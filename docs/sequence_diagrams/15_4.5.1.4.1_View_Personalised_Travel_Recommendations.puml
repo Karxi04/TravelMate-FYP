@@ -1,0 +1,27 @@
+@startuml
+title Hybrid Recommendation Module : View Personalised Travel Recommendations
+
+actor "Traveller" as Actor
+participant UI as ":recommendationUI"
+participant Ctrl as ":recommendationController"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open Hybrid Recommendation Module
+Actor -> UI: Select View Personalised Recommendations
+UI -> Ctrl: Request existing recommendations
+Ctrl -> DB: retrieveRecord(travelPreference)
+DB --> Ctrl: Preference profile
+
+alt [Travel preference questionnaire is incomplete]
+    Ctrl --> UI: Prompt traveller to complete the preference questionnaire
+else [Preference profile is available]
+    Ctrl -> DB: retrieveRecord(recommendationResults)
+    DB --> Ctrl: Recommendation results
+
+    alt [Personalised recommendations are available]
+        Ctrl --> UI: Display recommendation list and available suitability information
+    else [No recommendation has been generated]
+        Ctrl --> UI: Prompt traveller to generate recommendations
+    end
+end
+@enduml

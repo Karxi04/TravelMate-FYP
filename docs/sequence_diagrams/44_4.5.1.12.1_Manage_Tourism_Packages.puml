@@ -1,0 +1,45 @@
+@startuml
+title Tourism Operator Management Module : Manage Tourism Packages
+
+actor "Tourism Operator" as Actor
+participant UI as ":tourismPackageManagement"
+participant Ctrl as ":tourismOperatorController"
+participant Pkg as ":tourismPackage"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open Manage Tourism Packages
+UI -> Ctrl: Request Operator Packages
+Ctrl -> DB: retrieveRecord(operatorPackages)
+DB --> Ctrl: Package List
+Ctrl --> UI: Display Package List
+Actor -> UI: Choose Package Action
+alt [Create package]
+  Actor -> UI: Enter Package Details
+  UI -> Ctrl: Create Package
+  Ctrl -> Ctrl: validatePackageData()
+  alt [Package data valid]
+    Ctrl -> Pkg: createPackage()
+    Pkg --> Ctrl: Package Record
+    Ctrl -> DB: storeRecord(packageRecord)
+    Ctrl --> UI: Display Package Created
+  else [Invalid package data]
+    Ctrl --> UI: Display Package Validation Error
+  end
+else [Update package]
+  UI -> Ctrl: Update Package
+  Ctrl -> DB: updateRecord(packageData)
+  DB --> Ctrl: Update Result
+  Ctrl --> UI: Display Package Update Result
+else [Delete package]
+  UI --> Actor: Display Delete Confirmation
+  Actor -> UI: Confirm Delete
+  alt [Confirmed]
+    UI -> Ctrl: Delete Package
+    Ctrl -> DB: deleteRecord(packageId)
+    Ctrl --> UI: Display Package Deleted
+  else [Cancelled]
+    UI --> Actor: Keep Package
+  end
+end
+
+@enduml

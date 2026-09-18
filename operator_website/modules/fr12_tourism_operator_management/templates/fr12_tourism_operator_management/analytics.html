@@ -1,0 +1,177 @@
+{% extends 'portal_base.html' %}
+
+{% block content %}
+
+<div class="page-title">
+
+    <div>
+        <h1>Business Analytics</h1>
+
+        <p>
+            Business performance based on your
+            TravelMate records.
+        </p>
+
+    </div>
+
+
+    <div class="actions">
+
+        <a class="btn primary"
+           href="{{ url_for('operator_fr12.export_report') }}">
+
+            Export Business Report PDF
+
+        </a>
+
+    </div>
+
+</div>
+
+{% set summary = analytics.get('summary', {}) %}
+
+<div class="grid g4">
+
+    <div class="card cream">
+        <div class="metric">
+            {{ summary.get('totalPackages', 0) }}
+        </div>
+
+        <div class="metric-label">
+            Total Packages
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="metric">
+            {{ summary.get('approvedPackages', 0) }}
+        </div>
+
+        <div class="metric-label">
+            Approved Packages
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="metric">
+            {{ summary.get('totalCampaigns', 0) }}
+        </div>
+
+        <div class="metric-label">
+            Campaigns
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="metric">
+            {{ summary.get('bookingRecords', 0) }}
+        </div>
+
+        <div class="metric-label">
+            Booking Records
+        </div>
+    </div>
+
+</div>
+
+
+<div class="grid g2" style="margin-top:16px">
+
+    <div class="card">
+
+        <h3>Package Performance</h3>
+
+        <p class="muted">
+            Current tourism package approval status.
+        </p>
+
+        <p>
+            Approved:
+            <strong>
+                {{ summary.get('approvedPackages', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Pending:
+            <strong>
+                {{ summary.get('pendingPackages', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Rejected:
+            <strong>
+                {{ summary.get('rejectedPackages', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Draft:
+            <strong>
+                {{ summary.get('draftPackages', 0) }}
+            </strong>
+        </p>
+
+    </div>
+
+
+    <div class="card">
+
+        <h3>Campaign Performance</h3>
+
+        <p class="muted">
+            Current promotional campaign status.
+        </p>
+
+        <p>
+            Total:
+            <strong>
+                {{ summary.get('totalCampaigns', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Approved:
+            <strong>
+                {{ summary.get('approvedCampaigns', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Pending:
+            <strong>
+                {{ summary.get('pendingCampaigns', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Active:
+            <strong>
+                {{ summary.get('activeCampaigns', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Rejected:
+            <strong>
+                {{ summary.get('rejectedCampaigns', 0) }}
+            </strong>
+        </p>
+
+    </div>
+
+</div>
+
+
+<div class="card cream" style="margin-top:16px">
+
+    <strong>Combined Package Value:</strong>
+
+    RM {{ '%.2f'|format(
+    summary.get('totalPackageValue', 0)
+    ) }}
+
+</div>
+
+{% endblock %}

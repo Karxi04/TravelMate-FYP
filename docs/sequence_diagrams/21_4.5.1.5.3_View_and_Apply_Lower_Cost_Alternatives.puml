@@ -1,0 +1,39 @@
+@startuml
+title Smart Itinerary and Budget Planning Module : View and Apply Lower-Cost Alternatives
+
+actor "Traveller" as Actor
+participant UI as ":budgetAlternativeUI"
+participant Ctrl as ":budgetController"
+participant Budget as ":budgetEstimate"
+participant Flights as ":serpApiGoogleFlightsAPI"
+participant Hotels as ":liteAPINuiteeSandbox"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select View Lower Cost Alternatives
+UI -> Ctrl: Request Lower Cost Alternatives
+Ctrl -> DB: retrieveRecord(budgetEstimate)
+DB --> Ctrl: Budget Data
+alt [Itinerary is over budget]
+  Ctrl -> Flights: retrieveLowerCostFlights(tripCriteria)
+  Flights --> Ctrl: Lower Cost Flights
+  Ctrl -> Hotels: Retrieve Hotel Offers
+  Hotels --> Ctrl: Lower Cost Hotels
+  Ctrl -> Budget: buildLowerCostAlternatives()
+  Budget --> Ctrl: Alternatives
+  alt [Alternatives available]
+    Ctrl --> UI: Display Lower Cost Alternatives
+    Actor -> UI: Select Alternative
+    UI -> Ctrl: Apply Alternative
+    Ctrl -> Budget: calculateBudget(updatedSelections)
+    Budget --> Ctrl: Revised Budget
+    Ctrl -> DB: updateRecord(itinerary, revisedBudget)
+    DB --> Ctrl: Update Result
+    Ctrl --> UI: Display Updated Budget Comparison
+  else [No lower-cost alternative found]
+    Ctrl --> UI: Display No Lower Cost Alternative
+  end
+else [Itinerary already within budget]
+  Ctrl --> UI: Display Budget Within Limit
+end
+
+@enduml

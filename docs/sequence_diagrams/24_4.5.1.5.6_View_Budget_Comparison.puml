@@ -1,0 +1,29 @@
+@startuml
+title Smart Itinerary and Budget Planning Module : View Budget Comparison
+
+actor "Traveller" as Actor
+participant UI as ":budgetComparison"
+participant Ctrl as ":budgetController"
+participant Budget as ":budgetEstimate"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select View Budget Comparison
+UI -> Ctrl: Request Budget Comparison
+Ctrl -> DB: retrieveRecord(itineraryAndBudget)
+DB --> Ctrl: Cost Data
+alt [Budget data available]
+  Ctrl -> Budget: calculateBudget(costData)
+  Budget --> Ctrl: Total Estimated Cost
+  Ctrl -> Budget: compareBudget()
+  Budget --> Ctrl: Budget Status
+  alt [Within budget]
+    Ctrl --> UI: Display Within Budget Comparison
+  else [Over budget]
+    Ctrl --> UI: Display Over Budget Comparison
+    UI --> Actor: Offer View Lower Cost Alternatives
+  end
+else [Budget information unavailable]
+  Ctrl --> UI: Display Budget Comparison Unavailable
+end
+
+@enduml

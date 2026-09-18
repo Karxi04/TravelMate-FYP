@@ -1,0 +1,30 @@
+@startuml
+title Chatbot Travel Assistance Module : Ask Travel Question
+
+actor "Traveller" as Actor
+participant UI as ":chatbotUI"
+participant Ctrl as ":chatbotController"
+participant Gemini as ":geminiAPI"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open Chatbot
+UI --> Actor: Display Chat Interface
+Actor -> UI: Enter Travel Question
+Actor -> UI: Send Message
+UI -> Ctrl: Process Travel Question
+Ctrl -> Ctrl: validateQuestion()
+alt [Question valid]
+  Ctrl -> DB: storeRecord(userMessage)
+  Ctrl -> Gemini: generateChatbotResponse(question)
+  Gemini --> Ctrl: Chatbot Response
+  alt [Gemini response available]
+    Ctrl -> DB: storeRecord(chatbotResponse)
+    Ctrl --> UI: Display Chatbot Response
+  else [Gemini service unavailable or response failed]
+    Ctrl --> UI: Display Unable To Answer Now
+  end
+else [Empty or unsupported question]
+  Ctrl --> UI: Display Enter Valid Travel Question
+end
+
+@enduml

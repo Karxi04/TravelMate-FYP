@@ -1,0 +1,42 @@
+@startuml
+title Smart Itinerary and Budget Planning Module : Manage Itinerary Activities
+
+actor "Traveller" as Actor
+participant UI as ":itineraryEditor"
+participant Ctrl as ":itineraryController"
+participant Act as ":itineraryActivity"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open Itinerary Editor
+UI -> Ctrl: Request Itinerary
+Ctrl -> DB: retrieveRecord(itinerary)
+DB --> Ctrl: Itinerary Data
+alt [Itinerary exists]
+  Ctrl --> UI: Display Itinerary Activities
+  Actor -> UI: Choose Activity Action
+  alt [Add activity]
+    UI -> Ctrl: Add Activity
+    Ctrl -> Act: addActivity()
+  else [Remove activity]
+    UI -> Ctrl: Remove Activity
+    Ctrl -> Act: removeActivity()
+  else [Rearrange activity]
+    UI -> Ctrl: Rearrange Activity
+    Ctrl -> Act: rearrangeActivity()
+  else [Update activity]
+    UI -> Ctrl: Update Activity
+    Ctrl -> Act: updateActivity()
+  end
+  Act --> Ctrl: Activity Change Result
+  alt [Activity change valid]
+    Ctrl -> DB: updateRecord(itineraryActivities)
+    DB --> Ctrl: Update Result
+    Ctrl --> UI: Display Updated Itinerary Activities
+  else [Activity conflict or invalid input]
+    Ctrl --> UI: Display Activity Management Error
+  end
+else [Itinerary not found]
+  Ctrl --> UI: Display Itinerary Not Found
+end
+
+@enduml

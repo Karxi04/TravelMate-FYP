@@ -1,0 +1,34 @@
+@startuml
+title Destination Search and Information Module : Save and View Favourite Destination
+
+actor "Traveller" as Actor
+participant UI as ":favouriteDestination"
+participant Ctrl as ":destinationController"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Click Save Favourite Destination
+UI -> Ctrl: Save Favourite Destination
+Ctrl -> DB: retrieveRecord(favouriteStatus)
+DB --> Ctrl: Favourite Status
+alt [Destination not already saved]
+  Ctrl -> DB: storeRecord(favouriteDestination)
+  DB --> Ctrl: Save Result
+  alt [Save successful]
+    Ctrl --> UI: Display Destination Saved Successfully
+  else [Save failed]
+    Ctrl --> UI: Display Unable To Save Destination
+  end
+else [Destination already saved]
+  Ctrl --> UI: Display Destination Already Saved
+end
+Actor -> UI: Open Favourite Destination Page
+UI -> Ctrl: Request Favourite Destinations
+Ctrl -> DB: retrieveRecord(favouriteDestinations)
+DB --> Ctrl: Favourite Destination List
+alt [Favourite destinations exist]
+  Ctrl --> UI: Display Favourite Destinations
+else [No favourites found]
+  Ctrl --> UI: Display No Favourite Destinations
+end
+
+@enduml

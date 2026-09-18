@@ -1,0 +1,35 @@
+@startuml
+title Travel Preference Module : Update Travel Preferences
+
+actor "Traveller" as Actor
+participant UI as ":travelPreferenceProfile"
+participant Ctrl as ":travelPreferenceController"
+participant Pref as ":travelPreference"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select Update Travel Preferences
+UI -> Ctrl: Request existing travel preferences
+Ctrl -> DB: retrieveRecord(preferenceProfile)
+DB --> Ctrl: Preference data
+
+alt [No preference profile exists]
+    Ctrl --> UI: Prompt traveller to complete questionnaire first
+else [Preference profile exists]
+    Ctrl --> UI: Display current travel preferences
+    Actor -> UI: Modify preference fields
+    Actor -> UI: Click Save Changes
+    UI -> Ctrl: Submit updated preferences
+    Ctrl -> Ctrl: validateUpdatedPreferences()
+
+    alt [Updated preferences are invalid]
+        Ctrl --> UI: Display preference validation errors
+    else [Updated preferences are valid]
+        Ctrl -> Pref: updatePreferenceProfile()
+        Pref --> Ctrl: Updated preference profile
+        Ctrl -> DB: updateRecord(updatedProfile)
+        DB --> Ctrl: Preference update result
+        Ctrl -> Pref: applyHomepageCategoryMatching()
+        Ctrl --> UI: Display preference update result
+    end
+end
+@enduml

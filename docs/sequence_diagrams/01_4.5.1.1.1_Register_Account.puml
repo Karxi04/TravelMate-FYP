@@ -1,0 +1,42 @@
+@startuml
+title User Management Module : Register Account
+
+actor "Traveller / Tourism Operator" as Actor
+participant UI as ":userRegistration"
+participant Ctrl as ":userController"
+participant Auth as ":firebaseAuthentication"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open TravelMate
+UI --> Actor: Display welcome page
+Actor -> UI: Select Register Account
+UI --> Actor: Display registration form
+Actor -> UI: Enter registration information
+Actor -> UI: Select user type
+Actor -> UI: Click Register
+UI -> Ctrl: Submit registration details
+Ctrl -> Ctrl: validateRequiredInformation()
+Ctrl -> Ctrl: validateEmailFormat()
+Ctrl -> Ctrl: validatePasswordRequirement()
+
+alt [Registration information is invalid]
+    Ctrl --> UI: Display validation errors
+    UI --> Actor: Show fields that need correction
+else [Registration information is valid]
+    Ctrl -> Auth: createUserAccount(email, password)
+    Auth --> Ctrl: Account creation result
+
+    alt [Email already registered]
+        Ctrl --> UI: Display email already registered message
+        UI --> Actor: Request another email address
+    else [Authentication service fails]
+        Ctrl --> UI: Display registration failed message
+        UI --> Actor: Ask user to try again
+    else [Authentication account created]
+        Ctrl -> DB: storeRecord(userProfile)
+        DB --> Ctrl: Profile save result
+        Ctrl --> UI: Display registration result
+        UI --> Actor: Show registration successful or profile setup failed message
+    end
+end
+@enduml

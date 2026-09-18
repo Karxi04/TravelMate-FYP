@@ -1,0 +1,25 @@
+{% extends 'portal_base.html' %}{% block title %}Package Review | TravelMate{% endblock %}{% block content %}
+<div class="page-title"><div><h1>Review Submitted Packages</h1><p>Check the complete package information before deciding whether it can be published to Travellers.</p></div></div>
+<div class="grid g2">
+{% for x in items %}
+<div class="card">
+  <div class="actions" style="justify-content:space-between"><span class="status pending">Pending Approval</span><strong>RM {{x.get('price',0)}}</strong></div>
+  <h3 style="margin-top:12px">{{x.get('packageTitle','Package')}}</h3>
+  <p><strong>Destination:</strong> {{x.get('destinationName','-')}}</p>
+  <p><strong>Duration:</strong> {{x.get('durationDays',1)}} day(s) &nbsp; <strong>Max travellers:</strong> {{x.get('maxTravellers','-')}}</p>
+  <p><strong>Validity:</strong> {{x.get('validFrom','-')}} → {{x.get('validUntil','-')}}</p>
+  <p><strong>Meeting point:</strong> {{x.get('meetingPoint','-')}}</p>
+  <p>{{x.get('description','')}}</p>
+  {% if x.get('highlights') %}<p><strong>Highlights</strong><br>{{x.get('highlights')}}</p>{% endif %}
+  {% if x.get('inclusions') %}<p><strong>Included</strong><br>{{x.get('inclusions')}}</p>{% endif %}
+  {% if x.get('exclusions') %}<p><strong>Not included</strong><br>{{x.get('exclusions')}}</p>{% endif %}
+  <form method="post" action="{{ url_for('admin_fr13.review_package', package_id=x.id) }}" style="margin-top:14px">
+    <div class="field"><label>Review comment / rejection reason</label><textarea class="input" name="comment" placeholder="Add a clear note for the Tourism Operator"></textarea></div>
+    <div class="actions"><button class="btn primary" name="decision" value="approved">Approve & Publish</button><button class="btn danger" name="decision" value="rejected">Reject</button></div>
+  </form>
+</div>
+{% else %}
+<div class="card cream">No tourism package currently requires review.</div>
+{% endfor %}
+</div>
+{% endblock %}

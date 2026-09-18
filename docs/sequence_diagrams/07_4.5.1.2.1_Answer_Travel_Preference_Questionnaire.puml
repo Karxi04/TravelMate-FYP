@@ -1,0 +1,36 @@
+@startuml
+title Travel Preference Module : Answer Travel Preference Questionnaire
+
+actor "Traveller" as Actor
+participant UI as ":travelPreferenceQuestionnaire"
+participant Ctrl as ":travelPreferenceController"
+participant Pref as ":travelPreference"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open Travel Preference Module
+UI -> Ctrl: Check questionnaire completion status
+Ctrl -> DB: retrieveRecord(preferenceProfile)
+DB --> Ctrl: Existing preference data
+
+alt [Questionnaire was already completed]
+    Ctrl --> UI: Redirect to homepage
+else [Questionnaire has not been completed]
+    Ctrl --> UI: Display travel preference questionnaire
+    Actor -> UI: Select travel personality, sleeping type and travel type
+    Actor -> UI: Select interests, budget, travel pace and purpose
+    Actor -> UI: Submit questionnaire
+    UI -> Ctrl: Submit preference answers
+    Ctrl -> Ctrl: validatePreferenceAnswers()
+
+    alt [Preference answers are invalid]
+        Ctrl --> UI: Display preference validation errors
+    else [Preference answers are valid]
+        Ctrl -> Pref: createPreferenceProfile()
+        Pref --> Ctrl: Preference profile
+        Ctrl -> DB: storeRecord(preferenceProfile)
+        DB --> Ctrl: Preference save result
+        Ctrl -> Pref: applyHomepageCategoryMatching()
+        Ctrl --> UI: Display questionnaire completion result
+    end
+end
+@enduml

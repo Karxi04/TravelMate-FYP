@@ -1,0 +1,27 @@
+@startuml
+title Chatbot Travel Assistance Module : Ask Follow-Up Question
+
+actor "Traveller" as Actor
+participant UI as ":chatbotUI"
+participant Ctrl as ":chatbotController"
+participant Gemini as ":geminiAPI"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Enter Follow Up Question
+UI -> Ctrl: Process Follow Up Question
+Ctrl -> DB: retrieveRecord(chatHistory)
+DB --> Ctrl: Conversation Context
+alt [Active chat context available]
+  Ctrl -> Gemini: generateFollowUpResponse(conversationContext, question)
+  Gemini --> Ctrl: Follow Up Response
+  alt [Response generated]
+    Ctrl -> DB: storeRecord(followUpQuestionAndResponse)
+    Ctrl --> UI: Display Follow Up Response
+  else [Response generation failed]
+    Ctrl --> UI: Display Unable To Generate Follow Up Response
+  end
+else [Chat context unavailable]
+  Ctrl --> UI: Prompt Start New Chat Session
+end
+
+@enduml

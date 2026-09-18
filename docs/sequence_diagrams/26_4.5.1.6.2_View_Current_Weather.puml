@@ -1,0 +1,19 @@
+@startuml
+title Weather Forecasting Module : View Current Weather
+
+actor "Traveller" as Actor
+participant UI as ":weatherDetails"
+participant Ctrl as ":weatherController"
+participant Weather as ":openMeteoAPI"
+
+Actor -> UI: Select View Current Weather
+UI -> Ctrl: Request Current Weather
+Ctrl -> Weather: retrieveCurrentWeather(destinationCoordinates)
+Weather --> Ctrl: Current Weather
+alt [Current weather available]
+  Ctrl --> UI: Display Temperature Condition Rain And Wind
+else [Current weather unavailable]
+  Ctrl --> UI: Display Unable To Load Current Weather
+end
+
+@enduml

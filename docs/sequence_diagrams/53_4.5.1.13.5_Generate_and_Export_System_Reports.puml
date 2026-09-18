@@ -1,0 +1,36 @@
+@startuml
+title Administrator Management Module : Generate and Export System Reports
+
+actor "Administrator" as Actor
+participant UI as ":systemReportUI"
+participant Ctrl as ":administratorController"
+participant Report as ":systemReport"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open System Reports
+UI --> Actor: Display report options
+Actor -> UI: Select report type and date range
+Actor -> UI: Click Generate Report
+UI -> Ctrl: Submit report criteria
+Ctrl -> Ctrl: validateReportCriteria()
+
+alt [Report criteria are invalid]
+    Ctrl --> UI: Display report criteria error
+else [Report criteria are valid]
+    Ctrl -> DB: retrieveRecord(reportSourceData)
+    DB --> Ctrl: Report source data
+
+    alt [No data matches the selected criteria]
+        Ctrl --> UI: Display no report data available message
+    else [Report data is available]
+        Ctrl -> Report: generateReport(reportData)
+        Report --> Ctrl: Generated report
+        Ctrl --> UI: Display generated report
+        Actor -> UI: Select export format
+        UI -> Ctrl: Submit export request
+        Ctrl -> Report: exportReport()
+        Report --> Ctrl: Export result
+        Ctrl --> UI: Provide exported report or unsupported-format message
+    end
+end
+@enduml

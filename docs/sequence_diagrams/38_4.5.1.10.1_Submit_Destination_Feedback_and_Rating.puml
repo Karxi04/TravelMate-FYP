@@ -1,0 +1,30 @@
+@startuml
+title Feedback and Rating Module : Submit Destination Feedback and Rating
+
+actor "Traveller" as Actor
+participant UI as ":feedbackUI"
+participant Ctrl as ":feedbackController"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open destination feedback form
+UI --> Actor: Display rating and comment fields
+Actor -> UI: Select rating and enter comment
+Actor -> UI: Click Submit Feedback
+UI -> Ctrl: Submit destination feedback
+Ctrl -> Ctrl: validateRatingAndComment()
+
+alt [Rating or comment is invalid]
+    Ctrl --> UI: Display feedback validation error
+else [Feedback is valid]
+    Ctrl -> DB: retrieveRecord(existingFeedback)
+    DB --> Ctrl: Existing feedback result
+
+    alt [Duplicate feedback is not allowed]
+        Ctrl --> UI: Display feedback already submitted message
+    else [Feedback can be submitted]
+        Ctrl -> DB: storeRecord(feedback)
+        DB --> Ctrl: Feedback save result
+        Ctrl --> UI: Display feedback submission result
+    end
+end
+@enduml

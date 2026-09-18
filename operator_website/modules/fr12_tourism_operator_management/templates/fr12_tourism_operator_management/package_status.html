@@ -1,0 +1,7 @@
+{% extends 'portal_base.html' %}
+{% block content %}
+<div class="page-title"><div><h1>Package Approval Status</h1><p>View Pending Approval, Approved and Rejected tourism packages.</p></div><a class="btn primary" href="{{ url_for('operator_fr12.submit_package_page') }}">Submit Package</a></div>
+<div class="table-wrap"><table><thead><tr><th>Package</th><th>Destination</th><th>Price</th><th>Approval Status</th><th>Review Comment</th></tr></thead><tbody>
+{% for item in items %}<tr><td>{{ item.packageTitle }}</td><td>{{ item.destinationName }}</td><td>RM {{ '%.2f'|format(item.price or 0) }}</td><td><span class="status {{ item.approvalStatus or 'draft' }}">{{ item.approvalStatus or 'draft' }}</span></td><td>{{ item.reviewComment or '-' }}</td></tr>{% else %}<tr><td colspan="5">No packages found.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

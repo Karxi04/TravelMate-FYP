@@ -1,0 +1,44 @@
+@startuml
+title Tourism Operator Management Module : Manage Promotional Campaign
+
+actor "Tourism Operator" as Actor
+participant UI as ":promotionalCampaignManagement"
+participant Ctrl as ":tourismOperatorController"
+participant Campaign as ":promotionalCampaign"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open Promotional Campaign Management
+UI -> Ctrl: Request Campaigns
+Ctrl -> DB: retrieveRecord(operatorCampaigns)
+DB --> Ctrl: Campaign List
+Ctrl --> UI: Display Campaign List
+Actor -> UI: Choose Campaign Action
+alt [Create campaign]
+  Actor -> UI: Enter Campaign Details
+  UI -> Ctrl: Create Campaign
+  Ctrl -> Ctrl: validateCampaignDatesAndContent()
+  alt [Campaign valid]
+    Ctrl -> Campaign: createCampaign()
+    Campaign --> Ctrl: Campaign Record
+    Ctrl -> DB: storeRecord(campaignRecord)
+    Ctrl --> UI: Display Campaign Created
+  else [Invalid campaign data]
+    Ctrl --> UI: Display Campaign Validation Error
+  end
+else [Update campaign]
+  UI -> Ctrl: Update Campaign
+  Ctrl -> DB: updateRecord(campaignData)
+  Ctrl --> UI: Display Campaign Updated
+else [Delete campaign]
+  UI --> Actor: Display Delete Confirmation
+  Actor -> UI: Confirm Delete
+  alt [Confirmed]
+    UI -> Ctrl: Delete Campaign
+    Ctrl -> DB: deleteRecord(campaignId)
+    Ctrl --> UI: Display Campaign Deleted
+  else [Cancelled]
+    UI --> Actor: Keep Campaign
+  end
+end
+
+@enduml

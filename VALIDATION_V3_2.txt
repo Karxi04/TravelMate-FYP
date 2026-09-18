@@ -1,0 +1,26 @@
+TravelMate V3.2 Validation
+=========================
+
+Python backend/operator/admin compile: PASS
+Jinja templates parsed: PASS
+Dart files checked: 34
+Dart simple delimiter issues: 0
+Missing relative Dart imports: 0
+Sequence contract unique functions: 91
+Sequence functions missing: 0
+Traveller visible unwanted terms (demo/simulation/mockup): 0
+
+Cross-role linkage checks:
+- Approved tourism package Traveller endpoint: PASS
+- Approved promotional campaign Traveller endpoint: PASS
+- Traveller Home package section: PASS
+- Traveller Home promotion section: PASS
+- Tourism package details screen: PASS
+- Promotion details screen: PASS
+- Firestore-backed Traveller reviews: PASS
+- Admin Keep/Remove review moderation: PASS
+- Removed inappropriate feedback uses deleteRecord(): PASS
+- Collaborative recommendation uses visible shared feedback: PASS
+- Firestore rule file and firebase.json included: PASS
+
+Flutter SDK was not available in the artifact environment, so run `flutter analyze` on the user's Flutter workstation after copying the real Firebase configuration and Android folder.

@@ -1,0 +1,24 @@
+TravelMate Dynamic Usability Upgrade V3 - Static Validation
+=========================================================
+Dart files checked: 30
+Missing local Dart imports: 0
+Unwanted UI wording hits (demo/simulation/mockup): 0
+Sequence contract unique functions: 91
+Sequence functions present: 91
+Sequence functions missing: 0
+
+PASS: KL place catalogue >= 10
+PASS: Penang place catalogue >= 10
+PASS: Curry mee intent
+PASS: Online search augmentation
+PASS: AI follow-up planning state
+PASS: AI city-specific plan builder
+PASS: Home preference recommendations
+PASS: Home Add to trip
+PASS: Trip drag reorder
+PASS: Trip searchable place picker
+PASS: Chat place cards
+PASS: Chat history
+PASS: Full profile editor
+
+Image resolver: V3.1 unique Wikimedia place images

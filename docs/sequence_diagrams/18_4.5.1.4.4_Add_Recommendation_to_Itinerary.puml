@@ -1,0 +1,31 @@
+@startuml
+title Hybrid Recommendation Module : Add Recommendation to Itinerary
+
+actor "Traveller" as Actor
+participant UI as ":recommendationDetails"
+participant Ctrl as ":recommendationController"
+participant Itin as ":itinerary"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select Add Recommendation to Itinerary
+UI -> Ctrl: Submit recommended destination
+Ctrl -> DB: retrieveRecord(activeItinerary)
+DB --> Ctrl: Active itinerary data
+
+alt [No active itinerary exists]
+    Ctrl --> UI: Prompt traveller to create an itinerary first
+else [Active itinerary exists]
+    Ctrl -> Itin: checkDestinationExists(destinationId)
+    Itin --> Ctrl: Destination existence result
+
+    alt [Destination is already in itinerary]
+        Ctrl --> UI: Display destination already added message
+    else [Destination is not yet in itinerary]
+        Ctrl -> Itin: addActivity(destinationId)
+        Itin --> Ctrl: Add recommendation result
+        Ctrl -> DB: updateRecord(itinerary)
+        DB --> Ctrl: Itinerary update result
+        Ctrl --> UI: Display add recommendation result
+    end
+end
+@enduml

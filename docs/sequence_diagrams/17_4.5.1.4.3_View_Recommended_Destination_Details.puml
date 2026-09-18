@@ -1,0 +1,26 @@
+@startuml
+title Hybrid Recommendation Module : View Recommended Destination Details
+
+actor "Traveller" as Actor
+participant UI as ":recommendationDetails"
+participant Ctrl as ":recommendationController"
+participant Maps as ":serpApiGoogleMapsAPI"
+
+Actor -> UI: Select Recommended Destination
+UI -> Ctrl: Request Recommended Destination Details
+Ctrl -> Maps: retrieveDestinationDetails(destinationId)
+Maps --> Ctrl: Destination Details
+alt [Details available]
+  Ctrl --> UI: Display Recommended Destination Details
+  alt [Ratings and reviews requested]
+    Ctrl -> Maps: retrieveRatingsAndReviews(destinationId)
+    Maps --> Ctrl: Ratings And Reviews
+    Ctrl --> UI: Display Ratings And Reviews
+  else [No additional review request]
+    UI --> Actor: Keep Destination Details Visible
+  end
+else [Details unavailable]
+  Ctrl --> UI: Display Recommendation Details Unavailable
+end
+
+@enduml

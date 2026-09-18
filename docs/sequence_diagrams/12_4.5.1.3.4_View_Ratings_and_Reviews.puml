@@ -1,0 +1,25 @@
+@startuml
+title Destination Search and Information Module : View Ratings and Reviews
+
+actor "Traveller" as Actor
+participant UI as ":destinationDetails"
+participant Ctrl as ":destinationController"
+participant API as ":serpApiGoogleMapsAPI"
+
+Actor -> UI: Select View Ratings And Reviews
+UI -> Ctrl: Request Ratings And Reviews
+Ctrl -> API: retrieveRatingsAndReviews(destinationId)
+API --> Ctrl: Rating Review Result
+alt [Request successful]
+  alt [Ratings and reviews available]
+    Ctrl --> UI: Display Ratings And Reviews
+  else [Rating only available]
+    Ctrl --> UI: Display Rating Only
+  else [No reviews available]
+    Ctrl --> UI: Display No Reviews Available
+  end
+else [Request failed]
+  Ctrl --> UI: Display Unable To Load Ratings And Reviews
+end
+
+@enduml

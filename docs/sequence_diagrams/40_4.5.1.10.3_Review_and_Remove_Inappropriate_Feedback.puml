@@ -1,0 +1,34 @@
+@startuml
+title Feedback and Rating Module : Review and Remove Inappropriate Feedback
+
+actor "Administrator" as Actor
+participant UI as ":feedbackModeration"
+participant Ctrl as ":feedbackController"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open feedback moderation
+UI -> Ctrl: Request traveller feedback records
+Ctrl -> DB: retrieveRecord(allFeedback)
+DB --> Ctrl: Feedback records
+
+alt [No feedback record is available]
+    Ctrl --> UI: Display no feedback records message
+else [Feedback records are available]
+    Ctrl --> UI: Display feedback records
+    Actor -> UI: Select feedback to review
+    UI -> Ctrl: Request feedback details
+    Ctrl -> DB: retrieveRecord(feedbackId)
+    DB --> Ctrl: Feedback details
+    Ctrl --> UI: Display selected feedback details
+    Actor -> UI: Choose Keep or Remove
+
+    alt [Feedback is appropriate or removal is cancelled]
+        Ctrl --> UI: Keep feedback visible
+    else [Administrator confirms removal]
+        UI -> Ctrl: Submit feedback removal
+        Ctrl -> DB: deleteRecord(feedbackId)
+        DB --> Ctrl: Removal result
+        Ctrl --> UI: Display feedback removed result
+    end
+end
+@enduml

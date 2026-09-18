@@ -1,0 +1,35 @@
+@startuml
+title User Management Module : Manage User Account
+
+actor "Administrator" as Actor
+participant UI as ":userManagement"
+participant Ctrl as ":userController"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open user management page
+UI -> Ctrl: Request user account records
+Ctrl -> DB: retrieveRecord(userAccounts)
+DB --> Ctrl: User account records
+
+alt [No user accounts are available]
+    Ctrl --> UI: Display no user account records message
+else [User accounts are available]
+    Ctrl --> UI: Display user account list
+    Actor -> UI: Select a user account
+    UI -> Ctrl: Request selected account details
+    Ctrl -> DB: retrieveRecord(userId)
+    DB --> Ctrl: Selected account details
+
+    alt [Selected account cannot be found]
+        Ctrl --> UI: Display user account not found message
+    else [Selected account is available]
+        Ctrl --> UI: Display account details and management actions
+        Actor -> UI: Choose assign role or deactivate account
+        UI -> Ctrl: Submit selected account action
+        Ctrl -> Ctrl: validateAccountAction()
+        Ctrl -> DB: updateRecord(selectedAccountChanges)
+        DB --> Ctrl: Account update result
+        Ctrl --> UI: Display account management result
+    end
+end
+@enduml

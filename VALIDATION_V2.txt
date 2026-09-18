@@ -1,0 +1,14 @@
+TravelMate Enhanced Standalone V2 - Validation
+
+Python backend compileall: PASS
+Dart files checked: 28
+Simple Dart delimiter-balance issues: 0
+Missing relative/local Dart imports: 0
+Duplicate StandaloneApiService methods: 0
+Requested terminology scan (demo/simulation/mockup/prototype) in traveller_mobile/lib: 0 hits
+
+Flutter SDK is not installed in the artifact environment, therefore flutter analyze could not be executed here.
+Run on the development PC:
+  flutter clean
+  flutter pub get
+  flutter analyze

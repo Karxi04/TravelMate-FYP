@@ -1,0 +1,36 @@
+@startuml
+title Payment Module : Proceed to Payment
+
+actor "Traveller" as Actor
+participant UI as ":paymentUI"
+participant Ctrl as ":paymentController"
+participant Stripe as ":stripeSandbox"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select Proceed To Payment
+UI -> Ctrl: Request Payment Summary
+Ctrl -> DB: retrieveRecord(bookingId)
+DB --> Ctrl: Booking Summary
+Ctrl --> UI: Display Payment Summary
+Actor -> UI: Select Payment Method And Confirm
+UI -> Ctrl: Process Payment
+Ctrl -> Ctrl: validatePaymentInput()
+alt [Payment input valid]
+  Ctrl -> Stripe: createPaymentSession(paymentInput)
+  Stripe --> Ctrl: Payment Session Id
+  Ctrl -> Stripe: processSandboxPayment(paymentSessionId)
+  Stripe --> Ctrl: Payment Status
+  alt [Payment successful]
+    Ctrl -> DB: storeRecord(paymentRecord)
+    Ctrl -> DB: updateRecord(bookingStatus=Paid)
+    DB --> Ctrl: Save Result
+    Ctrl --> UI: Display Payment Successful
+  else [Payment failed]
+    Ctrl -> DB: storeRecord(paymentStatus=Failed)
+    Ctrl --> UI: Display Payment Failed And Retry Option
+  end
+else [Payment input invalid]
+  Ctrl --> UI: Display Payment Validation Error
+end
+
+@enduml

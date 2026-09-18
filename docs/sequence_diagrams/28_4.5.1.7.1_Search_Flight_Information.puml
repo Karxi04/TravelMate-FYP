@@ -1,0 +1,28 @@
+@startuml
+title Flight Search Module : Search Flight Information
+
+actor "Traveller" as Actor
+participant UI as ":flightSearch"
+participant Ctrl as ":flightController"
+participant Flights as ":serpApiGoogleFlightsAPI"
+
+Actor -> UI: Enter origin, destination and travel date
+Actor -> UI: Click Search Flights
+UI -> Ctrl: Submit flight search criteria
+Ctrl -> Ctrl: validateFlightSearchCriteria()
+
+alt [Flight search criteria are invalid]
+    Ctrl --> UI: Display flight search validation error
+else [Flight search criteria are valid]
+    Ctrl -> Flights: retrieveFlightOptions(searchCriteria)
+    Flights --> Ctrl: Flight search result
+
+    alt [Flight options are available]
+        Ctrl --> UI: Display flight options
+    else [No flights are found]
+        Ctrl --> UI: Display no flight options message
+    else [Flight search service is unavailable]
+        Ctrl --> UI: Display flight search service unavailable message
+    end
+end
+@enduml

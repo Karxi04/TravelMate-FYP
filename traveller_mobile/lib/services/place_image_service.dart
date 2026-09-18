@@ -1,0 +1,293 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+/// Resolves a relevant, unique image for a destination/place without requiring
+/// the TravelMate Flask backend.
+///
+/// Resolution order:
+/// 1. Use an image URL already supplied by the place provider.
+/// 2. Search English Wikipedia for the exact place/dish and use its lead image.
+/// 3. Search Wikimedia Commons for an image related to the exact place.
+/// 4. Return null and let the UI render a category-specific fallback.
+///
+/// A per-place cache plus a session-wide assigned-URL set prevents different
+/// place cards from reusing the same resolved image whenever alternatives are
+/// available.
+class PlaceImageService {
+  static final Map<String, String?> _resolvedByPlace = <String, String?>{};
+  static final Map<String, Future<String?>> _pendingByPlace =
+      <String, Future<String?>>{};
+  static final Map<String, String> _ownerByImageUrl = <String, String>{};
+
+  static const Map<String, String> _wikipediaTitleHints = <String, String>{
+    'george town unesco heritage area': 'George Town, Penang',
+    'george town food trail': 'Penang cuisine',
+    'penang road chendul area': 'Cendol',
+    'air itam curry mee area': 'Curry mee',
+    'george town white curry mee spots': 'Curry mee',
+    'air itam asam laksa area': 'Asam laksa',
+    'new lane hawker centre': 'New Lane, George Town',
+    'gurney drive hawker & seafront': 'Gurney Drive',
+    'petronas twin towers / klcc': 'Petronas Towers',
+    'petronas twin towers': 'Petronas Towers',
+    'river of life / masjid jamek': 'Jamek Mosque',
+    'kuala lumpur tower': 'Kuala Lumpur Tower',
+    'kl tower': 'Kuala Lumpur Tower',
+    'penang botanic gardens': 'Penang Botanic Gardens',
+    'kek lok si temple': 'Kek Lok Si',
+  };
+
+  static String _placeKey(Map<String, dynamic> place) {
+    final id = (place['destinationId'] ??
+            place['placeId'] ??
+            place['place_id'] ??
+            place['id'] ??
+            '')
+        .toString()
+        .trim();
+    if (id.isNotEmpty) return id.toLowerCase();
+    final title = (place['title'] ?? place['name'] ?? 'place').toString().trim();
+    final address = (place['address'] ?? place['location'] ?? '').toString().trim();
+    return '${title.toLowerCase()}|${address.toLowerCase()}';
+  }
+
+  static List<String> _explicitImageUrls(Map<String, dynamic> place) {
+    final urls = <String>[];
+
+    void add(dynamic raw) {
+      if (raw is Map) {
+        add(raw['thumbnail']);
+        add(raw['image']);
+        add(raw['link']);
+        add(raw['url']);
+        add(raw['source']);
+        return;
+      }
+      final value = (raw ?? '').toString().trim();
+      if ((value.startsWith('https://') || value.startsWith('http://')) &&
+          !urls.contains(value)) {
+        urls.add(value);
+      }
+    }
+
+    add(place['thumbnail']);
+    add(place['image']);
+    add(place['imageUrl']);
+    add(place['mainPhoto']);
+    add(place['main_photo']);
+    add(place['photo']);
+    add(place['photos']);
+    add(place['images']);
+    return urls;
+  }
+
+  static bool _claimImage(String key, String url) {
+    final normalized = url.trim();
+    if (normalized.isEmpty) return false;
+    final owner = _ownerByImageUrl[normalized];
+    if (owner != null && owner != key) return false;
+    _ownerByImageUrl[normalized] = key;
+    return true;
+  }
+
+  static Future<String?> resolve(Map<String, dynamic> place) {
+    final key = _placeKey(place);
+    if (_resolvedByPlace.containsKey(key)) {
+      return Future<String?>.value(_resolvedByPlace[key]);
+    }
+    final existing = _pendingByPlace[key];
+    if (existing != null) return existing;
+
+    final pending = _resolveInternal(key, place).then((value) {
+      _resolvedByPlace[key] = value;
+      _pendingByPlace.remove(key);
+      return value;
+    }).catchError((_) {
+      _resolvedByPlace[key] = null;
+      _pendingByPlace.remove(key);
+      return null;
+    });
+
+    _pendingByPlace[key] = pending;
+    return pending;
+  }
+
+  static Future<String?> _resolveInternal(
+    String key,
+    Map<String, dynamic> place,
+  ) async {
+    for (final url in _explicitImageUrls(place)) {
+      if (_claimImage(key, url)) return url;
+    }
+
+    final title = (place['title'] ?? place['name'] ?? '').toString().trim();
+    final address = (place['address'] ?? place['location'] ?? '').toString().trim();
+    final category = (place['category'] ?? place['type'] ?? '').toString().trim();
+
+    if (title.isEmpty) return null;
+
+    final lowerTitle = title.toLowerCase();
+    final hintedTitle = _wikipediaTitleHints[lowerTitle];
+
+    final queries = <String>[];
+    void addQuery(String value) {
+      final q = value.trim();
+      if (q.isNotEmpty && !queries.contains(q)) queries.add(q);
+    }
+
+    if (hintedTitle != null) addQuery(hintedTitle);
+    addQuery(title);
+
+    final locationContext = _shortLocation(address);
+    if (locationContext.isNotEmpty) addQuery('$title $locationContext');
+    if (category.isNotEmpty && locationContext.isNotEmpty) {
+      addQuery('$title $category $locationContext');
+    }
+
+    for (final query in queries) {
+      final candidates = await _searchWikipedia(query);
+      for (final candidate in candidates) {
+        if (_claimImage(key, candidate)) return candidate;
+      }
+    }
+
+    for (final query in queries.reversed) {
+      final candidates = await _searchCommons(query);
+      for (final candidate in candidates) {
+        if (_claimImage(key, candidate)) return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  static String _shortLocation(String address) {
+    if (address.trim().isEmpty) return '';
+    final parts = address
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '';
+    if (parts.length == 1) return parts.first;
+    return parts.take(2).join(', ');
+  }
+
+  static Future<List<String>> _searchWikipedia(String query) async {
+    try {
+      final uri = Uri.https('en.wikipedia.org', '/w/api.php', <String, String>{
+        'action': 'query',
+        'generator': 'search',
+        'gsrsearch': query,
+        'gsrnamespace': '0',
+        'gsrlimit': '8',
+        'prop': 'pageimages|pageterms',
+        'piprop': 'thumbnail',
+        'pithumbsize': '1200',
+        'pilimit': '8',
+        'format': 'json',
+        'formatversion': '2',
+        'redirects': '1',
+      });
+      final response = await http.get(
+        uri,
+        headers: const {
+          'User-Agent': 'TravelMate-FYP/1.0 (student travel planning app)',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return const [];
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) return const [];
+      final queryData = decoded['query'];
+      if (queryData is! Map) return const [];
+      final pages = queryData['pages'];
+      if (pages is! List) return const [];
+
+      final urls = <String>[];
+      for (final raw in pages) {
+        if (raw is! Map) continue;
+        final pageTitle = (raw['title'] ?? '').toString().toLowerCase();
+        if (_looksLikeNonPhoto(pageTitle)) continue;
+        final thumb = raw['thumbnail'];
+        if (thumb is Map) {
+          final source = (thumb['source'] ?? '').toString().trim();
+          if (source.startsWith('http') && !urls.contains(source)) {
+            urls.add(source);
+          }
+        }
+      }
+      return urls;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static Future<List<String>> _searchCommons(String query) async {
+    try {
+      final uri = Uri.https(
+        'commons.wikimedia.org',
+        '/w/api.php',
+        <String, String>{
+          'action': 'query',
+          'generator': 'search',
+          'gsrsearch': query,
+          'gsrnamespace': '6',
+          'gsrlimit': '12',
+          'prop': 'imageinfo',
+          'iiprop': 'url|mime',
+          'iiurlwidth': '1200',
+          'format': 'json',
+          'formatversion': '2',
+        },
+      );
+      final response = await http.get(
+        uri,
+        headers: const {
+          'User-Agent': 'TravelMate-FYP/1.0 (student travel planning app)',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return const [];
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) return const [];
+      final queryData = decoded['query'];
+      if (queryData is! Map) return const [];
+      final pages = queryData['pages'];
+      if (pages is! List) return const [];
+
+      final urls = <String>[];
+      for (final raw in pages) {
+        if (raw is! Map) continue;
+        final pageTitle = (raw['title'] ?? '').toString().toLowerCase();
+        if (_looksLikeNonPhoto(pageTitle)) continue;
+        final infos = raw['imageinfo'];
+        if (infos is! List || infos.isEmpty || infos.first is! Map) continue;
+        final info = infos.first as Map;
+        final mime = (info['mime'] ?? '').toString().toLowerCase();
+        if (!mime.startsWith('image/')) continue;
+        final url = (info['thumburl'] ?? info['url'] ?? '').toString().trim();
+        if (url.startsWith('http') && !urls.contains(url)) urls.add(url);
+      }
+      return urls;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static bool _looksLikeNonPhoto(String title) {
+    final bad = <String>[
+      'logo',
+      'icon',
+      'flag',
+      'map of',
+      'location map',
+      'coat of arms',
+      'diagram',
+      'route map',
+      'wordmark',
+    ];
+    return bad.any(title.contains);
+  }
+}

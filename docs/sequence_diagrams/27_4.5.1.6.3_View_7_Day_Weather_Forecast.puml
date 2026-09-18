@@ -1,0 +1,24 @@
+@startuml
+title Weather Forecasting Module : View 7-Day Weather Forecast
+
+actor "Traveller" as Actor
+participant UI as ":weatherForecast"
+participant Ctrl as ":weatherController"
+participant Weather as ":openMeteoAPI"
+
+Actor -> UI: Select View Seven Day Forecast
+UI -> Ctrl: Request Seven Day Forecast
+Ctrl -> Weather: retrieveSevenDayForecast(destinationCoordinates)
+Weather --> Ctrl: Forecast List
+alt [Seven-day forecast available]
+  Ctrl --> UI: Display Seven Day Forecast
+  alt [Some forecast days incomplete]
+    UI --> Actor: Show Available Forecast Data Only
+  else [Complete forecast available]
+    UI --> Actor: Show Complete Seven Day Forecast
+  end
+else [Forecast unavailable]
+  Ctrl --> UI: Display Unable To Load Forecast
+end
+
+@enduml

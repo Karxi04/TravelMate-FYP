@@ -1,0 +1,32 @@
+@startuml
+title Hotel Booking Module : Filter, Compare, and View Hotel Details
+
+actor "Traveller" as Actor
+participant UI as ":hotelResults"
+participant Ctrl as ":hotelBookingController"
+participant HotelAPI as ":liteAPINuiteeSandbox"
+
+Actor -> UI: Select hotel filter
+Actor -> UI: Select hotels for comparison
+UI -> Ctrl: Submit filter and comparison selection
+Ctrl -> Ctrl: applyHotelFilter()
+Ctrl -> Ctrl: compareSelectedHotels()
+
+alt [No hotel matches the filter]
+    Ctrl --> UI: Display no matching hotels message
+else [Comparison selection is invalid]
+    Ctrl --> UI: Request valid hotels for comparison
+else [Comparison is available]
+    Ctrl --> UI: Display hotel comparison
+    Actor -> UI: Select a hotel to view
+    UI -> Ctrl: Request selected hotel details
+    Ctrl -> HotelAPI: retrieveHotelOffers(hotelId)
+    HotelAPI --> Ctrl: Hotel details result
+
+    alt [Hotel details are available]
+        Ctrl --> UI: Display selected hotel details
+    else [Hotel details are unavailable]
+        Ctrl --> UI: Display hotel details unavailable message
+    end
+end
+@enduml

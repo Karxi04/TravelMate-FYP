@@ -1,0 +1,30 @@
+{% extends 'portal_base.html' %}{% block title %}Feedback Moderation | TravelMate{% endblock %}{% block content %}
+<div class="page-title"><div><h1>Traveller Reviews</h1><p>Review ratings submitted through the Traveller app. Appropriate reviews stay visible; inappropriate reviews can be removed.</p></div></div>
+<div class="grid g2">
+{% for x in items %}
+<div class="card">
+  <div class="actions" style="justify-content:space-between"><span class="status {{'rejected' if x.get('feedbackStatus')=='removed' else 'active'}}">{{x.get('feedbackStatus','visible')}}</span><span class="status {{'pending' if x.get('moderationStatus','pending_review')=='pending_review' else 'approved'}}">{{x.get('moderationStatus','pending_review')}}</span></div>
+  <h3 style="margin-top:12px">{{x.get('destinationName', x.get('destinationId','Destination'))}}</h3>
+  <p class="muted">{{x.get('destinationAddress','')}}</p>
+  <p><strong>Traveller:</strong> {{x.get('travellerName','Traveller')}}</p>
+  <p><strong>Rating:</strong> {{x.get('rating','-')}} / 5</p>
+  <p>{{x.get('comment','')}}</p>
+  {% if x.get('reviewComment') %}
+  <p class="muted"><strong>Moderation note:</strong> {{x.get('reviewComment')}}</p>
+  {% endif %}
+  <p class="muted"><small>Submitted: {{x.get('submittedAt','-')}}</small></p>
+  {% if x.get('feedbackStatus') != 'removed' %}
+  <form method="post" action="{{ url_for('admin_fr13.review_feedback', feedback_id=x.id) }}">
+    <div class="field"><label>Moderation note</label><textarea class="input" name="comment" placeholder="Reason or follow-up note"></textarea></div>
+    <div class="actions">
+      <button class="btn primary" name="decision" value="keep">Keep Visible</button>
+      <button class="btn danger" name="decision" value="remove">Remove</button>
+    </div>
+  </form>
+  {% endif %}
+</div>
+{% else %}
+<div class="card cream">No Traveller reviews have been submitted.</div>
+{% endfor %}
+</div>
+{% endblock %}

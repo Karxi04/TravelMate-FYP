@@ -1,0 +1,38 @@
+@startuml
+title Smart Itinerary and Budget Planning Module : Generate Itinerary
+
+actor "Traveller" as Actor
+participant UI as ":itineraryGeneration"
+participant Ctrl as ":itineraryController"
+participant Maps as ":serpApiGoogleMapsAPI"
+participant Weather as ":openMeteoAPI"
+participant Itin as ":itinerary"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select Generate Itinerary
+UI -> Ctrl: Submit itinerary generation request
+Ctrl -> DB: retrieveRecord(itineraryInputs)
+DB --> Ctrl: Itinerary input data
+
+alt [Required itinerary information is missing]
+    Ctrl --> UI: Prompt traveller to complete itinerary information
+else [Required itinerary information is available]
+    Ctrl -> Maps: retrieveLocationAndTravelTime(selectedDestinations)
+    Maps --> Ctrl: Location and travel-time data
+    Ctrl -> Weather: retrieveSevenDayForecast(destinationCoordinates)
+    Weather --> Ctrl: Forecast data
+    Ctrl -> Itin: generateItinerary(locationTravelData, forecastData)
+    Itin -> Itin: groupNearbyActivities()
+    Itin -> Itin: checkOpeningHoursAndTravelTime()
+    Itin -> Itin: adjustWeatherSensitiveActivities()
+    Itin --> Ctrl: Generated schedule result
+
+    alt [Feasible itinerary is generated]
+        Ctrl -> DB: updateRecord(generatedItinerary)
+        DB --> Ctrl: Itinerary save result
+        Ctrl --> UI: Display generated itinerary
+    else [External data unavailable or no feasible schedule]
+        Ctrl --> UI: Display itinerary generation problem and request adjustments
+    end
+end
+@enduml

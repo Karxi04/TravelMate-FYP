@@ -1,0 +1,39 @@
+{% extends 'portal_base.html' %}
+{% block title %}Admin Dashboard | TravelMate{% endblock %}
+{% block content %}
+<div class="page-title">
+  <div><span class="eyebrow">ADMINISTRATION</span><h1>System overview</h1><p>Review user activity, operator submissions, Traveller feedback and system records.</p></div>
+  <div class="actions"><a class="btn outline" href="{{ url_for('admin_fr13.reports') }}">System reports</a><a class="btn primary" href="{{ url_for('admin_fr13.packages') }}">Review packages</a></div>
+</div>
+{% set c=report.get('counts',{}) %}
+{% set summary=report.get('summary',{}) %}
+{% set users=summary.get('users',{}) %}
+{% set packages=summary.get('packages',{}) %}
+{% set campaigns=summary.get('campaigns',{}) %}
+{% set feedback=summary.get('feedback',{}) %}
+<div class="grid g4">
+  <div class="card cream"><div class="metric">{{c.get('users',0)}}</div><div class="metric-label">Users</div><div class="metric-help">{{users.get('travellers',0)}} travellers · {{users.get('operators',0)}} operators</div></div>
+  <div class="card"><div class="metric">{{packages.get('pending',0)}}</div><div class="metric-label">Package queue</div><div class="metric-help">{{packages.get('approved',0)}} approved · {{packages.get('rejected',0)}} rejected</div></div>
+  <div class="card"><div class="metric">{{campaigns.get('pending',0)}}</div><div class="metric-label">Campaign queue</div><div class="metric-help">{{campaigns.get('active',0)}} active · {{campaigns.get('rejected',0)}} rejected</div></div>
+  <div class="card"><div class="metric">{{feedback.get('pending',0)}}</div><div class="metric-label">Feedback queue</div><div class="metric-help">{{feedback.get('visible',0)}} visible · {{feedback.get('removed',0)}} removed</div></div>
+</div>
+<div class="grid g2 dashboard-panels">
+  <div class="card">
+    <span class="eyebrow">REVIEW QUEUE</span><h3>Moderation workspace</h3>
+    <p class="muted">{{packages.get('pending',0) + campaigns.get('pending',0) + feedback.get('pending',0)}} item(s) need administrator review.</p>
+    <div class="quick-list">
+      <a href="{{ url_for('admin_fr13.packages') }}"><span class="quick-icon">□</span><span><strong>Package reviews</strong><small>Approve or reject submitted tourism packages with comments.</small></span><b>›</b></a>
+      <a href="{{ url_for('admin_fr13.campaigns') }}"><span class="quick-icon">◇</span><span><strong>Promotion reviews</strong><small>Review promotional campaign content and dates.</small></span><b>›</b></a>
+      <a href="{{ url_for('admin_fr13.feedback') }}"><span class="quick-icon">☆</span><span><strong>Traveller feedback</strong><small>Review feedback and remove inappropriate records.</small></span><b>›</b></a>
+    </div>
+  </div>
+  <div class="card">
+    <span class="eyebrow">MANAGEMENT</span><h3>System controls</h3>
+    <div class="quick-list">
+      <a href="{{ url_for('admin_fr13.users') }}"><span class="quick-icon">○</span><span><strong>User accounts</strong><small>Manage permitted roles and account status.</small></span><b>›</b></a>
+      <a href="{{ url_for('admin_fr13.reports') }}"><span class="quick-icon">▤</span><span><strong>Generate reports</strong><small>Review system counts and export report records.</small></span><b>›</b></a>
+    </div>
+    <p class="muted" style="margin-top:14px">Last generated: {{ report.get('generatedAt','-') }}</p>
+  </div>
+</div>
+{% endblock %}

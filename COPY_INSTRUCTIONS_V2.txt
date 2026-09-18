@@ -1,0 +1,25 @@
+TravelMate V2 copy instructions
+
+Use this V2 project as the new baseline.
+
+From your CURRENT working project, preserve/copy only your real configuration:
+
+1. traveller_mobile/android/
+2. traveller_mobile/lib/firebase_options.dart
+3. backend_api/.env
+4. backend_api/serviceAccountKey.json
+
+Do NOT replace the V2 traveller_mobile/lib folder with your old lib folder.
+
+Then open the V2 traveller_mobile folder in Android Studio and run:
+
+flutter clean
+flutter pub get
+flutter analyze
+flutter run
+
+Standalone Traveller use does not require:
+python app.py
+adb reverse tcp:5000 tcp:5000
+
+The USB cable is only needed while installing/running from Android Studio. A release APK can be installed and then used without remaining connected to the PC.

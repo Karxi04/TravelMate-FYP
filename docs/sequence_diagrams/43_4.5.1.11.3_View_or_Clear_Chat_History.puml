@@ -1,0 +1,31 @@
+@startuml
+title Chatbot Travel Assistance Module : View or Clear Chat History
+
+actor "Traveller" as Actor
+participant UI as ":chatHistory"
+participant Ctrl as ":chatbotController"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open chat history
+UI -> Ctrl: Request chat history
+Ctrl -> DB: retrieveRecord(chatHistory)
+DB --> Ctrl: Chat history result
+
+alt [No chat history exists]
+    Ctrl --> UI: Display no chat history message
+else [Chat history exists]
+    Ctrl --> UI: Display previous chat messages
+    Actor -> UI: Choose View Only or Clear History
+
+    alt [View only]
+        UI --> Actor: Keep chat history visible
+    else [Clear history]
+        UI --> Actor: Display clear history confirmation
+        Actor -> UI: Confirm or cancel clearing
+        UI -> Ctrl: Submit clear-history decision
+        Ctrl -> DB: deleteRecord(chatHistory)
+        DB --> Ctrl: Clear history result
+        Ctrl --> UI: Display cleared result or keep existing history
+    end
+end
+@enduml

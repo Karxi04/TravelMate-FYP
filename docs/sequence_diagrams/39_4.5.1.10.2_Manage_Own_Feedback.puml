@@ -1,0 +1,36 @@
+@startuml
+title Feedback and Rating Module : Manage Own Feedback
+
+actor "Traveller" as Actor
+participant UI as ":myFeedback"
+participant Ctrl as ":feedbackController"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open My Feedback
+UI -> Ctrl: Request traveller feedback records
+Ctrl -> DB: retrieveRecord(userFeedback)
+DB --> Ctrl: Traveller feedback list
+
+alt [No feedback record exists]
+    Ctrl --> UI: Display no feedback found message
+else [Feedback records are available]
+    Ctrl --> UI: Display own feedback list
+    Actor -> UI: Select feedback and choose Update or Delete
+
+    alt [Update feedback]
+        Actor -> UI: Edit rating or comment
+        UI -> Ctrl: Submit updated feedback
+        Ctrl -> Ctrl: validateFeedback()
+        Ctrl -> DB: updateRecord(feedbackData)
+        DB --> Ctrl: Feedback update result
+        Ctrl --> UI: Display feedback update result
+    else [Delete feedback]
+        UI --> Actor: Display delete confirmation
+        Actor -> UI: Confirm or cancel deletion
+        UI -> Ctrl: Submit delete decision
+        Ctrl -> DB: deleteRecord(feedbackId)
+        DB --> Ctrl: Delete result
+        Ctrl --> UI: Display feedback deletion result or keep existing feedback
+    end
+end
+@enduml

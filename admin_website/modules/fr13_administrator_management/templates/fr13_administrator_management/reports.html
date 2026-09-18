@@ -1,0 +1,265 @@
+{% extends 'portal_base.html' %}
+
+{% block title %}
+System Reports | TravelMate
+{% endblock %}
+
+
+{% block content %}
+
+<div class="page-title">
+
+    <div>
+        <h1>System Activity Report</h1>
+
+        <p>
+            Review the current TravelMate system
+            activity and export the generated
+            Administrator System Activity Report.
+        </p>
+    </div>
+
+    <div class="actions">
+        <a class="btn outline" href="{{ url_for('admin_fr13.export_report', reportType=criteria.get('reportType','system_summary'), startDate=criteria.get('startDate',''), endDate=criteria.get('endDate',''), filter=criteria.get('filter',''), format='csv') }}">Export CSV</a>
+        <a class="btn primary" href="{{ url_for('admin_fr13.export_report', reportType=criteria.get('reportType','system_summary'), startDate=criteria.get('startDate',''), endDate=criteria.get('endDate',''), filter=criteria.get('filter',''), format='pdf') }}">Export PDF</a>
+    </div>
+
+</div>
+
+<form class="card" method="get" action="{{ url_for('admin_fr13.reports') }}">
+    <div class="grid g4">
+        <div class="field"><label>Report type</label><select class="input" name="reportType">
+            {% for value,label in [('system_summary','System summary'),('users','Users'),('packages','Packages'),('campaigns','Campaigns'),('feedback','Feedback'),('bookings','Bookings'),('payments','Payments')] %}
+            <option value="{{ value }}" {% if criteria.get('reportType','system_summary') == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select></div>
+        <div class="field"><label>Start date</label><input class="input" type="date" name="startDate" value="{{ criteria.get('startDate','') }}"></div>
+        <div class="field"><label>End date</label><input class="input" type="date" name="endDate" value="{{ criteria.get('endDate','') }}"></div>
+        <div class="field"><label>Keyword filter</label><input class="input" name="filter" value="{{ criteria.get('filter','') }}" placeholder="status, name, reference"></div>
+    </div>
+    <button class="btn secondary">Generate Report</button>
+</form>
+
+
+{% set summary = report.get('summary', {}) %}
+{% set users = summary.get('users', {}) %}
+{% set packages = summary.get('packages', {}) %}
+{% set campaigns = summary.get('campaigns', {}) %}
+{% set feedback = summary.get('feedback', {}) %}
+{% set counts = report.get('counts', {}) %}
+
+
+<div class="grid g4">
+
+    <div class="card cream">
+
+        <div class="metric">
+            {{ users.get('total', 0) }}
+        </div>
+
+        <div class="metric-label">
+            Registered Users
+        </div>
+
+    </div>
+
+
+    <div class="card">
+
+        <div class="metric">
+            {{ packages.get('total', 0) }}
+        </div>
+
+        <div class="metric-label">
+            Tourism Packages
+        </div>
+
+    </div>
+
+
+    <div class="card">
+
+        <div class="metric">
+            {{ counts.get('filtered_records', 0) }}
+        </div>
+
+        <div class="metric-label">
+            Filtered Records
+        </div>
+
+    </div>
+
+
+    <div class="card">
+
+        <div class="metric">
+            {{ feedback.get('total', 0) }}
+        </div>
+
+        <div class="metric-label">
+            Traveller Feedback
+        </div>
+
+    </div>
+
+</div>
+
+
+<div class="grid g2" style="margin-top:16px">
+
+
+    <div class="card">
+
+        <h3>User Accounts</h3>
+
+        <p>
+            Travellers:
+            <strong>
+                {{ users.get('travellers', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Tourism Operators:
+            <strong>
+                {{ users.get('operators', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Administrators:
+            <strong>
+                {{ users.get('administrators', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Active:
+            <strong>
+                {{ users.get('active', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Deactivated:
+            <strong>
+                {{ users.get('deactivated', 0) }}
+            </strong>
+        </p>
+
+    </div>
+
+
+    <div class="card">
+
+        <h3>Tourism Packages</h3>
+
+        <p>
+            Approved:
+            <strong>
+                {{ packages.get('approved', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Pending:
+            <strong>
+                {{ packages.get('pending', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Rejected:
+            <strong>
+                {{ packages.get('rejected', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Draft:
+            <strong>
+                {{ packages.get('draft', 0) }}
+            </strong>
+        </p>
+
+    </div>
+
+
+    <div class="card">
+
+        <h3>Promotional Campaigns</h3>
+
+        <p>
+            Approved:
+            <strong>
+                {{ campaigns.get('approved', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Pending:
+            <strong>
+                {{ campaigns.get('pending', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Active:
+            <strong>
+                {{ campaigns.get('active', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Rejected:
+            <strong>
+                {{ campaigns.get('rejected', 0) }}
+            </strong>
+        </p>
+
+    </div>
+
+
+    <div class="card">
+
+        <h3>Traveller Feedback</h3>
+
+        <p>
+            Visible:
+            <strong>
+                {{ feedback.get('visible', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Pending Review:
+            <strong>
+                {{ feedback.get('pending', 0) }}
+            </strong>
+        </p>
+
+        <p>
+            Removed:
+            <strong>
+                {{ feedback.get('removed', 0) }}
+            </strong>
+        </p>
+
+    </div>
+
+</div>
+
+
+<div
+        class="card cream"
+        style="margin-top:16px"
+>
+
+    <strong>Generated at:</strong>
+
+    {{ report.get('generatedAt', '-') }}
+
+</div>
+
+
+{% endblock %}

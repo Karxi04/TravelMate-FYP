@@ -1,0 +1,32 @@
+@startuml
+title User Management Module : Login Account
+
+actor "Traveller / Tourism Operator / Administrator" as Actor
+participant UI as ":userLogin"
+participant Ctrl as ":userController"
+participant Auth as ":firebaseAuthentication"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Enter email and password
+Actor -> UI: Click Login
+UI -> Ctrl: Submit login details
+Ctrl -> Ctrl: validateLoginInput()
+
+alt [Login input is invalid]
+    Ctrl --> UI: Display login validation error
+    UI --> Actor: Request valid email and password
+else [Login input is valid]
+    Ctrl -> Auth: authenticateCredentials(email, password)
+    Auth --> Ctrl: Authentication result
+
+    alt [Authentication fails]
+        Ctrl --> UI: Display invalid credentials message
+        UI --> Actor: Remain on login page
+    else [Authentication succeeds]
+        Ctrl -> DB: retrieveRecord(userId)
+        DB --> Ctrl: User role and account status
+        Ctrl --> UI: Display dashboard according to role and account status
+        UI --> Actor: Show Traveller, Tourism Operator, Administrator dashboard, or deactivated-account message
+    end
+end
+@enduml

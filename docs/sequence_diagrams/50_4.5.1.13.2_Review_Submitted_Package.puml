@@ -1,0 +1,35 @@
+@startuml
+title Administrator Management Module : Review Submitted Package
+
+actor "Administrator" as Actor
+participant UI as ":packageReview"
+participant Ctrl as ":administratorController"
+participant Review as ":approvalReview"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open Submitted Packages
+UI -> Ctrl: Request Pending Packages
+Ctrl -> DB: retrieveRecord(pendingPackages)
+DB --> Ctrl: Package List
+alt [Pending packages available]
+  Ctrl --> UI: Display Pending Packages
+  Actor -> UI: Select Package
+  UI -> Ctrl: Request Package Details
+  Ctrl -> DB: retrieveRecord(packageId)
+  DB --> Ctrl: Package Details
+  Ctrl --> UI: Display Package Details
+  Actor -> UI: Submit Review Decision
+  alt [Approve package]
+    Ctrl -> Review: approve()
+    Ctrl -> DB: updateRecord(approvalStatus=Approved, reviewComment)
+    Ctrl --> UI: Display Package Approved
+  else [Reject package]
+    Ctrl -> Review: reject()
+    Ctrl -> DB: updateRecord(approvalStatus=Rejected, reviewComment)
+    Ctrl --> UI: Display Package Rejected
+  end
+else [No pending packages]
+  Ctrl --> UI: Display No Pending Packages
+end
+
+@enduml

@@ -1,0 +1,35 @@
+@startuml
+title Administrator Management Module : Review Promotional Content
+
+actor "Administrator" as Actor
+participant UI as ":promotionalContentReview"
+participant Ctrl as ":administratorController"
+participant Review as ":approvalReview"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open Promotional Content Review
+UI -> Ctrl: Request Submitted Campaigns
+Ctrl -> DB: retrieveRecord(submittedCampaigns)
+DB --> Ctrl: Campaign List
+alt [Submitted campaigns available]
+  Ctrl --> UI: Display Submitted Campaigns
+  Actor -> UI: Select Campaign
+  UI -> Ctrl: Request Campaign Details
+  Ctrl -> DB: retrieveRecord(campaignId)
+  DB --> Ctrl: Campaign Details
+  Ctrl --> UI: Display Campaign Details
+  Actor -> UI: Submit Review Decision
+  alt [Content approved]
+    Ctrl -> Review: approve()
+    Ctrl -> DB: updateRecord(campaignStatus=Approved, reviewComment)
+    Ctrl --> UI: Display Campaign Approved
+  else [Content rejected]
+    Ctrl -> Review: reject()
+    Ctrl -> DB: updateRecord(campaignStatus=Rejected, reviewComment)
+    Ctrl --> UI: Display Campaign Rejected
+  end
+else [No promotional content awaiting review]
+  Ctrl --> UI: Display No Submitted Campaigns
+end
+
+@enduml

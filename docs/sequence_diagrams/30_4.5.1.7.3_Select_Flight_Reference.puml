@@ -1,0 +1,27 @@
+@startuml
+title Flight Search Module : Select Flight Reference
+
+actor "Traveller" as Actor
+participant UI as ":flightDetails"
+participant Ctrl as ":flightController"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select Flight Reference
+UI -> Ctrl: Submit selected flight reference
+Ctrl -> Ctrl: validateSelectedFlight()
+
+alt [Flight reference is unavailable]
+    Ctrl --> UI: Display flight reference unavailable message
+else [Flight reference is valid]
+    Ctrl -> DB: retrieveRecord(activeItinerary)
+    DB --> Ctrl: Active itinerary data
+
+    alt [No active itinerary exists]
+        Ctrl --> UI: Prompt traveller to create or select an itinerary
+    else [Active itinerary exists]
+        Ctrl -> DB: updateRecord(selectedFlightReference)
+        DB --> Ctrl: Save result
+        Ctrl --> UI: Display flight reference selection result
+    end
+end
+@enduml

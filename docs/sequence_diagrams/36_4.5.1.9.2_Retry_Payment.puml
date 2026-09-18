@@ -1,0 +1,33 @@
+@startuml
+title Payment Module : Retry Payment
+
+actor "Traveller" as Actor
+participant UI as ":paymentUI"
+participant Ctrl as ":paymentController"
+participant Stripe as ":stripeSandbox"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select Retry Payment
+UI -> Ctrl: Retry Payment
+Ctrl -> DB: retrieveRecord(paymentId)
+DB --> Ctrl: Previous Payment
+alt [Previous payment status is Failed]
+  Ctrl --> UI: Display Retry Payment Form
+  Actor -> UI: Confirm Retry Payment
+  UI -> Ctrl: Submit Retry Payment
+  Ctrl -> Stripe: createPaymentSession(updatedPaymentInput)
+  Stripe --> Ctrl: New Session Id
+  Ctrl -> Stripe: processSandboxPayment(newSessionId)
+  Stripe --> Ctrl: Payment Status
+  alt [Retry successful]
+    Ctrl -> DB: updateRecord(paymentStatus=Successful)
+    Ctrl --> UI: Display Payment Retry Successful
+  else [Retry failed]
+    Ctrl -> DB: updateRecord(paymentStatus=Failed)
+    Ctrl --> UI: Display Payment Retry Failed
+  end
+else [Payment not eligible for retry]
+  Ctrl --> UI: Display Payment Cannot Be Retried
+end
+
+@enduml

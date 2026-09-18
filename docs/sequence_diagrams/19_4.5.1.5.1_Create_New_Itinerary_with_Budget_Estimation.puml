@@ -1,0 +1,34 @@
+@startuml
+title Smart Itinerary and Budget Planning Module : Create New Itinerary with Budget Estimation
+
+actor "Traveller" as Actor
+participant UI as ":itineraryCreation"
+participant Ctrl as ":itineraryController"
+participant Itin as ":itinerary"
+participant Budget as ":budgetEstimate"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select Create New Itinerary
+UI --> Actor: Display Itinerary Form
+Actor -> UI: Enter Title Destination Dates And Budget
+Actor -> UI: Click Create Itinerary
+UI -> Ctrl: Create New Itinerary
+Ctrl -> Ctrl: validateItineraryInput()
+alt [Input valid]
+  Ctrl -> Itin: createItinerary()
+  Itin --> Ctrl: Itinerary Draft
+  Ctrl -> Budget: calculateBudget(initialSelections)
+  Budget --> Ctrl: Budget Estimate
+  alt [Budget estimate within limit]
+    Ctrl -> DB: storeRecord(itineraryDraft, budgetEstimate)
+    DB --> Ctrl: Save Result
+    Ctrl --> UI: Display New Itinerary With Budget
+  else [Estimated cost exceeds budget]
+    Ctrl --> UI: Display Over Budget Warning And Alternatives Option
+    Ctrl -> DB: storeRecord(itineraryDraft, budgetEstimate)
+  end
+else [Input invalid or date range invalid]
+  Ctrl --> UI: Display Itinerary Validation Error
+end
+
+@enduml

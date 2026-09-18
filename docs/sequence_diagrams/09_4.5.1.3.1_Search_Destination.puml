@@ -1,0 +1,28 @@
+@startuml
+title Destination Search and Information Module : Search Destination
+
+actor "Traveller" as Actor
+participant UI as ":destinationSearch"
+participant Ctrl as ":destinationController"
+participant API as ":serpApiGoogleMapsAPI"
+
+Actor -> UI: Enter destination keyword or location
+Actor -> UI: Click Search Destination
+UI -> Ctrl: Submit destination search
+Ctrl -> Ctrl: validateSearchInput()
+
+alt [Search input is invalid]
+    Ctrl --> UI: Display destination search validation error
+else [Search input is valid]
+    Ctrl -> API: retrieveDestinationResults(searchInput)
+    API --> Ctrl: Destination search result
+
+    alt [Matching destinations are returned]
+        Ctrl --> UI: Display destination list
+    else [No destination matches the search]
+        Ctrl --> UI: Display no destination found message
+    else [Destination service is unavailable]
+        Ctrl --> UI: Display destination service unavailable message
+    end
+end
+@enduml

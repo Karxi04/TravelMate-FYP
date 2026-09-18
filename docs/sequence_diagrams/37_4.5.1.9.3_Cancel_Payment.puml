@@ -1,0 +1,31 @@
+@startuml
+title Payment Module : Cancel Payment
+
+actor "Traveller" as Actor
+participant UI as ":paymentUI"
+participant Ctrl as ":paymentController"
+participant Stripe as ":stripeSandbox"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select Cancel Payment
+UI --> Actor: Display cancellation confirmation
+Actor -> UI: Choose Confirm or Keep Payment
+
+alt [Traveller keeps payment]
+    UI --> Actor: Return to payment page
+else [Traveller confirms cancellation]
+    UI -> Ctrl: Submit payment cancellation
+    Ctrl -> DB: retrieveRecord(paymentId)
+    DB --> Ctrl: Current payment status
+
+    alt [Payment is already successful or cancelled]
+        Ctrl --> UI: Display payment cannot be cancelled message
+    else [Payment is pending or failed]
+        Ctrl -> Stripe: returnPaymentStatus(paymentSessionId)
+        Stripe --> Ctrl: Sandbox transaction status
+        Ctrl -> DB: updateRecord(paymentStatus=Cancelled)
+        DB --> Ctrl: Cancellation update result
+        Ctrl --> UI: Display cancellation result or completed-transaction notice
+    end
+end
+@enduml

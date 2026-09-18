@@ -1,0 +1,40 @@
+TRAVELMATE V3.2 COPY INSTRUCTIONS
+================================
+
+Use V3.2 as the new project baseline.
+
+FROM YOUR CURRENT WORKING PROJECT, KEEP/COPY:
+
+1. traveller_mobile/android/
+   -> copy the complete working Android folder into V3.2 traveller_mobile/
+
+2. traveller_mobile/lib/firebase_options.dart
+   -> copy your real generated Firebase file into V3.2 traveller_mobile/lib/
+
+3. backend_api/.env
+   -> copy your current backend environment file into V3.2 backend_api/
+
+4. backend_api/serviceAccountKey.json
+   -> copy your real service account into V3.2 backend_api/
+
+DO NOT copy your old complete lib/ folder over V3.2.
+
+THEN RUN:
+
+cd traveller_mobile
+flutter clean
+flutter pub get
+flutter analyze
+flutter run
+
+ONE-TIME FIRESTORE RULE DEPLOYMENT:
+
+From the TravelMate project root:
+firebase use --add
+firebase deploy --only firestore:rules
+
+Traveller standalone mode does NOT require:
+python app.py
+adb reverse tcp:5000 tcp:5000
+
+Operator/Admin local testing DOES require the shared Flask backend unless you deploy the backend to a cloud URL.

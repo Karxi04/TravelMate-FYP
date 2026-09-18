@@ -1,0 +1,31 @@
+@startuml
+title User Management Module : Manage Own Profile
+
+actor "Traveller / Tourism Operator" as Actor
+participant UI as ":userProfile"
+participant Ctrl as ":userController"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Open profile page
+UI -> Ctrl: Request current profile
+Ctrl -> DB: retrieveRecord(userId)
+DB --> Ctrl: Profile data
+
+alt [Profile cannot be loaded]
+    Ctrl --> UI: Display unable to load profile message
+else [Profile is available]
+    Ctrl --> UI: Display current profile
+    Actor -> UI: Edit profile information
+    Actor -> UI: Click Save Changes
+    UI -> Ctrl: Submit updated profile
+    Ctrl -> Ctrl: validateUpdatedProfile()
+
+    alt [Updated profile is invalid]
+        Ctrl --> UI: Display profile validation error
+    else [Updated profile is valid]
+        Ctrl -> DB: updateRecord(updatedProfileData)
+        DB --> Ctrl: Profile update result
+        Ctrl --> UI: Display profile update result
+    end
+end
+@enduml

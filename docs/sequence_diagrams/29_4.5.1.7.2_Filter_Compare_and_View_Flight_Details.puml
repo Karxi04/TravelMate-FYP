@@ -1,0 +1,32 @@
+@startuml
+title Flight Search Module : Filter, Compare, and View Flight Details
+
+actor "Traveller" as Actor
+participant UI as ":flightResults"
+participant Ctrl as ":flightController"
+participant Flights as ":serpApiGoogleFlightsAPI"
+
+Actor -> UI: Select flight filter
+Actor -> UI: Select flights for comparison
+UI -> Ctrl: Submit filter and comparison selection
+Ctrl -> Ctrl: applyFlightFilter()
+Ctrl -> Ctrl: compareSelectedFlights()
+
+alt [No flight matches the filter]
+    Ctrl --> UI: Display no matching flights message
+else [Comparison selection is invalid]
+    Ctrl --> UI: Request at least two valid flights for comparison
+else [Comparison is available]
+    Ctrl --> UI: Display flight comparison
+    Actor -> UI: Select a flight to view
+    UI -> Ctrl: Request selected flight details
+    Ctrl -> Flights: retrieveFlightDetails(flightId)
+    Flights --> Ctrl: Flight details result
+
+    alt [Flight details are available]
+        Ctrl --> UI: Display selected flight details
+    else [Flight details are unavailable]
+        Ctrl --> UI: Display flight details unavailable message
+    end
+end
+@enduml

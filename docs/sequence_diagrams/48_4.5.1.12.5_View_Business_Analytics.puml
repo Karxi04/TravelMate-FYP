@@ -1,0 +1,29 @@
+@startuml
+title Tourism Operator Management Module : View Business Analytics
+
+actor "Tourism Operator" as Actor
+participant UI as ":businessAnalyticsUI"
+participant Ctrl as ":tourismOperatorController"
+participant Analytics as ":businessAnalytics"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select View Business Analytics
+UI -> Ctrl: Request Business Analytics
+Ctrl -> DB: retrieveRecord(packageCampaignBookingData)
+DB --> Ctrl: Analytics Source Data
+alt [Analytics data available]
+  Ctrl -> Analytics: calculatePackageViews()
+  Ctrl -> Analytics: calculateBookingCount()
+  Ctrl -> Analytics: calculateCampaignEngagement()
+  Analytics --> Ctrl: Analytics Summary
+  Ctrl --> UI: Display Analytics Summary
+  alt [Selected period has insufficient data]
+    UI --> Actor: Show Partial Analytics With Notice
+  else [Sufficient data available]
+    UI --> Actor: Show Complete Analytics Dashboard
+  end
+else [Analytics data unavailable]
+  Ctrl --> UI: Display Analytics Unavailable
+end
+
+@enduml

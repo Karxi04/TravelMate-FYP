@@ -1,0 +1,26 @@
+@startuml
+title Tourism Operator Management Module : View Package Approval Status
+
+actor "Tourism Operator" as Actor
+participant UI as ":packageApprovalStatus"
+participant Ctrl as ":tourismOperatorController"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select View Package Approval Status
+UI -> Ctrl: Request Package Approval Status
+Ctrl -> DB: retrieveRecord(packageApprovalRecords)
+DB --> Ctrl: Approval Records
+alt [Approval records available]
+  Ctrl --> UI: Display Package Approval Status
+  alt [Status is Rejected]
+    UI --> Actor: Show Review Comment And Revision Option
+  else [Status is Pending Approval]
+    UI --> Actor: Show Pending Status
+  else [Status is Approved]
+    UI --> Actor: Show Approved Status
+  end
+else [No approval record found]
+  Ctrl --> UI: Display No Approval Status Available
+end
+
+@enduml

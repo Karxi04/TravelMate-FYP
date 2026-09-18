@@ -1,0 +1,28 @@
+@startuml
+title Hotel Booking Module : Search Hotels
+
+actor "Traveller" as Actor
+participant UI as ":hotelSearch"
+participant Ctrl as ":hotelBookingController"
+participant HotelAPI as ":liteAPINuiteeSandbox"
+
+Actor -> UI: Enter destination, check-in, check-out and guest count
+Actor -> UI: Click Search Hotels
+UI -> Ctrl: Submit hotel search criteria
+Ctrl -> Ctrl: validateHotelSearchCriteria()
+
+alt [Hotel search criteria are invalid]
+    Ctrl --> UI: Display hotel search validation error
+else [Hotel search criteria are valid]
+    Ctrl -> HotelAPI: retrieveHotelOffers(searchCriteria)
+    HotelAPI --> Ctrl: Hotel search result
+
+    alt [Hotel offers are available]
+        Ctrl --> UI: Display hotel offers
+    else [No hotel offers are found]
+        Ctrl --> UI: Display no hotels found message
+    else [Hotel service is unavailable]
+        Ctrl --> UI: Display hotel service unavailable message
+    end
+end
+@enduml

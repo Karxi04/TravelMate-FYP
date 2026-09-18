@@ -1,0 +1,28 @@
+@startuml
+title Hotel Booking Module : Select Hotel Offer
+
+actor "Traveller" as Actor
+participant UI as ":hotelDetails"
+participant Ctrl as ":hotelBookingController"
+participant HotelAPI as ":liteAPINuiteeSandbox"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Click Select Hotel Offer
+UI -> Ctrl: Select Hotel Offer
+Ctrl -> HotelAPI: validateHotelOffer(hotelOffer)
+HotelAPI --> Ctrl: Offer Validation
+alt [Hotel offer still available]
+  Ctrl -> DB: retrieveRecord(activeItinerary)
+  DB --> Ctrl: Active Itinerary
+  alt [Active itinerary exists]
+    Ctrl -> DB: updateRecord(selectedHotelOffer)
+    DB --> Ctrl: Update Result
+    Ctrl --> UI: Display Hotel Offer Selected
+  else [No active itinerary]
+    Ctrl --> UI: Prompt Create Or Select Itinerary
+  end
+else [Hotel offer expired or unavailable]
+  Ctrl --> UI: Display Hotel Offer Unavailable
+end
+
+@enduml

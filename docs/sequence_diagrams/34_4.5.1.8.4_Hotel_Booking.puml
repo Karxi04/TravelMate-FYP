@@ -1,0 +1,32 @@
+@startuml
+title Hotel Booking Module : Hotel Booking
+
+actor "Traveller" as Actor
+participant UI as ":hotelBooking"
+participant Ctrl as ":hotelBookingController"
+participant HotelAPI as ":liteAPINuiteeSandbox"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Proceed with selected hotel offer
+UI --> Actor: Display booking summary
+Actor -> UI: Confirm booking details
+UI -> Ctrl: Submit hotel booking details
+Ctrl -> Ctrl: validateBookingDetails()
+
+alt [Booking details are invalid]
+    Ctrl --> UI: Display booking validation error
+else [Booking details are valid]
+    Ctrl -> HotelAPI: validateHotelOffer(selectedOffer)
+    HotelAPI --> Ctrl: Hotel offer validation result
+
+    alt [Selected offer is unavailable]
+        Ctrl --> UI: Display selected hotel offer unavailable message
+    else [Selected offer is available]
+        Ctrl -> HotelAPI: createBookingReference(selectedOffer)
+        HotelAPI --> Ctrl: Booking reference result
+        Ctrl -> DB: storeRecord(hotelBooking)
+        DB --> Ctrl: Booking save result
+        Ctrl --> UI: Display booking reference or booking failure message
+    end
+end
+@enduml

@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: travelmate-backend
+    runtime: python
+    rootDir: backend_api
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn "app:create_app()" --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120
+    healthCheckPath: /api/health
+    envVars:
+      - key: FALLBACK_MODE
+        value: "true"
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: SERPAPI_KEY
+        sync: false
+      - key: LITEAPI_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        sync: false

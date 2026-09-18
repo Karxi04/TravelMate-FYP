@@ -1,0 +1,24 @@
+@startuml
+title Destination Search and Information Module : Filter and Sort Destinations
+
+actor "Traveller" as Actor
+participant UI as ":destinationSearch"
+participant Ctrl as ":destinationController"
+
+Actor -> UI: View destination results
+Actor -> UI: Select filter option
+Actor -> UI: Select sorting option
+UI -> Ctrl: Submit filter and sorting selections
+Ctrl -> Ctrl: validateFilterOption()
+Ctrl -> Ctrl: applyDestinationFilter(filterCriteria)
+Ctrl -> Ctrl: validateSortingOption()
+Ctrl -> Ctrl: applyDestinationSorting(sortCriteria)
+
+alt [Matching destinations are available]
+    Ctrl --> UI: Display filtered and sorted destination list
+else [No destination matches the filter]
+    Ctrl --> UI: Display no matching destination message
+else [Filter or sorting option is invalid]
+    Ctrl --> UI: Display original destination list with selection error
+end
+@enduml

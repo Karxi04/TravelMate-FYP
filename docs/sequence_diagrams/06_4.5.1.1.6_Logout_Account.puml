@@ -1,0 +1,27 @@
+@startuml
+title User Management Module : Logout Account
+
+actor "Traveller / Tourism Operator" as Actor
+participant UI as ":userAccountMenu"
+participant Ctrl as ":userController"
+participant Auth as ":firebaseAuthentication"
+
+Actor -> UI: Select Logout
+UI --> Actor: Display logout confirmation
+Actor -> UI: Choose Confirm or Cancel
+
+alt [User cancels logout]
+    UI --> Actor: Remain on current page
+else [User confirms logout]
+    UI -> Ctrl: Submit logout request
+    Ctrl -> Auth: signOutUser()
+    Auth --> Ctrl: Sign-out result
+
+    alt [Logout succeeds or session already expired]
+        Ctrl --> UI: Redirect to login page
+        UI --> Actor: Display login page
+    else [Logout fails]
+        Ctrl --> UI: Display unable to logout message
+    end
+end
+@enduml

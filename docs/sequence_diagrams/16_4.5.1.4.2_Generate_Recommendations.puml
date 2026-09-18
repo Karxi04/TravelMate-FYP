@@ -1,0 +1,40 @@
+@startuml
+title Hybrid Recommendation Module : Generate Recommendations
+
+actor "Traveller" as Actor
+participant UI as ":recommendationUI"
+participant Ctrl as ":recommendationController"
+participant Engine as ":hybridRecommendationEngine"
+participant Maps as ":serpApiGoogleMapsAPI"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select Generate Recommendations
+UI -> Ctrl: Submit recommendation request
+Ctrl -> DB: retrieveRecord(travelPreference)
+DB --> Ctrl: Preference profile
+
+alt [Preference profile is unavailable]
+    Ctrl --> UI: Prompt traveller to complete the preference questionnaire
+else [Preference profile is available]
+    Ctrl -> Maps: retrieveDestinationResults(preferenceContext)
+    Maps --> Ctrl: Destination and activity data
+    Ctrl -> DB: retrieveRecord(ratingsFeedbackBehaviour)
+    DB --> Ctrl: Collaborative data
+    Ctrl -> Engine: prepareRecommendationInput(preferenceProfile, destinationData, collaborativeData)
+    Engine -> Engine: applyContentBasedFiltering()
+    opt [Sufficient collaborative data is available]
+        Engine -> Engine: applyCollaborativeFiltering()
+    end
+    Engine -> Engine: calculateRecommendationScore()
+    Engine -> Engine: rankRecommendations()
+    Engine --> Ctrl: Ranked recommendations
+
+    alt [Suitable personalised recommendations are produced]
+        Ctrl -> DB: storeRecord(recommendationResults)
+        DB --> Ctrl: Recommendation save result
+        Ctrl --> UI: Display personalised recommendation results
+    else [No suitable personalised result or external data unavailable]
+        Ctrl --> UI: Display general recommendations or unable-to-generate message
+    end
+end
+@enduml

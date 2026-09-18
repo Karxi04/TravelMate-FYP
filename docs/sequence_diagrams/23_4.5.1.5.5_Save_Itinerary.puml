@@ -1,0 +1,30 @@
+@startuml
+title Smart Itinerary and Budget Planning Module : Save Itinerary
+
+actor "Traveller" as Actor
+participant UI as ":itineraryUI"
+participant Ctrl as ":itineraryController"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Click Save Itinerary
+UI -> Ctrl: Save Itinerary
+Ctrl -> Ctrl: validateItineraryForSaving()
+alt [Itinerary valid]
+  Ctrl -> DB: retrieveRecord(itineraryId)
+  DB --> Ctrl: Existing Record
+  alt [Existing itinerary record]
+    Ctrl -> DB: updateRecord(itineraryData)
+  else [New itinerary record]
+    Ctrl -> DB: storeRecord(itineraryData)
+  end
+  DB --> Ctrl: Save Result
+  alt [Save successful]
+    Ctrl --> UI: Display Itinerary Saved Successfully
+  else [Save failed]
+    Ctrl --> UI: Display Unable To Save Itinerary
+  end
+else [Itinerary incomplete]
+  Ctrl --> UI: Display Itinerary Incomplete Error
+end
+
+@enduml

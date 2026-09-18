@@ -1,0 +1,40 @@
+{% extends 'portal_base.html' %}
+{% block title %}Activity Records | TravelMate{% endblock %}
+{% block content %}
+<div class="page-title"><div><h1>Activity Management</h1><p>Create and maintain activity records for destination planning.</p></div></div>
+<form class="card" method="post" action="{{ url_for('admin_fr13.create_activity') }}">
+  <div class="grid g2">
+    <div class="field"><label>Activity name</label><input class="input" name="activityName" required></div>
+    <div class="field"><label>Destination</label><input class="input" name="destinationName"></div>
+    <div class="field"><label>Category</label><input class="input" name="category"></div>
+    <div class="field"><label>Estimated cost (RM)</label><input class="input" name="estimatedCost" type="number" min="0" step="0.01" value="0"></div>
+    <div class="field"><label>Duration minutes</label><input class="input" name="recommendedDurationMinutes" type="number" min="30" step="15" value="90"></div>
+    <div class="field"><label>Status</label><select class="input" name="status"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+  </div>
+  <div class="field"><label>Description</label><textarea class="input" name="description" rows="3"></textarea></div>
+  <button class="btn primary">Add Activity</button>
+</form>
+<div class="table-wrap"><table><thead><tr><th>Activity</th><th>Category</th><th>Cost</th><th>Duration</th><th>Update</th></tr></thead><tbody>
+{% for x in items %}
+<tr>
+  <td><strong>{{ x.get('activityName','-') }}</strong><br><small>{{ x.get('destinationName','') }}</small></td>
+  <td>{{ x.get('category','-') }}</td>
+  <td>RM {{ x.get('estimatedCost',0) }}</td>
+  <td>{{ x.get('recommendedDurationMinutes',90) }} min</td>
+  <td>
+    <form class="actions" method="post" action="{{ url_for('admin_fr13.update_activity', activity_id=x.id) }}">
+      <input class="input" name="activityName" value="{{ x.get('activityName','') }}" required>
+      <input class="input" name="destinationName" value="{{ x.get('destinationName','') }}">
+      <input class="input" name="category" value="{{ x.get('category','') }}">
+      <input class="input" name="estimatedCost" type="number" min="0" step="0.01" value="{{ x.get('estimatedCost',0) }}">
+      <input class="input" name="recommendedDurationMinutes" type="number" min="30" step="15" value="{{ x.get('recommendedDurationMinutes',90) }}">
+      <input type="hidden" name="description" value="{{ x.get('description','') }}">
+      <select class="input" name="status"><option value="active" {% if x.get('status','active')=='active' %}selected{% endif %}>Active</option><option value="inactive" {% if x.get('status')=='inactive' %}selected{% endif %}>Inactive</option></select>
+      <button class="btn outline">Save</button>
+    </form>
+    <form method="post" action="{{ url_for('admin_fr13.delete_activity', activity_id=x.id) }}"><button class="btn danger">Delete</button></form>
+  </td>
+</tr>
+{% else %}<tr><td colspan="5">No activity records yet.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

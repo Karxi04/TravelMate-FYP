@@ -1,0 +1,33 @@
+@startuml
+title Destination Search and Information Module : Add Destination to Itinerary
+
+actor "Traveller" as Actor
+participant UI as ":destinationDetails"
+participant Ctrl as ":destinationController"
+participant Itin as ":itinerary"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select Add Destination to Itinerary
+UI -> Ctrl: Submit selected destination
+Ctrl -> Ctrl: validateSelectedDestination()
+
+alt [Selected destination is invalid]
+    Ctrl --> UI: Display invalid destination message
+else [Selected destination is valid]
+    Ctrl -> DB: retrieveRecord(activeItinerary)
+    DB --> Ctrl: Active itinerary data
+
+    alt [No active itinerary exists]
+        Ctrl --> UI: Prompt traveller to create an itinerary first
+    else [Active itinerary exists]
+        Ctrl -> Itin: checkDestinationExists(destinationId)
+        Itin -> Itin: checkDestinationLimit()
+        Itin --> Ctrl: Destination eligibility result
+        Ctrl -> Itin: addActivity(destinationId)
+        Itin --> Ctrl: Add destination result
+        Ctrl -> DB: updateRecord(itinerary)
+        DB --> Ctrl: Itinerary update result
+        Ctrl --> UI: Display add-to-itinerary result, duplicate notice, or destination-limit message
+    end
+end
+@enduml

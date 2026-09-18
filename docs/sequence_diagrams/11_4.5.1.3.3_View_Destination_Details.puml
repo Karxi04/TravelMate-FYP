@@ -1,0 +1,22 @@
+@startuml
+title Destination Search and Information Module : View Destination Details
+
+actor "Traveller" as Actor
+participant UI as ":destinationDetails"
+participant Ctrl as ":destinationController"
+participant API as ":serpApiGoogleMapsAPI"
+
+Actor -> UI: Select a destination
+UI -> Ctrl: Request destination details
+Ctrl -> API: retrieveDestinationDetails(destinationId)
+API --> Ctrl: Destination details result
+
+alt [Destination details are available]
+    Ctrl --> UI: Display destination name, category, location, rating and available details
+    UI --> Actor: Show available destination images and information
+else [Destination details are incomplete]
+    Ctrl --> UI: Display available destination information only
+else [Destination details cannot be retrieved]
+    Ctrl --> UI: Display unable to load destination details message
+end
+@enduml

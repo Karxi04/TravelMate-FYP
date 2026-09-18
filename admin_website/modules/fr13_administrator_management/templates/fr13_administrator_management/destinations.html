@@ -1,0 +1,41 @@
+{% extends 'portal_base.html' %}
+{% block title %}Destination Records | TravelMate{% endblock %}
+{% block content %}
+<div class="page-title"><div><h1>Destination Management</h1><p>Create and maintain destination records used by TravelMate administrators.</p></div></div>
+<form class="card" method="post" action="{{ url_for('admin_fr13.create_destination') }}">
+  <div class="grid g2">
+    <div class="field"><label>Destination name</label><input class="input" name="title" required></div>
+    <div class="field"><label>Address</label><input class="input" name="address"></div>
+    <div class="field"><label>Category</label><input class="input" name="category" placeholder="Heritage, Food, Nature"></div>
+    <div class="field"><label>Type</label><input class="input" name="type" placeholder="Museum, Attraction, Restaurant"></div>
+    <div class="field"><label>Opening hours</label><input class="input" name="openingHours" placeholder="09:00-18:00"></div>
+    <div class="field"><label>Estimated cost (RM)</label><input class="input" name="estimatedCost" type="number" min="0" step="0.01" value="0"></div>
+  </div>
+  <div class="field"><label>Description</label><textarea class="input" name="description" rows="3"></textarea></div>
+  <button class="btn primary">Add Destination</button>
+</form>
+<div class="table-wrap"><table><thead><tr><th>Destination</th><th>Category</th><th>Cost</th><th>Status</th><th>Update</th></tr></thead><tbody>
+{% for x in items %}
+<tr>
+  <td><strong>{{ x.get('title','-') }}</strong><br><small>{{ x.get('address','') }}</small></td>
+  <td>{{ x.get('category','-') }}<br><small>{{ x.get('type','') }}</small></td>
+  <td>RM {{ x.get('estimatedCost',0) }}</td>
+  <td><span class="status {{ x.get('status','active') }}">{{ x.get('status','active') }}</span></td>
+  <td>
+    <form class="actions" method="post" action="{{ url_for('admin_fr13.update_destination', destination_id=x.id) }}">
+      <input class="input" name="title" value="{{ x.get('title','') }}" required>
+      <input class="input" name="address" value="{{ x.get('address','') }}">
+      <input class="input" name="category" value="{{ x.get('category','') }}">
+      <input class="input" name="type" value="{{ x.get('type','') }}">
+      <input class="input" name="openingHours" value="{{ x.get('openingHours','') }}">
+      <input class="input" name="estimatedCost" type="number" min="0" step="0.01" value="{{ x.get('estimatedCost',0) }}">
+      <input type="hidden" name="description" value="{{ x.get('description','') }}">
+      <select class="input" name="status"><option value="active" {% if x.get('status','active')=='active' %}selected{% endif %}>Active</option><option value="inactive" {% if x.get('status')=='inactive' %}selected{% endif %}>Inactive</option></select>
+      <button class="btn outline">Save</button>
+    </form>
+    <form method="post" action="{{ url_for('admin_fr13.delete_destination', destination_id=x.id) }}"><button class="btn danger">Delete</button></form>
+  </td>
+</tr>
+{% else %}<tr><td colspan="5">No destination records yet.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

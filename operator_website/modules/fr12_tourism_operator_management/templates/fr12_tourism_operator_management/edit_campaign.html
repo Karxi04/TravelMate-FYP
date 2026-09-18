@@ -1,0 +1,13 @@
+{% extends 'portal_base.html' %}{% block content %}
+<div class="page-title"><div><h1>Edit Promotional Campaign</h1><p>Update campaign content before Administrator review.</p></div></div>
+<form class="card cream" method="post" style="max-width:920px">
+<div class="field"><label>Campaign title</label><input class="input" name="campaignTitle" value="{{ item.get('campaignTitle','') }}" required></div>
+<div class="field"><label>Related approved package</label><select class="input" name="packageId"><option value="">Select package</option>{% for p in approved_packages %}<option value="{{p.id}}" {% if p.id==item.get('packageId') %}selected{% endif %}>{{p.get('packageTitle')}}</option>{% endfor %}</select></div>
+<div class="grid g2"><div class="field"><label>Start date</label><input class="input" type="date" name="startDate" value="{{ item.get('startDate','') }}"></div><div class="field"><label>End date</label><input class="input" type="date" name="endDate" value="{{ item.get('endDate','') }}"></div></div>
+<div class="grid g2"><div class="field"><label>Discount type</label><select class="input" name="discountType"><option value="percentage" {% if item.get('discountType')=='percentage' %}selected{% endif %}>Percentage</option><option value="fixed" {% if item.get('discountType')=='fixed' %}selected{% endif %}>Fixed RM</option></select></div><div class="field"><label>Discount value</label><input class="input" name="discountValue" type="number" min="0" step="0.01" value="{{ item.get('discountValue',0) }}"></div></div>
+<div class="field"><label>Promo code</label><input class="input" name="promoCode" value="{{ item.get('promoCode','') }}"></div>
+<div class="field"><label>Banner image URL</label><input class="input" name="bannerImageUrl" type="url" value="{{ item.get('bannerImageUrl','') }}"></div>
+<div class="field"><label>Description</label><textarea class="input" name="description">{{ item.get('description','') }}</textarea></div>
+<div class="field"><label>Terms & conditions</label><textarea class="input" name="termsConditions">{{ item.get('termsConditions','') }}</textarea></div>
+<div class="actions"><button class="btn primary">Save Changes</button><a class="btn outline" href="{{ url_for('operator_fr12.campaigns') }}">Cancel</a></div></form>
+{% endblock %}

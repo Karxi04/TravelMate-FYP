@@ -1,0 +1,10 @@
+TravelMate Real MVP Validation Report
+
+Completed before packaging:
+- Python source compile check: PASS
+- Jinja syntax parse check for Operator/Admin templates: PASS
+- Traveller Dart local-import path check: PASS
+- firebase_options.dart intentionally not included because FlutterFire CLI generates it for the user's Firebase project.
+- Private .env files, Firebase service-account JSON and API keys are intentionally not included.
+
+Note: Flutter SDK is not installed in the artifact-generation environment, so `flutter analyze` was not executed here. Run `flutterfire configure`, `flutter pub get`, then `flutter analyze` on your PC after generating the Flutter platform files.

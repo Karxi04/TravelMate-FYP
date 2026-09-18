@@ -1,0 +1,215 @@
+TravelMate_Real_MVP_InkWash/
+├── admin_website/
+│   ├── modules/
+│   │   ├── fr01_user_management/
+│   │   │   ├── templates/
+│   │   │   │   └── fr01_user_management/
+│   │   │   │       └── login.html
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr13_administrator_management/
+│   │   │   ├── templates/
+│   │   │   │   └── fr13_administrator_management/
+│   │   │   │       ├── campaigns.html
+│   │   │   │       ├── dashboard.html
+│   │   │   │       ├── feedback.html
+│   │   │   │       ├── packages.html
+│   │   │   │       ├── reports.html
+│   │   │   │       └── users.html
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   └── __init__.py
+│   ├── static/
+│   │   └── styles.css
+│   ├── templates/
+│   │   ├── base.html
+│   │   └── portal_base.html
+│   ├── .env.example
+│   ├── api_client.py
+│   ├── app.py
+│   ├── firebase_auth_rest.py
+│   ├── README.md
+│   └── requirements.txt
+├── backend_api/
+│   ├── modules/
+│   │   ├── fr01_user_management/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr02_travel_preference/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr03_destination_search_information/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr04_hybrid_recommendation/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr05_smart_itinerary_budget_planner/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr06_weather_forecast/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr07_flight_search/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr08_hotel_booking/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr09_payment/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr10_feedback_rating/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr11_chatbot_travel_assistant/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr12_tourism_operator_management/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr13_administrator_management/
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   └── __init__.py
+│   ├── scripts/
+│   │   ├── create_admin.py
+│   │   └── seed_local_catalog.py
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── local_catalog.py
+│   │   ├── gemini_service.py
+│   │   ├── liteapi_service.py
+│   │   ├── open_meteo_service.py
+│   │   ├── serpapi_service.py
+│   │   └── stripe_service.py
+│   ├── .env.example
+│   ├── app.py
+│   ├── auth_utils.py
+│   ├── firebase_service.py
+│   ├── README.md
+│   ├── requirements.txt
+│   └── utils.py
+├── docs/
+│   ├── API_ROUTE_MAP.md
+│   ├── FIRESTORE_DATA_MODEL.md
+│   ├── HOW_FIRESTORE_IS_LINKED.md
+│   ├── HOW_TO_TEST_THE_MVP.md
+│   ├── ink_wash_theme_reference.png
+│   ├── RUN_ORDER_WINDOWS.md
+│   ├── SETUP_EXTERNAL_APIS.md
+│   ├── SETUP_FIREBASE.md
+│   ├── THEME.md
+│   └── README_ENHANCED_SYSTEM.md
+├── firebase/
+│   └── firestore.rules
+├── operator_website/
+│   ├── modules/
+│   │   ├── fr01_user_management/
+│   │   │   ├── templates/
+│   │   │   │   └── fr01_user_management/
+│   │   │   │       ├── login.html
+│   │   │   │       ├── profile.html
+│   │   │   │       ├── register.html
+│   │   │   │       └── reset.html
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   ├── fr12_tourism_operator_management/
+│   │   │   ├── templates/
+│   │   │   │   └── fr12_tourism_operator_management/
+│   │   │   │       ├── analytics.html
+│   │   │   │       ├── campaigns.html
+│   │   │   │       ├── dashboard.html
+│   │   │   │       ├── edit_campaign.html
+│   │   │   │       ├── edit_package.html
+│   │   │   │       ├── package_status.html
+│   │   │   │       ├── packages.html
+│   │   │   │       └── submit_package.html
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   └── routes.py
+│   │   └── __init__.py
+│   ├── static/
+│   │   └── styles.css
+│   ├── templates/
+│   │   ├── base.html
+│   │   └── portal_base.html
+│   ├── .env.example
+│   ├── api_client.py
+│   ├── app.py
+│   ├── firebase_auth_rest.py
+│   ├── README.md
+│   └── requirements.txt
+├── traveller_mobile/
+│   ├── lib/
+│   │   ├── core/
+│   │   │   ├── home/
+│   │   │   │   └── home_tab.dart
+│   │   │   └── navigation/
+│   │   │       └── app_shell.dart
+│   │   ├── modules/
+│   │   │   ├── fr01_user_management/
+│   │   │   │   ├── login_screen.dart
+│   │   │   │   ├── profile_tab.dart
+│   │   │   │   └── README.md
+│   │   │   ├── fr02_travel_preference/
+│   │   │   │   ├── preferences_screen.dart
+│   │   │   │   └── README.md
+│   │   │   ├── fr03_destination_search_information/
+│   │   │   │   ├── explore_tab.dart
+│   │   │   │   ├── favourites_screen.dart
+│   │   │   │   └── README.md
+│   │   │   ├── fr04_hybrid_recommendation/
+│   │   │   │   ├── README.md
+│   │   │   │   └── recommendation_screen.dart
+│   │   │   ├── fr05_smart_itinerary_budget_planner/
+│   │   │   │   ├── README.md
+│   │   │   │   └── trips_tab.dart
+│   │   │   ├── fr06_weather_forecast/
+│   │   │   │   ├── README.md
+│   │   │   │   └── weather_screen.dart
+│   │   │   ├── fr07_flight_search/
+│   │   │   │   ├── flight_screen.dart
+│   │   │   │   └── README.md
+│   │   │   ├── fr08_hotel_booking/
+│   │   │   │   ├── hotel_screen.dart
+│   │   │   │   └── README.md
+│   │   │   ├── fr09_payment/
+│   │   │   │   ├── payment_screen.dart
+│   │   │   │   └── README.md
+│   │   │   ├── fr10_feedback_rating/
+│   │   │   │   ├── feedback_screen.dart
+│   │   │   │   └── README.md
+│   │   │   └── fr11_chatbot_travel_assistant/
+│   │   │       ├── chat_tab.dart
+│   │   │       └── README.md
+│   │   ├── services/
+│   │   │   ├── api_service.dart
+│   │   │   └── auth_service.dart
+│   │   ├── theme/
+│   │   │   └── app_theme.dart
+│   │   ├── widgets/
+│   │   │   └── ink_card.dart
+│   │   ├── firebase_options.dart.example
+│   │   └── main.dart
+│   ├── pubspec.yaml
+│   └── README.md
+├── .gitignore
+├── PROJECT_STRUCTURE.txt
+└── README_START_HERE.md

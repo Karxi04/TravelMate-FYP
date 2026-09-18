@@ -1,0 +1,29 @@
+@startuml
+title Weather Forecasting Module : Search Weather by Destination
+
+actor "Traveller" as Actor
+participant UI as ":weatherSearch"
+participant Ctrl as ":weatherController"
+participant Maps as ":serpApiGoogleMapsAPI"
+participant Weather as ":openMeteoAPI"
+
+Actor -> UI: Enter destination name
+Actor -> UI: Click Search Weather
+UI -> Ctrl: Submit weather search
+Ctrl -> Ctrl: validateDestinationInput()
+
+alt [Destination input is invalid]
+    Ctrl --> UI: Display destination validation error
+else [Destination input is valid]
+    Ctrl -> Maps: retrieveDestinationDetails(destinationName)
+    Maps --> Ctrl: Destination coordinates
+
+    alt [Destination coordinates are unavailable]
+        Ctrl --> UI: Display destination not found message
+    else [Destination coordinates are available]
+        Ctrl -> Weather: retrieveCurrentWeather(coordinates)
+        Weather --> Ctrl: Weather result
+        Ctrl --> UI: Display current weather or weather-service-unavailable message
+    end
+end
+@enduml

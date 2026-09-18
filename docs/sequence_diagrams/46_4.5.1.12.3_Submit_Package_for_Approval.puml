@@ -1,0 +1,32 @@
+@startuml
+title Tourism Operator Management Module : Submit Package for Approval
+
+actor "Tourism Operator" as Actor
+participant UI as ":packageSubmission"
+participant Ctrl as ":tourismOperatorController"
+participant Pkg as ":tourismPackage"
+database DB as ":firebaseFirestore"
+
+Actor -> UI: Select Package To Submit
+UI -> Ctrl: Request Package Details
+Ctrl -> DB: retrieveRecord(packageId)
+DB --> Ctrl: Package Data
+alt [Package exists]
+  Ctrl --> UI: Display Package Submission Summary
+  Actor -> UI: Click Submit For Approval
+  UI -> Ctrl: Submit Package For Approval
+  Ctrl -> Ctrl: validatePackageCompleteness()
+  alt [Package complete and eligible]
+    Ctrl -> Pkg: submitForApproval()
+    Pkg --> Ctrl: ApprovalStatus=Pending
+    Ctrl -> DB: updateRecord(approvalStatus=PendingApproval)
+    DB --> Ctrl: Update Result
+    Ctrl --> UI: Display Package Submitted For Approval
+  else [Package incomplete or already pending/approved]
+    Ctrl --> UI: Display Package Not Eligible For Submission
+  end
+else [Package not found]
+  Ctrl --> UI: Display Package Not Found
+end
+
+@enduml
