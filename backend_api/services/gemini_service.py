@@ -91,7 +91,12 @@ def _local_assistant(question, context=''):
 
 def generateChatbotResponse(question, context=''):
     if is_gemini_configured():
-        return _generate((context + '\n\n' if context else '') + 'Traveller: ' + str(question))
+        try:
+            return _generate((context + '\n\n' if context else '') + 'Traveller: ' + str(question))
+        except Exception:
+            if _fallback_mode():
+                return _local_assistant(question, context)
+            raise
     if _fallback_mode():
         return _local_assistant(question, context)
     raise RuntimeError('GEMINI_API_KEY is not configured')

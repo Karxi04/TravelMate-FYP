@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/utils/malaysian_locality.dart';
+
 /// Local-first implementation of the same REST contracts used by TravelMate.
 ///
 /// It allows the installed Traveller application to remain usable when a Flask
@@ -51,12 +53,47 @@ class StandaloneApiService {
       return _destinationDetails(id);
     }
     if (path == '/api/fr4/recommendations') {
-      final items = await _readList('recommendations');
+      final snapshots = await _readList('recommendation_snapshots');
+      final generationId = (query?['generationId'] ?? '').trim();
+      final destinationArea = (query?['destinationArea'] ?? '').trim();
+      Map<String, dynamic>? snapshot;
+      for (final candidate in snapshots) {
+        final idMatches = generationId.isEmpty ||
+            candidate['recommendationGenerationId'].toString() == generationId;
+        final areaMatches = destinationArea.isEmpty ||
+            _requestedArea(candidate['requestedDestination'].toString()) ==
+                _requestedArea(destinationArea);
+        if (idMatches && areaMatches) {
+          snapshot = candidate;
+          break;
+        }
+      }
+      Map<String, dynamic>? safeSnapshot;
+      if (snapshot != null) {
+        final storedScope = snapshot['canonicalDestinationScope'];
+        final scope = storedScope is Map
+            ? Map<String, dynamic>.from(storedScope)
+            : MalaysianLocality.normalizeScope(
+                (snapshot['requestedDestination'] ?? '').toString());
+        final safeResults = (snapshot['recommendationResults'] as List? ??
+                const [])
+            .whereType<Map>()
+            .map((item) => MalaysianLocality.validateCandidate(
+                Map<String, dynamic>.from(item), scope))
+            .where((item) => item['geographicEligibility']?['eligible'] == true)
+            .toList();
+        safeSnapshot = {...snapshot, 'recommendationResults': safeResults};
+      }
       return {
         'ok': true,
-        'recommendations': items,
-        'source': 'local',
-        'engine': _engineInfo,
+        'recommendationGenerationId':
+            safeSnapshot?['recommendationGenerationId'] ?? '',
+        'recommendation': safeSnapshot ?? <String, dynamic>{},
+        'snapshot': safeSnapshot ?? <String, dynamic>{},
+        'recommendations':
+            safeSnapshot?['recommendationResults'] ?? <Map<String, dynamic>>[],
+        'source': safeSnapshot?['source'] ?? '',
+        'engine': safeSnapshot?['engine'] ?? _engineInfo,
       };
     }
     if (path == '/api/fr5/itineraries') {
@@ -103,6 +140,9 @@ class StandaloneApiService {
     if (path == '/api/fr4/recommendations/generate') {
       return _generateRecommendations(payload);
     }
+    if (path == '/api/fr5/personalised-trips/generate') {
+      return _generatePersonalisedTrip(payload);
+    }
     if (path == '/api/fr5/itineraries') return _createTrip(payload);
     if (path.startsWith('/api/fr5/itineraries/') &&
         path.endsWith('/activities/rearrange')) {
@@ -127,7 +167,7 @@ class StandaloneApiService {
     if (path.startsWith('/api/fr5/itineraries/') &&
         path.endsWith('/generate')) {
       final id = path.split('/')[4];
-      return _generateItinerary(id, payload);
+      return _generateAndPlanTrip(id, payload);
     }
     if (path.startsWith('/api/fr5/itineraries/') && path.endsWith('/save')) {
       final id = path.split('/')[4];
@@ -326,11 +366,13 @@ class StandaloneApiService {
       _saveProfile(payload);
 
   Future<dynamic> _savePreferences(Map<String, dynamic> payload) async {
+    final version = _now();
     final profile = <String, dynamic>{
       ...payload,
       'travellerId': _uid,
       'homepageCategories': _homepageCategories(payload),
-      'updatedAt': _now(),
+      'preferenceProfileVersion': version,
+      'updatedAt': version,
     };
     await _writeMap('preferences', profile);
     return {'ok': true, 'preferences': profile};
@@ -350,6 +392,16 @@ class StandaloneApiService {
   // ------------------------------------------------------------------
   // Destinations and recommendations
   // ------------------------------------------------------------------
+
+  String _requestedArea(String value) {
+    return MalaysianLocality.normalizeScope(value)['scopeKey'].toString();
+  }
+
+  bool _matchesRequestedArea(Map<String, dynamic> item, String destination) {
+    final scope = MalaysianLocality.normalizeScope(destination);
+    final validated = MalaysianLocality.validateCandidate(item, scope);
+    return validated['geographicEligibility']?['eligible'] == true;
+  }
 
   static Map<String, dynamic> _catalogPlace({
     required String id,
@@ -2705,8 +2757,16 @@ class StandaloneApiService {
 
   Future<dynamic> _generateRecommendations(Map<String, dynamic> payload) async {
     final preferences = await _readMap('preferences') ?? {};
-    final area =
-        _normaliseSearch((payload['destinationArea'] ?? '').toString());
+    final requestedDestination =
+        (payload['destinationArea'] ?? 'Malaysia').toString().trim();
+    final destinationScope =
+        MalaysianLocality.normalizeScope(requestedDestination);
+    if (destinationScope['resolved'] != true) {
+      return {
+        'ok': false,
+        'error': 'Requested Malaysian destination could not be resolved.',
+      };
+    }
     final interests = (preferences['interests'] as List? ?? [])
         .map((e) => _normaliseSearch(e.toString()))
         .where((e) => e.isNotEmpty)
@@ -2725,7 +2785,10 @@ class StandaloneApiService {
 
     final scored = <Map<String, dynamic>>[];
     for (final raw in _destinations) {
-      final item = Map<String, dynamic>.from(raw);
+      final candidate = MalaysianLocality.validateCandidate(
+          Map<String, dynamic>.from(raw), destinationScope);
+      if (candidate['geographicEligibility']?['eligible'] != true) continue;
+      final item = Map<String, dynamic>.from(candidate);
       final itemInterests = (item['interests'] as List? ?? [])
           .map((e) => _normaliseSearch(e.toString()))
           .toSet();
@@ -2742,12 +2805,6 @@ class StandaloneApiService {
       final itemPersonality = (item['personality'] as List? ?? [])
           .map((e) => _normaliseSearch(e.toString()))
           .toSet();
-
-      final locationMatches = area.isEmpty ||
-          area == 'malaysia' ||
-          _normaliseSearch((item['address'] ?? '').toString())
-              .contains(area.split(' ').first);
-      if (area.isNotEmpty && area != 'malaysia' && !locationMatches) continue;
 
       final interestHits =
           interests.isEmpty ? 0 : itemInterests.intersection(interests).length;
@@ -2847,6 +2904,11 @@ class StandaloneApiService {
         'reason': reasons.isEmpty
             ? 'Strong combined match for your current travel profile.'
             : reasons.join(' • '),
+        'finalScore': score.round(),
+        'recommendationReason': reasons.isEmpty
+            ? 'Strong combined match for your current travel profile.'
+            : reasons.join(' • '),
+        'recommendationSource': 'fallback',
         'matchReasons': reasons,
         'collaborativeSource': placeFeedback.isEmpty
             ? 'rating and popularity signal'
@@ -2859,12 +2921,39 @@ class StandaloneApiService {
     for (var i = 0; i < scored.length; i++) {
       scored[i]['rankNo'] = i + 1;
     }
-    final top = scored.take(12).toList();
-    await _writeList('recommendations', top);
+    final top = scored
+        .map((item) =>
+            MalaysianLocality.validateCandidate(item, destinationScope))
+        .where((item) => item['geographicEligibility']?['eligible'] == true)
+        .take(12)
+        .toList();
+    final generatedAt = _now();
+    final generationId =
+        'local_rec_${DateTime.now().microsecondsSinceEpoch}_${_uid.hashCode.abs()}';
+    final snapshot = <String, dynamic>{
+      'recommendationGenerationId': generationId,
+      'userId': _uid,
+      'travellerId': _uid,
+      'requestedDestination': requestedDestination,
+      'destinationArea': requestedDestination,
+      'canonicalDestinationScope': destinationScope,
+      'preferenceProfileVersion': preferences['preferenceProfileVersion'] ??
+          preferences['updatedAt'] ??
+          'local_profile_legacy',
+      'generatedAt': generatedAt,
+      'source': 'fallback',
+      'engine': _engineInfo,
+      'recommendationResults': top,
+    };
+    final snapshots = await _readList('recommendation_snapshots');
+    snapshots.insert(0, snapshot);
+    await _writeList('recommendation_snapshots', snapshots);
     return {
       'ok': true,
+      'recommendationGenerationId': generationId,
+      'snapshot': snapshot,
       'recommendations': top,
-      'source': 'local',
+      'source': 'fallback',
       'engine': _engineInfo,
       'profileUsed': {
         'interests': interests.toList(),
@@ -2880,6 +2969,167 @@ class StandaloneApiService {
   // ------------------------------------------------------------------
   // Itinerary and budget
   // ------------------------------------------------------------------
+
+  String? _personalisedInputError(Map<String, dynamic> payload) {
+    if ((payload['title'] ?? '').toString().trim().isEmpty ||
+        (payload['destinationArea'] ?? '').toString().trim().isEmpty) {
+      return 'Enter a trip title and destination.';
+    }
+    final start = DateTime.tryParse((payload['startDate'] ?? '').toString());
+    final end = DateTime.tryParse((payload['endDate'] ?? '').toString());
+    if (start == null || end == null || end.isBefore(start)) {
+      return 'Use a valid trip date range.';
+    }
+    if (_num(payload['travellerCount']).round() < 1) {
+      return 'Traveller count must be at least 1.';
+    }
+    if (_num(payload['budgetLimit']) < 0) {
+      return 'Budget cannot be negative.';
+    }
+    if ((payload['recommendationGenerationId'] ?? '')
+        .toString()
+        .trim()
+        .isEmpty) {
+      return 'A recommendation generation ID is required for a personalised trip.';
+    }
+    final requestId = (payload['generationRequestId'] ?? '').toString().trim();
+    if (requestId.length < 8 || requestId.length > 128) {
+      return 'A valid generation request ID is required.';
+    }
+    return null;
+  }
+
+  String _personalisedTripId(String generationRequestId) {
+    final safeUser = _uid.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    final safe = generationRequestId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    return 'personalised_${safeUser}_$safe';
+  }
+
+  Future<Map<String, dynamic>> _snapshotForTrip(
+      Map<String, dynamic> trip, Map<String, dynamic> payload) async {
+    final requestedGenerationId =
+        (payload['recommendationGenerationId'] ?? '').toString().trim();
+    final tripGenerationId =
+        (trip['recommendationGenerationId'] ?? '').toString().trim();
+    if (requestedGenerationId.isNotEmpty &&
+        tripGenerationId.isNotEmpty &&
+        requestedGenerationId != tripGenerationId) {
+      throw Exception(
+          'Recommendation snapshot does not match the snapshot linked to this trip.');
+    }
+    final generationId =
+        tripGenerationId.isNotEmpty ? tripGenerationId : requestedGenerationId;
+    if (generationId.isEmpty) return <String, dynamic>{};
+
+    final snapshots = await _readList('recommendation_snapshots');
+    Map<String, dynamic>? snapshot;
+    for (final candidate in snapshots) {
+      if (candidate['recommendationGenerationId'].toString() == generationId) {
+        snapshot = candidate;
+        break;
+      }
+    }
+    if (snapshot == null || snapshot['travellerId'].toString() != _uid) {
+      throw Exception('Recommendation snapshot not found for this traveller.');
+    }
+    if (_requestedArea(snapshot['requestedDestination'].toString()) !=
+        _requestedArea((trip['destinationArea'] ?? '').toString())) {
+      throw Exception(
+          'Recommendation snapshot destination does not match this trip.');
+    }
+    return snapshot;
+  }
+
+  Future<dynamic> _generatePersonalisedTrip(
+      Map<String, dynamic> payload) async {
+    final inputError = _personalisedInputError(payload);
+    if (inputError != null) {
+      return {
+        'ok': false,
+        'error': inputError,
+        'stage': 'input_validation',
+        'retryable': false,
+      };
+    }
+
+    final requestId = payload['generationRequestId'].toString().trim();
+    final id = _personalisedTripId(requestId);
+    final existing = await _tripById(id);
+    if (existing != null &&
+        _requestedArea(existing['destinationArea'].toString()) !=
+            _requestedArea(payload['destinationArea'].toString())) {
+      return {
+        'ok': false,
+        'error':
+            'Generation request is already linked to a different destination.',
+        'tripId': id,
+        'status': existing['status'],
+        'retryable': false,
+      };
+    }
+
+    final candidate = existing ??
+        <String, dynamic>{
+          ...payload,
+          'id': id,
+          'travellerId': _uid,
+          'activities': <Map<String, dynamic>>[],
+        };
+    try {
+      await _snapshotForTrip(candidate, payload);
+    } catch (error) {
+      return {
+        'ok': false,
+        'error': error.toString().replaceFirst('Exception: ', ''),
+        'tripId': existing == null ? null : id,
+        'stage': 'snapshot_validation',
+        'retryable': false,
+      };
+    }
+
+    if (existing?['status'] == 'planned') {
+      return {
+        'ok': true,
+        'id': id,
+        'tripId': id,
+        'status': 'planned',
+        'itinerary': existing,
+        'reused': true,
+      };
+    }
+    if (existing?['status'] == 'generating') {
+      return {
+        'ok': true,
+        'id': id,
+        'tripId': id,
+        'status': 'generating',
+        'itinerary': existing,
+        'inProgress': true,
+        'reused': true,
+      };
+    }
+
+    if (existing == null) {
+      final now = _now();
+      await _replaceTrip({
+        ...payload,
+        'id': id,
+        'travellerId': _uid,
+        'activities': <Map<String, dynamic>>[],
+        'planningFlow': 'personalised',
+        'generationRequestId': requestId,
+        'status': 'generating',
+        'generationAttempts': 0,
+        'retryable': false,
+        'createdAt': now,
+        'updatedAt': now,
+      });
+    }
+
+    final result = await _generateAndPlanTrip(id, payload);
+    if (result is Map) result['reused'] = existing != null;
+    return result;
+  }
 
   Future<dynamic> _createTrip(Map<String, dynamic> payload) async {
     final trips = await _readList('itineraries');
@@ -3142,12 +3392,48 @@ class StandaloneApiService {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
 
+    final snapshot = await _snapshotForTrip(trip, payload);
+    final recommendationSnapshot = snapshot.isEmpty ? null : snapshot;
+    final generationId = (trip['recommendationGenerationId'] ??
+            payload['recommendationGenerationId'] ??
+            '')
+        .toString()
+        .trim();
+
     var activities = (trip['activities'] as List? ?? [])
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
+    for (final activity in activities) {
+      final activityGenerationId =
+          (activity['recommendationGenerationId'] ?? '').toString();
+      if (activityGenerationId.isNotEmpty &&
+          activityGenerationId != generationId) {
+        throw Exception(
+            'Itinerary contains recommendations from a different snapshot.');
+      }
+    }
     if (activities.isEmpty) {
-      final recs = await _readList('recommendations');
+      final recs = recommendationSnapshot != null
+          ? (recommendationSnapshot['recommendationResults'] as List? ?? [])
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .where((item) => _matchesRequestedArea(
+                  item, (trip['destinationArea'] ?? '').toString()))
+              .toList()
+          : _destinations
+              .map((item) => Map<String, dynamic>.from(item))
+              .where((item) => _matchesRequestedArea(
+                  item, (trip['destinationArea'] ?? '').toString()))
+              .toList();
+      if (recs.isEmpty && recommendationSnapshot != null) {
+        throw Exception(
+            'Linked recommendation snapshot has no destination-relevant results.');
+      }
+      if (recs.isEmpty) {
+        throw Exception(
+            'No destination candidates are available for this trip.');
+      }
       activities = recs
           .take(6)
           .map((item) => {
@@ -3166,6 +3452,8 @@ class StandaloneApiService {
                 'openingHours': item['openingHours'] ?? '',
                 'recommendedDurationMinutes':
                     item['recommendedDurationMinutes'] ?? 105,
+                if (generationId.isNotEmpty)
+                  'recommendationGenerationId': generationId,
               })
           .toList();
     }
@@ -3216,13 +3504,16 @@ class StandaloneApiService {
 
     trip['activities'] = activities;
     trip['tripDays'] = days;
-    trip['status'] = 'generated';
+    trip['status'] = 'generating';
     trip['generationContext'] = {
       'destinationPlanning': true,
       'activityArrangement': true,
       'tripDayGeneration': true,
       'weatherConsideration': true,
       'weatherNotes': weatherNotes,
+      'destinationSource': recommendationSnapshot?['source'] ?? 'fallback',
+      'recommendationGenerationId':
+          recommendationSnapshot?['recommendationGenerationId'],
     };
     trip['updatedAt'] = _now();
     final scheduled = _withScheduleMetadata(trip);
@@ -3230,10 +3521,98 @@ class StandaloneApiService {
     return {'ok': true, 'itinerary': scheduled};
   }
 
+  Future<dynamic> _generateAndPlanTrip(
+      String id, Map<String, dynamic> payload) async {
+    var trip = await _tripById(id);
+    if (trip == null) throw Exception('Itinerary not found.');
+
+    try {
+      await _snapshotForTrip(trip, payload);
+    } catch (error) {
+      return {
+        'ok': false,
+        'error': error.toString().replaceFirst('Exception: ', ''),
+        'id': id,
+        'tripId': id,
+        'status': trip['status'] ?? 'draft',
+        'stage': 'snapshot_validation',
+        'retryable': false,
+      };
+    }
+
+    final startedAt = _now();
+    trip = {
+      ...trip,
+      'status': 'generating',
+      'generationStartedAt': startedAt,
+      'generationAttempts': _num(trip['generationAttempts']).round() + 1,
+      'lastGenerationError': null,
+      'generationFailedAt': null,
+      'retryable': false,
+      'updatedAt': startedAt,
+    };
+    await _replaceTrip(trip);
+
+    var stage = 'itinerary_generation';
+    Map<String, dynamic>? partial;
+    try {
+      final generated = await _generateItinerary(id, payload);
+      partial = Map<String, dynamic>.from(generated['itinerary'] as Map);
+      stage = 'budget_calculation';
+      final calculatedBudget = _calculateBudget(partial);
+
+      stage = 'save_generated_trip';
+      final plannedAt = _now();
+      final planned = <String, dynamic>{
+        ...partial,
+        'budgetEstimate': calculatedBudget,
+        'status': 'planned',
+        'plannedAt': plannedAt,
+        'lastGenerationError': null,
+        'generationFailedAt': null,
+        'retryable': false,
+        'updatedAt': plannedAt,
+      };
+      await _replaceTrip(planned);
+      return {
+        'ok': true,
+        'id': id,
+        'tripId': id,
+        'status': 'planned',
+        'itinerary': planned,
+      };
+    } catch (error) {
+      final message = error.toString().replaceFirst('Exception: ', '');
+      final failedAt = _now();
+      final failed = <String, dynamic>{
+        ...trip,
+        if (partial != null) ...partial,
+        'status': 'generation_failed',
+        'generationFailureStage': stage,
+        'lastGenerationError': message,
+        'generationFailedAt': failedAt,
+        'retryable': true,
+        'updatedAt': failedAt,
+      };
+      await _replaceTrip(failed);
+      return {
+        'ok': false,
+        'error': message,
+        'id': id,
+        'tripId': id,
+        'status': 'generation_failed',
+        'stage': stage,
+        'retryable': true,
+        'itinerary': failed,
+      };
+    }
+  }
+
   Future<dynamic> _saveTrip(String id) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
-    trip['status'] = 'saved';
+    trip['status'] = 'planned';
+    trip['plannedAt'] = _now();
     trip['updatedAt'] = _now();
     await _replaceTrip(trip);
     return {'ok': true, 'itinerary': trip};

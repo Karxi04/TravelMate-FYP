@@ -214,14 +214,24 @@ class _PaymentScreenState extends State<PaymentScreen> {
           const SizedBox(height: 10),
           TextField(
             controller: amount,
+            readOnly: widget.initialAmount != null,
             onChanged: (_) => setState(() {}),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
             ],
-            decoration: const InputDecoration(
-                labelText: 'Amount (RM)',
-                prefixIcon: Icon(Icons.payments_outlined)),
+            decoration: InputDecoration(
+              labelText: widget.initialAmount != null
+                  ? 'Authoritative booking amount (RM)'
+                  : 'Amount (RM)',
+              prefixIcon: const Icon(Icons.payments_outlined),
+              suffixIcon: widget.initialAmount != null
+                  ? const Tooltip(
+                      message: 'Amount is authoritative and tied to your booking.',
+                      child: Icon(Icons.lock_outline, size: 18),
+                    )
+                  : null,
+            ),
           ),
           const SizedBox(height: 18),
           const Text('Card details',

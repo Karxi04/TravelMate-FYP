@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/destination_utils.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
@@ -42,17 +43,8 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     Future.microtask(loadDetails);
   }
 
-  String destinationId(Map<String, dynamic> item) {
-    return (item['place_id'] ??
-            item['data_id'] ??
-            item['data_cid'] ??
-            item['destinationId'] ??
-            item['title'] ??
-            item['name'] ??
-            '')
-        .toString()
-        .trim();
-  }
+  String destinationId(Map<String, dynamic> item) =>
+      DestinationUtils.resolveId(item);
 
   Future<void> loadDetails() async {
     final id = destinationId(detail);
@@ -261,8 +253,22 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   String get type =>
       (detail['type'] ?? detail['category'] ?? 'Place').toString();
 
-  dynamic get rating => reviewInfo?['rating'] ?? detail['rating'];
-  dynamic get reviewCount => reviewInfo?['reviews'] ?? detail['reviews'];
+  dynamic get communityRating => reviewInfo?['rating'];
+  int get communityReviewCount {
+    final r = reviewInfo?['reviews'];
+    if (r is int) return r;
+    if (r is num) return r.toInt();
+    if (r != null) return int.tryParse(r.toString()) ?? 0;
+    return 0;
+  }
+
+  dynamic get providerRating => detail['rating'];
+  dynamic get providerReviewCount => detail['reviews'];
+
+  dynamic get rating =>
+      communityReviewCount > 0 ? communityRating : (providerRating ?? communityRating);
+  dynamic get reviewCount =>
+      communityReviewCount > 0 ? communityReviewCount : (providerReviewCount ?? communityReviewCount);
 
   List<String> imageUrls() {
     final urls = <String>{};
@@ -854,7 +860,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
                       borderRadius: BorderRadius.circular(18),
                     ),
                     child: Text(
-                      '${rating ?? '-'}',
+                      '${communityRating ?? providerRating ?? '-'}',
                       style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.w900,
@@ -866,13 +872,21 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Overall rating',
-                          style: TextStyle(fontWeight: FontWeight.w900),
+                        Text(
+                          communityReviewCount > 0
+                              ? 'TravelMate Community Rating'
+                              : (providerRating != null
+                                  ? 'Provider Rating'
+                                  : 'Overall rating'),
+                          style: const TextStyle(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${reviewCount ?? 0} review(s)',
+                          communityReviewCount > 0
+                              ? '$communityReviewCount TravelMate review(s)${providerReviewCount != null ? ' • Provider: $providerRating ★ ($providerReviewCount)' : ''}'
+                              : (providerReviewCount != null
+                                  ? '$providerReviewCount provider review(s)'
+                                  : 'No reviews yet'),
                           style: const TextStyle(
                             color: InkWashColors.mutedInk,
                           ),

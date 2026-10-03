@@ -83,14 +83,67 @@ class _FlightScreenState extends State<FlightScreen> {
     super.dispose();
   }
 
+  static const Map<String, String> cityToIata = {
+    'KUALA LUMPUR': 'KUL',
+    'KL': 'KUL',
+    'KLIA': 'KUL',
+    'PENANG': 'PEN',
+    'GEORGETOWN': 'PEN',
+    'GEORGE TOWN': 'PEN',
+    'SINGAPORE': 'SIN',
+    'CHANGI': 'SIN',
+    'BANGKOK': 'BKK',
+    'SUVARNABHUMI': 'BKK',
+    'TOKYO': 'NRT',
+    'NARITA': 'NRT',
+    'HANEDA': 'HND',
+    'SEOUL': 'ICN',
+    'INCHEON': 'ICN',
+    'HONG KONG': 'HKG',
+    'HK': 'HKG',
+    'LANGKAWI': 'LGK',
+    'KOTA KINABALU': 'BKI',
+    'KUCHING': 'KCH',
+    'JOHOR BAHRU': 'JHB',
+    'JB': 'JHB',
+    'IPOH': 'IPH',
+    'MELAKA': 'MKZ',
+    'MALACCA': 'MKZ',
+    'LONDON': 'LHR',
+    'HEATHROW': 'LHR',
+    'SYDNEY': 'SYD',
+    'MELBOURNE': 'MEL',
+    'BALI': 'DPS',
+    'DENPASAR': 'DPS',
+    'JAKARTA': 'CGK',
+    'TAIPEI': 'TPE',
+    'OSAKA': 'KIX',
+    'DUBAI': 'DXB',
+  };
+
+  String resolveIata(String input) {
+    final cleaned = input.trim().toUpperCase();
+    if (cleaned.length == 3 && RegExp(r'^[A-Z]{3}$').hasMatch(cleaned)) {
+      return cleaned;
+    }
+    for (final entry in cityToIata.entries) {
+      if (cleaned.contains(entry.key) || entry.key.contains(cleaned)) {
+        return entry.value;
+      }
+    }
+    return cleaned;
+  }
+
   Future<void> search() async {
-    final departure = from.text.trim().toUpperCase();
-    final arrival = to.text.trim().toUpperCase();
+    final departure = resolveIata(from.text);
+    final arrival = resolveIata(to.text);
+    if (departure.length == 3) from.text = departure;
+    if (arrival.length == 3) to.text = arrival;
     final travellerCount = int.tryParse(travellers.text.trim()) ?? 0;
     final outboundDate = parseDate(outbound.text);
     final inboundDate = roundTrip ? parseDate(returnDate.text) : null;
     if (departure.length != 3 || arrival.length != 3 || departure == arrival) {
-      showError(context, 'Use different 3-letter airport codes.');
+      showError(context, 'Enter 3-letter airport codes or supported city names (e.g. KUL, PEN, SIN).');
       return;
     }
     if (outboundDate == null || (roundTrip && inboundDate == null)) {
@@ -229,7 +282,46 @@ class _FlightScreenState extends State<FlightScreen> {
       final trips = data['items'] as List? ?? [];
       if (!mounted) return;
       if (trips.isEmpty) {
-        showError(context, 'Create an itinerary in Trips first.');
+        final createNow = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Create Itinerary for Flight?'),
+            content: Text(
+                'No active itineraries were found. Would you like to create a new itinerary to ${flight['arrivalAirport'] ?? 'your destination'} with this flight attached?'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Create Itinerary')),
+            ],
+          ),
+        );
+        if (createNow != true) return;
+        final start = flight['outboundDate'] ??
+            dateText(DateTime.now().add(const Duration(days: 14)));
+        final end = flight['returnDate'] ?? start;
+        final price = double.tryParse('${flight['price'] ?? 0}') ?? 0.0;
+        final newTrip = await api.post('/api/fr5/itineraries', {
+          'title': 'Trip to ${flight['arrivalAirport'] ?? 'Destination'}',
+          'startDate': start,
+          'endDate': end,
+          'travellerCount': int.tryParse(travellers.text.trim()) ?? 1,
+          'budgetLimit': price > 0 ? price * 3 : 1500.0,
+          'flightCost': price,
+          'selectedFlight': flight,
+          'activities': [],
+        });
+        if (mounted) {
+          final tripTitle =
+              newTrip['itinerary']?['title'] ?? 'New trip';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content:
+                    Text('Created "$tripTitle" with this flight attached!')),
+          );
+        }
         return;
       }
       final selected = await showModalBottomSheet<Map<String, dynamic>>(

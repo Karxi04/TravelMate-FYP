@@ -21,17 +21,29 @@ def _request(params):
     response.raise_for_status()
     data = response.json()
     if isinstance(data, dict) and data.get('error'):
+        if "hasn't returned any results" in str(data['error']).lower():
+            return {'local_results': []}
         raise RuntimeError(str(data['error']))
     return data
 
 
-def retrieveDestinationResults(searchInput, location="Malaysia"):
-    return _request({
+def retrieveDestinationResults(searchInput, location="Malaysia", coordinates=None):
+    query = (searchInput or "").strip()
+    loc = (location or "").strip()
+    if loc and loc.lower() not in query.lower():
+        query = f"{query} in {loc}"
+    params = {
         'engine': 'google_maps',
-        'q': searchInput,
-        'location': location,
+        'q': query,
         'hl': 'en',
-    })
+        'gl': 'my',
+    }
+    coordinates = coordinates if isinstance(coordinates, dict) else {}
+    latitude = coordinates.get('latitude')
+    longitude = coordinates.get('longitude')
+    if latitude is not None and longitude is not None:
+        params['ll'] = f'@{latitude},{longitude},11z'
+    return _request(params)
 
 
 def retrieveDestinationDetails(placeId, referenceType='place_id'):

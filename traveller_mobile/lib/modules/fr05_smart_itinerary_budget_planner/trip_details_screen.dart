@@ -14,15 +14,16 @@ import '../fr09_payment/payment_screen.dart';
 
 class TripDetailsScreen extends StatefulWidget {
   final String tripId;
+  final ApiService? api;
 
-  const TripDetailsScreen({super.key, required this.tripId});
+  const TripDetailsScreen({super.key, required this.tripId, this.api});
 
   @override
   State<TripDetailsScreen> createState() => _TripDetailsScreenState();
 }
 
 class _TripDetailsScreenState extends State<TripDetailsScreen> {
-  final api = ApiService();
+  late final ApiService api;
   Map<String, dynamic>? trip;
   bool loading = true;
   bool busy = false;
@@ -411,17 +412,25 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   Future<void> generate() async {
     final t = trip;
-    if (t == null) return;
+    if (t == null || busy) return;
     setState(() => busy = true);
     try {
-      await api.post('/api/fr5/itineraries/${widget.tripId}/generate', {
+      final result =
+          await api.post('/api/fr5/itineraries/${widget.tripId}/generate', {
         'destinationName': t['destinationArea'] ?? '',
+        if ((t['recommendationGenerationId'] ?? '').toString().isNotEmpty)
+          'recommendationGenerationId': t['recommendationGenerationId'],
       });
+      if (result is Map && result['ok'] != true) {
+        throw Exception(result['error'] ?? 'Trip generation failed.');
+      }
       await load();
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Trip days and activity timing updated.')));
+      }
     } catch (e) {
+      await load();
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => busy = false);
@@ -492,6 +501,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   @override
   void initState() {
     super.initState();
+    api = widget.api ?? ApiService();
     Future.microtask(load);
   }
 
@@ -551,6 +561,15 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                       TravelStatusPill(
                           text: '${t['travellerCount'] ?? 1} traveller(s)',
                           icon: Icons.people_outline_rounded),
+                      TravelStatusPill(
+                          text: (t['status'] ?? 'draft')
+                              .toString()
+                              .replaceAll('_', ' '),
+                          icon: t['status'] == 'generation_failed'
+                              ? Icons.error_outline_rounded
+                              : t['status'] == 'planned'
+                                  ? Icons.check_circle_outline_rounded
+                                  : Icons.hourglass_top_rounded),
                       if (t['totalScheduledMinutes'] != null)
                         TravelStatusPill(
                             text: '${t['totalScheduledMinutes']} planned min',
@@ -570,6 +589,37 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                 ],
               ),
             ),
+            if (t['status'] == 'generation_failed') ...[
+              const SizedBox(height: 12),
+              InkCard(
+                color: InkWashColors.cream,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Trip generation did not finish',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w900, fontSize: 16)),
+                    const SizedBox(height: 6),
+                    Text((t['lastGenerationError'] ??
+                            'TravelMate could not finish this trip.')
+                        .toString()),
+                    const SizedBox(height: 4),
+                    Text(
+                        'Stage: ${t['generationFailureStage'] ?? 'trip_generation'}',
+                        style: const TextStyle(
+                            color: InkWashColors.mutedInk, fontSize: 12)),
+                    if (t['retryable'] == true) ...[
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: busy ? null : generate,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Retry generation'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
             if (_attachedTravelCards(t).isNotEmpty) ...[
               const SizedBox(height: 12),
               ..._attachedTravelCards(t).map((card) => Padding(

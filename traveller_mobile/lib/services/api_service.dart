@@ -7,24 +7,53 @@ import 'package:http/http.dart' as http;
 import 'shared_firestore_service.dart';
 import 'standalone_api_service.dart';
 
+class ApiException implements Exception {
+  final String message;
+  final int statusCode;
+  final Map<String, dynamic> data;
+
+  const ApiException(this.message, this.statusCode, this.data);
+
+  @override
+  String toString() => message;
+}
+
 class ApiService {
-  /// Leave API_BASE_URL empty for standalone mode.
-  /// Set a public HTTPS backend URL at build time to use the Flask API:
-  /// flutter build apk --dart-define=API_BASE_URL=https://your-backend.example.com
-  static const String baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: '',
-  );
+  static String? customBaseUrl;
+
+  /// Default to Android emulator host (10.0.2.2:5000) on Android,
+  /// 127.0.0.1:5000 on Web/Desktop, or compile-time API_BASE_URL.
+  static String get baseUrl {
+    if (customBaseUrl != null && customBaseUrl!.trim().isNotEmpty) {
+      return customBaseUrl!.trim();
+    }
+    const envUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
+    if (envUrl.trim().isNotEmpty) return envUrl.trim();
+    if (kIsWeb) return 'http://127.0.0.1:5000';
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://10.0.2.2:5000';
+    }
+    return 'http://127.0.0.1:5000';
+  }
+
+  static void setBaseUrl(String url) {
+    customBaseUrl = url.trim();
+  }
 
   static const bool forceStandalone = bool.fromEnvironment(
     'STANDALONE_MODE',
     defaultValue: false,
   );
 
-  final StandaloneApiService _standalone = StandaloneApiService();
-  final SharedFirestoreService _shared = SharedFirestoreService();
+  StandaloneApiService? _standaloneService;
+  StandaloneApiService get _standalone =>
+      _standaloneService ??= StandaloneApiService();
+  SharedFirestoreService? _sharedService;
+  SharedFirestoreService get _shared =>
+      _sharedService ??= SharedFirestoreService();
 
-  bool get isStandalone => forceStandalone || baseUrl.trim().isEmpty;
+  /// Standalone mode is only active when explicitly enabled at build time.
+  bool get isStandalone => forceStandalone;
 
   Future<Map<String, String>> _headers() async {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
@@ -35,7 +64,8 @@ class ApiService {
   }
 
   bool _isReviewDetailsPath(String path) =>
-      path.startsWith('/api/fr3/destinations/') && path.endsWith('/ratings-reviews');
+      path.startsWith('/api/fr3/destinations/') &&
+      path.endsWith('/ratings-reviews');
 
   String _destinationIdFromReviewPath(String path) {
     final raw = path.substring(
@@ -47,13 +77,25 @@ class ApiService {
 
   Future<dynamic> _sharedGet(String path) async {
     if (path == '/api/public/tourism-packages') {
-      return {'ok': true, 'items': await _shared.approvedPackages(), 'source': 'firestore'};
+      return {
+        'ok': true,
+        'items': await _shared.approvedPackages(),
+        'source': 'firestore'
+      };
     }
     if (path == '/api/public/promotional-campaigns') {
-      return {'ok': true, 'items': await _shared.approvedCampaigns(), 'source': 'firestore'};
+      return {
+        'ok': true,
+        'items': await _shared.approvedCampaigns(),
+        'source': 'firestore'
+      };
     }
     if (path == '/api/fr10/feedback') {
-      return {'ok': true, 'items': await _shared.ownReviews(), 'source': 'firestore'};
+      return {
+        'ok': true,
+        'items': await _shared.ownReviews(),
+        'source': 'firestore'
+      };
     }
     if (_isReviewDetailsPath(path)) {
       final id = _destinationIdFromReviewPath(path);
@@ -69,7 +111,8 @@ class ApiService {
         'ok': true,
         'source': 'travelmate_database',
         'result': {
-          'rating': average == null ? null : double.parse(average.toStringAsFixed(1)),
+          'rating':
+              average == null ? null : double.parse(average.toStringAsFixed(1)),
           'reviews': reviews.length,
           'review_summary': reviews.isEmpty
               ? 'No Traveller reviews have been submitted for this place yet.'
@@ -91,7 +134,10 @@ class ApiService {
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
     // Cross-role shared data comes directly from Firebase in standalone mode so
     // Traveller can see Operator/Admin changes without USB or a local Flask server.
-    if (isStandalone && (path.startsWith('/api/public/') || path == '/api/fr10/feedback' || _isReviewDetailsPath(path))) {
+    if (isStandalone &&
+        (path.startsWith('/api/public/') ||
+            path == '/api/fr10/feedback' ||
+            _isReviewDetailsPath(path))) {
       return _sharedGet(path);
     }
     if (isStandalone) return _standalone.get(path, query);
@@ -103,12 +149,8 @@ class ApiService {
           .timeout(const Duration(seconds: 25));
       return _decode(response);
     } catch (e) {
-      debugPrint('Cloud GET failed: $e');
-      // Shared data must remain shared even when the backend is temporarily down.
-      if (path.startsWith('/api/public/') || path == '/api/fr10/feedback' || _isReviewDetailsPath(path)) {
-        return _sharedGet(path);
-      }
-      return _standalone.get(path, query);
+      debugPrint('Backend GET failed ($path): $e');
+      rethrow;
     }
   }
 
@@ -120,7 +162,8 @@ class ApiService {
     }
     if (isStandalone && path == '/api/fr4/recommendations/generate') {
       final sharedFeedback = await _shared.visibleReviews();
-      return _standalone.post(path, {...payload, 'sharedFeedback': sharedFeedback});
+      return _standalone
+          .post(path, {...payload, 'sharedFeedback': sharedFeedback});
     }
     if (isStandalone) return _standalone.post(path, body);
     try {
@@ -132,19 +175,13 @@ class ApiService {
             headers: await _headers(),
             body: jsonEncode(payload),
           )
-          .timeout(const Duration(seconds: 35));
+          .timeout(Duration(
+            seconds: path == '/api/fr5/personalised-trips/generate' ? 65 : 35,
+          ));
       return _decode(response);
     } catch (e) {
-      debugPrint('Cloud POST failed: $e');
-      if (path == '/api/fr10/feedback') {
-        final result = await _shared.createReview(payload);
-        return {'ok': true, 'id': result['id'], 'feedback': result};
-      }
-      if (path == '/api/fr4/recommendations/generate') {
-        final sharedFeedback = await _shared.visibleReviews();
-        return _standalone.post(path, {...payload, 'sharedFeedback': sharedFeedback});
-      }
-      return _standalone.post(path, body);
+      debugPrint('Backend POST failed ($path): $e');
+      rethrow;
     }
   }
 
@@ -165,12 +202,8 @@ class ApiService {
           .timeout(const Duration(seconds: 25));
       return _decode(response);
     } catch (e) {
-      debugPrint('Cloud PUT failed: $e');
-      if (path.startsWith('/api/fr10/feedback/')) {
-        final id = path.split('/').last;
-        return {'ok': true, 'feedback': await _shared.updateReview(id, payload)};
-      }
-      return _standalone.put(path, body);
+      debugPrint('Backend PUT failed ($path): $e');
+      rethrow;
     }
   }
 
@@ -187,13 +220,8 @@ class ApiService {
           .timeout(const Duration(seconds: 25));
       return _decode(response);
     } catch (e) {
-      debugPrint('Cloud DELETE failed: $e');
-      if (path.startsWith('/api/fr10/feedback/')) {
-        final id = path.split('/').last;
-        await _shared.deleteReview(id);
-        return {'ok': true};
-      }
-      return _standalone.delete(path);
+      debugPrint('Backend DELETE failed ($path): $e');
+      rethrow;
     }
   }
 
@@ -208,7 +236,13 @@ class ApiService {
       final message = data is Map
           ? (data['error'] ?? 'Request failed (${response.statusCode})')
           : 'Request failed';
-      throw Exception(message);
+      throw ApiException(
+        message.toString(),
+        response.statusCode,
+        data is Map
+            ? Map<String, dynamic>.from(data)
+            : <String, dynamic>{'error': message},
+      );
     }
     return data;
   }

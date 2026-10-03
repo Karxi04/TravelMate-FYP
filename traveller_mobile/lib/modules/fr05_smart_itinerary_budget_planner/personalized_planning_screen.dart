@@ -3,10 +3,12 @@ import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
-import 'trips_tab.dart';
+import 'trip_details_screen.dart';
 
 class PersonalizedPlanningScreen extends StatefulWidget {
-  const PersonalizedPlanningScreen({super.key});
+  final ApiService? api;
+
+  const PersonalizedPlanningScreen({super.key, this.api});
 
   @override
   State<PersonalizedPlanningScreen> createState() =>
@@ -15,7 +17,7 @@ class PersonalizedPlanningScreen extends StatefulWidget {
 
 class _PersonalizedPlanningScreenState
     extends State<PersonalizedPlanningScreen> {
-  final api = ApiService();
+  late final ApiService api;
   final destination = TextEditingController(text: 'Penang, Malaysia');
   final title = TextEditingController(text: 'My Personalised Penang Trip');
   final travellers = TextEditingController(text: '1');
@@ -26,6 +28,14 @@ class _PersonalizedPlanningScreenState
   int step = 0;
   String status = '';
   Map<String, dynamic>? generatedTrip;
+  String? generationRequestId;
+  String? generationSignature;
+  String? recommendationGenerationId;
+  String? completedTripId;
+  String? failedTripId;
+  String? failureStage;
+  String? failureMessage;
+  bool retryable = false;
 
   String dateText(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -33,121 +43,199 @@ class _PersonalizedPlanningScreenState
   @override
   void initState() {
     super.initState();
+    api = widget.api ?? ApiService();
     final start = DateTime.now().add(const Duration(days: 30));
     startDate = TextEditingController(text: dateText(start));
     endDate = TextEditingController(
         text: dateText(start.add(const Duration(days: 2))));
   }
 
-  Future<void> buildPlan() async {
+  @override
+  void dispose() {
+    destination.dispose();
+    title.dispose();
+    travellers.dispose();
+    budget.dispose();
+    startDate.dispose();
+    endDate.dispose();
+    super.dispose();
+  }
+
+  String? _inputError() {
     if (destination.text.trim().isEmpty || title.text.trim().isEmpty) {
-      showError(context, 'Enter a destination and trip title.');
+      return 'Enter a destination and trip title.';
+    }
+    final start = DateTime.tryParse(startDate.text.trim());
+    final end = DateTime.tryParse(endDate.text.trim());
+    if (start == null || end == null || end.isBefore(start)) {
+      return 'Use a valid trip date range.';
+    }
+    final travellerCount = int.tryParse(travellers.text.trim());
+    if (travellerCount == null || travellerCount < 1) {
+      return 'Traveller count must be at least 1.';
+    }
+    final budgetLimit = double.tryParse(budget.text.trim());
+    if (budgetLimit == null || budgetLimit < 0) {
+      return 'Enter a valid non-negative budget.';
+    }
+    return null;
+  }
+
+  String get _inputSignature => [
+        title.text.trim(),
+        destination.text.trim().toLowerCase(),
+        startDate.text.trim(),
+        endDate.text.trim(),
+        travellers.text.trim(),
+        budget.text.trim(),
+      ].join('|');
+
+  Map<String, dynamic> _tripPayload(String snapshotId) => {
+        'title': title.text.trim(),
+        'destinationArea': destination.text.trim(),
+        'destinationName': destination.text.trim(),
+        'startDate': startDate.text.trim(),
+        'endDate': endDate.text.trim(),
+        'travellerCount': int.parse(travellers.text.trim()),
+        'budgetLimit': double.parse(budget.text.trim()),
+        'recommendationGenerationId': snapshotId,
+        'generationRequestId': generationRequestId,
+      };
+
+  Future<void> _openTrip(String tripId) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TripDetailsScreen(tripId: tripId, api: api),
+      ),
+    );
+  }
+
+  void _recordFailure(Map<String, dynamic> data, Object error) {
+    failedTripId = (data['tripId'] ?? data['id'] ?? '').toString();
+    if (failedTripId!.isEmpty) failedTripId = null;
+    failureStage = (data['stage'] ?? 'trip_generation').toString();
+    failureMessage = (data['error'] ?? error).toString();
+    retryable = data['retryable'] == true;
+    status = failureMessage!;
+  }
+
+  Future<void> buildPlan({bool retry = false}) async {
+    if (busy) return;
+    final inputError = _inputError();
+    if (inputError != null) {
+      showError(context, inputError);
+      return;
+    }
+
+    final signature = _inputSignature;
+    if (generationSignature != signature) {
+      generationSignature = signature;
+      generationRequestId =
+          'personalised_${DateTime.now().microsecondsSinceEpoch}';
+      recommendationGenerationId = null;
+      completedTripId = null;
+      failedTripId = null;
+    }
+    if (!retry && completedTripId != null) {
+      await _openTrip(completedTripId!);
       return;
     }
     setState(() {
       busy = true;
-      step = 1;
-      status = 'Ranking destinations from your travel preferences...';
+      step = retry ? 2 : 1;
+      status = retry
+          ? 'Retrying itinerary and budget generation for this trip...'
+          : 'Ranking destinations from your travel preferences...';
       generatedTrip = null;
+      failureMessage = null;
+      failureStage = null;
+      retryable = false;
     });
 
     try {
-      // FR4: real hybrid recommendation engine.
-      final recommendationData =
-          await api.post('/api/fr4/recommendations/generate', {
-        'destinationArea': destination.text.trim(),
-      });
-      final recommendations =
-          recommendationData['recommendations'] as List? ?? [];
-      if (recommendations.isEmpty) {
-        throw Exception('No recommendations were generated.');
+      if (!retry || recommendationGenerationId == null) {
+        final recommendationData =
+            await api.post('/api/fr4/recommendations/generate', {
+          'destinationArea': destination.text.trim(),
+        });
+        final recommendations =
+            recommendationData['recommendations'] as List? ?? [];
+        recommendationGenerationId =
+            (recommendationData['recommendationGenerationId'] ?? '').toString();
+        if (recommendations.isEmpty) {
+          throw Exception('No recommendations were generated.');
+        }
+        if (recommendationGenerationId!.isEmpty) {
+          throw Exception('Recommendation snapshot could not be identified.');
+        }
       }
 
-      if (mounted)
-        setState(() {
-          step = 2;
-          status = 'Creating itinerary from the top ranked destinations...';
-        });
-
-      final days = _dayCount(startDate.text, endDate.text);
-      final count = (days * 3).clamp(3, 9).toInt();
-      final activities = recommendations.take(count).map((raw) {
-        final item = Map<String, dynamic>.from(raw as Map);
-        return {
-          'activityName': item['title'] ?? item['name'] ?? 'Destination',
-          'destinationId': item['destinationId'] ?? item['place_id'] ?? '',
-          'address': item['address'] ?? '',
-          'estimatedCost': item['estimatedCost'] ?? 0,
-          'gps_coordinates':
-              item['gps_coordinates'] ?? item['gpsCoordinates'] ?? {},
-          'type': item['type'] ?? item['category'] ?? '',
-          'category': item['category'] ?? item['type'] ?? '',
-          'description': item['description'] ?? '',
-          'openingHours': item['openingHours'] ?? '',
-          'indoor': item['indoor'] ?? false,
-          'recommendedDurationMinutes':
-              item['recommendedDurationMinutes'] ?? 105,
-          'recommendationScore': item['score'] ?? 0,
-        };
-      }).toList();
-
-      final created = await api.post('/api/fr5/itineraries', {
-        'title': title.text.trim(),
-        'destinationArea': destination.text.trim(),
-        'startDate': startDate.text.trim(),
-        'endDate': endDate.text.trim(),
-        'travellerCount': int.tryParse(travellers.text) ?? 1,
-        'budgetLimit': double.tryParse(budget.text) ?? 0,
-        'activities': activities,
-      });
-      final itineraryId = (created['id'] ?? '').toString();
-      if (itineraryId.isEmpty)
-        throw Exception('Itinerary could not be created.');
-
-      if (mounted)
-        setState(() {
-          step = 3;
-          status = 'Arranging trip days and checking destination weather...';
-        });
-
-      // FR5 Smart Itinerary Generator handles grouping, day generation, travel buffers and weather.
-      final generated =
-          await api.post('/api/fr5/itineraries/$itineraryId/generate', {
-        'destinationName': destination.text.trim(),
+      if (!mounted) return;
+      setState(() {
+        step = 2;
+        status =
+            'Generating the itinerary and budget from the selected recommendation snapshot...';
       });
 
-      if (mounted)
-        setState(() {
-          step = 4;
-          status = 'Calculating and comparing your total trip budget...';
-        });
-
-      final budgetData =
-          await api.get('/api/fr5/itineraries/$itineraryId/budget');
-      await api.post('/api/fr5/itineraries/$itineraryId/save', {});
-
+      final generated = await api.post(
+        '/api/fr5/personalised-trips/generate',
+        _tripPayload(recommendationGenerationId!),
+      );
+      if (generated is! Map || generated['ok'] != true) {
+        final data = generated is Map
+            ? Map<String, dynamic>.from(generated)
+            : <String, dynamic>{};
+        _recordFailure(data, 'Trip generation failed.');
+        throw Exception(failureMessage);
+      }
+      final itineraryId =
+          (generated['tripId'] ?? generated['id'] ?? '').toString();
+      if (itineraryId.isEmpty) {
+        throw Exception('The generated trip ID was not returned.');
+      }
+      if (generated['status'] != 'planned') {
+        _recordFailure(
+          {
+            ...Map<String, dynamic>.from(generated),
+            'stage': 'generation_in_progress',
+            'error':
+                'Trip generation is still in progress. Please retry shortly.',
+            'retryable': true,
+          },
+          'Trip generation is still in progress.',
+        );
+        throw Exception(failureMessage);
+      }
       final trip = Map<String, dynamic>.from(generated['itinerary'] as Map);
-      trip['budgetEstimate'] = budgetData['budget'];
       if (!mounted) return;
       setState(() {
         step = 5;
         status = 'Your personalised trip is ready.';
         generatedTrip = trip;
+        completedTripId = itineraryId;
+        failedTripId = null;
       });
+      await _openTrip(itineraryId);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _recordFailure(e.data, e));
+      showError(context, e.message);
     } catch (e) {
-      if (mounted) showError(context, e);
+      if (mounted) {
+        if (failureMessage == null) {
+          setState(() {
+            failureStage = 'request_transport';
+            failureMessage = e.toString().replaceFirst('Exception: ', '');
+            retryable = recommendationGenerationId != null &&
+                generationRequestId != null;
+            status = failureMessage!;
+          });
+        }
+        showError(context, failureMessage ?? e);
+      }
     } finally {
       if (mounted) setState(() => busy = false);
-    }
-  }
-
-  int _dayCount(String start, String end) {
-    try {
-      final a = DateTime.parse(start);
-      final b = DateTime.parse(end);
-      return (b.difference(a).inDays + 1).clamp(1, 7).toInt();
-    } catch (_) {
-      return 3;
     }
   }
 
@@ -391,6 +479,38 @@ class _PersonalizedPlanningScreenState
               ],
             ),
           ),
+          if (failureMessage != null) ...[
+            const SizedBox(height: 14),
+            InkCard(
+              color: InkWashColors.cream,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Trip generation did not finish',
+                      style:
+                          TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+                  const SizedBox(height: 6),
+                  Text(failureMessage!),
+                  const SizedBox(height: 5),
+                  Text('Stage: ${failureStage ?? 'trip_generation'}',
+                      style: const TextStyle(
+                          color: InkWashColors.mutedInk, fontSize: 12)),
+                  if (failedTripId != null)
+                    Text('Recoverable trip: $failedTripId',
+                        style: const TextStyle(
+                            color: InkWashColors.mutedInk, fontSize: 12)),
+                  if (retryable && recommendationGenerationId != null) ...[
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: busy ? null : () => buildPlan(retry: true),
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Retry this trip'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
           if (trip != null) ...[
             const SizedBox(height: 16),
             InkCard(
@@ -429,8 +549,9 @@ class _PersonalizedPlanningScreenState
                   _timelinePreview(trip),
                   const SizedBox(height: 12),
                   FilledButton.icon(
-                    onPressed: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const TripsTab())),
+                    onPressed: completedTripId == null
+                        ? null
+                        : () => _openTrip(completedTripId!),
                     icon: const Icon(Icons.route_rounded),
                     label: const Text('Open generated trip'),
                   ),

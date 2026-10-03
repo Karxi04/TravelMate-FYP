@@ -21,12 +21,61 @@ def _own_itinerary(iid):
     return data if data and data.get('travellerId') == g.uid else None
 
 
+CITY_TO_IATA = {
+    'KUALA LUMPUR': 'KUL',
+    'KL': 'KUL',
+    'KLIA': 'KUL',
+    'PENANG': 'PEN',
+    'GEORGETOWN': 'PEN',
+    'GEORGE TOWN': 'PEN',
+    'SINGAPORE': 'SIN',
+    'CHANGI': 'SIN',
+    'BANGKOK': 'BKK',
+    'SUVARNABHUMI': 'BKK',
+    'TOKYO': 'NRT',
+    'NARITA': 'NRT',
+    'HANEDA': 'HND',
+    'SEOUL': 'ICN',
+    'INCHEON': 'ICN',
+    'HONG KONG': 'HKG',
+    'HK': 'HKG',
+    'LANGKAWI': 'LGK',
+    'KOTA KINABALU': 'BKI',
+    'KUCHING': 'KCH',
+    'JOHOR BAHRU': 'JHB',
+    'JB': 'JHB',
+    'IPOH': 'IPH',
+    'MELAKA': 'MKZ',
+    'MALACCA': 'MKZ',
+    'LONDON': 'LHR',
+    'HEATHROW': 'LHR',
+    'SYDNEY': 'SYD',
+    'MELBOURNE': 'MEL',
+    'BALI': 'DPS',
+    'DENPASAR': 'DPS',
+    'JAKARTA': 'CGK',
+    'TAIPEI': 'TPE',
+    'OSAKA': 'KIX',
+    'DUBAI': 'DXB',
+}
+
+
+def _resolve_iata(val):
+    c = str(val or '').strip().upper()
+    if len(c) == 3 and c.isalpha():
+        return c
+    for k, v in CITY_TO_IATA.items():
+        if k == c or k in c or c in k:
+            return v
+    return c
+
+
 @bp.get('/flights/search')
 @auth_required(['traveller'])
 def search_flights():
     data = {
-        'departure_id': request.args.get('departure_id', '').strip().upper(),
-        'arrival_id': request.args.get('arrival_id', '').strip().upper(),
+        'departure_id': _resolve_iata(request.args.get('departure_id', '')),
+        'arrival_id': _resolve_iata(request.args.get('arrival_id', '')),
         'outbound_date': request.args.get('outbound_date', '').strip(),
         'return_date': request.args.get('return_date', '').strip() or None,
     }

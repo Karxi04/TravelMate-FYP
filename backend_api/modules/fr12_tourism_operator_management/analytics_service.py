@@ -120,7 +120,10 @@ def generate_business_analytics(db, operator_id):
             data.get("operatorId", "")
         ).strip()
 
-        if not booking_operator or booking_operator == operator_id:
+        if operator_id:
+            if booking_operator == operator_id:
+                bookings.append(data)
+        else:
             bookings.append(data)
 
     # ==========================================================

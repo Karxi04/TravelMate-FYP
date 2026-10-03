@@ -1,4 +1,6 @@
+import hashlib
 import os
+import re
 from flask import Blueprint, request, jsonify, g
 from auth_utils import auth_required
 from utils import utc_now_iso
@@ -26,6 +28,9 @@ def _own(iid):
     return data if data and data.get('travellerId') == g.uid else None
 
 
+_own_itinerary = _own
+
+
 def _trip_days(current):
     from datetime import date
     try:
@@ -36,6 +41,92 @@ def _trip_days(current):
     except Exception:
         pass
     return 1
+
+
+def _normalise_location(value):
+    return re.sub(r'[^a-z0-9]+', ' ', str(value or '').lower()).strip()
+
+
+def _requested_area(value):
+    parts = [
+        _normalise_location(part)
+        for part in str(value or '').split(',')
+        if _normalise_location(part)
+    ]
+    meaningful = [part for part in parts if part not in {'malaysia', 'my'}]
+    return meaningful[0] if meaningful else (parts[0] if parts else '')
+
+
+def _filter_destination_candidates(items, destination_area):
+    requested = _requested_area(destination_area)
+    if not requested or requested in {'malaysia', 'my'}:
+        return [dict(item) for item in (items or []) if isinstance(item, dict)]
+
+    aliases = {requested}
+    trimmed = re.sub(r'\b(city|island|state|district|region)\b', ' ', requested)
+    trimmed = re.sub(r'\s+', ' ', trimmed).strip()
+    if trimmed:
+        aliases.add(trimmed)
+
+    relevant = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        values = [
+            item.get('title'), item.get('name'), item.get('address'),
+            item.get('formatted_address'), item.get('city'), item.get('state'),
+            item.get('area'), item.get('neighborhood'), item.get('vicinity'),
+            item.get('location'), item.get('requestedDestination'),
+        ]
+        location_text = _normalise_location(' '.join(str(value or '') for value in values))
+        if any(alias and re.search(rf'\b{re.escape(alias)}\b', location_text) for alias in aliases):
+            relevant.append(dict(item))
+    return relevant
+
+
+def _recommendation_snapshot(current, payload):
+    requested_generation_id = str(payload.get('recommendationGenerationId') or '').strip()
+    trip_generation_id = str(current.get('recommendationGenerationId') or '').strip()
+    if requested_generation_id and trip_generation_id and requested_generation_id != trip_generation_id:
+        return None, 'Recommendation snapshot does not match the snapshot linked to this trip'
+    generation_id = trip_generation_id or requested_generation_id
+    if not generation_id:
+        return None, None
+
+    snapshot = retrieveRecord('recommendation_snapshots', generation_id)
+    if not snapshot or snapshot.get('travellerId') != g.uid:
+        return None, 'Recommendation snapshot not found for this traveller'
+
+    trip_area = _requested_area(current.get('destinationArea'))
+    snapshot_area = _requested_area(
+        snapshot.get('requestedDestination') or snapshot.get('destinationArea')
+    )
+    if not trip_area or trip_area != snapshot_area:
+        return None, 'Recommendation snapshot destination does not match this trip'
+    return snapshot, None
+
+
+def _personalised_trip_id(user_id, generation_request_id):
+    digest = hashlib.sha256(
+        f'{user_id}:{generation_request_id}'.encode('utf-8')
+    ).hexdigest()[:24]
+    return f'personalised_{digest}'
+
+
+def _generation_error_text(error):
+    message = str(error or '').strip()
+    return (message or 'Trip generation failed unexpectedly')[:500]
+
+
+def _snapshot_activity_error(current, snapshot):
+    if not snapshot:
+        return None
+    generation_id = str(snapshot.get('recommendationGenerationId') or '')
+    for activity in current.get('activities', []) or []:
+        activity_generation_id = str(activity.get('recommendationGenerationId') or '')
+        if activity_generation_id and activity_generation_id != generation_id:
+            return 'Itinerary contains recommendations from a different snapshot'
+    return None
 
 
 def _activity_from_destination(item, index):
@@ -56,31 +147,140 @@ def _activity_from_destination(item, index):
         'openingHours': item.get('openingHours') or item.get('hours') or '',
         'indoor': bool(item.get('indoor', False)),
         'recommendedDurationMinutes': int(item.get('recommendedDurationMinutes', 90) or 90),
+        'recommendationGenerationId': item.get('recommendationGenerationId') or '',
     }
 
 
-def _destination_candidates(current):
-    # 1. Use the traveller's ranked recommendations when available.
-    recommendation = retrieveRecord('recommendations', g.uid) or {}
-    items = list(recommendation.get('items', []) or [])
-    if items:
-        return items, recommendation.get('source', 'recommendation')
+def _destination_candidates(current, snapshot=None):
+    destination = str(current.get('destinationArea') or 'Malaysia').strip()
+
+    # 1. Use only the immutable snapshot explicitly linked to this trip.
+    if snapshot:
+        items = _filter_destination_candidates(
+            snapshot.get('recommendationResults') or snapshot.get('items', []),
+            destination,
+        )
+        generation_id = snapshot.get('recommendationGenerationId') or ''
+        return [
+            {**item, 'recommendationGenerationId': generation_id}
+            for item in items
+        ], snapshot.get('source', 'recommendation_snapshot')
 
     # 2. Try live destination information using the itinerary destination.
-    destination = str(current.get('destinationArea') or 'Malaysia').strip()
     if os.getenv('SERPAPI_KEY', '').strip():
         try:
             result = retrieveDestinationResults(f'top tourist attractions {destination}', destination)
-            live = list(result.get('local_results', []) or [])
+            live = _filter_destination_candidates(result.get('local_results', []) or [], destination)
             if live:
-                return live, 'serpapi'
+                return live, 'live_provider'
         except Exception:
             pass
 
     # 3. Interactive deterministic fallback.
     if _fallback_mode():
-        return [dict(x) for x in DESTINATIONS], 'local'
+        fallback = _filter_destination_candidates(DESTINATIONS, destination)
+        if fallback:
+            return fallback, 'fallback'
     return [], 'none'
+
+
+def _generate_itinerary_data(current, payload, snapshot=None):
+    if snapshot:
+        generation_id = str(snapshot.get('recommendationGenerationId') or '')
+        for activity in current.get('activities', []) or []:
+            activity_generation_id = str(activity.get('recommendationGenerationId') or '')
+            if activity_generation_id and activity_generation_id != generation_id:
+                raise ValueError('Itinerary contains recommendations from a different snapshot')
+
+    generation_source = snapshot.get('source', 'recommendation_snapshot') if snapshot else 'existing-activities'
+    working = {**current}
+    if not working.get('activities'):
+        candidates, generation_source = _destination_candidates(working, snapshot)
+        if not candidates:
+            if snapshot:
+                raise RuntimeError('Linked recommendation snapshot has no destination-relevant results')
+            raise RuntimeError('No destination candidates are available for this trip')
+        max_items = min(max(3, _trip_days(working) * 3), 9)
+        working['activities'] = [
+            _activity_from_destination(item, index)
+            for index, item in enumerate(candidates[:max_items])
+        ]
+    else:
+        working['activities'] = [dict(x) for x in working.get('activities', [])]
+
+    selected = [x for x in working.get('activities', []) if x.get('destinationId')]
+    locations = retrieveLocationAndTravelTime(selected)
+    forecast, coords = _forecast_for(working, payload)
+
+    generated = generateItinerary(locations, forecast, working)
+    generated = groupNearbyActivities(generated)
+    generated = checkOpeningHoursAndTravelTime(generated)
+    generated = adjustWeatherSensitiveActivities(generated)
+    generated['generationContext'] = {
+        **generated.get('generationContext', {}),
+        'destinationSource': generation_source,
+        'destinationCoordinates': coords,
+        'recommendationGenerationId': (
+            snapshot.get('recommendationGenerationId') if snapshot else None
+        ),
+    }
+    return generated
+
+
+def _transition_to_generating(iid, current):
+    now = utc_now_iso()
+    patch = {
+        'status': 'generating',
+        'generationStartedAt': now,
+        'updatedAt': now,
+        'generationAttempts': int(current.get('generationAttempts') or 0) + 1,
+        'lastGenerationError': None,
+        'generationFailedAt': None,
+        'retryable': False,
+    }
+    updated = updateRecord('itineraries', iid, patch)
+    return updated or {**current, **patch, 'id': iid}
+
+
+def _run_generation_state_machine(iid, current, payload, snapshot):
+    stage = 'itinerary_generation'
+    partial = None
+    try:
+        partial = _generate_itinerary_data(current, payload, snapshot)
+        stage = 'budget_calculation'
+        budget = calculateBudget(partial)
+        budget['comparison'] = compareBudget(budget)
+
+        stage = 'save_generated_trip'
+        now = utc_now_iso()
+        planned = {
+            **partial,
+            'budgetEstimate': budget,
+            'status': 'planned',
+            'plannedAt': now,
+            'updatedAt': now,
+            'lastGenerationError': None,
+            'generationFailedAt': None,
+            'retryable': False,
+        }
+        persisted = updateRecord('itineraries', iid, planned)
+        if persisted is None:
+            raise RuntimeError('Generated trip could not be saved')
+        return persisted, None, None
+    except Exception as error:
+        message = _generation_error_text(error)
+        now = utc_now_iso()
+        failure = {
+            **(partial or {}),
+            'status': 'generation_failed',
+            'generationFailureStage': stage,
+            'lastGenerationError': message,
+            'generationFailedAt': now,
+            'updatedAt': now,
+            'retryable': True,
+        }
+        persisted = updateRecord('itineraries', iid, failure)
+        return persisted or {**current, **failure, 'id': iid}, message, stage
 
 
 def _forecast_for(current, payload):
@@ -112,7 +312,7 @@ def list_itineraries():
 @auth_required(['traveller'])
 def create_itinerary_route():
     payload = request.get_json(silent=True) or {}
-    if not validateItineraryInput(payload):
+    if not validateItineraryInput(payload) or not str(payload.get('destinationArea') or '').strip():
         return jsonify({'ok': False, 'error': 'Use a title, valid date range, positive traveller count and non-negative budget'}), 400
     itinerary = createItinerary(payload, g.uid)
     budget = calculateBudget(itinerary)
@@ -252,7 +452,7 @@ def lower_cost_alternatives(iid):
 @bp.post('/itineraries/<iid>/lower-cost-alternatives/apply')
 @auth_required(['traveller'])
 def apply_lower_cost_alternative(iid):
-    current = _own_itinerary(iid)
+    current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     payload = request.get_json(silent=True) or {}
@@ -298,6 +498,148 @@ def apply_lower_cost_alternative(iid):
     return jsonify({'ok': True, 'itinerary': updated, 'budget': patch['budgetEstimate'], 'applied': alternative})
 
 
+@bp.post('/personalised-trips/generate')
+@auth_required(['traveller'])
+def generate_personalised_trip_route():
+    payload = request.get_json(silent=True) or {}
+    generation_request_id = str(payload.get('generationRequestId') or '').strip()
+    recommendation_generation_id = str(payload.get('recommendationGenerationId') or '').strip()
+
+    if not validateItineraryInput(payload) or not str(payload.get('destinationArea') or '').strip():
+        return jsonify({
+            'ok': False,
+            'error': 'Use a title, destination, valid date range, positive traveller count and non-negative budget',
+            'stage': 'input_validation',
+            'retryable': False,
+        }), 400
+    if not recommendation_generation_id:
+        return jsonify({
+            'ok': False,
+            'error': 'A recommendation generation ID is required for a personalised trip',
+            'stage': 'snapshot_validation',
+            'retryable': False,
+        }), 400
+    if len(generation_request_id) < 8 or len(generation_request_id) > 128:
+        return jsonify({
+            'ok': False,
+            'error': 'A valid generation request ID is required',
+            'stage': 'input_validation',
+            'retryable': False,
+        }), 400
+
+    iid = _personalised_trip_id(g.uid, generation_request_id)
+    existing = retrieveRecord('itineraries', iid)
+    if existing and existing.get('travellerId') != g.uid:
+        return jsonify({'ok': False, 'error': 'Trip generation request conflict'}), 409
+    if existing and _requested_area(existing.get('destinationArea')) != _requested_area(payload.get('destinationArea')):
+        return jsonify({
+            'ok': False,
+            'error': 'Generation request is already linked to a different destination',
+            'tripId': iid,
+        }), 409
+
+    candidate = existing or {
+        **payload,
+        'travellerId': g.uid,
+        'recommendationGenerationId': recommendation_generation_id,
+        'activities': [],
+    }
+    snapshot, snapshot_error = _recommendation_snapshot(candidate, payload)
+    if snapshot_error:
+        return jsonify({
+            'ok': False,
+            'error': snapshot_error,
+            'tripId': iid if existing else None,
+            'stage': 'snapshot_validation',
+            'retryable': False,
+        }), 409
+    activity_error = _snapshot_activity_error(candidate, snapshot)
+    if activity_error:
+        return jsonify({
+            'ok': False,
+            'error': activity_error,
+            'tripId': iid if existing else None,
+            'stage': 'snapshot_validation',
+            'retryable': False,
+        }), 409
+
+    if existing and existing.get('status') == 'planned':
+        return jsonify({
+            'ok': True,
+            'id': iid,
+            'tripId': iid,
+            'status': 'planned',
+            'itinerary': existing,
+            'reused': True,
+        })
+    if existing and existing.get('status') == 'generating':
+        return jsonify({
+            'ok': True,
+            'id': iid,
+            'tripId': iid,
+            'status': 'generating',
+            'itinerary': existing,
+            'inProgress': True,
+            'reused': True,
+        }), 202
+
+    if existing:
+        current = _transition_to_generating(iid, existing)
+    else:
+        now = utc_now_iso()
+        initial = createItinerary({
+            **payload,
+            'activities': [],
+            'status': 'generating',
+            'planningFlow': 'personalised',
+            'generationRequestId': generation_request_id,
+            'recommendationGenerationId': recommendation_generation_id,
+            'generationStartedAt': now,
+            'generationAttempts': 1,
+            'retryable': False,
+        }, g.uid)
+        try:
+            current = storeRecord('itineraries', initial, iid)
+        except Exception as error:
+            return jsonify({
+                'ok': False,
+                'error': _generation_error_text(error),
+                'stage': 'trip_creation',
+                'status': 'not_created',
+                'retryable': True,
+            }), 500
+
+    planned, error, stage = _run_generation_state_machine(
+        iid,
+        current,
+        {
+            **payload,
+            'recommendationGenerationId': recommendation_generation_id,
+        },
+        snapshot,
+    )
+    if error:
+        return jsonify({
+            'ok': False,
+            'error': error,
+            'id': iid,
+            'tripId': iid,
+            'status': 'generation_failed',
+            'stage': stage,
+            'retryable': True,
+            'itinerary': planned,
+        }), 500
+
+    return jsonify({
+        'ok': True,
+        'id': iid,
+        'tripId': iid,
+        'status': 'planned',
+        'itinerary': planned,
+        'reused': bool(existing),
+    })
+
+
 @bp.post('/itineraries/<iid>/generate')
 @auth_required(['traveller'])
 def generate_itinerary_route(iid):
@@ -305,35 +647,35 @@ def generate_itinerary_route(iid):
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     payload = request.get_json(silent=True) or {}
-
-    # Destination Planning: if the traveller has not manually added activities, use the
-    # ranked recommendation set, live destination search, or rich local fallback candidates.
-    generation_source = 'existing-activities'
-    if not current.get('activities'):
-        candidates, generation_source = _destination_candidates(current)
-        max_items = min(max(3, _trip_days(current) * 3), 9)
-        current['activities'] = [_activity_from_destination(item, index) for index, item in enumerate(candidates[:max_items])]
-    else:
-        current['activities'] = [dict(x) for x in current.get('activities', [])]
-
-    selected = [x for x in current.get('activities', []) if x.get('destinationId')]
-    locations = retrieveLocationAndTravelTime(selected)
-    forecast, coords = _forecast_for(current, payload)
-
-    generated = generateItinerary(locations, forecast, current)
-    generated = groupNearbyActivities(generated)
-    generated = checkOpeningHoursAndTravelTime(generated)
-    generated = adjustWeatherSensitiveActivities(generated)
-    generated['generationContext'] = {
-        **generated.get('generationContext', {}),
-        'destinationSource': generation_source,
-        'destinationCoordinates': coords,
-    }
-    generated['budgetEstimate'] = calculateBudget(generated)
-    generated['budgetEstimate']['comparison'] = compareBudget(generated['budgetEstimate'])
-
-    updateRecord('itineraries', iid, generated)
-    return jsonify({'ok': True, 'itinerary': generated, 'smartFeatures': generated.get('generationContext', {})})
+    snapshot, snapshot_error = _recommendation_snapshot(current, payload)
+    if snapshot_error:
+        return jsonify({'ok': False, 'error': snapshot_error}), 409
+    activity_error = _snapshot_activity_error(current, snapshot)
+    if activity_error:
+        return jsonify({'ok': False, 'error': activity_error}), 409
+    generating = _transition_to_generating(iid, current)
+    planned, error, stage = _run_generation_state_machine(
+        iid, generating, payload, snapshot
+    )
+    if error:
+        return jsonify({
+            'ok': False,
+            'error': error,
+            'id': iid,
+            'tripId': iid,
+            'status': 'generation_failed',
+            'stage': stage,
+            'retryable': True,
+            'itinerary': planned,
+        }), 500
+    return jsonify({
+        'ok': True,
+        'id': iid,
+        'tripId': iid,
+        'status': 'planned',
+        'itinerary': planned,
+        'smartFeatures': planned.get('generationContext', {}),
+    })
 
 
 @bp.post('/itineraries/<iid>/save')
@@ -344,7 +686,7 @@ def save_itinerary_route(iid):
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     if not validateItineraryForSaving(current):
         return jsonify({'ok': False, 'error': 'Itinerary cannot be saved'}), 400
-    return jsonify({'ok': True, 'itinerary': updateRecord('itineraries', iid, {'status': 'saved', 'updatedAt': utc_now_iso()})})
+    return jsonify({'ok': True, 'itinerary': updateRecord('itineraries', iid, {'status': 'planned', 'plannedAt': utc_now_iso(), 'updatedAt': utc_now_iso()})})
 
 
 @bp.delete('/itineraries/<iid>')

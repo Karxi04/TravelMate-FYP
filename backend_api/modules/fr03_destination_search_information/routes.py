@@ -1,5 +1,6 @@
 import os
 import math
+import re
 from flask import Blueprint, request, jsonify, g
 
 from auth_utils import auth_required
@@ -64,20 +65,36 @@ def _cached_destination(reference):
     return item if isinstance(item, dict) else None
 
 
+def _all_destinations():
+    items = [dict(x) for x in DESTINATIONS]
+    try:
+        admin_items = retrieveRecord('admin_destinations') or []
+        for ad in admin_items:
+            if isinstance(ad, dict) and ad.get('status', 'active') != 'archived':
+                items.append(dict(ad))
+    except Exception:
+        pass
+    return items
+
+
 def _local_destination(reference):
     reference = str(reference or '').strip()
+    if not reference:
+        return None
     lowered = reference.lower()
-    for item in DESTINATIONS:
+    for item in _all_destinations():
         candidates = {
             str(item.get('place_id') or ''),
             str(item.get('destinationId') or ''),
+            str(item.get('id') or ''),
             str(item.get('data_id') or ''),
             str(item.get('data_cid') or ''),
             str(item.get('title') or ''),
+            str(item.get('name') or ''),
         }
         if reference in candidates or lowered in {x.lower() for x in candidates if x}:
             return dict(item)
-    return dict(DESTINATIONS[0]) if DESTINATIONS else None
+    return None
 
 
 def _coords(item):
@@ -150,13 +167,29 @@ def search_destinations():
     except Exception as exc:
         if not _fallback_mode():
             return jsonify({'ok': False, 'error': str(exc)}), 502
-        results = [
-            x
-            for x in DESTINATIONS
-            if q.lower()
-            in (' '.join(str(x.get(k, '')) for k in ['title', 'type', 'category', 'description'])).lower()
-        ] or DESTINATIONS
+        query_words = set(re.findall(r'\w+', q.lower()))
+        matched = []
+        for x in _all_destinations():
+            text = (' '.join(str(x.get(k, '')) for k in ['title', 'name', 'type', 'category', 'description', 'location', 'address', 'city', 'state'])).lower()
+            if q.lower() in text or (query_words and query_words.issubset(set(re.findall(r'\w+', text)))):
+                matched.append(dict(x))
+            elif query_words and any(word in text for word in query_words if len(word) > 3):
+                matched.append(dict(x))
+        results = matched
         source = 'local'
+
+    # Always merge matching admin-managed destinations from Firestore
+    try:
+        admin_items = retrieveRecord('admin_destinations') or []
+        for ad in admin_items:
+            if isinstance(ad, dict) and ad.get('status', 'active') != 'archived':
+                text = (' '.join(str(ad.get(k, '')) for k in ['title', 'name', 'type', 'category', 'description', 'location', 'address', 'city', 'state'])).lower()
+                if q.lower() in text:
+                    did = _destination_id(ad)
+                    if not any(_destination_id(r) == did for r in results):
+                        results.insert(0, dict(ad))
+    except Exception:
+        pass
 
     results = applyDestinationSorting(
         applyDestinationFilter(results, filterOption),
@@ -164,6 +197,9 @@ def search_destinations():
     )
 
     for item in results[:30]:
+        did = _destination_id(item)
+        if did and not item.get('destinationId'):
+            item['destinationId'] = did
         _cache(item)
 
     return jsonify({'ok': True, 'results': results, 'source': source})
@@ -221,6 +257,21 @@ def destination_details(place_id):
 def retrieveRatingsAndReviews(place_id):
     """Retrieve TravelMate Traveller reviews from the shared Firestore database."""
     records = retrieveRecord('feedback', filters=[('destinationId', '==', place_id)])
+    if not records:
+        cached = _cached_destination(place_id) or _local_destination(place_id)
+        if cached:
+            other_ids = {
+                str(cached.get('destinationId') or ''),
+                str(cached.get('place_id') or ''),
+                str(cached.get('data_id') or ''),
+                str(cached.get('data_cid') or ''),
+                str(cached.get('title') or ''),
+                str(cached.get('name') or ''),
+            } - {'', str(place_id)}
+            for alt_id in other_ids:
+                records = retrieveRecord('feedback', filters=[('destinationId', '==', alt_id)])
+                if records:
+                    break
     visible = [x for x in records if str(x.get('feedbackStatus', 'visible')).lower() == 'visible']
     visible.sort(key=lambda x: str(x.get('updatedAt') or x.get('submittedAt') or ''), reverse=True)
     ratings = []

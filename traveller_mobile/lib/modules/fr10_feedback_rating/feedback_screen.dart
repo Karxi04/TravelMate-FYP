@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/destination_utils.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
@@ -32,10 +33,9 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     Future.microtask(load);
   }
 
-  String placeId(Map<String, dynamic> p) =>
-      (p['destinationId'] ?? p['place_id'] ?? p['data_id'] ?? p['title'] ?? p['name'] ?? '').toString();
+  String placeId(Map<String, dynamic> p) => DestinationUtils.resolveId(p);
 
-  String placeName(Map<String, dynamic> p) => (p['title'] ?? p['name'] ?? 'Place').toString();
+  String placeName(Map<String, dynamic> p) => DestinationUtils.resolveName(p);
 
   Future<void> load() async {
     try {
