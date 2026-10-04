@@ -13,7 +13,7 @@ from sequence_contract.domain_functions import (
     createItinerary, addActivity, removeActivity, rearrangeActivity, updateActivity,
     checkDestinationExists, checkDestinationLimit, calculateBudget, compareBudget,
     buildLowerCostAlternatives, generateItinerary, groupNearbyActivities,
-    checkOpeningHoursAndTravelTime, adjustWeatherSensitiveActivities,
+    checkOpeningHoursAndTravelTime, adjustWeatherSensitiveActivities, recalculateItinerary,
 )
 
 bp = Blueprint('fr05_itineraries', __name__, url_prefix='/api/fr5')
@@ -146,7 +146,10 @@ def _activity_from_destination(item, index):
         'description': item.get('description') or '',
         'openingHours': item.get('openingHours') or item.get('hours') or '',
         'indoor': bool(item.get('indoor', False)),
-        'recommendedDurationMinutes': int(item.get('recommendedDurationMinutes', 90) or 90),
+        **({'recommendedDurationMinutes': int(item.get('recommendedDurationMinutes') or 0)}
+           if item.get('recommendedDurationMinutes') not in (None, '') else {}),
+        'providerDurationMinutes': item.get('providerDurationMinutes'),
+        'durationSource': item.get('durationSource') or '',
         'recommendationGenerationId': item.get('recommendationGenerationId') or '',
     }
 
@@ -200,7 +203,9 @@ def _generate_itinerary_data(current, payload, snapshot=None):
             if snapshot:
                 raise RuntimeError('Linked recommendation snapshot has no destination-relevant results')
             raise RuntimeError('No destination candidates are available for this trip')
-        max_items = min(max(3, _trip_days(working) * 3), 9)
+        # Let the constraint-aware planner decide actual capacity. The existing
+        # safety limit remains 20, with overflow retained as suggestions.
+        max_items = min(len(candidates), 20)
         working['activities'] = [
             _activity_from_destination(item, index)
             for index, item in enumerate(candidates[:max_items])
@@ -213,9 +218,6 @@ def _generate_itinerary_data(current, payload, snapshot=None):
     forecast, coords = _forecast_for(working, payload)
 
     generated = generateItinerary(locations, forecast, working)
-    generated = groupNearbyActivities(generated)
-    generated = checkOpeningHoursAndTravelTime(generated)
-    generated = adjustWeatherSensitiveActivities(generated)
     generated['generationContext'] = {
         **generated.get('generationContext', {}),
         'destinationSource': generation_source,
@@ -362,13 +364,28 @@ def add_activity_route(iid):
         'description': payload.get('description', ''),
         'openingHours': payload.get('openingHours', ''),
         'indoor': bool(payload.get('indoor', False)),
-        'recommendedDurationMinutes': int(payload.get('recommendedDurationMinutes', 105) or 105),
+        **({'recommendedDurationMinutes': int(payload.get('recommendedDurationMinutes') or 0)}
+           if payload.get('recommendedDurationMinutes') not in (None, '') else {}),
+        'providerDurationMinutes': payload.get('providerDurationMinutes'),
+        'durationSource': payload.get('durationSource') or '',
     }
     updated = addActivity(current, activity)
-    patch = {'activities': updated['activities'], 'updatedAt': updated['updatedAt']}
+    recalculated = recalculateItinerary(
+        {**current, 'activities': updated['activities']},
+        preserveOrder=True,
+        respectDayAssignments=True,
+    )
+    patch = {
+        key: recalculated[key]
+        for key in ('activities', 'unscheduledSuggestions', 'scheduledActivityCount',
+                    'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
+                    'paceApplied', 'dailyPlanningWindow', 'tripDays',
+                    'tripDateRangeLabel', 'updatedAt')
+        if key in recalculated
+    }
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
     updateRecord('itineraries', iid, patch)
-    return jsonify({'ok': True, 'activities': updated['activities'], 'budget': patch['budgetEstimate']})
+    return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
 
 
 @bp.delete('/itineraries/<iid>/activities/<activity_id>')
@@ -378,10 +395,19 @@ def remove_activity_route(iid, activity_id):
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     updated = removeActivity(current, activity_id)
-    patch = {'activities': updated['activities'], 'updatedAt': updated['updatedAt']}
+    recalculated = recalculateItinerary(
+        {**current, 'activities': updated['activities']},
+        preserveOrder=True,
+        respectDayAssignments=True,
+    )
+    patch = {key: recalculated[key] for key in (
+        'activities', 'unscheduledSuggestions', 'scheduledActivityCount',
+        'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
+        'paceApplied', 'dailyPlanningWindow', 'tripDays',
+        'tripDateRangeLabel', 'updatedAt') if key in recalculated}
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
     updateRecord('itineraries', iid, patch)
-    return jsonify({'ok': True, 'activities': updated['activities'], 'budget': patch['budgetEstimate']})
+    return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
 
 
 @bp.put('/itineraries/<iid>/activities/<activity_id>')
@@ -391,10 +417,19 @@ def update_activity_route(iid, activity_id):
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     updated = updateActivity(current, activity_id, request.get_json(silent=True) or {})
-    patch = {'activities': updated['activities'], 'updatedAt': updated['updatedAt']}
+    recalculated = recalculateItinerary(
+        {**current, 'activities': updated['activities']},
+        preserveOrder=True,
+        respectDayAssignments=True,
+    )
+    patch = {key: recalculated[key] for key in (
+        'activities', 'unscheduledSuggestions', 'scheduledActivityCount',
+        'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
+        'paceApplied', 'dailyPlanningWindow', 'tripDays',
+        'tripDateRangeLabel', 'updatedAt') if key in recalculated}
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
     updateRecord('itineraries', iid, patch)
-    return jsonify({'ok': True, 'activities': updated['activities'], 'budget': patch['budgetEstimate']})
+    return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
 
 
 @bp.post('/itineraries/<iid>/activities/rearrange')
@@ -404,8 +439,19 @@ def rearrange_activity_route(iid):
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     updated = rearrangeActivity(current, (request.get_json(silent=True) or {}).get('orderedActivityIds', []))
-    updateRecord('itineraries', iid, {'activities': updated['activities'], 'updatedAt': updated['updatedAt']})
-    return jsonify({'ok': True, 'activities': updated['activities']})
+    recalculated = recalculateItinerary(
+        {**current, 'activities': updated['activities']},
+        preserveOrder=True,
+        respectDayAssignments=True,
+    )
+    patch = {key: recalculated[key] for key in (
+        'activities', 'unscheduledSuggestions', 'scheduledActivityCount',
+        'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
+        'paceApplied', 'dailyPlanningWindow', 'tripDays',
+        'tripDateRangeLabel', 'updatedAt') if key in recalculated}
+    patch['budgetEstimate'] = calculateBudget({**current, **patch})
+    updateRecord('itineraries', iid, patch)
+    return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
 
 
 @bp.get('/itineraries/<iid>/budget')

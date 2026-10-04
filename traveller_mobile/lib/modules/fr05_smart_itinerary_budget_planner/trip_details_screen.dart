@@ -517,6 +517,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           body: const Center(child: Text('Trip not found.')));
     }
     final list = activities;
+    final unscheduled = (t['unscheduledSuggestions'] as List? ?? [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
     return Scaffold(
       appBar: AppBar(
         title: Text((t['title'] ?? 'Trip').toString()),
@@ -728,6 +732,39 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                   );
                 },
               ),
+            if (unscheduled.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              TravelSectionHeader(
+                title: 'Unscheduled suggestions (${unscheduled.length})',
+                subtitle:
+                    'These selected places were kept, but could not be fitted safely into the current dates and constraints.',
+              ),
+              const SizedBox(height: 8),
+              ...unscheduled.map((activity) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: InkCard(
+                      color: InkWashColors.cream,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                              (activity['activityName'] ?? 'Place').toString(),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 4),
+                          Text(
+                            (activity['unscheduledReason'] ??
+                                    'Could not fit within the available itinerary time.')
+                                .toString(),
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: InkWashColors.mutedInk),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )),
+            ],
             const SizedBox(height: 10),
             FilledButton.icon(
               onPressed: busy ? null : addPlaces,

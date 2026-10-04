@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/utils/malaysian_locality.dart';
 import '../core/utils/recommendation_taxonomy.dart';
+import '../core/utils/constraint_itinerary_planner.dart';
 
 /// Local-first implementation of the same REST contracts used by TravelMate.
 ///
@@ -231,6 +232,11 @@ class StandaloneApiService {
     final payload = body ?? <String, dynamic>{};
     if (path == '/api/fr1/me') return _updateProfile(payload);
     if (path == '/api/fr2/preferences') return _savePreferences(payload);
+    if (path.startsWith('/api/fr5/itineraries/') &&
+        path.contains('/activities/')) {
+      final parts = path.split('/');
+      return _updateActivity(parts[4], parts.last, payload);
+    }
     if (path.startsWith('/api/fr5/itineraries/') &&
         path.split('/').length == 5) {
       final id = path.split('/').last;
@@ -3083,9 +3089,21 @@ class StandaloneApiService {
     };
     activities.add(activity);
     trip['activities'] = activities;
+    final recalculated = planConstraintAwareItinerary(trip,
+        preserveOrder: true, respectDayAssignments: true);
+    trip
+      ..clear()
+      ..addAll(recalculated);
+    trip['budgetEstimate'] = _calculateBudget(trip);
     trip['updatedAt'] = _now();
     await _replaceTrip(trip);
-    return {'ok': true, 'activity': activity, 'itinerary': trip};
+    return {
+      'ok': true,
+      'activity': activity,
+      'itinerary': trip,
+      'activities': trip['activities'],
+      'budget': trip['budgetEstimate'],
+    };
   }
 
   Future<dynamic> _removeActivity(String id, String activityId) async {
@@ -3099,9 +3117,49 @@ class StandaloneApiService {
     for (var i = 0; i < activities.length; i++)
       activities[i]['sequenceNo'] = i + 1;
     trip['activities'] = activities;
+    final recalculated = planConstraintAwareItinerary(trip,
+        preserveOrder: true, respectDayAssignments: true);
+    trip
+      ..clear()
+      ..addAll(recalculated);
+    trip['budgetEstimate'] = _calculateBudget(trip);
     trip['updatedAt'] = _now();
     await _replaceTrip(trip);
-    return {'ok': true, 'itinerary': trip};
+    return {
+      'ok': true,
+      'itinerary': trip,
+      'activities': trip['activities'],
+      'budget': trip['budgetEstimate']
+    };
+  }
+
+  Future<dynamic> _updateActivity(
+      String id, String activityId, Map<String, dynamic> payload) async {
+    final trip = await _tripById(id);
+    if (trip == null) throw Exception('Itinerary not found.');
+    final activities = (trip['activities'] as List? ?? [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    final index =
+        activities.indexWhere((item) => '${item['activityId']}' == activityId);
+    if (index < 0) throw Exception('Activity not found.');
+    activities[index] = {...activities[index], ...payload};
+    trip['activities'] = activities;
+    final recalculated = planConstraintAwareItinerary(trip,
+        preserveOrder: true, respectDayAssignments: true);
+    trip
+      ..clear()
+      ..addAll(recalculated);
+    trip['budgetEstimate'] = _calculateBudget(trip);
+    trip['updatedAt'] = _now();
+    await _replaceTrip(trip);
+    return {
+      'ok': true,
+      'itinerary': trip,
+      'activities': trip['activities'],
+      'budget': trip['budgetEstimate'],
+    };
   }
 
   Future<dynamic> _rearrangeActivities(
@@ -3126,12 +3184,22 @@ class StandaloneApiService {
     }
     for (var i = 0; i < ordered.length; i++) {
       ordered[i]['sequenceNo'] = i + 1;
-      ordered[i]['dayNo'] = (i ~/ 3) + 1;
     }
     trip['activities'] = ordered;
+    final recalculated = planConstraintAwareItinerary(trip,
+        preserveOrder: true, respectDayAssignments: true);
+    trip
+      ..clear()
+      ..addAll(recalculated);
+    trip['budgetEstimate'] = _calculateBudget(trip);
     trip['updatedAt'] = _now();
     await _replaceTrip(trip);
-    return {'ok': true, 'itinerary': trip};
+    return {
+      'ok': true,
+      'itinerary': trip,
+      'activities': trip['activities'],
+      'budget': trip['budgetEstimate']
+    };
   }
 
   int _tripDays(Map<String, dynamic> trip) {
@@ -3142,129 +3210,6 @@ class StandaloneApiService {
     } catch (_) {
       return 3;
     }
-  }
-
-  DateTime _tripStartDate(Map<String, dynamic> trip) {
-    return DateTime.tryParse((trip['startDate'] ?? '').toString()) ??
-        DateTime.now().add(const Duration(days: 14));
-  }
-
-  String _time(int minutes) {
-    final value = minutes % (24 * 60);
-    final h = (value ~/ 60).toString().padLeft(2, '0');
-    final m = (value % 60).toString().padLeft(2, '0');
-    return '$h:$m';
-  }
-
-  int? _parseTime(String value) {
-    final match = RegExp(r'(\d{1,2})[:.](\d{2})').firstMatch(value);
-    if (match == null) return null;
-    final h = int.tryParse(match.group(1) ?? '');
-    final m = int.tryParse(match.group(2) ?? '');
-    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
-      return null;
-    }
-    return h * 60 + m;
-  }
-
-  List<int>? _openingWindow(dynamic value) {
-    final text = (value ?? '').toString();
-    if (text.trim().isEmpty) return null;
-    final lower = text.toLowerCase();
-    if (lower.contains('open all day') || lower.contains('24 hour')) {
-      return [0, (24 * 60) - 1];
-    }
-    final match = RegExp(r'(\d{1,2}[:.]\d{2})\s*[–-]\s*(\d{1,2}[:.]\d{2})')
-        .firstMatch(text);
-    if (match == null) return null;
-    final start = _parseTime(match.group(1) ?? '');
-    final end = _parseTime(match.group(2) ?? '');
-    if (start == null || end == null) return null;
-    return [start, end];
-  }
-
-  Map<String, dynamic> _withScheduleMetadata(Map<String, dynamic> trip) {
-    final activities = (trip['activities'] as List? ?? [])
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
-    final days = _tripDays(trip);
-    final start = _tripStartDate(trip);
-    final dayEndMinutes = <int, int>{};
-    final scheduled = <Map<String, dynamic>>[];
-
-    for (var i = 0; i < activities.length; i++) {
-      final item = activities[i];
-      final dayIndex = min(days - 1, i ~/ 3);
-      final firstInDay = !dayEndMinutes.containsKey(dayIndex);
-      final buffer =
-          firstInDay ? 0 : max(20, _num(item['travelBufferMinutes']).round());
-      final duration = max(45,
-          min(360, _num(item['recommendedDurationMinutes'] ?? 105).round()));
-      final startMinutes =
-          firstInDay ? 9 * 60 : (dayEndMinutes[dayIndex] ?? 9 * 60) + buffer;
-      final endMinutes = startMinutes + duration;
-      final dayDate = start.add(Duration(days: dayIndex));
-      final notes = (item['scheduleNotes'] as List? ?? [])
-          .map((e) => e.toString())
-          .where((e) => e.trim().isNotEmpty)
-          .toList();
-      final opening = _openingWindow(item['openingHours']);
-      if (opening != null &&
-          (startMinutes < opening[0] || endMinutes > opening[1])) {
-        notes.add(
-            'Check opening hours before visiting: ${item['openingHours']}.');
-      } else if ((item['openingHours'] ?? '').toString().trim().isNotEmpty) {
-        notes.add('Opening info: ${item['openingHours']}.');
-      }
-
-      scheduled.add({
-        ...item,
-        'dayNo': dayIndex + 1,
-        'dayDate': _date(dayDate),
-        'dayLabel': 'Day ${dayIndex + 1} · ${_date(dayDate)}',
-        'sequenceNo': i + 1,
-        'timeSlot': _time(startMinutes),
-        'scheduledStartTime': _time(startMinutes),
-        'scheduledEndTime': _time(endMinutes),
-        'timeRangeLabel': '${_time(startMinutes)} - ${_time(endMinutes)}',
-        'travelBufferMinutes': buffer,
-        'recommendedDurationMinutes': duration,
-        'scheduleNotes': notes.take(3).toList(),
-      });
-      dayEndMinutes[dayIndex] = endMinutes;
-    }
-
-    final daily = <Map<String, dynamic>>[];
-    for (var day = 0; day < days; day++) {
-      final dayItems = scheduled.where((e) => e['dayNo'] == day + 1).toList();
-      daily.add({
-        'dayNo': day + 1,
-        'dayDate': _date(start.add(Duration(days: day))),
-        'dayLabel': 'Day ${day + 1} · ${_date(start.add(Duration(days: day)))}',
-        'activities': dayItems,
-        'estimatedMinutes': dayItems.fold<int>(
-          0,
-          (sum, e) =>
-              sum +
-              _num(e['recommendedDurationMinutes']).round() +
-              _num(e['travelBufferMinutes']).round(),
-        ),
-        'estimatedCost': _money(dayItems.fold<double>(
-            0, (sum, e) => sum + _num(e['estimatedCost']))),
-      });
-    }
-
-    return {
-      ...trip,
-      'activities': scheduled,
-      'tripDays': days,
-      'tripDateRangeLabel':
-          '${_date(start)} to ${_date(start.add(Duration(days: days - 1)))}',
-      'dailySchedule': daily,
-      'totalScheduledMinutes': daily.fold<int>(
-          0, (sum, e) => sum + _num(e['estimatedMinutes']).round()),
-    };
   }
 
   Future<dynamic> _generateItinerary(
@@ -3315,7 +3260,7 @@ class StandaloneApiService {
             'No destination candidates are available for this trip.');
       }
       activities = recs
-          .take(6)
+          .take(20)
           .map((item) => {
                 'activityId':
                     '${id}_a${DateTime.now().microsecondsSinceEpoch}_${item['destinationId']}',
@@ -3330,8 +3275,12 @@ class StandaloneApiService {
                 'type': item['type'] ?? item['category'],
                 'description': item['description'] ?? '',
                 'openingHours': item['openingHours'] ?? '',
-                'recommendedDurationMinutes':
-                    item['recommendedDurationMinutes'] ?? 105,
+                if (item['recommendedDurationMinutes'] != null)
+                  'recommendedDurationMinutes':
+                      item['recommendedDurationMinutes'],
+                if (item['providerDurationMinutes'] != null)
+                  'providerDurationMinutes': item['providerDurationMinutes'],
+                'durationSource': item['durationSource'] ?? '',
                 if (generationId.isNotEmpty)
                   'recommendationGenerationId': generationId,
               })
@@ -3341,6 +3290,7 @@ class StandaloneApiService {
     final days = _tripDays(trip);
     final weatherNotes = <String>[];
     bool likelyRain = false;
+    Map<String, dynamic> forecastData = {};
     try {
       final location = await _searchLocation(
           (payload['destinationName'] ?? trip['destinationArea'] ?? '')
@@ -3352,7 +3302,9 @@ class StandaloneApiService {
           'latitude': '${first['latitude']}',
           'longitude': '${first['longitude']}',
         });
-        final daily = forecast['weather']?['daily'] as Map?;
+        forecastData = Map<String, dynamic>.from(
+            forecast['weather'] is Map ? forecast['weather'] as Map : const {});
+        final daily = forecastData['daily'] as Map?;
         final rain = (daily?['precipitation_probability_max'] as List? ?? []);
         likelyRain = rain.any((v) => _num(v) >= 60);
         if (likelyRain)
@@ -3362,24 +3314,6 @@ class StandaloneApiService {
     } catch (_) {
       weatherNotes.add(
           'Weather information will refresh when an internet connection is available.');
-    }
-
-    if (likelyRain) {
-      activities.sort((a, b) {
-        final ai = a['indoor'] == true ? 0 : 1;
-        final bi = b['indoor'] == true ? 0 : 1;
-        return ai.compareTo(bi);
-      });
-    }
-
-    for (var i = 0; i < activities.length; i++) {
-      activities[i]['dayNo'] = (i ~/ 3) % days + 1;
-      activities[i]['sequenceNo'] = i + 1;
-      activities[i]['weatherNote'] =
-          likelyRain && activities[i]['indoor'] != true
-              ? 'Keep an indoor alternative available if rain develops.'
-              : '';
-      activities[i]['recommendedDurationMinutes'] ??= 105;
     }
 
     trip['activities'] = activities;
@@ -3396,7 +3330,8 @@ class StandaloneApiService {
           recommendationSnapshot?['recommendationGenerationId'],
     };
     trip['updatedAt'] = _now();
-    final scheduled = _withScheduleMetadata(trip);
+    final scheduled =
+        planConstraintAwareItinerary(trip, forecast: forecastData);
     await _replaceTrip(scheduled);
     return {'ok': true, 'itinerary': scheduled};
   }
@@ -3504,12 +3439,22 @@ class StandaloneApiService {
     final activityCost =
         activities.fold<double>(0, (sum, e) => sum + _num(e['estimatedCost']));
     final flight = _num(trip['flightCost']);
-    final hotel = _num(trip['hotelCost']);
-    final carRental = _num(trip['carRentalCost']);
     final days = _tripDays(trip);
+    final nights = max(0, days - 1);
+    final rooms = max(1, _num(trip['roomQuantity']).round());
+    final hasHotelTotal =
+        trip['hotelCost'] != null && '${trip['hotelCost']}'.trim().isNotEmpty;
+    final nightlyRate = _num(trip['hotelNightlyRate'] ?? trip['nightlyRate']);
+    final hotel =
+        hasHotelTotal ? _num(trip['hotelCost']) : nightlyRate * nights * rooms;
+    final carRental = _num(trip['carRentalCost']);
     final travellers = max(1, _num(trip['travellerCount']).round());
-    final transport = max(30.0, days * 35.0);
-    final food = days * travellers * 55.0;
+    final transport = trip['transportCost'] != null
+        ? _num(trip['transportCost'])
+        : days * 35.0;
+    final food = trip['foodCost'] != null
+        ? _num(trip['foodCost'])
+        : days * travellers * 60.0;
     final total = flight + hotel + carRental + transport + food + activityCost;
     final limit = _num(trip['budgetLimit']);
     final remaining = limit - total;
@@ -3519,6 +3464,8 @@ class StandaloneApiService {
       'limit': _money(limit),
       'flight': _money(flight),
       'hotel': _money(hotel),
+      'hotelNights': nights,
+      'hotelRooms': rooms,
       'carRental': _money(carRental),
       'transport': _money(transport),
       'food': _money(food),
@@ -3527,6 +3474,21 @@ class StandaloneApiService {
       'remaining': _money(remaining),
       'overBy': _money(over),
       'status': status,
+      'costProvenance': {
+        'flight': flight > 0 ? 'confirmed' : 'not_selected',
+        'hotel': hasHotelTotal
+            ? 'confirmed_total'
+            : (nightlyRate > 0
+                ? 'estimated_from_nightly_rate'
+                : 'not_selected'),
+        'carRental': carRental > 0 ? 'confirmed' : 'not_selected',
+        'transport': trip['transportCost'] != null
+            ? 'provided'
+            : 'estimated_daily_allowance',
+        'food':
+            trip['foodCost'] != null ? 'provided' : 'estimated_daily_allowance',
+        'activities': 'mixed_estimates',
+      },
       'comparison': status == 'over_budget'
           ? 'The current plan exceeds the budget by RM ${_money(over)}. Review the suggested lower-cost alternatives.'
           : 'The current plan is within budget with RM ${_money(max(0, remaining))} remaining.',
