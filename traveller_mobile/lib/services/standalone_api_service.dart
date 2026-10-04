@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/utils/malaysian_locality.dart';
+import '../core/utils/recommendation_taxonomy.dart';
 
 /// Local-first implementation of the same REST contracts used by TravelMate.
 ///
@@ -2143,6 +2144,10 @@ class StandaloneApiService {
           'collaborative': .30,
           'popularity': .10
         },
+        'contentTaxonomy': true,
+        'collaborativeColdStart': 'neutral_confidence_aware',
+        'deduplication': true,
+        'diversityReranking': true,
         'ranking': true,
       };
 
@@ -2768,164 +2773,39 @@ class StandaloneApiService {
       };
     }
     final interests = (preferences['interests'] as List? ?? [])
-        .map((e) => _normaliseSearch(e.toString()))
-        .where((e) => e.isNotEmpty)
-        .toSet();
-    final travelType =
-        _normaliseSearch((preferences['travelType'] ?? '').toString());
-    final budget =
-        _normaliseSearch((preferences['budgetRange'] ?? 'Moderate').toString());
-    final pace = _normaliseSearch((preferences['travelPace'] ?? '').toString());
-    final purpose =
-        _normaliseSearch((preferences['travelPurpose'] ?? '').toString());
-    final personality =
-        _normaliseSearch((preferences['travelPersonality'] ?? '').toString());
-    final sleeping =
-        _normaliseSearch((preferences['sleepingType'] ?? '').toString());
-
-    final scored = <Map<String, dynamic>>[];
+        .map((value) => value.toString())
+        .where((value) => value.trim().isNotEmpty)
+        .toList();
+    final travelType = (preferences['travelType'] ?? '').toString();
+    final budget = (preferences['budgetRange'] ?? 'Moderate').toString();
+    final pace = (preferences['travelPace'] ?? '').toString();
+    final purpose = (preferences['travelPurpose'] ?? '').toString();
+    final personality = (preferences['travelPersonality'] ?? '').toString();
+    final eligibleCandidates = <Map<String, dynamic>>[];
     for (final raw in _destinations) {
       final candidate = MalaysianLocality.validateCandidate(
           Map<String, dynamic>.from(raw), destinationScope);
       if (candidate['geographicEligibility']?['eligible'] != true) continue;
-      final item = Map<String, dynamic>.from(candidate);
-      final itemInterests = (item['interests'] as List? ?? [])
-          .map((e) => _normaliseSearch(e.toString()))
-          .toSet();
-      final itemTypes = <String>{
-        _normaliseSearch((item['type'] ?? '').toString()),
-        _normaliseSearch((item['category'] ?? '').toString()),
-      };
-      final itemPace = (item['pace'] as List? ?? [])
-          .map((e) => _normaliseSearch(e.toString()))
-          .toSet();
-      final itemPurpose = (item['purpose'] as List? ?? [])
-          .map((e) => _normaliseSearch(e.toString()))
-          .toSet();
-      final itemPersonality = (item['personality'] as List? ?? [])
-          .map((e) => _normaliseSearch(e.toString()))
-          .toSet();
-
-      final interestHits =
-          interests.isEmpty ? 0 : itemInterests.intersection(interests).length;
-      final interestScore = interests.isEmpty
-          ? .55
-          : (interestHits / max(1, interests.length)).clamp(0.0, 1.0);
-      final typeScore = travelType.isEmpty
-          ? .60
-          : (itemTypes
-                  .any((x) => x.contains(travelType) || travelType.contains(x))
-              ? 1.0
-              : itemInterests.any(
-                      (x) => x.contains(travelType) || travelType.contains(x))
-                  ? .82
-                  : .35);
-      final budgetLevel =
-          _normaliseSearch((item['budgetLevel'] ?? '').toString());
-      final budgetScore = budget == budgetLevel
-          ? 1.0
-          : (budget == 'moderate' &&
-                  (budgetLevel == 'budget' || budgetLevel == 'premium'))
-              ? .70
-              : (budget == 'premium' && budgetLevel == 'moderate') ||
-                      (budget == 'budget' && budgetLevel == 'moderate')
-                  ? .60
-                  : .38;
-      final paceScore =
-          pace.isEmpty ? .65 : (itemPace.contains(pace) ? 1.0 : .48);
-      final purposeScore =
-          purpose.isEmpty ? .65 : (itemPurpose.contains(purpose) ? 1.0 : .45);
-      final personalityScore = personality.isEmpty
-          ? .65
-          : (itemPersonality.contains(personality) ? 1.0 : .45);
-      final sleepScore = sleeping.contains('comfort') && item['indoor'] == true
-          ? .90
-          : sleeping.contains('early') && item['indoor'] == false
-              ? .82
-              : .65;
-
-      final content = ((interestScore * .34) +
-              (typeScore * .15) +
-              (budgetScore * .13) +
-              (paceScore * .11) +
-              (purposeScore * .11) +
-              (personalityScore * .11) +
-              (sleepScore * .05)) *
-          100;
-
-      final feedback =
-          (payload['sharedFeedback'] as List? ?? await _readList('feedback'))
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
-      final placeFeedback = feedback.where((f) =>
-          (f['destinationId'] ?? '').toString() ==
-          (item['destinationId'] ?? '').toString());
-      final ownSignals = placeFeedback.isEmpty
-          ? 0.0
-          : placeFeedback
-                  .map((e) => _num(e['rating']) / 5 * 100)
-                  .reduce((a, b) => a + b) /
-              placeFeedback.length;
-      final providerSignal =
-          (_num(item['rating']) / 5 * 70) + (_num(item['popularity']) * .30);
-      final collaborative = placeFeedback.isEmpty
-          ? providerSignal
-          : (providerSignal * .55 + ownSignals * .45);
-      final popularity = _num(item['popularity']).clamp(0, 100).toDouble();
-      final score = (content * .60 + collaborative * .30 + popularity * .10)
-          .clamp(0, 100)
-          .toDouble();
-
-      final matched =
-          itemInterests.intersection(interests).map(_titleCase).toList();
-      final reasons = <String>[];
-      if (matched.isNotEmpty)
-        reasons.add('Matches ${matched.take(3).join(', ')}');
-      if (travelType.isNotEmpty && typeScore >= .8)
-        reasons.add('Fits your ${_titleCase(travelType)} travel style');
-      if (pace.isNotEmpty && paceScore == 1.0)
-        reasons.add('Suitable for your ${_titleCase(pace)} pace');
-      if (purpose.isNotEmpty && purposeScore == 1.0)
-        reasons.add('Good fit for ${_titleCase(purpose)}');
-      if (budgetScore >= .9)
-        reasons.add('Matches your ${_titleCase(budget)} budget preference');
-
-      item.addAll({
-        'contentScore': content.round(),
-        'collaborativeScore': collaborative.round(),
-        'popularityScore': popularity.round(),
-        'score': score.round(),
-        'scoreBreakdown': {
-          'content': content.round(),
-          'collaborative': collaborative.round(),
-          'popularity': popularity.round(),
-        },
-        'reason': reasons.isEmpty
-            ? 'Strong combined match for your current travel profile.'
-            : reasons.join(' • '),
-        'finalScore': score.round(),
-        'recommendationReason': reasons.isEmpty
-            ? 'Strong combined match for your current travel profile.'
-            : reasons.join(' • '),
-        'recommendationSource': 'fallback',
-        'matchReasons': reasons,
-        'collaborativeSource': placeFeedback.isEmpty
-            ? 'rating and popularity signal'
-            : 'TravelMate Traveller rating signal',
-      });
-      scored.add(item);
+      eligibleCandidates.add(Map<String, dynamic>.from(candidate));
     }
 
-    scored.sort((a, b) => _num(b['score']).compareTo(_num(a['score'])));
-    for (var i = 0; i < scored.length; i++) {
-      scored[i]['rankNo'] = i + 1;
-    }
+    final feedback =
+        (payload['sharedFeedback'] as List? ?? await _readList('feedback'))
+            .whereType<Map>()
+            .map((value) => Map<String, dynamic>.from(value))
+            .toList();
+    final scored = RecommendationScoring.rankCandidates(
+      candidates: eligibleCandidates,
+      preferences: preferences,
+      feedback: feedback,
+      currentUserId: _uid,
+      limit: 12,
+    );
     final top = scored
+        .map((item) => {...item, 'recommendationSource': 'fallback'})
         .map((item) =>
             MalaysianLocality.validateCandidate(item, destinationScope))
         .where((item) => item['geographicEligibility']?['eligible'] == true)
-        .take(12)
         .toList();
     final generatedAt = _now();
     final generationId =
@@ -2956,7 +2836,7 @@ class StandaloneApiService {
       'source': 'fallback',
       'engine': _engineInfo,
       'profileUsed': {
-        'interests': interests.toList(),
+        'interests': interests,
         'travelType': travelType,
         'budget': budget,
         'pace': pace,
