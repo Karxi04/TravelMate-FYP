@@ -535,8 +535,9 @@ class TravelStatusPill extends StatelessWidget {
 
 class TravelPlaceImage extends StatelessWidget {
   final Map<String, dynamic> place;
-  final double height;
+  final double? height;
   final double? width;
+  final double? aspectRatio;
   final BorderRadius borderRadius;
 
   const TravelPlaceImage({
@@ -544,6 +545,7 @@ class TravelPlaceImage extends StatelessWidget {
     required this.place,
     this.height = 150,
     this.width,
+    this.aspectRatio,
     this.borderRadius = const BorderRadius.all(Radius.circular(18)),
   });
 
@@ -616,53 +618,59 @@ class TravelPlaceImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final image = FutureBuilder<String?>(
+      future: PlaceImageService.resolve(place),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return Container(
+            color: InkWashColors.paleBlue,
+            alignment: Alignment.center,
+            child: const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+
+        final url = snapshot.data;
+        if (url == null || url.isEmpty) return _fallback();
+
+        return Image.network(
+          url,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          excludeFromSemantics: true,
+          errorBuilder: (context, error, stackTrace) => _fallback(),
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return Container(
+              color: InkWashColors.paleBlue,
+              alignment: Alignment.center,
+              child: const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    final sizedImage = aspectRatio == null
+        ? SizedBox(width: width, height: height, child: image)
+        : SizedBox(
+            width: width,
+            child: AspectRatio(aspectRatio: aspectRatio!, child: image),
+          );
+
     return Semantics(
       image: true,
       label: 'Image of $_title',
       child: ClipRRect(
         borderRadius: borderRadius,
-        child: SizedBox(
-          width: width,
-          height: height,
-          child: FutureBuilder<String?>(
-            future: PlaceImageService.resolve(place),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return Container(
-                  color: InkWashColors.paleBlue,
-                  alignment: Alignment.center,
-                  child: const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                );
-              }
-
-              final url = snapshot.data;
-              if (url == null || url.isEmpty) return _fallback();
-
-              return Image.network(
-                url,
-                fit: BoxFit.cover,
-                gaplessPlayback: true,
-                errorBuilder: (context, error, stackTrace) => _fallback(),
-                loadingBuilder: (context, child, progress) {
-                  if (progress == null) return child;
-                  return Container(
-                    color: InkWashColors.paleBlue,
-                    alignment: Alignment.center,
-                    child: const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ),
+        child: sizedImage,
       ),
     );
   }

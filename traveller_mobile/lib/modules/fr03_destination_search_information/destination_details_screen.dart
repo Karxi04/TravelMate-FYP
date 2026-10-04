@@ -10,10 +10,12 @@ import '../fr10_feedback_rating/feedback_screen.dart';
 
 class DestinationDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> initialDestination;
+  final ApiService? api;
 
   const DestinationDetailsScreen({
     super.key,
     required this.initialDestination,
+    this.api,
   });
 
   @override
@@ -22,7 +24,7 @@ class DestinationDetailsScreen extends StatefulWidget {
 }
 
 class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
-  final ApiService api = ApiService();
+  late final ApiService api;
 
   late Map<String, dynamic> detail;
   Map<String, dynamic>? reviewInfo;
@@ -39,6 +41,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   @override
   void initState() {
     super.initState();
+    api = widget.api ?? ApiService();
     detail = Map<String, dynamic>.from(widget.initialDestination);
     Future.microtask(loadDetails);
   }
@@ -265,10 +268,12 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   dynamic get providerRating => detail['rating'];
   dynamic get providerReviewCount => detail['reviews'];
 
-  dynamic get rating =>
-      communityReviewCount > 0 ? communityRating : (providerRating ?? communityRating);
-  dynamic get reviewCount =>
-      communityReviewCount > 0 ? communityReviewCount : (providerReviewCount ?? communityReviewCount);
+  dynamic get rating => communityReviewCount > 0
+      ? communityRating
+      : (providerRating ?? communityRating);
+  dynamic get reviewCount => communityReviewCount > 0
+      ? communityReviewCount
+      : (providerReviewCount ?? communityReviewCount);
 
   List<String> imageUrls() {
     final urls = <String>{};

@@ -1,69 +1,117 @@
 import 'package:flutter/material.dart';
+
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
+import '../../widgets/recommendation_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../fr03_destination_search_information/destination_details_screen.dart';
 
 class RecommendationScreen extends StatefulWidget {
   final String initialDestination;
-  const RecommendationScreen(
-      {super.key, this.initialDestination = 'Penang, Malaysia'});
+  final ApiService? api;
+
+  const RecommendationScreen({
+    super.key,
+    this.initialDestination = 'Penang, Malaysia',
+    this.api,
+  });
 
   @override
   State<RecommendationScreen> createState() => _RecommendationScreenState();
 }
 
 class _RecommendationScreenState extends State<RecommendationScreen> {
-  final api = ApiService();
+  late final ApiService api;
   late final TextEditingController destination;
   List<dynamic> items = [];
-  bool busy = false;
+  bool busy = true;
   String source = '';
-  Map<String, dynamic> engine = {};
   Map<String, dynamic> preferences = {};
+  String? errorMessage;
 
   @override
   void initState() {
     super.initState();
+    api = widget.api ?? ApiService();
     destination = TextEditingController(text: widget.initialDestination);
     Future.microtask(loadExisting);
   }
 
+  @override
+  void dispose() {
+    destination.dispose();
+    super.dispose();
+  }
+
+  String _errorText(Object error) =>
+      error.toString().replaceFirst('Exception: ', '');
+
   Future<void> loadExisting() async {
+    if (mounted) {
+      setState(() {
+        busy = true;
+        errorMessage = null;
+      });
+    }
+
+    Object? recommendationError;
     try {
       final data = await api.get('/api/fr4/recommendations');
+      if (mounted && data is Map) {
+        setState(() {
+          items = data['recommendations'] as List? ?? [];
+          source = (data['source'] ?? '').toString();
+        });
+      }
+    } catch (error) {
+      recommendationError = error;
+    }
+
+    try {
       final prefData = await api.get('/api/fr2/preferences');
-      if (!mounted) return;
-      setState(() {
-        items = data['recommendations'] ?? [];
-        source = (data['source'] ?? '').toString();
-        engine = data['engine'] is Map
-            ? Map<String, dynamic>.from(data['engine'] as Map)
-            : {};
-        preferences = prefData['preferences'] is Map
-            ? Map<String, dynamic>.from(prefData['preferences'] as Map)
-            : {};
-      });
-    } catch (_) {}
+      if (mounted && prefData is Map && prefData['preferences'] is Map) {
+        setState(() {
+          preferences = Map<String, dynamic>.from(
+            prefData['preferences'] as Map,
+          );
+        });
+      }
+    } catch (_) {
+      // Recommendations remain useful when the compact profile summary fails.
+    }
+
+    if (!mounted) return;
+    setState(() {
+      busy = false;
+      if (recommendationError != null) {
+        errorMessage = _errorText(recommendationError);
+      }
+    });
   }
 
   Future<void> generate() async {
-    setState(() => busy = true);
+    final requestedArea = destination.text.trim();
+    if (requestedArea.isEmpty) {
+      setState(() => errorMessage = 'Enter a destination area first.');
+      return;
+    }
+
+    setState(() {
+      busy = true;
+      errorMessage = null;
+    });
     try {
       final data = await api.post('/api/fr4/recommendations/generate', {
-        'destinationArea': destination.text.trim(),
+        'destinationArea': requestedArea,
       });
-      if (!mounted) return;
+      if (!mounted || data is! Map) return;
       setState(() {
-        items = data['recommendations'] ?? [];
+        items = data['recommendations'] as List? ?? [];
         source = (data['source'] ?? '').toString();
-        engine = data['engine'] is Map
-            ? Map<String, dynamic>.from(data['engine'] as Map)
-            : {};
       });
-    } catch (e) {
-      if (mounted) showError(context, e);
+    } catch (error) {
+      if (mounted) setState(() => errorMessage = _errorText(error));
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -75,7 +123,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       final trips = data['items'] as List? ?? [];
       if (!mounted) return;
       if (trips.isEmpty) {
-        showError(context, 'Create an itinerary in Trips first.');
+        showError(context, 'Plan a trip before adding this recommendation.');
         return;
       }
       final selected = await showModalBottomSheet<Map<String, dynamic>>(
@@ -84,19 +132,28 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         builder: (context) => SafeArea(
           child: ListView(
             shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              0,
+              AppSpacing.md,
+              AppSpacing.lg,
+            ),
             children: [
-              const Text('Add recommendation to trip',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 10),
+              Text(
+                'Add to trip',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: AppSpacing.xs),
               ...trips.map((raw) {
                 final trip = Map<String, dynamic>.from(raw as Map);
                 return ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const CircleAvatar(
                     backgroundColor: InkWashColors.cream,
-                    child: Icon(Icons.luggage_outlined,
-                        color: InkWashColors.blueGrey),
+                    child: Icon(
+                      Icons.luggage_outlined,
+                      color: InkWashColors.blueGrey,
+                    ),
                   ),
                   title: Text((trip['title'] ?? 'Trip').toString()),
                   subtitle: Text((trip['destinationArea'] ?? '').toString()),
@@ -127,39 +184,56 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Added to ${selected['title'] ?? 'itinerary'}')),
+          SnackBar(content: Text('Added to ${selected['title'] ?? 'trip'}')),
         );
       }
-    } catch (e) {
-      if (mounted) showError(context, e);
+    } catch (error) {
+      if (mounted) showError(context, error);
     }
   }
 
-  Widget scoreBar(String label, dynamic value) {
-    final score = double.tryParse((value ?? 0).toString()) ?? 0;
-    return Padding(
-      padding: const EdgeInsets.only(top: 5),
+  List<String> get interests => (preferences['interests'] as List? ?? [])
+      .map((value) => value.toString())
+      .where((value) => value.trim().isNotEmpty)
+      .toList();
+
+  Widget _profileSummary() {
+    if (preferences.isEmpty) return const SizedBox.shrink();
+    final personality = (preferences['travelPersonality'] ??
+            preferences['travelType'] ??
+            'Your travel style')
+        .toString();
+    final pace = (preferences['travelPace'] ?? '').toString();
+    return InkCard(
+      color: InkWashColors.cream,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-              width: 92,
-              child: Text(label, style: const TextStyle(fontSize: 12))),
+          const Icon(
+            Icons.explore_outlined,
+            color: AppColors.primaryStrong,
+            semanticLabel: 'Travel style',
+          ),
+          const SizedBox(width: AppSpacing.sm),
           Expanded(
-            child: LinearProgressIndicator(
-              value: score.clamp(0, 100).toDouble() / 100.0,
-              minHeight: 7,
-              borderRadius: BorderRadius.circular(20),
-              backgroundColor: InkWashColors.softGrey.withValues(alpha: .35),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(personality,
+                    style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  [
+                    ...interests.take(3),
+                    if (pace.trim().isNotEmpty) '$pace pace',
+                  ].join(' · '),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
-          SizedBox(
-              width: 42,
-              child: Text(score.toStringAsFixed(0),
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w700))),
         ],
       ),
     );
@@ -168,196 +242,93 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('For You')),
+      appBar: AppBar(title: const Text('For you')),
       body: RefreshIndicator(
         onRefresh: generate,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 6, 18, 28),
+          padding: AppSpacing.page,
           children: [
-            const TravelSectionHeader(
-              title: 'Hybrid recommendations',
+            const AppSectionHeader(
+              title: 'Places matched to you',
               subtitle:
-                  'Content matching + collaborative filtering + weighted scoring + ranking',
+                  'Based on your saved interests and travel style. Refresh only when you want a new list.',
             ),
-            const SizedBox(height: 12),
             if (preferences.isNotEmpty) ...[
-              InkCard(
-                color: InkWashColors.cream,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: AppSpacing.md),
+              _profileSummary(),
+            ],
+            const SizedBox(height: AppSpacing.md),
+            AppTextField(
+              controller: destination,
+              label: 'Destination area',
+              hint: 'e.g. Penang, Malaysia',
+              prefixIcon: Icons.location_on_outlined,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => busy ? null : generate(),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            PrimaryButton(
+              label: busy ? 'Refreshing recommendations' : 'Refresh for you',
+              icon: Icons.auto_awesome_rounded,
+              loading: busy,
+              onPressed: generate,
+            ),
+            if (errorMessage != null && items.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Container(
+                padding: AppSpacing.card,
+                decoration: BoxDecoration(
+                  color: AppColors.warningSoft,
+                  borderRadius: AppRadii.control,
+                ),
+                child: Row(
                   children: [
-                    const Text('Recommendation profile',
-                        style: TextStyle(fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 7),
-                    Wrap(
-                      spacing: 7,
-                      runSpacing: 7,
-                      children: [
-                        TravelStatusPill(
-                            text:
-                                (preferences['travelPersonality'] ?? 'Balanced')
-                                    .toString(),
-                            icon: Icons.psychology_outlined),
-                        TravelStatusPill(
-                            text: (preferences['travelType'] ?? 'Mixed')
-                                .toString(),
-                            icon: Icons.explore_outlined),
-                        TravelStatusPill(
-                            text: (preferences['budgetRange'] ?? 'Moderate')
-                                .toString(),
-                            icon: Icons.account_balance_wallet_outlined),
-                        TravelStatusPill(
-                            text: (preferences['travelPace'] ?? 'Moderate')
-                                .toString(),
-                            icon: Icons.speed_rounded),
-                      ],
+                    const Icon(
+                      Icons.info_outline_rounded,
+                      color: AppColors.warning,
                     ),
-                    if (preferences['interests'] is List) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                          'Interests: ${(preferences['interests'] as List).join(', ')}',
-                          style: const TextStyle(
-                              fontSize: 12, color: InkWashColors.charcoal)),
-                    ],
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(child: Text(errorMessage!)),
+                    TertiaryButton(label: 'Retry', onPressed: generate),
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
             ],
-            TextField(
-              controller: destination,
-              decoration: const InputDecoration(
-                labelText: 'Destination area',
-                prefixIcon: Icon(Icons.location_on_outlined),
-              ),
-            ),
-            const SizedBox(height: 10),
-            FilledButton.icon(
-              onPressed: busy ? null : generate,
-              icon: const Icon(Icons.auto_awesome_rounded),
-              label: Text(
-                  busy ? 'Generating...' : 'Generate personalised ranking'),
-            ),
-            if (source.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              TravelStatusPill(
-                text: source == 'serpapi'
-                    ? 'LIVE DESTINATION DATA'
-                    : 'PERSONALISED DESTINATION DATA',
-                icon: source == 'serpapi'
-                    ? Icons.cloud_done_outlined
-                    : Icons.auto_awesome_outlined,
-              ),
-            ],
-            const SizedBox(height: 18),
-            if (items.isEmpty)
-              const TravelEmptyState(
+            const SizedBox(height: AppSpacing.xl),
+            if (busy && items.isEmpty)
+              const AppLoadingState(message: 'Loading recommendations…')
+            else if (errorMessage != null && items.isEmpty)
+              AppErrorState(message: errorMessage!, onRetry: loadExisting)
+            else if (items.isEmpty)
+              TravelEmptyState(
                 icon: Icons.auto_awesome_outlined,
-                title: 'No ranking yet',
+                title: 'No recommendations yet',
                 message:
-                    'Complete Travel Preferences, enter a destination area and generate your recommendation list.',
-              ),
-            ...items.map((raw) {
-              final item = Map<String, dynamic>.from(raw as Map);
-              final breakdown = item['scoreBreakdown'] is Map
-                  ? Map<String, dynamic>.from(item['scoreBreakdown'] as Map)
-                  : <String, dynamic>{};
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: InkCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: InkWashColors.cream,
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                            child: Text('#${item['rankNo'] ?? '-'}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w900)),
-                          ),
-                          const SizedBox(width: 11),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                    (item['title'] ??
-                                            item['name'] ??
-                                            'Destination')
-                                        .toString(),
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 17)),
-                                const SizedBox(height: 3),
-                                Text(
-                                    (item['address'] ?? item['type'] ?? '')
-                                        .toString(),
-                                    style: const TextStyle(
-                                        color: InkWashColors.mutedInk)),
-                              ],
-                            ),
-                          ),
-                          TravelStatusPill(
-                              text: '${item['score'] ?? 0}% match',
-                              icon: Icons.insights_rounded),
-                        ],
+                    'Enter a destination area and refresh to find places matched to your travel style.',
+                actionLabel: 'Refresh for you',
+                onAction: generate,
+              )
+            else
+              ...items.map((raw) {
+                final item = Map<String, dynamic>.from(raw as Map);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                  child: RecommendationCard(
+                    recommendation: item,
+                    source: source,
+                    onView: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => DestinationDetailsScreen(
+                          initialDestination: item,
+                          api: widget.api,
+                        ),
                       ),
-                      const SizedBox(height: 10),
-                      Text((item['reason'] ?? '').toString()),
-                      scoreBar('Content 60%',
-                          breakdown['content'] ?? item['contentScore']),
-                      scoreBar(
-                          'Collaborative 30%',
-                          breakdown['collaborative'] ??
-                              item['collaborativeScore']),
-                      scoreBar('Popularity 10%',
-                          breakdown['popularity'] ?? item['popularityScore']),
-                      const SizedBox(height: 11),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Rating ${item['rating'] ?? '-'} • ${(item['collaborativeSource'] ?? '').toString()}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: InkWashColors.mutedInk,
-                              ),
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => DestinationDetailsScreen(
-                                  initialDestination: item,
-                                ),
-                              ),
-                            ),
-                            icon: const Icon(Icons.info_outline_rounded,
-                                size: 18),
-                            label: const Text('Details'),
-                          ),
-                          const SizedBox(width: 5),
-                          FilledButton.tonalIcon(
-                            onPressed: () => addToItinerary(item),
-                            icon: const Icon(Icons.add_road_rounded, size: 18),
-                            label: const Text('Add'),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
+                    onAddToTrip: () => addToItinerary(item),
                   ),
-                ),
-              );
-            }),
+                );
+              }),
           ],
         ),
       ),
