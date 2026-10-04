@@ -1,6 +1,16 @@
 from datetime import datetime, date
 from math import radians, sin, cos, sqrt, atan2
 from utils import utc_now_iso
+from services.recommendation_taxonomy import (
+    candidate_concepts,
+    concepts_for,
+    display_concepts,
+    normalize_budget,
+    normalize_pace,
+    normalize_personality,
+    normalize_phrase,
+    normalize_purpose,
+)
 
 
 def _float(value, default=0.0):
@@ -83,60 +93,186 @@ def prepareRecommendationInput(preferenceProfile, destinationData, collaborative
 def applyContentBasedFiltering(recommendationInput):
     """Score destinations against the traveller profile (0-100).
 
-    The logic is intentionally simple and explainable for an FYP viva. Interests carry
-    the largest contribution, followed by travel type/purpose/personality/pace and the
-    provider rating as a small quality signal.
+    The logic is intentionally simple and explainable for an FYP viva. Related phrases
+    are mapped into a small shared taxonomy. Interests carry the largest contribution;
+    the remaining factors are used only when the destination has defensible evidence.
     """
     pref = recommendationInput.get('preferenceProfile', {}) or {}
-    interests = {_text(x).lower() for x in pref.get('interests', []) if _text(x)}
-    profile_tokens = _tokens(
-        pref.get('travelType'),
-        pref.get('travelPurpose'),
-        pref.get('travelPersonality'),
-        pref.get('travelPace'),
-        pref.get('budgetRange'),
-    )
+    raw_interests = [
+        value for value in pref.get('interests', []) if _text(value)
+    ]
+    interest_groups = [concepts_for(value) for value in raw_interests]
+    interest_groups = [group for group in interest_groups if group]
+    interest_concepts = set().union(*interest_groups) if interest_groups else set()
+    travel_type_concepts = concepts_for(pref.get('travelType'))
+    requested_budget = normalize_budget(pref.get('budgetRange'))
+    requested_pace = normalize_pace(pref.get('travelPace'))
+    requested_purpose = normalize_purpose(pref.get('travelPurpose'))
+    requested_personality = normalize_personality(pref.get('travelPersonality'))
 
     results = []
     for item in recommendationInput.get('destinationData', []) or []:
-        destination_tokens = _tokens(
-            item.get('title'), item.get('name'), item.get('category'), item.get('type'),
-            item.get('description'), item.get('address')
+        destination_concepts = candidate_concepts(item)
+        matched_concepts = interest_concepts.intersection(destination_concepts)
+        if interest_groups:
+            matched_group_count = sum(
+                1 for group in interest_groups
+                if group.intersection(destination_concepts)
+            )
+            interest_coverage = matched_group_count / len(interest_groups)
+            primary_concepts = concepts_for([
+                item.get('title'), item.get('name'), item.get('type')
+            ])
+            primary_match = bool(
+                primary_concepts.intersection(interest_concepts))
+            interest_score = interest_coverage * (
+                1.0 if primary_match else 0.80)
+        else:
+            interest_score = 0.55
+            primary_match = False
+        type_score = _concept_compatibility(
+            travel_type_concepts, destination_concepts, neutral=0.60)
+        pace_score, pace_applied = _pace_suitability(requested_pace, item)
+        budget_score, budget_applied = _budget_suitability(requested_budget, item)
+        purpose_score, purpose_applied = _purpose_suitability(requested_purpose, item)
+        personality_score, personality_applied = _personality_suitability(
+            requested_personality, item)
+
+        # Internal content score only. The documented hybrid score remains 60/30/10.
+        content_score = 100.0 * (
+            interest_score * 0.55
+            + type_score * 0.15
+            + pace_score * 0.10
+            + budget_score * 0.10
+            + purpose_score * 0.06
+            + personality_score * 0.04
         )
-        matched_interests = sorted(i for i in interests if i in destination_tokens)
-        matched_profile = sorted(profile_tokens.intersection(destination_tokens))
-
-        interest_ratio = len(matched_interests) / max(1, len(interests)) if interests else 0.35
-        profile_ratio = min(1.0, len(matched_profile) / max(1, len(profile_tokens))) if profile_tokens else 0.35
-        rating = min(5.0, max(0.0, _float(item.get('rating'))))
-        rating_ratio = rating / 5.0
-
-        # 65% actual profile match, 20% broader travel-style match, 15% quality signal.
-        content_score = (interest_ratio * 65.0) + (profile_ratio * 20.0) + (rating_ratio * 15.0)
-        if not matched_interests and interests:
-            # Keep candidates visible but clearly behind strong matches.
-            content_score *= 0.72
+        matched_interests = display_concepts(matched_concepts)
+        content_signals = {
+            'interests': {
+                'score': round(interest_score * 100.0, 2),
+                'applied': bool(interest_concepts),
+                'matched': matched_interests,
+                'requestedConcepts': sorted(interest_concepts),
+                'primaryCategoryMatch': primary_match,
+            },
+            'travelType': {
+                'score': round(type_score * 100.0, 2),
+                'applied': bool(travel_type_concepts),
+                'matched': display_concepts(
+                    travel_type_concepts.intersection(destination_concepts)),
+            },
+            'pace': _signal(pace_score, pace_applied, requested_pace),
+            'budget': _signal(budget_score, budget_applied, requested_budget),
+            'travelPurpose': _signal(
+                purpose_score, purpose_applied, requested_purpose),
+            'travelPersonality': _signal(
+                personality_score, personality_applied, requested_personality),
+        }
 
         results.append({
             **item,
             'destinationId': _destination_id(item),
             'contentScore': round(min(100.0, content_score), 2),
             'matchedInterests': matched_interests,
-            'matchedProfileTerms': matched_profile,
+            'matchedProfileTerms': [
+                key for key, value in content_signals.items()
+                if value.get('applied') and _float(value.get('score')) >= 80.0
+            ],
+            'destinationConcepts': sorted(destination_concepts),
+            'contentSignals': content_signals,
         })
     return results
 
 
-def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=None, currentPreference=None):
+def _signal(score, applied, requested):
+    return {
+        'score': round(score * 100.0, 2),
+        'applied': bool(applied),
+        'requested': requested,
+    }
+
+
+def _concept_compatibility(preferred, supported, neutral=0.55):
+    if not preferred:
+        return neutral
+    if not supported:
+        return 0.45
+    return len(set(preferred).intersection(supported)) / max(1, len(preferred))
+
+
+def _normalised_values(value, normalizer):
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    return {normalizer(entry) for entry in values if normalizer(entry)}
+
+
+def _matrix_suitability(requested, supported, matrix, neutral=0.55):
+    if not requested or not supported:
+        return neutral, False
+    return max(matrix.get((requested, value), 0.35) for value in supported), True
+
+
+def _budget_suitability(requested, item):
+    supported = _normalised_values(
+        item.get('budgetLevel') or item.get('budgetRange'), normalize_budget)
+    matrix = {
+        ('budget', 'budget'): 1.00,
+        ('budget', 'moderate'): 0.60,
+        ('budget', 'premium'): 0.20,
+        ('moderate', 'budget'): 0.90,
+        ('moderate', 'moderate'): 1.00,
+        ('moderate', 'premium'): 0.65,
+        ('premium', 'budget'): 0.85,
+        ('premium', 'moderate'): 0.95,
+        ('premium', 'premium'): 1.00,
+    }
+    return _matrix_suitability(requested, supported, matrix)
+
+
+def _pace_suitability(requested, item):
+    supported = _normalised_values(item.get('pace'), normalize_pace)
+    matrix = {
+        ('relaxed', 'relaxed'): 1.00,
+        ('relaxed', 'moderate'): 0.72,
+        ('relaxed', 'active'): 0.35,
+        ('moderate', 'relaxed'): 0.82,
+        ('moderate', 'moderate'): 1.00,
+        ('moderate', 'active'): 0.75,
+        ('active', 'relaxed'): 0.45,
+        ('active', 'moderate'): 0.82,
+        ('active', 'active'): 1.00,
+    }
+    return _matrix_suitability(requested, supported, matrix)
+
+
+def _purpose_suitability(requested, item):
+    supported = _normalised_values(item.get('purpose'), normalize_purpose)
+    if requested == 'holiday' and supported:
+        return (1.0 if 'holiday' in supported else 0.78), True
+    return _matrix_suitability(
+        requested, supported, {(value, value): 1.0 for value in supported})
+
+
+def _personality_suitability(requested, item):
+    supported = _normalised_values(item.get('personality'), normalize_personality)
+    if requested == 'balanced' and supported:
+        return 0.85, True
+    return _matrix_suitability(
+        requested, supported, {(value, value): 1.0 for value in supported})
+
+
+def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=None,
+                                currentPreference=None, currentTravellerId=None):
     """Compute an explainable collaborative score (0-100).
 
     Feedback from other travellers is used directly. If peer preference profiles are
     available, their interest/type/pace similarity weights their destination ratings.
-    Sparse-data fallback uses provider rating so a new FYP database still works.
+    Sparse data is blended toward a neutral constant. This preserves the documented
+    30% collaborative component without pretending provider ratings are peer evidence.
     """
     peer_preferences = peerPreferences or {}
     current = currentPreference or {}
-    current_interests = {_text(x).lower() for x in current.get('interests', []) if _text(x)}
+    current_interests = concepts_for(current.get('interests', []))
 
     ratings = {}
     for row in collaborativeData or []:
@@ -144,17 +280,36 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
         if not did:
             continue
         uid = str(row.get('travellerId') or '')
+        if currentTravellerId and uid == str(currentTravellerId):
+            continue
         rating = max(0.0, min(5.0, _float(row.get('rating'))))
-        similarity = 1.0
         peer = peer_preferences.get(uid) if isinstance(peer_preferences, dict) else None
-        if peer and current:
-            peer_interests = {_text(x).lower() for x in peer.get('interests', []) if _text(x)}
-            union = current_interests.union(peer_interests)
-            jaccard = len(current_interests.intersection(peer_interests)) / max(1, len(union))
-            type_match = 1.0 if _text(peer.get('travelType')).lower() == _text(current.get('travelType')).lower() and _text(current.get('travelType')) else 0.0
-            pace_match = 1.0 if _text(peer.get('travelPace')).lower() == _text(current.get('travelPace')).lower() and _text(current.get('travelPace')) else 0.0
-            purpose_match = 1.0 if _text(peer.get('travelPurpose')).lower() == _text(current.get('travelPurpose')).lower() and _text(current.get('travelPurpose')) else 0.0
-            similarity = max(0.15, 0.55 * jaccard + 0.20 * type_match + 0.15 * pace_match + 0.10 * purpose_match)
+        if not peer or not current:
+            continue
+        peer_interests = concepts_for(peer.get('interests', []))
+        union = current_interests.union(peer_interests)
+        jaccard = (
+            len(current_interests.intersection(peer_interests)) / max(1, len(union))
+            if union else 0.0
+        )
+        type_match = _set_similarity(
+            concepts_for(peer.get('travelType')),
+            concepts_for(current.get('travelType')),
+        )
+        pace_match = _exact_profile_match(peer, current, 'travelPace', normalize_pace)
+        purpose_match = _exact_profile_match(
+            peer, current, 'travelPurpose', normalize_purpose)
+        personality_match = _exact_profile_match(
+            peer, current, 'travelPersonality', normalize_personality)
+        similarity = (
+            0.60 * jaccard
+            + 0.15 * type_match
+            + 0.10 * pace_match
+            + 0.10 * purpose_match
+            + 0.05 * personality_match
+        )
+        if similarity < 0.25:
+            continue
         ratings.setdefault(did, []).append((rating, similarity))
 
     output = []
@@ -165,18 +320,37 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
             weighted_sum = sum(r * w for r, w in values)
             total_weight = sum(w for _, w in values) or 1.0
             avg_rating = weighted_sum / total_weight
-            collaborative_score = (avg_rating / 5.0) * 100.0
-            collaborative_source = f'{len(values)} traveller rating(s)'
+            raw_collaborative_score = (avg_rating / 5.0) * 100.0
+            collaborative_confidence = min(1.0, total_weight / 3.0)
+            collaborative_score = 50.0 + (
+                raw_collaborative_score - 50.0) * collaborative_confidence
+            collaborative_source = f'{len(values)} similar traveller rating(s)'
         else:
-            collaborative_score = min(100.0, (_float(item.get('rating'), 3.5) / 5.0) * 100.0)
-            collaborative_source = 'provider-rating fallback (cold start)'
+            raw_collaborative_score = 50.0
+            collaborative_confidence = 0.0
+            collaborative_score = 50.0
+            collaborative_source = 'neutral cold-start baseline (no similar traveller evidence)'
 
         output.append({
             **item,
             'collaborativeScore': round(collaborative_score, 2),
+            'rawCollaborativeScore': round(raw_collaborative_score, 2),
+            'collaborativeConfidence': round(collaborative_confidence, 3),
+            'collaborativeRatingCount': len(values),
             'collaborativeSource': collaborative_source,
         })
     return output
+
+
+def _set_similarity(left, right):
+    union = set(left or []).union(right or [])
+    return len(set(left or []).intersection(right or [])) / max(1, len(union)) if union else 0.0
+
+
+def _exact_profile_match(peer, current, field, normalizer):
+    peer_value = normalizer(peer.get(field))
+    current_value = normalizer(current.get(field))
+    return 1.0 if peer_value and peer_value == current_value else 0.0
 
 
 def calculateRecommendationScore(items):
@@ -191,14 +365,18 @@ def calculateRecommendationScore(items):
         popularity = min(100.0, (rating / 5.0) * 80.0 + min(20.0, reviews / 500.0))
         score = content * 0.60 + collaborative * 0.30 + popularity * 0.10
 
-        matches = item.get('matchedInterests', []) or []
-        reason = f"Matches {', '.join(matches[:3])}" if matches else 'Strong overall travel relevance'
-        reason += f" • rating {item.get('rating', '-')}"
+        reasons = _recommendation_reasons(item, popularity)
+        reason = f"{round(score)}% match"
+        if reasons:
+            reason += ' • ' + ' • '.join(reasons)
+        else:
+            reason += ' • Limited profile evidence; neutral fallback applied'
 
         output.append({
             **item,
             'popularityScore': round(popularity, 2),
             'score': round(score, 2),
+            'finalScore': round(score, 2),
             'scoreBreakdown': {
                 'contentWeight': 0.60,
                 'collaborativeWeight': 0.30,
@@ -208,8 +386,40 @@ def calculateRecommendationScore(items):
                 'popularity': round(popularity, 2),
             },
             'reason': reason,
+            'recommendationReason': reason,
+            'matchReasons': reasons,
         })
     return output
+
+
+def _recommendation_reasons(item, popularity):
+    reasons = []
+    matches = item.get('matchedInterests', []) or []
+    signals = item.get('contentSignals', {}) or {}
+    if matches:
+        reasons.append(f"Matches your {', '.join(matches[:2])} interests")
+    primary_factor_labels = (
+        ('travelType', 'travel style'),
+        ('pace', 'travel pace'),
+        ('budget', 'budget preference'),
+    )
+    for key, label in primary_factor_labels:
+        signal = signals.get(key, {}) or {}
+        if signal.get('applied') and _float(signal.get('score')) >= 80.0:
+            reasons.append(f'Fits your {label}')
+    confidence = _float(item.get('collaborativeConfidence'))
+    if confidence >= 0.25 and _float(item.get('rawCollaborativeScore')) >= 70.0:
+        reasons.append('Highly rated by similar travellers')
+    for key, label in (
+        ('travelPurpose', 'travel purpose'),
+        ('travelPersonality', 'traveller personality'),
+    ):
+        signal = signals.get(key, {}) or {}
+        if signal.get('applied') and _float(signal.get('score')) >= 80.0:
+            reasons.append(f'Fits your {label}')
+    if popularity >= 85.0:
+        reasons.append('Popular and well reviewed')
+    return reasons[:5]
 
 
 def rankRecommendations(items):
@@ -219,6 +429,64 @@ def rankRecommendations(items):
         reverse=True,
     )
     return [{**item, 'rankNo': index + 1} for index, item in enumerate(ranked)]
+
+
+def deduplicateRecommendations(items):
+    """Keep the best-scoring representation of each destination identity."""
+    ranked = sorted(
+        items or [],
+        key=lambda item: (_float(item.get('score')), _float(item.get('rating'))),
+        reverse=True,
+    )
+    seen_ids = set()
+    seen_names = set()
+    output = []
+    for item in ranked:
+        destination_id = normalize_phrase(_destination_id(item))
+        name = normalize_phrase(item.get('title') or item.get('name'))
+        if (destination_id and destination_id in seen_ids) or (name and name in seen_names):
+            continue
+        if destination_id:
+            seen_ids.add(destination_id)
+        if name:
+            seen_names.add(name)
+        output.append(item)
+    return output
+
+
+def diversifyRecommendations(items, preferenceProfile=None, limit=12):
+    """Greedy lightweight reranking that keeps strong preferences dominant."""
+    remaining = [dict(item) for item in (items or [])]
+    selected = []
+    category_counts = {}
+    preferred = concepts_for((preferenceProfile or {}).get('interests', []))
+    while remaining and len(selected) < max(0, int(limit or 0)):
+        best_index = 0
+        best_adjusted = float('-inf')
+        best_category = 'general'
+        best_penalty = 0.0
+        for index, item in enumerate(remaining):
+            concepts = set(item.get('destinationConcepts') or candidate_concepts(item))
+            preferred_matches = sorted(concepts.intersection(preferred))
+            category = preferred_matches[0] if preferred_matches else (
+                sorted(concepts)[0] if concepts else 'general')
+            repeated = category_counts.get(category, 0)
+            penalty_rate = 2.0 if category in preferred else 7.0
+            penalty = repeated * penalty_rate
+            adjusted = _float(item.get('score')) - penalty
+            if adjusted > best_adjusted:
+                best_index = index
+                best_adjusted = adjusted
+                best_category = category
+                best_penalty = penalty
+        chosen = remaining.pop(best_index)
+        chosen['diversityCategory'] = best_category
+        chosen['diversityAdjustedScore'] = round(best_adjusted, 2)
+        if best_penalty:
+            chosen['diversityReason'] = 'Light category repetition penalty applied'
+        selected.append(chosen)
+        category_counts[best_category] = category_counts.get(best_category, 0) + 1
+    return [{**item, 'rankNo': index + 1} for index, item in enumerate(selected)]
 
 
 # ---------------------------------------------------------------------------

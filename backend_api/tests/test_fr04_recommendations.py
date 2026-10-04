@@ -10,6 +10,89 @@ from services.malaysian_locality import (
     validate_candidate,
 )
 from services.serpapi_service import retrieveDestinationResults
+from services.recommendation_taxonomy import concepts_for
+from sequence_contract.domain_functions import (
+    applyCollaborativeFiltering,
+    applyContentBasedFiltering,
+    calculateRecommendationScore,
+    deduplicateRecommendations,
+    diversifyRecommendations,
+    prepareRecommendationInput,
+    rankRecommendations,
+)
+
+
+PERSONALISATION_CANDIDATES = [
+    {
+        'destinationId': 'food_market',
+        'title': 'Penang Street Food Market',
+        'category': 'Hawker centre and local cuisine',
+        'interests': ['Street Food', 'Cafe'],
+        'budgetLevel': 'Budget',
+        'pace': ['Relaxed', 'Moderate'],
+        'purpose': ['Holiday', 'Solo travel'],
+        'personality': ['Social', 'Relaxed'],
+        'rating': 4.4,
+        'reviews': 400,
+    },
+    {
+        'destinationId': 'heritage_museum',
+        'title': 'Penang Heritage Museum',
+        'category': 'Historic museum and architecture',
+        'interests': ['Culture', 'Heritage', 'History'],
+        'budgetLevel': 'Moderate',
+        'pace': ['Relaxed', 'Moderate'],
+        'purpose': ['Educational trip', 'Holiday'],
+        'personality': ['Planner', 'Explorer'],
+        'rating': 4.4,
+        'reviews': 400,
+    },
+    {
+        'destinationId': 'nature_trail',
+        'title': 'Penang Forest Adventure Trail',
+        'category': 'Hiking and outdoor activity',
+        'interests': ['Nature', 'Adventure', 'Hiking'],
+        'budgetLevel': 'Moderate',
+        'pace': ['Packed', 'Active'],
+        'purpose': ['Holiday', 'Solo travel'],
+        'personality': ['Explorer'],
+        'rating': 4.4,
+        'reviews': 400,
+    },
+    {
+        'destinationId': 'shopping_mall',
+        'title': 'Penang Leisure Mall',
+        'category': 'Shopping retail and entertainment',
+        'interests': ['Shopping', 'Leisure'],
+        'budgetLevel': 'Moderate',
+        'pace': ['Relaxed'],
+        'purpose': ['Holiday', 'Family trip'],
+        'personality': ['Social', 'Relaxed'],
+        'rating': 4.4,
+        'reviews': 400,
+    },
+]
+
+
+def _rank_profile(interests, travel_type, pace='Moderate', purpose='Holiday',
+                  personality='Balanced', budget='Moderate'):
+    preference = {
+        'interests': interests,
+        'travelType': travel_type,
+        'travelPace': pace,
+        'travelPurpose': purpose,
+        'travelPersonality': personality,
+        'budgetRange': budget,
+    }
+    content = applyContentBasedFiltering(prepareRecommendationInput(
+        preference, PERSONALISATION_CANDIDATES, []))
+    collaborative = applyCollaborativeFiltering(
+        content, [], peerPreferences={}, currentPreference=preference)
+    return diversifyRecommendations(
+        rankRecommendations(deduplicateRecommendations(
+            calculateRecommendationScore(collaborative))),
+        preference,
+    )
 
 
 def test_provider_destinations_assigns_raw_before_normalising():
@@ -447,3 +530,192 @@ def test_get_snapshot_returns_safe_view_without_mutating_stored_snapshot(
     assert response.status_code == 200
     assert [item['destinationId'] for item in response.get_json()['recommendations']] == ['valid']
     assert len(stored['recommendationResults']) == original_count
+
+
+@pytest.mark.parametrize('interests,travel_type,pace,purpose,personality,expected', [
+    (['Food', 'Local Cuisine', 'Cafe'], 'Food', 'Relaxed', 'Holiday',
+     'Social', 'food_market'),
+    (['Culture', 'Heritage', 'History'], 'Culture', 'Moderate',
+     'Educational trip', 'Planner', 'heritage_museum'),
+    (['Nature', 'Outdoor', 'Adventure'], 'Nature', 'Active', 'Holiday',
+     'Explorer', 'nature_trail'),
+    (['Shopping', 'Leisure', 'Entertainment'], 'Shopping', 'Relaxed',
+     'Holiday', 'Relaxed', 'shopping_mall'),
+])
+def test_controlled_profiles_rank_the_matching_concept_first(
+        interests, travel_type, pace, purpose, personality, expected):
+    ranked = _rank_profile(
+        interests, travel_type, pace=pace, purpose=purpose,
+        personality=personality)
+
+    assert ranked[0]['destinationId'] == expected
+    assert ranked[0]['matchedInterests']
+    assert ranked[0]['recommendationReason'].startswith(
+        f"{round(ranked[0]['score'])}% match")
+
+
+def test_taxonomy_maps_multi_word_and_related_interest_phrases():
+    assert concepts_for(['Local Cuisine', 'Cafe', 'Street Food Market']) >= {
+        'food', 'shopping'
+    }
+    assert concepts_for(['Local Culture', 'Historic Site']) == {'culture'}
+    assert concepts_for(['Outdoor Activity', 'Hiking']) == {
+        'adventure', 'nature'
+    }
+
+
+def test_cold_start_is_neutral_and_does_not_reuse_provider_rating():
+    preference = {'interests': ['Food'], 'travelType': 'Food'}
+    content = applyContentBasedFiltering(prepareRecommendationInput(
+        preference, PERSONALISATION_CANDIDATES, []))
+    output = applyCollaborativeFiltering(
+        content, [], peerPreferences={}, currentPreference=preference)
+
+    assert {item['collaborativeScore'] for item in output} == {50.0}
+    assert {item['collaborativeConfidence'] for item in output} == {0.0}
+    assert all('neutral cold-start' in item['collaborativeSource']
+               for item in output)
+
+
+def test_similar_peer_feedback_is_confidence_aware_and_explained():
+    preference = {
+        'interests': ['Culture', 'Heritage'],
+        'travelType': 'Culture',
+        'travelPace': 'Moderate',
+        'travelPurpose': 'Educational trip',
+        'travelPersonality': 'Planner',
+    }
+    peer = {**preference, 'travellerId': 'peer_1'}
+    candidate = [PERSONALISATION_CANDIDATES[1]]
+    content = applyContentBasedFiltering(prepareRecommendationInput(
+        preference, candidate, []))
+    collaborative = applyCollaborativeFiltering(
+        content,
+        [{'destinationId': 'heritage_museum', 'travellerId': 'peer_1',
+          'rating': 5}],
+        peerPreferences={'peer_1': peer},
+        currentPreference=preference,
+        currentTravellerId='current_user',
+    )
+    scored = calculateRecommendationScore(collaborative)[0]
+
+    assert 0 < scored['collaborativeConfidence'] < 1
+    assert 50 < scored['collaborativeScore'] < 100
+    assert scored['collaborativeRatingCount'] == 1
+    assert 'Highly rated by similar travellers' in scored['matchReasons']
+
+
+def test_hybrid_weighting_and_snapshot_components_remain_60_30_10():
+    item = {
+        'destinationId': 'weighted',
+        'contentScore': 80,
+        'collaborativeScore': 70,
+        'rating': 5,
+        'reviews': 0,
+    }
+    scored = calculateRecommendationScore([item])[0]
+
+    assert scored['scoreBreakdown']['contentWeight'] == 0.60
+    assert scored['scoreBreakdown']['collaborativeWeight'] == 0.30
+    assert scored['scoreBreakdown']['popularityWeight'] == 0.10
+    assert scored['score'] == pytest.approx(
+        scored['contentScore'] * .60
+        + scored['collaborativeScore'] * .30
+        + scored['popularityScore'] * .10,
+        abs=.02,
+    )
+
+
+def test_recommendation_reason_only_claims_evidence_that_was_applied():
+    candidate = {
+        'destinationId': 'food_without_metadata',
+        'title': 'Penang Hawker Centre',
+        'category': 'Street food',
+        'rating': 4.2,
+        'reviews': 50,
+    }
+    preference = {
+        'interests': ['Local Cuisine'],
+        'travelType': 'Food',
+        'travelPace': 'Relaxed',
+        'budgetRange': 'Moderate',
+        'travelPurpose': 'Holiday',
+        'travelPersonality': 'Social',
+    }
+    content = applyContentBasedFiltering(prepareRecommendationInput(
+        preference, [candidate], []))
+    scored = calculateRecommendationScore(applyCollaborativeFiltering(
+        content, [], peerPreferences={}, currentPreference=preference))[0]
+
+    assert 'Food and local cuisine' in scored['recommendationReason']
+    assert 'budget preference' not in scored['recommendationReason']
+    assert 'travel pace' not in scored['recommendationReason']
+    assert scored['contentSignals']['budget']['applied'] is False
+
+
+def test_duplicate_destination_id_or_name_is_returned_once():
+    duplicate = {
+        **PERSONALISATION_CANDIDATES[0],
+        'destinationId': 'provider_duplicate_id',
+        'rating': 4.9,
+    }
+    preference = {'interests': ['Food'], 'travelType': 'Food'}
+    content = applyContentBasedFiltering(prepareRecommendationInput(
+        preference, PERSONALISATION_CANDIDATES + [duplicate], []))
+    scored = calculateRecommendationScore(applyCollaborativeFiltering(
+        content, [], peerPreferences={}, currentPreference=preference))
+    unique = deduplicateRecommendations(scored)
+
+    names = [item['title'] for item in unique]
+    assert names.count('Penang Street Food Market') == 1
+
+
+def test_diversity_reranking_avoids_repeating_an_unpreferred_category():
+    ranked = diversifyRecommendations([
+        {'destinationId': 'food_1', 'title': 'Food One', 'score': 100,
+         'destinationConcepts': ['food']},
+        {'destinationId': 'food_2', 'title': 'Food Two', 'score': 99,
+         'destinationConcepts': ['food']},
+        {'destinationId': 'culture_1', 'title': 'Museum', 'score': 97,
+         'destinationConcepts': ['culture']},
+    ], {'interests': ['Shopping']}, limit=3)
+
+    assert [item['destinationId'] for item in ranked[:2]] == [
+        'food_1', 'culture_1'
+    ]
+    assert ranked[1]['rankNo'] == 2
+
+
+def test_supported_questionnaire_suitability_fields_change_content_score():
+    preference = {
+        'interests': ['Nature'],
+        'travelType': 'Nature',
+        'travelPace': 'Relaxed',
+        'budgetRange': 'Budget',
+        'travelPurpose': 'Family trip',
+        'travelPersonality': 'Relaxed',
+    }
+    matching = {
+        'destinationId': 'matching',
+        'title': 'Nature Park',
+        'type': 'Nature',
+        'budgetLevel': 'Budget',
+        'pace': ['Relaxed'],
+        'purpose': ['Family trip'],
+        'personality': ['Relaxed'],
+    }
+    conflicting = {
+        **matching,
+        'destinationId': 'conflicting',
+        'budgetLevel': 'Premium',
+        'pace': ['Packed'],
+        'purpose': ['Business trip'],
+        'personality': ['Social'],
+    }
+    output = applyContentBasedFiltering(prepareRecommendationInput(
+        preference, [matching, conflicting], []))
+
+    assert output[0]['contentScore'] > output[1]['contentScore']
+    for field in ('pace', 'budget', 'travelPurpose', 'travelPersonality'):
+        assert output[0]['contentSignals'][field]['applied'] is True
+        assert output[0]['contentSignals'][field]['score'] >= 80

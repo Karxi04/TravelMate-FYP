@@ -19,6 +19,8 @@ from sequence_contract.domain_functions import (
     applyContentBasedFiltering,
     applyCollaborativeFiltering,
     calculateRecommendationScore,
+    deduplicateRecommendations,
+    diversifyRecommendations,
     rankRecommendations,
 )
 
@@ -203,9 +205,15 @@ def generate():
         collaborative,
         peerPreferences=peer_profiles,
         currentPreference=pref,
+        currentTravellerId=g.uid,
     )
     scored = calculateRecommendationScore(combined)
-    ranked_candidates = rankRecommendations(scored)
+    unique_candidates = deduplicateRecommendations(scored)
+    ranked_candidates = diversifyRecommendations(
+        rankRecommendations(unique_candidates),
+        pref,
+        limit=12,
+    )
     final_candidates, rejected_final = filter_candidates(
         ranked_candidates,
         destination_scope,
@@ -238,6 +246,10 @@ def generate():
             'contentBasedFiltering': True,
             'collaborativeFiltering': True,
             'weightedScoring': {'content': 0.60, 'collaborative': 0.30, 'popularity': 0.10},
+            'contentTaxonomy': True,
+            'collaborativeColdStart': 'neutral_confidence_aware',
+            'deduplication': True,
+            'diversityReranking': True,
             'ranking': True,
         },
         'recommendationResults': ranked,
