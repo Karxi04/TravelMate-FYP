@@ -4,6 +4,7 @@ import '../../services/api_service.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../../theme/app_theme.dart';
+import '../../core/navigation/app_shell_navigation.dart';
 import 'favourites_screen.dart';
 import 'destination_details_screen.dart';
 import '../fr04_hybrid_recommendation/recommendation_screen.dart';
@@ -144,8 +145,12 @@ class _ExploreTabState extends State<ExploreTab> {
           ),
         );
         if (go == true && mounted) {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (_) => const TripsTab()));
+          final switched =
+              AppShellNavigation.select(context, AppShellTab.trips);
+          if (!switched) {
+            Navigator.push(
+                context, MaterialPageRoute(builder: (_) => const TripsTab()));
+          }
         }
         return;
       }
