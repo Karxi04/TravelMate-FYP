@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../services/place_image_service.dart';
 
@@ -206,6 +207,10 @@ class AppTextField extends StatelessWidget {
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
   final TextInputAction? textInputAction;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
+  final bool readOnly;
+  final VoidCallback? onTap;
   final bool enabled;
   final int maxLines;
 
@@ -220,6 +225,10 @@ class AppTextField extends StatelessWidget {
     this.onChanged,
     this.onSubmitted,
     this.textInputAction,
+    this.keyboardType,
+    this.inputFormatters,
+    this.readOnly = false,
+    this.onTap,
     this.enabled = true,
     this.maxLines = 1,
   });
@@ -231,6 +240,10 @@ class AppTextField extends StatelessWidget {
       enabled: enabled,
       maxLines: maxLines,
       textInputAction: textInputAction,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      readOnly: readOnly,
+      onTap: onTap,
       onChanged: onChanged,
       onSubmitted: onSubmitted,
       decoration: InputDecoration(
