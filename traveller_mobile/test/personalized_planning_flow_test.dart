@@ -411,7 +411,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Trip generation did not finish'), findsOneWidget);
-    expect(find.text('Budget calculation failed'), findsOneWidget);
+    expect(find.textContaining('Your trip draft is safe'), findsOneWidget);
+    expect(find.text('Budget calculation failed'), findsNothing);
     await tester.tap(find.text('Retry generation'));
     await tester.pumpAndSettle();
 
@@ -421,6 +422,6 @@ void main() {
       'rec_widget_1',
     );
     expect(find.text('generation failed'), findsNothing);
-    expect(find.text('planned'), findsOneWidget);
+    expect(find.text('Planned'), findsOneWidget);
   });
 }
