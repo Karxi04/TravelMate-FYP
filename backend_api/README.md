@@ -18,6 +18,27 @@ copy .env.example .env
 python app.py
 ```
 
+The deployment image currently uses Python 3.11. The backend and its bounded
+dependencies also support newer compatible Python 3.x environments used for
+local regression testing.
+
+## Test
+
+Create a dedicated virtual environment and install the test dependency set:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements-test.txt
+.venv\Scripts\python.exe -m pytest
+```
+
+`requirements.txt` remains the production/runtime dependency set.
+`requirements-test.txt` adds only pytest, per-test timeout protection, and
+socket blocking. The default suite clears provider credentials, mocks Firebase
+initialization, blocks direct Firestore access, and disables network sockets.
+Tests that intentionally need a live service must be marked `integration` and
+are excluded from normal runs; they must never be run with production data.
+
 Health checks:
 
 - `GET /api/health`
