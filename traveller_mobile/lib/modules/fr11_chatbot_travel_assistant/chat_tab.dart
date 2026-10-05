@@ -4,6 +4,7 @@ import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
+import '../../core/navigation/app_shell_navigation.dart';
 import '../fr03_destination_search_information/destination_details_screen.dart';
 import '../fr05_smart_itinerary_budget_planner/trips_tab.dart';
 
@@ -279,8 +280,12 @@ class _ChatTabState extends State<ChatTab> {
           ),
         );
         if (go == true && mounted) {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (_) => const TripsTab()));
+          final switched =
+              AppShellNavigation.select(context, AppShellTab.trips);
+          if (!switched) {
+            Navigator.push(
+                context, MaterialPageRoute(builder: (_) => const TripsTab()));
+          }
         }
         return;
       }

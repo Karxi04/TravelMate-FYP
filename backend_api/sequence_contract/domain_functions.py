@@ -546,7 +546,11 @@ def calculateBudget(itineraryOrSelections):
     limit = _float(data.get('budgetLimit'))
     travellers = max(1, int(_float(data.get('travellerCount'), 1)))
     flight = _float(data.get('flightCost'))
-    hotel = _float(data.get('hotelCost'))
+    nights = max(0, _trip_days(data) - 1)
+    hotel_is_explicit = data.get('hotelCost') not in (None, '')
+    rooms = max(1, int(_float(data.get('roomQuantity'), 1)))
+    nightly_rate = _float(data.get('hotelNightlyRate') or data.get('nightlyRate'))
+    hotel = _float(data.get('hotelCost')) if hotel_is_explicit else round(nightly_rate * nights * rooms, 2)
     car_rental = _float(data.get('carRentalCost'))
     try:
         days = _trip_days(data)
@@ -565,6 +569,8 @@ def calculateBudget(itineraryOrSelections):
         'travellers': travellers,
         'flight': round(flight, 2),
         'hotel': round(hotel, 2),
+        'hotelNights': nights,
+        'hotelRooms': rooms,
         'carRental': round(car_rental, 2),
         'transport': round(transport, 2),
         'food': round(food, 2),
@@ -575,6 +581,14 @@ def calculateBudget(itineraryOrSelections):
         'overBy': round(max(0.0, -difference), 2) if limit else 0.0,
         'utilizationPercent': utilization,
         'status': status,
+        'costProvenance': {
+            'flight': 'confirmed' if flight else 'not_selected',
+            'hotel': 'confirmed_total' if hotel_is_explicit else ('estimated_from_nightly_rate' if nightly_rate else 'not_selected'),
+            'carRental': 'confirmed' if car_rental else 'not_selected',
+            'transport': 'provided' if data.get('transportCost') not in (None, '') else 'estimated_daily_allowance',
+            'food': 'provided' if data.get('foodCost') not in (None, '') else 'estimated_daily_allowance',
+            'activities': 'mixed_estimates',
+        },
     }
 
 
@@ -646,7 +660,7 @@ def _trip_days(itinerary):
             return max(1, (d2 - d1).days + 1)
     except ValueError:
         pass
-    return max(1, min(5, int(_float(itinerary.get('tripDays'), 1))))
+    return max(1, min(14, int(_float(itinerary.get('tripDays'), 1))))
 
 
 def _trip_start_date(itinerary):
@@ -670,125 +684,314 @@ def _format_time(total_minutes):
     return f"{total_minutes // 60:02d}:{total_minutes % 60:02d}"
 
 
+PACE_WINDOWS = {
+    'relaxed': (10 * 60, 20 * 60),
+    'moderate': (9 * 60, 21 * 60),
+    'active': (8 * 60, 21 * 60 + 30),
+}
+
+DURATION_DEFAULTS = {
+    'food': 75, 'restaurant': 75, 'cafe': 75,
+    'museum': 105, 'heritage': 105, 'culture': 105,
+    'shopping': 120, 'market': 120, 'mall': 120,
+    'nature': 135, 'beach': 135, 'park': 135, 'outdoor': 135,
+    'theme park': 180, 'amusement': 180,
+}
+
+
+def _pace_key(itinerary):
+    raw = _text(itinerary.get('pace') or itinerary.get('travelPace') or itinerary.get('preferredPace')).lower()
+    if any(word in raw for word in ('relaxed', 'slow', 'leisure')):
+        return 'relaxed'
+    if any(word in raw for word in ('active', 'fast', 'packed', 'adventure')):
+        return 'active'
+    return 'moderate'
+
+
 def _parse_time_minutes(value):
-    text = _text(value).replace('.', ':')
-    try:
-        parts = text.split(':')
-        if len(parts) >= 2:
-            hour = int(parts[0])
-            minute = int(parts[1][:2])
-            if 0 <= hour <= 23 and 0 <= minute <= 59:
-                return hour * 60 + minute
-    except (TypeError, ValueError):
-        return None
-    return None
-
-
-def _opening_window(opening_hours):
-    text = _text(opening_hours)
-    if not text:
-        return None
-    lowered = text.lower()
-    if 'open all day' in lowered or '24 hour' in lowered:
-        return (0, 24 * 60 - 1)
     import re
-    match = re.search(r'(\d{1,2}[:.]\d{2})\s*[–-]\s*(\d{1,2}[:.]\d{2})', text)
+    text = _text(value).replace('.', ':').upper()
+    match = re.search(r'\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?\b', text)
     if not match:
         return None
+    try:
+        hour = int(match.group(1))
+        minute = int(match.group(2) or 0)
+        suffix = match.group(3)
+        if suffix:
+            if not 1 <= hour <= 12:
+                return None
+            hour = (hour % 12) + (12 if suffix == 'PM' else 0)
+        if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+            return None
+        return hour * 60 + minute
+    except (TypeError, ValueError):
+        return None
+
+
+def _opening_window(opening_hours, day_date=None):
+    import re
+    value = opening_hours
+    if isinstance(value, dict):
+        key = day_date.strftime('%A').lower() if day_date else ''
+        value = value.get(key) or value.get(key.title()) or value.get('default') or ''
+    text = _text(value)
+    if not text:
+        return {'status': 'unknown', 'window': None, 'text': ''}
+    lowered = text.lower()
+    if re.search(r'\bclosed\b', lowered):
+        return {'status': 'closed', 'window': None, 'text': text}
+    if 'open all day' in lowered or '24 hour' in lowered or '24/7' in lowered:
+        return {'status': 'open', 'window': (0, 24 * 60 - 1), 'text': text}
+    match = re.search(
+        r'(\d{1,2}(?::|\.)?\d{0,2}\s*(?:AM|PM)?)\s*(?:–|—|-)\s*'
+        r'(\d{1,2}(?::|\.)?\d{0,2}\s*(?:AM|PM)?)',
+        text, re.IGNORECASE,
+    )
+    if not match:
+        return {'status': 'unknown', 'window': None, 'text': text}
     start = _parse_time_minutes(match.group(1))
     end = _parse_time_minutes(match.group(2))
-    if start is None or end is None:
+    if start is None or end is None or end <= start:
+        return {'status': 'unknown', 'window': None, 'text': text}
+    return {'status': 'open', 'window': (start, end), 'text': text}
+
+
+def _activity_duration(activity):
+    provider = activity.get('providerDurationMinutes')
+    source = _text(activity.get('durationSource')).lower()
+    provided = activity.get('recommendedDurationMinutes')
+    if provider not in (None, '') or (provided not in (None, '') and source in {'provider', 'confirmed'}):
+        return int(max(30, min(480, _float(provider if provider not in (None, '') else provided, 105)))), 'provider'
+    label = _text(activity.get('category') or activity.get('type') or activity.get('activityName')).lower()
+    default = next((minutes for key, minutes in DURATION_DEFAULTS.items() if key in label), 105)
+    if provided not in (None, ''):
+        default = int(max(30, min(480, _float(provided, default))))
+    return default, source if source in {'catalog_estimate', 'category_estimate'} else 'category_estimate'
+
+
+def _coord(activity):
+    gps = activity.get('gps_coordinates') or activity.get('gpsCoordinates') or {}
+    try:
+        return float(gps.get('latitude')), float(gps.get('longitude'))
+    except (TypeError, ValueError, AttributeError):
         return None
-    return (start, end)
 
 
-def _schedule_activity(activity, day_date, day_index, slot_index, sequence_no, first_in_day=False):
-    activity = dict(activity or {})
-    duration = int(max(45, min(360, _float(activity.get('recommendedDurationMinutes'), 105))))
-    start_minutes = 9 * 60 if first_in_day else None
-    if start_minutes is None:
-        start_minutes = _parse_time_minutes(activity.get('timeSlot')) or (9 * 60 + slot_index * 240)
-    buffer_minutes = 0 if first_in_day else int(max(20, _float(activity.get('travelBufferMinutes'), 30)))
-    start_minutes += 0 if first_in_day else buffer_minutes
-    end_minutes = start_minutes + duration
-    notes = [str(x) for x in activity.get('scheduleNotes', []) if str(x).strip()] if isinstance(activity.get('scheduleNotes'), list) else []
+def _distance_km(a, b):
+    ca, cb = _coord(a), _coord(b)
+    if not ca or not cb:
+        return None
+    lat1, lon1 = map(radians, ca)
+    lat2, lon2 = map(radians, cb)
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    h = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+    return 6371.0 * 2 * atan2(sqrt(h), sqrt(max(0.0, 1 - h)))
 
-    opening = _opening_window(activity.get('openingHours'))
-    if opening:
-        open_start, open_end = opening
-        if start_minutes < open_start or end_minutes > open_end:
-            notes.append(f"Check opening hours before visiting: {_text(activity.get('openingHours'))}.")
-    elif _text(activity.get('openingHours')):
-        notes.append(f"Opening info: {_text(activity.get('openingHours'))}.")
 
-    activity.update({
-        'dayNo': day_index + 1,
-        'dayDate': _format_date(day_date),
-        'dayLabel': f"Day {day_index + 1} · {_format_date(day_date)}",
-        'sequenceNo': sequence_no,
-        'timeSlot': _format_time(start_minutes),
-        'scheduledStartTime': _format_time(start_minutes),
-        'scheduledEndTime': _format_time(end_minutes),
-        'timeRangeLabel': f"{_format_time(start_minutes)} - {_format_time(end_minutes)}",
-        'travelBufferMinutes': buffer_minutes,
+def _travel_leg(previous, activity):
+    if previous is None:
+        return 0, 0.0, 'not_applicable'
+    provider = activity.get('providerTravelDurationMinutes') or activity.get('travelDurationMinutes')
+    if provider not in (None, '') and _text(activity.get('travelTimeSource')).lower() in {'provider', 'confirmed'}:
+        return int(max(1, _float(provider))), _float(activity.get('travelDistanceKm')), 'provider'
+    distance = _distance_km(previous, activity)
+    if distance is None:
+        return 25, None, 'estimated_default'
+    # Explainable urban-road assumption: haversine distance x 1.25, 28 km/h, plus 8 minutes.
+    road_distance = distance * 1.25
+    minutes = int(max(8, round((road_distance / 28.0) * 60 + 8)))
+    return minutes, round(distance, 2), 'estimated_haversine'
+
+
+def _forecast_by_date(forecast_data):
+    daily = (forecast_data or {}).get('daily', {}) if isinstance(forecast_data, dict) else {}
+    dates = daily.get('time') or []
+    probs = daily.get('precipitation_probability_max') or []
+    codes = daily.get('weather_code') or []
+    result = {}
+    for index, value in enumerate(dates):
+        key = _text(value)[:10]
+        if not key:
+            continue
+        probability = _float(probs[index] if index < len(probs) else 0)
+        code = int(_float(codes[index] if index < len(codes) else 0))
+        result[key] = {
+            'date': key,
+            'precipitationProbability': probability,
+            'weatherCode': code,
+            'heavyRainLikely': probability >= 55 or code in range(51, 100),
+            'source': 'forecast',
+        }
+    return result
+
+
+def _indoor(activity):
+    label = _text(activity.get('category') or activity.get('type')).lower()
+    return bool(activity.get('indoor')) or any(x in label for x in ('indoor', 'museum', 'mall', 'gallery', 'food', 'restaurant'))
+
+
+def _candidate_order(remaining, previous, weather, preserve_order):
+    if preserve_order:
+        return list(remaining)
+    def key(item):
+        opening = _opening_window(item.get('openingHours'))
+        close_time = opening['window'][1] if opening.get('window') else 24 * 60
+        rain_rank = 0 if weather.get('heavyRainLikely') and _indoor(item) else 1
+        distance = _distance_km(previous, item) if previous else None
+        return (rain_rank, close_time, distance if distance is not None else 99999)
+    return sorted(remaining, key=key)
+
+
+def _schedule_candidate(activity, previous, current_minutes, day_date, window_end):
+    duration, duration_source = _activity_duration(activity)
+    travel_minutes, distance, travel_source = _travel_leg(previous, activity)
+    opening = _opening_window(activity.get('openingHours'), day_date)
+    if opening['status'] == 'closed':
+        return None, 'Attraction is closed on this trip day.'
+    start = current_minutes + travel_minutes
+    if opening.get('window'):
+        start = max(start, opening['window'][0])
+    # Reserve a simple lunch/rest block instead of scheduling continuously through midday.
+    if start < 13 * 60 + 30 and start + duration > 12 * 60 + 30:
+        start = 13 * 60 + 30
+    end = start + duration
+    if opening.get('window') and end > opening['window'][1]:
+        return None, 'Could not fit within the attraction opening hours.'
+    if end > window_end:
+        return None, 'Could not fit within the daily planning window.'
+    return ({
+        **activity,
         'recommendedDurationMinutes': duration,
-        'scheduleNotes': notes[:3],
-    })
-    return activity, end_minutes
+        'durationSource': duration_source,
+        'durationEstimated': duration_source != 'provider',
+        'travelBufferMinutes': travel_minutes,
+        'travelDurationMinutes': travel_minutes,
+        'travelDistanceKm': distance,
+        'travelTimeSource': travel_source,
+        'openingHoursStatus': opening['status'],
+        '_startMinutes': start,
+        '_endMinutes': end,
+    }, None)
 
 
-def _build_daily_schedule(activities):
-    days = {}
-    for activity in activities or []:
-        day_no = int(_float(activity.get('dayNo'), 1))
-        days.setdefault(day_no, {
-            'dayNo': day_no,
-            'dayDate': activity.get('dayDate', ''),
-            'dayLabel': activity.get('dayLabel') or f"Day {day_no}",
-            'activities': [],
-            'estimatedMinutes': 0,
-            'estimatedCost': 0.0,
-        })
-        days[day_no]['activities'].append(activity)
-        days[day_no]['estimatedMinutes'] += int(_float(activity.get('recommendedDurationMinutes')) + _float(activity.get('travelBufferMinutes')))
-        days[day_no]['estimatedCost'] += _float(activity.get('estimatedCost'))
-    return [
-        {**day, 'estimatedCost': round(day['estimatedCost'], 2)}
-        for _, day in sorted(days.items())
-    ]
-
-
-def _apply_schedule_metadata(itinerary):
+def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respect_day_assignments=False):
     itinerary = dict(itinerary or {})
     activities = [dict(x) for x in itinerary.get('activities', [])]
-    days = max(1, _trip_days(itinerary))
+    for item in itinerary.get('unscheduledSuggestions', []) or []:
+        candidate = dict(item)
+        candidate.pop('unscheduledReason', None)
+        if not any(str(x.get('activityId')) == str(candidate.get('activityId')) for x in activities):
+            activities.append(candidate)
+    days = _trip_days(itinerary)
     start_date = _trip_start_date(itinerary)
-    per_day = {}
+    pace = _pace_key(itinerary)
+    window_start, window_end = PACE_WINDOWS[pace]
+    weather_by_date = _forecast_by_date(forecast_data or {})
+    remaining = activities
     scheduled = []
-    sequence = 1
+    daily = []
 
-    for index, activity in enumerate(activities):
-        day_index = min(days - 1, index // 3)
-        per_day.setdefault(day_index, 9 * 60)
-        is_first = len([x for x in scheduled if int(_float(x.get('dayNo'), 1)) == day_index + 1]) == 0
-        if not is_first:
-            activity['timeSlot'] = _format_time(per_day[day_index])
+    for day_index in range(days):
+        day_no = day_index + 1
         day_date = start_date.fromordinal(start_date.toordinal() + day_index)
-        item, end_minutes = _schedule_activity(activity, day_date, day_index, index % 3, sequence, first_in_day=is_first)
-        per_day[day_index] = end_minutes
-        scheduled.append(item)
-        sequence += 1
+        date_key = _format_date(day_date)
+        weather = weather_by_date.get(date_key, {
+            'date': date_key,
+            'source': 'unavailable',
+            'message': 'Weather forecast unavailable for this date.',
+            'heavyRainLikely': False,
+        })
+        current = window_start
+        previous = None
+        day_items = []
+        while remaining:
+            eligible = [x for x in remaining if not respect_day_assignments or int(_float(x.get('dayNo'), day_no)) == day_no]
+            if not eligible:
+                break
+            chosen = None
+            reason_by_id = {}
+            for candidate in _candidate_order(eligible, previous, weather, preserve_order):
+                planned, reason = _schedule_candidate(candidate, previous, current, day_date, window_end)
+                if planned:
+                    chosen = planned
+                    break
+                reason_by_id[str(candidate.get('activityId'))] = reason
+            if chosen is None:
+                break
+            remaining.remove(next(x for x in remaining if str(x.get('activityId')) == str(chosen.get('activityId'))))
+            chosen['dayNo'] = day_no
+            chosen['dayDate'] = date_key
+            chosen['dayLabel'] = f"Day {day_no} · {date_key}"
+            chosen['sequenceNo'] = len(scheduled) + 1
+            chosen['timeSlot'] = _format_time(chosen.pop('_startMinutes'))
+            end_minutes = chosen.pop('_endMinutes')
+            chosen['scheduledStartTime'] = chosen['timeSlot']
+            chosen['scheduledEndTime'] = _format_time(end_minutes)
+            chosen['timeRangeLabel'] = f"{chosen['scheduledStartTime']} - {chosen['scheduledEndTime']}"
+            notes = []
+            if previous and chosen.get('travelTimeSource') == 'estimated_haversine':
+                notes.append('Grouped with a nearby attraction to reduce estimated travel time.')
+            opening = _opening_window(chosen.get('openingHours'), day_date)
+            if opening.get('window') and opening['window'][1] <= 18 * 60:
+                notes.append(f"Scheduled before closing at {_format_time(opening['window'][1])}.")
+            if weather.get('heavyRainLikely'):
+                if _indoor(chosen):
+                    notes.append('Indoor activity prioritised because heavy rain is forecast for this date.')
+                else:
+                    notes.append('Rain is forecast; keep an indoor alternative available.')
+            chosen['weather'] = weather
+            chosen['weatherNote'] = notes[-1] if notes and 'rain' in notes[-1].lower() else ''
+            chosen['scheduleNotes'] = notes[:3]
+            day_items.append(chosen)
+            scheduled.append(chosen)
+            current = end_minutes
+            previous = chosen
 
-    itinerary['activities'] = scheduled
-    itinerary['tripDays'] = days
-    itinerary['tripDateRangeLabel'] = f"{_format_date(start_date)} to {_format_date(start_date.fromordinal(start_date.toordinal() + days - 1))}"
-    itinerary['dailySchedule'] = _build_daily_schedule(scheduled)
-    itinerary['totalScheduledMinutes'] = sum(day.get('estimatedMinutes', 0) for day in itinerary['dailySchedule'])
+        meal_blocks = []
+        if day_items:
+            meal_blocks.append({
+                'type': 'meal_rest', 'label': 'Lunch and rest',
+                'startTime': '12:30', 'endTime': '13:30',
+                'durationMinutes': 60, 'estimated': True,
+            })
+        daily.append({
+            'dayNo': day_no,
+            'dayDate': date_key,
+            'dayLabel': f"Day {day_no} · {date_key}",
+            'planningWindow': {'startTime': _format_time(window_start), 'endTime': _format_time(window_end), 'pace': pace},
+            'activities': day_items,
+            'planningBlocks': meal_blocks,
+            'weather': weather,
+            'estimatedMinutes': sum(int(_float(x.get('recommendedDurationMinutes'))) + int(_float(x.get('travelDurationMinutes'))) for x in day_items),
+            'estimatedCost': round(sum(_float(x.get('estimatedCost')) for x in day_items), 2),
+        })
+
+    unscheduled = []
+    for item in remaining:
+        all_closed = all(_opening_window(item.get('openingHours'), start_date.fromordinal(start_date.toordinal() + index))['status'] == 'closed' for index in range(days))
+        unscheduled.append({
+            **item,
+            'unscheduledReason': 'Attraction is closed on all trip days.' if all_closed else 'Could not fit within available time, travel, and opening-hour constraints.',
+        })
+    itinerary.update({
+        'activities': scheduled,
+        'unscheduledSuggestions': unscheduled,
+        'scheduledActivityCount': len(scheduled),
+        'unscheduledActivityCount': len(unscheduled),
+        'tripDays': days,
+        'paceApplied': pace,
+        'dailyPlanningWindow': {'startTime': _format_time(window_start), 'endTime': _format_time(window_end)},
+        'tripDateRangeLabel': f"{_format_date(start_date)} to {_format_date(start_date.fromordinal(start_date.toordinal() + days - 1))}",
+        'dailySchedule': daily,
+        'totalScheduledMinutes': sum(day['estimatedMinutes'] for day in daily),
+        'updatedAt': utc_now_iso(),
+    })
     return itinerary
 
 
 def generateItinerary(locationTravelData, forecastData, itineraryInput=None):
-    """Destination planning + trip-day generation + initial activity arrangement."""
+    """Generate an explainable, constraint-aware heuristic itinerary."""
     base = dict(itineraryInput or {})
     activities = [dict(x) for x in base.get('activities', [])]
     days = _trip_days(base)
@@ -811,110 +1014,31 @@ def generateItinerary(locationTravelData, forecastData, itineraryInput=None):
         'status': 'generated',
         'updatedAt': utc_now_iso(),
     }
-    return _apply_schedule_metadata(itinerary)
+    itinerary['generationContext']['planner'] = 'constraint_aware_heuristic'
+    return _constraint_plan(itinerary, forecastData, preserve_order=False, respect_day_assignments=False)
 
 
-def _coord(activity):
-    gps = activity.get('gps_coordinates') or activity.get('gpsCoordinates') or {}
-    try:
-        return float(gps.get('latitude')), float(gps.get('longitude'))
-    except (TypeError, ValueError, AttributeError):
-        return None
-
-
-def _distance_km(a, b):
-    ca, cb = _coord(a), _coord(b)
-    if not ca or not cb:
-        return 999.0
-    lat1, lon1 = map(radians, ca)
-    lat2, lon2 = map(radians, cb)
-    dlat, dlon = lat2 - lat1, lon2 - lon1
-    h = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
-    return 6371.0 * 2 * atan2(sqrt(h), sqrt(1 - h))
+def recalculateItinerary(itinerary, preserveOrder=True, respectDayAssignments=True):
+    context = (itinerary or {}).get('generationContext') or {}
+    return _constraint_plan(
+        itinerary,
+        context.get('forecastData') or {},
+        preserve_order=preserveOrder,
+        respect_day_assignments=respectDayAssignments,
+    )
 
 
 def groupNearbyActivities(itinerary):
-    """Greedy nearest-neighbour ordering within each day."""
-    itinerary = dict(itinerary or {})
-    activities = [dict(x) for x in itinerary.get('activities', [])]
-    grouped = []
-    for day_no in sorted({int(_float(x.get('dayNo'), 1)) for x in activities} or {1}):
-        remaining = [x for x in activities if int(_float(x.get('dayNo'), 1)) == day_no]
-        if not remaining:
-            continue
-        ordered = [remaining.pop(0)]
-        while remaining:
-            current = ordered[-1]
-            idx = min(range(len(remaining)), key=lambda i: _distance_km(current, remaining[i]))
-            ordered.append(remaining.pop(idx))
-        grouped.extend(ordered)
-    for index, activity in enumerate(grouped):
-        activity['sequenceNo'] = index + 1
-    itinerary['activities'] = grouped
-    itinerary['generationContext'] = {**itinerary.get('generationContext', {}), 'nearbyGroupingApplied': True}
-    return _apply_schedule_metadata(itinerary)
+    """Compatibility wrapper; the authoritative planner already groups nearby activities."""
+    return recalculateItinerary(itinerary, preserveOrder=False, respectDayAssignments=True)
 
 
 def checkOpeningHoursAndTravelTime(itinerary):
-    itinerary = dict(itinerary or {})
-    activities = [dict(x) for x in itinerary.get('activities', [])]
-    for idx, activity in enumerate(activities):
-        same_day_previous = idx > 0 and activity.get('dayNo') == activities[idx - 1].get('dayNo')
-        activity['travelBufferMinutes'] = 0 if not same_day_previous else int(_float(activity.get('travelBufferMinutes'), 30))
-        activity['openingHoursChecked'] = bool(activity.get('openingHours'))
-        activity['recommendedDurationMinutes'] = int(_float(activity.get('recommendedDurationMinutes'), 105))
-    itinerary['activities'] = activities
-    itinerary['generationContext'] = {**itinerary.get('generationContext', {}), 'openingHoursAndTravelTimeChecked': True}
-    return _apply_schedule_metadata(itinerary)
-
-
-def _rainy_days(forecast_data):
-    daily = (forecast_data or {}).get('daily', {}) if isinstance(forecast_data, dict) else {}
-    dates = daily.get('time') or []
-    probs = daily.get('precipitation_probability_max') or []
-    codes = daily.get('weather_code') or []
-    rainy = set()
-    for index, day in enumerate(dates):
-        prob = _float(probs[index] if index < len(probs) else 0)
-        code = int(_float(codes[index] if index < len(codes) else 0))
-        if prob >= 55 or code >= 51:
-            rainy.add(index + 1)
-    return rainy
+    return recalculateItinerary(itinerary, preserveOrder=True, respectDayAssignments=True)
 
 
 def adjustWeatherSensitiveActivities(itinerary):
-    itinerary = dict(itinerary or {})
-    forecast = (itinerary.get('generationContext') or {}).get('forecastData') or {}
-    rainy_days = _rainy_days(forecast)
-    activities = [dict(x) for x in itinerary.get('activities', [])]
-
-    for activity in activities:
-        day_no = int(_float(activity.get('dayNo'), 1))
-        indoor = bool(activity.get('indoor')) or 'indoor' in _text(activity.get('type')).lower() or 'museum' in _text(activity.get('type')).lower() or 'mall' in _text(activity.get('type')).lower()
-        activity['weatherSensitive'] = not indoor
-        if day_no in rainy_days:
-            if indoor:
-                activity['weatherNote'] = 'Prioritised because rain is likely.'
-                activity['_weatherPriority'] = 0
-            else:
-                activity['weatherNote'] = 'Rain is likely; keep a flexible indoor backup.'
-                activity['_weatherPriority'] = 1
-        else:
-            activity['weatherNote'] = 'No major weather rearrangement required.'
-            activity['_weatherPriority'] = 0
-
-    activities.sort(key=lambda x: (int(_float(x.get('dayNo'), 1)), int(x.get('_weatherPriority', 0)), int(_float(x.get('sequenceNo'), 999))))
-    for index, activity in enumerate(activities):
-        activity.pop('_weatherPriority', None)
-        activity['sequenceNo'] = index + 1
-
-    itinerary['activities'] = activities
-    itinerary['generationContext'] = {
-        **itinerary.get('generationContext', {}),
-        'weatherConsideration': bool(forecast),
-        'rainyDayNumbers': sorted(rainy_days),
-    }
-    return _apply_schedule_metadata(itinerary)
+    return recalculateItinerary(itinerary, preserveOrder=False, respectDayAssignments=True)
 
 
 # ---------------------------------------------------------------------------

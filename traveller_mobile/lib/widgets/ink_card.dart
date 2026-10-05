@@ -5,7 +5,12 @@ class InkCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets padding;
   final Color? color;
-  const InkCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.color});
+  const InkCard({
+    super.key,
+    required this.child,
+    this.padding = AppSpacing.card,
+    this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -26,10 +31,15 @@ class SectionTitle extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w800, color: InkWashColors.charcoal)),
+        Text(title, style: Theme.of(context).textTheme.headlineMedium),
         if (subtitle != null) ...[
-          const SizedBox(height: 3),
-          Text(subtitle!, style: const TextStyle(color: InkWashColors.charcoal)),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            subtitle!,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+          ),
         ],
       ]),
     );

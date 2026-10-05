@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
+import '../fr02_travel_preference/preferences_screen.dart';
 import 'trip_details_screen.dart';
 
 class PersonalizedPlanningScreen extends StatefulWidget {
@@ -19,26 +22,34 @@ class _PersonalizedPlanningScreenState
     extends State<PersonalizedPlanningScreen> {
   late final ApiService api;
   final destination = TextEditingController(text: 'Penang, Malaysia');
-  final title = TextEditingController(text: 'My Personalised Penang Trip');
   final travellers = TextEditingController(text: '1');
   final budget = TextEditingController(text: '1200');
   late final TextEditingController startDate;
   late final TextEditingController endDate;
-  bool busy = false;
-  int step = 0;
-  String status = '';
-  Map<String, dynamic>? generatedTrip;
+
+  Map<String, dynamic> preferences = {};
+  List<Map<String, dynamic>> recommendations = [];
+  final Set<String> touchedFields = {};
+
+  bool profileLoading = true;
+  bool suggestionsLoading = true;
+  bool generating = false;
+  bool showValidationErrors = false;
+  bool snapshotConflict = false;
+  String? profileError;
+  String? suggestionsError;
+  String recommendationSource = '';
+  String snapshotDestination = '';
+  String? recommendationGenerationId;
   String? generationRequestId;
   String? generationSignature;
-  String? recommendationGenerationId;
   String? completedTripId;
   String? failedTripId;
-  String? failureStage;
   String? failureMessage;
   bool retryable = false;
 
-  String dateText(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  String dateText(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
   @override
   void initState() {
@@ -47,13 +58,14 @@ class _PersonalizedPlanningScreenState
     final start = DateTime.now().add(const Duration(days: 30));
     startDate = TextEditingController(text: dateText(start));
     endDate = TextEditingController(
-        text: dateText(start.add(const Duration(days: 2))));
+      text: dateText(start.add(const Duration(days: 2))),
+    );
+    Future.microtask(_loadInitialData);
   }
 
   @override
   void dispose() {
     destination.dispose();
-    title.dispose();
     travellers.dispose();
     budget.dispose();
     startDate.dispose();
@@ -61,44 +73,233 @@ class _PersonalizedPlanningScreenState
     super.dispose();
   }
 
-  String? _inputError() {
-    if (destination.text.trim().isEmpty || title.text.trim().isEmpty) {
-      return 'Enter a destination and trip title.';
+  Future<void> _loadInitialData() async {
+    await Future.wait([
+      _loadProfile(),
+      _loadSuggestions(regenerate: false),
+    ]);
+  }
+
+  Future<void> _loadProfile() async {
+    if (mounted) {
+      setState(() {
+        profileLoading = true;
+        profileError = null;
+      });
+    }
+    try {
+      final data = await api.get('/api/fr2/preferences');
+      if (!mounted) return;
+      final raw = data is Map ? data['preferences'] : null;
+      setState(() {
+        preferences = raw is Map ? Map<String, dynamic>.from(raw) : {};
+        profileError = preferences.isEmpty
+            ? 'Complete your travel preferences before building a personalised trip.'
+            : null;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => profileError = 'We could not load your travel style.');
+      }
+    } finally {
+      if (mounted) setState(() => profileLoading = false);
+    }
+  }
+
+  String _normaliseDestination(String value) =>
+      value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  bool get _snapshotMatchesDestination =>
+      snapshotDestination.isNotEmpty &&
+      _normaliseDestination(snapshotDestination) ==
+          _normaliseDestination(destination.text);
+
+  bool get _snapshotReady =>
+      recommendationGenerationId?.isNotEmpty == true &&
+      recommendations.isNotEmpty &&
+      _snapshotMatchesDestination &&
+      !snapshotConflict;
+
+  void _clearGenerationState() {
+    generationRequestId = null;
+    generationSignature = null;
+    completedTripId = null;
+    failedTripId = null;
+    failureMessage = null;
+    retryable = false;
+  }
+
+  void _clearSnapshot() {
+    recommendationGenerationId = null;
+    snapshotDestination = '';
+    recommendationSource = '';
+    recommendations = [];
+    snapshotConflict = false;
+    suggestionsError = null;
+    _clearGenerationState();
+  }
+
+  void _onFieldChanged(String field, {bool destinationChanged = false}) {
+    setState(() {
+      touchedFields.add(field);
+      if (destinationChanged) {
+        _clearSnapshot();
+      } else {
+        _clearGenerationState();
+      }
+    });
+  }
+
+  Map<String, String> _validationErrors() {
+    final errors = <String, String>{};
+    if (destination.text.trim().isEmpty) {
+      errors['destination'] = 'Choose a destination.';
     }
     final start = DateTime.tryParse(startDate.text.trim());
     final end = DateTime.tryParse(endDate.text.trim());
-    if (start == null || end == null || end.isBefore(start)) {
-      return 'Use a valid trip date range.';
+    if (start == null) errors['startDate'] = 'Choose a valid start date.';
+    if (end == null) {
+      errors['endDate'] = 'Choose a valid end date.';
+    } else if (start != null && !end.isAfter(start)) {
+      errors['endDate'] = 'End date must be after start date.';
     }
-    final travellerCount = int.tryParse(travellers.text.trim());
-    if (travellerCount == null || travellerCount < 1) {
-      return 'Traveller count must be at least 1.';
+    final count = int.tryParse(travellers.text.trim());
+    if (count == null || count < 1) {
+      errors['travellers'] = 'Enter at least 1 traveller.';
     }
-    final budgetLimit = double.tryParse(budget.text.trim());
-    if (budgetLimit == null || budgetLimit < 0) {
-      return 'Enter a valid non-negative budget.';
+    final limit = double.tryParse(budget.text.trim());
+    if (limit == null || limit < 0) {
+      errors['budget'] = 'Enter a valid non-negative budget.';
     }
-    return null;
+    return errors;
+  }
+
+  String? _fieldError(String field) {
+    if (!showValidationErrors && !touchedFields.contains(field)) return null;
+    return _validationErrors()[field];
+  }
+
+  Future<void> _pickDate(
+    TextEditingController controller,
+    String field,
+  ) async {
+    final initial = DateTime.tryParse(controller.text) ??
+        DateTime.now().add(const Duration(days: 30));
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      controller.text = dateText(picked);
+      touchedFields.add(field);
+      _clearGenerationState();
+    });
+  }
+
+  Future<void> _loadSuggestions({required bool regenerate}) async {
+    if (suggestionsLoading && regenerate) return;
+    final requestedDestination = destination.text.trim();
+    if (requestedDestination.isEmpty) {
+      if (mounted) {
+        setState(() {
+          touchedFields.add('destination');
+          suggestionsLoading = false;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        suggestionsLoading = true;
+        suggestionsError = null;
+        if (regenerate) _clearGenerationState();
+      });
+    }
+
+    try {
+      final dynamic data = regenerate
+          ? await api.post('/api/fr4/recommendations/generate', {
+              'destinationArea': requestedDestination,
+            })
+          : await api.get('/api/fr4/recommendations', {
+              'destinationArea': requestedDestination,
+            });
+      if (!mounted || data is! Map) return;
+
+      final items = (data['recommendations'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      final rawSnapshot = data['snapshot'];
+      final snapshot = rawSnapshot is Map
+          ? Map<String, dynamic>.from(rawSnapshot)
+          : <String, dynamic>{};
+      final generationId =
+          (data['recommendationGenerationId'] ?? '').toString().trim();
+      final storedDestination = (snapshot['requestedDestination'] ??
+              snapshot['destinationArea'] ??
+              requestedDestination)
+          .toString()
+          .trim();
+
+      setState(() {
+        recommendations = items;
+        recommendationGenerationId =
+            generationId.isEmpty || items.isEmpty ? null : generationId;
+        snapshotDestination = items.isEmpty ? '' : storedDestination;
+        recommendationSource =
+            (data['source'] ?? snapshot['source'] ?? '').toString().trim();
+        snapshotConflict = false;
+        suggestionsError = items.isEmpty
+            ? 'No saved suggestions are available for this destination yet.'
+            : null;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        suggestionsError = error.statusCode == 404
+            ? 'No saved suggestions are available for this destination yet.'
+            : 'We could not load suggestions for this destination.';
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          suggestionsError =
+              'We could not load suggestions for this destination.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => suggestionsLoading = false);
+    }
+  }
+
+  String get _derivedTitle {
+    final area = destination.text.trim().split(',').first.trim();
+    return area.isEmpty ? 'My Personalised Trip' : 'My Personalised $area Trip';
   }
 
   String get _inputSignature => [
-        title.text.trim(),
-        destination.text.trim().toLowerCase(),
+        _derivedTitle,
+        _normaliseDestination(destination.text),
         startDate.text.trim(),
         endDate.text.trim(),
         travellers.text.trim(),
         budget.text.trim(),
+        recommendationGenerationId ?? '',
       ].join('|');
 
-  Map<String, dynamic> _tripPayload(String snapshotId) => {
-        'title': title.text.trim(),
+  Map<String, dynamic> _tripPayload() => {
+        'title': _derivedTitle,
         'destinationArea': destination.text.trim(),
         'destinationName': destination.text.trim(),
         'startDate': startDate.text.trim(),
         'endDate': endDate.text.trim(),
         'travellerCount': int.parse(travellers.text.trim()),
         'budgetLimit': double.parse(budget.text.trim()),
-        'recommendationGenerationId': snapshotId,
+        'recommendationGenerationId': recommendationGenerationId,
         'generationRequestId': generationRequestId,
       };
 
@@ -111,20 +312,43 @@ class _PersonalizedPlanningScreenState
     );
   }
 
-  void _recordFailure(Map<String, dynamic> data, Object error) {
-    failedTripId = (data['tripId'] ?? data['id'] ?? '').toString();
-    if (failedTripId!.isEmpty) failedTripId = null;
-    failureStage = (data['stage'] ?? 'trip_generation').toString();
-    failureMessage = (data['error'] ?? error).toString();
-    retryable = data['retryable'] == true;
-    status = failureMessage!;
+  String _failureCopy(String stage, {required bool hasDraft}) {
+    if (stage == 'trip_creation') {
+      return 'We couldn\'t create your trip. Please try again.';
+    }
+    if (stage == 'budget_calculation') {
+      return hasDraft
+          ? 'We couldn\'t finish the budget. Your trip draft is safe and you can try again.'
+          : 'We couldn\'t finish the budget. Please try again.';
+    }
+    return hasDraft
+        ? 'We couldn\'t finish your itinerary. Your trip draft is safe and you can try again.'
+        : 'We couldn\'t finish your itinerary. Please try again.';
   }
 
-  Future<void> buildPlan({bool retry = false}) async {
-    if (busy) return;
-    final inputError = _inputError();
-    if (inputError != null) {
-      showError(context, inputError);
+  void _recordFailure(
+    Map<String, dynamic> data, {
+    bool transportFailure = false,
+  }) {
+    final id = (data['tripId'] ?? data['id'] ?? '').toString().trim();
+    failedTripId = id.isEmpty ? null : id;
+    final stage = (data['stage'] ?? 'trip_generation').toString();
+    retryable = data['retryable'] == true ||
+        (transportFailure && generationRequestId != null);
+    failureMessage = _failureCopy(stage, hasDraft: failedTripId != null);
+  }
+
+  Future<void> _buildPlan({bool retry = false}) async {
+    if (generating) return;
+    FocusScope.of(context).unfocus();
+    setState(() => showValidationErrors = true);
+    if (_validationErrors().isNotEmpty) return;
+    if (!_snapshotReady) {
+      setState(() {
+        suggestionsError = snapshotConflict
+            ? 'Refresh suggestions for this destination before building your itinerary.'
+            : 'Load suggestions for this destination before building your itinerary.';
+      });
       return;
     }
 
@@ -133,7 +357,6 @@ class _PersonalizedPlanningScreenState
       generationSignature = signature;
       generationRequestId =
           'personalised_${DateTime.now().microsecondsSinceEpoch}';
-      recommendationGenerationId = null;
       completedTripId = null;
       failedTripId = null;
     }
@@ -141,424 +364,622 @@ class _PersonalizedPlanningScreenState
       await _openTrip(completedTripId!);
       return;
     }
+
     setState(() {
-      busy = true;
-      step = retry ? 2 : 1;
-      status = retry
-          ? 'Retrying itinerary and budget generation for this trip...'
-          : 'Ranking destinations from your travel preferences...';
-      generatedTrip = null;
+      generating = true;
       failureMessage = null;
-      failureStage = null;
       retryable = false;
     });
-
     try {
-      if (!retry || recommendationGenerationId == null) {
-        final recommendationData =
-            await api.post('/api/fr4/recommendations/generate', {
-          'destinationArea': destination.text.trim(),
-        });
-        final recommendations =
-            recommendationData['recommendations'] as List? ?? [];
-        recommendationGenerationId =
-            (recommendationData['recommendationGenerationId'] ?? '').toString();
-        if (recommendations.isEmpty) {
-          throw Exception('No recommendations were generated.');
-        }
-        if (recommendationGenerationId!.isEmpty) {
-          throw Exception('Recommendation snapshot could not be identified.');
-        }
-      }
-
-      if (!mounted) return;
-      setState(() {
-        step = 2;
-        status =
-            'Generating the itinerary and budget from the selected recommendation snapshot...';
-      });
-
       final generated = await api.post(
         '/api/fr5/personalised-trips/generate',
-        _tripPayload(recommendationGenerationId!),
+        _tripPayload(),
       );
       if (generated is! Map || generated['ok'] != true) {
         final data = generated is Map
             ? Map<String, dynamic>.from(generated)
             : <String, dynamic>{};
-        _recordFailure(data, 'Trip generation failed.');
-        throw Exception(failureMessage);
+        if (mounted) setState(() => _recordFailure(data));
+        return;
       }
-      final itineraryId =
-          (generated['tripId'] ?? generated['id'] ?? '').toString();
-      if (itineraryId.isEmpty) {
-        throw Exception('The generated trip ID was not returned.');
+      final tripId =
+          (generated['tripId'] ?? generated['id'] ?? '').toString().trim();
+      if (tripId.isEmpty) {
+        if (mounted) setState(() => _recordFailure(const {}));
+        return;
       }
       if (generated['status'] != 'planned') {
-        _recordFailure(
-          {
-            ...Map<String, dynamic>.from(generated),
-            'stage': 'generation_in_progress',
-            'error':
-                'Trip generation is still in progress. Please retry shortly.',
-            'retryable': true,
-          },
-          'Trip generation is still in progress.',
-        );
-        throw Exception(failureMessage);
-      }
-      final trip = Map<String, dynamic>.from(generated['itinerary'] as Map);
-      if (!mounted) return;
-      setState(() {
-        step = 5;
-        status = 'Your personalised trip is ready.';
-        generatedTrip = trip;
-        completedTripId = itineraryId;
-        failedTripId = null;
-      });
-      await _openTrip(itineraryId);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _recordFailure(e.data, e));
-      showError(context, e.message);
-    } catch (e) {
-      if (mounted) {
-        if (failureMessage == null) {
-          setState(() {
-            failureStage = 'request_transport';
-            failureMessage = e.toString().replaceFirst('Exception: ', '');
-            retryable = recommendationGenerationId != null &&
-                generationRequestId != null;
-            status = failureMessage!;
-          });
+        if (mounted) {
+          setState(() => _recordFailure({
+                ...Map<String, dynamic>.from(generated),
+                'stage': generated['stage'] ?? 'trip_generation',
+                'retryable': generated['retryable'] ?? true,
+              }));
         }
-        showError(context, failureMessage ?? e);
+        return;
+      }
+      completedTripId = tripId;
+      failedTripId = null;
+      if (!mounted) return;
+      await _openTrip(tripId);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      if (error.statusCode == 409) {
+        setState(() {
+          snapshotConflict = true;
+          retryable = false;
+          failureMessage =
+              'Your recommendations are out of date. Refresh suggestions for this destination and try again.';
+        });
+      } else {
+        setState(() => _recordFailure(error.data));
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _recordFailure(const {}, transportFailure: true));
       }
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) setState(() => generating = false);
     }
   }
 
-  Future<void> _pickDate(TextEditingController controller) async {
-    final initial = DateTime.tryParse(controller.text) ??
-        DateTime.now().add(const Duration(days: 30));
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime.now().subtract(const Duration(days: 1)),
-      lastDate: DateTime.now().add(const Duration(days: 730)),
+  Future<void> _adjustPreferences() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PreferencesScreen()),
     );
-    if (picked != null) controller.text = dateText(picked);
+    if (!mounted) return;
+    await _loadProfile();
+    if (!mounted) return;
+    setState(() {
+      _clearSnapshot();
+      suggestionsError =
+          'Refresh suggestions to use your updated travel preferences.';
+    });
   }
 
-  List<Map<String, dynamic>> _activityMaps(Map<String, dynamic> trip) {
-    return (trip['activities'] as List? ?? [])
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
-  }
+  List<String> get _interests => (preferences['interests'] as List? ?? const [])
+      .map((value) => value.toString().trim())
+      .where((value) => value.isNotEmpty)
+      .toList();
 
-  Map<int, List<Map<String, dynamic>>> _groupByDay(Map<String, dynamic> trip) {
-    final grouped = <int, List<Map<String, dynamic>>>{};
-    for (final activity in _activityMaps(trip)) {
-      final day = int.tryParse('${activity['dayNo'] ?? 1}') ?? 1;
-      grouped.putIfAbsent(day, () => []).add(activity);
-    }
-    return grouped;
-  }
-
-  String _dateRange(Map<String, dynamic> trip) {
-    final range = (trip['tripDateRangeLabel'] ?? '').toString();
-    if (range.isNotEmpty) return range;
-    final start = (trip['startDate'] ?? '').toString();
-    final end = (trip['endDate'] ?? '').toString();
-    return start.isEmpty && end.isEmpty ? 'Dates not set' : '$start to $end';
-  }
-
-  String _timeRange(Map<String, dynamic> activity) {
-    final range = (activity['timeRangeLabel'] ?? '').toString();
-    if (range.isNotEmpty) return range;
-    final slot = (activity['timeSlot'] ?? '').toString();
-    return slot.isEmpty ? 'Time not arranged' : slot;
-  }
-
-  Widget _timelinePreview(Map<String, dynamic> trip) {
-    final grouped = _groupByDay(trip);
-    if (grouped.isEmpty) return const SizedBox.shrink();
-    return Column(
+  Widget _sectionLabel(int number, String title, String subtitle) {
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: grouped.entries.map((entry) {
-        final first =
-            entry.value.isEmpty ? <String, dynamic>{} : entry.value.first;
-        final dayLabel = (first['dayLabel'] ?? 'Day ${entry.key}').toString();
-        return Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: InkCard(
-            color: InkWashColors.cream,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(dayLabel,
-                    style: const TextStyle(fontWeight: FontWeight.w900)),
-                const SizedBox(height: 8),
-                ...entry.value.map((activity) {
-                  final notes = (activity['scheduleNotes'] as List? ?? [])
-                      .map((e) => e.toString())
-                      .where((e) => e.trim().isNotEmpty)
-                      .take(1)
-                      .toList();
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: 86,
-                          child: Text(_timeRange(activity),
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: InkWashColors.blueGrey)),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                  (activity['activityName'] ?? 'Place')
-                                      .toString(),
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w800)),
-                              Text(
-                                  '${activity['category'] ?? activity['type'] ?? ''}${activity['recommendedDurationMinutes'] == null ? '' : ' • ${activity['recommendedDurationMinutes']} min'}',
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      color: InkWashColors.mutedInk)),
-                              if (notes.isNotEmpty)
-                                Text(notes.first,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                        fontSize: 12,
-                                        color: InkWashColors.blueGrey)),
-                            ],
-                          ),
-                        ),
-                      ],
+      children: [
+        CircleAvatar(
+          radius: 16,
+          backgroundColor: AppColors.primarySoft,
+          foregroundColor: AppColors.primaryStrong,
+          child: Text('$number'),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
                     ),
-                  );
-                }),
-              ],
-            ),
+              ),
+            ],
           ),
-        );
-      }).toList(),
+        ),
+      ],
     );
   }
 
-  Widget processStep(int number, String text) {
-    final complete = step > number;
-    final active = step == number && busy;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
+  Widget _tripBasics() {
+    return InkCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            complete
-                ? Icons.check_circle_rounded
-                : active
-                    ? Icons.sync_rounded
-                    : Icons.radio_button_unchecked_rounded,
-            size: 20,
-            color: complete || active
-                ? InkWashColors.blueGrey
-                : InkWashColors.softGrey,
+          _sectionLabel(
+            1,
+            'Trip basics',
+            'Tell us where, when and who this trip is for.',
           ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(text)),
+          const SizedBox(height: AppSpacing.md),
+          AppTextField(
+            key: const ValueKey('planning-destination'),
+            controller: destination,
+            label: 'Where are you going?',
+            hint: 'Penang, Malaysia',
+            prefixIcon: Icons.location_on_outlined,
+            errorText: _fieldError('destination'),
+            textInputAction: TextInputAction.next,
+            onChanged: (_) =>
+                _onFieldChanged('destination', destinationChanged: true),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: AppTextField(
+                  key: const ValueKey('planning-start-date'),
+                  controller: startDate,
+                  label: 'Start date',
+                  prefixIcon: Icons.calendar_month_outlined,
+                  errorText: _fieldError('startDate'),
+                  readOnly: true,
+                  onTap: () => _pickDate(startDate, 'startDate'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: AppTextField(
+                  key: const ValueKey('planning-end-date'),
+                  controller: endDate,
+                  label: 'End date',
+                  prefixIcon: Icons.event_outlined,
+                  errorText: _fieldError('endDate'),
+                  readOnly: true,
+                  onTap: () => _pickDate(endDate, 'endDate'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: AppTextField(
+                  key: const ValueKey('planning-travellers'),
+                  controller: travellers,
+                  label: 'Travellers',
+                  prefixIcon: Icons.people_outline_rounded,
+                  errorText: _fieldError('travellers'),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  textInputAction: TextInputAction.next,
+                  onChanged: (_) => _onFieldChanged('travellers'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: AppTextField(
+                  key: const ValueKey('planning-budget'),
+                  controller: budget,
+                  label: 'Budget (RM)',
+                  prefixIcon: Icons.account_balance_wallet_outlined,
+                  errorText: _fieldError('budget'),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(
+                        RegExp(r'^\d*\.?\d{0,2}')),
+                  ],
+                  textInputAction: TextInputAction.done,
+                  onChanged: (_) => _onFieldChanged('budget'),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final trip = generatedTrip;
-    final b = trip?['budgetEstimate'] is Map
-        ? Map<String, dynamic>.from(trip!['budgetEstimate'] as Map)
-        : <String, dynamic>{};
-    final contextData = trip?['generationContext'] is Map
-        ? Map<String, dynamic>.from(trip!['generationContext'] as Map)
-        : <String, dynamic>{};
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Personalised Plan')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 6, 18, 30),
+  Widget _profileSummary() {
+    return InkCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const TravelSectionHeader(
-            title: 'Build the whole trip for me',
-            subtitle:
-                'Uses your preferences, hybrid ranking, smart itinerary generation, weather and budget analysis.',
+          _sectionLabel(
+            2,
+            'Your travel style',
+            'TravelMate uses your saved profile to personalise this trip.',
           ),
-          const SizedBox(height: 14),
-          TextField(
-              controller: destination,
-              decoration: const InputDecoration(
-                  labelText: 'Destination area',
-                  prefixIcon: Icon(Icons.location_on_outlined))),
-          const SizedBox(height: 9),
-          TextField(
-              controller: title,
-              decoration: const InputDecoration(labelText: 'Trip title')),
-          const SizedBox(height: 9),
-          Row(children: [
-            Expanded(
-                child: TextField(
-                    controller: startDate,
-                    readOnly: true,
-                    onTap: () => _pickDate(startDate),
-                    decoration: const InputDecoration(
-                        labelText: 'Start date',
-                        prefixIcon: Icon(Icons.calendar_month_outlined)))),
-            const SizedBox(width: 8),
-            Expanded(
-                child: TextField(
-                    controller: endDate,
-                    readOnly: true,
-                    onTap: () => _pickDate(endDate),
-                    decoration: const InputDecoration(
-                        labelText: 'End date',
-                        prefixIcon: Icon(Icons.event_outlined)))),
-          ]),
-          const SizedBox(height: 9),
-          Row(children: [
-            Expanded(
-                child: TextField(
-                    controller: travellers,
-                    keyboardType: TextInputType.number,
-                    decoration:
-                        const InputDecoration(labelText: 'Travellers'))),
-            const SizedBox(width: 8),
-            Expanded(
-                child: TextField(
-                    controller: budget,
-                    keyboardType: TextInputType.number,
-                    decoration:
-                        const InputDecoration(labelText: 'Budget (RM)'))),
-          ]),
-          const SizedBox(height: 14),
-          FilledButton.icon(
-            onPressed: busy ? null : buildPlan,
-            icon: const Icon(Icons.auto_fix_high_rounded),
-            label: Text(
-                busy ? 'Building your plan...' : 'Generate personalised trip'),
-          ),
-          const SizedBox(height: 18),
-          InkCard(
-            color: InkWashColors.cream,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('What TravelMate runs',
-                    style:
-                        TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
-                const SizedBox(height: 7),
-                processStep(1, 'Hybrid Recommendation Engine'),
-                processStep(2, 'Destination Planning'),
-                processStep(3,
-                    'Activity Arrangement + Trip Day Generation + Weather Consideration'),
-                processStep(4, 'Budget Estimation and Comparison'),
-                if (status.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(status,
-                      style: const TextStyle(
-                          color: InkWashColors.blueGrey,
-                          fontWeight: FontWeight.w700)),
-                ],
-              ],
-            ),
-          ),
-          if (failureMessage != null) ...[
-            const SizedBox(height: 14),
-            InkCard(
-              color: InkWashColors.cream,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Trip generation did not finish',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
-                  const SizedBox(height: 6),
-                  Text(failureMessage!),
-                  const SizedBox(height: 5),
-                  Text('Stage: ${failureStage ?? 'trip_generation'}',
-                      style: const TextStyle(
-                          color: InkWashColors.mutedInk, fontSize: 12)),
-                  if (failedTripId != null)
-                    Text('Recoverable trip: $failedTripId',
-                        style: const TextStyle(
-                            color: InkWashColors.mutedInk, fontSize: 12)),
-                  if (retryable && recommendationGenerationId != null) ...[
-                    const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      onPressed: busy ? null : () => buildPlan(retry: true),
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Retry this trip'),
+          const SizedBox(height: AppSpacing.md),
+          if (profileLoading)
+            const AppLoadingState(message: 'Loading your travel style…')
+          else if (profileError != null)
+            AppErrorState(
+              title: 'Travel style unavailable',
+              message: profileError!,
+              retryLabel: 'Try again',
+              onRetry: _loadProfile,
+            )
+          else ...[
+            Semantics(
+              container: true,
+              label: 'Planning for your saved travel style',
+              child: Container(
+                width: double.infinity,
+                padding: AppSpacing.card,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: AppRadii.control,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      (preferences['travelPersonality'] ??
+                              preferences['travelType'] ??
+                              'Your travel style')
+                          .toString(),
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      children: [
+                        ..._interests.take(3).map(
+                              (interest) => StatusChip(
+                                text: interest,
+                                tone: AppStatusTone.neutral,
+                              ),
+                            ),
+                        if ((preferences['travelPace'] ?? '')
+                            .toString()
+                            .trim()
+                            .isNotEmpty)
+                          StatusChip(
+                            text: '${preferences['travelPace']} pace',
+                            tone: AppStatusTone.neutral,
+                          ),
+                        if ((preferences['budgetRange'] ?? '')
+                            .toString()
+                            .trim()
+                            .isNotEmpty)
+                          StatusChip(
+                            text: '${preferences['budgetRange']} budget',
+                            tone: AppStatusTone.neutral,
+                          ),
+                      ],
                     ),
                   ],
-                ],
+                ),
               ),
             ),
+            const SizedBox(height: AppSpacing.xs),
+            TertiaryButton(
+              label: 'Adjust preferences',
+              icon: Icons.tune_rounded,
+              onPressed: generating ? null : _adjustPreferences,
+            ),
           ],
-          if (trip != null) ...[
-            const SizedBox(height: 16),
-            InkCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text((trip['title'] ?? 'Generated trip').toString(),
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w900, fontSize: 20)),
-                  const SizedBox(height: 6),
-                  Wrap(spacing: 7, runSpacing: 7, children: [
-                    TravelStatusPill(
-                        text: '${trip['tripDays'] ?? '-'} days',
-                        icon: Icons.calendar_today_outlined),
-                    TravelStatusPill(
-                        text: _dateRange(trip),
-                        icon: Icons.event_available_outlined),
-                    TravelStatusPill(
-                        text:
-                            '${(trip['activities'] as List?)?.length ?? 0} activities',
-                        icon: Icons.place_outlined),
-                    TravelStatusPill(
-                        text: 'RM ${b['total'] ?? 0} / RM ${b['limit'] ?? 0}',
-                        icon: Icons.account_balance_wallet_outlined),
-                    TravelStatusPill(
-                        text: (b['status'] ?? '').toString(),
-                        icon: Icons.insights_outlined),
-                  ]),
-                  const SizedBox(height: 10),
-                  Text((b['comparison'] ?? '').toString()),
-                  const SizedBox(height: 8),
-                  Text(
-                      'Weather considered: ${contextData['weatherConsideration'] == true ? 'Yes' : 'No'}'),
-                  Text(
-                      'Destination source: ${contextData['destinationSource'] ?? 'recommendations'}'),
-                  _timelinePreview(trip),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: completedTripId == null
-                        ? null
-                        : () => _openTrip(completedTripId!),
-                    icon: const Icon(Icons.route_rounded),
-                    label: const Text('Open generated trip'),
+        ],
+      ),
+    );
+  }
+
+  num? _score(Map<String, dynamic> item) {
+    final value = item['finalScore'] ?? item['score'];
+    if (value is num) return value.clamp(0, 100);
+    return num.tryParse((value ?? '').toString())?.clamp(0, 100);
+  }
+
+  List<String> _reasons(Map<String, dynamic> item) {
+    final reasons = item['matchReasons'];
+    if (reasons is List) {
+      return reasons
+          .map((value) => value.toString().trim())
+          .where((value) => value.isNotEmpty)
+          .take(2)
+          .toList();
+    }
+    final reason = (item['recommendationReason'] ?? item['reason'] ?? '')
+        .toString()
+        .trim();
+    if (reason.isEmpty) return const [];
+    return reason
+        .split('•')
+        .map((value) => value.trim())
+        .where((value) =>
+            value.isNotEmpty &&
+            !RegExp(r'^\d+(\.\d+)?%\s*match$', caseSensitive: false)
+                .hasMatch(value))
+        .take(2)
+        .toList();
+  }
+
+  Widget _suggestionTile(Map<String, dynamic> item, int index) {
+    final title =
+        (item['title'] ?? item['name'] ?? 'Recommended place').toString();
+    final score = _score(item);
+    final reasons = _reasons(item);
+    return Padding(
+      padding: EdgeInsets.only(top: index == 0 ? 0 : AppSpacing.xs),
+      child: Semantics(
+        container: true,
+        selected: true,
+        label: '$title, selected for your trip',
+        child: Container(
+          padding: AppSpacing.card,
+          decoration: BoxDecoration(
+            color: AppColors.surfaceElevated,
+            border: Border.all(color: AppColors.divider),
+            borderRadius: AppRadii.control,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.check_circle_rounded,
+                color: AppColors.success,
+                semanticLabel: 'Selected',
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        if (score != null) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          StatusChip(
+                            text: '${score.round()}% match',
+                            icon: Icons.auto_awesome_rounded,
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      reasons.isEmpty
+                          ? 'Recommended for your saved travel style.'
+                          : reasons.join(' · '),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      'Selected for planning',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: AppColors.success,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _suggestionsReview() {
+    return InkCard(
+      key: recommendationGenerationId == null
+          ? const ValueKey('planning-snapshot-empty')
+          : ValueKey('planning-snapshot-$recommendationGenerationId'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionLabel(
+            3,
+            'Suggestions for this trip',
+            'These places come from one saved recommendation set for your destination.',
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (suggestionsLoading)
+            AppLoadingState(
+              message: 'Loading suggestions for ${destination.text.trim()}…',
+            )
+          else if (_snapshotReady) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Selected for your trip',
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                ],
-              ),
+                ),
+                StatusChip(
+                  text: '${recommendations.length} places',
+                  icon: Icons.check_rounded,
+                  tone: AppStatusTone.success,
+                ),
+              ],
+            ),
+            if (recommendationSource.isNotEmpty &&
+                !{'live', 'provider', 'live_provider', 'serpapi'}
+                    .contains(recommendationSource.toLowerCase())) ...[
+              const SizedBox(height: AppSpacing.xs),
+              SourceFallbackBadge(source: recommendationSource),
+            ],
+            const SizedBox(height: AppSpacing.sm),
+            ...recommendations.indexed.map(
+              (entry) => _suggestionTile(entry.$2, entry.$1),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            SecondaryButton(
+              label: 'Refresh suggestions',
+              icon: Icons.refresh_rounded,
+              onPressed:
+                  generating ? null : () => _loadSuggestions(regenerate: true),
+            ),
+          ] else ...[
+            AppErrorState(
+              title: snapshotConflict
+                  ? 'Your recommendations are out of date'
+                  : 'Suggestions needed',
+              message: snapshotConflict
+                  ? failureMessage ??
+                      'Refresh suggestions for this destination and try again.'
+                  : suggestionsError ??
+                      'Find personalised places for this destination before building your itinerary.',
+              retryLabel:
+                  snapshotConflict ? 'Refresh suggestions' : 'Find suggestions',
+              onRetry:
+                  generating ? null : () => _loadSuggestions(regenerate: true),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _generationProgress() {
+    return Semantics(
+      liveRegion: true,
+      label: 'Building your itinerary',
+      child: InkCard(
+        color: AppColors.infoSoft,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const SizedBox.square(
+                  dimension: AppSizes.icon,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'Building your ${destination.text.trim().split(',').first} trip',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            const _ProgressLine(
+              label: 'Travel preferences matched',
+              complete: true,
+            ),
+            const _ProgressLine(
+              label: 'Recommendations selected',
+              complete: true,
+            ),
+            const _ProgressLine(
+              label: 'Arranging your itinerary and budget',
+              complete: false,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'We’re arranging activities around your dates, travel pace, location and budget.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _failureState() {
+    final conflict = snapshotConflict;
+    return AppErrorState(
+      title: conflict
+          ? 'Your recommendations are out of date'
+          : 'We couldn’t finish your itinerary',
+      message: failureMessage ?? 'Please try again.',
+      retryLabel: conflict ? 'Refresh suggestions' : 'Retry this trip',
+      onRetry: conflict
+          ? () => _loadSuggestions(regenerate: true)
+          : retryable && recommendationGenerationId != null
+              ? () => _buildPlan(retry: true)
+              : null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TravelMatePageScaffold(
+      appBar: AppBar(title: const Text('Plan a trip')),
+      padding: EdgeInsets.zero,
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: ListView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.xs,
+            AppSpacing.md,
+            AppSpacing.xxl,
+          ),
+          children: [
+            const AppSectionHeader(
+              title: 'Build a trip around you',
+              subtitle:
+                  'Set your trip basics, review what TravelMate will use, then build your itinerary.',
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _tripBasics(),
+            const SizedBox(height: AppSpacing.md),
+            _profileSummary(),
+            const SizedBox(height: AppSpacing.md),
+            _suggestionsReview(),
+            if (generating) ...[
+              const SizedBox(height: AppSpacing.md),
+              _generationProgress(),
+            ],
+            if (failureMessage != null && !snapshotConflict) ...[
+              const SizedBox(height: AppSpacing.md),
+              _failureState(),
+            ],
+            const SizedBox(height: AppSpacing.lg),
+            Semantics(
+              button: true,
+              enabled: _snapshotReady && !generating,
+              label:
+                  generating ? 'Building your itinerary' : 'Build my itinerary',
+              child: PrimaryButton(
+                key: const ValueKey('build-itinerary-button'),
+                label: 'Build my itinerary',
+                icon: Icons.auto_awesome_rounded,
+                loading: generating,
+                onPressed: _snapshotReady && !generating ? _buildPlan : null,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'TravelMate will create a day-by-day plan and estimate the budget using the selected suggestions.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProgressLine extends StatelessWidget {
+  final String label;
+  final bool complete;
+
+  const _ProgressLine({required this.label, required this.complete});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+      child: Row(
+        children: [
+          Icon(
+            complete ? Icons.check_circle_rounded : Icons.more_horiz_rounded,
+            size: AppSizes.iconSmall,
+            color: complete ? AppColors.success : AppColors.info,
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(child: Text(label)),
         ],
       ),
     );

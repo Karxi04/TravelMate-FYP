@@ -1,23 +1,27 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/destination_utils.dart';
 import '../../services/api_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/destination_card.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
-import '../../theme/app_theme.dart';
-import 'favourites_screen.dart';
-import 'destination_details_screen.dart';
 import '../fr04_hybrid_recommendation/recommendation_screen.dart';
-import '../fr05_smart_itinerary_budget_planner/trips_tab.dart';
 import '../fr08_hotel_booking/hotel_screen.dart';
+import 'destination_details_screen.dart';
+import 'destination_trip_actions.dart';
+import 'favourites_screen.dart';
 
 class ExploreTab extends StatefulWidget {
   final String initialQuery;
   final String initialLocation;
+  final ApiService? api;
 
   const ExploreTab({
     super.key,
     this.initialQuery = '',
     this.initialLocation = 'Malaysia',
+    this.api,
   });
 
   @override
@@ -27,13 +31,21 @@ class ExploreTab extends StatefulWidget {
 class _ExploreTabState extends State<ExploreTab> {
   late final TextEditingController query;
   late final TextEditingController location;
-  final api = ApiService();
+  late final ApiService api;
 
-  List<dynamic> results = [];
+  List<Map<String, dynamic>> results = [];
+  final Set<String> addingIds = {};
+  final Set<String> savingIds = {};
+  final Set<String> savedIds = {};
   bool loading = false;
+  bool hasSearched = false;
   String category = 'All';
   String sort = 'relevance';
   String locationUsed = '';
+  String resultSource = '';
+  String? queryError;
+  String? searchError;
+  int searchVersion = 0;
 
   final categories = const [
     ('All', Icons.explore_outlined),
@@ -44,17 +56,17 @@ class _ExploreTabState extends State<ExploreTab> {
     ('Hotels', Icons.hotel_outlined),
   ];
 
-  final examples = const [
+  final suggestions = const [
     'Penang attractions',
-    'curry mee in Penang',
-    'heritage in George Town',
-    'Kuala Lumpur food',
-    'nature in Kuala Lumpur',
+    'Local food',
+    'Heritage places',
+    'Nature escapes',
   ];
 
   @override
   void initState() {
     super.initState();
+    api = widget.api ?? ApiService();
     query = TextEditingController(text: widget.initialQuery);
     location = TextEditingController(text: widget.initialLocation);
     if (widget.initialQuery.trim().isNotEmpty) Future.microtask(search);
@@ -67,446 +79,398 @@ class _ExploreTabState extends State<ExploreTab> {
     super.dispose();
   }
 
+  bool get _showSourceDisclosure => const {
+        'cache',
+        'cached',
+        'fallback',
+        'local',
+        'demo',
+      }.contains(resultSource.toLowerCase());
+
+  String get _locationTitle {
+    final value = location.text.trim();
+    if (value.isEmpty || value.toLowerCase() == 'malaysia') return 'Malaysia';
+    return value.split(',').first.trim();
+  }
+
   Future<void> search() async {
     final text = query.text.trim();
-    if (text.isEmpty) return;
-    setState(() => loading = true);
+    if (text.isEmpty) {
+      setState(
+          () => queryError = 'Enter a place, food, or activity to search.');
+      return;
+    }
+    if (loading) return;
 
+    final version = ++searchVersion;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      loading = true;
+      hasSearched = true;
+      queryError = null;
+      searchError = null;
+    });
+
+    final requestedLocation =
+        location.text.trim().isEmpty ? 'Malaysia' : location.text.trim();
     final params = <String, String>{
       'q': text,
-      'location':
-          location.text.trim().isEmpty ? 'Malaysia' : location.text.trim(),
+      'location': requestedLocation,
     };
     if (category != 'All') params['filter'] = category.toLowerCase();
     if (sort != 'relevance') params['sort'] = sort;
 
     try {
       final data = await api.get('/api/fr3/destinations/search', params);
-      if (!mounted) return;
+      if (!mounted || version != searchVersion) return;
       setState(() {
-        results = data['results'] ?? [];
+        results = (data['results'] as List? ?? const [])
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
         locationUsed =
-            (data['locationUsed'] ?? params['location'] ?? '').toString();
+            (data['locationUsed'] ?? requestedLocation).toString().trim();
+        resultSource = (data['source'] ?? '').toString();
       });
-    } catch (e) {
-      if (mounted) showError(context, e);
+    } catch (_) {
+      if (!mounted || version != searchVersion) return;
+      setState(() {
+        searchError =
+            'We couldn’t load places right now. Check your connection and try again.';
+      });
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted && version == searchVersion) setState(() => loading = false);
     }
   }
 
-  String destinationId(Map<String, dynamic> item) {
-    return (item['place_id'] ??
-            item['data_id'] ??
-            item['data_cid'] ??
-            item['destinationId'] ??
-            item['title'] ??
-            '')
-        .toString();
+  Future<void> _addToTrip(Map<String, dynamic> item) async {
+    final id = DestinationUtils.resolveId(item);
+    if (addingIds.contains(id)) return;
+    setState(() => addingIds.add(id));
+    await addDestinationToTrip(
+      context: context,
+      api: api,
+      destination: item,
+    );
+    if (mounted) setState(() => addingIds.remove(id));
   }
 
-  Future<void> save(Map<String, dynamic> item) async {
-    final payload = Map<String, dynamic>.from(item);
-    payload['destinationId'] = destinationId(payload);
+  Future<void> _saveDestination(Map<String, dynamic> item) async {
+    final id = DestinationUtils.resolveId(item);
+    if (id.isEmpty || savingIds.contains(id) || savedIds.contains(id)) return;
+    setState(() => savingIds.add(id));
     try {
+      final payload = Map<String, dynamic>.from(item);
+      payload['destinationId'] = id;
       await api.post('/api/fr3/favourites', payload);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Saved to favourites.')),
-        );
-      }
-    } catch (e) {
-      if (mounted) showError(context, e);
+      if (!mounted) return;
+      setState(() => savedIds.add(id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saved to your destinations.')),
+      );
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => savingIds.remove(id));
     }
   }
 
-  Future<void> addToItinerary(Map<String, dynamic> item) async {
-    try {
-      final data = await api.get('/api/fr5/itineraries');
-      final trips = data['items'] as List? ?? [];
-
-      if (trips.isEmpty) {
-        if (!mounted) return;
-        final go = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Create a trip first'),
-            content:
-                const Text('Create an itinerary before adding this place.'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel')),
-              FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Go to Trips')),
-            ],
-          ),
-        );
-        if (go == true && mounted) {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (_) => const TripsTab()));
-        }
-        return;
-      }
-
-      if (!mounted) return;
-      final selected = await showModalBottomSheet<Map<String, dynamic>>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
-            children: [
-              const Text('Add to which trip?',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 9),
-              ...trips.map((raw) {
-                final trip = Map<String, dynamic>.from(raw as Map);
-                return ListTile(
-                  leading: const CircleAvatar(
-                      backgroundColor: InkWashColors.cream,
-                      child: Icon(Icons.luggage_outlined)),
-                  title: Text((trip['title'] ?? 'Trip').toString()),
-                  subtitle: Text((trip['destinationArea'] ?? '').toString()),
-                  onTap: () => Navigator.pop(context, trip),
-                );
-              }),
-            ],
+  Future<void> _viewDetails(Map<String, dynamic> item) => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DestinationDetailsScreen(
+            initialDestination: Map<String, dynamic>.from(item),
+            api: api,
           ),
         ),
       );
 
-      if (selected == null) return;
-      await api.post('/api/fr5/itineraries/${selected['id']}/activities', {
-        'activityName':
-            (item['title'] ?? item['name'] ?? 'Destination').toString(),
-        'destinationId': destinationId(item),
-        'address': item['address'] ?? '',
-        'dayNo': 1,
-        'estimatedCost': item['estimatedCost'] ?? 0,
-        'gps_coordinates':
-            item['gps_coordinates'] ?? item['gpsCoordinates'] ?? {},
-        'type': item['type'] ?? item['category'] ?? '',
-        'category': item['category'] ?? item['type'] ?? '',
-        'description': item['description'] ?? '',
-        'indoor': item['indoor'] ?? false,
-        'openingHours': item['openingHours'] ?? '',
-        'recommendedDurationMinutes': item['recommendedDurationMinutes'] ?? 90,
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Added to ${selected['title'] ?? 'trip'}')),
-        );
-      }
-    } catch (e) {
-      if (mounted) showError(context, e);
+  void _selectCategory(String value) {
+    if (value == 'Hotels') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const HotelScreen()),
+      );
+      return;
     }
+    setState(() => category = value);
+    if (query.text.trim().isNotEmpty) search();
   }
 
-  Future<void> viewDetails(Map<String, dynamic> item) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => DestinationDetailsScreen(
-          initialDestination: Map<String, dynamic>.from(item),
-        ),
-      ),
-    );
+  void _useSuggestion(String value) {
+    query.text = value;
+    query.selection = TextSelection.collapsed(offset: value.length);
+    search();
   }
 
-  Widget resultCard(Map<String, dynamic> item) {
-    final rating = item['rating'];
-    final reason = (item['searchReason'] ?? '').toString();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 13),
-      child: InkCard(
-        padding: EdgeInsets.zero,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            InkWell(
-              onTap: () => viewDetails(item),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(20)),
-              child: Stack(
-                children: [
-                  TravelPlaceImage(
-                    place: item,
-                    height: 180,
-                    width: double.infinity,
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(20)),
-                  ),
-                  Positioned(
-                    top: 10,
-                    right: 10,
-                    child: Material(
-                      color: Colors.white.withValues(alpha: .94),
-                      shape: const CircleBorder(),
-                      child: IconButton(
-                        onPressed: () => save(item),
-                        icon: const Icon(Icons.favorite_border_rounded),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          (item['title'] ?? item['name'] ?? 'Destination')
-                              .toString(),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w900, fontSize: 18),
-                        ),
-                      ),
-                      if (rating != null) ...[
-                        const SizedBox(width: 8),
-                        TravelStatusPill(text: '★ $rating'),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    (item['address'] ?? item['type'] ?? '').toString(),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: InkWashColors.mutedInk),
-                  ),
-                  const SizedBox(height: 7),
-                  Wrap(
-                    spacing: 7,
-                    runSpacing: 7,
-                    children: [
-                      TravelStatusPill(
-                          text: (item['category'] ?? item['type'] ?? 'Place')
-                              .toString(),
-                          icon: Icons.category_outlined),
-                      if ((item['openingHours'] ?? '').toString().isNotEmpty)
-                        TravelStatusPill(
-                            text: (item['openingHours'] ?? '').toString(),
-                            icon: Icons.schedule_outlined),
-                    ],
-                  ),
-                  if (reason.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text(reason,
-                        style: const TextStyle(
-                            fontSize: 12,
-                            color: InkWashColors.blueGrey,
-                            fontWeight: FontWeight.w700)),
-                  ],
-                  const SizedBox(height: 11),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => viewDetails(item),
-                          icon: const Icon(Icons.info_outline_rounded),
-                          label: const Text('Details'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () => addToItinerary(item),
-                          icon: const Icon(Icons.add_location_alt_outlined),
-                          label: const Text('Add to trip'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+  Widget _searchControls() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SearchField(
+            key: const ValueKey('explore-search-field'),
+            controller: query,
+            hint: 'Search places, food, attractions…',
+            onSubmitted: (_) => search(),
+            onClear: () {
+              query.clear();
+              setState(() {
+                queryError = null;
+                searchError = null;
+                hasSearched = false;
+                results = [];
+              });
+            },
+          ),
+          if (queryError != null) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              queryError!,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: AppColors.error),
             ),
           ],
+          const SizedBox(height: AppSpacing.sm),
+          AppTextField(
+            key: const ValueKey('explore-location-field'),
+            controller: location,
+            label: 'Search area',
+            hint: 'Penang, Kuala Lumpur…',
+            prefixIcon: Icons.location_on_outlined,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => search(),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          SizedBox(
+            width: double.infinity,
+            child: PrimaryButton(
+              key: const ValueKey('explore-search-button'),
+              label: loading ? 'Searching…' : 'Search places',
+              icon: Icons.travel_explore_rounded,
+              onPressed: loading ? null : search,
+            ),
+          ),
+        ],
+      );
+
+  Widget _filters() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Interests', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.xs),
+          SizedBox(
+            height: 44,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: categories.length,
+              separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.xs),
+              itemBuilder: (context, index) {
+                final item = categories[index];
+                return ChoiceChip(
+                  key: ValueKey('explore-category-${item.$1.toLowerCase()}'),
+                  selected: category == item.$1,
+                  avatar: Icon(item.$2, size: AppSizes.iconSmall),
+                  label: Text(item.$1),
+                  onSelected: (_) => _selectCategory(item.$1),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  hasSearched ? 'Results' : 'Discover',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              PopupMenuButton<String>(
+                key: const ValueKey('explore-sort-menu'),
+                initialValue: sort,
+                tooltip: 'Sort destinations',
+                onSelected: (value) {
+                  setState(() => sort = value);
+                  if (hasSearched) search();
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'relevance', child: Text('Relevance')),
+                  PopupMenuItem(value: 'rating', child: Text('Highest rating')),
+                  PopupMenuItem(value: 'name', child: Text('Name')),
+                ],
+                child: StatusChip(
+                  text: switch (sort) {
+                    'rating' => 'Highest rating',
+                    'name' => 'Name',
+                    _ => 'Relevance',
+                  },
+                  icon: Icons.sort_rounded,
+                  tone: AppStatusTone.neutral,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+
+  Widget _resultState() {
+    if (loading && results.isEmpty) {
+      return const InkCard(
+        child: AppLoadingState(message: 'Finding places…'),
+      );
+    }
+    if (searchError != null && results.isEmpty) {
+      return AppErrorState(
+        title: 'Places couldn’t be loaded',
+        message: searchError!,
+        onRetry: search,
+      );
+    }
+    if (!hasSearched) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: suggestions
+                .map(
+                  (suggestion) => ActionChip(
+                    label: Text(suggestion),
+                    onPressed: () => _useSuggestion(suggestion),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          const TravelEmptyState(
+            icon: Icons.map_outlined,
+            title: 'Find somewhere memorable',
+            message:
+                'Search a place, dish, attraction, or activity in your chosen area.',
+          ),
+        ],
+      );
+    }
+    if (results.isEmpty) {
+      return TravelEmptyState(
+        icon: Icons.search_off_rounded,
+        title: 'No places found',
+        message:
+            'Try a broader search term, another area, or remove the selected interest.',
+        actionLabel: 'Clear interest filter',
+        onAction: () {
+          setState(() => category = 'All');
+          search();
+        },
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (loading) ...[
+          const LinearProgressIndicator(),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        if (searchError != null) ...[
+          InkCard(
+            color: AppColors.errorSoft,
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline_rounded, color: AppColors.error),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(child: Text(searchError!)),
+                TextButton(onPressed: search, child: const Text('Retry')),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${results.length} place${results.length == 1 ? '' : 's'}${locationUsed.isEmpty ? '' : ' in $locationUsed'}',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: AppColors.textSecondary),
+              ),
+            ),
+            if (_showSourceDisclosure)
+              SourceFallbackBadge(source: resultSource),
+          ],
         ),
-      ),
+        const SizedBox(height: AppSpacing.sm),
+        ...results.map(
+          (item) => Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: DestinationCard(
+              destination: item,
+              source: resultSource,
+              onView: () => _viewDetails(item),
+              saved: savedIds.contains(DestinationUtils.resolveId(item)),
+              onSave: savingIds.contains(DestinationUtils.resolveId(item))
+                  ? null
+                  : () => _saveDestination(item),
+              onAddToTrip: addingIds.contains(DestinationUtils.resolveId(item))
+                  ? null
+                  : () => _addToTrip(item),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return TravelMatePageScaffold(
       appBar: AppBar(
         title: const Text('Explore'),
         actions: [
           IconButton(
-            tooltip: 'Recommendations',
+            tooltip: 'Personalised recommendations',
             onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const RecommendationScreen())),
+              context,
+              MaterialPageRoute(builder: (_) => const RecommendationScreen()),
+            ),
             icon: const Icon(Icons.auto_awesome_outlined),
           ),
           IconButton(
-            tooltip: 'Favourites',
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const FavouritesScreen())),
+            tooltip: 'Saved destinations',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const FavouritesScreen()),
+            ),
             icon: const Icon(Icons.favorite_border_rounded),
           ),
         ],
       ),
+      padding: EdgeInsets.zero,
       body: RefreshIndicator(
-        onRefresh: search,
+        onRefresh: hasSearched ? search : () async {},
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 6, 18, 28),
+          key: const ValueKey('explore-scroll'),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.xs,
+            AppSpacing.md,
+            AppSpacing.xxl,
+          ),
           children: [
-            const TravelSectionHeader(
-              title: 'Discover your next place',
-              subtitle:
-                  'Search by city, attraction type, dish, activity or place name',
+            AppSectionHeader(
+              title: 'Explore $_locationTitle',
+              subtitle: 'Search, discover, and add places to your trip.',
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: query,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) => search(),
-              decoration: const InputDecoration(
-                hintText: 'e.g. curry mee, Penang attractions, KL museums',
-                prefixIcon: Icon(Icons.search_rounded),
-              ),
-            ),
-            const SizedBox(height: 9),
-            TextField(
-              controller: location,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) => search(),
-              decoration: const InputDecoration(
-                hintText: 'Location (optional)',
-                prefixIcon: Icon(Icons.location_on_outlined),
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 37,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: examples.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 7),
-                itemBuilder: (context, index) => ActionChip(
-                  label: Text(examples[index]),
-                  onPressed: () {
-                    query.text = examples[index];
-                    location.text = 'Malaysia';
-                    search();
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 42,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: categories.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 7),
-                itemBuilder: (context, index) {
-                  final item = categories[index];
-                  return ChoiceChip(
-                    selected: category == item.$1,
-                    avatar: Icon(item.$2, size: 17),
-                    label: Text(item.$1),
-                    onSelected: (_) {
-                      if (item.$1 == 'Hotels') {
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const HotelScreen()));
-                        return;
-                      }
-                      setState(() => category = item.$1);
-                      if (query.text.trim().isNotEmpty) search();
-                    },
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: loading ? null : search,
-                    icon: const Icon(Icons.travel_explore_rounded),
-                    label: Text(loading ? 'Searching...' : 'Search places'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                PopupMenuButton<String>(
-                  initialValue: sort,
-                  onSelected: (value) {
-                    setState(() => sort = value);
-                    if (results.isNotEmpty) search();
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'relevance', child: Text('Relevance')),
-                    PopupMenuItem(
-                        value: 'rating', child: Text('Highest rating')),
-                    PopupMenuItem(value: 'name', child: Text('Name')),
-                  ],
-                  child: Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFE1E1DC)),
-                    ),
-                    child: const Icon(Icons.sort_rounded),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            if (!loading && results.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Text(
-                  '${results.length} places found${locationUsed.isEmpty ? '' : ' • $locationUsed'}',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: InkWashColors.mutedInk),
-                ),
-              ),
-            if (loading)
-              const Center(
-                  child: Padding(
-                      padding: EdgeInsets.all(28),
-                      child: CircularProgressIndicator()))
-            else if (results.isEmpty && query.text.trim().isEmpty)
-              const TravelEmptyState(
-                icon: Icons.map_outlined,
-                title: 'Search by what you really want',
-                message:
-                    'You can search a specific dish, activity, attraction type or place name.',
-              )
-            else if (results.isEmpty)
-              TravelEmptyState(
-                icon: Icons.search_off_rounded,
-                title: 'No strong match yet',
-                message:
-                    'Try a wider city, a related category, or remove one filter. For food, include the dish and city.',
-                actionLabel: 'Search all Malaysia',
-                onAction: () {
-                  location.text = 'Malaysia';
-                  setState(() => category = 'All');
-                  search();
-                },
-              )
-            else
-              ...results.map(
-                  (raw) => resultCard(Map<String, dynamic>.from(raw as Map))),
+            const SizedBox(height: AppSpacing.md),
+            _searchControls(),
+            const SizedBox(height: AppSpacing.lg),
+            _filters(),
+            const SizedBox(height: AppSpacing.md),
+            _resultState(),
           ],
         ),
       ),

@@ -1,14 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../services/place_image_service.dart';
 
-class TravelSectionHeader extends StatelessWidget {
+class TravelMatePageScaffold extends StatelessWidget {
+  final PreferredSizeWidget? appBar;
+  final Widget body;
+  final Widget? floatingActionButton;
+  final Widget? bottomNavigationBar;
+  final bool safeArea;
+  final EdgeInsetsGeometry padding;
+
+  const TravelMatePageScaffold({
+    super.key,
+    this.appBar,
+    required this.body,
+    this.floatingActionButton,
+    this.bottomNavigationBar,
+    this.safeArea = true,
+    this.padding = AppSpacing.page,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget content = Padding(padding: padding, child: body);
+    if (safeArea) content = SafeArea(child: content);
+    return Scaffold(
+      appBar: appBar,
+      body: content,
+      floatingActionButton: floatingActionButton,
+      bottomNavigationBar: bottomNavigationBar,
+    );
+  }
+}
+
+class AppSectionHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
   final String? actionLabel;
   final VoidCallback? onAction;
 
-  const TravelSectionHeader({
+  const AppSectionHeader({
     super.key,
     required this.title,
     this.subtitle,
@@ -27,20 +59,15 @@ class TravelSectionHeader extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: const TextStyle(
-                  fontSize: 21,
-                  fontWeight: FontWeight.w800,
-                  color: InkWashColors.ink,
-                ),
+                style: Theme.of(context).textTheme.headlineSmall,
               ),
               if (subtitle != null) ...[
-                const SizedBox(height: 3),
+                const SizedBox(height: AppSpacing.xxs),
                 Text(
                   subtitle!,
-                  style: const TextStyle(
-                    color: InkWashColors.mutedInk,
-                    fontSize: 13,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
                 ),
               ],
             ],
@@ -51,6 +78,217 @@ class TravelSectionHeader extends StatelessWidget {
       ],
     );
   }
+}
+
+class TravelSectionHeader extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  const TravelSectionHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) => AppSectionHeader(
+        title: title,
+        subtitle: subtitle,
+        actionLabel: actionLabel,
+        onAction: onAction,
+      );
+}
+
+class PrimaryButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+  final bool loading;
+
+  const PrimaryButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.icon,
+    this.loading = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final child = loading
+        ? const SizedBox.square(
+            dimension: AppSizes.icon,
+            child:
+                CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+          )
+        : Text(label);
+    if (icon != null && !loading) {
+      return FilledButton.icon(
+          onPressed: onPressed, icon: Icon(icon), label: child);
+    }
+    return FilledButton(onPressed: loading ? null : onPressed, child: child);
+  }
+}
+
+class SecondaryButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+
+  const SecondaryButton(
+      {super.key, required this.label, required this.onPressed, this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    if (icon != null) {
+      return OutlinedButton.icon(
+          onPressed: onPressed, icon: Icon(icon), label: Text(label));
+    }
+    return OutlinedButton(onPressed: onPressed, child: Text(label));
+  }
+}
+
+class TertiaryButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+
+  const TertiaryButton(
+      {super.key, required this.label, required this.onPressed, this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    if (icon != null) {
+      return TextButton.icon(
+          onPressed: onPressed, icon: Icon(icon), label: Text(label));
+    }
+    return TextButton(onPressed: onPressed, child: Text(label));
+  }
+}
+
+class DestructiveButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+
+  const DestructiveButton(
+      {super.key, required this.label, required this.onPressed, this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = OutlinedButton.styleFrom(
+      foregroundColor: AppColors.error,
+      side: const BorderSide(color: AppColors.error),
+    );
+    if (icon != null) {
+      return OutlinedButton.icon(
+        style: style,
+        onPressed: onPressed,
+        icon: Icon(icon),
+        label: Text(label),
+      );
+    }
+    return OutlinedButton(
+        style: style, onPressed: onPressed, child: Text(label));
+  }
+}
+
+class AppTextField extends StatelessWidget {
+  final TextEditingController? controller;
+  final String? label;
+  final String? hint;
+  final String? errorText;
+  final IconData? prefixIcon;
+  final Widget? suffixIcon;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+  final TextInputAction? textInputAction;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
+  final bool readOnly;
+  final VoidCallback? onTap;
+  final bool enabled;
+  final int maxLines;
+
+  const AppTextField({
+    super.key,
+    this.controller,
+    this.label,
+    this.hint,
+    this.errorText,
+    this.prefixIcon,
+    this.suffixIcon,
+    this.onChanged,
+    this.onSubmitted,
+    this.textInputAction,
+    this.keyboardType,
+    this.inputFormatters,
+    this.readOnly = false,
+    this.onTap,
+    this.enabled = true,
+    this.maxLines = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      enabled: enabled,
+      maxLines: maxLines,
+      textInputAction: textInputAction,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      readOnly: readOnly,
+      onTap: onTap,
+      onChanged: onChanged,
+      onSubmitted: onSubmitted,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        errorText: errorText,
+        prefixIcon: prefixIcon == null ? null : Icon(prefixIcon),
+        suffixIcon: suffixIcon,
+      ),
+    );
+  }
+}
+
+class SearchField extends StatelessWidget {
+  final TextEditingController? controller;
+  final String hint;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+  final VoidCallback? onClear;
+
+  const SearchField({
+    super.key,
+    this.controller,
+    this.hint = 'Search destinations',
+    this.onChanged,
+    this.onSubmitted,
+    this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) => AppTextField(
+        controller: controller,
+        hint: hint,
+        prefixIcon: Icons.search_rounded,
+        onChanged: onChanged,
+        onSubmitted: onSubmitted,
+        textInputAction: TextInputAction.search,
+        suffixIcon: onClear == null
+            ? null
+            : IconButton(
+                tooltip: 'Clear search',
+                onPressed: onClear,
+                icon: const Icon(Icons.close_rounded),
+              ),
+      );
 }
 
 class TravelQuickAction extends StatelessWidget {
@@ -70,16 +308,16 @@ class TravelQuickAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
+      color: AppColors.surface,
+      borderRadius: AppRadii.card,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: AppRadii.card,
         child: Container(
-          padding: const EdgeInsets.all(14),
+          padding: AppSpacing.card,
           decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFE3E3DE)),
-            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.divider),
+            borderRadius: AppRadii.card,
           ),
           child: Row(
             children: [
@@ -92,23 +330,23 @@ class TravelQuickAction extends StatelessWidget {
                 ),
                 child: Icon(icon, color: InkWashColors.blueGrey),
               ),
-              const SizedBox(width: 11),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    Text(label, style: Theme.of(context).textTheme.titleMedium),
                     Text(
                       subtitle,
-                      style: const TextStyle(
-                        color: InkWashColors.mutedInk,
-                        fontSize: 12,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: InkWashColors.softGrey),
+              const Icon(Icons.chevron_right_rounded,
+                  color: InkWashColors.softGrey),
             ],
           ),
         ),
@@ -136,11 +374,11 @@ class TravelEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(AppSpacing.xl),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE3E3DE)),
+        color: AppColors.surface,
+        borderRadius: AppRadii.card,
+        border: Border.all(color: AppColors.divider),
       ),
       child: Column(
         children: [
@@ -149,13 +387,15 @@ class TravelEmptyState extends StatelessWidget {
             backgroundColor: InkWashColors.paleBlue,
             child: Icon(icon, color: InkWashColors.blueGrey),
           ),
-          const SizedBox(height: 12),
-          Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 5),
+          const SizedBox(height: AppSpacing.sm),
+          Text(title, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: AppSpacing.xxs),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: InkWashColors.mutedInk),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppColors.textSecondary,
+                ),
           ),
           if (actionLabel != null && onAction != null) ...[
             const SizedBox(height: 8),
@@ -167,6 +407,133 @@ class TravelEmptyState extends StatelessWidget {
   }
 }
 
+class AppLoadingState extends StatelessWidget {
+  final String message;
+
+  const AppLoadingState({super.key, this.message = 'Loading…'});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        liveRegion: true,
+        label: message,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: AppSpacing.md),
+                Text(message, style: Theme.of(context).textTheme.bodyMedium),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+class AppErrorState extends StatelessWidget {
+  final String title;
+  final String message;
+  final String retryLabel;
+  final VoidCallback? onRetry;
+
+  const AppErrorState({
+    super.key,
+    this.title = 'Something went wrong',
+    required this.message,
+    this.retryLabel = 'Try again',
+    this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) => TravelEmptyState(
+        icon: Icons.error_outline_rounded,
+        title: title,
+        message: message,
+        actionLabel: onRetry == null ? null : retryLabel,
+        onAction: onRetry,
+      );
+}
+
+enum AppStatusTone { neutral, info, success, warning, error }
+
+class StatusChip extends StatelessWidget {
+  final String text;
+  final IconData? icon;
+  final AppStatusTone tone;
+
+  const StatusChip({
+    super.key,
+    required this.text,
+    this.icon,
+    this.tone = AppStatusTone.info,
+  });
+
+  (Color, Color) get _colors => switch (tone) {
+        AppStatusTone.neutral => (
+            AppColors.surfaceElevated,
+            AppColors.textSecondary
+          ),
+        AppStatusTone.info => (AppColors.infoSoft, AppColors.info),
+        AppStatusTone.success => (AppColors.successSoft, AppColors.success),
+        AppStatusTone.warning => (AppColors.warningSoft, AppColors.warning),
+        AppStatusTone.error => (AppColors.errorSoft, AppColors.error),
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final (background, foreground) = _colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: AppSizes.iconSmall, color: foreground),
+            const SizedBox(width: AppSpacing.xxs),
+          ],
+          Text(
+            text,
+            style: Theme.of(context)
+                .textTheme
+                .labelMedium
+                ?.copyWith(color: foreground),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SourceFallbackBadge extends StatelessWidget {
+  final String source;
+
+  const SourceFallbackBadge({super.key, required this.source});
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = source.trim().toLowerCase();
+    final isLive = normalized == 'live' || normalized == 'provider';
+    final isCache = normalized == 'cache' || normalized == 'cached';
+    final label = isLive
+        ? 'Live source'
+        : (isCache ? 'Cached source' : 'Fallback source');
+    final tone = isLive
+        ? AppStatusTone.success
+        : (isCache ? AppStatusTone.info : AppStatusTone.warning);
+    final icon = isLive
+        ? Icons.cloud_done_outlined
+        : (isCache ? Icons.cached_rounded : Icons.offline_bolt_outlined);
+    return StatusChip(text: label, icon: icon, tone: tone);
+  }
+}
+
 class TravelStatusPill extends StatelessWidget {
   final String text;
   final IconData? icon;
@@ -175,37 +542,15 @@ class TravelStatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: InkWashColors.paleBlue,
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 14, color: InkWashColors.blueGrey),
-            const SizedBox(width: 5),
-          ],
-          Text(
-            text,
-            style: const TextStyle(
-              color: InkWashColors.charcoal,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
+    return StatusChip(text: text, icon: icon);
   }
 }
 
 class TravelPlaceImage extends StatelessWidget {
   final Map<String, dynamic> place;
-  final double height;
+  final double? height;
   final double? width;
+  final double? aspectRatio;
   final BorderRadius borderRadius;
 
   const TravelPlaceImage({
@@ -213,6 +558,7 @@ class TravelPlaceImage extends StatelessWidget {
     required this.place,
     this.height = 150,
     this.width,
+    this.aspectRatio,
     this.borderRadius = const BorderRadius.all(Radius.circular(18)),
   });
 
@@ -285,49 +631,59 @@ class TravelPlaceImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: borderRadius,
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: FutureBuilder<String?>(
-          future: PlaceImageService.resolve(place),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return Container(
-                color: InkWashColors.paleBlue,
-                alignment: Alignment.center,
-                child: const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              );
-            }
+    final image = FutureBuilder<String?>(
+      future: PlaceImageService.resolve(place),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return Container(
+            color: InkWashColors.paleBlue,
+            alignment: Alignment.center,
+            child: const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
 
-            final url = snapshot.data;
-            if (url == null || url.isEmpty) return _fallback();
+        final url = snapshot.data;
+        if (url == null || url.isEmpty) return _fallback();
 
-            return Image.network(
-              url,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              errorBuilder: (context, error, stackTrace) => _fallback(),
-              loadingBuilder: (context, child, progress) {
-                if (progress == null) return child;
-                return Container(
-                  color: InkWashColors.paleBlue,
-                  alignment: Alignment.center,
-                  child: const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                );
-              },
+        return Image.network(
+          url,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          excludeFromSemantics: true,
+          errorBuilder: (context, error, stackTrace) => _fallback(),
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return Container(
+              color: InkWashColors.paleBlue,
+              alignment: Alignment.center,
+              child: const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
             );
           },
-        ),
+        );
+      },
+    );
+
+    final sizedImage = aspectRatio == null
+        ? SizedBox(width: width, height: height, child: image)
+        : SizedBox(
+            width: width,
+            child: AspectRatio(aspectRatio: aspectRatio!, child: image),
+          );
+
+    return Semantics(
+      image: true,
+      label: 'Image of $_title',
+      child: ClipRRect(
+        borderRadius: borderRadius,
+        child: sizedImage,
       ),
     );
   }
