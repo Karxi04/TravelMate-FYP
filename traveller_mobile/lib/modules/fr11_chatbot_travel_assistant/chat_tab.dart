@@ -9,7 +9,9 @@ import '../fr03_destination_search_information/destination_details_screen.dart';
 import '../fr05_smart_itinerary_budget_planner/trips_tab.dart';
 
 class ChatTab extends StatefulWidget {
-  const ChatTab({super.key});
+  final ApiService? api;
+
+  const ChatTab({super.key, this.api});
 
   @override
   State<ChatTab> createState() => _ChatTabState();
@@ -17,23 +19,31 @@ class ChatTab extends StatefulWidget {
 
 class _ChatTabState extends State<ChatTab> {
   final message = TextEditingController();
-  final api = ApiService();
+  late final ApiService api;
 
   List<dynamic> sessions = [];
   List<dynamic> messages = [];
   String? activeSessionId;
   bool busy = false;
+  bool loadingSessions = true;
+  String? screenError;
+  String? sendError;
+  String? failedMessage;
 
   final suggestions = const [
-    'Plan a Kuala Lumpur trip',
-    'Plan a Penang trip',
-    'Find curry mee in Penang',
-    'Create a food and heritage itinerary',
-    'Help me reduce my trip budget',
+    'Plan things to do',
+    'Adjust my itinerary',
+    'Help with my budget',
     'What should I do if it rains?',
   ];
 
   Future<void> loadSessions({bool openNewest = true}) async {
+    if (mounted) {
+      setState(() {
+        loadingSessions = true;
+        screenError = null;
+      });
+    }
     try {
       final data = await api.get('/api/fr11/sessions');
       final list = data['items'] as List? ?? [];
@@ -44,7 +54,13 @@ class _ChatTabState extends State<ChatTab> {
         await openSession(first['id'].toString());
       }
     } catch (_) {
-      // Older cloud backends can still fall back to the standalone service.
+      if (mounted) {
+        setState(() {
+          screenError = 'We couldn’t load your previous chats. Try again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => loadingSessions = false);
     }
   }
 
@@ -80,6 +96,28 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   Future<void> deleteSession(String id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
+        title: const Text('Delete this chat?'),
+        content: const Text(
+          'This removes the conversation from your chat history.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep chat'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete chat'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     try {
       await api.delete('/api/fr11/sessions/$id');
       if (activeSessionId == id) {
@@ -97,7 +135,11 @@ class _ChatTabState extends State<ChatTab> {
     if (text.isEmpty || busy) return;
 
     message.clear();
-    setState(() => busy = true);
+    setState(() {
+      busy = true;
+      sendError = null;
+      failedMessage = text;
+    });
     try {
       final data = await api.post('/api/fr11/chat', {
         'message': text,
@@ -112,8 +154,13 @@ class _ChatTabState extends State<ChatTab> {
         });
       }
       await loadSessions(openNewest: false);
-    } catch (e) {
-      if (mounted) showError(context, e);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          sendError =
+              'Your message wasn’t sent. Check your connection and try again.';
+        });
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -175,51 +222,61 @@ class _ChatTabState extends State<ChatTab> {
             const SizedBox(height: 10),
             const Divider(height: 1),
             Expanded(
-              child: sessions.isEmpty
-                  ? const Center(
-                      child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text(
-                              'Your previous travel chats will appear here.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: InkWashColors.mutedInk))))
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      itemCount: sessions.length,
-                      itemBuilder: (context, index) {
-                        final s =
-                            Map<String, dynamic>.from(sessions[index] as Map);
-                        final selected = s['id'].toString() == activeSessionId;
-                        return ListTile(
-                          selected: selected,
-                          leading: Icon(selected
-                              ? Icons.chat_bubble_rounded
-                              : Icons.chat_bubble_outline_rounded),
-                          title: Text((s['title'] ?? 'Travel chat').toString(),
-                              maxLines: 2, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(
-                              (s['updatedAt'] ?? '')
-                                  .toString()
-                                  .split('T')
-                                  .first,
-                              style: const TextStyle(fontSize: 11)),
-                          trailing: PopupMenuButton<String>(
-                            onSelected: (value) {
-                              if (value == 'delete')
-                                deleteSession(s['id'].toString());
-                            },
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(
-                                  value: 'delete', child: Text('Delete chat'))
-                            ],
-                          ),
-                          onTap: () async {
-                            Navigator.pop(context);
-                            await openSession(s['id'].toString());
-                          },
-                        );
-                      },
-                    ),
+              child: loadingSessions
+                  ? const AppLoadingState(message: 'Loading your chats…')
+                  : screenError != null
+                      ? AppErrorState(
+                          message: screenError!, onRetry: loadSessions)
+                      : sessions.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Text(
+                                      'Your previous travel chats will appear here.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                          color: InkWashColors.mutedInk))))
+                          : ListView.builder(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              itemCount: sessions.length,
+                              itemBuilder: (context, index) {
+                                final s = Map<String, dynamic>.from(
+                                    sessions[index] as Map);
+                                final selected =
+                                    s['id'].toString() == activeSessionId;
+                                return ListTile(
+                                  selected: selected,
+                                  leading: Icon(selected
+                                      ? Icons.chat_bubble_rounded
+                                      : Icons.chat_bubble_outline_rounded),
+                                  title: Text(
+                                      (s['title'] ?? 'Travel chat').toString(),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis),
+                                  subtitle: Text(
+                                      (s['updatedAt'] ?? '')
+                                          .toString()
+                                          .split('T')
+                                          .first,
+                                      style: const TextStyle(fontSize: 11)),
+                                  trailing: PopupMenuButton<String>(
+                                    onSelected: (value) {
+                                      if (value == 'delete')
+                                        deleteSession(s['id'].toString());
+                                    },
+                                    itemBuilder: (_) => const [
+                                      PopupMenuItem(
+                                          value: 'delete',
+                                          child: Text('Delete chat'))
+                                    ],
+                                  ),
+                                  onTap: () async {
+                                    Navigator.pop(context);
+                                    await openSession(s['id'].toString());
+                                  },
+                                );
+                              },
+                            ),
             ),
           ],
         ),
@@ -486,7 +543,20 @@ class _ChatTabState extends State<ChatTab> {
   @override
   void initState() {
     super.initState();
+    api = widget.api ?? ApiService();
     Future.microtask(loadSessions);
+  }
+
+  @override
+  void dispose() {
+    message.dispose();
+    super.dispose();
+  }
+
+  bool usesSavedGuidance(Map<String, dynamic> item) {
+    final source = (item['source'] ?? '').toString().toLowerCase();
+    return {'fallback', 'cache', 'cached', 'local', 'standalone'}
+        .contains(source);
   }
 
   @override
@@ -494,11 +564,11 @@ class _ChatTabState extends State<ChatTab> {
     return Scaffold(
       drawer: historyDrawer(),
       appBar: AppBar(
-        title: Column(
+        title: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(sessionTitle(), maxLines: 1, overflow: TextOverflow.ellipsis),
-            const Text('Plan, compare and save your trip',
+            Text('TravelMate Assistant'),
+            Text('How can I help with your trip?',
                 style: TextStyle(
                     fontSize: 11,
                     color: InkWashColors.mutedInk,
@@ -518,7 +588,14 @@ class _ChatTabState extends State<ChatTab> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               children: [
-                if (messages.isEmpty) ...[
+                if (loadingSessions)
+                  const AppLoadingState(message: 'Loading your chats…')
+                else if (screenError != null)
+                  AppErrorState(
+                    message: screenError!,
+                    onRetry: loadSessions,
+                  )
+                else if (messages.isEmpty) ...[
                   InkCard(
                     color: InkWashColors.cream,
                     child: const Column(
@@ -527,12 +604,12 @@ class _ChatTabState extends State<ChatTab> {
                         Icon(Icons.auto_awesome_rounded,
                             color: InkWashColors.blueGrey, size: 31),
                         SizedBox(height: 9),
-                        Text('Your AI travel planning workspace',
+                        Text('How can I help with your trip?',
                             style: TextStyle(
                                 fontSize: 20, fontWeight: FontWeight.w900)),
                         SizedBox(height: 5),
                         Text(
-                            'Ask TravelMate to build a trip, refine activities, control the budget, compare options or explain recommendations. Generated plans can be saved directly to Trips.'),
+                            'Ask for ideas, itinerary changes, budget help or weather-friendly alternatives.'),
                       ],
                     ),
                   ),
@@ -548,60 +625,104 @@ class _ChatTabState extends State<ChatTab> {
                   ),
                   const SizedBox(height: 16),
                 ],
-                ...messages.expand((raw) {
-                  final item = Map<String, dynamic>.from(raw as Map);
-                  final plan = item['tripPlan'];
-                  final placeSuggestions =
-                      (item['placeSuggestions'] as List? ?? [])
-                          .whereType<Map>()
-                          .map((e) => Map<String, dynamic>.from(e))
-                          .toList();
-                  return [
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 8, left: 52),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                            color: InkWashColors.blueGrey,
-                            borderRadius: BorderRadius.circular(17)),
-                        child: Text((item['message'] ?? '').toString(),
-                            style: const TextStyle(color: Colors.white)),
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 14, right: 28),
-                        padding: const EdgeInsets.all(13),
-                        decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(17),
-                            border: Border.all(color: const Color(0xFFE3E3DE))),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text((item['reply'] ?? '').toString()),
-                            if (placeSuggestions.isNotEmpty)
-                              placeSuggestionsCard(placeSuggestions),
-                            if (plan is Map)
-                              planCard(Map<String, dynamic>.from(plan)),
-                          ],
+                if (!loadingSessions && screenError == null)
+                  ...messages.expand((raw) {
+                    final item = Map<String, dynamic>.from(raw as Map);
+                    final plan = item['tripPlan'];
+                    final placeSuggestions =
+                        (item['placeSuggestions'] as List? ?? [])
+                            .whereType<Map>()
+                            .map((e) => Map<String, dynamic>.from(e))
+                            .toList();
+                    return [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Semantics(
+                          label: 'Your message',
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8, left: 52),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                                color: InkWashColors.blueGrey,
+                                borderRadius: BorderRadius.circular(17)),
+                            child: Text((item['message'] ?? '').toString(),
+                                style: const TextStyle(color: Colors.white)),
+                          ),
                         ),
                       ),
-                    ),
-                  ];
-                }),
-                if (busy)
-                  const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                              width: 22,
-                              height: 22,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2)))),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Semantics(
+                          label: 'TravelMate response',
+                          child: Container(
+                            margin:
+                                const EdgeInsets.only(bottom: 14, right: 28),
+                            padding: const EdgeInsets.all(13),
+                            decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(17),
+                                border:
+                                    Border.all(color: const Color(0xFFE3E3DE))),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text((item['reply'] ?? '').toString()),
+                                if (usesSavedGuidance(item)) ...[
+                                  const SizedBox(height: 10),
+                                  const StatusChip(
+                                    text: 'Using saved travel guidance',
+                                    icon: Icons.offline_bolt_outlined,
+                                    tone: AppStatusTone.warning,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Check live details before making bookings.',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: AppColors.textSecondary,
+                                        ),
+                                  ),
+                                ],
+                                if (placeSuggestions.isNotEmpty)
+                                  placeSuggestionsCard(placeSuggestions),
+                                if (plan is Map)
+                                  planCard(Map<String, dynamic>.from(plan)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ];
+                  }),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  child: busy
+                      ? const Align(
+                          key: ValueKey('assistant-thinking'),
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: StatusChip(
+                              text: 'TravelMate is thinking…',
+                              icon: Icons.auto_awesome_outlined,
+                              tone: AppStatusTone.info,
+                            ),
+                          ),
+                        )
+                      : sendError != null
+                          ? AppErrorState(
+                              key: const ValueKey('assistant-send-error'),
+                              title: 'Message not sent',
+                              message: sendError!,
+                              retryLabel: 'Retry message',
+                              onRetry: failedMessage == null
+                                  ? null
+                                  : () => send(failedMessage),
+                            )
+                          : const SizedBox.shrink(),
+                ),
               ],
             ),
           ),
@@ -622,9 +743,8 @@ class _ChatTabState extends State<ChatTab> {
                       maxLines: 5,
                       onSubmitted: (_) => send(),
                       decoration: const InputDecoration(
-                          hintText:
-                              'Ask TravelMate to plan or improve your trip...',
-                          prefixIcon: Icon(Icons.auto_awesome_outlined)),
+                          hintText: 'Ask about your trip…',
+                          prefixIcon: Icon(Icons.chat_bubble_outline_rounded)),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -635,7 +755,10 @@ class _ChatTabState extends State<ChatTab> {
                           style:
                               FilledButton.styleFrom(padding: EdgeInsets.zero),
                           onPressed: busy ? null : () => send(),
-                          child: const Icon(Icons.arrow_upward_rounded))),
+                          child: const Icon(
+                            Icons.arrow_upward_rounded,
+                            semanticLabel: 'Send message',
+                          ))),
                 ],
               ),
             ),
