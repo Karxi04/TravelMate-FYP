@@ -42,7 +42,11 @@ are excluded from normal runs; they must never be run with production data.
 Health checks:
 
 - `GET /api/health`
-- `GET /api/config-status`
+- `GET /api/config-status` (Administrator Firebase token required; returns only payment/hotel capability modes)
+
+Browser CORS is disabled unless `CORS_ALLOWED_ORIGINS` contains a
+comma-separated list of explicit origins. Native Flutter requests are not
+affected by browser CORS. Wildcard origins are rejected.
 
 ## Main API routes
 

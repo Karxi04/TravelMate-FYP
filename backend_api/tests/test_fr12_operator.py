@@ -1,6 +1,48 @@
 import pytest
+from contextlib import contextmanager
 from unittest.mock import patch, MagicMock
 from modules.fr12_tourism_operator_management.analytics_service import generate_business_analytics
+
+
+@contextmanager
+def operator_auth_status(status):
+    profile = {
+        'uid': 'test_operator_uid',
+        'email': 'operator@test.com',
+        'role': 'operator',
+        'status': 'active',
+        'verificationStatus': status,
+    }
+    snap = MagicMock(exists=True)
+    snap.to_dict.return_value = profile
+    db = MagicMock()
+    db.collection.return_value.document.return_value.get.return_value = snap
+    with patch('auth_utils.auth.verify_id_token', return_value={'uid': 'test_operator_uid'}), \
+         patch('auth_utils.get_db', return_value=db):
+        yield
+
+
+@pytest.mark.parametrize('verification_status', ['pending', 'rejected'])
+def test_unverified_operator_is_denied(client, verification_status):
+    with operator_auth_status(verification_status):
+        response = client.get(
+            '/api/fr12/packages',
+            headers={'Authorization': 'Bearer valid_test_token'},
+        )
+    assert response.status_code == 403
+    assert 'not verified' in response.get_json()['error']
+
+
+def test_admin_operator_override_remains_allowed(client, mock_admin_auth):
+    with patch(
+        'modules.fr12_tourism_operator_management.routes.retrieveRecord',
+        return_value=[],
+    ):
+        response = client.get(
+            '/api/fr12/packages',
+            headers={'Authorization': 'Bearer valid_test_token'},
+        )
+    assert response.status_code == 200
 
 def test_operator_packages_crud(client, mock_operator_auth):
     sample_pkg = {

@@ -33,7 +33,7 @@ The existing FR9 sandbox integration is preserved. Use only a Stripe test secret
 ## Recommended test sequence
 
 1. Keep `FALLBACK_MODE=true`.
-2. Confirm `/api/config-status`.
+2. Sign in as an Administrator and confirm `/api/config-status` reports only the expected payment/hotel capability modes.
 3. Test Open-Meteo.
 4. Add SerpApi and confirm Explore + Flights show `LIVE` source badges.
 5. Add Gemini and confirm Assistant messages show `Gemini live response`.

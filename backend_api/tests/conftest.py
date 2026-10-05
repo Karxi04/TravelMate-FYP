@@ -103,7 +103,8 @@ def mock_operator_auth():
             "email": "operator@test.com",
             "name": "Test Operator",
             "role": "operator",
-            "status": "active"
+            "status": "active",
+            "verificationStatus": "approved"
         }
         mock_doc.get.return_value = mock_snap
         mock_coll = MagicMock()

@@ -56,7 +56,16 @@ def validateUpdatedProfile(data):
 def validateAccountAction(data):
     role_ok = 'role' not in data or data.get('role') in {'traveller','operator','admin'}
     status_ok = 'status' not in data or data.get('status') in {'active','deactivated'}
-    return role_ok and status_ok and bool(set(data) & {'role','status'})
+    verification_ok = (
+        'verificationStatus' not in data
+        or data.get('verificationStatus') in {'pending','approved','verified','rejected'}
+    )
+    return (
+        role_ok
+        and status_ok
+        and verification_ok
+        and bool(set(data) & {'role','status','verificationStatus'})
+    )
 
 
 def validatePreferenceAnswers(data):

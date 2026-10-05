@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
+import 'payment_status.dart';
 
 class PaymentScreen extends StatefulWidget {
   final String initialBookingReference;
@@ -227,7 +228,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
               prefixIcon: const Icon(Icons.payments_outlined),
               suffixIcon: widget.initialAmount != null
                   ? const Tooltip(
-                      message: 'Amount is authoritative and tied to your booking.',
+                      message:
+                          'Amount is authoritative and tied to your booking.',
                       child: Icon(Icons.lock_outline, size: 18),
                     )
                   : null,
@@ -356,8 +358,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             final item = Map<String, dynamic>.from(raw as Map);
             final paymentId =
                 (item['id'] ?? item['transactionReference'] ?? '').toString();
-            final status =
-                (item['paymentStatus'] ?? '').toString().toLowerCase();
+            final status = canonicalPaymentStatus(item['paymentStatus']);
             return Padding(
               padding: const EdgeInsets.only(bottom: 9),
               child: InkCard(
@@ -384,7 +385,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   style: const TextStyle(
                                       color: InkWashColors.mutedInk,
                                       fontSize: 12)),
-                              Text('Status: ${item['paymentStatus'] ?? '-'}',
+                              Text('Status: $status',
                                   style: const TextStyle(
                                       color: InkWashColors.mutedInk,
                                       fontSize: 12)),
@@ -401,7 +402,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton.icon(
-                          onPressed: busy || status == 'successful'
+                          onPressed: busy || !canRetryPayment(status)
                               ? null
                               : () => updatePayment(paymentId, 'retry'),
                           icon: const Icon(Icons.refresh_rounded),
@@ -409,7 +410,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         ),
                         const SizedBox(width: 6),
                         TextButton.icon(
-                          onPressed: busy || status == 'cancelled'
+                          onPressed: busy || !canCancelPayment(status)
                               ? null
                               : () => updatePayment(paymentId, 'cancel'),
                           icon: const Icon(Icons.cancel_outlined),

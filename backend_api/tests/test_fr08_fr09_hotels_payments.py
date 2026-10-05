@@ -1,6 +1,61 @@
 import pytest
 from unittest.mock import patch
 
+from services.stripe_service import (
+    SimulatedPaymentIntent,
+    createPaymentSession,
+    normalizePaymentStatus,
+    stripePaymentMode,
+)
+
+
+@pytest.mark.parametrize('raw,expected', [
+    ('succeeded', 'succeeded'),
+    ('successful', 'succeeded'),
+    ('failed', 'failed'),
+    ('pending', 'pending'),
+    ('cancelled', 'cancelled'),
+    ('canceled', 'cancelled'),
+])
+def test_payment_status_normalization(raw, expected):
+    assert normalizePaymentStatus(raw) == expected
+
+
+def test_stripe_test_secret_is_accepted_for_sandbox_mutation():
+    intent = SimulatedPaymentIntent('pi_test_mock', 1000)
+    with patch.dict('os.environ', {
+        'STRIPE_SECRET_KEY': 'sk_test_example_not_real',
+        'FALLBACK_MODE': 'false',
+    }), patch(
+        'services.stripe_service.stripe.PaymentIntent.create',
+        return_value=intent,
+    ) as create:
+        result = createPaymentSession({'amount': 10}, 'traveller', 'booking')
+    assert result is intent
+    create.assert_called_once()
+
+
+def test_stripe_live_secret_never_performs_mutation():
+    with patch.dict('os.environ', {
+        'STRIPE_SECRET_KEY': 'sk_live_must_never_be_used',
+        'FALLBACK_MODE': 'true',
+    }), patch('services.stripe_service.stripe.PaymentIntent.create') as create:
+        result = createPaymentSession({'amount': 10}, 'traveller', 'booking')
+        assert isinstance(result, SimulatedPaymentIntent)
+        assert stripePaymentMode() == 'simulation'
+    create.assert_not_called()
+
+
+def test_invalid_stripe_key_is_unavailable_without_fallback():
+    with patch.dict('os.environ', {
+        'STRIPE_SECRET_KEY': 'pk_test_publishable_only',
+        'FALLBACK_MODE': 'false',
+    }), patch('services.stripe_service.stripe.PaymentIntent.create') as create:
+        with pytest.raises(RuntimeError, match='sandbox is unavailable'):
+            createPaymentSession({'amount': 10}, 'traveller', 'booking')
+        assert stripePaymentMode() == 'unavailable'
+    create.assert_not_called()
+
 def test_payment_process_authoritative_amount_and_booking_update(client, mock_traveller_auth):
     sample_booking = {
         'id': 'booking_doc_101',
@@ -81,3 +136,36 @@ def test_payment_process_rejects_unauthorized_booking(client, mock_traveller_aut
         )
         assert res.status_code == 403
         assert 'Unauthorized' in res.get_json()['error']
+
+
+def test_payment_list_normalizes_legacy_success(client, mock_traveller_auth):
+    records = [
+        {'id': 'legacy', 'paymentStatus': 'successful'},
+        {'id': 'current', 'paymentStatus': 'succeeded'},
+    ]
+    with patch(
+        'modules.fr09_payment.routes.retrieveRecord',
+        return_value=records,
+    ):
+        response = client.get(
+            '/api/fr9/payments',
+            headers={'Authorization': 'Bearer valid_test_token'},
+        )
+    assert response.status_code == 200
+    assert [item['paymentStatus'] for item in response.get_json()['items']] == [
+        'succeeded',
+        'succeeded',
+    ]
+
+
+def test_successful_payment_cannot_be_retried(client, mock_traveller_auth):
+    with patch(
+        'modules.fr09_payment.routes.retrieveRecord',
+        return_value={'id': 'paid', 'travellerId': 'test_traveller_uid', 'paymentStatus': 'successful'},
+    ), patch('modules.fr09_payment.routes.processSandboxPayment') as process:
+        response = client.post(
+            '/api/fr9/payments/paid/retry',
+            headers={'Authorization': 'Bearer valid_test_token'},
+        )
+    assert response.status_code == 409
+    process.assert_not_called()

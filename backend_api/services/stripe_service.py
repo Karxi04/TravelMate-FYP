@@ -15,9 +15,31 @@ def _fallback_mode():
     return os.getenv('FALLBACK_MODE', 'false').lower() in {'1', 'true', 'yes'}
 
 
+def normalizePaymentStatus(status):
+    value = str(status or 'unknown').strip().lower()
+    aliases = {
+        'successful': 'succeeded',
+        'success': 'succeeded',
+        'completed': 'succeeded',
+        'canceled': 'cancelled',
+    }
+    return aliases.get(value, value)
+
+
+def stripePaymentMode():
+    key = os.getenv('STRIPE_SECRET_KEY', '').strip()
+    if key.startswith('sk_test_'):
+        return 'sandbox'
+    if _fallback_mode():
+        return 'simulation'
+    return 'unavailable'
+
+
 def _setup():
     key = os.getenv('STRIPE_SECRET_KEY', '').strip()
-    if not key or not key.startswith('sk_'):
+    # TravelMate is an FYP/sandbox application. Never accept a live Stripe
+    # secret, a publishable key, or an ambiguous generic sk_ credential.
+    if not key.startswith('sk_test_'):
         return False
     stripe.api_key = key
     return True
@@ -39,7 +61,7 @@ def createPaymentSession(paymentInput, travellerId=None, bookingId=''):
     if _fallback_mode():
         sim_id = f"pi_sim_{uuid.uuid4().hex[:16]}"
         return SimulatedPaymentIntent(sim_id, int(round(amount * 100)), status='requires_payment_method')
-    raise RuntimeError('STRIPE_SECRET_KEY requires a secret key (sk_test_...), currently configured with publishable key (pk_test_...). Live Stripe blocked by credentials.')
+    raise RuntimeError('Stripe sandbox is unavailable. Configure an sk_test_ credential or enable explicit simulation mode.')
 
 
 def processSandboxPayment(paymentSessionId=None, paymentInput=None, travellerId=None, bookingId=''):
@@ -60,7 +82,7 @@ def processSandboxPayment(paymentSessionId=None, paymentInput=None, travellerId=
         if _fallback_mode():
             sim_id = f"pi_sim_{uuid.uuid4().hex[:16]}"
             return SimulatedPaymentIntent(sim_id, int(round(amount * 100)), status='succeeded')
-        raise RuntimeError('STRIPE_SECRET_KEY requires a secret key (sk_test_...), currently configured with publishable key (pk_test_...). Live Stripe blocked by credentials.')
+        raise RuntimeError('Stripe sandbox is unavailable. Configure an sk_test_ credential or enable explicit simulation mode.')
 
     if not paymentSessionId:
         raise ValueError('paymentSessionId is required')

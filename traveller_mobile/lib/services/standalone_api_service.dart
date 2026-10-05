@@ -4159,7 +4159,7 @@ class StandaloneApiService {
       'bookingId': payload['bookingId'] ?? '',
       'amount': _money(amount),
       'currency': 'MYR',
-      'paymentStatus': 'successful',
+      'paymentStatus': 'succeeded',
       'transactionReference':
           'TM-PAY-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}',
       'cardBrand': payload['cardBrand'] ?? 'Card',

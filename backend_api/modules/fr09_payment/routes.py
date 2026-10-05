@@ -1,7 +1,12 @@
 from flask import Blueprint, request, jsonify, g
 from auth_utils import auth_required
 from utils import utc_now_iso
-from services.stripe_service import createPaymentSession, processSandboxPayment, returnPaymentStatus
+from services.stripe_service import (
+    createPaymentSession,
+    normalizePaymentStatus,
+    processSandboxPayment,
+    returnPaymentStatus,
+)
 from sequence_contract.validators import validatePaymentInput
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord
 
@@ -25,7 +30,7 @@ def _resolve_booking(booking_id):
 
 def _record(intent, booking_id, amount):
     intent_id = getattr(intent, 'id', str(intent))
-    status = getattr(intent, 'status', 'succeeded')
+    status = normalizePaymentStatus(getattr(intent, 'status', 'succeeded'))
     data = {
         'travellerId': g.uid,
         'bookingId': booking_id or '',
@@ -112,10 +117,12 @@ def retry_payment(payment_id):
     existing = retrieveRecord('payment_records', payment_id)
     if not existing or existing.get('travellerId') != g.uid:
         return jsonify({'ok': False, 'error': 'Payment not found'}), 404
+    if normalizePaymentStatus(existing.get('paymentStatus')) == 'succeeded':
+        return jsonify({'ok': False, 'error': 'Successful payments cannot be retried'}), 409
     try:
         intent = processSandboxPayment(paymentInput=existing, travellerId=g.uid, bookingId=existing.get('bookingId', ''))
         intent_id = getattr(intent, 'id', str(intent))
-        status = getattr(intent, 'status', 'succeeded')
+        status = normalizePaymentStatus(getattr(intent, 'status', 'succeeded'))
         updateRecord('payment_records', payment_id, {
             'paymentStatus': status,
             'transactionReference': intent_id,
@@ -132,6 +139,8 @@ def cancel_payment(payment_id):
     existing = retrieveRecord('payment_records', payment_id)
     if not existing or existing.get('travellerId') != g.uid:
         return jsonify({'ok': False, 'error': 'Payment not found'}), 404
+    if normalizePaymentStatus(existing.get('paymentStatus')) == 'succeeded':
+        return jsonify({'ok': False, 'error': 'Successful payments cannot be cancelled'}), 409
     status = existing.get('paymentStatus', 'unknown')
     try:
         status = returnPaymentStatus(existing.get('transactionReference') or payment_id)
@@ -148,4 +157,10 @@ def cancel_payment(payment_id):
 @bp.get('/payments')
 @auth_required(['traveller'])
 def list_payments():
-    return jsonify({'ok': True, 'items': retrieveRecord('payment_records', filters=[('travellerId', '==', g.uid)]) or []})
+    items = retrieveRecord('payment_records', filters=[('travellerId', '==', g.uid)]) or []
+    normalized = [
+        {**item, 'paymentStatus': normalizePaymentStatus(item.get('paymentStatus'))}
+        for item in items
+        if isinstance(item, dict)
+    ]
+    return jsonify({'ok': True, 'items': normalized})

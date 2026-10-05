@@ -40,7 +40,7 @@ Add one key at a time and restart backend:
 - `STRIPE_SECRET_KEY` -> test sandbox payment
 - `GEMINI_API_KEY` -> test chatbot
 
-Check `GET /api/config-status` after every change.
+With an Administrator Firebase token, check `GET /api/config-status` after every provider-configuration change.
 
 ## When you are ready for final live-provider testing
 

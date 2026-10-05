@@ -4,7 +4,7 @@ The Flutter app, Operator website and Administrator website all call the shared 
 
 ## System
 - `GET /api/health`
-- `GET /api/config-status`
+- `GET /api/config-status` (Administrator authentication required)
 
 ## FR1 User Management
 - `POST /api/fr1/profile`

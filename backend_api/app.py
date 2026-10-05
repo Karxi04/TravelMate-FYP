@@ -3,13 +3,35 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 from firebase_service import init_firebase
+from auth_utils import auth_required
+from services.stripe_service import stripePaymentMode
 
 load_dotenv()
 
 
+def _truthy(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _allowed_cors_origins():
+    origins = [
+        origin.strip()
+        for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    if "*" in origins:
+        raise RuntimeError("CORS_ALLOWED_ORIGINS must list explicit browser origins; wildcard is not allowed")
+    return origins
+
+
 def create_app():
     app = Flask(__name__)
-    CORS(app)
+    origins = _allowed_cors_origins()
+    if origins:
+        CORS(app, origins=origins, supports_credentials=False)
     init_firebase()
 
     from modules.fr01_user_management import bp as fr01
@@ -35,18 +57,14 @@ def create_app():
         return jsonify({"ok": True, "service": "TravelMate Backend API"})
 
     @app.get("/api/config-status")
+    @auth_required(['admin'])
     def config_status():
+        fallback = _truthy("FALLBACK_MODE")
+        hotel_live = bool(os.getenv("LITEAPI_KEY", "").strip())
         return jsonify({
             "ok": True,
-            "fallbackMode": os.getenv("FALLBACK_MODE", "false").lower() in {"1", "true", "yes"},
-            "providers": {
-                "firebaseServiceAccount": bool(os.getenv("FIREBASE_SERVICE_ACCOUNT")),
-                "serpApi": bool(os.getenv("SERPAPI_KEY")),
-                "liteApi": bool(os.getenv("LITEAPI_KEY")),
-                "stripeSandbox": bool(os.getenv("STRIPE_SECRET_KEY")),
-                "gemini": bool(os.getenv("GEMINI_API_KEY")),
-                "openMeteo": True,
-            },
+            "paymentMode": stripePaymentMode(),
+            "hotelMode": "live" if hotel_live else ("fallback" if fallback else "unavailable"),
         })
 
     return app
@@ -54,4 +72,8 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "5000")),
+        debug=_truthy("FLASK_DEBUG"),
+    )
