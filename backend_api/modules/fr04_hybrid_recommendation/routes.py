@@ -8,6 +8,15 @@ from auth_utils import auth_required
 from utils import utc_now_iso
 from services.serpapi_service import retrieveDestinationResults
 from services.local_catalog import DESTINATIONS
+from services.recommendation_taxonomy import candidate_concepts
+from services.preference_learning import (
+    apply_explicit_feedback,
+    canonical_concepts,
+    effective_preference_profile,
+    effective_profile_version,
+    public_learning_state,
+    reset_learning_profile,
+)
 from services.malaysian_locality import (
     filter_candidates,
     normalize_destination_scope,
@@ -46,7 +55,7 @@ def _filter_for_destination(items, destination_area):
     return accepted
 
 
-def _preference_version(preference):
+def _preference_version(preference, learned_profile=None):
     explicit = (
         preference.get('preferenceProfileVersion')
         or preference.get('profileVersion')
@@ -54,9 +63,107 @@ def _preference_version(preference):
         or preference.get('updatedAt')
     )
     if explicit:
-        return str(explicit)
-    encoded = json.dumps(preference or {}, sort_keys=True, separators=(',', ':'), default=str).encode('utf-8')
-    return f"profile_{hashlib.sha256(encoded).hexdigest()[:16]}"
+        base_version = str(explicit)
+    else:
+        encoded = json.dumps(preference or {}, sort_keys=True, separators=(',', ':'), default=str).encode('utf-8')
+        base_version = f"profile_{hashlib.sha256(encoded).hexdigest()[:16]}"
+    return effective_profile_version(base_version, learned_profile)
+
+
+def _destination_id(item):
+    return str(
+        (item or {}).get('destinationId')
+        or (item or {}).get('place_id')
+        or (item or {}).get('data_id')
+        or (item or {}).get('id')
+        or (item or {}).get('title')
+        or ''
+    ).strip()
+
+
+def _feedback_destination(payload, user_id):
+    destination_id = str(payload.get('destinationId') or '').strip()
+    generation_id = str(
+        payload.get('recommendationGenerationId') or '').strip()
+    if not destination_id:
+        return None, 'destinationId is required', 400
+    if generation_id:
+        snapshot = retrieveRecord('recommendation_snapshots', generation_id)
+        owner_id = str((snapshot or {}).get('travellerId') or
+                       (snapshot or {}).get('userId') or '')
+        if not snapshot or owner_id != user_id:
+            return None, 'Recommendation snapshot not found', 404
+        for item in snapshot.get('recommendationResults', []) or []:
+            if _destination_id(item) == destination_id:
+                return dict(item), '', 200
+        return None, 'Destination does not belong to this recommendation snapshot', 409
+    concepts = canonical_concepts(payload.get('destinationConcepts', []))
+    if not concepts:
+        concepts = sorted(candidate_concepts(payload))
+    return {**payload, 'destinationId': destination_id,
+            'destinationConcepts': concepts}, '', 200
+
+
+@bp.get('/preference-feedback')
+@auth_required(['traveller'])
+def get_preference_feedback():
+    profile = retrieveRecord('learned_preference_profiles', g.uid)
+    return jsonify({'ok': True, 'learning': public_learning_state(profile)})
+
+
+@bp.post('/preference-feedback')
+@auth_required(['traveller'])
+def submit_preference_feedback():
+    payload = request.get_json(silent=True) or {}
+    item, error, status = _feedback_destination(payload, g.uid)
+    if item is None:
+        return jsonify({'ok': False, 'error': error}), status
+    concepts = canonical_concepts(
+        item.get('destinationConcepts') or candidate_concepts(item))
+    current = retrieveRecord('learned_preference_profiles', g.uid)
+    try:
+        updated, event, changed = apply_explicit_feedback(
+            current,
+            user_id=g.uid,
+            destination_id=_destination_id(item),
+            feedback_type=str(payload.get('feedbackType') or '').strip(),
+            destination_concepts=concepts,
+            recommendation_generation_id=payload.get(
+                'recommendationGenerationId', ''),
+            source_context=payload.get(
+                'sourceContext', 'recommendation_card'),
+        )
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    if changed:
+        storeRecord('learned_preference_profiles', updated, g.uid, merge=True)
+        storeRecord(
+            'recommendation_feedback_events', event,
+            event['feedbackEventId'])
+    return jsonify({
+        'ok': True,
+        'changed': changed,
+        'feedbackEvent': event,
+        'learning': public_learning_state(updated),
+        'message': 'Thanks — this will help improve future recommendations.',
+    })
+
+
+@bp.delete('/preference-feedback')
+@auth_required(['traveller'])
+def reset_preference_feedback():
+    current = retrieveRecord('learned_preference_profiles', g.uid)
+    reset, event, had_learning = reset_learning_profile(
+        current, user_id=g.uid)
+    storeRecord('learned_preference_profiles', reset, g.uid, merge=True)
+    storeRecord(
+        'recommendation_feedback_events', event,
+        event['feedbackEventId'])
+    return jsonify({
+        'ok': True,
+        'changed': had_learning,
+        'learning': public_learning_state(reset),
+    })
 
 
 def _provider_destinations(query, location):
@@ -126,6 +233,8 @@ def generate():
     if not pref:
         return jsonify({'ok': False, 'error': 'Complete travel preferences first'}), 400
 
+    learned_profile = retrieveRecord('learned_preference_profiles', g.uid)
+    effective_pref = effective_preference_profile(pref, learned_profile)
     payload = request.get_json(silent=True) or {}
     destination_area = str(payload.get('destinationArea') or payload.get('location') or 'Malaysia').strip()
     destination_scope = normalize_destination_scope(destination_area)
@@ -198,7 +307,8 @@ def generate():
         if str(row.get('travellerId') or row.get('id') or '')
     }
 
-    prepared = prepareRecommendationInput(pref, candidates, collaborative)
+    prepared = prepareRecommendationInput(
+        effective_pref, candidates, collaborative)
     content = applyContentBasedFiltering(prepared)
     combined = applyCollaborativeFiltering(
         content,
@@ -240,7 +350,8 @@ def generate():
         'requestedDestination': destination_area,
         'destinationArea': destination_area,
         'canonicalDestinationScope': destination_scope,
-        'preferenceProfileVersion': _preference_version(pref),
+        'preferenceProfileVersion': _preference_version(
+            pref, learned_profile),
         'source': source,
         'engine': {
             'contentBasedFiltering': True,

@@ -11,6 +11,7 @@ from services.recommendation_taxonomy import (
     normalize_phrase,
     normalize_purpose,
 )
+from services.preference_learning import LEARNED_INTEREST_STRENGTH
 
 
 def _float(value, default=0.0):
@@ -125,11 +126,26 @@ def applyContentBasedFiltering(recommendationInput):
             ])
             primary_match = bool(
                 primary_concepts.intersection(interest_concepts))
-            interest_score = interest_coverage * (
+            base_interest_score = interest_coverage * (
                 1.0 if primary_match else 0.80)
         else:
-            interest_score = 0.55
+            base_interest_score = 0.55
             primary_match = False
+        learned_affinities = pref.get('learnedAffinities') or {}
+        learned_matches = {
+            concept: max(-1.0, min(1.0, _float(learned_affinities.get(concept))))
+            for concept in destination_concepts
+            if concept in learned_affinities
+        }
+        learned_mean = (
+            sum(learned_matches.values()) / len(learned_matches)
+            if learned_matches else 0.0
+        )
+        learned_adjustment = LEARNED_INTEREST_STRENGTH * learned_mean
+        interest_score = max(
+            -LEARNED_INTEREST_STRENGTH,
+            min(1.0, base_interest_score + learned_adjustment),
+        )
         type_score = _concept_compatibility(
             travel_type_concepts, destination_concepts, neutral=0.60)
         pace_score, pace_applied = _pace_suitability(requested_pace, item)
@@ -155,6 +171,16 @@ def applyContentBasedFiltering(recommendationInput):
                 'matched': matched_interests,
                 'requestedConcepts': sorted(interest_concepts),
                 'primaryCategoryMatch': primary_match,
+                'baseScore': round(base_interest_score * 100.0, 2),
+                'learnedAdjustment': round(learned_adjustment * 100.0, 2),
+                'learnedPositive': display_concepts([
+                    concept for concept, value in learned_matches.items()
+                    if value >= 0.10
+                ]),
+                'learnedNegative': display_concepts([
+                    concept for concept, value in learned_matches.items()
+                    if value <= -0.10
+                ]),
             },
             'travelType': {
                 'score': round(type_score * 100.0, 2),
@@ -173,7 +199,7 @@ def applyContentBasedFiltering(recommendationInput):
         results.append({
             **item,
             'destinationId': _destination_id(item),
-            'contentScore': round(min(100.0, content_score), 2),
+            'contentScore': round(max(0.0, min(100.0, content_score)), 2),
             'matchedInterests': matched_interests,
             'matchedProfileTerms': [
                 key for key, value in content_signals.items()
@@ -398,6 +424,11 @@ def _recommendation_reasons(item, popularity):
     signals = item.get('contentSignals', {}) or {}
     if matches:
         reasons.append(f"Matches your {', '.join(matches[:2])} interests")
+    learned_positive = (
+        (signals.get('interests', {}) or {}).get('learnedPositive', []) or [])
+    if learned_positive:
+        reasons.append(
+            f"Based on your recent interest in {', '.join(learned_positive[:2]).lower()}")
     primary_factor_labels = (
         ('travelType', 'travel style'),
         ('pace', 'travel pace'),

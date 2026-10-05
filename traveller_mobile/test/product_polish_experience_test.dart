@@ -280,10 +280,11 @@ void main() {
 
     await tester.scrollUntilVisible(
       find.text('Sign out'),
-      350,
+      500,
       scrollable: find.byType(Scrollable).first,
       maxScrolls: 10,
     );
+    await tester.ensureVisible(find.text('Sign out'));
     await tester.tap(find.text('Sign out'));
     await tester.pumpAndSettle();
 

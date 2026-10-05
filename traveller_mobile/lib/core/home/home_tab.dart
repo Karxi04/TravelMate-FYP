@@ -51,6 +51,9 @@ class _HomeTabState extends State<HomeTab> {
   String? coreError;
   String? recommendationError;
   String recommendationSource = '';
+  String recommendationGenerationId = '';
+  Map<String, String> feedbackByDestination = {};
+  final Set<String> feedbackInFlight = {};
 
   @override
   void initState() {
@@ -110,6 +113,7 @@ class _HomeTabState extends State<HomeTab> {
     await _loadCoreData();
     await Future.wait([
       loadRecommendations(),
+      loadPreferenceFeedback(),
       loadSharedContent(),
     ]);
   }
@@ -118,6 +122,7 @@ class _HomeTabState extends State<HomeTab> {
     await Future.wait([
       _loadCoreData(),
       loadRecommendations(),
+      loadPreferenceFeedback(),
       loadSharedContent(),
     ]);
   }
@@ -151,6 +156,10 @@ class _HomeTabState extends State<HomeTab> {
       setState(() {
         recommendations = data['recommendations'] as List? ?? [];
         recommendationSource = (data['source'] ?? '').toString();
+        recommendationGenerationId = (data['recommendationGenerationId'] ??
+                data['snapshot']?['recommendationGenerationId'] ??
+                '')
+            .toString();
       });
     } catch (error) {
       if (regenerate) {
@@ -161,6 +170,11 @@ class _HomeTabState extends State<HomeTab> {
             setState(() {
               if (cached.isNotEmpty) recommendations = cached;
               recommendationSource = (existing['source'] ?? '').toString();
+              recommendationGenerationId =
+                  (existing['recommendationGenerationId'] ??
+                          existing['snapshot']?['recommendationGenerationId'] ??
+                          '')
+                      .toString();
               recommendationError = cached.isEmpty
                   ? _message(error)
                   : 'Recommendations could not be refreshed. Showing your latest saved results.';
@@ -173,6 +187,23 @@ class _HomeTabState extends State<HomeTab> {
     } finally {
       _recommendationRequestInFlight = false;
       if (mounted) setState(() => loadingForYou = false);
+    }
+  }
+
+  Future<void> loadPreferenceFeedback() async {
+    try {
+      final data = await api.get('/api/fr4/preference-feedback');
+      if (!mounted || data is! Map || data['learning'] is! Map) return;
+      final current = Map<String, dynamic>.from(
+        data['learning']['currentFeedback'] as Map? ?? const {},
+      );
+      setState(() {
+        feedbackByDestination = current.map(
+          (key, value) => MapEntry(key, value.toString()),
+        );
+      });
+    } catch (_) {
+      // Home remains useful when preference learning is temporarily unavailable.
     }
   }
 
@@ -306,9 +337,48 @@ class _HomeTabState extends State<HomeTab> {
     }
   }
 
-  String destinationId(Map<String, dynamic> item) =>
-      (item['destinationId'] ?? item['place_id'] ?? item['title'] ?? '')
-          .toString();
+  String destinationId(Map<String, dynamic> item) => (item['destinationId'] ??
+          item['place_id'] ??
+          item['id'] ??
+          item['title'] ??
+          item['name'] ??
+          '')
+      .toString();
+
+  Future<void> submitPreferenceFeedback(
+    Map<String, dynamic> item,
+    String feedbackType,
+  ) async {
+    final id = destinationId(item);
+    if (id.isEmpty || feedbackInFlight.contains(id)) return;
+    setState(() => feedbackInFlight.add(id));
+    try {
+      final data = await api.post('/api/fr4/preference-feedback', {
+        'destinationId': id,
+        'recommendationGenerationId': recommendationGenerationId,
+        'feedbackType': feedbackType,
+        'sourceContext': 'home',
+        if (recommendationGenerationId.isEmpty)
+          'destinationConcepts': item['destinationConcepts'],
+      });
+      if (data is Map && data['ok'] == false) {
+        throw Exception(data['error'] ?? 'Feedback could not be saved.');
+      }
+      if (!mounted) return;
+      setState(() => feedbackByDestination[id] = feedbackType);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Thanks — this will help improve future recommendations.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => feedbackInFlight.remove(id));
+    }
+  }
 
   Future<void> addToTrip(Map<String, dynamic> item) async {
     try {
@@ -612,6 +682,12 @@ class _HomeTabState extends State<HomeTab> {
                     child: RecommendationCard(
                       recommendation: item,
                       source: recommendationSource,
+                      preferenceFeedback:
+                          feedbackByDestination[destinationId(item)],
+                      feedbackBusy:
+                          feedbackInFlight.contains(destinationId(item)),
+                      onPreferenceFeedback: (value) =>
+                          submitPreferenceFeedback(item, value),
                       onView: () => open(
                         DestinationDetailsScreen(
                           initialDestination: item,

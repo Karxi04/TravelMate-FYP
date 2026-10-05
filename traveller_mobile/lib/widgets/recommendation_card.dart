@@ -9,12 +9,18 @@ class RecommendationCard extends StatelessWidget {
   final String source;
   final VoidCallback onView;
   final VoidCallback? onAddToTrip;
+  final String? preferenceFeedback;
+  final ValueChanged<String>? onPreferenceFeedback;
+  final bool feedbackBusy;
 
   const RecommendationCard({
     super.key,
     required this.recommendation,
     required this.onView,
     this.onAddToTrip,
+    this.preferenceFeedback,
+    this.onPreferenceFeedback,
+    this.feedbackBusy = false,
     this.source = '',
   });
 
@@ -133,8 +139,63 @@ class RecommendationCard extends StatelessWidget {
                           icon: Icons.auto_awesome_rounded,
                         ),
                       ],
+                      if (onPreferenceFeedback != null)
+                        PopupMenuButton<String>(
+                          key: ValueKey(
+                            'recommendation-feedback-$_destinationKey',
+                          ),
+                          enabled: !feedbackBusy,
+                          tooltip: 'Improve future recommendations',
+                          icon: feedbackBusy
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.more_vert_rounded),
+                          onSelected: onPreferenceFeedback,
+                          itemBuilder: (context) => [
+                            PopupMenuItem(
+                              value: 'more_like_this',
+                              child: ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(
+                                  preferenceFeedback == 'more_like_this'
+                                      ? Icons.check_circle_rounded
+                                      : Icons.thumb_up_alt_outlined,
+                                ),
+                                title: const Text('More like this'),
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'not_for_me',
+                              child: ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(
+                                  preferenceFeedback == 'not_for_me'
+                                      ? Icons.check_circle_rounded
+                                      : Icons.thumb_down_alt_outlined,
+                                ),
+                                title: const Text('Not for me'),
+                              ),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
+                  if (preferenceFeedback != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    StatusChip(
+                      text: preferenceFeedback == 'more_like_this'
+                          ? 'More like this saved'
+                          : 'Not for me saved',
+                      icon: preferenceFeedback == 'more_like_this'
+                          ? Icons.thumb_up_alt_outlined
+                          : Icons.thumb_down_alt_outlined,
+                      tone: AppStatusTone.neutral,
+                    ),
+                  ],
                   if (_location.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.xxs),
                     Row(

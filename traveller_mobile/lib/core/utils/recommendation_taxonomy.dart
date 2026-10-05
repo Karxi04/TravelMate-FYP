@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'preference_learning.dart';
+
 /// Small, explainable taxonomy shared by standalone recommendation scoring.
 /// It intentionally mirrors the Flask engine rather than using an opaque model.
 class RecommendationTaxonomy {
@@ -448,6 +450,18 @@ class RecommendationScoring {
     }
     final signals =
         Map<String, dynamic>.from(item['contentSignals'] as Map? ?? const {});
+    final interestSignal = Map<String, dynamic>.from(
+      signals['interests'] as Map? ?? const {},
+    );
+    final learnedPositive = (interestSignal['learnedPositive'] as List? ?? [])
+        .map((value) => value.toString())
+        .where((value) => value.isNotEmpty)
+        .toList();
+    if (learnedPositive.isNotEmpty) {
+      reasons.add(
+        'Based on your recent interest in ${learnedPositive.take(2).join(', ')}',
+      );
+    }
     const primaryLabels = {
       'travelType': 'travel style',
       'pace': 'travel pace',
@@ -508,10 +522,32 @@ class RecommendationScoring {
     final matchedGroupCount = interestGroups
         .where((group) => group.intersection(destinationConcepts).isNotEmpty)
         .length;
-    final interestScore = interestGroups.isEmpty
+    final baseInterestScore = interestGroups.isEmpty
         ? .55
         : (matchedGroupCount / interestGroups.length) *
             (primaryMatch ? 1.0 : .80);
+    final learnedAffinities = Map<String, dynamic>.from(
+      preferences['learnedAffinities'] as Map? ?? const {},
+    );
+    final matchedLearnedAffinities = <String, double>{};
+    for (final concept in destinationConcepts) {
+      final affinity = _number(learnedAffinities[concept]);
+      if (affinity.abs() > .0001) {
+        matchedLearnedAffinities[concept] = affinity.clamp(-1, 1).toDouble();
+      }
+    }
+    final learnedMean = matchedLearnedAffinities.isEmpty
+        ? 0.0
+        : matchedLearnedAffinities.values.fold<double>(
+              0,
+              (sum, value) => sum + value,
+            ) /
+            matchedLearnedAffinities.length;
+    final learnedAdjustment =
+        PreferenceLearning.learnedInterestStrength * learnedMean;
+    final interestScore = (baseInterestScore + learnedAdjustment)
+        .clamp(-PreferenceLearning.learnedInterestStrength, 1)
+        .toDouble();
     final typeScore =
         _conceptCompatibility(typeConcepts, destinationConcepts, neutral: .60);
     final requestedPace =
@@ -530,19 +566,35 @@ class RecommendationScoring {
     final personality = _exactSuitability(requestedPersonality,
         item['personality'], RecommendationTaxonomy.normalizePersonality,
         broadBalanced: true);
-    final content = 100 *
-        (interestScore * .55 +
-            typeScore * .15 +
-            pace.score * .10 +
-            budget.score * .10 +
-            purpose.score * .06 +
-            personality.score * .04);
+    final content = (100 *
+            (interestScore * .55 +
+                typeScore * .15 +
+                pace.score * .10 +
+                budget.score * .10 +
+                purpose.score * .06 +
+                personality.score * .04))
+        .clamp(0, 100)
+        .toDouble();
     final matched = RecommendationTaxonomy.displayConcepts(matchedConcepts);
     final signals = <String, dynamic>{
       'interests': {
         'score': _round2(interestScore * 100),
+        'baseScore': _round2(baseInterestScore * 100),
+        'learnedAdjustment': _round2(learnedAdjustment * 100),
         'applied': interestConcepts.isNotEmpty,
         'matched': matched,
+        'learnedPositive': RecommendationTaxonomy.displayConcepts(
+          matchedLearnedAffinities.entries
+              .where((entry) => entry.value >= .10)
+              .map((entry) => entry.key)
+              .toSet(),
+        ),
+        'learnedNegative': RecommendationTaxonomy.displayConcepts(
+          matchedLearnedAffinities.entries
+              .where((entry) => entry.value <= -.10)
+              .map((entry) => entry.key)
+              .toSet(),
+        ),
         'requestedConcepts': interestConcepts.toList()..sort(),
         'primaryCategoryMatch': primaryMatch,
       },

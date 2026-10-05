@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/utils/malaysian_locality.dart';
+import '../core/utils/preference_learning.dart';
 import '../core/utils/recommendation_taxonomy.dart';
 import '../core/utils/constraint_itinerary_planner.dart';
 
@@ -98,6 +99,14 @@ class StandaloneApiService {
         'engine': safeSnapshot?['engine'] ?? _engineInfo,
       };
     }
+    if (path == '/api/fr4/preference-feedback') {
+      return {
+        'ok': true,
+        'learning': PreferenceLearning.publicState(
+          await _readMap('learned_preference_profile'),
+        ),
+      };
+    }
     if (path == '/api/fr5/itineraries') {
       return {'ok': true, 'items': await _readList('itineraries')};
     }
@@ -141,6 +150,9 @@ class StandaloneApiService {
     if (path == '/api/fr3/favourites') return _saveFavourite(payload);
     if (path == '/api/fr4/recommendations/generate') {
       return _generateRecommendations(payload);
+    }
+    if (path == '/api/fr4/preference-feedback') {
+      return _submitPreferenceFeedback(payload);
     }
     if (path == '/api/fr5/personalised-trips/generate') {
       return _generatePersonalisedTrip(payload);
@@ -257,6 +269,9 @@ class StandaloneApiService {
   }
 
   Future<dynamic> delete(String path) async {
+    if (path == '/api/fr4/preference-feedback') {
+      return _resetPreferenceFeedback();
+    }
     if (path.startsWith('/api/fr11/sessions/')) {
       final id = path.split('/').last;
       final sessions = await _readList('chat_sessions');
@@ -2768,6 +2783,9 @@ class StandaloneApiService {
 
   Future<dynamic> _generateRecommendations(Map<String, dynamic> payload) async {
     final preferences = await _readMap('preferences') ?? {};
+    final learnedProfile = await _readMap('learned_preference_profile');
+    final effectivePreferences =
+        PreferenceLearning.effectiveProfile(preferences, learnedProfile);
     final requestedDestination =
         (payload['destinationArea'] ?? 'Malaysia').toString().trim();
     final destinationScope =
@@ -2802,7 +2820,7 @@ class StandaloneApiService {
             .toList();
     final scored = RecommendationScoring.rankCandidates(
       candidates: eligibleCandidates,
-      preferences: preferences,
+      preferences: effectivePreferences,
       feedback: feedback,
       currentUserId: _uid,
       limit: 12,
@@ -2823,9 +2841,13 @@ class StandaloneApiService {
       'requestedDestination': requestedDestination,
       'destinationArea': requestedDestination,
       'canonicalDestinationScope': destinationScope,
-      'preferenceProfileVersion': preferences['preferenceProfileVersion'] ??
-          preferences['updatedAt'] ??
-          'local_profile_legacy',
+      'preferenceProfileVersion': PreferenceLearning.effectiveVersion(
+        (preferences['preferenceProfileVersion'] ??
+                preferences['updatedAt'] ??
+                'local_profile_legacy')
+            .toString(),
+        learnedProfile,
+      ),
       'generatedAt': generatedAt,
       'source': 'fallback',
       'engine': _engineInfo,
@@ -2849,6 +2871,115 @@ class StandaloneApiService {
         'purpose': purpose,
         'personality': personality,
       },
+    };
+  }
+
+  Future<dynamic> _submitPreferenceFeedback(
+    Map<String, dynamic> payload,
+  ) async {
+    final destinationId = (payload['destinationId'] ?? '').toString().trim();
+    final feedbackType = (payload['feedbackType'] ?? '').toString().trim();
+    final generationId =
+        (payload['recommendationGenerationId'] ?? '').toString().trim();
+    final sourceContext =
+        (payload['sourceContext'] ?? 'recommendation').toString().trim();
+    Map<String, dynamic>? snapshotItem;
+    if (generationId.isNotEmpty) {
+      final snapshots = await _readList('recommendation_snapshots');
+      Map<String, dynamic>? snapshot;
+      for (final candidate in snapshots) {
+        if ((candidate['recommendationGenerationId'] ?? '').toString() ==
+            generationId) {
+          snapshot = candidate;
+          break;
+        }
+      }
+      if (snapshot == null) {
+        return {
+          'ok': false,
+          'statusCode': 409,
+          'error': 'Recommendation snapshot was not found.',
+        };
+      }
+      for (final raw
+          in snapshot['recommendationResults'] as List? ?? const []) {
+        if (raw is! Map) continue;
+        final item = Map<String, dynamic>.from(raw);
+        final itemId = (item['destinationId'] ??
+                item['place_id'] ??
+                item['id'] ??
+                item['title'] ??
+                item['name'] ??
+                '')
+            .toString();
+        if (itemId == destinationId) {
+          snapshotItem = item;
+          break;
+        }
+      }
+      if (snapshotItem == null) {
+        return {
+          'ok': false,
+          'statusCode': 409,
+          'error':
+              'Destination does not belong to this recommendation snapshot.',
+        };
+      }
+    }
+    try {
+      final concepts = snapshotItem?['destinationConcepts'] ??
+          payload['destinationConcepts'] ??
+          RecommendationTaxonomy.candidateConcepts(payload);
+      final now = _now();
+      final eventId = 'local_feedback_${DateTime.now().microsecondsSinceEpoch}';
+      final update = PreferenceLearning.applyFeedback(
+        await _readMap('learned_preference_profile'),
+        userId: _uid,
+        destinationId: destinationId,
+        feedbackType: feedbackType,
+        destinationConcepts: concepts,
+        recommendationGenerationId: generationId,
+        sourceContext: sourceContext,
+        now: now,
+        eventId: eventId,
+      );
+      if (update.changed) {
+        await _writeMap('learned_preference_profile', update.profile);
+        final events = await _readList('recommendation_feedback_events');
+        events.insert(0, Map<String, dynamic>.from(update.event!));
+        await _writeList('recommendation_feedback_events', events);
+      }
+      return {
+        'ok': true,
+        'changed': update.changed,
+        'learning': PreferenceLearning.publicState(update.profile),
+        'message': update.changed
+            ? 'Thanks — this will help improve future recommendations.'
+            : 'Your feedback is already recorded.',
+      };
+    } on ArgumentError catch (error) {
+      return {'ok': false, 'error': error.message.toString()};
+    }
+  }
+
+  Future<dynamic> _resetPreferenceFeedback() async {
+    final now = _now();
+    final eventId = 'local_reset_${DateTime.now().microsecondsSinceEpoch}';
+    final update = PreferenceLearning.reset(
+      await _readMap('learned_preference_profile'),
+      userId: _uid,
+      now: now,
+      eventId: eventId,
+    );
+    await _writeMap('learned_preference_profile', update.profile);
+    final events = await _readList('recommendation_feedback_events');
+    events.insert(0, Map<String, dynamic>.from(update.event!));
+    await _writeList('recommendation_feedback_events', events);
+    return {
+      'ok': true,
+      'changed': update.changed,
+      'learning': PreferenceLearning.publicState(update.profile),
+      'message': 'Learned recommendation preferences were reset.',
     };
   }
 
