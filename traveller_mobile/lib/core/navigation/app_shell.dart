@@ -7,7 +7,9 @@ import '../../modules/fr01_user_management/profile_tab.dart';
 import 'app_shell_navigation.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  final List<Widget>? pages;
+
+  const AppShell({super.key, this.pages});
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -16,7 +18,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int index = 0;
 
-  final pages = const [
+  static const _defaultPages = [
     HomeTab(),
     ExploreTab(),
     TripsTab(),
@@ -26,41 +28,59 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    return AppShellNavigation(
-      selectedTab: AppShellTab.values[index],
-      onSelect: (tab) => setState(() => index = tab.index),
-      child: Scaffold(
-        body: IndexedStack(index: index, children: pages),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: index,
-          onDestinationSelected: (value) => setState(() => index = value),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: 'Home',
+    final pages = widget.pages ?? _defaultPages;
+    assert(pages.length == AppShellTab.values.length);
+
+    void select(int value) {
+      if (value != index) setState(() => index = value);
+    }
+
+    return PopScope(
+      canPop: index == AppShellTab.home.index,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && index != AppShellTab.home.index) {
+          select(AppShellTab.home.index);
+        }
+      },
+      child: AppShellNavigation(
+        selectedTab: AppShellTab.values[index],
+        onSelect: (tab) => select(tab.index),
+        child: Scaffold(
+          body: IndexedStack(index: index, children: pages),
+          bottomNavigationBar: Semantics(
+            label: 'Main navigation',
+            child: NavigationBar(
+              selectedIndex: index,
+              onDestinationSelected: select,
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home_rounded),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.travel_explore_outlined),
+                  selectedIcon: Icon(Icons.travel_explore_rounded),
+                  label: 'Explore',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.luggage_outlined),
+                  selectedIcon: Icon(Icons.luggage_rounded),
+                  label: 'Trips',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.auto_awesome_outlined),
+                  selectedIcon: Icon(Icons.auto_awesome_rounded),
+                  label: 'Assistant',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline_rounded),
+                  selectedIcon: Icon(Icons.person_rounded),
+                  label: 'Profile',
+                ),
+              ],
             ),
-            NavigationDestination(
-              icon: Icon(Icons.travel_explore_outlined),
-              selectedIcon: Icon(Icons.travel_explore_rounded),
-              label: 'Explore',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.luggage_outlined),
-              selectedIcon: Icon(Icons.luggage_rounded),
-              label: 'Trips',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.auto_awesome_outlined),
-              selectedIcon: Icon(Icons.auto_awesome_rounded),
-              label: 'Assistant',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline_rounded),
-              selectedIcon: Icon(Icons.person_rounded),
-              label: 'Profile',
-            ),
-          ],
+          ),
         ),
       ),
     );

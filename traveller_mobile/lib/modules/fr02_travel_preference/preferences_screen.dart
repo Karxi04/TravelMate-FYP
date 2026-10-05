@@ -4,15 +4,18 @@ import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
+import '../../widgets/travel_widgets.dart';
 
 class PreferencesScreen extends StatefulWidget {
   final bool onboarding;
   final VoidCallback? onCompleted;
+  final ApiService? api;
 
   const PreferencesScreen({
     super.key,
     this.onboarding = false,
     this.onCompleted,
+    this.api,
   });
 
   @override
@@ -20,7 +23,7 @@ class PreferencesScreen extends StatefulWidget {
 }
 
 class _PreferencesScreenState extends State<PreferencesScreen> {
-  final ApiService api = ApiService();
+  late final ApiService api;
   final PageController controller = PageController();
 
   int page = 0;
@@ -36,11 +39,31 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   final Set<String> interests = {'Culture', 'Food', 'Heritage'};
 
   final personalities = const [
-    ('Explorer', Icons.explore_rounded, 'I enjoy discovering new places and flexible experiences.'),
-    ('Planner', Icons.event_note_rounded, 'I prefer organised schedules and clear plans.'),
-    ('Social', Icons.groups_rounded, 'I enjoy lively places, events and shared experiences.'),
-    ('Relaxed', Icons.spa_outlined, 'I prefer slower travel with more rest time.'),
-    ('Balanced', Icons.balance_rounded, 'I like a mix of planning, exploration and free time.'),
+    (
+      'Explorer',
+      Icons.explore_rounded,
+      'I enjoy discovering new places and flexible experiences.'
+    ),
+    (
+      'Planner',
+      Icons.event_note_rounded,
+      'I prefer organised schedules and clear plans.'
+    ),
+    (
+      'Social',
+      Icons.groups_rounded,
+      'I enjoy lively places, events and shared experiences.'
+    ),
+    (
+      'Relaxed',
+      Icons.spa_outlined,
+      'I prefer slower travel with more rest time.'
+    ),
+    (
+      'Balanced',
+      Icons.balance_rounded,
+      'I like a mix of planning, exploration and free time.'
+    ),
   ];
 
   final sleepingTypes = const [
@@ -81,6 +104,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   @override
   void initState() {
     super.initState();
+    api = widget.api ?? ApiService();
     Future.microtask(load);
   }
 
@@ -103,7 +127,8 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           personalities.map((e) => e.$1).toList(),
           personality,
         );
-        sleepingType = normalise(p['sleepingType'], sleepingTypes, sleepingType);
+        sleepingType =
+            normalise(p['sleepingType'], sleepingTypes, sleepingType);
         travelType = normalise(p['travelType'], travelTypes, travelType);
         budget = normalise(p['budgetRange'], budgets, budget);
         pace = normalise(p['travelPace'], paces, pace);
@@ -203,7 +228,8 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(17),
               border: Border.all(
-                color: selected ? InkWashColors.blueGrey : const Color(0xFFE3E3DE),
+                color:
+                    selected ? InkWashColors.blueGrey : const Color(0xFFE3E3DE),
                 width: selected ? 1.5 : 1,
               ),
             ),
@@ -226,20 +252,26 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                      Text(title,
+                          style: const TextStyle(fontWeight: FontWeight.w800)),
                       if (subtitle != null) ...[
                         const SizedBox(height: 3),
                         Text(
                           subtitle,
-                          style: const TextStyle(color: InkWashColors.mutedInk, fontSize: 12),
+                          style: const TextStyle(
+                              color: InkWashColors.mutedInk, fontSize: 12),
                         ),
                       ],
                     ],
                   ),
                 ),
                 Icon(
-                  selected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                  color: selected ? InkWashColors.blueGrey : InkWashColors.softGrey,
+                  selected
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: selected
+                      ? InkWashColors.blueGrey
+                      : InkWashColors.softGrey,
                 ),
               ],
             ),
@@ -269,7 +301,8 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 6),
-            Text(subtitle, style: const TextStyle(color: InkWashColors.mutedInk)),
+            Text(subtitle,
+                style: const TextStyle(color: InkWashColors.mutedInk)),
           ],
         ),
       );
@@ -277,7 +310,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: AppLoadingState(message: 'Loading your travel profile…'),
+      );
     }
 
     return PopScope(
@@ -285,7 +320,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: !widget.onboarding,
-          title: Text(widget.onboarding ? 'Set up your travel profile' : 'Travel preferences'),
+          title: Text(widget.onboarding
+              ? 'Set up your travel profile'
+              : 'Travel preferences'),
           actions: [
             if (widget.onboarding)
               TextButton(
@@ -305,7 +342,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       height: 5,
                       margin: EdgeInsets.only(right: i == 5 ? 0 : 5),
                       decoration: BoxDecoration(
-                        color: i <= page ? InkWashColors.blueGrey : InkWashColors.softGrey.withValues(alpha: .45),
+                        color: i <= page
+                            ? InkWashColors.blueGrey
+                            : InkWashColors.softGrey.withValues(alpha: .45),
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
@@ -322,97 +361,125 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   ListView(
                     padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
                     children: [
-                      pageHeader('1 OF 6', 'What kind of traveller are you?', 'Choose the description that best matches how you usually approach a trip.'),
+                      pageHeader('1 OF 6', 'What kind of traveller are you?',
+                          'Choose the description that best matches how you usually approach a trip.'),
                       ...personalities.map((item) => optionTile(
                             title: item.$1,
                             subtitle: item.$3,
                             icon: item.$2,
                             selectedValue: personality,
-                            onSelected: (value) => setState(() => personality = value),
+                            onSelected: (value) =>
+                                setState(() => personality = value),
                           )),
                     ],
                   ),
                   ListView(
                     padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
                     children: [
-                      pageHeader('2 OF 6', 'When does your travel day work best?', 'This helps TravelMate place activities at more suitable times.'),
+                      pageHeader(
+                          '2 OF 6',
+                          'When does your travel day work best?',
+                          'This helps TravelMate place activities at more suitable times.'),
                       ...sleepingTypes.map((item) => optionTile(
                             title: item,
                             selectedValue: sleepingType,
-                            onSelected: (value) => setState(() => sleepingType = value),
-                            icon: item == 'Early riser' ? Icons.wb_sunny_outlined : item == 'Night owl' ? Icons.nightlight_outlined : Icons.bedtime_outlined,
+                            onSelected: (value) =>
+                                setState(() => sleepingType = value),
+                            icon: item == 'Early riser'
+                                ? Icons.wb_sunny_outlined
+                                : item == 'Night owl'
+                                    ? Icons.nightlight_outlined
+                                    : Icons.bedtime_outlined,
                           )),
                     ],
                   ),
                   ListView(
                     padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
                     children: [
-                      pageHeader('3 OF 6', 'What travel style do you prefer?', 'TravelMate uses this together with your interests when ranking destinations.'),
+                      pageHeader('3 OF 6', 'What travel style do you prefer?',
+                          'TravelMate uses this with your interests to shape suggestions for you.'),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: travelTypes.map((item) => ChoiceChip(
-                              selected: travelType == item,
-                              label: Text(item),
-                              onSelected: (_) => setState(() => travelType = item),
-                            )).toList(),
+                        children: travelTypes
+                            .map((item) => ChoiceChip(
+                                  selected: travelType == item,
+                                  label: Text(item),
+                                  onSelected: (_) =>
+                                      setState(() => travelType = item),
+                                ))
+                            .toList(),
                       ),
                     ],
                   ),
                   ListView(
                     padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
                     children: [
-                      pageHeader('4 OF 6', 'What are you interested in?', 'Choose all that apply. These are important inputs for content-based filtering.'),
+                      pageHeader('4 OF 6', 'What are you interested in?',
+                          'Choose all that apply so your suggestions reflect what you enjoy.'),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: interestOptions.map((item) => FilterChip(
-                              selected: interests.contains(item),
-                              label: Text(item),
-                              onSelected: (selected) => setState(() {
-                                if (selected) {
-                                  interests.add(item);
-                                } else {
-                                  interests.remove(item);
-                                }
-                              }),
-                            )).toList(),
+                        children: interestOptions
+                            .map((item) => FilterChip(
+                                  selected: interests.contains(item),
+                                  label: Text(item),
+                                  onSelected: (selected) => setState(() {
+                                    if (selected) {
+                                      interests.add(item);
+                                    } else {
+                                      interests.remove(item);
+                                    }
+                                  }),
+                                ))
+                            .toList(),
                       ),
                     ],
                   ),
                   ListView(
                     padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
                     children: [
-                      pageHeader('5 OF 6', 'Choose your budget and travel pace', 'These settings influence recommendation scoring and itinerary density.'),
-                      const Text('Budget preference', style: TextStyle(fontWeight: FontWeight.w900)),
+                      pageHeader('5 OF 6', 'Choose your budget and travel pace',
+                          'These settings shape suggested places and how full each day feels.'),
+                      const Text('Budget preference',
+                          style: TextStyle(fontWeight: FontWeight.w900)),
                       const SizedBox(height: 8),
                       ...budgets.map((item) => optionTile(
                             title: item,
                             selectedValue: budget,
-                            onSelected: (value) => setState(() => budget = value),
+                            onSelected: (value) =>
+                                setState(() => budget = value),
                             icon: Icons.account_balance_wallet_outlined,
                           )),
                       const SizedBox(height: 9),
-                      const Text('Travel pace', style: TextStyle(fontWeight: FontWeight.w900)),
+                      const Text('Travel pace',
+                          style: TextStyle(fontWeight: FontWeight.w900)),
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
-                        children: paces.map((item) => ChoiceChip(
-                              selected: pace == item,
-                              label: Text(item),
-                              onSelected: (_) => setState(() => pace = item),
-                            )).toList(),
+                        children: paces
+                            .map((item) => ChoiceChip(
+                                  selected: pace == item,
+                                  label: Text(item),
+                                  onSelected: (_) =>
+                                      setState(() => pace = item),
+                                ))
+                            .toList(),
                       ),
                     ],
                   ),
                   ListView(
                     padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
                     children: [
-                      pageHeader('6 OF 6', 'What is the main purpose of this travel profile?', 'You can update all questionnaire answers later from Profile.'),
+                      pageHeader(
+                          '6 OF 6',
+                          'What is the main purpose of this travel profile?',
+                          'You can update all questionnaire answers later from Profile.'),
                       ...purposes.map((item) => optionTile(
                             title: item,
                             selectedValue: purpose,
-                            onSelected: (value) => setState(() => purpose = value),
+                            onSelected: (value) =>
+                                setState(() => purpose = value),
                             icon: Icons.flag_outlined,
                           )),
                       const SizedBox(height: 12),
@@ -421,9 +488,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Your TravelMate profile', style: TextStyle(fontWeight: FontWeight.w900)),
+                            const Text('Your TravelMate profile',
+                                style: TextStyle(fontWeight: FontWeight.w900)),
                             const SizedBox(height: 7),
-                            Text('$personality • $travelType • $budget • $pace'),
+                            Text(
+                                '$personality • $travelType • $budget • $pace'),
                             const SizedBox(height: 3),
                             Text(interests.join(', ')),
                           ],
@@ -460,7 +529,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                           busy
                               ? 'Saving...'
                               : page == 5
-                                  ? (widget.onboarding ? 'Start using TravelMate' : 'Save changes')
+                                  ? (widget.onboarding
+                                      ? 'Start using TravelMate'
+                                      : 'Save changes')
                                   : 'Continue',
                         ),
                       ),

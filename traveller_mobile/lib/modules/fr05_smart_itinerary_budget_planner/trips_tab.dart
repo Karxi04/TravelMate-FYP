@@ -4,19 +4,39 @@ import '../../services/api_service.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../../theme/app_theme.dart';
+import 'personalized_planning_screen.dart';
 import 'trip_details_screen.dart';
 
 class TripsTab extends StatefulWidget {
-  const TripsTab({super.key});
+  final ApiService? api;
+
+  const TripsTab({super.key, this.api});
 
   @override
   State<TripsTab> createState() => _TripsTabState();
 }
 
 class _TripsTabState extends State<TripsTab> {
-  final api = ApiService();
+  late final ApiService api;
   List<dynamic> items = [];
   bool busy = false;
+  bool loading = true;
+  String? loadError;
+
+  static const _months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
 
   String _date(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -30,34 +50,72 @@ class _TripsTabState extends State<TripsTab> {
   }
 
   String _dateRange(Map<String, dynamic> trip) {
-    final range = (trip['tripDateRangeLabel'] ?? '').toString();
+    final start = DateTime.tryParse((trip['startDate'] ?? '').toString());
+    final end = DateTime.tryParse((trip['endDate'] ?? '').toString());
+    if (start != null && end != null) {
+      final startText = '${start.day} ${_months[start.month - 1]}';
+      final endText = start.year == end.year
+          ? '${end.day} ${_months[end.month - 1]} ${end.year}'
+          : '${end.day} ${_months[end.month - 1]} ${end.year}';
+      return '$startText–$endText';
+    }
+    final range = (trip['tripDateRangeLabel'] ?? '').toString().trim();
     if (range.isNotEmpty) return range;
-    final start = (trip['startDate'] ?? '').toString();
-    final end = (trip['endDate'] ?? '').toString();
-    if (start.isNotEmpty && end.isNotEmpty) return '$start to $end';
     return 'Dates not set';
   }
 
   String _budgetText(Map<String, dynamic> trip) {
     final budget = trip['budgetEstimate'];
     if (budget is Map && budget['total'] != null) {
-      return 'RM ${budget['total']} / RM ${budget['limit'] ?? trip['budgetLimit'] ?? 0}';
+      return 'RM ${budget['total']} estimated';
     }
-    return 'RM ${trip['budgetLimit'] ?? 0}';
+    final limit = num.tryParse('${trip['budgetLimit'] ?? 0}') ?? 0;
+    return limit > 0 ? 'RM $limit budget' : 'Budget not set';
   }
 
   String _statusText(Map<String, dynamic> trip) {
-    final status = (trip['status'] ?? 'draft').toString().replaceAll('_', ' ');
-    return status.isEmpty ? 'draft' : status;
+    return switch ((trip['status'] ?? 'draft').toString().toLowerCase()) {
+      'planned' => 'Planned',
+      'generating' => 'Preparing',
+      'generation_failed' => 'Needs attention',
+      _ => 'Draft',
+    };
+  }
+
+  AppStatusTone _statusTone(Map<String, dynamic> trip) {
+    return switch ((trip['status'] ?? 'draft').toString().toLowerCase()) {
+      'planned' => AppStatusTone.success,
+      'generating' => AppStatusTone.info,
+      'generation_failed' => AppStatusTone.warning,
+      _ => AppStatusTone.neutral,
+    };
   }
 
   Future<void> load() async {
+    if (mounted) {
+      setState(() {
+        loading = true;
+        loadError = null;
+      });
+    }
     try {
       final data = await api.get('/api/fr5/itineraries');
       if (mounted) setState(() => items = data['items'] ?? []);
-    } catch (e) {
-      if (mounted) showError(context, e);
+    } catch (_) {
+      if (mounted) {
+        setState(() => loadError = 'We couldn’t load your trips. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => loading = false);
     }
+  }
+
+  Future<void> planTrip() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PersonalizedPlanningScreen(api: api)),
+    );
+    await load();
   }
 
   Future<void> createTrip() async {
@@ -188,8 +246,14 @@ class _TripsTabState extends State<TripsTab> {
               '')
           .toString();
       if (id.isNotEmpty) {
-        await Navigator.push(context,
-            MaterialPageRoute(builder: (_) => TripDetailsScreen(tripId: id)));
+        await Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => TripDetailsScreen(
+                      key: ValueKey('trip-details-$id'),
+                      tripId: id,
+                      api: api,
+                    )));
         await load();
       }
     } catch (e) {
@@ -200,9 +264,36 @@ class _TripsTabState extends State<TripsTab> {
   }
 
   Future<void> deleteTrip(String id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
+        title: const Text('Delete this trip?'),
+        content: const Text(
+          'This removes the trip and its saved itinerary. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep trip'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete trip'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     try {
       await api.delete('/api/fr5/itineraries/$id');
       await load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Trip deleted.')),
+        );
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -212,7 +303,11 @@ class _TripsTabState extends State<TripsTab> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-          builder: (_) => TripDetailsScreen(tripId: trip['id'].toString())),
+          builder: (_) => TripDetailsScreen(
+                key: ValueKey('trip-details-${trip['id']}'),
+                tripId: trip['id'].toString(),
+                api: api,
+              )),
     );
     await load();
   }
@@ -220,6 +315,7 @@ class _TripsTabState extends State<TripsTab> {
   @override
   void initState() {
     super.initState();
+    api = widget.api ?? ApiService();
     Future.microtask(load);
   }
 
@@ -229,13 +325,26 @@ class _TripsTabState extends State<TripsTab> {
       appBar: AppBar(
         title: const Text('Trips'),
         actions: [
-          IconButton(onPressed: load, icon: const Icon(Icons.refresh_rounded))
+          PopupMenuButton<String>(
+            tooltip: 'More trip actions',
+            onSelected: (value) {
+              if (value == 'manual') createTrip();
+              if (value == 'refresh') load();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'manual',
+                child: Text('Add trip manually'),
+              ),
+              PopupMenuItem(value: 'refresh', child: Text('Refresh trips')),
+            ],
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: busy ? null : createTrip,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('New trip'),
+        onPressed: busy ? null : planTrip,
+        icon: const Icon(Icons.route_rounded),
+        label: const Text('Plan a trip'),
       ),
       body: RefreshIndicator(
         onRefresh: load,
@@ -248,14 +357,17 @@ class _TripsTabState extends State<TripsTab> {
                   'Open a trip when you want to add places, change the sequence or edit details.',
             ),
             const SizedBox(height: 14),
-            if (items.isEmpty)
+            if (loading)
+              const AppLoadingState(message: 'Loading your trips…')
+            else if (loadError != null)
+              AppErrorState(message: loadError!, onRetry: load)
+            else if (items.isEmpty)
               TravelEmptyState(
                 icon: Icons.luggage_outlined,
-                title: 'No trip yet',
-                message:
-                    'Create a trip first. Then search and add places instead of typing activities manually.',
-                actionLabel: 'Create first trip',
-                onAction: createTrip,
+                title: 'No trips yet',
+                message: 'Start planning your first personalised trip.',
+                actionLabel: 'Plan a trip',
+                onAction: planTrip,
               )
             else
               ...items.map((raw) {
@@ -267,66 +379,88 @@ class _TripsTabState extends State<TripsTab> {
                     borderRadius: BorderRadius.circular(20),
                     onTap: () => openTrip(trip),
                     child: InkCard(
-                      child: Row(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                                color: InkWashColors.paleBlue,
-                                borderRadius: BorderRadius.circular(15)),
-                            child: const Icon(Icons.route_rounded,
-                                color: InkWashColors.blueGrey),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text((trip['title'] ?? 'Trip').toString(),
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 18)),
-                                const SizedBox(height: 2),
-                                Text((trip['destinationArea'] ?? '').toString(),
-                                    style: const TextStyle(
-                                        color: InkWashColors.mutedInk)),
-                                const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 7,
-                                  runSpacing: 7,
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    TravelStatusPill(
-                                        text: _dateRange(trip),
-                                        icon: Icons.calendar_month_outlined),
-                                    TravelStatusPill(
-                                        text: '${_tripDays(trip)} day(s)',
-                                        icon: Icons.today_outlined),
-                                    TravelStatusPill(
-                                        text: '${activities.length} places',
-                                        icon: Icons.place_outlined),
-                                    TravelStatusPill(
-                                        text: _budgetText(trip),
-                                        icon: Icons
-                                            .account_balance_wallet_outlined),
-                                    TravelStatusPill(
-                                        text: _statusText(trip),
-                                        icon: Icons.flag_outlined),
+                                    Text((trip['title'] ?? 'Trip').toString(),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleLarge),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                        (trip['destinationArea'] ?? '')
+                                            .toString(),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: AppColors.textSecondary,
+                                            )),
                                   ],
                                 ),
-                              ],
-                            ),
-                          ),
-                          PopupMenuButton<String>(
-                            onSelected: (value) {
-                              if (value == 'delete')
-                                deleteTrip(trip['id'].toString());
-                            },
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(
-                                  value: 'delete', child: Text('Delete trip'))
+                              ),
+                              PopupMenuButton<String>(
+                                tooltip: 'Trip actions',
+                                onSelected: (value) {
+                                  if (value == 'delete') {
+                                    deleteTrip(trip['id'].toString());
+                                  }
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('Delete trip'),
+                                  ),
+                                ],
+                              ),
                             ],
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              StatusChip(
+                                text: _statusText(trip),
+                                icon: Icons.flag_outlined,
+                                tone: _statusTone(trip),
+                              ),
+                              TravelStatusPill(
+                                text:
+                                    '${_dateRange(trip)} · ${_tripDays(trip)} ${_tripDays(trip) == 1 ? 'day' : 'days'}',
+                                icon: Icons.calendar_month_outlined,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            '${activities.length} ${activities.length == 1 ? 'activity' : 'activities'} · ${_budgetText(trip)}',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                          ),
+                          const SizedBox(height: 10),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: () => openTrip(trip),
+                              icon: const Icon(Icons.arrow_forward_rounded),
+                              label: const Text('Continue'),
+                            ),
                           ),
                         ],
                       ),
