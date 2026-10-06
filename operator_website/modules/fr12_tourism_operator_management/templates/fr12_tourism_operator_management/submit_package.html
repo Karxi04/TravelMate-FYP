@@ -2,7 +2,7 @@
 {% block content %}
 <div class="page-title"><div><h1>Submit Package for Approval</h1><p>Choose a Draft or Rejected package and send it to the Administrator.</p></div></div>
 <div class="card cream" style="max-width:760px">
-<form method="post">
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="field"><label>Tourism Package</label><select class="input" name="packageId" required><option value="">Select a package</option>{% for item in items %}<option value="{{ item.id }}">{{ item.packageTitle }} — {{ item.approvalStatus or 'draft' }}</option>{% endfor %}</select></div>
 <p class="muted">After submission, the package status becomes Pending Approval and the Administrator can approve or reject it.</p>
 <button class="btn primary" type="submit">Submit for Approval</button>

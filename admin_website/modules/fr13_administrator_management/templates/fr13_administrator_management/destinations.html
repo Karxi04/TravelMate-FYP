@@ -2,7 +2,7 @@
 {% block title %}Destination Records | TravelMate{% endblock %}
 {% block content %}
 <div class="page-title"><div><h1>Destination Management</h1><p>Create and maintain destination records used by TravelMate administrators.</p></div></div>
-<form class="card" method="post" action="{{ url_for('admin_fr13.create_destination') }}">
+<form class="card" method="post" action="{{ url_for('admin_fr13.create_destination') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="grid g2">
     <div class="field"><label>Destination name</label><input class="input" name="title" required></div>
     <div class="field"><label>Address</label><input class="input" name="address"></div>
@@ -22,7 +22,7 @@
   <td>RM {{ x.get('estimatedCost',0) }}</td>
   <td><span class="status {{ x.get('status','active') }}">{{ x.get('status','active') }}</span></td>
   <td>
-    <form class="actions" method="post" action="{{ url_for('admin_fr13.update_destination', destination_id=x.id) }}">
+    <form class="actions" method="post" action="{{ url_for('admin_fr13.update_destination', destination_id=x.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input class="input" name="title" value="{{ x.get('title','') }}" required>
       <input class="input" name="address" value="{{ x.get('address','') }}">
       <input class="input" name="category" value="{{ x.get('category','') }}">
@@ -33,7 +33,7 @@
       <select class="input" name="status"><option value="active" {% if x.get('status','active')=='active' %}selected{% endif %}>Active</option><option value="inactive" {% if x.get('status')=='inactive' %}selected{% endif %}>Inactive</option></select>
       <button class="btn outline">Save</button>
     </form>
-    <form method="post" action="{{ url_for('admin_fr13.delete_destination', destination_id=x.id) }}"><button class="btn danger">Delete</button></form>
+    <form method="post" action="{{ url_for('admin_fr13.delete_destination', destination_id=x.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn danger">Delete</button></form>
   </td>
 </tr>
 {% else %}<tr><td colspan="5">No destination records yet.</td></tr>{% endfor %}

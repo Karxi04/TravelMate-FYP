@@ -10,7 +10,7 @@
   {% if x.get('discountValue') %}<p><strong>Offer:</strong> {{x.get('discountValue')}}{% if x.get('discountType')=='percentage' %}% off{% else %} RM off{% endif %}</p>{% endif %}
   <p>{{x.get('description','')}}</p>
   {% if x.get('termsConditions') %}<p><strong>Terms & conditions</strong><br>{{x.get('termsConditions')}}</p>{% endif %}
-  <form method="post" action="{{ url_for('admin_fr13.review_campaign', campaign_id=x.id) }}" style="margin-top:14px">
+  <form method="post" action="{{ url_for('admin_fr13.review_campaign', campaign_id=x.id) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field"><label>Review comment / rejection reason</label><textarea class="input" name="comment"></textarea></div>
     <div class="actions"><button class="btn primary" name="decision" value="approved">Approve & Publish</button><button class="btn danger" name="decision" value="rejected">Reject</button></div>
   </form>

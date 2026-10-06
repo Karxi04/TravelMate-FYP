@@ -12,7 +12,7 @@
       <a href="{{ url_for('operator_fr12.campaigns') }}">◇ Promotional Campaigns</a>
       <a href="{{ url_for('operator_fr12.analytics') }}">▥ Business Analytics</a>
     </nav>
-    <div class="footer"><nav><a href="{{ url_for('operator_fr01.logout') }}">↪ Logout</a></nav></div>
+    <div class="footer"><nav><form method="post" action="{{ url_for('operator_fr01.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn outline" type="submit">↪ Logout</button></form></nav></div>
   </aside>
   <section class="content">
     <header class="topbar"><div><strong>Tourism Operator Management</strong><div class="muted" style="font-size:12px">Separate operator web application</div></div><div class="avatar">OP</div></header>

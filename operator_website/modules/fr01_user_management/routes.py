@@ -101,7 +101,7 @@ def profile():
     return render_template("fr01_user_management/profile.html", profile=response.json().get("profile", {}) if response.ok else {})
 
 
-@bp.route("/logout")
+@bp.post("/logout")
 def logout():
     signOutUser(session)
     return redirect(url_for("operator_fr01.login"))
