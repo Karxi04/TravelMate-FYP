@@ -59,6 +59,24 @@ affected by browser CORS. Wildcard origins are rejected.
 - FR7 `/api/fr7/flights/search`
 - FR8 `/api/fr8/places/search`, `/api/fr8/hotels/search`, `/api/fr8/hotels/prebook`, `/api/fr8/hotels/book`
 - FR9 `/api/fr9/payments/...`
+
+### Transaction reliability
+
+Payment mutations accept a client-retained `paymentAttemptId`. Hotel prebook
+and booking mutations accept one parent `hotelBookingAttemptId`; TravelMate
+derives separate opaque provider-stage identities for prebook and book.
+Firestore atomically claims deterministic operation documents before provider
+calls. Repeating an attempt converges on that record instead of creating a new
+logical payment/booking. Pending outcomes can be checked through:
+
+- `GET /api/fr9/payments/attempts/<paymentAttemptId>`
+- `GET /api/fr8/bookings/attempts/<hotelBookingAttemptId>`
+
+Stripe test-mode calls use the same opaque Stripe idempotency key for an
+ambiguous retry. A terminal failed payment requires a new attempt ID. LiteAPI
+booking has no guaranteed reconciliation lookup in the current integration;
+an ambiguous booking remains pending/verification-required and is not blindly
+submitted again. Local hotel confirmations are explicitly marked simulation.
 - FR10 `/api/fr10/feedback/...`
 - FR11 `/api/fr11/chat`, `/api/fr11/history`
 - FR12 `/api/fr12/...`

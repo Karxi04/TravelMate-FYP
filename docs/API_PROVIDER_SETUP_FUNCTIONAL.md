@@ -23,9 +23,19 @@ No key is required by this project. It is used for geocoding and weather forecas
 
 ### LiteAPI / Nuitée
 `LITEAPI_KEY` enables live hotel rate, prebook and booking sandbox calls.
+Hotel mutation calls are bounded below the Traveller app's 90-second mutation
+window. The current LiteAPI integration does not expose a guaranteed booking
+idempotency/status lookup, so an ambiguous timeout is retained as pending for
+verification rather than automatically resubmitted. Fallback records are
+labelled Demo booking and Simulated confirmation.
 
 ### Gemini
 `GEMINI_API_KEY` enables live TravelMate assistant responses. Without it, `FALLBACK_MODE=true` keeps the assistant usable through a deterministic local fallback.
+
+Stripe test mutations use a 75-second SDK timeout, disable blind SDK network
+retries, and pass a stable opaque idempotency key. The mobile client allows 90
+seconds for payment/hotel mutations, 70 seconds for long provider reads, 35
+seconds for ordinary writes, and 25 seconds for ordinary reads.
 
 ### Stripe
 The existing FR9 sandbox integration is preserved. Use only a Stripe test secret key.

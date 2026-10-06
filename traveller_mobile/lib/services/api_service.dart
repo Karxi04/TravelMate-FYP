@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import 'shared_firestore_service.dart';
 import 'standalone_api_service.dart';
+import 'transaction_request.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -146,7 +147,7 @@ class ApiService {
       debugPrint('GET  → $uri');
       final response = await http
           .get(uri, headers: await _headers())
-          .timeout(const Duration(seconds: 25));
+          .timeout(RequestTimeouts.forGet(path));
       return _decode(response);
     } catch (e) {
       debugPrint('Backend GET failed ($path): $e');
@@ -175,9 +176,7 @@ class ApiService {
             headers: await _headers(),
             body: jsonEncode(payload),
           )
-          .timeout(Duration(
-            seconds: path == '/api/fr5/personalised-trips/generate' ? 65 : 35,
-          ));
+          .timeout(RequestTimeouts.forPost(path));
       return _decode(response);
     } catch (e) {
       debugPrint('Backend POST failed ($path): $e');
@@ -199,7 +198,7 @@ class ApiService {
             headers: await _headers(),
             body: jsonEncode(payload),
           )
-          .timeout(const Duration(seconds: 25));
+          .timeout(RequestTimeouts.ordinaryRead);
       return _decode(response);
     } catch (e) {
       debugPrint('Backend PUT failed ($path): $e');
@@ -217,7 +216,7 @@ class ApiService {
     try {
       final response = await http
           .delete(Uri.parse('$baseUrl$path'), headers: await _headers())
-          .timeout(const Duration(seconds: 25));
+          .timeout(RequestTimeouts.ordinaryRead);
       return _decode(response);
     } catch (e) {
       debugPrint('Backend DELETE failed ($path): $e');

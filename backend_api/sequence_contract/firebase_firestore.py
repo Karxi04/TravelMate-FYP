@@ -1,5 +1,6 @@
 from firebase_service import get_db
 from utils import doc_to_dict
+from google.api_core.exceptions import AlreadyExists
 
 
 def retrieveRecord(collectionName, documentId=None, filters=None, limit=None):
@@ -21,6 +22,22 @@ def storeRecord(collectionName, data, documentId=None, merge=False):
     ref = get_db().collection(collectionName).document(str(documentId)) if documentId else get_db().collection(collectionName).document()
     ref.set(data, merge=merge)
     return {"id": ref.id, **data}
+
+
+def claimRecord(collectionName, documentId, data):
+    """Atomically create an operation record, or return the existing claim.
+
+    Firestore ``create`` is deliberately used instead of a read followed by
+    ``set`` so concurrent duplicate requests cannot both win the claim. No
+    provider/network work is performed while the claim is being created.
+    """
+    ref = get_db().collection(collectionName).document(str(documentId))
+    try:
+        ref.create(data)
+        return {"id": ref.id, **data}, True
+    except AlreadyExists:
+        snap = ref.get()
+        return ({"id": snap.id, **(snap.to_dict() or {})}, False)
 
 
 def updateRecord(collectionName, documentId, data):
