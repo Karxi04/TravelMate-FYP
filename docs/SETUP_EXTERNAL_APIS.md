@@ -50,7 +50,10 @@ Implemented flow:
 
 Car rental search/select is provided by the bundled local TravelMate adapter and does not require an external API key.
 
-The mobile MVP currently exposes search and prebook directly. The `/api/fr8/hotels/book` backend endpoint is ready for a sandbox booking payload once you add the guest/payment fields required by your LiteAPI account/test flow.
+The mobile flow supports search, prebook and booking. Use a sandbox provider
+configuration for optional manual provider testing. Missing provider access
+with fallback enabled produces an explicitly simulated Demo booking; an
+ambiguous provider timeout is pending for verification, never blindly rebooked.
 
 ## D. Stripe Sandbox — Payment Workflow
 
@@ -62,13 +65,17 @@ Create or open a Stripe sandbox/test environment and copy the sandbox secret key
 STRIPE_SECRET_KEY=sk_test_...
 ```
 
-For a simple FYP localnstration the mobile screen calls:
+The current mobile checkout calls:
 
-`POST /api/fr9/payments/process-success`
+`POST /api/fr9/payments/process`
 
-The backend uses Stripe's sandbox/test PaymentMethod and writes the resulting PaymentIntent status/reference into Firestore.
+Use a stable `paymentAttemptId`. The backend uses Stripe test mode or explicit
+local simulation, preserves one authoritative intent per operation, and stores
+the normalized result. The screen labels simulated versus sandbox payments;
+neither charges real money. Pending attempts are reconciled rather than
+replaced after an ambiguous timeout. Cancellation is not a Stripe refund.
 
-Do not use a live Stripe secret key for this assignment local.
+Do not use a live Stripe secret key for the FYP demonstration.
 
 ## E. Gemini API — Chatbot
 
@@ -84,6 +91,8 @@ GEMINI_MODEL=gemini-3.6-flash
 The backend uses the Google GenAI Python SDK and the Gemini Interactions API. The model name is configurable in `.env` so you can change it later without editing code.
 
 Each Traveller message/reply is stored in `chat_messages` in Firestore.
+If a configured provider fails and fallback is enabled, the reply is labelled
+as the local TravelMate assistant rather than as a live Gemini response.
 
 ## Provider status check
 

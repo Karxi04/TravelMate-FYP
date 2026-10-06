@@ -29,6 +29,12 @@ def _generate(message):
     )
     text = getattr(interaction, 'output_text', None)
     if not text:
+        text = ''.join(
+            getattr(output, 'text', '') or ''
+            for output in (getattr(interaction, 'outputs', None) or [])
+            if getattr(output, 'type', '') == 'text'
+        )
+    if not text:
         raise RuntimeError('Gemini returned an empty response')
     return text.strip()
 
@@ -89,21 +95,26 @@ def _local_assistant(question, context=''):
     )
 
 
-def generateChatbotResponse(question, context=''):
+def generateChatbotResponse(question, context='', *, with_source=False):
+    source = 'travelmate-assistant'
     if is_gemini_configured():
         try:
-            return _generate((context + '\n\n' if context else '') + 'Traveller: ' + str(question))
+            reply = _generate((context + '\n\n' if context else '') + 'Traveller: ' + str(question))
+            source = 'gemini'
         except Exception:
             if _fallback_mode():
-                return _local_assistant(question, context)
-            raise
-    if _fallback_mode():
-        return _local_assistant(question, context)
-    raise RuntimeError('GEMINI_API_KEY is not configured')
+                reply = _local_assistant(question, context)
+            else:
+                raise
+    elif _fallback_mode():
+        reply = _local_assistant(question, context)
+    else:
+        raise RuntimeError('GEMINI_API_KEY is not configured')
+    return {'reply': reply, 'source': source} if with_source else reply
 
 
-def generateFollowUpResponse(question, context=''):
-    return generateChatbotResponse(question, context)
+def generateFollowUpResponse(question, context='', *, with_source=False):
+    return generateChatbotResponse(question, context, with_source=with_source)
 
 
 def ask(message):

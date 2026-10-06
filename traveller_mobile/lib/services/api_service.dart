@@ -8,6 +8,37 @@ import 'shared_firestore_service.dart';
 import 'standalone_api_service.dart';
 import 'transaction_request.dart';
 
+String resolveApiBaseUrl(
+  String configuredUrl, {
+  bool release = kReleaseMode,
+  bool web = kIsWeb,
+  TargetPlatform? platform,
+}) {
+  final url = configuredUrl.trim().replaceFirst(RegExp(r'/+$'), '');
+  if (release) {
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment ||
+        {'localhost', '127.0.0.1', '0.0.0.0', '::1', '10.0.2.2', '10.0.3.2'}
+            .contains(uri.host.toLowerCase())) {
+      throw StateError(
+        'Cloud release requires an explicit HTTPS API_BASE_URL for a reachable '
+        'backend. Build with --dart-define=API_BASE_URL=https://YOUR-BACKEND '
+        'or explicitly use --dart-define=STANDALONE_MODE=true for the FYP demo.',
+      );
+    }
+  }
+  if (url.isNotEmpty) return url;
+  if (!web && (platform ?? defaultTargetPlatform) == TargetPlatform.android) {
+    return 'http://10.0.2.2:5000';
+  }
+  return 'http://127.0.0.1:5000';
+}
+
 class ApiException implements Exception {
   final String message;
   final int statusCode;
@@ -22,19 +53,11 @@ class ApiException implements Exception {
 class ApiService {
   static String? customBaseUrl;
 
-  /// Default to Android emulator host (10.0.2.2:5000) on Android,
-  /// 127.0.0.1:5000 on Web/Desktop, or compile-time API_BASE_URL.
+  /// Local defaults are for debug builds; cloud releases require explicit HTTPS.
   static String get baseUrl {
-    if (customBaseUrl != null && customBaseUrl!.trim().isNotEmpty) {
-      return customBaseUrl!.trim();
-    }
     const envUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
-    if (envUrl.trim().isNotEmpty) return envUrl.trim();
-    if (kIsWeb) return 'http://127.0.0.1:5000';
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:5000';
-    }
-    return 'http://127.0.0.1:5000';
+    final override = customBaseUrl?.trim() ?? '';
+    return resolveApiBaseUrl(override.isNotEmpty ? override : envUrl);
   }
 
   static void setBaseUrl(String url) {

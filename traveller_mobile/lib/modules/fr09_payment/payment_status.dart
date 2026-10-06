@@ -10,6 +10,11 @@ String canonicalPaymentStatus(Object? raw) {
 bool isSuccessfulPayment(Object? raw) =>
     canonicalPaymentStatus(raw) == 'succeeded';
 
+bool isSimulatedPayment(Map<String, dynamic>? payment) {
+  final reference = (payment?['transactionReference'] ?? '').toString();
+  return reference.startsWith('pi_sim_') || reference.startsWith('TM-PAY-');
+}
+
 bool canRetryPayment(Object? raw) {
   final status = canonicalPaymentStatus(raw);
   return status != 'succeeded';

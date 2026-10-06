@@ -22,8 +22,11 @@ CSRF_ERROR = "This form has expired or could not be verified. Reload the page an
 
 @pytest.fixture(params=["admin", "operator"])
 def portal(request, monkeypatch):
+    return load_portal(request.param, monkeypatch)
+
+
+def load_portal(name, monkeypatch):
     """Load each real portal without colliding with the backend's modules package."""
-    name = request.param
     directory = PROJECT_ROOT / f"{name}_website"
     monkeypatch.syspath_prepend(str(directory))
     monkeypatch.setenv("APP_ENV", "test")
@@ -213,11 +216,11 @@ def operation_boundaries():
         ))
         chat = stack.enter_context(patch(
             "modules.fr11_chatbot_travel_assistant.routes.generateChatbotResponse",
-            return_value="Test reply",
+            return_value={"reply": "Test reply", "source": "travelmate-assistant"},
         ))
         stack.enter_context(patch(
             "modules.fr11_chatbot_travel_assistant.routes.generateFollowUpResponse",
-            return_value="Test reply",
+            return_value={"reply": "Test reply", "source": "travelmate-assistant"},
         ))
         yield memory, payment, chat
 

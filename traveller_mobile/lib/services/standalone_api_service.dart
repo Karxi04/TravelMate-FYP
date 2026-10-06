@@ -12,9 +12,8 @@ import '../core/utils/constraint_itinerary_planner.dart';
 
 /// Local-first implementation of the same REST contracts used by TravelMate.
 ///
-/// It allows the installed Traveller application to remain usable when a Flask
-/// server is not configured. When a cloud backend URL is supplied, ApiService
-/// uses the real Flask API instead and keeps this class as an automatic fallback.
+/// It is selected explicitly with STANDALONE_MODE=true. Cloud mode uses Flask
+/// and does not silently switch to this store when the backend is unavailable.
 class StandaloneApiService {
   final String? uidOverride;
   final Map<String, String>? memoryStore;
@@ -4023,6 +4022,15 @@ class StandaloneApiService {
   Future<dynamic> _hotelSearch(Map<String, dynamic> payload) async {
     final destination =
         (payload['destination'] ?? 'George Town, Penang').toString();
+    const demoLocation = 'George Town, Penang, Malaysia';
+    if (!_matchesRequestedArea({'address': demoLocation}, destination)) {
+      return {
+        'ok': true,
+        'items': <Map<String, dynamic>>[],
+        'source': 'local',
+        'message': 'No local demo hotel offers match this destination.',
+      };
+    }
     final refundableOnly = payload['refundable'] == true;
     final roomQuantity = max(1, _num(payload['roomQuantity'] ?? 1).round());
     final rows = [
@@ -4109,7 +4117,7 @@ class StandaloneApiService {
                   'local_offer_${r[0].toString().toLowerCase().replaceAll(' ', '_')}',
               'hotelId': 'hotel_${r[0].toString().hashCode.abs()}',
               'name': r[0],
-              'address': destination,
+              'address': demoLocation,
               'price': r[1],
               'nightlyRoomRate': r[1],
               'roomQuantity': roomQuantity,
@@ -4129,7 +4137,7 @@ class StandaloneApiService {
               'checkout': payload['checkout'],
               'taxesAndFeesIncluded': true,
               'description':
-                  '${r[0]} offers a practical stay in $destination with ${r[4].toString().toLowerCase()} accommodation and convenient access to nearby travel areas.',
+                  'Demo offer in $demoLocation with ${r[4].toString().toLowerCase()} accommodation; not live hotel availability.',
               'houseRules': [
                 'Valid identification may be required at check-in',
                 'Check-in and check-out times apply',

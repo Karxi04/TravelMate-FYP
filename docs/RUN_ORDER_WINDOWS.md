@@ -2,6 +2,10 @@
 
 Use four terminals.
 
+See `FINAL_DEMO_READINESS.md` for account approval, current Firebase state,
+test requirements, and release safety. Copy an `.env.example` only when `.env`
+does not already exist; preserve privately configured local files.
+
 ## Terminal 1 — Backend API
 
 ```powershell
@@ -48,34 +52,26 @@ Admin website: `http://127.0.0.1:5002`
 
 ```powershell
 cd traveller_mobile
-flutter create .
 flutter pub get
-flutterfire configure
 flutter run
 ```
 
 Android emulator uses `http://10.0.2.2:5000` to reach your PC backend.
 
-For a physical phone, run with your PC LAN IP:
+This checkout already has Android/Firebase platform configuration. Do not run
+`flutter create .` or reconfigure Firebase just to start the existing demo.
+For a physical phone, set `TM_DEMO_API_URL` to your reachable backend URL:
 
 ```powershell
-flutter run --dart-define=API_BASE_URL=http://192.168.0.15:5000
+flutter run --dart-define=API_BASE_URL=$env:TM_DEMO_API_URL
 ```
 
-Replace `192.168.0.15` with your computer's actual IPv4 address from `ipconfig`.
+For a local debug backend, use your own PC address from `ipconfig`; the phone
+must be able to reach it. Cloud release requires explicit HTTPS configuration.
 
 ## Local Android HTTP note
 
-The starter backend uses local `http://` URLs during development. If your generated Android project blocks clear-text HTTP, edit:
-
-`traveller_mobile/android/app/src/main/AndroidManifest.xml`
-
-and add this to the `<application ...>` element for local development:
-
-```xml
-android:usesCleartextTraffic="true"
-```
-
-Do this only for the local-development build. A deployed system should use HTTPS.
+The debug Android manifest allows local HTTP. Do not enable clear-text HTTP
+in the main/release manifest; deployed cloud releases require HTTPS.
 
 If a physical phone cannot reach the backend, confirm that the phone and PC are on the same Wi-Fi network and allow Python through Windows Firewall for your private network.

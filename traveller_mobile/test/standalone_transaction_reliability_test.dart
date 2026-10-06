@@ -1,8 +1,27 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/services/standalone_api_service.dart';
+import 'package:travelmate_traveller/core/utils/malaysian_locality.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('standalone hotel samples keep their real demo locality', () async {
+    final service = StandaloneApiService(uidOverride: 'locality_test', memoryStore: {});
+    for (final destination in ['Penang', 'George Town', 'Kuala Lumpur', 'Singapore']) {
+      final response = await service.post('/api/fr8/hotels/search', {
+        'destination': destination, 'checkin': '2026-11-01', 'checkout': '2026-11-03',
+      });
+      final items = response['items'] as List;
+      expect(items.isNotEmpty, destination == 'Penang' || destination == 'George Town');
+      for (final item in items) {
+        final validated = MalaysianLocality.validateCandidate(
+          Map<String, dynamic>.from(item as Map), MalaysianLocality.normalizeScope(destination),
+        );
+        expect(validated['geographicEligibility']['eligible'], isTrue);
+        expect(item['address'], 'George Town, Penang, Malaysia');
+      }
+    }
+  });
 
   test('same standalone payment attempt returns the same transaction',
       () async {
