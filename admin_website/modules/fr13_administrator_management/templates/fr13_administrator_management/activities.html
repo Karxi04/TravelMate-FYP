@@ -2,7 +2,7 @@
 {% block title %}Activity Records | TravelMate{% endblock %}
 {% block content %}
 <div class="page-title"><div><h1>Activity Management</h1><p>Create and maintain activity records for destination planning.</p></div></div>
-<form class="card" method="post" action="{{ url_for('admin_fr13.create_activity') }}">
+<form class="card" method="post" action="{{ url_for('admin_fr13.create_activity') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="grid g2">
     <div class="field"><label>Activity name</label><input class="input" name="activityName" required></div>
     <div class="field"><label>Destination</label><input class="input" name="destinationName"></div>
@@ -22,7 +22,7 @@
   <td>RM {{ x.get('estimatedCost',0) }}</td>
   <td>{{ x.get('recommendedDurationMinutes',90) }} min</td>
   <td>
-    <form class="actions" method="post" action="{{ url_for('admin_fr13.update_activity', activity_id=x.id) }}">
+    <form class="actions" method="post" action="{{ url_for('admin_fr13.update_activity', activity_id=x.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input class="input" name="activityName" value="{{ x.get('activityName','') }}" required>
       <input class="input" name="destinationName" value="{{ x.get('destinationName','') }}">
       <input class="input" name="category" value="{{ x.get('category','') }}">
@@ -32,7 +32,7 @@
       <select class="input" name="status"><option value="active" {% if x.get('status','active')=='active' %}selected{% endif %}>Active</option><option value="inactive" {% if x.get('status')=='inactive' %}selected{% endif %}>Inactive</option></select>
       <button class="btn outline">Save</button>
     </form>
-    <form method="post" action="{{ url_for('admin_fr13.delete_activity', activity_id=x.id) }}"><button class="btn danger">Delete</button></form>
+    <form method="post" action="{{ url_for('admin_fr13.delete_activity', activity_id=x.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn danger">Delete</button></form>
   </td>
 </tr>
 {% else %}<tr><td colspan="5">No activity records yet.</td></tr>{% endfor %}

@@ -13,7 +13,7 @@
   {% if x.get('highlights') %}<p><strong>Highlights</strong><br>{{x.get('highlights')}}</p>{% endif %}
   {% if x.get('inclusions') %}<p><strong>Included</strong><br>{{x.get('inclusions')}}</p>{% endif %}
   {% if x.get('exclusions') %}<p><strong>Not included</strong><br>{{x.get('exclusions')}}</p>{% endif %}
-  <form method="post" action="{{ url_for('admin_fr13.review_package', package_id=x.id) }}" style="margin-top:14px">
+  <form method="post" action="{{ url_for('admin_fr13.review_package', package_id=x.id) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field"><label>Review comment / rejection reason</label><textarea class="input" name="comment" placeholder="Add a clear note for the Tourism Operator"></textarea></div>
     <div class="actions"><button class="btn primary" name="decision" value="approved">Approve & Publish</button><button class="btn danger" name="decision" value="rejected">Reject</button></div>
   </form>

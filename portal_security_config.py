@@ -1,5 +1,10 @@
 import os
 
+from flask import request, session
+from flask_wtf.csrf import CSRFError, CSRFProtect
+
+from request_rate_limit import init_rate_limiter, rate_limit_response
+
 
 LOCAL_ENVIRONMENTS = {"development", "dev", "local", "test", "testing"}
 WEAK_SECRETS = {
@@ -46,5 +51,27 @@ def configure_portal_app(app, cookie_name, portal_name, environ=None):
             default=production,
             environ=source,
         ),
+        WTF_CSRF_ENABLED=True,
+        WTF_CSRF_CHECK_DEFAULT=True,
+        WTF_CSRF_TIME_LIMIT=3600,
     )
+    CSRFProtect(app)
+    init_rate_limiter(app)
+
+    @app.errorhandler(CSRFError)
+    def csrf_error(_error):
+        return (
+            "This form has expired or could not be verified. Reload the page and try again.",
+            400,
+            {"Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store"},
+        )
+
+    @app.before_request
+    def limit_authentication():
+        if request.method == "POST" and request.endpoint in {
+            "admin_fr01.login", "operator_fr01.login",
+            "operator_fr01.register", "operator_fr01.reset",
+        }:
+            return rate_limit_response("authentication", session.get("uid"))
+
     return app

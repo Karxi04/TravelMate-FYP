@@ -2,12 +2,17 @@ from functools import wraps
 from flask import request, jsonify, g
 from firebase_admin import auth
 from firebase_service import get_db
+from request_rate_limit import API_LIMITS, rate_limit_response
 
 
 APPROVED_OPERATOR_STATUSES = {"approved", "verified"}
 
 
 def _error(message, status=401):
+    if status == 401:
+        limited = rate_limit_response("authentication")
+        if limited is not None:
+            return limited
     return jsonify({"ok": False, "error": message}), status
 
 
@@ -66,6 +71,9 @@ def auth_required(roles=None):
             g.firebase_user = decoded
             g.profile = profile or {}
             g.role = role
+            limited = rate_limit_response(API_LIMITS.get(request.endpoint), uid)
+            if limited is not None:
+                return limited
             return fn(*args, **kwargs)
 
         return wrapper

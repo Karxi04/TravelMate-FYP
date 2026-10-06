@@ -37,7 +37,7 @@ def manage_user_account():
         return redirect(url_for("admin_fr01.login"))
     return redirect(url_for("admin_fr13.users"))
 
-@bp.route("/logout")
+@bp.post("/logout")
 def logout():
     signOutUser(session)
     return redirect(url_for("admin_fr01.login"))

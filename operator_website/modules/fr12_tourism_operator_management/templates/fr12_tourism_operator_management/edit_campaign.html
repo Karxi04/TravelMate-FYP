@@ -1,6 +1,6 @@
 {% extends 'portal_base.html' %}{% block content %}
 <div class="page-title"><div><h1>Edit Promotional Campaign</h1><p>Update campaign content before Administrator review.</p></div></div>
-<form class="card cream" method="post" style="max-width:920px">
+<form class="card cream" method="post" style="max-width:920px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="field"><label>Campaign title</label><input class="input" name="campaignTitle" value="{{ item.get('campaignTitle','') }}" required></div>
 <div class="field"><label>Related approved package</label><select class="input" name="packageId"><option value="">Select package</option>{% for p in approved_packages %}<option value="{{p.id}}" {% if p.id==item.get('packageId') %}selected{% endif %}>{{p.get('packageTitle')}}</option>{% endfor %}</select></div>
 <div class="grid g2"><div class="field"><label>Start date</label><input class="input" type="date" name="startDate" value="{{ item.get('startDate','') }}"></div><div class="field"><label>End date</label><input class="input" type="date" name="endDate" value="{{ item.get('endDate','') }}"></div></div>
