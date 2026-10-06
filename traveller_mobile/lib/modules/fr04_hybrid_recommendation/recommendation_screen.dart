@@ -28,6 +28,9 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   bool busy = true;
   String source = '';
   Map<String, dynamic> preferences = {};
+  Map<String, String> feedbackByDestination = {};
+  final Set<String> feedbackInFlight = {};
+  String recommendationGenerationId = '';
   String? errorMessage;
 
   @override
@@ -62,6 +65,10 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         setState(() {
           items = data['recommendations'] as List? ?? [];
           source = (data['source'] ?? '').toString();
+          recommendationGenerationId = (data['recommendationGenerationId'] ??
+                  data['snapshot']?['recommendationGenerationId'] ??
+                  '')
+              .toString();
         });
       }
     } catch (error) {
@@ -79,6 +86,22 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       }
     } catch (_) {
       // Recommendations remain useful when the compact profile summary fails.
+    }
+
+    try {
+      final learning = await api.get('/api/fr4/preference-feedback');
+      if (mounted && learning is Map && learning['learning'] is Map) {
+        final current = Map<String, dynamic>.from(
+          learning['learning']['currentFeedback'] as Map? ?? const {},
+        );
+        setState(() {
+          feedbackByDestination = current.map(
+            (key, value) => MapEntry(key, value.toString()),
+          );
+        });
+      }
+    } catch (_) {
+      // Feedback controls remain optional if preference learning is unavailable.
     }
 
     if (!mounted) return;
@@ -109,11 +132,58 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       setState(() {
         items = data['recommendations'] as List? ?? [];
         source = (data['source'] ?? '').toString();
+        recommendationGenerationId = (data['recommendationGenerationId'] ??
+                data['snapshot']?['recommendationGenerationId'] ??
+                '')
+            .toString();
       });
     } catch (error) {
       if (mounted) setState(() => errorMessage = _errorText(error));
     } finally {
       if (mounted) setState(() => busy = false);
+    }
+  }
+
+  String _destinationId(Map<String, dynamic> item) => (item['destinationId'] ??
+          item['place_id'] ??
+          item['id'] ??
+          item['title'] ??
+          item['name'] ??
+          '')
+      .toString();
+
+  Future<void> submitPreferenceFeedback(
+    Map<String, dynamic> item,
+    String feedbackType,
+  ) async {
+    final id = _destinationId(item);
+    if (id.isEmpty || feedbackInFlight.contains(id)) return;
+    setState(() => feedbackInFlight.add(id));
+    try {
+      final data = await api.post('/api/fr4/preference-feedback', {
+        'destinationId': id,
+        'recommendationGenerationId': recommendationGenerationId,
+        'feedbackType': feedbackType,
+        'sourceContext': 'for_you',
+        if (recommendationGenerationId.isEmpty)
+          'destinationConcepts': item['destinationConcepts'],
+      });
+      if (data is Map && data['ok'] == false) {
+        throw Exception(data['error'] ?? 'Feedback could not be saved.');
+      }
+      if (!mounted) return;
+      setState(() => feedbackByDestination[id] = feedbackType);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Thanks — this will help improve future recommendations.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => feedbackInFlight.remove(id));
     }
   }
 
@@ -316,6 +386,12 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
                   child: RecommendationCard(
                     recommendation: item,
                     source: source,
+                    preferenceFeedback:
+                        feedbackByDestination[_destinationId(item)],
+                    feedbackBusy:
+                        feedbackInFlight.contains(_destinationId(item)),
+                    onPreferenceFeedback: (value) =>
+                        submitPreferenceFeedback(item, value),
                     onView: () => Navigator.push(
                       context,
                       MaterialPageRoute(

@@ -29,7 +29,9 @@ class _ProfileTabState extends State<ProfileTab> {
 
   Map<String, dynamic>? profile;
   Map<String, dynamic> preferences = {};
+  Map<String, dynamic> preferenceLearning = {};
   bool loading = true;
+  bool resettingLearning = false;
   String? loadError;
 
   Future<void> load() async {
@@ -58,6 +60,14 @@ class _ProfileTabState extends State<ProfileTab> {
       } catch (_) {
         preferences = {};
       }
+      try {
+        final learningData = await api.get('/api/fr4/preference-feedback');
+        final rawLearning = learningData['learning'];
+        preferenceLearning =
+            rawLearning is Map ? Map<String, dynamic>.from(rawLearning) : {};
+      } catch (_) {
+        preferenceLearning = {};
+      }
     } catch (_) {
       loadError = 'We couldn’t load your profile. Try again.';
     } finally {
@@ -71,6 +81,51 @@ class _ProfileTabState extends State<ProfileTab> {
       MaterialPageRoute(builder: (_) => PreferencesScreen(api: api)),
     );
     await load();
+  }
+
+  Future<void> resetLearnedPreferences() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.restart_alt_rounded),
+        title: const Text('Reset learned preferences?'),
+        content: const Text(
+          'This clears what TravelMate learned from “More like this” and “Not for me”. Your saved travel preferences, trips and reviews will stay unchanged.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep learning'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Reset learning'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => resettingLearning = true);
+    try {
+      final data = await api.delete('/api/fr4/preference-feedback');
+      if (data is Map && data['ok'] == false) {
+        throw Exception(
+            data['error'] ?? 'Learned preferences could not reset.');
+      }
+      if (!mounted) return;
+      setState(() {
+        preferenceLearning = data is Map && data['learning'] is Map
+            ? Map<String, dynamic>.from(data['learning'] as Map)
+            : {};
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Learned preferences were reset.')),
+      );
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => resettingLearning = false);
+    }
   }
 
   Future<void> signOut() async {
@@ -211,6 +266,10 @@ class _ProfileTabState extends State<ProfileTab> {
       ...interests,
       if (pace.isNotEmpty) '$pace pace',
     ];
+    final tendencies = (preferenceLearning['tendencies'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -309,11 +368,58 @@ class _ProfileTabState extends State<ProfileTab> {
                             ),
                       ),
                     ],
+                    const SizedBox(height: 10),
+                    Text(
+                      'TravelMate adapts recommendations using your feedback.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                    ),
+                    if (tendencies.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: AppSpacing.xs,
+                        runSpacing: AppSpacing.xs,
+                        children: tendencies.map((item) {
+                          final up = item['direction'] == 'up';
+                          return StatusChip(
+                            text:
+                                '${up ? 'More' : 'Less'} ${(item['label'] ?? item['concept'] ?? 'similar places')}',
+                            icon: up
+                                ? Icons.trending_up_rounded
+                                : Icons.trending_down_rounded,
+                            tone: AppStatusTone.neutral,
+                          );
+                        }).toList(),
+                      ),
+                    ],
                     const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: editPreferences,
-                      icon: const Icon(Icons.tune_rounded),
-                      label: const Text('Edit travel preferences'),
+                    Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: editPreferences,
+                          icon: const Icon(Icons.tune_rounded),
+                          label: const Text('Edit travel preferences'),
+                        ),
+                        if (preferenceLearning['hasLearnedPreferences'] == true)
+                          TextButton.icon(
+                            key: const ValueKey('reset-learned-preferences'),
+                            onPressed: resettingLearning
+                                ? null
+                                : resetLearnedPreferences,
+                            icon: resettingLearning
+                                ? const SizedBox.square(
+                                    dimension: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.restart_alt_rounded),
+                            label: const Text('Reset learned preferences'),
+                          ),
+                      ],
                     ),
                   ],
                 ),

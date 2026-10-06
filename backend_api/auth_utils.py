@@ -4,6 +4,9 @@ from firebase_admin import auth
 from firebase_service import get_db
 
 
+APPROVED_OPERATOR_STATUSES = {"approved", "verified"}
+
+
 def _error(message, status=401):
     return jsonify({"ok": False, "error": message}), status
 
@@ -47,6 +50,17 @@ def auth_required(roles=None):
                     role_matches = True
                 if not role_matches:
                     return _error("Insufficient role permission", 403)
+
+                # Operator registration starts in the canonical `pending`
+                # state. Protected operator APIs remain unavailable until an
+                # Administrator approves the account. Administrators retain
+                # their existing override for operator-management endpoints.
+                if role == "operator" and "operator" in allowed_roles:
+                    verification_status = str(
+                        profile.get("verificationStatus", "pending")
+                    ).strip().lower()
+                    if verification_status not in APPROVED_OPERATOR_STATUSES:
+                        return _error("Tourism Operator account is not verified", 403)
 
             g.uid = uid
             g.firebase_user = decoded

@@ -1,15 +1,4 @@
-import pytest
 from unittest.mock import patch, MagicMock
-
-def test_admin_rbac_enforcement(client, mock_traveller_auth, mock_admin_auth):
-    # As traveller, accessing admin endpoint should return 403
-    res = client.get(
-        '/api/fr13/users',
-        headers={'Authorization': 'Bearer valid_test_token'}
-    )
-    # mock_admin_auth fixture overrides the auth mock when included, so let's test directly with mock_traveller_auth first
-    # In pytest, if both fixtures are passed, the last one takes effect.
-    pass
 
 def test_admin_rbac_forbidden_for_traveller(client, mock_traveller_auth):
     res = client.get(

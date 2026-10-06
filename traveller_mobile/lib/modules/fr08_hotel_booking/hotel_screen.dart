@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/api_service.dart';
+import '../../services/transaction_request.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
@@ -38,6 +41,7 @@ class _HotelScreenState extends State<HotelScreen> {
   String sort = 'top';
   String source = '';
   Map<String, dynamic>? lastBooking;
+  final Map<String, String> bookingAttemptIds = {};
 
   String dateText(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -206,16 +210,37 @@ class _HotelScreenState extends State<HotelScreen> {
   }
 
   Future<void> prebook(Map<String, dynamic> hotel) async {
+    if (busy) return;
     final offerId = (hotel['offerId'] ?? '').toString();
     if (offerId.isEmpty) {
       showError(
           context, 'This hotel result does not contain a bookable offer ID.');
       return;
     }
+    final attemptId = bookingAttemptIds.putIfAbsent(
+      offerId,
+      () => newTransactionAttemptId('hotel'),
+    );
     setState(() => busy = true);
     try {
-      final data =
-          await api.post('/api/fr8/hotels/prebook', {'offerId': offerId});
+      final data = await api.post('/api/fr8/hotels/prebook', {
+        'offerId': offerId,
+        'hotelBookingAttemptId': attemptId,
+      });
+      if (data['status'] == 'pending') {
+        if (!mounted) return;
+        setState(() => lastBooking = {
+              'hotelBookingAttemptId': attemptId,
+              'bookingStatus': 'pending',
+              'confirmationLabel': 'Verification pending',
+            });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+            'The prebook outcome is being verified and was not submitted again.',
+          ),
+        ));
+        return;
+      }
       final result = Map<String, dynamic>.from(data['result'] as Map);
       final prebookId = (result['prebookId'] ?? result['id'] ?? '').toString();
       if (prebookId.isEmpty)
@@ -223,7 +248,19 @@ class _HotelScreenState extends State<HotelScreen> {
       if (!mounted) return;
       setState(() => busy = false);
       await completeBooking(
-          hotel, prebookId, (data['source'] ?? source).toString());
+          hotel, prebookId, (data['source'] ?? source).toString(), attemptId);
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() => lastBooking = {
+            'hotelBookingAttemptId': attemptId,
+            'bookingStatus': 'pending',
+            'confirmationLabel': 'Verification pending',
+          });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+          'The prebook request may still be completing. TravelMate will retain this booking attempt instead of creating another.',
+        ),
+      ));
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -232,7 +269,7 @@ class _HotelScreenState extends State<HotelScreen> {
   }
 
   Future<void> completeBooking(Map<String, dynamic> hotel, String prebookId,
-      String prebookSource) async {
+      String prebookSource, String attemptId) async {
     final firstName = TextEditingController(text: 'TravelMate');
     final lastName = TextEditingController(text: 'Traveller');
     final email = TextEditingController(
@@ -276,7 +313,7 @@ class _HotelScreenState extends State<HotelScreen> {
                 Text(
                   prebookSource == 'liteapi'
                       ? 'This uses the configured LiteAPI/Nuitée booking flow.'
-                      : 'TravelMate will create and save the booking reference through the available booking flow.',
+                      : 'This creates a Demo booking with a simulated confirmation. It is not an external hotel reservation.',
                   style: const TextStyle(
                       fontSize: 12, color: InkWashColors.mutedInk),
                 ),
@@ -305,6 +342,7 @@ class _HotelScreenState extends State<HotelScreen> {
     setState(() => busy = true);
     try {
       final data = await api.post('/api/fr8/hotels/book', {
+        'hotelBookingAttemptId': attemptId,
         'prebookId': prebookId,
         'holder': {
           'firstName': firstName.text.trim(),
@@ -331,15 +369,26 @@ class _HotelScreenState extends State<HotelScreen> {
       setState(() => lastBooking = data['booking'] is Map
           ? Map<String, dynamic>.from(data['booking'] as Map)
           : null);
+      if (lastBooking?['bookingStatus'] == 'pending') {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+            'Booking outcome pending verification. The provider request was not submitted again.',
+          ),
+        ));
+        return;
+      }
       final ref = lastBooking?['bookingReference'] ?? '-';
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Booking created: $ref')));
+      final simulated = lastBooking?['isSimulated'] == true;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(simulated
+              ? 'Demo booking created: $ref'
+              : 'Provider booking created: $ref')));
       final proceed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Proceed to card payment?'),
           content: Text(
-              'Booking $ref is ready. Continue to the card-payment process for ${hotel['currency'] ?? 'MYR'} ${hotel['price'] ?? 0}?'),
+              '${simulated ? 'Demo booking' : 'Booking'} $ref is ready. Continue to the card-payment process for ${hotel['currency'] ?? 'MYR'} ${hotel['price'] ?? 0}?'),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -360,6 +409,29 @@ class _HotelScreenState extends State<HotelScreen> {
             ),
           ),
         );
+      }
+    } on TimeoutException {
+      try {
+        final data = await api.get('/api/fr8/bookings/attempts/$attemptId');
+        if (mounted && data['booking'] is Map) {
+          setState(() =>
+              lastBooking = Map<String, dynamic>.from(data['booking'] as Map));
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() => lastBooking = {
+                'hotelBookingAttemptId': attemptId,
+                'bookingStatus': 'pending',
+                'confirmationLabel': 'Verification pending',
+              });
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+            'The booking outcome is being verified. Retrying will reuse this attempt and will not create a second provider booking.',
+          ),
+        ));
       }
     } catch (e) {
       if (mounted) showError(context, e);
@@ -534,11 +606,16 @@ class _HotelScreenState extends State<HotelScreen> {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Latest booking',
+                    Text(
+                        lastBooking!['isSimulated'] == true
+                            ? 'Latest Demo booking'
+                            : 'Latest booking',
                         style: TextStyle(fontWeight: FontWeight.w900)),
                     Text(
                         'Reference: ${lastBooking!['bookingReference'] ?? '-'}'),
                     Text('Status: ${lastBooking!['bookingStatus'] ?? '-'}'),
+                    if (lastBooking!['confirmationLabel'] != null)
+                      Text('${lastBooking!['confirmationLabel']}'),
                   ]),
             ),
           ],

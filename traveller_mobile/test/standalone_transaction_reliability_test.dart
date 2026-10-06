@@ -1,0 +1,68 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:travelmate_traveller/services/standalone_api_service.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('same standalone payment attempt returns the same transaction',
+      () async {
+    final service = StandaloneApiService(
+      uidOverride: 'transaction_test_user',
+      memoryStore: {},
+    );
+    final payload = {
+      'paymentAttemptId': 'payment_attempt_standalone',
+      'bookingId': 'DEMO-BOOKING',
+      'amount': 42.0,
+    };
+
+    final first = await service.post('/api/fr9/payments/process', payload);
+    final second = await service.post('/api/fr9/payments/process', payload);
+
+    expect(first['payment']['id'], second['payment']['id']);
+    expect(second['reused'], isTrue);
+    await expectLater(
+      service.post(
+        '/api/fr9/payments/${first['payment']['id']}/cancel',
+        const {},
+      ),
+      throwsA(isA<Exception>()),
+    );
+  });
+
+  test('same standalone hotel attempt keeps prebook and confirmation',
+      () async {
+    final service = StandaloneApiService(
+      uidOverride: 'hotel_test_user',
+      memoryStore: {},
+    );
+    const attemptId = 'hotel_attempt_standalone';
+    final prebookPayload = {
+      'hotelBookingAttemptId': attemptId,
+      'offerId': 'local_offer_demo',
+    };
+    final firstPrebook =
+        await service.post('/api/fr8/hotels/prebook', prebookPayload);
+    final secondPrebook =
+        await service.post('/api/fr8/hotels/prebook', prebookPayload);
+    expect(firstPrebook['result']['prebookId'],
+        secondPrebook['result']['prebookId']);
+
+    final bookingPayload = {
+      'hotelBookingAttemptId': attemptId,
+      'prebookId': firstPrebook['result']['prebookId'],
+      'selectedHotel': {'name': 'Demo Hotel', 'price': 88.0},
+      'hotelCost': 88.0,
+    };
+    final firstBooking =
+        await service.post('/api/fr8/hotels/book', bookingPayload);
+    final secondBooking =
+        await service.post('/api/fr8/hotels/book', bookingPayload);
+
+    expect(firstBooking['booking']['bookingReference'],
+        secondBooking['booking']['bookingReference']);
+    expect(
+        firstBooking['booking']['confirmationLabel'], 'Simulated confirmation');
+    expect(secondBooking['reused'], isTrue);
+  });
+}

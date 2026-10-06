@@ -87,8 +87,8 @@ Each Traveller message/reply is stored in `chat_messages` in Firestore.
 
 ## Provider status check
 
-After the backend starts, visit:
+After the backend starts, request the following endpoint with an Administrator Firebase token:
 
 `http://127.0.0.1:5000/api/config-status`
 
-It shows `true/false` for each configured provider without exposing your secret keys.
+It returns only the safe `paymentMode` and `hotelMode` capability states without exposing provider credentials or internal diagnostics.

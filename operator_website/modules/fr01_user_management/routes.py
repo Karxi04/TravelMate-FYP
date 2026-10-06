@@ -36,6 +36,9 @@ def login():
             if not profile or user_role not in {"operator", "tourism_operator", "admin"}:
                 session.clear()
                 flash("This account is not a Tourism Operator account.", "error")
+            elif user_role != "admin" and str(profile.get("verificationStatus", "pending")).lower() not in {"approved", "verified"}:
+                session.clear()
+                flash("Your Tourism Operator account is awaiting administrator verification.", "error")
             else:
                 return redirect(url_for("operator_fr12.dashboard"))
         else:
@@ -62,8 +65,9 @@ def register():
             }
             response = call_api("POST", "/api/fr1/profile", json=payload)
             if response.ok:
-                flash("Operator account created.", "success")
-                return redirect(url_for("operator_fr12.dashboard"))
+                session.clear()
+                flash("Operator account created and awaiting administrator verification.", "success")
+                return redirect(url_for("operator_fr01.login"))
             flash(_api_error(response, "Profile creation failed"), "error")
         else:
             flash(data.get("error", {}).get("message", "Registration failed"), "error")

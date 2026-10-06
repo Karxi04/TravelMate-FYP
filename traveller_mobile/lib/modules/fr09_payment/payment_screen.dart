@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/api_service.dart';
+import '../../services/transaction_request.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
+import 'payment_status.dart';
 
 class PaymentScreen extends StatefulWidget {
   final String initialBookingReference;
@@ -35,6 +39,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   List<dynamic> history = [];
   bool busy = false;
   bool showCard = false;
+  final paymentAttempt = TransactionAttemptLifecycle('payment');
 
   @override
   void initState() {
@@ -97,6 +102,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> process() async {
+    if (busy || isSuccessfulPayment(result?['paymentStatus'])) return;
     final value = double.tryParse(amount.text.trim()) ?? 0;
     final number = digits(cardNumber.text);
 
@@ -127,8 +133,23 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     setState(() => busy = true);
     try {
+      final paymentAttemptId = paymentAttempt.currentOrCreate;
+      if (canonicalPaymentStatus(result?['paymentStatus']) == 'pending') {
+        final reconciled = await api.get(
+          '/api/fr9/payments/attempts/$paymentAttemptId',
+        );
+        if (reconciled['payment'] is Map) {
+          result = Map<String, dynamic>.from(reconciled['payment'] as Map);
+        }
+        if (isSuccessfulPayment(result?['paymentStatus'])) {
+          if (mounted) setState(() {});
+          await loadHistory();
+          return;
+        }
+      }
       await Future<void>.delayed(const Duration(milliseconds: 900));
       final data = await api.post('/api/fr9/payments/process', {
+        'paymentAttemptId': paymentAttemptId,
         'bookingId': bookingId.text.trim(),
         'amount': value,
         'cardholderName': cardholder.text.trim(),
@@ -139,11 +160,30 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (!mounted) return;
       setState(
           () => result = Map<String, dynamic>.from(data['payment'] as Map));
-      cardNumber.clear();
-      expiry.clear();
-      cvc.clear();
+      if (isSuccessfulPayment(result?['paymentStatus'])) {
+        cardNumber.clear();
+        expiry.clear();
+        cvc.clear();
+      }
       await loadHistory();
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() => result = {
+            'paymentAttemptId': paymentAttempt.current,
+            'paymentStatus': 'pending',
+            'transactionReference': 'Verification pending',
+            'amount': value,
+            'currency': 'MYR',
+          });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+          'The payment outcome is still being checked. The same attempt will be reconciled; no new payment was created.',
+        ),
+      ));
     } catch (e) {
+      if (e is ApiException && e.data['newAttemptRequired'] == true) {
+        paymentAttempt.startNewAttempt();
+      }
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => busy = false);
@@ -166,8 +206,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(action == 'retry'
-            ? 'Payment retry completed.'
-            : 'Payment cancelled.'),
+            ? 'Payment status checked.'
+            : (data['message'] ?? 'Payment cancelled in TravelMate.')
+                .toString()),
       ));
     } catch (e) {
       if (mounted) showError(context, e);
@@ -207,6 +248,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
           const SizedBox(height: 14),
           TextField(
             controller: bookingId,
+            onChanged: (_) {
+              if (!busy) {
+                setState(() {
+                  paymentAttempt.startNewAttempt();
+                  result = null;
+                });
+              }
+            },
             decoration: const InputDecoration(
                 labelText: 'Booking reference',
                 prefixIcon: Icon(Icons.confirmation_number_outlined)),
@@ -215,7 +264,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
           TextField(
             controller: amount,
             readOnly: widget.initialAmount != null,
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) => setState(() {
+              paymentAttempt.startNewAttempt();
+              result = null;
+            }),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
@@ -227,7 +279,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
               prefixIcon: const Icon(Icons.payments_outlined),
               suffixIcon: widget.initialAmount != null
                   ? const Tooltip(
-                      message: 'Amount is authoritative and tied to your booking.',
+                      message:
+                          'Amount is authoritative and tied to your booking.',
                       child: Icon(Icons.lock_outline, size: 18),
                     )
                   : null,
@@ -303,7 +356,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
           ),
           const SizedBox(height: 15),
           FilledButton.icon(
-            onPressed: busy ? null : process,
+            onPressed: busy || isSuccessfulPayment(result?['paymentStatus'])
+                ? null
+                : process,
             icon: busy
                 ? const SizedBox(
                     width: 18,
@@ -322,12 +377,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(children: [
-                    Icon(Icons.check_circle_rounded,
+                  Row(children: [
+                    const Icon(Icons.check_circle_rounded,
                         color: InkWashColors.blueGrey),
-                    SizedBox(width: 8),
-                    Text('Payment completed',
-                        style: TextStyle(
+                    const SizedBox(width: 8),
+                    Text(
+                        isSuccessfulPayment(result?['paymentStatus'])
+                            ? 'Payment completed'
+                            : 'Payment verification pending',
+                        style: const TextStyle(
                             fontWeight: FontWeight.w900, fontSize: 18))
                   ]),
                   const SizedBox(height: 10),
@@ -356,8 +414,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             final item = Map<String, dynamic>.from(raw as Map);
             final paymentId =
                 (item['id'] ?? item['transactionReference'] ?? '').toString();
-            final status =
-                (item['paymentStatus'] ?? '').toString().toLowerCase();
+            final status = canonicalPaymentStatus(item['paymentStatus']);
             return Padding(
               padding: const EdgeInsets.only(bottom: 9),
               child: InkCard(
@@ -384,7 +441,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   style: const TextStyle(
                                       color: InkWashColors.mutedInk,
                                       fontSize: 12)),
-                              Text('Status: ${item['paymentStatus'] ?? '-'}',
+                              Text('Status: $status',
                                   style: const TextStyle(
                                       color: InkWashColors.mutedInk,
                                       fontSize: 12)),
@@ -401,7 +458,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton.icon(
-                          onPressed: busy || status == 'successful'
+                          onPressed: busy || !canRetryPayment(status)
                               ? null
                               : () => updatePayment(paymentId, 'retry'),
                           icon: const Icon(Icons.refresh_rounded),
@@ -409,7 +466,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         ),
                         const SizedBox(width: 6),
                         TextButton.icon(
-                          onPressed: busy || status == 'cancelled'
+                          onPressed: busy || !canCancelPayment(status)
                               ? null
                               : () => updatePayment(paymentId, 'cancel'),
                           icon: const Icon(Icons.cancel_outlined),

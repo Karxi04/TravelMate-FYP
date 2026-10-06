@@ -18,10 +18,35 @@ copy .env.example .env
 python app.py
 ```
 
+The deployment image currently uses Python 3.11. The backend and its bounded
+dependencies also support newer compatible Python 3.x environments used for
+local regression testing.
+
+## Test
+
+Create a dedicated virtual environment and install the test dependency set:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements-test.txt
+.venv\Scripts\python.exe -m pytest
+```
+
+`requirements.txt` remains the production/runtime dependency set.
+`requirements-test.txt` adds only pytest, per-test timeout protection, and
+socket blocking. The default suite clears provider credentials, mocks Firebase
+initialization, blocks direct Firestore access, and disables network sockets.
+Tests that intentionally need a live service must be marked `integration` and
+are excluded from normal runs; they must never be run with production data.
+
 Health checks:
 
 - `GET /api/health`
-- `GET /api/config-status`
+- `GET /api/config-status` (Administrator Firebase token required; returns only payment/hotel capability modes)
+
+Browser CORS is disabled unless `CORS_ALLOWED_ORIGINS` contains a
+comma-separated list of explicit origins. Native Flutter requests are not
+affected by browser CORS. Wildcard origins are rejected.
 
 ## Main API routes
 
@@ -34,6 +59,24 @@ Health checks:
 - FR7 `/api/fr7/flights/search`
 - FR8 `/api/fr8/places/search`, `/api/fr8/hotels/search`, `/api/fr8/hotels/prebook`, `/api/fr8/hotels/book`
 - FR9 `/api/fr9/payments/...`
+
+### Transaction reliability
+
+Payment mutations accept a client-retained `paymentAttemptId`. Hotel prebook
+and booking mutations accept one parent `hotelBookingAttemptId`; TravelMate
+derives separate opaque provider-stage identities for prebook and book.
+Firestore atomically claims deterministic operation documents before provider
+calls. Repeating an attempt converges on that record instead of creating a new
+logical payment/booking. Pending outcomes can be checked through:
+
+- `GET /api/fr9/payments/attempts/<paymentAttemptId>`
+- `GET /api/fr8/bookings/attempts/<hotelBookingAttemptId>`
+
+Stripe test-mode calls use the same opaque Stripe idempotency key for an
+ambiguous retry. A terminal failed payment requires a new attempt ID. LiteAPI
+booking has no guaranteed reconciliation lookup in the current integration;
+an ambiguous booking remains pending/verification-required and is not blindly
+submitted again. Local hotel confirmations are explicitly marked simulation.
 - FR10 `/api/fr10/feedback/...`
 - FR11 `/api/fr11/chat`, `/api/fr11/history`
 - FR12 `/api/fr12/...`

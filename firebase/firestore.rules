@@ -29,8 +29,31 @@ service cloud.firestore {
                       || resource.data.travellerId == request.auth.uid);
 
       allow create: if signedIn()
+                    && request.resource.data.keys().hasOnly([
+                      'destinationId',
+                      'destinationName',
+                      'destinationAddress',
+                      'rating',
+                      'comment',
+                      'travellerId',
+                      'travellerName',
+                      'feedbackStatus',
+                      'moderationStatus',
+                      'submittedAt',
+                      'updatedAt'
+                    ])
+                    && request.resource.data.keys().hasAll([
+                      'destinationId',
+                      'rating',
+                      'travellerId',
+                      'feedbackStatus',
+                      'moderationStatus',
+                      'submittedAt',
+                      'updatedAt'
+                    ])
                     && request.resource.data.travellerId == request.auth.uid
                     && request.resource.data.feedbackStatus == 'visible'
+                    && request.resource.data.moderationStatus == 'pending_review'
                     && request.resource.data.rating is number
                     && request.resource.data.rating >= 1
                     && request.resource.data.rating <= 5;
@@ -38,8 +61,16 @@ service cloud.firestore {
       allow update: if signedIn()
                     && resource.data.travellerId == request.auth.uid
                     && resource.data.feedbackStatus == 'visible'
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                      'rating',
+                      'comment',
+                      'feedbackStatus',
+                      'moderationStatus',
+                      'updatedAt'
+                    ])
                     && request.resource.data.travellerId == request.auth.uid
                     && request.resource.data.feedbackStatus == 'visible'
+                    && request.resource.data.moderationStatus == 'pending_review'
                     && request.resource.data.rating is number
                     && request.resource.data.rating >= 1
                     && request.resource.data.rating <= 5;

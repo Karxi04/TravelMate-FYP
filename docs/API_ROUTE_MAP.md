@@ -4,7 +4,7 @@ The Flutter app, Operator website and Administrator website all call the shared 
 
 ## System
 - `GET /api/health`
-- `GET /api/config-status`
+- `GET /api/config-status` (Administrator authentication required)
 
 ## FR1 User Management
 - `POST /api/fr1/profile`
@@ -50,6 +50,10 @@ The Flutter app, Operator website and Administrator website all call the shared 
 - Sandbox convenience payment workflow
 - Store payment record in Firestore
 - Retry/cancel stored payment records
+- Atomically claim stable payment attempts before Stripe and reconcile them by `paymentAttemptId`
+- Atomically claim stable hotel prebook/book stages under one `hotelBookingAttemptId`
+- Preserve ambiguous provider outcomes as pending instead of blindly creating another mutation
+- Mark local hotel fallback records as Demo booking / Simulated confirmation
 
 ## FR10 Feedback and Rating
 - Submit/list/update/delete Traveller feedback

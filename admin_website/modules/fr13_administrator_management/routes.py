@@ -39,6 +39,8 @@ def update_user(uid):
     if not guard():
         return redirect(url_for("admin_fr01.login"))
     payload = {"role": request.form.get("role"), "status": request.form.get("status")}
+    if request.form.get("verificationStatus"):
+        payload["verificationStatus"] = request.form.get("verificationStatus")
     response = call_api("PUT", f"/api/fr13/users/{uid}", json=payload)
     flash("User account updated." if response.ok else _error(response), "success" if response.ok else "error")
     return redirect(url_for("admin_fr13.users"))

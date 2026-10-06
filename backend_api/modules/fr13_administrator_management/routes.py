@@ -120,7 +120,7 @@ def users():return jsonify({'ok':True,'items':retrieveRecord('users')})
 def update_user(uid):
     payload=request.get_json(silent=True) or {}
     if not validateAccountAction(payload):return jsonify({'ok':False,'error':'No valid account update supplied'}),400
-    updates={k:v for k,v in payload.items() if k in {'role','status'}}; updates['updatedAt']=utc_now_iso()
+    updates={k:v for k,v in payload.items() if k in {'role','status','verificationStatus'}}; updates['updatedAt']=utc_now_iso()
     if 'status' in updates: auth.update_user(uid,disabled=updates['status']=='deactivated')
     return jsonify({'ok':True,'user':updateRecord('users',uid,updates)})
 @bp.get('/packages/pending')

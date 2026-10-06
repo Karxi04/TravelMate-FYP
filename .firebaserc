@@ -1,6 +1,6 @@
 {
   "projects": {
-    "firebase deploy --only firestore:rules": "travelmate2-30a8a"
+    "default": "travelmate2-30a8a"
   },
   "targets": {},
   "etags": {}

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/utils/malaysian_locality.dart';
+import '../core/utils/preference_learning.dart';
 import '../core/utils/recommendation_taxonomy.dart';
 import '../core/utils/constraint_itinerary_planner.dart';
 
@@ -15,9 +16,17 @@ import '../core/utils/constraint_itinerary_planner.dart';
 /// server is not configured. When a cloud backend URL is supplied, ApiService
 /// uses the real Flask API instead and keeps this class as an automatic fallback.
 class StandaloneApiService {
-  final SharedPreferencesAsync _prefs = SharedPreferencesAsync();
+  final String? uidOverride;
+  final Map<String, String>? memoryStore;
+  SharedPreferencesAsync? _prefsInstance;
 
-  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+  StandaloneApiService({this.uidOverride, this.memoryStore});
+
+  SharedPreferencesAsync get _prefs =>
+      _prefsInstance ??= SharedPreferencesAsync();
+
+  String get _uid =>
+      uidOverride ?? FirebaseAuth.instance.currentUser?.uid ?? 'guest';
   String _key(String name) => 'travelmate_${_uid}_$name';
 
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
@@ -98,6 +107,14 @@ class StandaloneApiService {
         'engine': safeSnapshot?['engine'] ?? _engineInfo,
       };
     }
+    if (path == '/api/fr4/preference-feedback') {
+      return {
+        'ok': true,
+        'learning': PreferenceLearning.publicState(
+          await _readMap('learned_preference_profile'),
+        ),
+      };
+    }
     if (path == '/api/fr5/itineraries') {
       return {'ok': true, 'items': await _readList('itineraries')};
     }
@@ -131,6 +148,43 @@ class StandaloneApiService {
     if (path == '/api/fr9/payments') {
       return {'ok': true, 'items': await _readList('payments')};
     }
+    if (path.startsWith('/api/fr9/payments/attempts/')) {
+      final attemptId = path.split('/').last;
+      final items = await _readList('payments');
+      final matches = items
+          .cast<Map>()
+          .map(Map<String, dynamic>.from)
+          .where((item) => item['paymentAttemptId'].toString() == attemptId)
+          .toList();
+      if (matches.isEmpty) throw Exception('Payment attempt not found.');
+      final payment = matches.first;
+      return {
+        'ok': true,
+        'payment': payment,
+        'paymentAttemptId': attemptId,
+        'status': payment['paymentStatus'],
+        'reused': true,
+      };
+    }
+    if (path.startsWith('/api/fr8/bookings/attempts/')) {
+      final attemptId = path.split('/').last;
+      final items = await _readList('bookings');
+      final matches = items
+          .cast<Map>()
+          .map(Map<String, dynamic>.from)
+          .where(
+              (item) => item['hotelBookingAttemptId'].toString() == attemptId)
+          .toList();
+      if (matches.isEmpty) throw Exception('Booking attempt not found.');
+      final booking = matches.first;
+      return {
+        'ok': true,
+        'booking': booking,
+        'hotelBookingAttemptId': attemptId,
+        'status': booking['bookingStatus'],
+        'reused': true,
+      };
+    }
     throw Exception('This function is not available in standalone mode: $path');
   }
 
@@ -141,6 +195,9 @@ class StandaloneApiService {
     if (path == '/api/fr3/favourites') return _saveFavourite(payload);
     if (path == '/api/fr4/recommendations/generate') {
       return _generateRecommendations(payload);
+    }
+    if (path == '/api/fr4/preference-feedback') {
+      return _submitPreferenceFeedback(payload);
     }
     if (path == '/api/fr5/personalised-trips/generate') {
       return _generatePersonalisedTrip(payload);
@@ -215,10 +272,10 @@ class StandaloneApiService {
       return _recordPayment(payload);
     }
     if (path.startsWith('/api/fr9/payments/') && path.endsWith('/retry')) {
-      return _updatePaymentStatus(path.split('/')[4], 'successful');
+      return _retryPayment(path.split('/')[4]);
     }
     if (path.startsWith('/api/fr9/payments/') && path.endsWith('/cancel')) {
-      return _updatePaymentStatus(path.split('/')[4], 'cancelled');
+      return _cancelPayment(path.split('/')[4]);
     }
     if (path == '/api/fr10/feedback') return _createFeedback(payload);
     if (path == '/api/fr11/sessions') return _createChatSession(payload);
@@ -257,6 +314,9 @@ class StandaloneApiService {
   }
 
   Future<dynamic> delete(String path) async {
+    if (path == '/api/fr4/preference-feedback') {
+      return _resetPreferenceFeedback();
+    }
     if (path.startsWith('/api/fr11/sessions/')) {
       final id = path.split('/').last;
       final sessions = await _readList('chat_sessions');
@@ -306,17 +366,27 @@ class StandaloneApiService {
   // ------------------------------------------------------------------
 
   Future<Map<String, dynamic>?> _readMap(String name) async {
-    final raw = await _prefs.getString(_key(name));
+    final raw = memoryStore != null
+        ? memoryStore![_key(name)]
+        : await _prefs.getString(_key(name));
     if (raw == null || raw.trim().isEmpty) return null;
     final value = jsonDecode(raw);
     return value is Map ? Map<String, dynamic>.from(value) : null;
   }
 
-  Future<void> _writeMap(String name, Map<String, dynamic> value) =>
-      _prefs.setString(_key(name), jsonEncode(value));
+  Future<void> _writeMap(String name, Map<String, dynamic> value) async {
+    final encoded = jsonEncode(value);
+    if (memoryStore != null) {
+      memoryStore![_key(name)] = encoded;
+      return;
+    }
+    await _prefs.setString(_key(name), encoded);
+  }
 
   Future<List<Map<String, dynamic>>> _readList(String name) async {
-    final raw = await _prefs.getString(_key(name));
+    final raw = memoryStore != null
+        ? memoryStore![_key(name)]
+        : await _prefs.getString(_key(name));
     if (raw == null || raw.trim().isEmpty) return [];
     final value = jsonDecode(raw);
     if (value is! List) return [];
@@ -326,8 +396,14 @@ class StandaloneApiService {
         .toList();
   }
 
-  Future<void> _writeList(String name, List<Map<String, dynamic>> value) =>
-      _prefs.setString(_key(name), jsonEncode(value));
+  Future<void> _writeList(String name, List<Map<String, dynamic>> value) async {
+    final encoded = jsonEncode(value);
+    if (memoryStore != null) {
+      memoryStore![_key(name)] = encoded;
+      return;
+    }
+    await _prefs.setString(_key(name), encoded);
+  }
 
   Future<dynamic> _getProfile() async {
     var profile = await _readMap('profile');
@@ -2768,6 +2844,9 @@ class StandaloneApiService {
 
   Future<dynamic> _generateRecommendations(Map<String, dynamic> payload) async {
     final preferences = await _readMap('preferences') ?? {};
+    final learnedProfile = await _readMap('learned_preference_profile');
+    final effectivePreferences =
+        PreferenceLearning.effectiveProfile(preferences, learnedProfile);
     final requestedDestination =
         (payload['destinationArea'] ?? 'Malaysia').toString().trim();
     final destinationScope =
@@ -2802,7 +2881,7 @@ class StandaloneApiService {
             .toList();
     final scored = RecommendationScoring.rankCandidates(
       candidates: eligibleCandidates,
-      preferences: preferences,
+      preferences: effectivePreferences,
       feedback: feedback,
       currentUserId: _uid,
       limit: 12,
@@ -2823,9 +2902,13 @@ class StandaloneApiService {
       'requestedDestination': requestedDestination,
       'destinationArea': requestedDestination,
       'canonicalDestinationScope': destinationScope,
-      'preferenceProfileVersion': preferences['preferenceProfileVersion'] ??
-          preferences['updatedAt'] ??
-          'local_profile_legacy',
+      'preferenceProfileVersion': PreferenceLearning.effectiveVersion(
+        (preferences['preferenceProfileVersion'] ??
+                preferences['updatedAt'] ??
+                'local_profile_legacy')
+            .toString(),
+        learnedProfile,
+      ),
       'generatedAt': generatedAt,
       'source': 'fallback',
       'engine': _engineInfo,
@@ -2849,6 +2932,115 @@ class StandaloneApiService {
         'purpose': purpose,
         'personality': personality,
       },
+    };
+  }
+
+  Future<dynamic> _submitPreferenceFeedback(
+    Map<String, dynamic> payload,
+  ) async {
+    final destinationId = (payload['destinationId'] ?? '').toString().trim();
+    final feedbackType = (payload['feedbackType'] ?? '').toString().trim();
+    final generationId =
+        (payload['recommendationGenerationId'] ?? '').toString().trim();
+    final sourceContext =
+        (payload['sourceContext'] ?? 'recommendation').toString().trim();
+    Map<String, dynamic>? snapshotItem;
+    if (generationId.isNotEmpty) {
+      final snapshots = await _readList('recommendation_snapshots');
+      Map<String, dynamic>? snapshot;
+      for (final candidate in snapshots) {
+        if ((candidate['recommendationGenerationId'] ?? '').toString() ==
+            generationId) {
+          snapshot = candidate;
+          break;
+        }
+      }
+      if (snapshot == null) {
+        return {
+          'ok': false,
+          'statusCode': 409,
+          'error': 'Recommendation snapshot was not found.',
+        };
+      }
+      for (final raw
+          in snapshot['recommendationResults'] as List? ?? const []) {
+        if (raw is! Map) continue;
+        final item = Map<String, dynamic>.from(raw);
+        final itemId = (item['destinationId'] ??
+                item['place_id'] ??
+                item['id'] ??
+                item['title'] ??
+                item['name'] ??
+                '')
+            .toString();
+        if (itemId == destinationId) {
+          snapshotItem = item;
+          break;
+        }
+      }
+      if (snapshotItem == null) {
+        return {
+          'ok': false,
+          'statusCode': 409,
+          'error':
+              'Destination does not belong to this recommendation snapshot.',
+        };
+      }
+    }
+    try {
+      final concepts = snapshotItem?['destinationConcepts'] ??
+          payload['destinationConcepts'] ??
+          RecommendationTaxonomy.candidateConcepts(payload);
+      final now = _now();
+      final eventId = 'local_feedback_${DateTime.now().microsecondsSinceEpoch}';
+      final update = PreferenceLearning.applyFeedback(
+        await _readMap('learned_preference_profile'),
+        userId: _uid,
+        destinationId: destinationId,
+        feedbackType: feedbackType,
+        destinationConcepts: concepts,
+        recommendationGenerationId: generationId,
+        sourceContext: sourceContext,
+        now: now,
+        eventId: eventId,
+      );
+      if (update.changed) {
+        await _writeMap('learned_preference_profile', update.profile);
+        final events = await _readList('recommendation_feedback_events');
+        events.insert(0, Map<String, dynamic>.from(update.event!));
+        await _writeList('recommendation_feedback_events', events);
+      }
+      return {
+        'ok': true,
+        'changed': update.changed,
+        'learning': PreferenceLearning.publicState(update.profile),
+        'message': update.changed
+            ? 'Thanks — this will help improve future recommendations.'
+            : 'Your feedback is already recorded.',
+      };
+    } on ArgumentError catch (error) {
+      return {'ok': false, 'error': error.message.toString()};
+    }
+  }
+
+  Future<dynamic> _resetPreferenceFeedback() async {
+    final now = _now();
+    final eventId = 'local_reset_${DateTime.now().microsecondsSinceEpoch}';
+    final update = PreferenceLearning.reset(
+      await _readMap('learned_preference_profile'),
+      userId: _uid,
+      now: now,
+      eventId: eventId,
+    );
+    await _writeMap('learned_preference_profile', update.profile);
+    final events = await _readList('recommendation_feedback_events');
+    events.insert(0, Map<String, dynamic>.from(update.event!));
+    await _writeList('recommendation_feedback_events', events);
+    return {
+      'ok': true,
+      'changed': update.changed,
+      'learning': PreferenceLearning.publicState(update.profile),
+      'message': 'Learned recommendation preferences were reset.',
     };
   }
 
@@ -3964,26 +4156,82 @@ class StandaloneApiService {
   Future<dynamic> _prebook(Map<String, dynamic> payload) async {
     final offer = (payload['offerId'] ?? '').toString();
     if (offer.isEmpty) throw Exception('Offer ID is required.');
+    final attemptId = (payload['hotelBookingAttemptId'] ?? '').toString();
+    if (attemptId.isEmpty)
+      throw Exception('hotelBookingAttemptId is required.');
+    final attempts = await _readList('hotel_prebook_attempts');
+    final existingIndex = attempts.indexWhere(
+      (item) => item['hotelBookingAttemptId'].toString() == attemptId,
+    );
+    if (existingIndex >= 0) {
+      final existing =
+          Map<String, dynamic>.from(attempts[existingIndex] as Map);
+      if (existing['offerId'].toString() != offer) {
+        throw Exception('Booking attempt is already bound to another offer.');
+      }
+      return {
+        'ok': true,
+        'source': 'local',
+        'result': existing,
+        'hotelBookingAttemptId': attemptId,
+        'reused': true,
+      };
+    }
+    final suffix = attemptId.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    final prebookId =
+        'local_prebook_${suffix.substring(0, min(16, suffix.length))}';
+    final result = {
+      'prebookId': prebookId,
+      'offerId': offer,
+      'status': 'prebooked',
+      'sandbox': true,
+      'hotelBookingAttemptId': attemptId,
+    };
+    attempts.insert(0, result);
+    await _writeList('hotel_prebook_attempts', attempts);
     return {
       'ok': true,
       'source': 'local',
-      'result': {
-        'prebookId': 'prebook_${DateTime.now().millisecondsSinceEpoch}',
-        'offerId': offer,
-        'status': 'prebooked',
-      },
+      'result': result,
+      'hotelBookingAttemptId': attemptId,
     };
   }
 
   Future<dynamic> _bookHotel(Map<String, dynamic> payload) async {
     final selected = Map<String, dynamic>.from(payload['selectedHotel'] ?? {});
-    final id = 'booking_${DateTime.now().millisecondsSinceEpoch}';
+    final attemptId = (payload['hotelBookingAttemptId'] ?? '').toString();
+    if (attemptId.isEmpty)
+      throw Exception('hotelBookingAttemptId is required.');
+    final bookings = await _readList('bookings');
+    final existingIndex = bookings.indexWhere(
+      (item) => item['hotelBookingAttemptId'].toString() == attemptId,
+    );
+    if (existingIndex >= 0) {
+      final existing =
+          Map<String, dynamic>.from(bookings[existingIndex] as Map);
+      final budget = await _attachStandaloneBooking(existing, payload);
+      return {
+        'ok': true,
+        'booking': existing,
+        'budget': budget,
+        'source': 'local',
+        'hotelBookingAttemptId': attemptId,
+        'reused': true,
+      };
+    }
+    final suffix = attemptId.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    final stable = suffix.substring(0, min(18, suffix.length));
+    final id = 'booking_$stable';
     final booking = <String, dynamic>{
       'id': id,
       'bookingId': id,
-      'bookingReference':
-          'TM-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}',
+      'hotelBookingAttemptId': attemptId,
+      'bookingReference': 'TM-DEMO-${stable.toUpperCase()}',
       'bookingStatus': 'confirmed',
+      'bookingMode': 'simulation',
+      'isSimulated': true,
+      'confirmationLabel': 'Simulated confirmation',
+      'selectedHotel': selected,
       'hotelName': selected['name'] ?? 'Hotel',
       'roomType': selected['roomName'] ?? '',
       'price': _num(payload['hotelCost'] ?? selected['price']),
@@ -3992,27 +4240,29 @@ class StandaloneApiService {
       'holder': payload['holder'] ?? {},
       'createdAt': _now(),
     };
-    final bookings = await _readList('bookings');
     bookings.insert(0, booking);
     await _writeList('bookings', bookings);
-
-    final itineraryId = (payload['itineraryId'] ?? '').toString();
-    Map<String, dynamic>? budget;
-    if (itineraryId.isNotEmpty) {
-      final trip = await _tripById(itineraryId);
-      if (trip != null) {
-        trip['selectedHotel'] = selected;
-        trip['hotelCost'] = booking['price'];
-        await _replaceTrip(trip);
-        budget = _calculateBudget(trip);
-      }
-    }
+    final budget = await _attachStandaloneBooking(booking, payload);
     return {
       'ok': true,
       'booking': booking,
       'budget': budget,
       'source': 'local'
     };
+  }
+
+  Future<Map<String, dynamic>?> _attachStandaloneBooking(
+      Map<String, dynamic> booking, Map<String, dynamic> payload) async {
+    final itineraryId = (payload['itineraryId'] ?? '').toString();
+    if (itineraryId.isEmpty) return null;
+    final trip = await _tripById(itineraryId);
+    if (trip == null) return null;
+    trip['selectedHotel'] = booking['selectedHotel'] ??
+        Map<String, dynamic>.from(payload['selectedHotel'] ?? {});
+    trip['hotelCost'] = booking['price'];
+    trip['hotelBookingId'] = booking['id'];
+    await _replaceTrip(trip);
+    return _calculateBudget(trip);
   }
 
   // ------------------------------------------------------------------
@@ -4022,25 +4272,81 @@ class StandaloneApiService {
   Future<dynamic> _recordPayment(Map<String, dynamic> payload) async {
     final amount = _num(payload['amount']);
     if (amount <= 0) throw Exception('Enter a positive amount.');
-    final id = 'pay_${DateTime.now().millisecondsSinceEpoch}';
+    final attemptId = (payload['paymentAttemptId'] ?? '').toString();
+    if (attemptId.isEmpty) throw Exception('paymentAttemptId is required.');
+    final items = await _readList('payments');
+    final existingIndex = items.indexWhere(
+      (item) => item['paymentAttemptId'].toString() == attemptId,
+    );
+    if (existingIndex >= 0) {
+      final existing = Map<String, dynamic>.from(items[existingIndex] as Map);
+      if (_num(existing['amount']) != amount ||
+          existing['bookingId'].toString() !=
+              (payload['bookingId'] ?? '').toString()) {
+        throw Exception('Payment attempt is already bound to another payment.');
+      }
+      return {
+        'ok': true,
+        'payment': existing,
+        'paymentAttemptId': attemptId,
+        'source': 'local',
+        'reused': true,
+      };
+    }
+    final suffix = attemptId.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    final stable = suffix.substring(0, min(18, suffix.length));
+    final id = 'pay_$stable';
     final record = {
       'id': id,
+      'paymentAttemptId': attemptId,
       'bookingId': payload['bookingId'] ?? '',
       'amount': _money(amount),
       'currency': 'MYR',
-      'paymentStatus': 'successful',
-      'transactionReference':
-          'TM-PAY-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}',
+      'paymentStatus': 'succeeded',
+      'transactionReference': 'TM-PAY-${stable.toUpperCase()}',
       'cardBrand': payload['cardBrand'] ?? 'Card',
       'cardLast4': payload['cardLast4'] ?? '',
       'cardholderName': payload['cardholderName'] ?? '',
       'billingEmail': payload['billingEmail'] ?? '',
       'createdAt': _now(),
     };
-    final items = await _readList('payments');
     items.insert(0, record);
     await _writeList('payments', items);
-    return {'ok': true, 'payment': record, 'source': 'local'};
+    return {
+      'ok': true,
+      'payment': record,
+      'paymentAttemptId': attemptId,
+      'source': 'local'
+    };
+  }
+
+  Future<dynamic> _retryPayment(String id) async {
+    final items = await _readList('payments');
+    final index = items.indexWhere((item) => item['id'].toString() == id);
+    if (index < 0) throw Exception('Payment record not found.');
+    final payment = Map<String, dynamic>.from(items[index] as Map);
+    if (payment['paymentStatus'] == 'succeeded' ||
+        payment['paymentStatus'] == 'successful') {
+      throw Exception('Successful payments cannot be retried.');
+    }
+    return {
+      'ok': true,
+      'payment': payment,
+      'status': payment['paymentStatus'],
+      'reused': true,
+    };
+  }
+
+  Future<dynamic> _cancelPayment(String id) async {
+    final items = await _readList('payments');
+    final index = items.indexWhere((item) => item['id'].toString() == id);
+    if (index < 0) throw Exception('Payment record not found.');
+    final payment = Map<String, dynamic>.from(items[index] as Map);
+    if (payment['paymentStatus'] == 'succeeded' ||
+        payment['paymentStatus'] == 'successful') {
+      throw Exception('Successful payments cannot be cancelled.');
+    }
+    return _updatePaymentStatus(id, 'cancelled');
   }
 
   Future<dynamic> _updatePaymentStatus(String id, String status) async {
