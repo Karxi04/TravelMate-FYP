@@ -1,22 +1,5 @@
-{% extends 'portal_base.html' %}{% block title %}Promotion Review | TravelMate{% endblock %}{% block content %}
-<div class="page-title"><div><h1>Review Promotional Content</h1><p>Approve only promotions that are complete, accurate and suitable for Traveller display.</p></div></div>
-<div class="grid g2">
-{% for x in items %}
-<div class="card">
-  <div class="actions" style="justify-content:space-between"><span class="status pending">Under Review</span>{% if x.get('promoCode') %}<strong>{{x.get('promoCode')}}</strong>{% endif %}</div>
-  <h3 style="margin-top:12px">{{x.get('campaignTitle','Campaign')}}</h3>
-  <p><strong>Related package:</strong> {{x.get('packageTitle', x.get('packageId','-'))}}</p>
-  <p><strong>Period:</strong> {{x.get('startDate','-')}} → {{x.get('endDate','-')}}</p>
-  {% if x.get('discountValue') %}<p><strong>Offer:</strong> {{x.get('discountValue')}}{% if x.get('discountType')=='percentage' %}% off{% else %} RM off{% endif %}</p>{% endif %}
-  <p>{{x.get('description','')}}</p>
-  {% if x.get('termsConditions') %}<p><strong>Terms & conditions</strong><br>{{x.get('termsConditions')}}</p>{% endif %}
-  <form method="post" action="{{ url_for('admin_fr13.review_campaign', campaign_id=x.id) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="field"><label>Review comment / rejection reason</label><textarea class="input" name="comment"></textarea></div>
-    <div class="actions"><button class="btn primary" name="decision" value="approved">Approve & Publish</button><button class="btn danger" name="decision" value="rejected">Reject</button></div>
-  </form>
-</div>
-{% else %}
-<div class="card cream">No promotional content currently requires review.</div>
-{% endfor %}
-</div>
+{% extends 'portal_base.html' %}{% block title %}Promotion reviews | TravelMate{% endblock %}{% block content %}
+<div class="page-title"><div><span class="eyebrow">CONTENT SAFETY</span><h1>Promotion reviews</h1><p>Approve complete promotional content before it appears to travellers.</p></div></div>
+<form class="toolbar card" method="get"><div class="actions"><input class="input search-input" name="q" value="{{ query }}" placeholder="Search campaign, package or destination" aria-label="Search campaigns"><select class="input filter-input" name="status" aria-label="Filter campaigns"><option value="pending" {% if status=='pending' %}selected{% endif %}>Needs review</option><option value="all" {% if status=='all' %}selected{% endif %}>All statuses</option><option value="approved" {% if status=='approved' %}selected{% endif %}>Approved</option><option value="rejected" {% if status=='rejected' %}selected{% endif %}>Rejected</option></select><button class="btn primary">Filter</button></div></form>
+<div class="grid g2">{% for x in items %}<article class="card review-card"><div class="actions" style="justify-content:space-between"><span class="status {{ x.get('reviewStatus','pending') }}">{{ x.get('reviewStatus','pending') }}</span><small>{{ x.get('startDate','-') }} → {{ x.get('endDate','-') }}</small></div><h3>{{ x.get('campaignTitle','Untitled promotion') }}</h3><p><strong>{{ x.get('packageTitle','Package unavailable') }}</strong> · {{ x.get('destinationName','Destination unavailable') }}</p><p class="muted">{{ x.get('description','No description provided.') }}</p>{% if x.get('reviewComment') %}<p class="notice"><strong>Review note:</strong> {{ x.get('reviewComment') }}</p>{% endif %}<a class="btn outline" href="{{ url_for('admin_fr13.campaign_details', campaign_id=x.id) }}">Open review</a></article>{% else %}<div class="card cream empty-state"><strong>No campaigns need attention.</strong><span>Approved and rejected records remain available through the status filter.</span></div>{% endfor %}</div>
 {% endblock %}

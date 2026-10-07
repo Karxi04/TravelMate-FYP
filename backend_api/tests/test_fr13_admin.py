@@ -106,3 +106,28 @@ def test_admin_destination_management(client, mock_admin_auth):
         data = res.get_json()
         assert data['ok'] is True
         assert data['destination']['title'] == 'New Heritage Museum'
+
+def test_admin_cannot_demote_or_disable_self(client, mock_admin_auth):
+    res = client.put('/api/fr13/users/test_admin_uid',
+                     headers={'Authorization': 'Bearer valid_test_token'},
+                     json={'role': 'traveller'})
+    assert res.status_code == 409
+    assert 'cannot' in res.get_json()['error'].lower()
+
+def test_campaign_queue_filters_and_rejection_requires_reason(client, mock_admin_auth):
+    records = [
+        {'id': 'camp-1', 'campaignTitle': 'Island offer', 'reviewStatus': 'pending', 'packageId': 'pkg-1'},
+        {'id': 'camp-2', 'campaignTitle': 'Old offer', 'reviewStatus': 'approved', 'packageId': 'pkg-2'},
+    ]
+    def retrieve(collection, doc_id=None, filters=None):
+        if collection == 'promotional_campaigns':
+            if doc_id: return next((x for x in records if x['id'] == doc_id), None)
+            return records
+        return {'packageTitle': 'Package'}
+    with patch('modules.fr13_administrator_management.routes.retrieveRecord', side_effect=retrieve):
+        queued = client.get('/api/fr13/campaigns?status=pending', headers={'Authorization': 'Bearer valid_test_token'})
+        assert queued.status_code == 200
+        assert [x['id'] for x in queued.get_json()['items']] == ['camp-1']
+        missing = client.post('/api/fr13/campaigns/camp-1/review', headers={'Authorization': 'Bearer valid_test_token'}, json={'decision': 'rejected'})
+    assert missing.status_code == 400
+    assert missing.get_json()['error'] == 'A rejection reason is required'

@@ -115,13 +115,27 @@ def _records_for_type(report_type, collections):
     return sum(collections.values(), [])
 @bp.get('/users')
 @auth_required(['admin'])
-def users():return jsonify({'ok':True,'items':retrieveRecord('users')})
+def users():
+    items = retrieveRecord('users') or []
+    role = str(request.args.get('role') or '').strip().lower()
+    status = str(request.args.get('status') or '').strip().lower()
+    query = str(request.args.get('q') or '').strip().lower()
+    if role:
+        items = [item for item in items if str(item.get('role') or '').lower() == role]
+    if status:
+        items = [item for item in items if str(item.get('status') or 'active').lower() == status]
+    if query:
+        items = [item for item in items if query in ' '.join(str(item.get(k) or '') for k in ('name', 'email', 'companyName', 'role')).lower()]
+    return jsonify({'ok':True,'items':items})
 @bp.put('/users/<uid>')
 @auth_required(['admin'])
 def update_user(uid):
     payload=request.get_json(silent=True) or {}
     if not validateAccountAction(payload):return jsonify({'ok':False,'error':'No valid account update supplied'}),400
-    updates={k:v for k,v in payload.items() if k in {'role','status','verificationStatus'}}; updates['updatedAt']=utc_now_iso()
+    updates={k:v for k,v in payload.items() if k in {'role','status','verificationStatus'}}
+    if uid == g.uid and (updates.get('role') not in (None, 'admin') or updates.get('status') == 'deactivated'):
+        return jsonify({'ok':False,'error':'Administrators cannot disable or demote their own account'}), 409
+    updates['updatedAt']=utc_now_iso()
     if 'status' in updates: auth.update_user(uid,disabled=updates['status']=='deactivated')
     return jsonify({'ok':True,'user':updateRecord('users',uid,updates)})
 @bp.get('/packages/pending')
@@ -164,12 +178,39 @@ def review_package(pid):
 @bp.get('/campaigns/pending')
 @auth_required(['admin'])
 def pending_campaigns():
-    items=retrieveRecord('promotional_campaigns',filters=[('reviewStatus','==','pending')])
-    for item in items:
-        package=retrieveRecord('tourism_packages',str(item.get('packageId') or '')) or {}
-        item['packageTitle']=package.get('packageTitle','-')
-        item['destinationName']=package.get('destinationName','')
+    return campaign_records(pending_only=True)
+
+def _campaign_view(item):
+    item = dict(item)
+    package=retrieveRecord('tourism_packages',str(item.get('packageId') or '')) or {}
+    item['packageTitle']=package.get('packageTitle') or package.get('title') or '-'
+    item['destinationName']=package.get('destinationName') or package.get('destination') or ''
+    item['operatorName']=package.get('operatorName') or package.get('operatorDisplayName') or 'Tourism Operator'
+    return item
+
+def campaign_records(pending_only=False):
+    items=retrieveRecord('promotional_campaigns') or []
+    if pending_only:
+        items=[item for item in items if str(item.get('reviewStatus') or '').lower() in {'pending','submitted','under_review'}]
+    status=str(request.args.get('status') or '').strip().lower()
+    query=str(request.args.get('q') or '').strip().lower()
+    if status and status != 'all': items=[item for item in items if str(item.get('reviewStatus') or '').lower() == status]
+    items=[_campaign_view(item) for item in items]
+    if query: items=[item for item in items if query in ' '.join(str(item.get(k) or '') for k in ('campaignTitle','packageTitle','destinationName','operatorName','promoCode')).lower()]
+    items.sort(key=lambda item: (str(item.get('reviewStatus') or '').lower() not in {'pending','submitted','under_review'}, str(item.get('submittedAt') or item.get('updatedAt') or '')))
     return jsonify({'ok':True,'items':items})
+
+@bp.get('/campaigns')
+@auth_required(['admin'])
+def campaigns():
+    return campaign_records()
+
+@bp.get('/campaigns/<cid>')
+@auth_required(['admin'])
+def campaign_details(cid):
+    item=retrieveRecord('promotional_campaigns',cid)
+    if not item:return jsonify({'ok':False,'error':'Campaign not found'}),404
+    return jsonify({'ok':True,'campaign':_campaign_view(item)})
 @bp.post('/campaigns/<cid>/review')
 @auth_required(['admin'])
 def review_campaign(cid):
@@ -177,7 +218,9 @@ def review_campaign(cid):
     if not current:return jsonify({'ok':False,'error':'Campaign not found'}),404
     payload=request.get_json(silent=True) or {}; decision=payload.get('decision')
     if decision not in {'approved','rejected'}:return jsonify({'ok':False,'error':'decision must be approved or rejected'}),400
-    review=approve(current,payload.get('comment','')) if decision=='approved' else reject(current,payload.get('comment','')); updates={'reviewStatus':review['decision'],'reviewComment':review['reviewComment'],'reviewedBy':g.uid,'reviewedAt':review['reviewedAt'],'updatedAt':utc_now_iso()}
+    comment=str(payload.get('comment','')).strip()
+    if decision=='rejected' and not comment:return jsonify({'ok':False,'error':'A rejection reason is required'}),400
+    review=approve(current,comment) if decision=='approved' else reject(current,comment); updates={'reviewStatus':review['decision'],'reviewComment':review['reviewComment'],'reviewReason':review['reviewComment'],'reviewedBy':g.uid,'reviewedAt':review['reviewedAt'],'updatedAt':utc_now_iso()}
     if decision=='approved':updates['campaignStatus']='approved'
     return jsonify({'ok':True,'campaign':updateRecord('promotional_campaigns',cid,updates)})
 @bp.get('/feedback')
