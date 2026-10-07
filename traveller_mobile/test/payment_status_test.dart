@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/modules/fr09_payment/payment_status.dart';
+import 'package:travelmate_traveller/widgets/ink_card.dart';
 
 void main() {
   test('fallback payment references are explicitly simulation, not Stripe', () {
@@ -27,5 +28,20 @@ void main() {
     expect(canonicalPaymentStatus('canceled'), 'cancelled');
     expect(canRetryPayment('cancelled'), isTrue);
     expect(canCancelPayment('cancelled'), isFalse);
+  });
+
+  test('traveller-facing status labels hide provider terminology', () {
+    expect(paymentStatusLabel('succeeded'), 'Payment successful');
+    expect(paymentStatusLabel('failed'), 'Payment failed');
+    expect(paymentStatusLabel('pending'), 'Checking payment status');
+    expect(paymentStatusLabel('cancelled'), 'Payment cancelled');
+  });
+
+  test('network failures use safe traveller language', () {
+    final message = travellerErrorMessage(
+      Exception('TimeoutException after 0:00:25.000000: Future not completed'),
+    );
+    expect(message, contains('couldn’t connect'));
+    expect(message, isNot(contains('TimeoutException')));
   });
 }

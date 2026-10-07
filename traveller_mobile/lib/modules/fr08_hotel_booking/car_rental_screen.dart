@@ -89,8 +89,8 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
       showError(context, 'Enter a pickup location.');
       return;
     }
-    if (pickup == null || dropoff == null || dropoff.isBefore(pickup)) {
-      showError(context, 'Choose a valid pickup and drop-off date range.');
+    if (pickup == null || dropoff == null || !dropoff.isAfter(pickup)) {
+      showError(context, 'Drop-off must be after pickup. Choose a valid date range.');
       return;
     }
     if (drivers <= 0) {

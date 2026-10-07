@@ -384,19 +384,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     Text(
                         isSuccessfulPayment(result?['paymentStatus'])
                             ? (isSimulatedPayment(result)
-                                ? 'Simulated payment completed'
-                                : 'Sandbox payment completed')
-                            : 'Payment verification pending',
+                                ? 'Demo payment · no real charge'
+                                : 'Test payment · no real charge')
+                            : paymentStatusLabel(result?['paymentStatus']),
                         style: const TextStyle(
                             fontWeight: FontWeight.w900, fontSize: 18))
                   ]),
                   const SizedBox(height: 10),
-                  Text('Reference: ${result!['transactionReference']}'),
+                  if (!isSuccessfulPayment(result?['paymentStatus']))
+                    const Text('We’re still checking this payment. Use Check status before trying again.'),
                   Text(
                       'Amount: ${result!['currency'] ?? 'MYR'} ${result!['amount']}'),
                   Text(
                       'Card: ${result!['cardBrand'] ?? 'Card'} •••• ${result!['cardLast4'] ?? ''}'),
-                  Text('Status: ${result!['paymentStatus']}'),
+                  Text(paymentStatusLabel(result!['paymentStatus'])),
                 ],
               ),
             ),
@@ -446,7 +447,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   style: const TextStyle(
                                       color: InkWashColors.mutedInk,
                                       fontSize: 12)),
-                              Text('$kind status: $status',
+                              Text('$kind · ${paymentStatusLabel(status)}',
                                   style: const TextStyle(
                                       color: InkWashColors.mutedInk,
                                       fontSize: 12)),

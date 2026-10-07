@@ -46,8 +46,22 @@ class SectionTitle extends StatelessWidget {
   }
 }
 
+String travellerErrorMessage(Object error) {
+  final text = error.toString().replaceFirst('Exception: ', '').trim();
+  final lower = text.toLowerCase();
+  if (lower.contains('timeout') || lower.contains('socket') || lower.contains('connection') || lower.contains('network')) {
+    return 'We couldn’t connect to TravelMate. Check your connection and try again.';
+  }
+  if (lower.contains('unauthorized') || lower.contains('token')) {
+    return 'Your session has expired. Sign in again and try again.';
+  }
+  if (lower.contains('not found')) return 'That TravelMate record is no longer available.';
+  if (text.isEmpty || text.length > 180) return 'TravelMate could not complete that request. Please try again.';
+  return text;
+}
+
 void showError(BuildContext context, Object error) {
   ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+    SnackBar(content: Text(travellerErrorMessage(error))),
   );
 }
