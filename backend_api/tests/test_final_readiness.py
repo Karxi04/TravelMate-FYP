@@ -219,11 +219,28 @@ def portal_bridge(portal, backend_client, uid):
 def test_actual_operator_login_requires_verification(client, journey, monkeypatch, status):
     journey.update("users", OPERATOR, {"verificationStatus": status})
     browser, _token, response = portal_bridge(load_portal("operator", monkeypatch), client, OPERATOR)
-    assert response.status_code == (302 if status in {"approved", "verified"} else 200)
+    assert response.status_code == 302
     with browser.session_transaction() as session:
-        assert bool(session.get("id_token")) == (status in {"approved", "verified"})
+        assert bool(session.get("id_token")) is True
     if status in {"pending", "rejected"}:
+        pending_page = browser.get(response.location)
+        assert pending_page.status_code == 200
+        assert b"Account verification pending" in pending_page.data or b"Account needs attention" in pending_page.data
         assert client.get("/api/fr12/packages", headers={"Authorization": f"Bearer {OPERATOR}"}).status_code == 403
+    else:
+        dashboard = browser.get("/dashboard")
+        assert dashboard.status_code == 200
+        assert b"needs your attention today" in dashboard.data
+        assert browser.get("/profile").status_code == 200
+        profile_update = browser.post("/profile", data={
+            "csrf_token": _token, "name": "Updated Demo Operator",
+            "companyName": "Demo Travel Company", "businessContact": "+60123456789",
+        })
+        assert profile_update.status_code == 302
+        assert journey.retrieve("users", OPERATOR)["name"] == "Updated Demo Operator"
+        assert browser.get("/packages").status_code == 200
+        assert browser.get("/packages/new").status_code == 200
+        assert browser.get("/campaigns").status_code == 200
 
 
 def test_portal_admin_verification_package_campaign_and_traveller_publication(client, journey, monkeypatch):
@@ -231,7 +248,7 @@ def test_portal_admin_verification_package_campaign_and_traveller_publication(cl
     admin, admin_token, login = portal_bridge(load_portal("admin", monkeypatch), client, ADMIN)
     assert login.status_code == 302
     pending_browser, _token, pending = portal_bridge(load_portal("operator", monkeypatch), client, OPERATOR)
-    assert pending.status_code == 200
+    assert pending.status_code == 302
     account_update = {"role": "operator", "status": "active", "verificationStatus": "approved"}
     assert admin.post(f"/admin/users/{OPERATOR}/update", data=account_update).status_code == 400
     assert journey.retrieve("users", OPERATOR)["verificationStatus"] == "pending"
@@ -284,6 +301,17 @@ def test_portal_admin_verification_package_campaign_and_traveller_publication(cl
     campaign_id = journey.retrieve("promotional_campaigns")[0]["id"]
     assert operator.post(f"/campaigns/{campaign_id}/submit", data={"csrf_token": operator_token}).status_code == 302
     assert journey.retrieve("promotional_campaigns", campaign_id)["reviewStatus"] == "pending"
+    assert admin.post(f"/admin/campaigns/{campaign_id}/review", data={"csrf_token": admin_token, "decision": "approved"}).status_code == 302
+    assert journey.retrieve("promotional_campaigns", campaign_id)["reviewStatus"] == "approved"
+    campaign_update = {**campaign, "description": "Updated campaign content."}
+    assert operator.post(f"/campaigns/{campaign_id}/edit-page", data={**campaign_update, "csrf_token": operator_token}).status_code == 302
+    assert journey.retrieve("promotional_campaigns", campaign_id)["reviewStatus"] == "draft"
+    assert client.get("/api/public/promotional-campaigns", headers=AUTH).get_json()["items"] == []
+    assert operator.post(f"/campaigns/{campaign_id}/submit", data={"csrf_token": operator_token}).status_code == 302
+    assert admin.post(f"/admin/campaigns/{campaign_id}/review", data={"csrf_token": admin_token, "decision": "rejected", "comment": "Clarify the promotion end date."}).status_code == 302
+    assert b"Clarify the promotion end date" in operator.get("/campaigns").data
+    assert operator.post(f"/campaigns/{campaign_id}/edit-page", data={**campaign_update, "description": "Clarified promotion.", "csrf_token": operator_token}).status_code == 302
+    assert operator.post(f"/campaigns/{campaign_id}/submit", data={"csrf_token": operator_token}).status_code == 302
     assert admin.post(f"/admin/campaigns/{campaign_id}/review", data={"csrf_token": admin_token, "decision": "approved"}).status_code == 302
     assert journey.retrieve("promotional_campaigns", campaign_id)["reviewStatus"] == "approved"
     public_package = client.get("/api/public/tourism-packages", headers=AUTH).get_json()["items"][0]

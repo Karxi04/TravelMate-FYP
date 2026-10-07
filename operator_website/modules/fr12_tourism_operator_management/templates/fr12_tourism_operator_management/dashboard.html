@@ -1,42 +1,6 @@
-{% extends 'portal_base.html' %}
-{% block title %}Operator Dashboard | TravelMate{% endblock %}
-{% block content %}
-<div class="page-title">
-  <div>
-    <span class="eyebrow">TOURISM OPERATOR</span>
-    <h1>Welcome back, {{ profile.get('name','Operator') }}</h1>
-    <p>{% if profile.get('companyName') %}{{ profile.get('companyName') }} · {% endif %}Manage packages, campaigns and approval progress from one workspace.</p>
-  </div>
-  <div class="actions">
-    <a class="btn outline" href="{{ url_for('operator_fr12.package_status') }}">Approval status</a>
-    <a class="btn primary" href="{{ url_for('operator_fr12.packages') }}">+ New package</a>
-  </div>
-</div>
-{% set summary=analytics.get('summary',{}) %}
-<div class="grid g4">
-  <div class="card cream"><div class="metric">{{ summary.get('totalPackages', analytics.get('packageCount',0)) }}</div><div class="metric-label">Total packages</div><div class="metric-help">{{ summary.get('draftPackages',0) }} draft · {{ summary.get('pendingPackages',0) }} pending</div></div>
-  <div class="card"><div class="metric">{{ summary.get('approvedPackages', analytics.get('approvedPackageCount',0)) }}</div><div class="metric-label">Approved packages</div><div class="metric-help">{{ summary.get('rejectedPackages',0) }} need revision</div></div>
-  <div class="card"><div class="metric">{{ summary.get('totalCampaigns', analytics.get('campaignCount',0)) }}</div><div class="metric-label">Campaigns</div><div class="metric-help">{{ summary.get('activeCampaigns',0) }} active · {{ summary.get('pendingCampaigns',0) }} pending</div></div>
-  <div class="card"><div class="metric">{{ summary.get('bookingRecords', analytics.get('bookingCount',0)) }}</div><div class="metric-label">Booking records</div><div class="metric-help">Traveller hotel booking activity</div></div>
-</div>
-<div class="grid g2 dashboard-panels">
-  <div class="card">
-    <div class="card-heading"><div><span class="eyebrow">QUICK ACTIONS</span><h3>Continue your work</h3></div></div>
-    <p class="muted">{{ summary.get('draftPackages',0) + summary.get('rejectedPackages',0) }} package(s) can be edited before approval submission.</p>
-    <div class="quick-list">
-      <a href="{{ url_for('operator_fr12.packages') }}"><span class="quick-icon">□</span><span><strong>Manage tourism packages</strong><small>Create, update, delete and prepare packages for approval.</small></span><b>›</b></a>
-      <a href="{{ url_for('operator_fr12.submit_package_page') }}"><span class="quick-icon">↑</span><span><strong>Submit for approval</strong><small>Send a completed package to the Administrator.</small></span><b>›</b></a>
-      <a href="{{ url_for('operator_fr12.campaigns') }}"><span class="quick-icon">◇</span><span><strong>Promotional campaigns</strong><small>Create campaign content for approved packages.</small></span><b>›</b></a>
-      <a href="{{ url_for('operator_fr12.analytics') }}"><span class="quick-icon">▥</span><span><strong>Business analytics</strong><small>Review package, campaign and booking activity.</small></span><b>›</b></a>
-    </div>
-  </div>
-  <div class="card">
-    <span class="eyebrow">ACCOUNT</span><h3>Operator readiness</h3>
-    <div class="detail-row"><span>Role</span><strong>{{ profile.get('role','operator')|title }}</strong></div>
-    <div class="detail-row"><span>Verification</span><span class="status {{ profile.get('verificationStatus','pending') }}">{{ profile.get('verificationStatus','pending') }}</span></div>
-    <div class="detail-row"><span>Business email</span><strong>{{ profile.get('email','-') }}</strong></div>
-    <div class="detail-row"><span>Company</span><strong>{{ profile.get('companyName','Not provided') }}</strong></div>
-    <a class="btn outline full" href="{{ url_for('operator_fr01.profile') }}">Update business profile</a>
-  </div>
-</div>
+{% extends 'portal_base.html' %}{% block title %}Operator Dashboard | TravelMate{% endblock %}{% block content %}
+<div class="page-title"><div><span class="eyebrow">TOURISM OPERATOR</span><h1>Welcome back, {{ profile.get('name','Operator') }}</h1><p>{% if profile.get('companyName') %}{{ profile.get('companyName') }} · {% endif %}Here is what needs your attention today.</p></div><div class="actions"><a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">View packages</a><a class="btn primary" href="{{ url_for('operator_fr12.new_package') }}">Create package</a></div></div>
+<div class="grid g4 operator-stats"><div class="card cream"><div class="metric">{{ summary.get('totalPackages',0) }}</div><div class="metric-label">Total packages</div></div><div class="card"><div class="metric">{{ summary.get('draftPackages',0) }}</div><div class="metric-label">Draft packages</div></div><div class="card"><div class="metric">{{ summary.get('pendingPackages',0) }}</div><div class="metric-label">Under review</div></div><div class="card"><div class="metric">{{ summary.get('approvedPackages',0) }}</div><div class="metric-label">Approved packages</div></div><div class="card"><div class="metric">{{ summary.get('rejectedPackages',0) }}</div><div class="metric-label">Needs changes</div></div><div class="card"><div class="metric">{{ summary.get('activeCampaigns',0) }}</div><div class="metric-label">Active campaigns</div></div><div class="card"><div class="metric">{{ summary.get('pendingCampaigns',0) }}</div><div class="metric-label">Campaigns awaiting review</div></div></div>
+<div class="grid g2 dashboard-panels"><section class="card"><div class="card-heading"><div><span class="eyebrow">NEEDS YOUR ATTENTION</span><h3>Keep work moving</h3></div></div>{% if attention %}<div class="attention-list">{% for item in attention %}<article class="attention-item"><span class="status rejected">{{ item.kind }}</span><strong>{{ item.title }}</strong><p>{{ item.reason }}</p><a class="btn outline" href="{{ item.url }}">Review</a></article>{% endfor %}</div>{% else %}<div class="empty-state compact"><div class="empty-icon">✓</div><strong>Nothing needs your attention</strong><p>Your packages and campaigns are up to date.</p></div>{% endif %}</section><section class="card"><div class="card-heading"><div><span class="eyebrow">QUICK ACTIONS</span><h3>Continue your work</h3></div></div><div class="quick-list"><a href="{{ url_for('operator_fr12.new_package') }}"><span class="quick-icon">□</span><span><strong>Create a package</strong><small>Build a complete itinerary and save it as a draft.</small></span><b>›</b></a><a href="{{ url_for('operator_fr12.packages', status='rejected') }}"><span class="quick-icon">!</span><span><strong>Review changes</strong><small>Address Administrator feedback before resubmitting.</small></span><b>›</b></a><a href="{{ url_for('operator_fr12.campaigns') }}"><span class="quick-icon">◇</span><span><strong>Manage campaigns</strong><small>Promote one of your approved packages.</small></span><b>›</b></a></div></section></div>
+<section class="card dashboard-profile"><div class="card-heading"><div><span class="eyebrow">ACCOUNT</span><h3>Business profile</h3></div><a class="btn outline" href="{{ url_for('operator_fr01.profile') }}">Edit profile</a></div><div class="grid g3"><div class="detail-row"><span>Company</span><strong>{{ profile.get('companyName','Not provided') }}</strong></div><div class="detail-row"><span>Email</span><strong>{{ profile.get('email','Not provided') }}</strong></div><div class="detail-row"><span>Verification</span><span class="status {{ profile.get('verificationStatus','pending') }}">{{ {'pending':'Pending verification','approved':'Verified','verified':'Verified','rejected':'Needs attention'}.get(profile.get('verificationStatus','pending'),'Needs attention') }}</span></div></div></section>
 {% endblock %}

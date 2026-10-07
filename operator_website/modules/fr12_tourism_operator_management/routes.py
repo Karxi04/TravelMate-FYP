@@ -1,7 +1,15 @@
+from datetime import date
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response
 from api_client import call_api
 
 bp = Blueprint("operator_fr12", __name__, template_folder="templates")
+
+
+@bp.before_request
+def verified_operator_gate():
+    if session.get("id_token") and session.get("portal_role") and session.get("portal_role") not in {"admin", "administrator"}:
+        if session.get("verification_status", "pending") not in {"approved", "verified"}:
+            return redirect(url_for("operator_fr01.verification"))
 
 
 def guard():
@@ -10,9 +18,17 @@ def guard():
 
 def _error(response, fallback="Request failed"):
     try:
-        return response.json().get("error", fallback)
+        message = response.json().get("error", fallback)
     except Exception:
-        return fallback
+        message = fallback
+    text = str(message)
+    replacements = {
+        "Tourism Operator account is not verified": "Your operator account is still awaiting administrator approval.",
+        "Promotional campaign requires an approved package": "Choose one of your approved packages before creating a campaign.",
+        "Campaign under administrator review cannot be edited": "This campaign is under review and cannot be edited yet.",
+        "Campaign cannot be deleted in its current state": "This campaign cannot be deleted in its current publishing state.",
+    }
+    return replacements.get(text, text if text and text != fallback else "We couldn't complete that request. Try again.")
 
 
 def _float_field(name, default=0):
@@ -48,6 +64,42 @@ def _optional_int(name):
 def _items(name):
     values = request.form.getlist(name)
     return [item.strip() for value in values for item in value.replace("\r", "").split("\n") if item.strip()]
+
+
+def _campaign_payload():
+    return {
+        "campaignTitle": request.form.get("campaignTitle", "").strip(),
+        "description": request.form.get("description", "").strip(),
+        "packageId": request.form.get("packageId", "").strip(),
+        "startDate": request.form.get("startDate", ""),
+        "endDate": request.form.get("endDate", ""),
+        "promoCode": request.form.get("promoCode", "").strip(),
+        "discountType": request.form.get("discountType", "percentage"),
+        "discountValue": _float_field("discountValue"),
+        "bannerImageUrl": request.form.get("bannerImageUrl", "").strip(),
+        "termsConditions": request.form.get("termsConditions", "").strip(),
+    }
+
+
+def _campaign_state(item):
+    status = str(item.get("reviewStatus", "draft") or "draft").lower()
+    if status == "approved" and item.get("endDate") and str(item["endDate"]) < date.today().isoformat():
+        return "expired"
+    return status
+
+
+def _decorate_campaigns(items, package_items):
+    package_names = {
+        str(package.get("id")): package.get("title") or package.get("packageTitle", "Package")
+        for package in package_items
+    }
+    decorated = []
+    for campaign in items:
+        item = dict(campaign)
+        item["packageTitle"] = package_names.get(str(item.get("packageId", "")), "Package")
+        item["displayStatus"] = _campaign_state(item)
+        decorated.append(item)
+    return decorated
 
 
 def _package_payload():
@@ -125,9 +177,45 @@ def _package_payload():
 def dashboard():
     if not guard():
         return redirect(url_for("operator_fr01.login"))
-    analytics = call_api("GET", "/api/fr12/analytics")
+    package_response = call_api("GET", "/api/fr12/packages")
+    campaign_response = call_api("GET", "/api/fr12/campaigns")
     me = call_api("GET", "/api/fr1/me")
-    return render_template("fr12_tourism_operator_management/dashboard.html", analytics=analytics.json().get("analytics", {}) if analytics.ok else {}, profile=me.json().get("profile", {}) if me.ok else {})
+    packages = package_response.json().get("items", []) if package_response.ok else []
+    campaigns = campaign_response.json().get("items", []) if campaign_response.ok else []
+    summary = {
+        "totalPackages": len(packages),
+        "draftPackages": sum(1 for item in packages if str(item.get("approvalStatus", "draft")).lower() in {"", "draft"}),
+        "pendingPackages": sum(1 for item in packages if str(item.get("approvalStatus", "")).lower() in {"pending", "submitted"}),
+        "approvedPackages": sum(1 for item in packages if str(item.get("approvalStatus", "")).lower() == "approved"),
+        "rejectedPackages": sum(1 for item in packages if str(item.get("approvalStatus", "")).lower() == "rejected"),
+        "totalCampaigns": len(campaigns),
+        "pendingCampaigns": sum(1 for item in campaigns if str(item.get("reviewStatus", "")).lower() in {"pending", "submitted"}),
+        "activeCampaigns": sum(1 for item in campaigns if str(item.get("campaignStatus", "")).lower() in {"active", "approved"}),
+    }
+    attention = []
+    for package in packages:
+        if str(package.get("approvalStatus", "")).lower() == "rejected":
+            attention.append({
+                "kind": "Package needs changes",
+                "title": package.get("title") or package.get("packageTitle", "Package"),
+                "reason": package.get("reviewReason") or package.get("reviewComment") or "Please review the Administrator feedback.",
+                "url": url_for("operator_fr12.edit_package_page", package_id=package.get("id")),
+            })
+    for campaign in campaigns:
+        if str(campaign.get("reviewStatus", "")).lower() == "rejected":
+            attention.append({
+                "kind": "Campaign needs changes",
+                "title": campaign.get("campaignTitle", "Campaign"),
+                "reason": campaign.get("reviewComment") or "Please review the Administrator feedback.",
+                "url": url_for("operator_fr12.edit_campaign_page", campaign_id=campaign.get("id")),
+            })
+    return render_template(
+        "fr12_tourism_operator_management/dashboard.html",
+        analytics={"packages": packages, "campaigns": campaigns},
+        summary=summary,
+        profile=me.json().get("profile", {}) if me.ok else {},
+        attention=attention,
+    )
 
 
 @bp.route("/packages", methods=["GET", "POST"])
@@ -142,15 +230,31 @@ def packages():
         expected = {"pending", "submitted"} if status == "pending" else {status}
         items = [item for item in items if str(item.get("approvalStatus", "draft")).lower() in expected]
     if query:
-        items = [item for item in items if query in str(item.get("title") or item.get("packageTitle") or "").lower()]
+        items = [item for item in items if query in " ".join(str(item.get(field) or "") for field in ("title", "packageTitle", "destination", "destinationName")).lower()]
     if request.method == "POST":
         payload = _package_payload()
         response = call_api("POST", "/api/fr12/packages", json=payload)
         flash("Package created." if response.ok else _error(response), "success" if response.ok else "error")
         if response.ok:
             return redirect(url_for("operator_fr12.packages"))
-        return render_template("fr12_tourism_operator_management/packages.html", items=items, form=payload, status=status, query=query)
-    return render_template("fr12_tourism_operator_management/packages.html", items=items, form={}, status=status, query=query)
+        return render_template("fr12_tourism_operator_management/package_new.html", form=payload)
+    for item in items:
+        item["displayStatus"] = str(item.get("approvalStatus", "draft") or "draft").lower()
+    return render_template("fr12_tourism_operator_management/packages.html", items=items, status=status, query=query)
+
+
+@bp.route("/packages/new", methods=["GET", "POST"])
+def new_package():
+    if not guard():
+        return redirect(url_for("operator_fr01.login"))
+    if request.method == "POST":
+        payload = _package_payload()
+        response = call_api("POST", "/api/fr12/packages", json=payload)
+        flash("Package saved as a draft." if response.ok else _error(response), "success" if response.ok else "error")
+        if response.ok:
+            return redirect(url_for("operator_fr12.packages"))
+        return render_template("fr12_tourism_operator_management/package_new.html", form=payload)
+    return render_template("fr12_tourism_operator_management/package_new.html", form={})
 
 
 @bp.post("/packages/<package_id>/edit")
@@ -198,27 +302,25 @@ def campaigns():
     package_items = package_response.json().get("items", []) if package_response.ok else []
     approved_packages = [p for p in package_items if p.get("approvalStatus") == "approved"]
     if request.method == "POST":
-        payload = {
-            "campaignTitle": request.form.get("campaignTitle", ""),
-            "description": request.form.get("description", ""),
-            "packageId": request.form.get("packageId", ""),
-            "startDate": request.form.get("startDate", ""),
-            "endDate": request.form.get("endDate", ""),
-            "promoCode": request.form.get("promoCode", ""),
-            "discountType": request.form.get("discountType", "percentage"),
-            "discountValue": _float_field("discountValue"),
-            "bannerImageUrl": request.form.get("bannerImageUrl", ""),
-            "termsConditions": request.form.get("termsConditions", ""),
-        }
+        payload = _campaign_payload()
         response = call_api("POST", "/api/fr12/campaigns", json=payload)
         flash("Campaign created." if response.ok else _error(response), "success" if response.ok else "error")
-        return redirect(url_for("operator_fr12.campaigns"))
+        if response.ok:
+            return redirect(url_for("operator_fr12.campaigns"))
+        campaign_response = call_api("GET", "/api/fr12/campaigns")
+        campaigns = campaign_response.json().get("items", []) if campaign_response.ok else []
+        decorated = _decorate_campaigns(campaigns, package_items)
+        return render_template("fr12_tourism_operator_management/campaigns.html", items=decorated, approved_packages=approved_packages, form=payload, status="all", query="")
     response = call_api("GET", "/api/fr12/campaigns")
     campaign_items = response.json().get("items", []) if response.ok else []
-    package_names = {str(p.get("id")): p.get("packageTitle", "Package") for p in package_items}
-    for campaign in campaign_items:
-        campaign["packageTitle"] = package_names.get(str(campaign.get("packageId", "")), "-")
-    return render_template("fr12_tourism_operator_management/campaigns.html", items=campaign_items, approved_packages=approved_packages)
+    decorated = _decorate_campaigns(campaign_items, package_items)
+    status = request.args.get("status", "all").lower()
+    query = request.args.get("q", "").strip().lower()
+    if status != "all":
+        decorated = [item for item in decorated if item.get("displayStatus") == status]
+    if query:
+        decorated = [item for item in decorated if query in " ".join(str(item.get(field) or "") for field in ("campaignTitle", "packageTitle", "description")).lower()]
+    return render_template("fr12_tourism_operator_management/campaigns.html", items=decorated, approved_packages=approved_packages, form={}, status=status, query=query)
 
 
 @bp.post("/campaigns/<campaign_id>/delete")
@@ -317,23 +419,13 @@ def edit_campaign_page(campaign_id):
     package_items = package_response.json().get("items", []) if package_response.ok else []
     approved_packages = [x for x in package_items if x.get("approvalStatus") == "approved"]
     if request.method == "POST":
-        payload = {
-            "campaignTitle": request.form.get("campaignTitle", ""),
-            "description": request.form.get("description", ""),
-            "packageId": request.form.get("packageId", ""),
-            "startDate": request.form.get("startDate", ""),
-            "endDate": request.form.get("endDate", ""),
-            "promoCode": request.form.get("promoCode", ""),
-            "discountType": request.form.get("discountType", "percentage"),
-            "discountValue": _float_field("discountValue"),
-            "bannerImageUrl": request.form.get("bannerImageUrl", ""),
-            "termsConditions": request.form.get("termsConditions", ""),
-        }
+        payload = _campaign_payload()
         response = call_api("PUT", f"/api/fr12/campaigns/{campaign_id}", json=payload)
         flash("Campaign updated." if response.ok else _error(response), "success" if response.ok else "error")
         if response.ok:
             return redirect(url_for("operator_fr12.campaigns"))
-    return render_template("fr12_tourism_operator_management/edit_campaign.html", item=item, approved_packages=approved_packages)
+        item = {**item, **payload}
+    return render_template("fr12_tourism_operator_management/edit_campaign.html", item=item, approved_packages=approved_packages, form=item)
 
 
 @bp.route("/reports/export")

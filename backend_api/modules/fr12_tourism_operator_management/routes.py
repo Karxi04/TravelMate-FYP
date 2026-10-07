@@ -120,7 +120,10 @@ def update_campaign(cid):
     if current.get('reviewStatus')=='pending':return jsonify({'ok':False,'error':'Campaign under administrator review cannot be edited'}),409
     payload=request.get_json(silent=True) or {}
     if not validateCampaignDatesAndContent({**current,**payload}):return jsonify({'ok':False,'error':'Invalid campaign dates or content'}),400
-    payload['updatedAt']=utc_now_iso(); return jsonify({'ok':True,'campaign':updateRecord('promotional_campaigns',cid,payload)})
+    payload['updatedAt']=utc_now_iso()
+    if current.get('reviewStatus') == 'approved':
+        payload.update({'reviewStatus': 'draft', 'campaignStatus': 'draft', 'reviewComment': ''})
+    return jsonify({'ok':True,'campaign':updateRecord('promotional_campaigns',cid,payload)})
 @bp.delete('/campaigns/<cid>')
 @auth_required(['operator'])
 def delete_campaign(cid):

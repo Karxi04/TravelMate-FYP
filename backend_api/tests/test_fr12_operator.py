@@ -233,3 +233,22 @@ def test_legacy_package_remains_readable_with_v2_aliases():
     assert item['destination'] == 'Penang'
     assert item['fullDescription'] == 'Existing package'
     assert item['adultPrice'] == 88
+
+
+def test_approved_campaign_edit_returns_to_review(client, mock_operator_auth):
+    campaign = {
+        'id': 'campaign_v2', 'operatorId': 'test_operator_uid',
+        'campaignTitle': 'Early bird', 'packageId': 'approved_package',
+        'description': 'Save on a local experience.', 'reviewStatus': 'approved',
+        'campaignStatus': 'active', 'startDate': '2026-12-01', 'endDate': '2026-12-31',
+    }
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=campaign), \
+         patch('modules.fr12_tourism_operator_management.routes.updateRecord') as update:
+        update.side_effect = lambda collection, document_id, data: {**campaign, **data}
+        response = client.put('/api/fr12/campaigns/campaign_v2',
+                              headers={'Authorization': 'Bearer valid_test_token'},
+                              json={'description': 'Updated promotion.'})
+    assert response.status_code == 200
+    saved = response.get_json()['campaign']
+    assert saved['reviewStatus'] == 'draft'
+    assert saved['campaignStatus'] == 'draft'
