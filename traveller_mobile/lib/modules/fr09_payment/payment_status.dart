@@ -24,3 +24,13 @@ bool canCancelPayment(Object? raw) {
   final status = canonicalPaymentStatus(raw);
   return status != 'succeeded' && status != 'cancelled';
 }
+
+String paymentStatusLabel(Object? raw) {
+  return switch (canonicalPaymentStatus(raw)) {
+    'succeeded' => 'Payment successful',
+    'failed' || 'requires_payment_method' => 'Payment failed',
+    'cancelled' => 'Payment cancelled',
+    'pending' || 'processing' => 'Checking payment status',
+    _ => 'Payment status unavailable',
+  };
+}

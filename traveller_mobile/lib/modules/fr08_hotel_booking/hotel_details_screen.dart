@@ -16,6 +16,7 @@ class HotelDetailsScreen extends StatelessWidget {
 
   Widget row(String label, dynamic value, {IconData? icon}) {
     final text = (value ?? '').toString();
+    if (text.trim().isEmpty || text == '-') return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -26,7 +27,7 @@ class HotelDetailsScreen extends StatelessWidget {
             const SizedBox(width: 9),
           ],
           SizedBox(width: 110, child: Text(label, style: const TextStyle(color: InkWashColors.mutedInk))),
-          Expanded(child: Text(text.isEmpty ? 'Not provided' : text, style: const TextStyle(fontWeight: FontWeight.w700))),
+          Expanded(child: Text(text, style: const TextStyle(fontWeight: FontWeight.w700))),
         ],
       ),
     );
