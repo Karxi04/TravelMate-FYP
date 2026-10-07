@@ -239,8 +239,22 @@ def test_portal_admin_verification_package_campaign_and_traveller_publication(cl
     assert journey.retrieve("users", OPERATOR)["verificationStatus"] == "approved"
     operator, operator_token, login = portal_bridge(load_portal("operator", monkeypatch), client, OPERATOR)
     assert login.status_code == 302
-    package = {"packageTitle": "Isolated Penang test package", "destinationName": "Penang",
-               "description": "Test fixture only", "price": "100", "durationDays": "1", "maxTravellers": "10"}
+    package = {
+        "title": "Isolated Penang test package", "destination": "Penang",
+        "shortDescription": "A focused local package", "fullDescription": "Test fixture only",
+        "durationDays": "2", "durationNights": "1", "currency": "MYR",
+        "adultPrice": "100", "childPrice": "50", "priceBasis": "per_person",
+        "minimumTravellers": "1", "maximumTravellers": "10",
+        "departureDates": "2026-12-10\n2026-12-17", "departureLocation": "George Town",
+        "itineraryTitle": ["Arrival", "Heritage day"],
+        "itineraryDescription": ["Meet the local guide.", "Explore George Town."],
+        "itineraryActivities": ["Hotel check-in", "Street art\nClan jetty"],
+        "itineraryMeals": ["Dinner", "Breakfast\nLunch"],
+        "highlights": "Local guide\nHeritage trail", "inclusions": "Transport\nGuide",
+        "exclusions": "Flights", "accommodationName": "Demo Heritage Hotel",
+        "transportTypes": "Private van", "cancellationPolicy": "Cancel seven days before departure.",
+        "heroImage": "https://example.test/package.jpg",
+    }
     assert operator.post("/packages", data=package).status_code == 400
     assert journey.retrieve("tourism_packages") == []
     assert operator.post("/packages", data={**package, "csrf_token": operator_token}).status_code == 302
@@ -248,6 +262,20 @@ def test_portal_admin_verification_package_campaign_and_traveller_publication(cl
     assert client.get("/api/public/tourism-packages", headers=AUTH).get_json()["items"] == []
     assert operator.post(f"/packages/{package_id}/submit", data={"csrf_token": operator_token}).status_code == 302
     assert journey.retrieve("tourism_packages", package_id)["approvalStatus"] == "pending"
+    assert admin.get("/admin/packages?status=pending").status_code == 200
+    details = admin.get(f"/admin/packages/{package_id}")
+    assert details.status_code == 200
+    assert b"Day-by-day itinerary" in details.data
+    rejected = admin.post(f"/admin/packages/{package_id}/review", data={
+        "csrf_token": admin_token, "decision": "rejected", "comment": "Clarify the second day meeting point."
+    })
+    assert rejected.status_code == 302
+    assert journey.retrieve("tourism_packages", package_id)["approvalStatus"] == "rejected"
+    assert b"Clarify the second day meeting point" in operator.get("/packages").data
+    package["meetingPoint"] = "Hotel lobby"
+    assert operator.post(f"/packages/{package_id}/edit-page", data={**package, "csrf_token": operator_token}).status_code == 302
+    assert journey.retrieve("tourism_packages", package_id)["approvalStatus"] == "rejected"
+    assert operator.post(f"/packages/{package_id}/submit", data={"csrf_token": operator_token}).status_code == 302
     assert admin.post(f"/admin/packages/{package_id}/review", data={"csrf_token": admin_token, "decision": "approved"}).status_code == 302
     assert journey.retrieve("tourism_packages", package_id)["approvalStatus"] == "approved"
     campaign = {"campaignTitle": "Isolated test campaign", "packageId": package_id,
@@ -258,7 +286,18 @@ def test_portal_admin_verification_package_campaign_and_traveller_publication(cl
     assert journey.retrieve("promotional_campaigns", campaign_id)["reviewStatus"] == "pending"
     assert admin.post(f"/admin/campaigns/{campaign_id}/review", data={"csrf_token": admin_token, "decision": "approved"}).status_code == 302
     assert journey.retrieve("promotional_campaigns", campaign_id)["reviewStatus"] == "approved"
-    assert client.get("/api/public/tourism-packages", headers=AUTH).get_json()["items"][0]["id"] == package_id
+    public_package = client.get("/api/public/tourism-packages", headers=AUTH).get_json()["items"][0]
+    assert public_package["id"] == package_id
+    assert public_package["title"] == package["title"]
+    assert public_package["itineraryDays"][1]["activities"] == ["Street art", "Clan jetty"]
+    assert public_package["departureDates"] == ["2026-12-10", "2026-12-17"]
+    assert public_package["highlights"] == ["Local guide", "Heritage trail"]
+    assert public_package["accommodationName"] == "Demo Heritage Hotel"
+    assert public_package["adultPrice"] == 100
+    assert public_package["operatorName"] == "Demo test account"
+    assert "operatorId" not in public_package
+    assert "approvalStatus" not in public_package
+    assert "reviewedBy" not in public_package
     assert client.get("/api/public/promotional-campaigns", headers=AUTH).get_json()["items"][0]["id"] == campaign_id
 
 

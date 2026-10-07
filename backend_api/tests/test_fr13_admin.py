@@ -46,6 +46,23 @@ def test_admin_review_package(client, mock_admin_auth):
         assert data['package']['approvalStatus'] == 'approved'
         assert data['package']['reviewedBy'] == 'test_admin_uid'
 
+
+def test_admin_rejection_requires_reason_and_completed_review_is_immutable(client, mock_admin_auth):
+    pending = {'id': 'pkg_pending', 'packageTitle': 'Penang Tour', 'approvalStatus': 'pending'}
+    with patch('modules.fr13_administrator_management.routes.retrieveRecord', return_value=pending):
+        missing = client.post('/api/fr13/packages/pkg_pending/review',
+                              headers={'Authorization': 'Bearer valid_test_token'},
+                              json={'decision': 'rejected', 'comment': ''})
+    assert missing.status_code == 400
+    assert missing.get_json()['error'] == 'A rejection reason is required'
+
+    approved = {**pending, 'approvalStatus': 'approved'}
+    with patch('modules.fr13_administrator_management.routes.retrieveRecord', return_value=approved):
+        duplicate = client.post('/api/fr13/packages/pkg_pending/review',
+                                headers={'Authorization': 'Bearer valid_test_token'},
+                                json={'decision': 'rejected', 'comment': 'Changed mind'})
+    assert duplicate.status_code == 409
+
 def test_admin_moderate_feedback(client, mock_admin_auth):
     sample_fb = {
         'id': 'fb_spam_1',

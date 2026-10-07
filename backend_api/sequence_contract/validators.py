@@ -172,25 +172,13 @@ def validateQuestion(question):
 
 
 def validatePackageData(data):
-    if not bool(str(data.get('packageTitle','')).strip()):
-        return False
-    if not _non_negative_number(data.get('price', 0)):
-        return False
-    if not _positive_int(data.get('durationDays', 1)):
-        return False
-    if not _positive_int(data.get('maxTravellers', 1)):
-        return False
-    valid_from, valid_until = data.get('validFrom'), data.get('validUntil')
-    if valid_from or valid_until:
-        start = _parse_iso_date(valid_from)
-        end = _parse_iso_date(valid_until)
-        return bool(start and end and start <= end)
-    return True
+    from services.package_service import package_validation_error
+    return package_validation_error(data) is None
 
 
 def validatePackageCompleteness(data):
-    required = ['packageTitle','description','price']
-    return all(data.get(x) not in (None,'') for x in required)
+    from services.package_service import package_submission_error
+    return package_submission_error(data) is None
 
 
 def validateCampaignDatesAndContent(data):

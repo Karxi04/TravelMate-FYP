@@ -1116,7 +1116,8 @@ def compareSelectedHotels(items):
 # ---------------------------------------------------------------------------
 
 def createPackage(data, operatorId):
-    return {**data, 'operatorId': operatorId, 'approvalStatus': 'draft', 'availabilityStatus': data.get('availabilityStatus', 'available'), 'createdAt': utc_now_iso(), 'updatedAt': utc_now_iso()}
+    from services.package_service import normalise_package
+    return {**normalise_package(data), 'operatorId': operatorId, 'approvalStatus': 'draft', 'createdAt': utc_now_iso(), 'updatedAt': utc_now_iso()}
 
 
 def submitForApproval(packageData):

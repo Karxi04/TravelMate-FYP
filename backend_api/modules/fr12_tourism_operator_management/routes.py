@@ -4,11 +4,7 @@ from flask import Blueprint, request, jsonify, g
 from auth_utils import auth_required
 from utils import utc_now_iso
 
-from sequence_contract.validators import (
-    validatePackageData,
-    validatePackageCompleteness,
-    validateCampaignDatesAndContent
-)
+from sequence_contract.validators import validateCampaignDatesAndContent
 
 from sequence_contract.firebase_firestore import (
     retrieveRecord,
@@ -31,6 +27,12 @@ from firebase_service import get_db
 from flask import send_file
 from .analytics_service import generate_business_analytics
 from services.report_service import export_operator_report
+from services.package_service import (
+    normalise_package,
+    package_for_read,
+    package_submission_error,
+    package_validation_error,
+)
 
 bp=Blueprint('fr12_operator',__name__,url_prefix='/api/fr12')
 
@@ -42,40 +44,58 @@ def packages():
     items = retrieveRecord('tourism_packages', filters=[('operatorId', '==', g.uid)])
     if not items and g.role == 'admin':
         items = retrieveRecord('tourism_packages')
-    return jsonify({'ok': True, 'items': items})
+    return jsonify({'ok': True, 'items': [package_for_read(item) for item in items]})
 @bp.post('/packages')
 @auth_required(['operator'])
 def create_package_route():
     payload=request.get_json(silent=True) or {}
-    if not validatePackageData(payload):return jsonify({'ok':False,'error':'Invalid package data'}),400
+    error=package_validation_error(payload)
+    if error:return jsonify({'ok':False,'error':error}),400
     profile=retrieveRecord('users',g.uid) or {}
-    payload['operatorName']=profile.get('companyName') or profile.get('businessName') or profile.get('name') or 'TravelMate Tourism Operator'
-    payload['operatorEmail']=profile.get('businessEmail') or profile.get('email') or ''
-    payload['operatorPhone']=profile.get('businessContact') or profile.get('phoneNo') or profile.get('phone') or ''
-    result=storeRecord('tourism_packages',createPackage(payload,g.uid)); return jsonify({'ok':True,'id':result['id'],'package':result}),201
+    package=normalise_package(payload)
+    package.update({
+        'operatorName':profile.get('companyName') or profile.get('businessName') or profile.get('name') or 'TravelMate Tourism Operator',
+        'operatorEmail':profile.get('businessEmail') or profile.get('email') or '',
+        'operatorPhone':profile.get('businessContact') or profile.get('phoneNo') or profile.get('phone') or '',
+    })
+    result=storeRecord('tourism_packages',createPackage(package,g.uid)); return jsonify({'ok':True,'id':result['id'],'package':package_for_read(result)}),201
 @bp.put('/packages/<pid>')
 @auth_required(['operator'])
 def update_package(pid):
     current=_own('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
-    if current.get('approvalStatus')=='pending':return jsonify({'ok':False,'error':'Package under administrator review cannot be edited'}),409
+    if current.get('approvalStatus') in {'pending','submitted','archived'}:return jsonify({'ok':False,'error':'Package cannot be edited in its current state'}),409
     payload=request.get_json(silent=True) or {}
-    if not validatePackageData({**current, **payload}):return jsonify({'ok':False,'error':'Invalid package data'}),400
-    payload['updatedAt']=utc_now_iso(); return jsonify({'ok':True,'package':updateRecord('tourism_packages',pid,payload)})
+    merged={**current, **payload}; error=package_validation_error(merged)
+    if error:return jsonify({'ok':False,'error':error}),400
+    updates=normalise_package(payload,current)
+    if current.get('approvalStatus')=='approved':
+        updates.update({'approvalStatus':'draft','reviewReason':'','reviewComment':'','reviewedAt':'','reviewedBy':'','reviewedByName':'','submittedAt':''})
+    updates['updatedAt']=utc_now_iso(); return jsonify({'ok':True,'package':package_for_read(updateRecord('tourism_packages',pid,updates))})
 @bp.delete('/packages/<pid>')
 @auth_required(['operator'])
 def delete_package(pid):
     current=_own('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
-    if current.get('approvalStatus')=='pending':return jsonify({'ok':False,'error':'Package under administrator review cannot be deleted'}),409
+    if current.get('approvalStatus') in {'pending','submitted','approved'}:return jsonify({'ok':False,'error':'Submitted or approved packages must be archived instead'}),409
     deleteRecord('tourism_packages',pid); return jsonify({'ok':True})
 @bp.post('/packages/<pid>/submit')
 @auth_required(['operator'])
 def submit_package(pid):
     current=_own('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
-    if not validatePackageCompleteness(current):return jsonify({'ok':False,'error':'Package is incomplete'}),400
+    if current.get('approvalStatus') not in {'draft','rejected'}:return jsonify({'ok':False,'error':'Only draft or rejected packages can be submitted'}),409
+    error=package_submission_error(current)
+    if error:return jsonify({'ok':False,'error':error}),400
     return jsonify({'ok':True,'package':updateRecord('tourism_packages',pid,submitForApproval(current)),'status':'pending'})
+
+@bp.post('/packages/<pid>/archive')
+@auth_required(['operator'])
+def archive_package(pid):
+    current=_own('tourism_packages',pid)
+    if not current:return jsonify({'ok':False,'error':'Package not found'}),404
+    if current.get('approvalStatus') in {'pending','submitted'}:return jsonify({'ok':False,'error':'A package under review cannot be archived'}),409
+    return jsonify({'ok':True,'package':updateRecord('tourism_packages',pid,{'approvalStatus':'archived','updatedAt':utc_now_iso()})})
 @bp.get('/campaigns')
 @auth_required(['operator'])
 def campaigns():return jsonify({'ok':True,'items':retrieveRecord('promotional_campaigns',filters=[('operatorId','==',g.uid)])})

@@ -1,25 +1,6 @@
 {% extends 'portal_base.html' %}{% block title %}Package Review | TravelMate{% endblock %}{% block content %}
-<div class="page-title"><div><h1>Review Submitted Packages</h1><p>Check the complete package information before deciding whether it can be published to Travellers.</p></div></div>
-<div class="grid g2">
-{% for x in items %}
-<div class="card">
-  <div class="actions" style="justify-content:space-between"><span class="status pending">Pending Approval</span><strong>RM {{x.get('price',0)}}</strong></div>
-  <h3 style="margin-top:12px">{{x.get('packageTitle','Package')}}</h3>
-  <p><strong>Destination:</strong> {{x.get('destinationName','-')}}</p>
-  <p><strong>Duration:</strong> {{x.get('durationDays',1)}} day(s) &nbsp; <strong>Max travellers:</strong> {{x.get('maxTravellers','-')}}</p>
-  <p><strong>Validity:</strong> {{x.get('validFrom','-')}} → {{x.get('validUntil','-')}}</p>
-  <p><strong>Meeting point:</strong> {{x.get('meetingPoint','-')}}</p>
-  <p>{{x.get('description','')}}</p>
-  {% if x.get('highlights') %}<p><strong>Highlights</strong><br>{{x.get('highlights')}}</p>{% endif %}
-  {% if x.get('inclusions') %}<p><strong>Included</strong><br>{{x.get('inclusions')}}</p>{% endif %}
-  {% if x.get('exclusions') %}<p><strong>Not included</strong><br>{{x.get('exclusions')}}</p>{% endif %}
-  <form method="post" action="{{ url_for('admin_fr13.review_package', package_id=x.id) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="field"><label>Review comment / rejection reason</label><textarea class="input" name="comment" placeholder="Add a clear note for the Tourism Operator"></textarea></div>
-    <div class="actions"><button class="btn primary" name="decision" value="approved">Approve & Publish</button><button class="btn danger" name="decision" value="rejected">Reject</button></div>
-  </form>
-</div>
-{% else %}
-<div class="card cream">No tourism package currently requires review.</div>
-{% endfor %}
-</div>
-{% endblock %}
+<div class="page-title"><div><span class="eyebrow">PACKAGE MODERATION</span><h1>Tourism Package Queue</h1><p>Submitted packages are prioritised for review.</p></div></div>
+<form class="toolbar card" method="get"><div class="actions"><input class="input search-input" name="q" value="{{query}}" placeholder="Search title, destination or operator"><select class="input filter-input" name="status"><option value="all">All statuses</option>{% for value,label in [('pending','Under review'),('approved','Approved'),('rejected','Needs changes'),('draft','Draft'),('archived','Archived')] %}<option value="{{value}}" {% if status==value %}selected{% endif %}>{{label}}</option>{% endfor %}</select><button class="btn primary">Apply filters</button></div></form>
+<div class="table-wrap"><table><thead><tr><th>Package</th><th>Operator</th><th>Destination</th><th>Submitted / reviewed</th><th>Price</th><th>Status</th><th></th></tr></thead><tbody>
+{% for x in items %}{% set state=x.get('approvalStatus','draft') %}<tr><td><strong>{{x.get('title',x.get('packageTitle','Package'))}}</strong><br><small>{{x.get('durationDays',1)}} day{% if x.get('durationDays',1)!=1 %}s{% endif %}</small></td><td>{{x.get('operatorName','Tourism Operator')}}</td><td>{{x.get('destination',x.get('destinationName',''))}}</td><td>{% if x.get('submittedAt') %}Submitted {{x.get('submittedAt')[:10]}}{% endif %}{% if x.get('reviewedAt') %}<br>Reviewed {{x.get('reviewedAt')[:10]}}{% endif %}{% if not x.get('submittedAt') and not x.get('reviewedAt') %}—{% endif %}</td><td>{{x.get('currency','MYR')}} {{'%.2f'|format(x.get('promotionalPrice') or x.get('adultPrice') or x.get('price') or 0)}}</td><td><span class="status {{state}}">{{ {'pending':'Under review','submitted':'Under review','rejected':'Needs changes'}.get(state,state) }}</span></td><td><a class="btn outline" href="{{url_for('admin_fr13.package_details',package_id=x.id)}}">Review details</a></td></tr>{% else %}<tr><td colspan="7">No packages match this view.</td></tr>{% endfor %}
+</tbody></table></div>{% endblock %}

@@ -29,6 +29,98 @@ def _int_field(name, default=1):
         return default
 
 
+def _optional_float(name):
+    value = request.form.get(name, "").strip()
+    try:
+        return float(value) if value else ""
+    except ValueError:
+        return value
+
+
+def _optional_int(name):
+    value = request.form.get(name, "").strip()
+    try:
+        return int(value) if value else ""
+    except ValueError:
+        return value
+
+
+def _items(name):
+    values = request.form.getlist(name)
+    return [item.strip() for value in values for item in value.replace("\r", "").split("\n") if item.strip()]
+
+
+def _package_payload():
+    legacy = bool(request.form.get("packageTitle")) and not request.form.get("title")
+    titles = request.form.getlist("itineraryTitle")
+    descriptions = request.form.getlist("itineraryDescription")
+    activities = request.form.getlist("itineraryActivities")
+    meals = request.form.getlist("itineraryMeals")
+    accommodations = request.form.getlist("itineraryAccommodation")
+    transport_notes = request.form.getlist("itineraryTransportNotes")
+    itinerary = []
+    for index in range(max(map(len, [titles, descriptions, activities, meals, accommodations, transport_notes]), default=0)):
+        value = lambda items: items[index].strip() if index < len(items) else ""
+        day = {
+            "dayNumber": index + 1,
+            "title": value(titles),
+            "description": value(descriptions),
+            "activities": [x for x in value(activities).replace("\r", "").split("\n") if x.strip()],
+            "meals": [x for x in value(meals).replace("\r", "").split("\n") if x.strip()],
+            "accommodation": value(accommodations),
+            "transportNotes": value(transport_notes),
+        }
+        if any(v for key, v in day.items() if key != "dayNumber"):
+            itinerary.append(day)
+    return {
+        "schemaVersion": 1 if legacy else 2,
+        "title": (request.form.get("title") or request.form.get("packageTitle") or "").strip(),
+        "shortDescription": request.form.get("shortDescription", "").strip(),
+        "fullDescription": (request.form.get("fullDescription") or request.form.get("description") or "").strip(),
+        "destination": (request.form.get("destination") or request.form.get("destinationName") or "").strip(),
+        "destinationArea": request.form.get("destinationArea", "").strip(),
+        "category": request.form.get("category", "").strip(),
+        "heroImage": request.form.get("heroImage", "").strip(),
+        "galleryImages": _items("galleryImages"),
+        "durationDays": _optional_int("durationDays"),
+        "durationNights": _optional_int("durationNights"),
+        "currency": request.form.get("currency", "MYR").strip().upper(),
+        "adultPrice": _optional_float("adultPrice") if request.form.get("adultPrice") is not None else _optional_float("price"),
+        "childPrice": _optional_float("childPrice"),
+        "originalPrice": _optional_float("originalPrice"),
+        "promotionalPrice": _optional_float("promotionalPrice"),
+        "promotionStart": request.form.get("promotionStart", ""),
+        "promotionEnd": request.form.get("promotionEnd", ""),
+        "priceBasis": request.form.get("priceBasis", "per_person"),
+        "taxIncluded": request.form.get("taxIncluded") == "on",
+        "taxNotes": request.form.get("taxNotes", "").strip(),
+        "minimumTravellers": _optional_int("minimumTravellers"),
+        "maximumTravellers": _optional_int("maximumTravellers") if request.form.get("maximumTravellers") is not None else _optional_int("maxTravellers"),
+        "validFrom": request.form.get("validFrom", ""),
+        "validUntil": request.form.get("validUntil", ""),
+        "departureDates": _items("departureDates"),
+        "departureLocation": request.form.get("departureLocation", "").strip(),
+        "meetingPoint": request.form.get("meetingPoint", "").strip(),
+        "departureNotes": request.form.get("departureNotes", "").strip(),
+        "itineraryDays": itinerary,
+        "highlights": _items("highlights"),
+        "inclusions": _items("inclusions"),
+        "exclusions": _items("exclusions"),
+        "accommodationName": request.form.get("accommodationName", "").strip(),
+        "accommodationCategory": request.form.get("accommodationCategory", "").strip(),
+        "roomType": request.form.get("roomType", "").strip(),
+        "accommodationNotes": request.form.get("accommodationNotes", "").strip(),
+        "transportTypes": _items("transportTypes"),
+        "transportNotes": request.form.get("transportNotes", "").strip(),
+        "cancellationPolicy": request.form.get("cancellationPolicy", "").strip(),
+        "refundPolicy": request.form.get("refundPolicy", "").strip(),
+        "bookingTerms": request.form.get("bookingTerms", "").strip(),
+        "importantNotes": request.form.get("importantNotes", "").strip(),
+        "whatToBring": _items("whatToBring"),
+        "availabilityStatus": request.form.get("availabilityStatus", "available"),
+    }
+
+
 @bp.route("/dashboard")
 def dashboard():
     if not guard():
@@ -42,50 +134,30 @@ def dashboard():
 def packages():
     if not guard():
         return redirect(url_for("operator_fr01.login"))
+    listing = call_api("GET", "/api/fr12/packages")
+    items = listing.json().get("items", []) if listing.ok else []
+    status = request.args.get("status", "all").lower()
+    query = request.args.get("q", "").strip().lower()
+    if status != "all":
+        expected = {"pending", "submitted"} if status == "pending" else {status}
+        items = [item for item in items if str(item.get("approvalStatus", "draft")).lower() in expected]
+    if query:
+        items = [item for item in items if query in str(item.get("title") or item.get("packageTitle") or "").lower()]
     if request.method == "POST":
-        payload = {
-            "packageTitle": request.form.get("packageTitle", ""),
-            "destinationName": request.form.get("destinationName", ""),
-            "description": request.form.get("description", ""),
-            "price": _float_field("price"),
-            "availabilityStatus": request.form.get("availabilityStatus", "available"),
-            "durationDays": _int_field("durationDays"),
-            "maxTravellers": _int_field("maxTravellers"),
-            "validFrom": request.form.get("validFrom", ""),
-            "validUntil": request.form.get("validUntil", ""),
-            "meetingPoint": request.form.get("meetingPoint", ""),
-            "imageUrl": request.form.get("imageUrl", ""),
-            "highlights": request.form.get("highlights", ""),
-            "inclusions": request.form.get("inclusions", ""),
-            "exclusions": request.form.get("exclusions", ""),
-        }
+        payload = _package_payload()
         response = call_api("POST", "/api/fr12/packages", json=payload)
         flash("Package created." if response.ok else _error(response), "success" if response.ok else "error")
-        return redirect(url_for("operator_fr12.packages"))
-    response = call_api("GET", "/api/fr12/packages")
-    return render_template("fr12_tourism_operator_management/packages.html", items=response.json().get("items", []) if response.ok else [])
+        if response.ok:
+            return redirect(url_for("operator_fr12.packages"))
+        return render_template("fr12_tourism_operator_management/packages.html", items=items, form=payload, status=status, query=query)
+    return render_template("fr12_tourism_operator_management/packages.html", items=items, form={}, status=status, query=query)
 
 
 @bp.post("/packages/<package_id>/edit")
 def edit_package(package_id):
     if not guard():
         return redirect(url_for("operator_fr01.login"))
-    payload = {
-        "packageTitle": request.form.get("packageTitle", ""),
-        "destinationName": request.form.get("destinationName", ""),
-        "description": request.form.get("description", ""),
-        "price": _float_field("price"),
-        "availabilityStatus": request.form.get("availabilityStatus", "available"),
-        "durationDays": _int_field("durationDays"),
-        "maxTravellers": _int_field("maxTravellers"),
-        "validFrom": request.form.get("validFrom", ""),
-        "validUntil": request.form.get("validUntil", ""),
-        "meetingPoint": request.form.get("meetingPoint", ""),
-        "imageUrl": request.form.get("imageUrl", ""),
-        "highlights": request.form.get("highlights", ""),
-        "inclusions": request.form.get("inclusions", ""),
-        "exclusions": request.form.get("exclusions", ""),
-    }
+    payload = _package_payload()
     response = call_api("PUT", f"/api/fr12/packages/{package_id}", json=payload)
     flash("Package updated." if response.ok else _error(response), "success" if response.ok else "error")
     return redirect(url_for("operator_fr12.packages"))
@@ -106,6 +178,15 @@ def submit_package(package_id):
         return redirect(url_for("operator_fr01.login"))
     response = call_api("POST", f"/api/fr12/packages/{package_id}/submit")
     flash("Package submitted for approval." if response.ok else _error(response), "success" if response.ok else "error")
+    return redirect(url_for("operator_fr12.packages"))
+
+
+@bp.post("/packages/<package_id>/archive")
+def archive_package(package_id):
+    if not guard():
+        return redirect(url_for("operator_fr01.login"))
+    response = call_api("POST", f"/api/fr12/packages/{package_id}/archive")
+    flash("Package archived." if response.ok else _error(response), "success" if response.ok else "error")
     return redirect(url_for("operator_fr12.packages"))
 
 
@@ -213,27 +294,13 @@ def edit_package_page(package_id):
         flash("Package not found.", "error")
         return redirect(url_for("operator_fr12.packages"))
     if request.method == "POST":
-        payload = {
-            "packageTitle": request.form.get("packageTitle", ""),
-            "destinationName": request.form.get("destinationName", ""),
-            "description": request.form.get("description", ""),
-            "price": _float_field("price"),
-            "availabilityStatus": request.form.get("availabilityStatus", "available"),
-            "durationDays": _int_field("durationDays"),
-            "maxTravellers": _int_field("maxTravellers"),
-            "validFrom": request.form.get("validFrom", ""),
-            "validUntil": request.form.get("validUntil", ""),
-            "meetingPoint": request.form.get("meetingPoint", ""),
-            "imageUrl": request.form.get("imageUrl", ""),
-            "highlights": request.form.get("highlights", ""),
-            "inclusions": request.form.get("inclusions", ""),
-            "exclusions": request.form.get("exclusions", ""),
-        }
+        payload = _package_payload()
         response = call_api("PUT", f"/api/fr12/packages/{package_id}", json=payload)
         flash("Package updated." if response.ok else _error(response), "success" if response.ok else "error")
         if response.ok:
             return redirect(url_for("operator_fr12.packages"))
-    return render_template("fr12_tourism_operator_management/edit_package.html", item=item)
+        item = {**item, **payload}
+    return render_template("fr12_tourism_operator_management/edit_package.html", item=item, form=item)
 
 
 @bp.route("/campaigns/<campaign_id>/edit-page", methods=["GET", "POST"])
