@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
@@ -43,7 +44,12 @@ class _LoginScreenState extends State<LoginScreen> {
         await auth.loginTraveller(email.text, password.text);
       }
     } catch (e) {
-      if (mounted) showError(context, e);
+      if (mounted) {
+        showError(
+          context,
+          isBackendConnectionFailure(e) ? backendConnectionMessage : e,
+        );
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -114,7 +120,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          registerMode ? 'Create traveller account' : 'Welcome back',
+                          registerMode
+                              ? 'Create traveller account'
+                              : 'Welcome back',
                           style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w900,
@@ -178,7 +186,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         TextButton(
                           onPressed: busy
                               ? null
-                              : () => setState(() => registerMode = !registerMode),
+                              : () =>
+                                  setState(() => registerMode = !registerMode),
                           child: Text(
                             registerMode
                                 ? 'Already have an account? Sign in'

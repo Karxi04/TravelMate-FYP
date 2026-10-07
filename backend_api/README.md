@@ -8,6 +8,14 @@ All three frontends use this backend:
 
 The backend verifies Firebase ID tokens and uses the Firebase Admin SDK to read/write Firestore.
 
+For current account prerequisites, portal/mobile startup, safe release builds,
+and the integrated FYP demonstration, use `../docs/FINAL_DEMO_READINESS.md`.
+Docker builds require the repository-root context:
+`docker build -f backend_api/Dockerfile -t travelmate-backend .`.
+The root `.dockerignore` excludes private credentials and environment files;
+provide Firebase/provider credentials at runtime. Health confirms process
+startup, not live Firebase/provider readiness.
+
 ## Run
 
 ```powershell

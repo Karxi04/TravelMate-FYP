@@ -2,6 +2,7 @@ import pytest
 from contextlib import contextmanager
 from unittest.mock import patch, MagicMock
 from modules.fr12_tourism_operator_management.analytics_service import generate_business_analytics
+from services.package_service import package_for_read
 
 
 @contextmanager
@@ -170,3 +171,84 @@ def test_operator_campaign_requires_approved_package(client, mock_operator_auth)
         )
         assert res.status_code == 409
         assert 'requires an approved package' in res.get_json()['error']
+
+
+def test_package_v2_validation_rejects_bad_itinerary_and_promotion(client, mock_operator_auth):
+    base = {
+        'schemaVersion': 2, 'title': 'Penang Escape', 'destination': 'Penang',
+        'fullDescription': 'A complete local package.', 'durationDays': 2,
+        'adultPrice': 100, 'currency': 'MYR',
+    }
+    bad_day = client.post('/api/fr12/packages', headers={'Authorization': 'Bearer valid_test_token'},
+                          json={**base, 'itineraryDays': [{'title': '', 'description': 'Arrival'}]})
+    assert bad_day.status_code == 400
+    assert bad_day.get_json()['error'] == 'Each itinerary day needs a title and description.'
+    bad_price = client.post('/api/fr12/packages', headers={'Authorization': 'Bearer valid_test_token'},
+                            json={**base, 'originalPrice': 80, 'promotionalPrice': 90})
+    assert bad_price.status_code == 400
+    assert 'cannot exceed' in bad_price.get_json()['error']
+
+
+def test_package_v2_ownership_approved_edit_and_archive(client, mock_operator_auth):
+    approved = {
+        'id': 'pkg_v2', 'operatorId': 'test_operator_uid', 'approvalStatus': 'approved',
+        'schemaVersion': 2, 'title': 'Penang Escape', 'destination': 'Penang',
+        'fullDescription': 'A complete local package.', 'durationDays': 2,
+        'adultPrice': 100, 'currency': 'MYR',
+        'itineraryDays': [{'title': 'Arrival', 'description': 'Meet the guide.'}],
+    }
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=approved), \
+         patch('modules.fr12_tourism_operator_management.routes.updateRecord') as update:
+        update.side_effect = lambda collection, document_id, data: {**approved, **data}
+        edited = client.put('/api/fr12/packages/pkg_v2', headers={'Authorization': 'Bearer valid_test_token'},
+                            json={'adultPrice': 120})
+        assert edited.status_code == 200
+        assert edited.get_json()['package']['approvalStatus'] == 'draft'
+        archived = client.post('/api/fr12/packages/pkg_v2/archive',
+                               headers={'Authorization': 'Bearer valid_test_token'})
+        assert archived.status_code == 200
+        assert archived.get_json()['package']['approvalStatus'] == 'archived'
+
+    other = {**approved, 'operatorId': 'another_operator'}
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=other):
+        denied = client.put('/api/fr12/packages/pkg_v2',
+                            headers={'Authorization': 'Bearer valid_test_token'}, json={'adultPrice': 120})
+    assert denied.status_code == 404
+
+    draft = {**approved, 'approvalStatus': 'draft'}
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=draft), \
+         patch('modules.fr12_tourism_operator_management.routes.deleteRecord') as delete:
+        removed = client.delete('/api/fr12/packages/pkg_v2',
+                                headers={'Authorization': 'Bearer valid_test_token'})
+    assert removed.status_code == 200
+    delete.assert_called_once_with('tourism_packages', 'pkg_v2')
+
+
+def test_legacy_package_remains_readable_with_v2_aliases():
+    item = package_for_read({
+        'id': 'legacy', 'packageTitle': 'Legacy Tour', 'destinationName': 'Penang',
+        'description': 'Existing package', 'price': 88, 'durationDays': 1,
+    })
+    assert item['title'] == 'Legacy Tour'
+    assert item['destination'] == 'Penang'
+    assert item['fullDescription'] == 'Existing package'
+    assert item['adultPrice'] == 88
+
+
+def test_approved_campaign_edit_returns_to_review(client, mock_operator_auth):
+    campaign = {
+        'id': 'campaign_v2', 'operatorId': 'test_operator_uid',
+        'campaignTitle': 'Early bird', 'packageId': 'approved_package',
+        'description': 'Save on a local experience.', 'reviewStatus': 'approved',
+        'campaignStatus': 'active', 'startDate': '2026-12-01', 'endDate': '2026-12-31',
+    }
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=campaign), \
+         patch('modules.fr12_tourism_operator_management.routes.updateRecord') as update:
+        update.side_effect = lambda collection, document_id, data: {**campaign, **data}
+        response = client.put('/api/fr12/campaigns/campaign_v2',
+                              headers={'Authorization': 'Bearer valid_test_token'},
+                              json={'description': 'Updated promotion.'})
+    assert response.status_code == 200
+    saved = response.get_json()['campaign']
+    assert saved['reviewStatus'] == 'draft'
+    assert saved['campaignStatus'] == 'draft'

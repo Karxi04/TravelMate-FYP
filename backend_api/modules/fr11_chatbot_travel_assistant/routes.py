@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, g
 from auth_utils import auth_required
 from utils import utc_now_iso
-from services.gemini_service import generateChatbotResponse, generateFollowUpResponse, is_gemini_configured
+from services.gemini_service import generateChatbotResponse, generateFollowUpResponse
 from sequence_contract.validators import validateQuestion
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, deleteRecord, updateRecord
 from sequence_contract.domain_functions import createItinerary, calculateBudget
@@ -158,11 +158,14 @@ def chat():
     context = system_context + ('\nRecent conversation:\n' + recent_context if recent_context else '')
 
     try:
-        reply = generateFollowUpResponse(message, context) if history else generateChatbotResponse(message, context)
+        response = (
+            generateFollowUpResponse(message, context, with_source=True)
+            if history else generateChatbotResponse(message, context, with_source=True)
+        )
     except Exception as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 502
 
-    source = 'gemini' if is_gemini_configured() else 'travelmate-assistant'
+    reply, source = response['reply'], response['source']
     item = {
         'id': 'chat_' + utc_now_iso().replace(':', '').replace('-', '').replace('.', ''),
         'travellerId': g.uid,

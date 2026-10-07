@@ -4,7 +4,10 @@ This is the required setup before the real app/websites can save data.
 
 ## 1. Create Firebase project
 
-In Firebase Console create a project named, for example, `travelmate-fyp`.
+This checkout uses `travelmate2-30a8a`. Use that existing project for the current
+demo. If you deliberately change projects, Flutter options, Android Firebase
+registration, backend credentials and both portal Web API keys must change
+together; do not create a replacement project merely to run this checkout.
 
 ## 2. Enable Authentication
 
@@ -54,14 +57,15 @@ Install Firebase CLI, sign in, then install FlutterFire CLI.
 From `traveller_mobile`:
 
 ```powershell
-flutter create .
 flutter pub get
 firebase login
 dart pub global activate flutterfire_cli
 flutterfire configure
 ```
 
-Choose your `travelmate-fyp` Firebase project and Android platform.
+The existing checkout is already configured. Run `flutterfire configure` only
+when intentionally changing that configuration, selecting the same Firebase
+project as the backend/portals and preserving the registered application ID.
 
 `flutterfire configure` generates:
 
@@ -108,16 +112,24 @@ After backend dependencies are installed and `.env` is configured:
 ```powershell
 cd backend_api
 .venv\Scripts\activate
-python scripts/create_admin.py --email admin@travelmate.test --password "ChangeMe123!" --name "TravelMate Administrator"
+python scripts/create_admin.py --email $env:TM_DEMO_ADMIN_EMAIL --password $env:TM_DEMO_ADMIN_PASSWORD --name "TravelMate Administrator"
 ```
 
-This creates the Firebase Authentication account and its Firestore `users/{uid}` document with role `admin`.
+Supply your own email/password privately in those temporary environment
+variables. Do not use or commit shared demo passwords. This is an intentional
+live Firebase provisioning action, not part of the automated test suite.
+It creates the Firebase Authentication account and its Firestore `users/{uid}`
+document with role `admin`. An operator also needs active status and an
+administrator-approved `verificationStatus` before using its portal.
 
 ## 8. Firestore rules
 
 The architecture routes application database traffic through the backend. Deploy the supplied rules from `firebase/firestore.rules` if you use Firebase CLI.
 
-They intentionally deny direct client database access. Firebase Authentication still works normally.
+The rules permit authenticated reads of approved shared packages/campaigns
+and limited validated traveller review access; other client data access is
+denied and goes through the trusted backend. Preserve these allowlists.
+Firebase Authentication still works normally.
 
 ## 9. Verify connection
 

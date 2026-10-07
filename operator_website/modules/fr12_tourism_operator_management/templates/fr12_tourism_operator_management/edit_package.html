@@ -1,16 +1,5 @@
-{% extends 'portal_base.html' %}{% block content %}
-<div class="page-title"><div><h1>Edit Tourism Package</h1><p>Update package information before submitting it for Administrator approval.</p></div></div>
-<form class="card cream" method="post" style="max-width:920px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="field"><label>Package title</label><input class="input" name="packageTitle" value="{{ item.get('packageTitle','') }}" required></div>
-<div class="field"><label>Destination</label><input class="input" name="destinationName" value="{{ item.get('destinationName','') }}" required></div>
-<div class="grid g2"><div class="field"><label>Price (RM)</label><input class="input" name="price" type="number" step="0.01" min="0" value="{{ item.get('price',0) }}"></div><div class="field"><label>Duration (days)</label><input class="input" name="durationDays" type="number" min="1" value="{{ item.get('durationDays',1) }}"></div></div>
-<div class="grid g2"><div class="field"><label>Maximum travellers</label><input class="input" name="maxTravellers" type="number" min="1" value="{{ item.get('maxTravellers',2) }}"></div><div class="field"><label>Availability</label><select class="input" name="availabilityStatus"><option value="available" {% if item.get('availabilityStatus')=='available' %}selected{% endif %}>Available</option><option value="unavailable" {% if item.get('availabilityStatus')=='unavailable' %}selected{% endif %}>Unavailable</option></select></div></div>
-<div class="grid g2"><div class="field"><label>Valid from</label><input class="input" type="date" name="validFrom" value="{{ item.get('validFrom','') }}"></div><div class="field"><label>Valid until</label><input class="input" type="date" name="validUntil" value="{{ item.get('validUntil','') }}"></div></div>
-<div class="field"><label>Meeting point</label><input class="input" name="meetingPoint" value="{{ item.get('meetingPoint','') }}"></div>
-<div class="field"><label>Package image URL</label><input class="input" name="imageUrl" type="url" value="{{ item.get('imageUrl','') }}"></div>
-<div class="field"><label>Description</label><textarea class="input" name="description" required>{{ item.get('description','') }}</textarea></div>
-<div class="field"><label>Highlights</label><textarea class="input" name="highlights">{{ item.get('highlights','') }}</textarea></div>
-<div class="field"><label>Included</label><textarea class="input" name="inclusions">{{ item.get('inclusions','') }}</textarea></div>
-<div class="field"><label>Not included</label><textarea class="input" name="exclusions">{{ item.get('exclusions','') }}</textarea></div>
-<div class="actions"><button class="btn primary">Save Changes</button><a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">Cancel</a></div></form>
+{% extends 'portal_base.html' %}{% block title %}Edit Package | TravelMate{% endblock %}{% block content %}
+<div class="page-title"><div><span class="eyebrow">PACKAGE V2</span><h1>Edit Tourism Package</h1><p>Saving an approved package returns it to draft so the Administrator can review the change.</p></div><a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">Back to packages</a></div>
+{% if item.get('reviewReason',item.get('reviewComment')) %}<div class="review-feedback"><strong>Administrator feedback</strong><p>{{ item.get('reviewReason',item.get('reviewComment')) }}</p></div>{% endif %}
+<form class="card cream package-editor" method="post">{% include 'fr12_tourism_operator_management/_package_form.html' %}<div class="review-bar"><span>Review all details before resubmitting a changed package.</span><div class="actions"><a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">Cancel</a><button class="btn primary">Save Changes</button></div></div></form>
 {% endblock %}

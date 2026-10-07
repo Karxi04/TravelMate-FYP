@@ -19,6 +19,7 @@ from sequence_contract.domain_functions import (
 from services.report_service import (
     export_system_report_pdf
 )
+from services.package_service import package_for_read
 from firebase_service import get_db
 
 bp=Blueprint('fr13_admin',__name__,url_prefix='/api/fr13')
@@ -125,16 +126,41 @@ def update_user(uid):
     return jsonify({'ok':True,'user':updateRecord('users',uid,updates)})
 @bp.get('/packages/pending')
 @auth_required(['admin'])
-def pending_packages():return jsonify({'ok':True,'items':retrieveRecord('tourism_packages',filters=[('approvalStatus','==','pending')])})
+def pending_packages():
+    items=retrieveRecord('tourism_packages')
+    return jsonify({'ok':True,'items':[package_for_read(item) for item in items if item.get('approvalStatus') in {'pending','submitted'}]})
+
+@bp.get('/packages')
+@auth_required(['admin'])
+def review_packages():
+    items=retrieveRecord('tourism_packages')
+    status=str(request.args.get('status','all')).strip().lower()
+    query=str(request.args.get('q','')).strip().lower()
+    if status!='all':
+        expected={'pending','submitted'} if status=='pending' else {status}
+        items=[item for item in items if str(item.get('approvalStatus','draft')).lower() in expected]
+    if query:items=[item for item in items if query in ' '.join(str(item.get(field) or '') for field in ('title','packageTitle','destination','destinationName','operatorName')).lower()]
+    items.sort(key=lambda item:(item.get('approvalStatus') not in {'pending','submitted'},str(item.get('submittedAt') or item.get('updatedAt') or '')))
+    return jsonify({'ok':True,'items':[package_for_read(item) for item in items]})
+
+@bp.get('/packages/<pid>')
+@auth_required(['admin'])
+def package_details(pid):
+    item=retrieveRecord('tourism_packages',pid)
+    if not item:return jsonify({'ok':False,'error':'Package not found'}),404
+    return jsonify({'ok':True,'package':package_for_read(item)})
 @bp.post('/packages/<pid>/review')
 @auth_required(['admin'])
 def review_package(pid):
     current=retrieveRecord('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
+    if current.get('approvalStatus') not in {'pending','submitted'}:return jsonify({'ok':False,'error':'Only submitted packages can be reviewed'}),409
     payload=request.get_json(silent=True) or {}; decision=payload.get('decision')
     if decision not in {'approved','rejected'}:return jsonify({'ok':False,'error':'decision must be approved or rejected'}),400
-    review=approve(current,payload.get('comment','')) if decision=='approved' else reject(current,payload.get('comment',''))
-    updates={'approvalStatus':review['decision'],'reviewComment':review['reviewComment'],'reviewedBy':g.uid,'reviewedAt':review['reviewedAt'],'updatedAt':utc_now_iso()}; return jsonify({'ok':True,'package':updateRecord('tourism_packages',pid,updates)})
+    comment=str(payload.get('comment','')).strip()
+    if decision=='rejected' and not comment:return jsonify({'ok':False,'error':'A rejection reason is required'}),400
+    review=approve(current,comment) if decision=='approved' else reject(current,comment)
+    updates={'approvalStatus':review['decision'],'reviewReason':review['reviewComment'],'reviewComment':review['reviewComment'],'reviewedBy':g.uid,'reviewedByName':(g.profile or {}).get('name','Administrator'),'reviewedAt':review['reviewedAt'],'updatedAt':utc_now_iso()}; return jsonify({'ok':True,'package':updateRecord('tourism_packages',pid,updates)})
 @bp.get('/campaigns/pending')
 @auth_required(['admin'])
 def pending_campaigns():

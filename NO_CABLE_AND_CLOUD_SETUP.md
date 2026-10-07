@@ -11,6 +11,10 @@ Install:
     traveller_mobile\build\app\outputs\flutter-apk\app-release.apk
 
 The installed app uses Firebase Authentication plus its local persistent application data. It does not point to `127.0.0.1:5000` and does not require `adb reverse`.
+Firebase login and shared Firestore content still require network access and
+matching Firebase configuration. Local transactions are single-device demo
+storage, not the cloud portal's store. Release APKs use debug signing for the
+FYP only; see `docs/FINAL_DEMO_READINESS.md`.
 
 ## Recommended final option: deploy Flask once
 

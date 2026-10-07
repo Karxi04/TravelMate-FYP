@@ -2,24 +2,22 @@
 {% block body %}
 <div class="layout">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">TM</div><div><strong>TravelMate</strong><br><small>Operator Website</small></div></div>
+    <div class="brand"><div class="logo">TM</div><div><strong>TravelMate</strong><br><small>Operator Portal</small></div></div>
     <nav>
-      <a href="{{ url_for('operator_fr12.dashboard') }}">▦ Dashboard</a>
-      <a href="{{ url_for('operator_fr01.profile') }}">○ Business Profile</a>
-      <a href="{{ url_for('operator_fr12.packages') }}">□ Tourism Packages</a>
-      <a href="{{ url_for('operator_fr12.package_status') }}">✓ Approval Status</a>
-      <a href="{{ url_for('operator_fr12.submit_package_page') }}">↑ Submit Package</a>
-      <a href="{{ url_for('operator_fr12.campaigns') }}">◇ Promotional Campaigns</a>
-      <a href="{{ url_for('operator_fr12.analytics') }}">▥ Business Analytics</a>
+      <a class="{% if request.endpoint == 'operator_fr12.dashboard' %}active{% endif %}" href="{{ url_for('operator_fr12.dashboard') }}">▦ <span>Dashboard</span></a>
+      <a class="{% if request.endpoint in ['operator_fr12.packages','operator_fr12.new_package','operator_fr12.edit_package_page'] %}active{% endif %}" href="{{ url_for('operator_fr12.packages') }}">□ <span>Packages</span></a>
+      <a class="{% if request.endpoint in ['operator_fr12.campaigns','operator_fr12.edit_campaign_page'] %}active{% endif %}" href="{{ url_for('operator_fr12.campaigns') }}">◇ <span>Campaigns</span></a>
+      <a class="{% if request.endpoint == 'operator_fr01.profile' %}active{% endif %}" href="{{ url_for('operator_fr01.profile') }}">○ <span>Profile</span></a>
     </nav>
-    <div class="footer"><nav><form method="post" action="{{ url_for('operator_fr01.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn outline" type="submit">↪ Logout</button></form></nav></div>
+    <div class="footer"><form method="post" action="{{ url_for('operator_fr01.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn outline" type="submit">↪ <span>Sign out</span></button></form></div>
   </aside>
   <section class="content">
-    <header class="topbar"><div><strong>Tourism Operator Management</strong><div class="muted" style="font-size:12px">Separate operator web application</div></div><div class="avatar">OP</div></header>
+    <header class="topbar"><button class="mobile-menu" type="button" aria-label="Open navigation" aria-expanded="false">☰</button><div><strong>Tourism Operator Portal</strong><div class="muted" style="font-size:12px">Packages and campaigns workspace</div></div><div class="avatar" aria-label="Operator account">OP</div></header>
     <main class="main">
       {% for c,m in get_flashed_messages(with_categories=true) %}<div class="msg {{c}}">{{m}}</div>{% endfor %}
       {% block content %}{% endblock %}
     </main>
   </section>
 </div>
+<script>document.querySelector('.mobile-menu')?.addEventListener('click',e=>{const open=document.body.classList.toggle('nav-open');e.currentTarget.setAttribute('aria-expanded',open);});</script>
 {% endblock %}

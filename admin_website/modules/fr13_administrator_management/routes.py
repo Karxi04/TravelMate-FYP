@@ -49,8 +49,21 @@ def update_user(uid):
 def packages():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    response = call_api("GET", "/api/fr13/packages/pending")
-    return render_template("fr13_administrator_management/packages.html", items=response.json().get("items", []) if response.ok else [])
+    status = request.args.get("status", "all")
+    query = request.args.get("q", "").strip()
+    response = call_api("GET", "/api/fr13/packages", params={"status": status, "q": query})
+    return render_template("fr13_administrator_management/packages.html", items=response.json().get("items", []) if response.ok else [], status=status, query=query)
+
+
+@bp.get("/packages/<package_id>")
+def package_details(package_id):
+    if not guard():
+        return redirect(url_for("admin_fr01.login"))
+    response = call_api("GET", f"/api/fr13/packages/{package_id}")
+    if not response.ok:
+        flash(_error(response, "Package not found."), "error")
+        return redirect(url_for("admin_fr13.packages"))
+    return render_template("fr13_administrator_management/package_review.html", item=response.json().get("package", {}))
 
 @bp.post("/packages/<package_id>/review")
 def review_package(package_id):
@@ -61,7 +74,7 @@ def review_package(package_id):
         "comment": request.form.get("comment", ""),
     })
     flash("Package review saved." if response.ok else _error(response), "success" if response.ok else "error")
-    return redirect(url_for("admin_fr13.packages"))
+    return redirect(url_for("admin_fr13.package_details", package_id=package_id) if not response.ok else url_for("admin_fr13.packages"))
 
 @bp.route("/campaigns")
 def campaigns():

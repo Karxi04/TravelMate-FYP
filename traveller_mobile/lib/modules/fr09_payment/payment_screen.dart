@@ -227,7 +227,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           const TravelSectionHeader(
             title: 'Checkout',
             subtitle:
-                'Enter card details, review the amount and complete the payment process.',
+                'Review the amount and complete a sandbox or simulated payment.',
           ),
           const SizedBox(height: 12),
           InkCard(
@@ -383,7 +383,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     const SizedBox(width: 8),
                     Text(
                         isSuccessfulPayment(result?['paymentStatus'])
-                            ? 'Payment completed'
+                            ? (isSimulatedPayment(result)
+                                ? 'Simulated payment completed'
+                                : 'Sandbox payment completed')
                             : 'Payment verification pending',
                         style: const TextStyle(
                             fontWeight: FontWeight.w900, fontSize: 18))
@@ -415,6 +417,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
             final paymentId =
                 (item['id'] ?? item['transactionReference'] ?? '').toString();
             final status = canonicalPaymentStatus(item['paymentStatus']);
+            final kind = isSimulatedPayment(Map<String, dynamic>.from(item as Map))
+                ? 'Simulated'
+                : 'Sandbox';
             return Padding(
               padding: const EdgeInsets.only(bottom: 9),
               child: InkCard(
@@ -441,7 +446,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   style: const TextStyle(
                                       color: InkWashColors.mutedInk,
                                       fontSize: 12)),
-                              Text('Status: $status',
+                              Text('$kind status: $status',
                                   style: const TextStyle(
                                       color: InkWashColors.mutedInk,
                                       fontSize: 12)),

@@ -477,20 +477,45 @@ class _HomeTabState extends State<HomeTab> {
 
   Future<void> addPackageToTrip(Map<String, dynamic> item) async {
     await addToTrip({
-      'destinationId': 'package_${item['id'] ?? item['packageTitle'] ?? ''}',
-      'title': item['packageTitle'] ?? 'Tourism package',
-      'address': item['destinationName'] ?? '',
-      'estimatedCost': item['price'] ?? 0,
+      'destinationId':
+          'package_${item['id'] ?? item['title'] ?? item['packageTitle'] ?? ''}',
+      'title': item['title'] ?? item['packageTitle'] ?? 'Tourism package',
+      'address': item['destination'] ?? item['destinationName'] ?? '',
+      'estimatedCost':
+          item['promotionalPrice'] ?? item['adultPrice'] ?? item['price'] ?? 0,
       'gps_coordinates':
           item['gps_coordinates'] ?? item['gpsCoordinates'] ?? {},
       'type': item['type'] ?? item['category'] ?? 'Tourism package',
       'category': 'Tourism package',
-      'description': item['description'] ?? '',
+      'description': item['fullDescription'] ?? item['description'] ?? '',
       'openingHours': item['openingHours'] ?? '',
       'indoor': item['indoor'] ?? false,
       'recommendedDurationMinutes': item['recommendedDurationMinutes'] ?? 180,
       'packageId': item['id'] ?? '',
     });
+  }
+
+  String _packagePrice(Map<String, dynamic> item) {
+    final value =
+        item['promotionalPrice'] ?? item['adultPrice'] ?? item['price'];
+    final amount = value is num ? value : num.tryParse(value?.toString() ?? '');
+    if (amount == null) return '';
+    final currency = (item['currency'] ?? 'MYR').toString();
+    final formatted = amount == amount.roundToDouble()
+        ? amount.toStringAsFixed(0)
+        : amount.toStringAsFixed(2);
+    final basis = item['priceBasis'] == 'per_group' ? 'group' : 'person';
+    return '$currency $formatted / $basis';
+  }
+
+  String _packageDuration(Map<String, dynamic> item) {
+    final days = int.tryParse((item['durationDays'] ?? '').toString());
+    if (days == null || days < 1) return '';
+    final nights = int.tryParse((item['durationNights'] ?? '').toString());
+    final dayText = '$days ${days == 1 ? 'day' : 'days'}';
+    return nights == null
+        ? dayText
+        : '$dayText · $nights ${nights == 1 ? 'night' : 'nights'}';
   }
 
   Widget _profileCard() {
@@ -862,6 +887,12 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Widget _packageCard(Map<String, dynamic> item) {
+    final title =
+        (item['title'] ?? item['packageTitle'] ?? 'Travel package').toString();
+    final destination =
+        (item['destination'] ?? item['destinationName'] ?? '').toString();
+    final price = _packagePrice(item);
+    final duration = _packageDuration(item);
     return InkCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -869,8 +900,11 @@ class _HomeTabState extends State<HomeTab> {
         children: [
           TravelPlaceImage(
             place: {
-              'title': item['packageTitle'] ?? item['destinationName'],
-              'imageUrl': item['imageUrl'] ?? item['bannerImageUrl'] ?? '',
+              'title': title,
+              'imageUrl': item['heroImage'] ??
+                  item['imageUrl'] ??
+                  item['bannerImageUrl'] ??
+                  '',
               'category': 'Travel package',
             },
             width: double.infinity,
@@ -886,23 +920,34 @@ class _HomeTabState extends State<HomeTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  (item['packageTitle'] ?? 'Travel package').toString(),
+                  title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: AppSpacing.xxs),
                 Text(
-                  (item['destinationName'] ?? '').toString(),
+                  destination,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: AppColors.textSecondary,
                       ),
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  'RM ${item['price'] ?? 0}',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                if (duration.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(duration,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                          )),
+                ],
+                if (price.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(price, style: Theme.of(context).textTheme.titleMedium),
+                ],
+                if ((item['operatorName'] ?? '').toString().trim().isNotEmpty)
+                  Text('by ${item['operatorName']}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                          )),
                 const SizedBox(height: AppSpacing.sm),
                 Row(
                   children: [

@@ -12,6 +12,7 @@ from services.transaction_reliability import (
     provider_idempotency_key,
 )
 from services.local_catalog import LOCAL_HOTEL_ITEMS, CAR_RENTALS
+from services.malaysian_locality import filter_candidates, normalize_destination_scope
 from sequence_contract.validators import validateHotelSearchCriteria, validateBookingDetails, validateCarRentalSearchCriteria
 from sequence_contract.domain_functions import applyHotelFilter, compareSelectedHotels, calculateBudget
 from sequence_contract.firebase_firestore import claimRecord, retrieveRecord, updateRecord
@@ -109,7 +110,12 @@ def hotels_search():
     except Exception as exc:
         if not _fallback_mode():
             return jsonify({'ok': False, 'error': str(exc)}), 502
-        items = [dict(x) for x in LOCAL_HOTEL_ITEMS]
+        destination = payload.get('destination') or payload.get('aiSearch') or (
+            'Penang' if payload.get('placeId') == 'local_penang' else ''
+        )
+        items, _rejected = filter_candidates(
+            LOCAL_HOTEL_ITEMS, normalize_destination_scope(destination)
+        )
         result = {'items': items, 'sandbox': True}
         source = 'local'
 

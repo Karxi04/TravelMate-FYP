@@ -67,14 +67,15 @@ See `docs/THEME.md`.
 
 ## Read these files in order
 
-1. `docs/SETUP_FIREBASE.md`
-2. `docs/HOW_FIRESTORE_IS_LINKED.md`
-3. `docs/SETUP_EXTERNAL_APIS.md`
-4. `docs/RUN_ORDER_WINDOWS.md`
-5. `docs/HOW_TO_TEST_THE_MVP.md`
-6. `docs/FIRESTORE_DATA_MODEL.md`
-7. `docs/API_ROUTE_MAP.md`
-8. `docs/README_ENHANCED_SYSTEM.md`
+1. `docs/FINAL_DEMO_READINESS.md` — current startup, accounts, release safety and demo checklist
+2. `docs/SETUP_FIREBASE.md`
+3. `docs/HOW_FIRESTORE_IS_LINKED.md`
+4. `docs/SETUP_EXTERNAL_APIS.md`
+5. `docs/RUN_ORDER_WINDOWS.md`
+6. `docs/HOW_TO_TEST_THE_MVP.md`
+7. `docs/FIRESTORE_DATA_MODEL.md`
+8. `docs/API_ROUTE_MAP.md`
+9. `docs/README_ENHANCED_SYSTEM.md`
 
 ## Important
 
