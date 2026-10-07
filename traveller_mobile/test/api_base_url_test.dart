@@ -40,4 +40,11 @@ void main() {
     expect(resolveApiBaseUrl('https://backend.example/service', release: true),
         'https://backend.example/service');
   });
+
+  test('debug physical device accepts an explicit LAN backend URL', () {
+    expect(
+      resolveApiBaseUrl('http://172.20.10.5:5000', release: false),
+      'http://172.20.10.5:5000',
+    );
+  });
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,6 +8,18 @@ import 'package:http/http.dart' as http;
 import 'shared_firestore_service.dart';
 import 'standalone_api_service.dart';
 import 'transaction_request.dart';
+
+const backendConnectionMessage =
+    "We couldn't connect to TravelMate. Check your connection and try again.";
+
+bool isBackendConnectionFailure(Object error) =>
+    error is TimeoutException || error is http.ClientException;
+
+String userFacingApiError(Object error) {
+  if (isBackendConnectionFailure(error)) return backendConnectionMessage;
+  if (error is ApiException) return error.message;
+  return 'Something went wrong. Please try again.';
+}
 
 String resolveApiBaseUrl(
   String configuredUrl, {

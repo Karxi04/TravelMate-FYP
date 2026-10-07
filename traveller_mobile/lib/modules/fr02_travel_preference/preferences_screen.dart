@@ -10,12 +10,14 @@ class PreferencesScreen extends StatefulWidget {
   final bool onboarding;
   final VoidCallback? onCompleted;
   final ApiService? api;
+  final bool loadExisting;
 
   const PreferencesScreen({
     super.key,
     this.onboarding = false,
     this.onCompleted,
     this.api,
+    this.loadExisting = true,
   });
 
   @override
@@ -29,6 +31,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   int page = 0;
   bool busy = false;
   bool loading = true;
+  String? loadError;
 
   String personality = 'Balanced';
   String sleepingType = 'Flexible';
@@ -105,7 +108,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   void initState() {
     super.initState();
     api = widget.api ?? ApiService();
-    Future.microtask(load);
+    if (widget.loadExisting) {
+      Future.microtask(load);
+    } else {
+      loading = false;
+    }
   }
 
   String normalise(dynamic value, List<String> options, String fallback) {
@@ -117,6 +124,12 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   }
 
   Future<void> load() async {
+    if (!loading) {
+      setState(() {
+        loading = true;
+        loadError = null;
+      });
+    }
     try {
       final data = await api.get('/api/fr2/preferences');
       final raw = data['preferences'];
@@ -140,8 +153,8 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             ..addAll(values.map((e) => e.toString()));
         }
       }
-    } catch (_) {
-      // A new account has no questionnaire yet.
+    } catch (failure) {
+      loadError = userFacingApiError(failure);
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -172,16 +185,26 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       } else {
         Navigator.maybePop(context);
       }
-    } catch (e) {
-      _message(e.toString());
+    } catch (failure) {
+      _message(
+        userFacingApiError(failure),
+        retry: isBackendConnectionFailure(failure) ? save : null,
+      );
     } finally {
       if (mounted) setState(() => busy = false);
     }
   }
 
-  void _message(String text) {
+  void _message(String text, {VoidCallback? retry}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        action: retry == null
+            ? null
+            : SnackBarAction(label: 'Retry', onPressed: retry),
+      ),
+    );
   }
 
   void next() {
@@ -312,6 +335,16 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     if (loading) {
       return const Scaffold(
         body: AppLoadingState(message: 'Loading your travel profile…'),
+      );
+    }
+
+    if (loadError != null) {
+      return Scaffold(
+        body: AppErrorState(
+          message: loadError!,
+          retryLabel: 'Retry',
+          onRetry: load,
+        ),
       );
     }
 
