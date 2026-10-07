@@ -31,8 +31,9 @@ def dashboard():
 def users():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    response = call_api("GET", "/api/fr13/users")
-    return render_template("fr13_administrator_management/users.html", items=response.json().get("items", []) if response.ok else [])
+    params = {key: request.args.get(key, "").strip() for key in ("q", "role", "status") if request.args.get(key, "").strip()}
+    response = call_api("GET", "/api/fr13/users", params=params)
+    return render_template("fr13_administrator_management/users.html", items=response.json().get("items", []) if response.ok else [], query=params.get("q", ""), role=params.get("role", "all"), status=params.get("status", "all"))
 
 @bp.post("/users/<uid>/update")
 def update_user(uid):
@@ -80,8 +81,20 @@ def review_package(package_id):
 def campaigns():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    response = call_api("GET", "/api/fr13/campaigns/pending")
-    return render_template("fr13_administrator_management/campaigns.html", items=response.json().get("items", []) if response.ok else [])
+    status = request.args.get("status", "pending")
+    query = request.args.get("q", "").strip()
+    response = call_api("GET", "/api/fr13/campaigns", params={"status": status, "q": query})
+    return render_template("fr13_administrator_management/campaigns.html", items=response.json().get("items", []) if response.ok else [], status=status, query=query)
+
+@bp.get("/campaigns/<campaign_id>")
+def campaign_details(campaign_id):
+    if not guard():
+        return redirect(url_for("admin_fr01.login"))
+    response = call_api("GET", f"/api/fr13/campaigns/{campaign_id}")
+    if not response.ok:
+        flash(_error(response, "Campaign not found."), "error")
+        return redirect(url_for("admin_fr13.campaigns"))
+    return render_template("fr13_administrator_management/campaign_detail.html", item=response.json().get("campaign", {}))
 
 @bp.post("/campaigns/<campaign_id>/review")
 def review_campaign(campaign_id):
