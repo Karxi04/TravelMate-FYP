@@ -34,11 +34,12 @@ idempotent rebuild tool. A future operator must supply `--apply --project
 live rebuild or rules deployment is performed by PU-1. The tool removes stale
 projection documents and reports counts without printing source records.
 
-Required rollout order is: deploy backend projection writer, deploy Firestore
-rules, run the dry-run against the isolated target project, review counts, run
-the explicit apply, then release the standalone client. Until that rollout,
-existing installed clients may retain previously downloaded data; new clients
-using these rules fail closed rather than falling back to raw collections.
+Required rollout is coordinated: deploy the backend projection writer, run the
+dry-run against the isolated target project, review counts, run the explicit
+apply, and stage the client that reads projections. Deploy the final rules with
+that client release. Existing clients may temporarily lose shared content when
+the raw-source deny takes effect; they must never regain raw reads as a
+rollback. Previously downloaded data cannot be remotely recalled.
 
 The current client uses full reads of the three projection collections, so no
 new composite index is required. The source collections remain the canonical
