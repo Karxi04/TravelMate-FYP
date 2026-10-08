@@ -276,6 +276,7 @@ def build_preview(trip, flight, owner, preview_id):
             'budgetBefore': calculateBudget(current), 'budgetAfter': calculateBudget(current),
         }
     activities = [dict(x) for x in current.get('activities', []) or []]
+    proposed_activities = [dict(x) for x in activities]
     affected_dates = {key for key, value in availability['days'].items() if value.get('arrival') or value.get('departure')}
     if not affected_dates:
         return {
@@ -296,9 +297,9 @@ def build_preview(trip, flight, owner, preview_id):
         ids = {str(x.get('activityId')) for x in day_items}
         by_id = {str(x.get('activityId')): x for x in scheduled}
         unscheduled_ids = {str(x.get('activityId')) for x in unscheduled}
-        proposed['activities'] = [
+        proposed_activities = [
             by_id.get(str(x.get('activityId')), x)
-            for x in activities
+            for x in proposed_activities
             if str(x.get('activityId')) not in unscheduled_ids
         ]
         proposed['unscheduledSuggestions'] = [x for x in proposed.get('unscheduledSuggestions', []) if str(x.get('activityId')) not in ids] + unscheduled
@@ -311,6 +312,7 @@ def build_preview(trip, flight, owner, preview_id):
                 changes.append({'activityId': before.get('activityId'), 'activityName': before.get('activityName'), 'kind': 'moved', 'from': {key: before.get(key) for key in ('dayNo', 'scheduledStartTime', 'scheduledEndTime')}, 'to': {key: after.get(key) for key in ('dayNo', 'scheduledStartTime', 'scheduledEndTime')}, 'protected': _protected(before)})
             else:
                 changes.append({'activityId': before.get('activityId'), 'activityName': before.get('activityName'), 'kind': 'retained', 'protected': _protected(before)})
+    proposed['activities'] = proposed_activities
     proposed['scheduledActivityCount'] = len(proposed.get('activities', []))
     proposed['unscheduledActivityCount'] = len(proposed.get('unscheduledSuggestions', []) or [])
     proposed['budgetEstimate'] = calculateBudget(proposed)

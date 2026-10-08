@@ -149,3 +149,20 @@ def test_preview_owner_is_required_for_apply():
     assert result is None
     assert error == 'Preview not found'
 
+
+def test_arrival_and_departure_day_changes_are_both_retained(client, mock_traveller_auth):
+    reset_flight_adjustment_previews()
+    trip = _trip()
+    trip['activities'].append({
+        'activityId': 'last-day', 'activityName': 'Last-day gallery', 'dayNo': 3,
+        'scheduledStartTime': '08:00', 'scheduledEndTime': '09:00',
+        'recommendedDurationMinutes': 60, 'openingHours': '08:00-20:00',
+        'estimatedCost': 15, 'userFixed': True,
+    })
+    with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord', return_value=trip):
+        response = client.post('/api/fr5/itineraries/pu3b_trip/flight-adjustment/preview', headers={'Authorization': 'Bearer valid_test_token'})
+    preview = response.get_json()['preview']
+    after = {item['activityId']: item for item in preview['after']['activities']}
+    assert 'morning' in after
+    assert 'last-day' in after
+
