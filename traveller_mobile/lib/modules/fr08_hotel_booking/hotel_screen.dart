@@ -223,10 +223,42 @@ class _HotelScreenState extends State<HotelScreen> {
     );
     setState(() => busy = true);
     try {
-      final data = await api.post('/api/fr8/hotels/prebook', {
+      final request = <String, dynamic>{
         'offerId': offerId,
+        'quoteId': hotel['quoteId'],
         'hotelBookingAttemptId': attemptId,
-      });
+      };
+      late Map<String, dynamic> data;
+      try {
+        data = Map<String, dynamic>.from(
+            await api.post('/api/fr8/hotels/prebook', request));
+      } on ApiException catch (error) {
+        if (error.data['status'] != 'reprice_required') rethrow;
+        final latest = error.data['validatedOffer'] is Map
+            ? Map<String, dynamic>.from(error.data['validatedOffer'] as Map)
+            : <String, dynamic>{};
+        if (!mounted) rethrow;
+        final accepted = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Offer updated'),
+            content: Text(
+                'The validated price or cancellation terms changed to ${latest['currency'] ?? 'MYR'} ${latest['price'] ?? '-'} . Review the latest offer before continuing.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Accept latest offer')),
+            ],
+          ),
+        );
+        if (accepted != true) rethrow;
+        request['acceptedQuoteVersion'] = error.data['quoteVersion'];
+        data = Map<String, dynamic>.from(
+            await api.post('/api/fr8/hotels/prebook', request));
+      }
       if (data['status'] == 'pending') {
         if (!mounted) return;
         setState(() => lastBooking = {
@@ -247,8 +279,11 @@ class _HotelScreenState extends State<HotelScreen> {
         throw Exception('Provider did not return a prebook ID.');
       if (!mounted) return;
       setState(() => busy = false);
-      await completeBooking(
-          hotel, prebookId, (data['source'] ?? source).toString(), attemptId);
+      final resultOffer = result['validatedOffer'] is Map
+          ? Map<String, dynamic>.from(result['validatedOffer'] as Map)
+          : result;
+      await completeBooking({...hotel, ...resultOffer},
+          prebookId, (data['source'] ?? source).toString(), attemptId);
     } on TimeoutException {
       if (!mounted) return;
       setState(() => lastBooking = {

@@ -37,6 +37,15 @@ class HotelDetailsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final amenities = (hotel['amenities'] as List? ?? []).map((e) => e.toString()).toList();
     final rules = (hotel['houseRules'] as List? ?? []).map((e) => e.toString()).toList();
+    final currency = (hotel['currency'] ?? 'Unknown currency').toString();
+    final price = hotel['priceStatus'] == 'available'
+        ? '${hotel['price'] ?? '-'}'
+        : 'Unavailable';
+    final priceBasis = (hotel['priceBasis'] ?? '').toString();
+    final fees = (hotel['taxesAndFeesStatus'] ?? '').toString();
+    final cancellation = hotel['cancellation'] is Map
+        ? Map<String, dynamic>.from(hotel['cancellation'] as Map)
+        : <String, dynamic>{};
 
     return Scaffold(
       appBar: AppBar(title: const Text('Hotel details')),
@@ -52,7 +61,7 @@ class HotelDetailsScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('Stay price', style: TextStyle(color: InkWashColors.mutedInk, fontSize: 12)),
-                    Text('${hotel['currency'] ?? 'MYR'} ${hotel['price'] ?? '-'}', style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+                    Text('$currency $price', style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
                   ],
                 ),
               ),
@@ -101,7 +110,8 @@ class HotelDetailsScreen extends StatelessWidget {
                 row('Board', hotel['boardName'], icon: Icons.restaurant_outlined),
                 row('Check-in', '${hotel['checkin'] ?? ''} • ${hotel['checkInTime'] ?? ''}', icon: Icons.login_rounded),
                 row('Check-out', '${hotel['checkout'] ?? ''} • ${hotel['checkOutTime'] ?? ''}', icon: Icons.logout_rounded),
-                row('Taxes & fees', hotel['taxesAndFeesIncluded'] == true ? 'Included in shown price' : 'Check final offer', icon: Icons.receipt_long_outlined),
+                row('Price basis', priceBasis == 'stay_total' ? 'Total stay' : priceBasis == 'per_room_night' ? 'Per room/night' : 'Unknown', icon: Icons.calculate_outlined),
+                row('Taxes & fees', fees == 'included' || hotel['taxesAndFeesIncluded'] == true ? 'Included in shown price' : fees == 'excluded' ? 'Excluded from shown price' : 'Not confirmed', icon: Icons.receipt_long_outlined),
               ],
             ),
           ),
@@ -124,7 +134,10 @@ class HotelDetailsScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text((hotel['cancellationPolicy'] ?? 'Check the selected offer conditions before confirming.').toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
+                Text((cancellation['status'] == 'known' || hotel['cancellationPolicy'] != null
+                    ? (hotel['cancellationPolicy'] ?? cancellation['tag'] ?? 'See offer conditions')
+                    : 'Cancellation terms are not confirmed for this offer.'
+                ).toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
                 if (rules.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   ...rules.map((r) => Padding(

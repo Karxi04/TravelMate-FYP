@@ -28,6 +28,28 @@ def _own(iid):
     return data if data and data.get('travellerId') == g.uid else None
 
 
+def _trusted_hotel_update(current, payload):
+    hotel_fields = {'selectedHotel', 'hotelCost', 'hotelCurrency', 'hotelBookingId'}
+    if not hotel_fields.intersection(payload):
+        return payload, None
+    booking_id = str(payload.get('hotelBookingId') or current.get('hotelBookingId') or '').strip()
+    booking = retrieveRecord('hotel_bookings', booking_id) if booking_id else None
+    if not booking or booking.get('travellerId') != g.uid:
+        return None, 'Hotel costs must come from an owned validated hotel booking.'
+    if booking.get('bookingStatus') not in {'confirmed', 'paid'}:
+        return None, 'Only confirmed hotel bookings can be attached to a trip.'
+    if str(booking.get('hotelCurrency') or '').upper() != 'MYR' or booking.get('amountSource') != 'validated_offer':
+        return None, 'Only validated MYR hotel bookings can be attached to this trip.'
+    trusted = dict(payload)
+    trusted.update({
+        'selectedHotel': booking.get('selectedHotel') or booking.get('validatedOffer') or {},
+        'hotelCost': float(booking.get('hotelCost') or 0),
+        'hotelCurrency': 'MYR',
+        'hotelBookingId': booking_id,
+    })
+    return trusted, None
+
+
 _own_itinerary = _own
 
 
@@ -330,6 +352,9 @@ def update_itinerary_route(iid):
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     payload = request.get_json(silent=True) or {}
+    payload, hotel_error = _trusted_hotel_update(current, payload)
+    if hotel_error:
+        return jsonify({'ok': False, 'error': hotel_error}), 409
     if not validateItineraryInput({**current, **payload}):
         return jsonify({'ok': False, 'error': 'Use a title, valid date range, positive traveller count and non-negative budget'}), 400
     payload['updatedAt'] = utc_now_iso()

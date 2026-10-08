@@ -115,8 +115,8 @@ def _finish_payment(document_id, record, intent, booking_doc_id=None):
     }
     if booking_doc_id and status == 'succeeded':
         updateRecord('hotel_bookings', booking_doc_id, {
-            'bookingStatus': 'paid',
-            'paymentReference': intent_id,
+            'demoPaymentStatus': 'succeeded',
+            'demoPaymentReference': intent_id,
             'paymentAttemptId': record.get('paymentAttemptId'),
             'updatedAt': utc_now_iso(),
         })
@@ -190,6 +190,10 @@ def create_payment_intent():
         if booking.get('travellerId') and booking.get('travellerId') != g.uid:
             return jsonify({'ok': False, 'error': 'Unauthorized: booking does not belong to current traveller'}), 403
         authoritative = float(booking.get('hotelCost') or booking.get('price') or booking.get('totalPrice') or 0)
+        if str(booking.get('hotelCurrency') or '').upper() != 'MYR':
+            return jsonify({'ok': False, 'error': 'This booking has no validated MYR amount for the current payment flow.'}), 409
+        if booking.get('amountSource') not in {'validated_offer', 'legacy_verified_myr'}:
+            return jsonify({'ok': False, 'error': 'This booking amount is not a validated hotel quote.'}), 409
         if authoritative > 0:
             payload['amount'] = authoritative
     if not validatePaymentInput(payload):
@@ -273,6 +277,10 @@ def process_payment():
         if booking.get('travellerId') and booking.get('travellerId') != g.uid:
             return jsonify({'ok': False, 'error': 'Unauthorized: booking does not belong to current traveller'}), 403
         authoritative = float(booking.get('hotelCost') or booking.get('price') or booking.get('totalPrice') or 0)
+        if str(booking.get('hotelCurrency') or '').upper() != 'MYR':
+            return jsonify({'ok': False, 'error': 'This booking has no validated MYR amount for the current payment flow.'}), 409
+        if booking.get('amountSource') not in {'validated_offer', 'legacy_verified_myr'}:
+            return jsonify({'ok': False, 'error': 'This booking amount is not a validated hotel quote.'}), 409
         if authoritative > 0:
             payload['amount'] = authoritative
     if not validatePaymentInput(payload):
