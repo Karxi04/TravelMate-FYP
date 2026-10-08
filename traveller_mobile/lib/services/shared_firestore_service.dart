@@ -1,12 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'public_content_contract.dart';
 
 /// Shared Firestore data that must be consistent across Traveller, Operator and
 /// Administrator applications even when the Traveller app is not connected to
 /// a local Flask server.
 ///
 /// Operator/Admin writes still go through the Flask backend. The Traveller app
-/// only reads approved operator content and reads/writes Traveller feedback.
+/// only reads server-authored public projections and reads/writes Traveller
+/// feedback through the owner-authenticated source path.
 class SharedFirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -18,10 +20,9 @@ class SharedFirestoreService {
 
   Future<List<Map<String, dynamic>>> approvedPackages() async {
     final snap = await _db
-        .collection('tourism_packages')
-        .where('approvalStatus', isEqualTo: 'approved')
+        .collection('public_tourism_packages')
         .get();
-    final items = snap.docs.map(_doc).where((item) {
+    final items = snap.docs.map((d) => PublicContentContract.package(_doc(d))).where((item) {
       return (item['availabilityStatus'] ?? 'available').toString() == 'available';
     }).toList();
     items.sort((a, b) {
@@ -34,29 +35,17 @@ class SharedFirestoreService {
 
   Future<List<Map<String, dynamic>>> approvedCampaigns() async {
     final snap = await _db
-        .collection('promotional_campaigns')
-        .where('reviewStatus', isEqualTo: 'approved')
+        .collection('public_promotional_campaigns')
         .get();
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final items = snap.docs.map(_doc).where((item) {
-      final status = (item['campaignStatus'] ?? 'approved').toString().toLowerCase();
-      if (!{'approved', 'active'}.contains(status)) return false;
-      final startText = (item['startDate'] ?? '').toString();
-      final endText = (item['endDate'] ?? '').toString();
-      final start = DateTime.tryParse(startText);
-      final end = DateTime.tryParse(endText);
-      if (start != null && today.isBefore(DateTime(start.year, start.month, start.day))) return false;
-      if (end != null && today.isAfter(DateTime(end.year, end.month, end.day))) return false;
-      return true;
-    }).toList();
+    final items = snap.docs
+        .map((d) => PublicContentContract.campaign(_doc(d)))
+        .where(PublicContentContract.activeCampaign)
+        .toList();
 
-    final packageSnap = await _db
-        .collection('tourism_packages')
-        .where('approvalStatus', isEqualTo: 'approved')
-        .get();
+    final packageSnap = await _db.collection('public_tourism_packages').get();
     final packages = <String, Map<String, dynamic>>{
-      for (final d in packageSnap.docs) d.id: {'id': d.id, ...d.data()}
+      for (final d in packageSnap.docs)
+        d.id: PublicContentContract.package(_doc(d))
     };
     for (final item in items) {
       final package = packages[(item['packageId'] ?? '').toString()];
@@ -79,10 +68,9 @@ class SharedFirestoreService {
   Future<List<Map<String, dynamic>>> destinationReviews(String destinationId) async {
     if (destinationId.trim().isEmpty) return [];
     final snap = await _db
-        .collection('feedback')
-        .where('feedbackStatus', isEqualTo: 'visible')
+        .collection('public_destination_reviews')
         .get();
-    final items = snap.docs.map(_doc).where((item) {
+    final items = snap.docs.map((d) => PublicContentContract.review(_doc(d))).where((item) {
       return (item['destinationId'] ?? '').toString() == destinationId;
     }).toList();
     items.sort((a, b) {
@@ -96,10 +84,9 @@ class SharedFirestoreService {
 
   Future<List<Map<String, dynamic>>> visibleReviews() async {
     final snap = await _db
-        .collection('feedback')
-        .where('feedbackStatus', isEqualTo: 'visible')
+        .collection('public_destination_reviews')
         .get();
-    return snap.docs.map(_doc).toList();
+    return snap.docs.map((d) => PublicContentContract.review(_doc(d))).toList();
   }
 
   Future<List<Map<String, dynamic>>> ownReviews() async {
