@@ -109,7 +109,7 @@ def test_local_booking_uses_server_quote_when_client_amount_is_tampered(
         assert prebook.status_code == 200
         booked = client.post('/api/fr8/hotels/book', headers={
             'Authorization': 'Bearer valid_test_token'}, json={
-                'prebookId': prebook.get_json()['result']['prebookId'],
+                'validationId': prebook.get_json()['result']['validationId'],
                 'hotelBookingAttemptId': 'hotel_attempt_quote_bound',
                 'selectedHotel': {'offerId': 'local_offer_test', 'price': 0, 'currency': 'USD'},
                 'hotelCost': 0,

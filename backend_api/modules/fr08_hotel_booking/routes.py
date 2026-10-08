@@ -8,7 +8,8 @@ from auth_utils import auth_required
 from utils import utc_now_iso
 from services.liteapi_service import (
     search_places, retrieveHotelOffers, validateHotelOffer, createBookingReference,
-    normalizeHotelOffers, normalizePrebookResult, ProviderMutationBlocked,
+    retrieveHotelContent, normalizeHotelContent, normalizeHotelOffers,
+    normalizePrebookResult, ProviderMutationBlocked,
 )
 from services.transaction_reliability import (
     is_ambiguous_provider_error,
@@ -33,6 +34,25 @@ def _liteapi_configured():
     return bool(os.getenv('LITEAPI_KEY', '').strip())
 
 
+def _sample_mode():
+    # FALLBACK_MODE remains useful for other modules. Hotel sample data is only
+    # enabled explicitly or inside the deterministic test harness.
+    return os.getenv('HOTEL_SAMPLE_MODE', '').lower() in {'1', 'true', 'yes'} or (
+        _testing_mode() and _fallback_mode()
+    )
+
+
+def _transaction_mode():
+    configured = os.getenv('HOTEL_TRANSACTION_MODE', '').strip().lower()
+    if configured in {'local_demo', 'provider_sandbox'}:
+        return configured
+    # Existing provider-boundary tests retain their guarded sandbox path. A
+    # normal configured deployment always defaults to a local demo transaction.
+    if _testing_mode() and _liteapi_configured():
+        return 'provider_sandbox'
+    return 'local_demo'
+
+
 def _booking_attempt_id(payload):
     raw = payload.get('hotelBookingAttemptId') or f"legacy_{uuid.uuid4().hex}"
     return normalize_attempt_id(raw, 'hotelBookingAttemptId')
@@ -49,6 +69,44 @@ def _simulated_reference(provider_key, prefix, length):
 
 def _testing_mode():
     return os.getenv('TRAVELMATE_TESTING', '').lower() in {'1', 'true', 'yes'}
+
+
+def _provenance(source, now=None):
+    now = now or utc_now_iso()
+    if source == 'liteapi':
+        return {
+            'contentSource': 'liteapi_provider',
+            'rateSource': 'liteapi_live_quote',
+            'rateProvenance': 'live_provider_quote',
+            'quoteRetrievedAt': now,
+            'transactionMode': _transaction_mode(),
+            'demoDisclosure': 'Demo reservation — no room will be reserved.' if _transaction_mode() == 'local_demo' else 'Provider sandbox transaction.',
+        }
+    return {
+        'contentSource': 'sample_fixture',
+        'rateSource': 'sample_fixture',
+        'rateProvenance': 'explicit_sample_fixture',
+        'quoteRetrievedAt': now,
+        'transactionMode': 'local_demo',
+        'demoDisclosure': 'Sample hotel content and price; not live availability. Demo reservation — no room will be reserved.',
+    }
+
+
+def _local_validation_id(provider_key):
+    return _simulated_reference(provider_key, 'demo_validation_', 16)
+
+
+def _local_demo_validation(quote, offer, provider_key):
+    validation_id = _local_validation_id(provider_key)
+    return {
+        'validationId': validation_id,
+        'offerId': offer,
+        'status': 'validated',
+        'validationMode': 'local_demo',
+        'isSimulated': True,
+        'sandbox': False,
+        **(quote.get('offer') or {}),
+    }
 
 
 def _safe_provider_error(exc, fallback):
@@ -245,8 +303,27 @@ def hotels_search():
         if not items:
             raise RuntimeError('LiteAPI returned no bookable offers for these dates')
         source = 'liteapi'
+        provenance = _provenance(source)
+        # LiteAPI rate responses may omit property content. Enrich only those
+        # properties, by exact provider ID, and keep the read-only boundary.
+        content_cache = {}
+        if _liteapi_configured() and not _testing_mode():
+            for hotel_id in list({str(item.get('hotelId') or '') for item in items})[:20]:
+                if not hotel_id:
+                    continue
+                try:
+                    content_cache[hotel_id] = normalizeHotelContent(
+                        retrieveHotelContent(hotel_id), hotel_id
+                    )
+                except Exception:
+                    content_cache[hotel_id] = {}
+            for item in items:
+                content = content_cache.get(str(item.get('hotelId') or ''), {})
+                for key, value in content.items():
+                    if value not in (None, '', []):
+                        item.setdefault(key, value)
     except Exception as exc:
-        if not _fallback_mode():
+        if not _sample_mode():
             return jsonify({'ok': False, 'error': _safe_provider_error(
                 exc, 'The hotel offer could not be validated right now.'
             )}), 502
@@ -258,6 +335,7 @@ def hotels_search():
         )
         result = {'items': items, 'sandbox': True}
         source = 'local'
+        provenance = _provenance(source)
 
     filters = {
         'refundable': payload.get('refundable'),
@@ -265,6 +343,7 @@ def hotels_search():
     }
     items = applyHotelFilter(items, filters)
     for item in items:
+        item.update(provenance)
         item['roomQuantity'] = room_quantity
         if item.get('priceBasis') == 'per_room_night' and item.get('priceStatus') == 'available':
             item['nightlyRoomRate'] = item.get('price')
@@ -277,7 +356,16 @@ def hotels_search():
             item['priceStatus'] = 'unknown'
             item['price'] = None
     items = _persist_quotes(items, _search_criteria(payload, req, room_quantity), source)
-    return jsonify({'ok': True, 'items': items, 'result': {'items': items}, 'source': source})
+    return jsonify({
+        'ok': True,
+        'items': items,
+        'result': {'items': items},
+        'source': source,
+        'contentSource': provenance['contentSource'],
+        'rateSource': provenance['rateSource'],
+        'quoteRetrievedAt': provenance['quoteRetrievedAt'],
+        'transactionMode': provenance['transactionMode'],
+    })
 
 
 @bp.post('/hotels/compare')
@@ -324,14 +412,17 @@ def hotel_prebook():
         return jsonify({'ok': False, 'error': 'hotelBookingAttemptId is already bound to another offer'}), 409
     if not created:
         if claimed.get('status') == 'succeeded':
+            reused_result = claimed.get('providerResult') or {
+                'validationId': claimed.get('validationId'),
+                'offerId': offer,
+                'status': claimed.get('validationStatus') or 'validated',
+                'sandbox': claimed.get('isSimulated', False),
+            }
+            if claimed.get('prebookId') and not reused_result.get('prebookId'):
+                reused_result['prebookId'] = claimed.get('prebookId')
             return jsonify({
                 'ok': True,
-                'result': claimed.get('providerResult') or {
-                    'prebookId': claimed.get('prebookId'),
-                    'offerId': offer,
-                    'status': 'prebooked',
-                    'sandbox': claimed.get('isSimulated', False),
-                },
+                'result': reused_result,
                 'hotelBookingAttemptId': attempt_id,
                 'source': claimed.get('source', 'local'),
                 'reused': True,
@@ -366,16 +457,10 @@ def hotel_prebook():
             'message': 'Prebook outcome is still being verified; it was not submitted again.',
         }), 202
 
-    use_demo = _fallback_mode() and offer.startswith('local_offer_')
+    use_demo = _transaction_mode() == 'local_demo'
     try:
         if use_demo:
-            result = {
-                'prebookId': _simulated_reference(provider_key, 'local_prebook_', 16),
-                'offerId': offer,
-                'status': 'prebooked',
-                'sandbox': True,
-                **(quote.get('offer') or {}),
-            }
+            result = _local_demo_validation(quote, offer, provider_key)
             source = 'local'
         else:
             result = validateHotelOffer(offer)
@@ -416,6 +501,36 @@ def hotel_prebook():
             'sandbox': True,
         }
         source = 'local'
+    if use_demo:
+        validated = dict(result)
+        version = _quote_version(validated)
+        original = quote.get('offer') or {}
+        changes = _material_quote_changes(original, validated)
+        if validated.get('priceStatus') != 'available' or not validated.get('currency'):
+            updateRecord('hotel_prebook_attempts', document_id, {
+                'status': 'failed', 'stage': 'demo_unpriced',
+                'validatedOffer': validated, 'updatedAt': utc_now_iso(),
+            })
+            return jsonify({'ok': False, 'error': 'The hotel price or currency is unavailable; search again.'}), 422
+        patch = {
+            'status': 'succeeded', 'stage': 'validated_local_demo',
+            'validationId': validated['validationId'],
+            'validationStatus': 'validated',
+            'validatedOffer': validated,
+            'validatedQuoteVersion': version,
+            'quoteChanges': changes,
+            'source': source,
+            'isSimulated': True,
+            'providerMutationCalled': False,
+            'demoDisclosure': 'Demo reservation — no room will be reserved.',
+            'updatedAt': utc_now_iso(),
+        }
+        updateRecord('hotel_prebook_attempts', document_id, patch)
+        return jsonify({
+            'ok': True, 'result': validated,
+            'hotelBookingAttemptId': attempt_id, 'source': source,
+        })
+
     validated = normalizePrebookResult(result, offer)
     # Keep non-sensitive offer presentation fields from the server quote while
     # allowing only normalized provider values to replace price/terms.
@@ -567,18 +682,21 @@ def _booking_response(booking, itinerary=None, reused=False, status_code=200):
 def hotel_book():
     payload = request.get_json(silent=True) or {}
     if not validateBookingDetails(payload):
-        return jsonify({'ok': False, 'error': 'prebookId is required'}), 400
+        return jsonify({'ok': False, 'error': 'validationId is required'}), 400
 
     try:
         attempt_id = _booking_attempt_id(payload)
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 400
+    validation_id = str(payload.get('validationId') or '')
     prebook_id = str(payload.get('prebookId') or '')
     prebook_document_id = _hotel_operation_id(attempt_id, 'prebook')
     prebook_record = retrieveRecord('hotel_prebook_attempts', prebook_document_id)
     if not prebook_record or prebook_record.get('travellerId') != g.uid:
         return jsonify({'ok': False, 'error': 'Validate this hotel offer before booking.'}), 409
-    if prebook_record.get('status') != 'succeeded' or str(prebook_record.get('prebookId') or '') != prebook_id:
+    expected_id = validation_id or prebook_id
+    stored_id = str(prebook_record.get('validationId') or prebook_record.get('prebookId') or '')
+    if prebook_record.get('status') != 'succeeded' or stored_id != expected_id:
         return jsonify({'ok': False, 'error': 'This hotel validation is stale or incomplete; validate the offer again.'}), 409
     selected_hotel, authority_error = _authoritative_offer(prebook_record)
     if authority_error:
@@ -590,7 +708,8 @@ def hotel_book():
     record = {
         'travellerId': g.uid,
         'hotelBookingAttemptId': attempt_id,
-        'prebookId': prebook_id,
+        'validationId': validation_id or None,
+        'prebookId': prebook_id or None,
         'quoteId': prebook_record.get('quoteId'),
         'validatedQuoteVersion': prebook_record.get('validatedQuoteVersion'),
         'validatedOffer': selected_hotel,
@@ -610,8 +729,9 @@ def hotel_book():
     claimed, created = claimRecord('hotel_bookings', document_id, record)
     if claimed.get('travellerId') != g.uid:
         return jsonify({'ok': False, 'error': 'Booking attempt not found'}), 404
-    if str(claimed.get('prebookId') or '') != prebook_id:
-        return jsonify({'ok': False, 'error': 'hotelBookingAttemptId is already bound to another prebook'}), 409
+    claimed_id = str(claimed.get('validationId') or claimed.get('prebookId') or '')
+    if claimed_id != expected_id:
+        return jsonify({'ok': False, 'error': 'hotelBookingAttemptId is already bound to another validation'}), 409
     if not created:
         if claimed.get('bookingStatus') in {'confirmed', 'paid'}:
             updated, itinerary = _attach_booking_to_itinerary(document_id, claimed, payload)
@@ -623,14 +743,13 @@ def hotel_book():
         return _booking_response(claimed, reused=True, status_code=202)
 
     source = 'liteapi'
-    use_demo = _fallback_mode() and prebook_id.startswith('local_prebook_')
+    use_demo = _transaction_mode() == 'local_demo'
     try:
         if use_demo:
             result = {
-                'bookingId': _simulated_reference(provider_key, 'TM-DEMO-', 10),
-                'hotelConfirmationCode': _simulated_reference(provider_key, 'DEMO-', 8),
+                'bookingId': _simulated_reference(provider_key, 'demo_booking_', 10),
                 'status': 'confirmed',
-                'sandbox': True,
+                'isSimulated': True,
             }
             source = 'local'
         else:
@@ -672,7 +791,7 @@ def hotel_book():
                 **patch,
             }
             return _booking_response(pending, status_code=202)
-        if not _fallback_mode() or not prebook_id.startswith('local_prebook_'):
+        if _transaction_mode() != 'local_demo' or not use_demo:
             patch = {
                 'bookingStatus': 'failed',
                 'stage': 'booking_failed',
@@ -727,10 +846,12 @@ def hotel_book():
     patch = {
         'bookingStatus': result.get('status', 'confirmed'),
         'bookingReference': result.get('bookingId') or result.get('id') or result.get('hotelConfirmationCode', ''),
-        'providerResult': _safe_booking_result(result),
+        'providerResult': _safe_booking_result(result) if source != 'local' else None,
         'source': source,
         'bookingMode': 'simulation' if source == 'local' else 'provider',
         'isSimulated': source == 'local',
+        'providerMutationCalled': source != 'local',
+        'demoDisclosure': 'Demo reservation — no room will be reserved.' if source == 'local' else None,
         'confirmationLabel': 'Simulated confirmation' if source == 'local' else 'Provider confirmation',
         'stage': 'booking_confirmed',
         'updatedAt': utc_now_iso(),

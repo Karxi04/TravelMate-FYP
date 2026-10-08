@@ -19,6 +19,8 @@ void main() {
         );
         expect(validated['geographicEligibility']['eligible'], isTrue);
         expect(item['address'], 'George Town, Penang, Malaysia');
+        expect(item['rateSource'], 'sample_fixture');
+        expect(item['transactionMode'], 'local_demo');
       }
     }
   });
@@ -56,20 +58,27 @@ void main() {
       memoryStore: {},
     );
     const attemptId = 'hotel_attempt_standalone';
+    final search = await service.post('/api/fr8/hotels/search', {
+      'destination': 'Penang',
+      'checkin': '2026-11-01',
+      'checkout': '2026-11-03',
+    });
+    final offer = Map<String, dynamic>.from((search['items'] as List).first as Map);
     final prebookPayload = {
       'hotelBookingAttemptId': attemptId,
-      'offerId': 'local_offer_demo',
+      'offerId': offer['offerId'],
+      'quoteId': offer['quoteId'],
     };
     final firstPrebook =
         await service.post('/api/fr8/hotels/prebook', prebookPayload);
     final secondPrebook =
         await service.post('/api/fr8/hotels/prebook', prebookPayload);
-    expect(firstPrebook['result']['prebookId'],
-        secondPrebook['result']['prebookId']);
+    expect(firstPrebook['result']['validationId'],
+        secondPrebook['result']['validationId']);
 
     final bookingPayload = {
       'hotelBookingAttemptId': attemptId,
-      'prebookId': firstPrebook['result']['prebookId'],
+      'validationId': firstPrebook['result']['validationId'],
       'selectedHotel': {'name': 'Demo Hotel', 'price': 88.0},
       'hotelCost': 88.0,
     };

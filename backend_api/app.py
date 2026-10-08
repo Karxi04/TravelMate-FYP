@@ -70,10 +70,17 @@ def create_app():
     def config_status():
         fallback = _truthy("FALLBACK_MODE")
         hotel_live = bool(os.getenv("LITEAPI_KEY", "").strip())
+        sample = _truthy("HOTEL_SAMPLE_MODE") or (_truthy("TRAVELMATE_TESTING") and fallback)
+        transaction = os.getenv("HOTEL_TRANSACTION_MODE", "local_demo").strip().lower()
+        if transaction not in {"local_demo", "provider_sandbox"}:
+            transaction = "local_demo"
         return jsonify({
             "ok": True,
             "paymentMode": stripePaymentMode(),
-            "hotelMode": "live" if hotel_live else ("fallback" if fallback else "unavailable"),
+            "hotelMode": "live" if hotel_live else ("sample" if sample else "unavailable"),
+            "hotelContentMode": "provider" if hotel_live else ("sample_fixture" if sample else "unavailable"),
+            "hotelRateMode": "live_quote" if hotel_live else ("sample_fixture" if sample else "unavailable"),
+            "hotelTransactionMode": transaction,
         })
 
     return app

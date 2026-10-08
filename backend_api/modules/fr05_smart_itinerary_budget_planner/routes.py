@@ -363,6 +363,27 @@ def update_itinerary_route(iid):
     return jsonify({'ok': True, 'itinerary': updateRecord('itineraries', iid, payload)})
 
 
+@bp.post('/itineraries/<iid>/hotel-selection/remove')
+@auth_required(['traveller'])
+def remove_hotel_selection(iid):
+    """Remove the trip association while retaining the hotel booking history."""
+    current = _own(iid)
+    if not current:
+        return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    patch = {
+        'selectedHotel': None,
+        'hotelCost': 0,
+        'hotelCurrency': None,
+        'hotelBookingId': None,
+        'hotelSelectionStatus': 'removed',
+        'hotelSelectionRemovedAt': utc_now_iso(),
+        'updatedAt': utc_now_iso(),
+    }
+    merged = {**current, **patch}
+    patch['budgetEstimate'] = calculateBudget(merged)
+    return jsonify({'ok': True, 'itinerary': updateRecord('itineraries', iid, patch)})
+
+
 @bp.post('/itineraries/<iid>/activities')
 @auth_required(['traveller'])
 def add_activity_route(iid):

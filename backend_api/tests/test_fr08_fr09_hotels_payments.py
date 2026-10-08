@@ -401,7 +401,7 @@ def test_fallback_hotel_attempt_reuses_simulated_confirmation(
                 'hotelBookingAttemptId': payload['hotelBookingAttemptId'],
             })
         assert prebook.status_code == 200
-        payload['prebookId'] = prebook.get_json()['result']['prebookId']
+        payload['validationId'] = prebook.get_json()['result']['validationId']
         first = client.post('/api/fr8/hotels/book', headers={
             'Authorization': 'Bearer valid_test_token'}, json=payload)
         second = client.post('/api/fr8/hotels/book', headers={

@@ -274,16 +274,20 @@ class _HotelScreenState extends State<HotelScreen> {
         return;
       }
       final result = Map<String, dynamic>.from(data['result'] as Map);
-      final prebookId = (result['prebookId'] ?? result['id'] ?? '').toString();
-      if (prebookId.isEmpty)
-        throw Exception('Provider did not return a prebook ID.');
+      final validationId =
+          (result['validationId'] ?? result['prebookId'] ?? result['id'] ?? '')
+              .toString();
+      if (validationId.isEmpty) {
+        throw Exception(
+            'The hotel offer could not be validated. Search again.');
+      }
       if (!mounted) return;
       setState(() => busy = false);
       final resultOffer = result['validatedOffer'] is Map
           ? Map<String, dynamic>.from(result['validatedOffer'] as Map)
           : result;
-      await completeBooking({...hotel, ...resultOffer},
-          prebookId, (data['source'] ?? source).toString(), attemptId);
+      await completeBooking({...hotel, ...resultOffer}, validationId,
+          (data['source'] ?? source).toString(), attemptId);
     } on TimeoutException {
       if (!mounted) return;
       setState(() => lastBooking = {
@@ -303,7 +307,7 @@ class _HotelScreenState extends State<HotelScreen> {
     }
   }
 
-  Future<void> completeBooking(Map<String, dynamic> hotel, String prebookId,
+  Future<void> completeBooking(Map<String, dynamic> hotel, String validationId,
       String prebookSource, String attemptId) async {
     final firstName = TextEditingController(text: 'TravelMate');
     final lastName = TextEditingController(text: 'Traveller');
@@ -347,8 +351,8 @@ class _HotelScreenState extends State<HotelScreen> {
                 ),
                 Text(
                   prebookSource == 'liteapi'
-                      ? 'This uses the configured LiteAPI/Nuitée booking flow.'
-                      : 'This creates a Demo booking with a simulated confirmation. It is not an external hotel reservation.',
+                      ? 'Price checked with LiteAPI. This demo app does not reserve a room.'
+                      : 'Sample hotel content. This creates a local demo reservation; no room will be reserved.',
                   style: const TextStyle(
                       fontSize: 12, color: InkWashColors.mutedInk),
                 ),
@@ -378,7 +382,7 @@ class _HotelScreenState extends State<HotelScreen> {
     try {
       final data = await api.post('/api/fr8/hotels/book', {
         'hotelBookingAttemptId': attemptId,
-        'prebookId': prebookId,
+        'validationId': validationId,
         'holder': {
           'firstName': firstName.text.trim(),
           'lastName': lastName.text.trim(),
@@ -555,7 +559,7 @@ class _HotelScreenState extends State<HotelScreen> {
           const TravelSectionHeader(
               title: 'Search bookable hotel offers',
               subtitle:
-                  'Search, compare, prebook and confirm hotel offers. Live provider results are used when configured.'),
+                  'Search and compare hotel offers, then validate a quote before creating a local demo reservation.'),
           const SizedBox(height: 12),
           TextField(
               controller: destination,
@@ -628,8 +632,8 @@ class _HotelScreenState extends State<HotelScreen> {
             const SizedBox(height: 10),
             TravelStatusPill(
                 text: source == 'liteapi'
-                    ? 'LIVE LITEAPI / NUITÉE OFFERS'
-                    : 'AVAILABLE HOTEL OFFERS',
+                    ? 'PRICE CHECKED WITH LITEAPI'
+                    : 'SAMPLE HOTEL CONTENT',
                 icon: source == 'liteapi'
                     ? Icons.cloud_done_outlined
                     : Icons.science_outlined),
@@ -693,6 +697,14 @@ class _HotelScreenState extends State<HotelScreen> {
                         Text((h['address'] ?? '').toString(),
                             style:
                                 const TextStyle(color: InkWashColors.mutedInk)),
+                        if ((h['demoDisclosure'] ?? '').toString().isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 5),
+                            child: Text((h['demoDisclosure']).toString(),
+                                style: const TextStyle(
+                                    color: InkWashColors.mutedInk,
+                                    fontSize: 12)),
+                          ),
                         const SizedBox(height: 7),
                         Wrap(spacing: 7, runSpacing: 7, children: [
                           TravelStatusPill(
@@ -727,7 +739,7 @@ class _HotelScreenState extends State<HotelScreen> {
                           const SizedBox(width: 6),
                           FilledButton.tonal(
                               onPressed: busy ? null : () => prebook(h),
-                              child: const Text('Prebook')),
+                              child: const Text('Validate quote')),
                         ]),
                       ]),
                 ),

@@ -55,6 +55,49 @@ def retrieveHotelOffers(payload):
     return _json_or_error(r)
 
 
+def retrieveHotelContent(hotel_id):
+    """Read property content only; never calls a booking/mutation endpoint."""
+    if not str(hotel_id or '').strip():
+        raise ValueError('hotel_id is required')
+    r = requests.get(
+        f'{DATA_BASE}/data/hotel',
+        params={'hotelId': str(hotel_id)},
+        headers=_headers(),
+        timeout=20,
+    )
+    return _json_or_error(r)
+
+
+def normalizeHotelContent(result, hotel_id=None):
+    """Return an allowlisted property projection without raw provider fields."""
+    result = result or {}
+    data = result.get('data') if isinstance(result, dict) else None
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    data = data if isinstance(data, dict) else result
+    photos = data.get('images') or data.get('photos') or []
+    if isinstance(photos, str):
+        photos = [photos]
+    image_urls = [str(item.get('url') or item.get('image') or item)
+                  for item in photos[:8]
+                  if isinstance(item, (str, dict)) and (isinstance(item, str) or item.get('url') or item.get('image'))]
+    return {
+        'hotelId': str(data.get('id') or data.get('hotelId') or hotel_id or ''),
+        'name': data.get('name') or data.get('hotelName'),
+        'description': data.get('description') or data.get('hotelDescription'),
+        'address': data.get('address') or data.get('addressLine'),
+        'amenities': data.get('amenities') if isinstance(data.get('amenities'), list) else [],
+        'imageUrls': image_urls,
+        'mainPhoto': data.get('mainPhoto') or data.get('main_photo') or (image_urls[0] if image_urls else ''),
+        'latitude': data.get('latitude') or (data.get('coordinates') or {}).get('latitude'),
+        'longitude': data.get('longitude') or (data.get('coordinates') or {}).get('longitude'),
+        'stars': data.get('stars') or data.get('starRating') or data.get('star_rating'),
+        'rating': data.get('rating') or data.get('reviewScore') or data.get('guestRating'),
+        'checkinTime': data.get('checkinTime') or data.get('checkInTime'),
+        'checkoutTime': data.get('checkoutTime') or data.get('checkOutTime'),
+    }
+
+
 def validateHotelOffer(offerId):
     if not provider_mutations_allowed():
         raise ProviderMutationBlocked('External hotel validation is unavailable until a confirmed sandbox environment is configured.')
