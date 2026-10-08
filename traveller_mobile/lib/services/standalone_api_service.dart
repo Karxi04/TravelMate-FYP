@@ -18,6 +18,7 @@ class StandaloneApiService {
   final String? uidOverride;
   final Map<String, String>? memoryStore;
   SharedPreferencesAsync? _prefsInstance;
+  final Map<String, Map<String, dynamic>> _flightAdjustmentPreviews = {};
 
   StandaloneApiService({this.uidOverride, this.memoryStore});
 
@@ -220,6 +221,14 @@ class StandaloneApiService {
             path.startsWith('/api/fr7/itineraries/')) &&
         path.endsWith('/flight-selection/remove')) {
       return _removeFlightSelection(path.split('/')[4]);
+    }
+    if (path.startsWith('/api/fr5/itineraries/') &&
+        path.endsWith('/flight-adjustment/preview')) {
+      return _flightAdjustmentPreview(path.split('/')[4]);
+    }
+    if (path.startsWith('/api/fr5/itineraries/') &&
+        path.endsWith('/flight-adjustment/apply')) {
+      return _flightAdjustmentApply(path.split('/')[4], payload);
     }
     if (path.startsWith('/api/fr5/itineraries/') &&
         path.endsWith('/lower-cost-alternatives')) {
@@ -4166,6 +4175,364 @@ class StandaloneApiService {
     trip['updatedAt'] = _now();
     await _replaceTrip(trip);
     return {'ok': true, 'itinerary': trip, 'budget': trip['budgetEstimate']};
+  }
+
+  Map<String, dynamic> _cloneMap(Map<String, dynamic> value) =>
+      Map<String, dynamic>.from(jsonDecode(jsonEncode(value)) as Map);
+
+  String _adjustmentFingerprint(dynamic value) =>
+      jsonEncode(value).hashCode.toRadixString(16);
+
+  int? _adjustmentClock(dynamic value) {
+    final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch('${value ?? ''}');
+    if (match == null) return null;
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+    if (hour == null || minute == null || hour > 23 || minute > 59) return null;
+    return hour * 60 + minute;
+  }
+
+  bool _adjustmentProtected(Map<String, dynamic> item) =>
+      [
+        'locked',
+        'isLocked',
+        'fixed',
+        'protected',
+        'userFixed',
+        'manualTime',
+        'manualOrder',
+        'userEdited'
+      ].any((key) => item[key] == true) ||
+      ['manual', 'user']
+          .contains((item['editProvenance'] ?? '').toString().toLowerCase());
+
+  Future<dynamic> _flightAdjustmentPreview(String id) async {
+    final trip = await _tripById(id);
+    if (trip == null) throw Exception('Itinerary not found.');
+    final flight = trip['selectedFlight'] is Map
+        ? Map<String, dynamic>.from(trip['selectedFlight'] as Map)
+        : <String, dynamic>{};
+    if (flight.isEmpty)
+      throw Exception(
+          'Select a flight before requesting an itinerary adjustment preview.');
+    final assumptions = {
+      'arrivalClearanceMinutes': 90,
+      'departureTransferMinutes': 90,
+      'departureCheckinMinutes': 120,
+      'timezone': 'Asia/Kuala_Lumpur',
+      'label':
+          'TravelMate planning assumptions; not official airline requirements.',
+      'source': 'configured_planning_assumption',
+    };
+    final outbound =
+        (flight['outboundSegments'] as List? ?? []).whereType<Map>().toList();
+    final returns =
+        (flight['returnSegments'] as List? ?? []).whereType<Map>().toList();
+    DateTime? parseLocal(dynamic date, dynamic time) {
+      if ('${date ?? ''}'.isEmpty || '${time ?? ''}'.isEmpty) return null;
+      return DateTime.tryParse('${date}T${time}:00+08:00');
+    }
+
+    DateTime? arrival;
+    for (final segment in outbound.reversed) {
+      if ((segment['arrivalAirportCode'] ?? '').toString().toUpperCase() ==
+          'PEN') {
+        arrival = parseLocal(segment['arrivalDate'], segment['arrivalTime']);
+        if (arrival != null) break;
+      }
+    }
+    DateTime? departure;
+    for (final segment in returns) {
+      if ((segment['departureAirportCode'] ?? '').toString().toUpperCase() ==
+          'PEN') {
+        departure =
+            parseLocal(segment['departureDate'], segment['departureTime']);
+        if (departure != null) break;
+      }
+    }
+    if (arrival == null &&
+        outbound.isEmpty &&
+        '${flight['arrivalAirport'] ?? ''}'.toUpperCase() == 'PEN') {
+      arrival = parseLocal(flight['outboundDate'], flight['arrivalTime']);
+    }
+    if (departure == null &&
+        returns.isEmpty &&
+        '${flight['departureAirport'] ?? ''}'.toUpperCase() == 'PEN') {
+      departure = parseLocal(flight['outboundDate'], flight['departureTime']);
+    }
+    final startDate = DateTime.tryParse('${trip['startDate'] ?? ''}');
+    final endDate = DateTime.tryParse('${trip['endDate'] ?? ''}');
+    Map<String, dynamic> unavailable(String reason) => {
+          'ok': true,
+          'preview': {
+            'previewId':
+                'flight_adjustment_${DateTime.now().microsecondsSinceEpoch}',
+            'tripId': id,
+            'status': 'no_flight_boundary',
+            'canApply': false,
+            'reason': reason,
+            'assumptions': assumptions,
+            'before': _cloneMap(trip),
+            'after': _cloneMap(trip),
+            'changes': <dynamic>[],
+            'newlyUnscheduled': <dynamic>[],
+            'remainingConflicts': [
+              <String, dynamic>{'message': reason}
+            ],
+            'budgetBefore': _calculateBudget(trip),
+            'budgetAfter': _calculateBudget(trip),
+          },
+        };
+    if (startDate == null || endDate == null)
+      return unavailable('Trip dates are missing or invalid.');
+    if ((returns.isNotEmpty && (arrival == null || departure == null)) ||
+        (returns.isEmpty && arrival == null && departure == null)) {
+      return unavailable(
+          'Flight local date and time data is incomplete; no safe adjustment was proposed.');
+    }
+    if ((arrival != null &&
+            (arrival.isBefore(startDate) ||
+                arrival.isAfter(endDate.add(const Duration(days: 1))))) ||
+        (departure != null &&
+            (departure.isBefore(startDate) ||
+                departure.isAfter(endDate.add(const Duration(days: 1)))))) {
+      return unavailable('Flight date is incompatible with the trip dates.');
+    }
+    final pace = (trip['travelPace'] ?? trip['pace'] ?? 'moderate')
+        .toString()
+        .toLowerCase();
+    final window = pace.contains('relax')
+        ? const [600, 1200]
+        : pace.contains('active')
+            ? const [480, 1290]
+            : const [540, 1260];
+    final availability = <String, Map<String, dynamic>>{};
+    for (var i = 0; i <= endDate.difference(startDate).inDays; i++) {
+      final day = startDate.add(Duration(days: i));
+      var dayStart = window[0];
+      var dayEnd = window[1];
+      if (arrival != null && _dateKey(arrival) == _dateKey(day))
+        dayStart = max(dayStart, arrival.hour * 60 + arrival.minute + 90);
+      if (departure != null && _dateKey(departure) == _dateKey(day))
+        dayEnd = min(dayEnd, departure.hour * 60 + departure.minute - 210);
+      availability[_dateKey(day)] = {
+        'dayNo': i + 1,
+        'date': _dateKey(day),
+        'startMinutes': dayStart,
+        'endMinutes': dayEnd,
+        'availableMinutes': max(0, dayEnd - dayStart),
+        'availabilityStatus': dayEnd > dayStart ? 'available' : 'unavailable',
+      };
+    }
+    final affected = availability.values
+        .where((day) =>
+            (arrival != null && day['date'] == _dateKey(arrival)) ||
+            (departure != null && day['date'] == _dateKey(departure)))
+        .toList();
+    if (affected.isEmpty)
+      return unavailable(
+          'Flight does not provide an affected trip-local boundary.');
+    final before = _cloneMap(trip);
+    final after = _cloneMap(trip);
+    final currentActivities = (trip['activities'] as List? ?? [])
+        .whereType<Map>()
+        .map((e) => _cloneMap(Map<String, dynamic>.from(e)))
+        .toList();
+    final newUnscheduled = <Map<String, dynamic>>[];
+    final changes = <Map<String, dynamic>>[];
+    final conflicts = <Map<String, dynamic>>[];
+    for (final day in affected) {
+      final dayItems = currentActivities
+          .where((item) => '${item['dayNo'] ?? 1}' == '${day['dayNo']}')
+          .toList();
+      var cursor = day['startMinutes'] as int;
+      final byId = <String, Map<String, dynamic>>{};
+      for (final item in dayItems) {
+        final protected = _adjustmentProtected(item);
+        final oldStart =
+            _adjustmentClock(item['scheduledStartTime'] ?? item['timeSlot']);
+        final oldEnd = _adjustmentClock(item['scheduledEndTime']);
+        if (protected) {
+          byId['${item['activityId']}'] = item;
+          if (oldStart == null ||
+              oldEnd == null ||
+              oldStart < day['startMinutes'] ||
+              oldEnd > day['endMinutes']) {
+            conflicts.add({
+              'activityId': item['activityId'],
+              'type': 'protected_activity',
+              'message':
+                  'Protected activity remains in conflict with flight availability.'
+            });
+          } else {
+            cursor = max(cursor, oldEnd);
+          }
+          continue;
+        }
+        final duration = max(
+            30,
+            _num(item['recommendedDurationMinutes'] ??
+                    item['providerDurationMinutes'] ??
+                    90)
+                .round());
+        final start = cursor;
+        final end = start + duration;
+        if (end > day['endMinutes']) {
+          newUnscheduled.add({
+            ...item,
+            'unscheduledReason':
+                'Could not fit within flight-constrained availability.'
+          });
+          changes.add({
+            'activityId': item['activityId'],
+            'activityName': item['activityName'],
+            'kind': 'unscheduled',
+            'reason': 'Could not fit within flight-constrained availability.',
+            'protected': false
+          });
+          continue;
+        }
+        final adjusted = {
+          ...item,
+          'scheduledStartTime': _formatAdjustmentClock(start),
+          'scheduledEndTime': _formatAdjustmentClock(end),
+          'timeSlot': _formatAdjustmentClock(start),
+          'timeRangeLabel':
+              '${_formatAdjustmentClock(start)} - ${_formatAdjustmentClock(end)}',
+          'scheduleNotes': [
+            ...(item['scheduleNotes'] as List? ?? []),
+            'Adjusted within flight-derived availability.'
+          ],
+        };
+        byId['${item['activityId']}'] = adjusted;
+        if (oldStart != start || oldEnd != end) {
+          changes.add({
+            'activityId': item['activityId'],
+            'activityName': item['activityName'],
+            'kind': 'moved',
+            'from': {
+              'scheduledStartTime': item['scheduledStartTime'],
+              'scheduledEndTime': item['scheduledEndTime']
+            },
+            'to': {
+              'scheduledStartTime': adjusted['scheduledStartTime'],
+              'scheduledEndTime': adjusted['scheduledEndTime']
+            },
+            'protected': false
+          });
+        } else {
+          changes.add({
+            'activityId': item['activityId'],
+            'activityName': item['activityName'],
+            'kind': 'retained',
+            'protected': false
+          });
+        }
+        cursor = end + 25;
+      }
+      for (var i = 0; i < currentActivities.length; i++) {
+        final item = currentActivities[i];
+        if ('${item['dayNo'] ?? 1}' == '${day['dayNo']}' &&
+            byId.containsKey('${item['activityId']}'))
+          currentActivities[i] = byId['${item['activityId']}']!;
+      }
+    }
+    final unscheduledIds =
+        newUnscheduled.map((x) => '${x['activityId']}').toSet();
+    after['activities'] = currentActivities
+        .where((x) => !unscheduledIds.contains('${x['activityId']}'))
+        .toList();
+    after['unscheduledSuggestions'] = [
+      ...(trip['unscheduledSuggestions'] as List? ?? [])
+          .whereType<Map>()
+          .map((e) => _cloneMap(Map<String, dynamic>.from(e))),
+      ...newUnscheduled,
+    ];
+    after['scheduledActivityCount'] = (after['activities'] as List).length;
+    after['unscheduledActivityCount'] =
+        (after['unscheduledSuggestions'] as List).length;
+    after['budgetEstimate'] = _calculateBudget(after);
+    final previewId = 'flight_adjustment_${_adjustmentFingerprint({
+          'trip': trip['id'],
+          'tripState': _adjustmentFingerprint(trip),
+          'flight': _adjustmentFingerprint(flight)
+        })}';
+    final preview = {
+      'previewId': previewId,
+      'tripId': id,
+      'status': 'ready',
+      'canApply': true,
+      'reason': '',
+      'assumptions': assumptions,
+      'boundaries': {
+        'arrivalLocal': arrival?.toIso8601String(),
+        'departureLocal': departure?.toIso8601String(),
+        'timezone': 'Asia/Kuala_Lumpur'
+      },
+      'availability': {'status': 'available', 'days': availability},
+      'before': before,
+      'after': after,
+      'changes': changes,
+      'newlyUnscheduled': newUnscheduled,
+      'remainingConflicts': conflicts,
+      'budgetBefore': _calculateBudget(before),
+      'budgetAfter': after['budgetEstimate'],
+      'tripFingerprint': _adjustmentFingerprint(trip),
+      'flightFingerprint': _adjustmentFingerprint(flight),
+    };
+    _flightAdjustmentPreviews[previewId] = _cloneMap(preview);
+    return {'ok': true, 'preview': preview};
+  }
+
+  String _dateKey(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
+  String _formatAdjustmentClock(int value) =>
+      '${(value ~/ 60).toString().padLeft(2, '0')}:${(value % 60).toString().padLeft(2, '0')}';
+
+  Future<dynamic> _flightAdjustmentApply(
+      String id, Map<String, dynamic> payload) async {
+    final previewId = (payload['previewId'] ?? '').toString();
+    final preview = _flightAdjustmentPreviews[previewId];
+    if (preview == null || preview['tripId'].toString() != id)
+      throw Exception('Preview not found.');
+    if (preview['status'] == 'applied') {
+      final result =
+          _cloneMap(preview['appliedResult'] as Map<String, dynamic>);
+      result['idempotent'] = true;
+      return result;
+    }
+    final trip = await _tripById(id);
+    if (trip == null) throw Exception('Itinerary not found.');
+    final flight = trip['selectedFlight'] is Map
+        ? Map<String, dynamic>.from(trip['selectedFlight'] as Map)
+        : <String, dynamic>{};
+    if (preview['tripFingerprint'] != _adjustmentFingerprint(trip) ||
+        preview['flightFingerprint'] != _adjustmentFingerprint(flight))
+      throw Exception(
+          'This preview is stale because the trip or selected flight changed. Create a new preview.');
+    if (preview['canApply'] != true)
+      throw Exception(
+          preview['reason'] ?? 'This preview cannot be applied safely.');
+    final updated = _cloneMap(preview['after'] as Map<String, dynamic>);
+    updated['flightAdjustmentPreviewId'] = previewId;
+    updated['flightAdjustmentAppliedAt'] = _now();
+    updated['flightAdjustmentAssumptions'] = preview['assumptions'];
+    updated['flightAdjustmentStatus'] = 'applied';
+    updated['revision'] = _num(trip['revision']).round() + 1;
+    await _replaceTrip(updated);
+    final result = {
+      'ok': true,
+      'itinerary': updated,
+      'previewId': previewId,
+      'idempotent': false
+    };
+    _flightAdjustmentPreviews[previewId] = {
+      ...preview,
+      'status': 'applied',
+      'appliedResult': result
+    };
+    return result;
   }
 
   Future<dynamic> _hotelSearch(Map<String, dynamic> payload) async {
