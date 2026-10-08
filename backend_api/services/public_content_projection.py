@@ -195,6 +195,21 @@ def sync_review(review_id, source=None):
     storeRecord(PUBLIC_REVIEW_COLLECTION, public_review(source), review_id)
 
 
+def revoke_projection(collection, document_id):
+    """Remove public visibility before a source mutation is committed."""
+    if not _writes_enabled():
+        return
+    if collection == 'tourism_packages':
+        deleteRecord(PUBLIC_PACKAGE_COLLECTION, document_id)
+        for item in retrieveRecord('promotional_campaigns'):
+            if str(item.get('packageId') or '') == str(document_id):
+                deleteRecord(PUBLIC_CAMPAIGN_COLLECTION, item.get('id'))
+    elif collection == 'promotional_campaigns':
+        deleteRecord(PUBLIC_CAMPAIGN_COLLECTION, document_id)
+    elif collection == 'feedback':
+        deleteRecord(PUBLIC_REVIEW_COLLECTION, document_id)
+
+
 def source_changed(collection, document_id, source=None):
     if collection == 'tourism_packages':
         sync_package(document_id, source)

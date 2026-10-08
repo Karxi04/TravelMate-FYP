@@ -6,6 +6,8 @@ This script never runs at application startup.
 """
 
 import argparse
+import hashlib
+import json
 import os
 import sys
 
@@ -46,45 +48,83 @@ def rebuild(apply=False):
         'packages': len(eligible_packages),
         'campaigns': len(eligible_campaigns),
         'reviews': len(eligible_reviews),
+        'removedStale': 0,
+        'skippedConcurrentChanges': 0,
     }
     if not apply:
         return counts
 
-    package_ids = set(eligible_packages)
-    campaign_ids = {str(item.get('id')) for item in eligible_campaigns}
-    review_ids = {str(item.get('id')) for item in eligible_reviews}
     for item in retrieveRecord(PUBLIC_PACKAGE_COLLECTION):
-        if str(item.get('id')) not in package_ids:
-            deleteRecord(PUBLIC_PACKAGE_COLLECTION, item.get('id'))
+        package_id = str(item.get('id'))
+        current = retrieveRecord('tourism_packages', package_id)
+        if not eligible_package(current):
+            deleteRecord(PUBLIC_PACKAGE_COLLECTION, package_id)
+            counts['removedStale'] += 1
     for item in retrieveRecord(PUBLIC_CAMPAIGN_COLLECTION):
-        if str(item.get('id')) not in campaign_ids:
-            deleteRecord(PUBLIC_CAMPAIGN_COLLECTION, item.get('id'))
+        campaign_id = str(item.get('id'))
+        current = retrieveRecord('promotional_campaigns', campaign_id)
+        parent = retrieveRecord('tourism_packages', str((current or {}).get('packageId') or ''))
+        current_eligible = bool(current and parent and campaign_publication_eligible(current) and eligible_package(parent))
+        if not current_eligible:
+            deleteRecord(PUBLIC_CAMPAIGN_COLLECTION, campaign_id)
+            counts['removedStale'] += 1
     for item in retrieveRecord(PUBLIC_REVIEW_COLLECTION):
-        if str(item.get('id')) not in review_ids:
-            deleteRecord(PUBLIC_REVIEW_COLLECTION, item.get('id'))
+        review_id = str(item.get('id'))
+        current = retrieveRecord('feedback', review_id)
+        if str((current or {}).get('feedbackStatus', 'visible')).lower() != 'visible':
+            deleteRecord(PUBLIC_REVIEW_COLLECTION, review_id)
+            counts['removedStale'] += 1
 
     for package_id, package in eligible_packages.items():
-        profile = retrieveRecord('users', package.get('operatorId')) if package.get('operatorId') else None
+        current = retrieveRecord('tourism_packages', package_id)
+        if _fingerprint(current) != _fingerprint(package) or not eligible_package(current):
+            counts['skippedConcurrentChanges'] += 1
+            continue
+        profile = retrieveRecord('users', current.get('operatorId')) if current.get('operatorId') else None
         package_campaigns = [
             item for item in eligible_campaigns
             if str(item.get('packageId') or '') == package_id
         ]
         storeRecord(
             PUBLIC_PACKAGE_COLLECTION,
-            public_package(package, profile, package_campaigns),
+            public_package(current, profile, package_campaigns),
             package_id,
         )
     for campaign in eligible_campaigns:
-        package = eligible_packages[str(campaign.get('packageId'))]
-        profile = retrieveRecord('users', campaign.get('operatorId')) if campaign.get('operatorId') else None
+        campaign_id = str(campaign.get('id'))
+        current = retrieveRecord('promotional_campaigns', campaign_id)
+        package_id = str((current or {}).get('packageId') or '')
+        package = retrieveRecord('tourism_packages', package_id)
+        snapshot_package = eligible_packages.get(package_id)
+        if (
+            _fingerprint(current) != _fingerprint(campaign)
+            or _fingerprint(package) != _fingerprint(snapshot_package)
+            or not current
+            or not package
+            or not campaign_publication_eligible(current)
+            or not eligible_package(package)
+        ):
+            counts['skippedConcurrentChanges'] += 1
+            continue
+        profile = retrieveRecord('users', current.get('operatorId')) if current.get('operatorId') else None
         storeRecord(
             PUBLIC_CAMPAIGN_COLLECTION,
-            public_campaign(campaign, package, profile),
-            campaign['id'],
+            public_campaign(current, package, profile),
+            campaign_id,
         )
     for review in eligible_reviews:
-        storeRecord(PUBLIC_REVIEW_COLLECTION, public_review(review), review['id'])
+        review_id = str(review.get('id'))
+        current = retrieveRecord('feedback', review_id)
+        if _fingerprint(current) != _fingerprint(review) or str((current or {}).get('feedbackStatus', 'visible')).lower() != 'visible':
+            counts['skippedConcurrentChanges'] += 1
+            continue
+        storeRecord(PUBLIC_REVIEW_COLLECTION, public_review(current), review_id)
     return counts
+
+
+def _fingerprint(record):
+    payload = json.dumps(record or {}, sort_keys=True, default=str, separators=(',', ':'))
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
 
 def main():
@@ -96,10 +136,15 @@ def main():
         parser.error('--project is required with --apply')
     if args.apply:
         os.environ['GOOGLE_CLOUD_PROJECT'] = args.project
-    init_firebase()
-    counts = rebuild(apply=args.apply)
-    print({'mode': 'apply' if args.apply else 'dry-run', 'eligible': counts})
+    try:
+        init_firebase()
+        counts = rebuild(apply=args.apply)
+        print({'mode': 'apply' if args.apply else 'dry-run', 'eligible': counts})
+        return 0
+    except Exception as exc:
+        print({'mode': 'apply' if args.apply else 'dry-run', 'error': type(exc).__name__}, file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

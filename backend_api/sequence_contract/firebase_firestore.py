@@ -10,6 +10,13 @@ def _public_projection_changed(collection_name, document_id, source):
     source_changed(collection_name, document_id, source)
 
 
+def _revoke_public_projection(collection_name, document_id):
+    if collection_name not in {'tourism_packages', 'promotional_campaigns', 'feedback'}:
+        return
+    from services.public_content_projection import revoke_projection
+    revoke_projection(collection_name, document_id)
+
+
 def retrieveRecord(collectionName, documentId=None, filters=None, limit=None):
     """Exact sequence-diagram name for Firestore retrieval."""
     collection = get_db().collection(collectionName)
@@ -27,6 +34,8 @@ def retrieveRecord(collectionName, documentId=None, filters=None, limit=None):
 def storeRecord(collectionName, data, documentId=None, merge=False):
     """Exact sequence-diagram name for Firestore create/store."""
     ref = get_db().collection(collectionName).document(str(documentId)) if documentId else get_db().collection(collectionName).document()
+    if documentId:
+        _revoke_public_projection(collectionName, documentId)
     ref.set(data, merge=merge)
     result = {"id": ref.id, **data}
     _public_projection_changed(collectionName, ref.id, result)
@@ -54,6 +63,7 @@ def updateRecord(collectionName, documentId, data):
     ref = get_db().collection(collectionName).document(str(documentId))
     if not ref.get().exists:
         return None
+    _revoke_public_projection(collectionName, documentId)
     ref.set(data, merge=True)
     result = retrieveRecord(collectionName, documentId)
     _public_projection_changed(collectionName, documentId, result)
@@ -65,6 +75,7 @@ def deleteRecord(collectionName, documentId):
     ref = get_db().collection(collectionName).document(str(documentId))
     if not ref.get().exists:
         return False
+    _revoke_public_projection(collectionName, documentId)
     ref.delete()
     _public_projection_changed(collectionName, documentId, None)
     return True

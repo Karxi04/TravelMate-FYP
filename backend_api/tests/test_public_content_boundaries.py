@@ -1,6 +1,8 @@
 from copy import deepcopy
 from unittest.mock import patch
 
+import pytest
+
 from services.public_content_projection import (
     PUBLIC_PACKAGE_COLLECTION,
     PUBLIC_REVIEW_COLLECTION,
@@ -10,6 +12,7 @@ from services.public_content_projection import (
     sync_package,
     sync_review,
 )
+from services.public_content_projection import active_campaign
 
 
 def test_package_projection_allowlists_v2_nested_fields_without_mutating_source():
@@ -110,3 +113,74 @@ def test_projection_sync_removes_rejected_package_and_hidden_review(monkeypatch)
     sync_review('review-1', {'id': 'review-1', 'feedbackStatus': 'removed'})
     assert (PUBLIC_PACKAGE_COLLECTION, 'pkg-1') in deleted
     assert (PUBLIC_REVIEW_COLLECTION, 'review-1') in deleted
+
+
+def test_campaign_expiry_is_read_time_policy_without_source_write():
+    campaign = {
+        'reviewStatus': 'approved', 'campaignStatus': 'active',
+        'startDate': '2026-10-01', 'endDate': '2026-10-08',
+    }
+    assert active_campaign(campaign, today='2026-09-30') is False
+    assert active_campaign(campaign, today='2026-10-01') is True
+    assert active_campaign(campaign, today='2026-10-08') is True
+    assert active_campaign(campaign, today='2026-10-09') is False
+
+
+def test_revoke_projection_removes_parent_campaigns_before_source_mutation(monkeypatch):
+    from services.public_content_projection import revoke_projection
+
+    deleted = []
+    monkeypatch.delenv('TRAVELMATE_TESTING', raising=False)
+    monkeypatch.setattr(
+        'services.public_content_projection.retrieveRecord',
+        lambda collection, *args, **kwargs: [
+            {'id': 'camp-1', 'packageId': 'pkg-1'},
+        ] if collection == 'promotional_campaigns' else [],
+    )
+    monkeypatch.setattr(
+        'services.public_content_projection.deleteRecord',
+        lambda collection, key: deleted.append((collection, key)),
+    )
+    revoke_projection('tourism_packages', 'pkg-1')
+    assert ('public_tourism_packages', 'pkg-1') in deleted
+    assert ('public_promotional_campaigns', 'camp-1') in deleted
+
+
+def test_source_update_revokes_before_write_and_propagates_publish_failure(monkeypatch):
+    from sequence_contract import firebase_firestore
+
+    events = []
+
+    class Ref:
+        id = 'pkg-1'
+
+        def get(self):
+            return type('Snapshot', (), {'exists': True})()
+
+        def set(self, data, merge=True):
+            events.append('source-write')
+
+    class Collection:
+        def document(self, _key):
+            return Ref()
+
+    class Database:
+        def collection(self, _name):
+            return Collection()
+
+    monkeypatch.setattr(firebase_firestore, 'get_db', lambda: Database())
+    monkeypatch.setattr(firebase_firestore, 'retrieveRecord', lambda *_args, **_kwargs: {'id': 'pkg-1'})
+    monkeypatch.setattr(
+        firebase_firestore,
+        '_revoke_public_projection',
+        lambda *_args: events.append('revoke'),
+    )
+
+    def failed_publish(*_args):
+        events.append('publish')
+        raise RuntimeError('projection unavailable')
+
+    monkeypatch.setattr(firebase_firestore, '_public_projection_changed', failed_publish)
+    with pytest.raises(RuntimeError, match='projection unavailable'):
+        firebase_firestore.updateRecord('tourism_packages', 'pkg-1', {'approvalStatus': 'draft'})
+    assert events == ['revoke', 'source-write', 'publish']
