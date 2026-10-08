@@ -216,6 +216,11 @@ class StandaloneApiService {
         path.endsWith('/hotel-selection/remove')) {
       return _removeHotelSelection(path.split('/')[4]);
     }
+    if ((path.startsWith('/api/fr5/itineraries/') ||
+            path.startsWith('/api/fr7/itineraries/')) &&
+        path.endsWith('/flight-selection/remove')) {
+      return _removeFlightSelection(path.split('/')[4]);
+    }
     if (path.startsWith('/api/fr5/itineraries/') &&
         path.endsWith('/lower-cost-alternatives')) {
       final id = path.split('/')[4];
@@ -3267,6 +3272,20 @@ class StandaloneApiService {
       'hotelCurrency',
       'hotelBookingId'
     };
+    const flightKeys = {
+      'selectedFlight',
+      'flightCost',
+      'flightCurrency',
+      'flightPriceBasis',
+      'flightSearchId',
+      'flightOptionId',
+      'flightSelectionSource',
+      'flightSelectionStatus',
+    };
+    if (flightKeys.any((key) => payload.containsKey(key))) {
+      throw Exception(
+          'Flight selections must be attached through flight search.');
+    }
     final safePayload = Map<String, dynamic>.from(payload);
     if (hotelKeys.any((key) => payload.containsKey(key))) {
       final bookingId =
@@ -3676,7 +3695,20 @@ class StandaloneApiService {
         (trip['activities'] as List? ?? []).whereType<Map>().toList();
     final activityCost =
         activities.fold<double>(0, (sum, e) => sum + _num(e['estimatedCost']));
-    final flight = _num(trip['flightCost']);
+    final selectedFlight = trip['selectedFlight'] is Map
+        ? Map<String, dynamic>.from(trip['selectedFlight'] as Map)
+        : <String, dynamic>{};
+    final flightCurrency =
+        (trip['flightCurrency'] ?? selectedFlight['currency'] ?? '')
+            .toString()
+            .toUpperCase();
+    final flightBasis =
+        trip['flightPriceBasis'] ?? selectedFlight['priceBasis'];
+    final flightIssue = selectedFlight.isNotEmpty &&
+        (flightCurrency != 'MYR' ||
+            flightBasis == null ||
+            selectedFlight['priceStatus'] == 'unknown');
+    final flight = flightIssue ? 0.0 : _num(trip['flightCost']);
     final days = _tripDays(trip);
     final nights = max(0, days - 1);
     final rooms = max(1, _num(trip['roomQuantity']).round());
@@ -3708,7 +3740,7 @@ class StandaloneApiService {
     final limit = _num(trip['budgetLimit']);
     final remaining = limit - total;
     final over = max(0.0, -remaining);
-    final status = hotelCurrencyIssue
+    final status = hotelCurrencyIssue || flightIssue
         ? 'attention_required'
         : (limit > 0 && total > limit ? 'over_budget' : 'within_budget');
     return {
@@ -3725,12 +3757,16 @@ class StandaloneApiService {
       'remaining': _money(remaining),
       'overBy': _money(over),
       'status': status,
-      'incomplete': hotelCurrencyIssue,
-      'attention': hotelCurrencyIssue
-          ? 'Hotel amount is excluded until a validated MYR currency is available.'
-          : '',
+      'incomplete': hotelCurrencyIssue || flightIssue,
+      'attention': flightIssue
+          ? 'Flight amount is excluded until a validated MYR planning price is available.'
+          : (hotelCurrencyIssue
+              ? 'Hotel amount is excluded until a validated MYR currency is available.'
+              : ''),
       'costProvenance': {
-        'flight': flight > 0 ? 'confirmed' : 'not_selected',
+        'flight': flightIssue
+            ? 'excluded_unknown_currency_or_basis'
+            : (flight > 0 ? 'confirmed_total' : 'not_selected'),
         'hotel': hotelCurrencyIssue
             ? 'excluded_unknown_currency'
             : (hasHotelTotal
@@ -4061,7 +4097,7 @@ class StandaloneApiService {
               'currency': 'MYR',
               'currencyStatus': 'known',
               'priceStatus': 'available',
-              'priceBasis': 'per_room_night',
+              'priceBasis': 'sample_itinerary_total',
               'taxesAndFeesStatus': 'included',
               'cancellation': {
                 'tag': r[6] == true ? 'RFN' : 'NRFN',
@@ -4089,7 +4125,14 @@ class StandaloneApiService {
       items.sort((a, b) =>
           _num(a['durationMinutes']).compareTo(_num(b['durationMinutes'])));
     }
-    return {'ok': true, 'items': items, 'source': 'local'};
+    return {
+      'ok': true,
+      'items': items,
+      'source': 'sample_fixture',
+      'sourceLabel': 'Explicit sample fixture (not a current schedule)',
+      'cacheStatus': 'fixture',
+      'transactionMode': 'planning_reference',
+    };
   }
 
   Future<dynamic> _selectFlight(Map<String, dynamic> payload) async {
@@ -4099,9 +4142,30 @@ class StandaloneApiService {
     if (trip == null) throw Exception('Itinerary not found.');
     trip['selectedFlight'] = flight;
     trip['flightCost'] = _num(flight['price']);
+    trip['flightCurrency'] =
+        (flight['currency'] ?? 'MYR').toString().toUpperCase();
+    trip['flightPriceBasis'] = flight['priceBasis'] ?? 'sample_itinerary_total';
+    trip['flightSelectionStatus'] = 'selected';
+    trip['flightSelectionSource'] = 'sample_fixture';
+    trip['flightSelectedAt'] = _now();
     trip['updatedAt'] = _now();
     await _replaceTrip(trip);
     return {'ok': true, 'itinerary': trip, 'budget': _calculateBudget(trip)};
+  }
+
+  Future<dynamic> _removeFlightSelection(String id) async {
+    final trip = await _tripById(id);
+    if (trip == null) throw Exception('Itinerary not found.');
+    trip['selectedFlight'] = null;
+    trip['flightCost'] = 0;
+    trip['flightCurrency'] = null;
+    trip['flightPriceBasis'] = null;
+    trip['flightSelectionStatus'] = 'removed';
+    trip['flightSelectionRemovedAt'] = _now();
+    trip['budgetEstimate'] = _calculateBudget(trip);
+    trip['updatedAt'] = _now();
+    await _replaceTrip(trip);
+    return {'ok': true, 'itinerary': trip, 'budget': trip['budgetEstimate']};
   }
 
   Future<dynamic> _hotelSearch(Map<String, dynamic> payload) async {

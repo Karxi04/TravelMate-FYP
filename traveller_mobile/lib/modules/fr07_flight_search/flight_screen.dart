@@ -8,11 +8,15 @@ import 'flight_details_screen.dart';
 class FlightScreen extends StatefulWidget {
   final String? initialOutboundDate;
   final String? initialReturnDate;
+  final String? initialDeparture;
+  final String? initialArrival;
 
   const FlightScreen({
     super.key,
     this.initialOutboundDate,
     this.initialReturnDate,
+    this.initialDeparture,
+    this.initialArrival,
   });
 
   @override
@@ -34,6 +38,7 @@ class _FlightScreenState extends State<FlightScreen> {
   bool nonstopOnly = false;
   String sort = 'top';
   String source = '';
+  String searchId = '';
 
   String dateText(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -61,6 +66,10 @@ class _FlightScreenState extends State<FlightScreen> {
   @override
   void initState() {
     super.initState();
+    if ((widget.initialDeparture ?? '').trim().isNotEmpty)
+      from.text = widget.initialDeparture!.trim();
+    if ((widget.initialArrival ?? '').trim().isNotEmpty)
+      to.text = widget.initialArrival!.trim();
     final start = DateTime.now().add(const Duration(days: 30));
     outbound = TextEditingController(
         text: widget.initialOutboundDate?.trim().isNotEmpty == true
@@ -143,7 +152,8 @@ class _FlightScreenState extends State<FlightScreen> {
     final outboundDate = parseDate(outbound.text);
     final inboundDate = roundTrip ? parseDate(returnDate.text) : null;
     if (departure.length != 3 || arrival.length != 3 || departure == arrival) {
-      showError(context, 'Enter 3-letter airport codes or supported city names (e.g. KUL, PEN, SIN).');
+      showError(context,
+          'Enter 3-letter airport codes or supported city names (e.g. KUL, PEN, SIN).');
       return;
     }
     if (outboundDate == null || (roundTrip && inboundDate == null)) {
@@ -179,6 +189,7 @@ class _FlightScreenState extends State<FlightScreen> {
       setState(() {
         items = data['items'] ?? data['best_flights'] ?? [];
         source = (data['source'] ?? '').toString();
+        searchId = (data['searchId'] ?? '').toString();
       });
     } catch (e) {
       if (mounted) showError(context, e);
@@ -193,7 +204,11 @@ class _FlightScreenState extends State<FlightScreen> {
 
   Future<void> showDetails(Map<String, dynamic> item) async {
     try {
-      final data = await api.post('/api/fr7/flights/details', {'flight': item});
+      final data = await api.post('/api/fr7/flights/details', {
+        'flight': item,
+        if (searchId.isNotEmpty) 'searchId': searchId,
+        'optionId': idOf(item),
+      });
       final flight = data['flight'] is Map
           ? Map<String, dynamic>.from(data['flight'] as Map)
           : Map<String, dynamic>.from(item);
@@ -309,13 +324,21 @@ class _FlightScreenState extends State<FlightScreen> {
           'endDate': end,
           'travellerCount': int.tryParse(travellers.text.trim()) ?? 1,
           'budgetLimit': price > 0 ? price * 3 : 1500.0,
-          'flightCost': price,
-          'selectedFlight': flight,
           'activities': [],
         });
+        final created = newTrip['itinerary'] is Map
+            ? Map<String, dynamic>.from(newTrip['itinerary'] as Map)
+            : <String, dynamic>{};
+        if ((created['id'] ?? '').toString().isNotEmpty) {
+          await api.post('/api/fr7/flights/select', {
+            'itineraryId': created['id'],
+            'searchId': searchId,
+            'optionId': idOf(flight),
+            'flight': flight,
+          });
+        }
         if (mounted) {
-          final tripTitle =
-              newTrip['itinerary']?['title'] ?? 'New trip';
+          final tripTitle = newTrip['itinerary']?['title'] ?? 'New trip';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
                 content:
@@ -355,6 +378,8 @@ class _FlightScreenState extends State<FlightScreen> {
       if (selected == null) return;
       final result = await api.post('/api/fr7/flights/select', {
         'itineraryId': selected['id'],
+        'searchId': searchId,
+        'optionId': idOf(flight),
         'flight': flight,
       });
       if (mounted) {
@@ -491,8 +516,8 @@ class _FlightScreenState extends State<FlightScreen> {
             const SizedBox(height: 10),
             TravelStatusPill(
                 text: source == 'serpapi'
-                    ? 'LIVE SERPAPI RESULTS'
-                    : 'AVAILABLE FLIGHT OPTIONS',
+                    ? 'PROVIDER RESULTS • PLANNING REFERENCE'
+                    : 'EXPLICIT SAMPLE FIXTURE • NOT A CURRENT SCHEDULE',
                 icon: source == 'serpapi'
                     ? Icons.cloud_done_outlined
                     : Icons.science_outlined),
@@ -551,6 +576,10 @@ class _FlightScreenState extends State<FlightScreen> {
                               text:
                                   '${item['travellerCount'] ?? travellers.text} traveller(s)',
                               icon: Icons.people_outline_rounded),
+                          if ((item['priceBasis'] ?? '').toString().isNotEmpty)
+                            TravelStatusPill(
+                                text: (item['priceBasis'] ?? '').toString(),
+                                icon: Icons.payments_outlined),
                         ]),
                         const SizedBox(height: 10),
                         Row(children: [

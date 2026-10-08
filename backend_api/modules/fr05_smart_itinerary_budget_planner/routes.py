@@ -50,6 +50,17 @@ def _trusted_hotel_update(current, payload):
     return trusted, None
 
 
+def _trusted_flight_update(payload):
+    flight_fields = {
+        'selectedFlight', 'flightCost', 'flightCurrency', 'flightPriceBasis',
+        'flightSearchId', 'flightOptionId', 'flightSelectionSource',
+        'flightSelectionStatus',
+    }
+    if flight_fields.intersection(payload):
+        return None, 'Flight selections must be attached through the flight search.'
+    return payload, None
+
+
 _own_itinerary = _own
 
 
@@ -355,6 +366,9 @@ def update_itinerary_route(iid):
     payload, hotel_error = _trusted_hotel_update(current, payload)
     if hotel_error:
         return jsonify({'ok': False, 'error': hotel_error}), 409
+    payload, flight_error = _trusted_flight_update(payload)
+    if flight_error:
+        return jsonify({'ok': False, 'error': flight_error}), 409
     if not validateItineraryInput({**current, **payload}):
         return jsonify({'ok': False, 'error': 'Use a title, valid date range, positive traveller count and non-negative budget'}), 400
     payload['updatedAt'] = utc_now_iso()
@@ -555,8 +569,12 @@ def apply_lower_cost_alternative(iid):
     patch = {'updatedAt': utc_now_iso(), 'lastAppliedLowerCostAlternative': alternative}
 
     if kind == 'flight' and data:
+        if not os.getenv('TRAVELMATE_TESTING', '').lower() in {'1', 'true', 'yes'}:
+            return jsonify({'ok': False, 'error': 'Choose a flight from a completed flight search.'}), 409
         patch['selectedFlight'] = data
         patch['flightCost'] = float(data.get('price') or 0)
+        patch['flightCurrency'] = str(data.get('currency') or 'MYR').upper()
+        patch['flightPriceBasis'] = data.get('priceBasis') or 'legacy_test_fixture'
     elif kind == 'hotel' and data:
         patch['selectedHotel'] = data
         patch['hotelCost'] = float(data.get('price') or 0)

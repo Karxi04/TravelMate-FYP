@@ -323,6 +323,19 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             if (t['flightCost'] != null)
               Text('Flight cost: RM ${t['flightCost']}',
                   style: const TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, children: [
+              OutlinedButton.icon(
+                onPressed: busy ? null : () => _replaceFlight(t),
+                icon: const Icon(Icons.swap_horiz_rounded),
+                label: const Text('Change'),
+              ),
+              OutlinedButton.icon(
+                onPressed: busy ? null : _removeFlight,
+                icon: const Icon(Icons.remove_circle_outline_rounded),
+                label: const Text('Remove'),
+              ),
+            ]),
           ],
         ),
       ));
@@ -436,6 +449,57 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                   initialCheckin: (t['startDate'] ?? '').toString(),
                   initialCheckout: (t['endDate'] ?? '').toString(),
                 )));
+  }
+
+  Future<void> _removeFlight() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove flight from trip?'),
+        content: const Text('This removes the planning reference only.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Keep')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => busy = true);
+    try {
+      final data = await api.post(
+          '/api/fr7/itineraries/${widget.tripId}/flight-selection/remove');
+      if (mounted)
+        setState(
+            () => trip = Map<String, dynamic>.from(data['itinerary'] as Map));
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _replaceFlight(Map<String, dynamic> t) async {
+    final flight = t['selectedFlight'] is Map
+        ? Map<String, dynamic>.from(t['selectedFlight'] as Map)
+        : <String, dynamic>{};
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FlightScreen(
+          initialDeparture: (flight['departureAirport'] ?? '').toString(),
+          initialArrival:
+              (flight['arrivalAirport'] ?? t['destinationArea'] ?? '')
+                  .toString(),
+          initialOutboundDate: (t['startDate'] ?? '').toString(),
+          initialReturnDate: (t['endDate'] ?? '').toString(),
+        ),
+      ),
+    );
+    await load();
   }
 
   Future<void> editTrip() async {
