@@ -581,7 +581,12 @@ def calculateBudget(itineraryOrSelections):
     hotel_is_explicit = data.get('hotelCost') not in (None, '')
     rooms = max(1, int(_float(data.get('roomQuantity'), 1)))
     nightly_rate = _float(data.get('hotelNightlyRate') or data.get('nightlyRate'))
-    hotel = _float(data.get('hotelCost')) if hotel_is_explicit else round(nightly_rate * nights * rooms, 2)
+    selected_hotel = data.get('selectedHotel') if isinstance(data.get('selectedHotel'), dict) else {}
+    hotel_currency = str(data.get('hotelCurrency') or selected_hotel.get('currency') or '').upper()
+    hotel_currency_issue = hotel_is_explicit and hotel_currency != 'MYR'
+    hotel = 0.0 if hotel_currency_issue else (
+        _float(data.get('hotelCost')) if hotel_is_explicit else round(nightly_rate * nights * rooms, 2)
+    )
     car_rental = _float(data.get('carRentalCost'))
     try:
         days = _trip_days(data)
@@ -592,7 +597,7 @@ def calculateBudget(itineraryOrSelections):
     activities = sum(_float(x.get('estimatedCost')) for x in data.get('activities', []))
     total = flight + hotel + car_rental + transport + food + activities
     difference = limit - total if limit else 0.0
-    status = 'within_budget' if not limit or total <= limit else 'over_budget'
+    status = 'attention_required' if hotel_currency_issue else ('within_budget' if not limit or total <= limit else 'over_budget')
     utilization = round((total / limit) * 100.0, 2) if limit > 0 else 0.0
 
     return {
@@ -612,9 +617,11 @@ def calculateBudget(itineraryOrSelections):
         'overBy': round(max(0.0, -difference), 2) if limit else 0.0,
         'utilizationPercent': utilization,
         'status': status,
+        'incomplete': hotel_currency_issue,
+        'attention': 'Hotel amount is excluded until a validated MYR currency is available.' if hotel_currency_issue else '',
         'costProvenance': {
             'flight': 'confirmed' if flight else 'not_selected',
-            'hotel': 'confirmed_total' if hotel_is_explicit else ('estimated_from_nightly_rate' if nightly_rate else 'not_selected'),
+            'hotel': 'excluded_unknown_currency' if hotel_currency_issue else ('confirmed_total' if hotel_is_explicit else ('estimated_from_nightly_rate' if nightly_rate else 'not_selected')),
             'carRental': 'confirmed' if car_rental else 'not_selected',
             'transport': 'provided' if data.get('transportCost') not in (None, '') else 'estimated_daily_allowance',
             'food': 'provided' if data.get('foodCost') not in (None, '') else 'estimated_daily_allowance',

@@ -24,6 +24,7 @@ from sequence_contract.firebase_firestore import (
     storeRecord,
     deleteRecord,
 )
+from services.public_content_projection import public_review
 
 bp = Blueprint('fr03_destinations', __name__, url_prefix='/api/fr3')
 
@@ -281,15 +282,7 @@ def retrieveRatingsAndReviews(place_id):
         except (TypeError, ValueError):
             pass
     average = round(sum(ratings) / len(ratings), 1) if ratings else None
-    reviews = [
-        {
-            **item,
-            'username': item.get('travellerName') or 'Traveller',
-            'description': item.get('comment') or '',
-            'date': item.get('updatedAt') or item.get('submittedAt') or '',
-        }
-        for item in visible
-    ]
+    reviews = [public_review(item) for item in visible]
     return {
         'rating': average,
         'reviews': len(reviews),

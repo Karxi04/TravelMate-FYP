@@ -138,7 +138,7 @@ def validateHotelSearchCriteria(data):
 
 
 def validateBookingDetails(data):
-    return bool(data.get('prebookId'))
+    return bool(data.get('prebookId') or data.get('validationId'))
 
 
 def validatePaymentInput(data):

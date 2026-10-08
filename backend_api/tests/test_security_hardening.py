@@ -33,7 +33,10 @@ def test_config_status_is_minimal_and_stripe_accurate(client, mock_admin_auth):
     assert response.get_json() == {
         'ok': True,
         'paymentMode': 'simulation',
-        'hotelMode': 'fallback',
+        'hotelMode': 'sample',
+        'hotelContentMode': 'sample_fixture',
+        'hotelRateMode': 'sample_fixture',
+        'hotelTransactionMode': 'local_demo',
     }
     serialized = response.get_data(as_text=True)
     for forbidden in ('SERPAPI_KEY', 'STRIPE_SECRET_KEY', 'firebaseServiceAccount', 'providers'):
@@ -55,6 +58,9 @@ def test_config_status_reports_stripe_test_mode(client, mock_admin_auth):
         'ok': True,
         'paymentMode': 'sandbox',
         'hotelMode': 'live',
+        'hotelContentMode': 'provider',
+        'hotelRateMode': 'live_quote',
+        'hotelTransactionMode': 'local_demo',
     }
 
 

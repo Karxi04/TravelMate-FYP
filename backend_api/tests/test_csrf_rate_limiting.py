@@ -8,6 +8,7 @@ from types import ModuleType
 from unittest.mock import Mock, patch
 
 import pytest
+from services.transaction_reliability import operation_document_id
 
 from app import create_app
 from request_rate_limit import API_LIMITS, LIMITS, ProcessLocalLimiter
@@ -250,10 +251,29 @@ def test_api_budgets_accept_normal_requests_and_stop_before_side_effects(
     app.extensions["request_rate_limiter"].clock = lambda: 1000
     memory, payment, chat = operation_boundaries
     for index in range(LIMITS[category]):
+        attempt_id = f"hotel_attempt_{index}"
+        if path.endswith('/hotels/book'):
+            memory.seed('hotel_prebook_attempts', operation_document_id(
+                'hotel_prebook', 'test_traveller_uid', attempt_id
+            ), {
+                'travellerId': 'test_traveller_uid',
+                'hotelBookingAttemptId': attempt_id,
+                'offerId': 'local_offer_test',
+                'prebookId': 'local_prebook_test',
+                'status': 'succeeded',
+                'validatedOffer': {
+                    'offerId': 'local_offer_test', 'name': 'Demo hotel',
+                    'price': 120.0, 'priceStatus': 'available',
+                    'priceBasis': 'stay_total', 'currency': 'MYR',
+                    'currencyStatus': 'known', 'taxesAndFeesStatus': 'included',
+                    'cancellation': {'tag': 'RFN', 'status': 'known'},
+                },
+                'validatedQuoteVersion': 'test-version',
+            })
         response = client.post(path, headers=AUTH, json={
             **payload,
             "paymentAttemptId": f"payment_attempt_{index}",
-            "hotelBookingAttemptId": f"hotel_attempt_{index}",
+            "hotelBookingAttemptId": attempt_id,
         })
         assert response.status_code == 200, response.get_data(as_text=True)
     counts = (repr(memory.collections), payment.call_count, chat.call_count)
@@ -262,7 +282,27 @@ def test_api_budgets_accept_normal_requests_and_stop_before_side_effects(
     assert counts == (repr(memory.collections), payment.call_count, chat.call_count)
     # Budgets are fresh in every app fixture, with no opt-out of production checks.
     app.extensions["request_rate_limiter"].reset()
-    assert client.post(path, headers=AUTH, json=payload).status_code == 200
+    reset_payload = dict(payload)
+    if path.endswith('/hotels/book'):
+        reset_attempt = 'hotel_attempt_reset'
+        memory.seed('hotel_prebook_attempts', operation_document_id(
+            'hotel_prebook', 'test_traveller_uid', reset_attempt
+        ), {
+            'travellerId': 'test_traveller_uid',
+            'hotelBookingAttemptId': reset_attempt,
+            'offerId': 'local_offer_test',
+            'prebookId': 'local_prebook_test',
+            'status': 'succeeded',
+            'validatedOffer': {
+                'offerId': 'local_offer_test', 'price': 120.0,
+                'priceStatus': 'available', 'priceBasis': 'stay_total',
+                'currency': 'MYR', 'currencyStatus': 'known',
+                'taxesAndFeesStatus': 'included',
+                'cancellation': {'tag': 'RFN', 'status': 'known'},
+            },
+        })
+        reset_payload['hotelBookingAttemptId'] = reset_attempt
+    assert client.post(path, headers=AUTH, json=reset_payload).status_code == 200
 
 
 @pytest.mark.parametrize("header", [{}, {"Authorization": "Bearer invalid-token"}])

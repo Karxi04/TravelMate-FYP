@@ -355,7 +355,7 @@ def test_hotel_and_payment_fallback_are_simulated_not_provider_confirmations(cli
         "offerId": "local_offer_test", "hotelBookingAttemptId": "journey_hotel_attempt",
     }).get_json()
     booked = client.post("/api/fr8/hotels/book", headers=AUTH, json={
-        "prebookId": prebook["result"]["prebookId"], "hotelBookingAttemptId": "journey_hotel_attempt",
+        "validationId": prebook["result"]["validationId"], "hotelBookingAttemptId": "journey_hotel_attempt",
         "hotelCost": 120,
     })
     assert booked.status_code == 200

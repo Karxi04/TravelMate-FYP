@@ -111,6 +111,8 @@ def test_payment_process_authoritative_amount_and_booking_update(client, mock_tr
         'travellerId': 'test_traveller_uid',
         'hotelCost': 450.0,
         'bookingStatus': 'confirmed',
+        'hotelCurrency': 'MYR',
+        'amountSource': 'legacy_verified_myr',
     }
     memory.seed('hotel_bookings', 'booking_doc_101', sample_booking)
 
@@ -139,7 +141,9 @@ def test_payment_process_authoritative_amount_and_booking_update(client, mock_tr
         # Verify server derived authoritative booking cost RM 450.00 instead of client's RM 0.01!
         assert data['payment']['amount'] == 450.0
         # Verify hotel_bookings was updated using the document ID
-        assert memory.retrieve('hotel_bookings', 'booking_doc_101')['bookingStatus'] == 'paid'
+        updated_booking = memory.retrieve('hotel_bookings', 'booking_doc_101')
+        assert updated_booking['bookingStatus'] == 'confirmed'
+        assert updated_booking['demoPaymentStatus'] == 'succeeded'
 
 def test_payment_process_rejects_unauthorized_booking(client, mock_traveller_auth):
     sample_booking_other_user = {
@@ -327,19 +331,34 @@ def test_hotel_prebook_and_book_have_distinct_stage_keys(
     client, mock_traveller_auth
 ):
     memory = MemoryPersistence()
+    memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_live_1', {
+        'quoteId': 'quote_live_1',
+        'travellerId': 'test_traveller_uid',
+        'offer': {
+            'offerId': 'offer_live_1', 'name': 'Hotel', 'price': 200,
+            'priceStatus': 'available', 'priceBasis': 'stay_total',
+            'currency': 'MYR', 'currencyStatus': 'known',
+            'taxesAndFeesStatus': 'included',
+            'cancellation': {'tag': 'RFN', 'status': 'known'},
+        },
+        'criteria': {},
+    })
     with patch.dict('os.environ', {'LITEAPI_KEY': 'test-key', 'FALLBACK_MODE': 'false'}), \
          patch('modules.fr08_hotel_booking.routes.claimRecord', side_effect=memory.claim), \
          patch('modules.fr08_hotel_booking.routes.retrieveRecord', side_effect=memory.retrieve), \
          patch('modules.fr08_hotel_booking.routes.updateRecord', side_effect=memory.update), \
          patch('modules.fr08_hotel_booking.routes.validateHotelOffer', return_value={
-             'prebookId': 'prebook_live_1', 'status': 'prebooked'
+             'prebookId': 'prebook_live_1', 'offerId': 'offer_live_1',
+             'status': 'prebooked', 'price': 200, 'currency': 'MYR',
+             'priceBasis': 'stay_total', 'taxesAndFeesStatus': 'included',
+             'cancellation': {'tag': 'RFN', 'status': 'known'},
          }), patch('modules.fr08_hotel_booking.routes.createBookingReference', return_value={
              'bookingId': 'LIVE-BOOK-1', 'status': 'confirmed'
          }) as book:
         prebook = client.post(
             '/api/fr8/hotels/prebook',
             headers={'Authorization': 'Bearer valid_test_token'},
-            json={'offerId': 'offer_live_1', 'hotelBookingAttemptId': 'hotel_attempt_stage_keys'},
+            json={'offerId': 'offer_live_1', 'quoteId': 'quote_live_1', 'hotelBookingAttemptId': 'hotel_attempt_stage_keys'},
         )
         booking = client.post(
             '/api/fr8/hotels/book',
@@ -371,15 +390,18 @@ def test_fallback_hotel_attempt_reuses_simulated_confirmation(
     client, mock_traveller_auth
 ):
     memory = MemoryPersistence()
-    payload = {
-        'prebookId': 'local_prebook_same',
-        'hotelBookingAttemptId': 'hotel_attempt_demo_same',
-        'selectedHotel': {'name': 'Demo Hotel', 'price': 100},
-    }
+    payload = {'hotelBookingAttemptId': 'hotel_attempt_demo_same'}
     with patch.dict('os.environ', {'LITEAPI_KEY': '', 'FALLBACK_MODE': 'true'}), \
          patch('modules.fr08_hotel_booking.routes.claimRecord', side_effect=memory.claim), \
          patch('modules.fr08_hotel_booking.routes.retrieveRecord', side_effect=memory.retrieve), \
          patch('modules.fr08_hotel_booking.routes.updateRecord', side_effect=memory.update):
+        prebook = client.post('/api/fr8/hotels/prebook', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'offerId': 'local_offer_test',
+                'hotelBookingAttemptId': payload['hotelBookingAttemptId'],
+            })
+        assert prebook.status_code == 200
+        payload['validationId'] = prebook.get_json()['result']['validationId']
         first = client.post('/api/fr8/hotels/book', headers={
             'Authorization': 'Bearer valid_test_token'}, json=payload)
         second = client.post('/api/fr8/hotels/book', headers={
@@ -400,11 +422,31 @@ def test_ambiguous_hotel_booking_is_not_resubmitted(
         'hotelBookingAttemptId': 'hotel_attempt_timeout',
         'selectedHotel': {'name': 'Hotel', 'price': 180},
     }
-    with patch.dict('os.environ', {'LITEAPI_KEY': 'test-key', 'FALLBACK_MODE': 'true'}), \
+    memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_live_timeout', {
+        'quoteId': 'quote_live_timeout', 'travellerId': 'test_traveller_uid',
+        'offer': {'offerId': 'offer_live_timeout', 'name': 'Hotel', 'price': 180,
+                  'priceStatus': 'available', 'priceBasis': 'stay_total',
+                  'currency': 'MYR', 'currencyStatus': 'known',
+                  'taxesAndFeesStatus': 'included',
+                  'cancellation': {'tag': 'RFN', 'status': 'known'}},
+        'criteria': {},
+    })
+    with patch.dict('os.environ', {'LITEAPI_KEY': 'test-key', 'FALLBACK_MODE': 'false'}), \
          patch('modules.fr08_hotel_booking.routes.claimRecord', side_effect=memory.claim), \
          patch('modules.fr08_hotel_booking.routes.retrieveRecord', side_effect=memory.retrieve), \
          patch('modules.fr08_hotel_booking.routes.updateRecord', side_effect=memory.update), \
-         patch('modules.fr08_hotel_booking.routes.createBookingReference', side_effect=Timeout('unknown')) as book:
+         patch('modules.fr08_hotel_booking.routes.validateHotelOffer', return_value={
+             'prebookId': 'prebook_live_timeout', 'offerId': 'offer_live_timeout',
+             'status': 'prebooked', 'price': 180, 'currency': 'MYR',
+             'priceBasis': 'stay_total', 'taxesAndFeesStatus': 'included',
+             'cancellation': {'tag': 'RFN', 'status': 'known'},
+         }), patch('modules.fr08_hotel_booking.routes.createBookingReference', side_effect=Timeout('unknown')) as book:
+        prebook = client.post('/api/fr8/hotels/prebook', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'offerId': 'offer_live_timeout', 'quoteId': 'quote_live_timeout',
+                'hotelBookingAttemptId': payload['hotelBookingAttemptId'],
+            })
+        assert prebook.status_code == 200
         first = client.post('/api/fr8/hotels/book', headers={
             'Authorization': 'Bearer valid_test_token'}, json=payload)
         second = client.post('/api/fr8/hotels/book', headers={
@@ -437,13 +479,33 @@ def test_itinerary_attachment_retry_does_not_rebook_provider(
             raise RuntimeError('temporary itinerary write failure')
         return original_update(collection, document_id, data)
 
+    memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_live_attach', {
+        'quoteId': 'quote_live_attach', 'travellerId': 'test_traveller_uid',
+        'offer': {'offerId': 'offer_live_attach', 'name': 'Hotel', 'price': 220,
+                  'priceStatus': 'available', 'priceBasis': 'stay_total',
+                  'currency': 'MYR', 'currencyStatus': 'known',
+                  'taxesAndFeesStatus': 'included',
+                  'cancellation': {'tag': 'RFN', 'status': 'known'}},
+        'criteria': {},
+    })
     with patch.dict('os.environ', {'LITEAPI_KEY': 'test-key', 'FALLBACK_MODE': 'false'}), \
          patch('modules.fr08_hotel_booking.routes.claimRecord', side_effect=memory.claim), \
          patch('modules.fr08_hotel_booking.routes.retrieveRecord', side_effect=memory.retrieve), \
          patch('modules.fr08_hotel_booking.routes.updateRecord', side_effect=flaky_update), \
-         patch('modules.fr08_hotel_booking.routes.createBookingReference', return_value={
+         patch('modules.fr08_hotel_booking.routes.validateHotelOffer', return_value={
+             'prebookId': 'prebook_live_attach', 'offerId': 'offer_live_attach',
+             'status': 'prebooked', 'price': 220, 'currency': 'MYR',
+             'priceBasis': 'stay_total', 'taxesAndFeesStatus': 'included',
+             'cancellation': {'tag': 'RFN', 'status': 'known'},
+         }), patch('modules.fr08_hotel_booking.routes.createBookingReference', return_value={
              'bookingId': 'LIVE-ATTACH-1', 'status': 'confirmed'
          }) as book:
+        prebook = client.post('/api/fr8/hotels/prebook', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'offerId': 'offer_live_attach', 'quoteId': 'quote_live_attach',
+                'hotelBookingAttemptId': payload['hotelBookingAttemptId'],
+            })
+        assert prebook.status_code == 200
         first = client.post('/api/fr8/hotels/book', headers={
             'Authorization': 'Bearer valid_test_token'}, json=payload)
         second = client.post('/api/fr8/hotels/book', headers={

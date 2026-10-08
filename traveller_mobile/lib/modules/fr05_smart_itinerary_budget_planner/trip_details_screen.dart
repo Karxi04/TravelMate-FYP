@@ -351,6 +351,19 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
               Text('Booking ID: ${t['hotelBookingId']}',
                   style: const TextStyle(
                       fontSize: 12, color: InkWashColors.mutedInk)),
+            const SizedBox(height: 10),
+            Wrap(spacing: 8, children: [
+              OutlinedButton.icon(
+                onPressed: busy ? null : () => _replaceHotel(t),
+                icon: const Icon(Icons.swap_horiz_rounded),
+                label: const Text('Replace'),
+              ),
+              TextButton.icon(
+                onPressed: busy ? null : _removeHotel,
+                icon: const Icon(Icons.link_off_rounded),
+                label: const Text('Remove from trip'),
+              ),
+            ]),
           ],
         ),
       ));
@@ -380,6 +393,49 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       ));
     }
     return cards;
+  }
+
+  Future<void> _removeHotel() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove hotel from trip?'),
+        content: const Text(
+            'This removes the itinerary association only. Booking and payment history are kept.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Keep')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => busy = true);
+    try {
+      final data = await api
+          .post('/api/fr5/itineraries/${widget.tripId}/hotel-selection/remove');
+      if (mounted)
+        setState(
+            () => trip = Map<String, dynamic>.from(data['itinerary'] as Map));
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _replaceHotel(Map<String, dynamic> t) async {
+    await Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => HotelScreen(
+                  initialDestination: (t['destinationArea'] ?? '').toString(),
+                  initialCheckin: (t['startDate'] ?? '').toString(),
+                  initialCheckout: (t['endDate'] ?? '').toString(),
+                )));
   }
 
   Future<void> editTrip() async {

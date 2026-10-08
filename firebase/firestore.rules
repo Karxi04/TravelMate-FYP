@@ -4,29 +4,33 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
 
     // Operator and Administrator applications write through the trusted Flask
-    // backend (Firebase Admin SDK). Traveller receives only approved shared
-    // content directly from Firestore so the installed app does not require a
-    // USB connection or a locally running Flask server.
+    // backend (Firebase Admin SDK). Standalone Traveller reads use only the
+    // server-authored public projections below. Mixed source documents remain
+    // backend-only; Firestore rules cannot hide individual fields.
 
     match /tourism_packages/{packageId} {
-      allow read: if signedIn()
-                  && resource.data.approvalStatus == 'approved';
+      allow read, write: if false;
+    }
+
+    match /public_tourism_packages/{packageId} {
+      allow read: if signedIn();
       allow write: if false;
     }
 
     match /promotional_campaigns/{campaignId} {
-      allow read: if signedIn()
-                  && resource.data.reviewStatus == 'approved';
+      allow read, write: if false;
+    }
+
+    match /public_promotional_campaigns/{campaignId} {
+      allow read: if signedIn();
       allow write: if false;
     }
 
     match /feedback/{feedbackId} {
-      // Visible Traveller reviews can be displayed on destination details.
-      // A Traveller can always read their own record even if an Administrator
-      // has removed it from the public review list.
+      // A Traveller can read/query only their own source records for edit and
+      // delete flows. Public review display uses the projection collection.
       allow read: if signedIn()
-                  && (resource.data.feedbackStatus == 'visible'
-                      || resource.data.travellerId == request.auth.uid);
+                  && resource.data.travellerId == request.auth.uid;
 
       allow create: if signedIn()
                     && request.resource.data.keys().hasOnly([
@@ -77,6 +81,11 @@ service cloud.firestore {
 
       allow delete: if signedIn()
                     && resource.data.travellerId == request.auth.uid;
+    }
+
+    match /public_destination_reviews/{reviewId} {
+      allow read: if signedIn();
+      allow write: if false;
     }
 
     // All other application business data remains backend-only.

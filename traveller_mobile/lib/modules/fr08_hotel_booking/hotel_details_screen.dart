@@ -26,8 +26,13 @@ class HotelDetailsScreen extends StatelessWidget {
             Icon(icon, size: 19, color: InkWashColors.blueGrey),
             const SizedBox(width: 9),
           ],
-          SizedBox(width: 110, child: Text(label, style: const TextStyle(color: InkWashColors.mutedInk))),
-          Expanded(child: Text(text, style: const TextStyle(fontWeight: FontWeight.w700))),
+          SizedBox(
+              width: 110,
+              child: Text(label,
+                  style: const TextStyle(color: InkWashColors.mutedInk))),
+          Expanded(
+              child: Text(text,
+                  style: const TextStyle(fontWeight: FontWeight.w700))),
         ],
       ),
     );
@@ -35,15 +40,33 @@ class HotelDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final amenities = (hotel['amenities'] as List? ?? []).map((e) => e.toString()).toList();
-    final rules = (hotel['houseRules'] as List? ?? []).map((e) => e.toString()).toList();
+    final amenities =
+        (hotel['amenities'] as List? ?? []).map((e) => e.toString()).toList();
+    final rules =
+        (hotel['houseRules'] as List? ?? []).map((e) => e.toString()).toList();
+    final currency = (hotel['currency'] ?? 'Unknown currency').toString();
+    final price = hotel['priceStatus'] == 'available'
+        ? '${hotel['price'] ?? '-'}'
+        : 'Unavailable';
+    final priceBasis = (hotel['priceBasis'] ?? '').toString();
+    final fees = (hotel['taxesAndFeesStatus'] ?? '').toString();
+    final cancellation = hotel['cancellation'] is Map
+        ? Map<String, dynamic>.from(hotel['cancellation'] as Map)
+        : <String, dynamic>{};
+    final images = (hotel['imageUrls'] as List? ?? [])
+        .map((e) => e.toString())
+        .where((e) => e.isNotEmpty)
+        .take(6)
+        .toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Hotel details')),
       bottomNavigationBar: SafeArea(
         child: Container(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-          decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Color(0xFFE7E7E2)))),
+          decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Color(0xFFE7E7E2)))),
           child: Row(
             children: [
               Expanded(
@@ -51,12 +74,19 @@ class HotelDetailsScreen extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Stay price', style: TextStyle(color: InkWashColors.mutedInk, fontSize: 12)),
-                    Text('${hotel['currency'] ?? 'MYR'} ${hotel['price'] ?? '-'}', style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+                    const Text('Stay price',
+                        style: TextStyle(
+                            color: InkWashColors.mutedInk, fontSize: 12)),
+                    Text('$currency $price',
+                        style: const TextStyle(
+                            fontSize: 21, fontWeight: FontWeight.w900)),
                   ],
                 ),
               ),
-              FilledButton.icon(onPressed: onProceed, icon: const Icon(Icons.hotel_class_outlined), label: const Text('Continue')),
+              FilledButton.icon(
+                  onPressed: onProceed,
+                  icon: const Icon(Icons.hotel_class_outlined),
+                  label: const Text('Continue')),
             ],
           ),
         ),
@@ -64,22 +94,56 @@ class HotelDetailsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 100),
         children: [
+          if (images.isNotEmpty) ...[
+            SizedBox(
+              height: 180,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: images.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (_, index) => ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.network(images[index],
+                      width: 260,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                            width: 260,
+                            color: InkWashColors.cream,
+                            alignment: Alignment.center,
+                            child: const Icon(Icons.hotel_outlined, size: 42),
+                          )),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
           InkCard(
             color: InkWashColors.cream,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text((hotel['name'] ?? 'Hotel').toString(), style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w900)),
+                Text((hotel['name'] ?? 'Hotel').toString(),
+                    style: const TextStyle(
+                        fontSize: 23, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 5),
-                Text((hotel['address'] ?? '').toString(), style: const TextStyle(color: InkWashColors.mutedInk)),
+                Text((hotel['address'] ?? '').toString(),
+                    style: const TextStyle(color: InkWashColors.mutedInk)),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    TravelStatusPill(text: 'Rating ${hotel['rating'] ?? '-'}', icon: Icons.star_rounded),
-                    TravelStatusPill(text: '${hotel['stars'] ?? '-'} stars', icon: Icons.hotel_class_outlined),
-                    TravelStatusPill(text: hotel['refundable'] == true ? 'Refundable' : 'Non-refundable', icon: Icons.policy_outlined),
+                    TravelStatusPill(
+                        text: 'Rating ${hotel['rating'] ?? '-'}',
+                        icon: Icons.star_rounded),
+                    TravelStatusPill(
+                        text: '${hotel['stars'] ?? '-'} stars',
+                        icon: Icons.hotel_class_outlined),
+                    TravelStatusPill(
+                        text: hotel['refundable'] == true
+                            ? 'Refundable'
+                            : 'Non-refundable',
+                        icon: Icons.policy_outlined),
                   ],
                 ),
               ],
@@ -88,7 +152,10 @@ class HotelDetailsScreen extends StatelessWidget {
           const SizedBox(height: 18),
           const TravelSectionHeader(title: 'About this stay'),
           const SizedBox(height: 8),
-          InkCard(child: Text((hotel['description'] ?? 'Hotel information is available for the selected offer.').toString())),
+          InkCard(
+              child: Text((hotel['description'] ??
+                      'Hotel information is available for the selected offer.')
+                  .toString())),
           const SizedBox(height: 18),
           const TravelSectionHeader(title: 'Room & stay details'),
           const SizedBox(height: 8),
@@ -97,11 +164,32 @@ class HotelDetailsScreen extends StatelessWidget {
               children: [
                 row('Room', hotel['roomName'], icon: Icons.bed_outlined),
                 row('Bed', hotel['bedType'], icon: Icons.king_bed_outlined),
-                row('Room size', hotel['roomSize'], icon: Icons.square_foot_rounded),
-                row('Board', hotel['boardName'], icon: Icons.restaurant_outlined),
-                row('Check-in', '${hotel['checkin'] ?? ''} • ${hotel['checkInTime'] ?? ''}', icon: Icons.login_rounded),
-                row('Check-out', '${hotel['checkout'] ?? ''} • ${hotel['checkOutTime'] ?? ''}', icon: Icons.logout_rounded),
-                row('Taxes & fees', hotel['taxesAndFeesIncluded'] == true ? 'Included in shown price' : 'Check final offer', icon: Icons.receipt_long_outlined),
+                row('Room size', hotel['roomSize'],
+                    icon: Icons.square_foot_rounded),
+                row('Board', hotel['boardName'],
+                    icon: Icons.restaurant_outlined),
+                row('Check-in',
+                    '${hotel['checkin'] ?? ''} • ${hotel['checkInTime'] ?? ''}',
+                    icon: Icons.login_rounded),
+                row('Check-out',
+                    '${hotel['checkout'] ?? ''} • ${hotel['checkOutTime'] ?? ''}',
+                    icon: Icons.logout_rounded),
+                row(
+                    'Price basis',
+                    priceBasis == 'stay_total'
+                        ? 'Total stay'
+                        : priceBasis == 'per_room_night'
+                            ? 'Per room/night'
+                            : 'Unknown',
+                    icon: Icons.calculate_outlined),
+                row(
+                    'Taxes & fees',
+                    fees == 'included' || hotel['taxesAndFeesIncluded'] == true
+                        ? 'Included in shown price'
+                        : fees == 'excluded'
+                            ? 'Excluded from shown price'
+                            : 'Not confirmed',
+                    icon: Icons.receipt_long_outlined),
               ],
             ),
           ),
@@ -110,11 +198,18 @@ class HotelDetailsScreen extends StatelessWidget {
           const SizedBox(height: 8),
           InkCard(
             child: amenities.isEmpty
-                ? const Text('Amenity information is not provided for this offer.')
+                ? const Text(
+                    'Amenity information is not provided for this offer.')
                 : Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: amenities.map((a) => Chip(avatar: const Icon(Icons.check_circle_outline_rounded, size: 17), label: Text(a))).toList(),
+                    children: amenities
+                        .map((a) => Chip(
+                            avatar: const Icon(
+                                Icons.check_circle_outline_rounded,
+                                size: 17),
+                            label: Text(a)))
+                        .toList(),
                   ),
           ),
           const SizedBox(height: 18),
@@ -124,25 +219,54 @@ class HotelDetailsScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text((hotel['cancellationPolicy'] ?? 'Check the selected offer conditions before confirming.').toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
+                Text(
+                    (cancellation['status'] == 'known' ||
+                                hotel['cancellationPolicy'] != null
+                            ? (hotel['cancellationPolicy'] ??
+                                cancellation['tag'] ??
+                                'See offer conditions')
+                            : 'Cancellation terms are not confirmed for this offer.')
+                        .toString(),
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
                 if (rules.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   ...rules.map((r) => Padding(
                         padding: const EdgeInsets.only(bottom: 6),
-                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('•  '), Expanded(child: Text(r))]),
+                        child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('•  '),
+                              Expanded(child: Text(r))
+                            ]),
                       )),
                 ],
               ],
             ),
           ),
+          if (hotel['latitude'] != null && hotel['longitude'] != null) ...[
+            const SizedBox(height: 18),
+            OutlinedButton.icon(
+              onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                    content: Text(
+                        'Map coordinates: ${hotel['latitude']}, ${hotel['longitude']}')),
+              ),
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('View property location'),
+            ),
+          ],
           const SizedBox(height: 18),
           InkCard(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.info_outline_rounded, color: InkWashColors.blueGrey),
+                const Icon(Icons.info_outline_rounded,
+                    color: InkWashColors.blueGrey),
                 const SizedBox(width: 10),
-                Expanded(child: Text('Hotel availability, cancellation deadlines and final conditions should be checked again before completing an external provider booking.', style: const TextStyle(color: InkWashColors.charcoal))),
+                Expanded(
+                    child: Text(
+                        'Hotel availability, cancellation deadlines and final conditions should be checked again before completing an external provider booking.',
+                        style: const TextStyle(color: InkWashColors.charcoal))),
               ],
             ),
           ),

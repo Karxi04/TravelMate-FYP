@@ -213,6 +213,10 @@ class StandaloneApiService {
       return _addActivity(id, payload);
     }
     if (path.startsWith('/api/fr5/itineraries/') &&
+        path.endsWith('/hotel-selection/remove')) {
+      return _removeHotelSelection(path.split('/')[4]);
+    }
+    if (path.startsWith('/api/fr5/itineraries/') &&
         path.endsWith('/lower-cost-alternatives')) {
       final id = path.split('/')[4];
       return _lowerCostAlternatives(id);
@@ -3257,11 +3261,54 @@ class StandaloneApiService {
   Future<dynamic> _updateTrip(String id, Map<String, dynamic> payload) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
-    trip.addAll(payload);
+    final hotelKeys = {
+      'selectedHotel',
+      'hotelCost',
+      'hotelCurrency',
+      'hotelBookingId'
+    };
+    final safePayload = Map<String, dynamic>.from(payload);
+    if (hotelKeys.any((key) => payload.containsKey(key))) {
+      final bookingId =
+          (payload['hotelBookingId'] ?? trip['hotelBookingId'] ?? '')
+              .toString();
+      final bookings = await _readList('bookings');
+      final booking =
+          bookings.cast<Map>().map(Map<String, dynamic>.from).firstWhere(
+                (item) => item['id'].toString() == bookingId,
+                orElse: () => <String, dynamic>{},
+              );
+      if (booking.isEmpty ||
+          booking['amountSource'] != 'validated_offer' ||
+          (booking['hotelCurrency'] ?? '').toString().toUpperCase() != 'MYR') {
+        throw Exception('Hotel costs must come from a validated MYR booking.');
+      }
+      safePayload.removeWhere((key, value) => hotelKeys.contains(key));
+      trip['selectedHotel'] = booking['selectedHotel'];
+      trip['hotelCost'] = booking['price'];
+      trip['hotelCurrency'] = booking['hotelCurrency'];
+      trip['hotelBookingId'] = booking['id'];
+    }
+    trip.addAll(safePayload);
     trip['id'] = id;
     trip['updatedAt'] = _now();
     await _replaceTrip(trip);
     return {'ok': true, 'itinerary': trip};
+  }
+
+  Future<dynamic> _removeHotelSelection(String id) async {
+    final trip = await _tripById(id);
+    if (trip == null) throw Exception('Itinerary not found.');
+    trip['selectedHotel'] = null;
+    trip['hotelCost'] = 0;
+    trip['hotelCurrency'] = null;
+    trip['hotelBookingId'] = null;
+    trip['hotelSelectionStatus'] = 'removed';
+    trip['hotelSelectionRemovedAt'] = _now();
+    trip['budgetEstimate'] = _calculateBudget(trip);
+    trip['updatedAt'] = _now();
+    await _replaceTrip(trip);
+    return {'ok': true, 'itinerary': trip, 'budget': trip['budgetEstimate']};
   }
 
   Future<dynamic> _addActivity(String id, Map<String, dynamic> payload) async {
@@ -3635,9 +3682,20 @@ class StandaloneApiService {
     final rooms = max(1, _num(trip['roomQuantity']).round());
     final hasHotelTotal =
         trip['hotelCost'] != null && '${trip['hotelCost']}'.trim().isNotEmpty;
+    final selectedHotel = trip['selectedHotel'] is Map
+        ? Map<String, dynamic>.from(trip['selectedHotel'] as Map)
+        : <String, dynamic>{};
+    final hotelCurrency =
+        (trip['hotelCurrency'] ?? selectedHotel['currency'] ?? '')
+            .toString()
+            .toUpperCase();
+    final hotelCurrencyIssue = hasHotelTotal && hotelCurrency != 'MYR';
     final nightlyRate = _num(trip['hotelNightlyRate'] ?? trip['nightlyRate']);
-    final hotel =
-        hasHotelTotal ? _num(trip['hotelCost']) : nightlyRate * nights * rooms;
+    final hotel = hotelCurrencyIssue
+        ? 0.0
+        : (hasHotelTotal
+            ? _num(trip['hotelCost'])
+            : nightlyRate * nights * rooms);
     final carRental = _num(trip['carRentalCost']);
     final travellers = max(1, _num(trip['travellerCount']).round());
     final transport = trip['transportCost'] != null
@@ -3650,7 +3708,9 @@ class StandaloneApiService {
     final limit = _num(trip['budgetLimit']);
     final remaining = limit - total;
     final over = max(0.0, -remaining);
-    final status = limit > 0 && total > limit ? 'over_budget' : 'within_budget';
+    final status = hotelCurrencyIssue
+        ? 'attention_required'
+        : (limit > 0 && total > limit ? 'over_budget' : 'within_budget');
     return {
       'limit': _money(limit),
       'flight': _money(flight),
@@ -3665,13 +3725,19 @@ class StandaloneApiService {
       'remaining': _money(remaining),
       'overBy': _money(over),
       'status': status,
+      'incomplete': hotelCurrencyIssue,
+      'attention': hotelCurrencyIssue
+          ? 'Hotel amount is excluded until a validated MYR currency is available.'
+          : '',
       'costProvenance': {
         'flight': flight > 0 ? 'confirmed' : 'not_selected',
-        'hotel': hasHotelTotal
-            ? 'confirmed_total'
-            : (nightlyRate > 0
-                ? 'estimated_from_nightly_rate'
-                : 'not_selected'),
+        'hotel': hotelCurrencyIssue
+            ? 'excluded_unknown_currency'
+            : (hasHotelTotal
+                ? 'confirmed_total'
+                : (nightlyRate > 0
+                    ? 'estimated_from_nightly_rate'
+                    : 'not_selected')),
         'carRental': carRental > 0 ? 'confirmed' : 'not_selected',
         'transport': trip['transportCost'] != null
             ? 'provided'
@@ -3747,6 +3813,16 @@ class StandaloneApiService {
       trip['flightCost'] = _num(data['price']);
     } else if (kind == 'hotel' || kind == 'accommodation') {
       if (data.isNotEmpty) {
+        if (data['amountSource'] != 'validated_offer' ||
+            (data['hotelCurrency'] ?? data['currency'] ?? '')
+                    .toString()
+                    .toUpperCase() !=
+                'MYR' ||
+            (data['hotelBookingId'] ?? '').toString().isEmpty ||
+            (data['hotelBookingId'] ?? '').toString() !=
+                (trip['hotelBookingId'] ?? '').toString()) {
+          throw Exception('Choose a validated MYR hotel booking instead.');
+        }
         trip['selectedHotel'] = data;
         trip['hotelCost'] = _num(data['price']);
       } else {
@@ -3983,6 +4059,15 @@ class StandaloneApiService {
               'travellerCount': travellers,
               'price': _money(_num(r[2]) * travellers),
               'currency': 'MYR',
+              'currencyStatus': 'known',
+              'priceStatus': 'available',
+              'priceBasis': 'per_room_night',
+              'taxesAndFeesStatus': 'included',
+              'cancellation': {
+                'tag': r[6] == true ? 'RFN' : 'NRFN',
+                'status': 'known',
+                'text': r[12],
+              },
               'bookingToken': 'ref_${r[1]}',
               'outboundDate': query['outbound_date'],
               'returnDate': query['return_date'],
@@ -4119,6 +4204,8 @@ class StandaloneApiService {
               'name': r[0],
               'address': demoLocation,
               'price': r[1],
+              'priceStatus': 'available',
+              'priceBasis': 'per_room_night',
               'nightlyRoomRate': r[1],
               'roomQuantity': roomQuantity,
               'currency': 'MYR',
@@ -4138,6 +4225,13 @@ class StandaloneApiService {
               'taxesAndFeesIncluded': true,
               'description':
                   'Demo offer in $demoLocation with ${r[4].toString().toLowerCase()} accommodation; not live hotel availability.',
+              'contentSource': 'sample_fixture',
+              'rateSource': 'sample_fixture',
+              'rateProvenance': 'explicit_sample_fixture',
+              'transactionMode': 'local_demo',
+              'demoDisclosure':
+                  'Sample hotel content and price; not live availability. Demo reservation — no room will be reserved.',
+              'quoteRetrievedAt': _now(),
               'houseRules': [
                 'Valid identification may be required at check-in',
                 'Check-in and check-out times apply',
@@ -4150,6 +4244,7 @@ class StandaloneApiService {
           .map((item) => {
                 ...item,
                 'price': _money(_num(item['price']) * roomQuantity),
+                'priceBasis': 'stay_total',
               })
           .toList();
     }
@@ -4158,7 +4253,56 @@ class StandaloneApiService {
     } else if (payload['sort'] == 'rating') {
       items.sort((a, b) => _num(b['rating']).compareTo(_num(a['rating'])));
     }
-    return {'ok': true, 'items': items, 'source': 'local'};
+    final criteria = {
+      'destination': destination,
+      'checkin': payload['checkin'],
+      'checkout': payload['checkout'],
+      'adults': payload['adults'] ?? 1,
+      'roomQuantity': roomQuantity,
+      'currency': 'MYR',
+    };
+    final quotes = await _readList('hotel_offer_quotes');
+    for (final item in items) {
+      final quoteId = _standaloneQuoteId(item, criteria);
+      item['quoteId'] = quoteId;
+      item['quoteVersion'] = _standaloneQuoteVersion(item);
+      quotes.removeWhere((q) => q['quoteId'].toString() == quoteId);
+      quotes.insert(0, {
+        'quoteId': quoteId,
+        'offer': Map<String, dynamic>.from(item),
+        'criteria': criteria,
+        'source': 'sample_fixture',
+      });
+    }
+    await _writeList('hotel_offer_quotes', quotes);
+    return {
+      'ok': true,
+      'items': items,
+      'source': 'sample_fixture',
+      'contentSource': 'sample_fixture',
+      'rateSource': 'sample_fixture',
+    };
+  }
+
+  String _standaloneQuoteId(
+      Map<String, dynamic> offer, Map<String, dynamic> criteria) {
+    final encoded = base64Url
+        .encode(utf8.encode(
+            jsonEncode({'offerId': offer['offerId'], 'criteria': criteria})))
+        .replaceAll('=', '');
+    return 'quote_${encoded.substring(0, min(24, encoded.length))}';
+  }
+
+  String _standaloneQuoteVersion(Map<String, dynamic> offer) {
+    final encoded = base64Url
+        .encode(utf8.encode(jsonEncode({
+          'offerId': offer['offerId'],
+          'price': offer['price'],
+          'currency': offer['currency'],
+          'cancellation': offer['cancellation'],
+        })))
+        .replaceAll('=', '');
+    return 'v_${encoded.substring(0, min(20, encoded.length))}';
   }
 
   Future<dynamic> _prebook(Map<String, dynamic> payload) async {
@@ -4167,6 +4311,23 @@ class StandaloneApiService {
     final attemptId = (payload['hotelBookingAttemptId'] ?? '').toString();
     if (attemptId.isEmpty)
       throw Exception('hotelBookingAttemptId is required.');
+    final quotes = await _readList('hotel_offer_quotes');
+    final quoteId = (payload['quoteId'] ?? '').toString();
+    Map<String, dynamic>? quote;
+    for (final raw in quotes) {
+      if ((quoteId.isNotEmpty && raw['quoteId'].toString() == quoteId) ||
+          (quoteId.isEmpty && raw['offer']?['offerId'].toString() == offer)) {
+        quote = Map<String, dynamic>.from(raw as Map);
+        break;
+      }
+    }
+    if (quote == null)
+      throw Exception('Search again before validating this hotel offer.');
+    final trustedOffer = Map<String, dynamic>.from(quote['offer'] as Map);
+    if (trustedOffer['currency'] != 'MYR' ||
+        trustedOffer['priceStatus'] != 'available') {
+      throw Exception('Only a validated MYR hotel offer can continue.');
+    }
     final attempts = await _readList('hotel_prebook_attempts');
     final existingIndex = attempts.indexWhere(
       (item) => item['hotelBookingAttemptId'].toString() == attemptId,
@@ -4179,38 +4340,56 @@ class StandaloneApiService {
       }
       return {
         'ok': true,
-        'source': 'local',
+        'source': 'sample_fixture',
         'result': existing,
         'hotelBookingAttemptId': attemptId,
         'reused': true,
       };
     }
     final suffix = attemptId.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
-    final prebookId =
-        'local_prebook_${suffix.substring(0, min(16, suffix.length))}';
+    final validationId =
+        'demo_validation_${suffix.substring(0, min(16, suffix.length))}';
     final result = {
-      'prebookId': prebookId,
+      'validationId': validationId,
       'offerId': offer,
-      'status': 'prebooked',
-      'sandbox': true,
+      'status': 'validated',
+      'validationMode': 'local_demo',
+      'isSimulated': true,
+      'demoDisclosure': 'Demo reservation — no room will be reserved.',
       'hotelBookingAttemptId': attemptId,
+      'quoteId': quote['quoteId'],
+      'validatedOffer': trustedOffer,
+      'validatedQuoteVersion': quote['offer']['quoteVersion'] ??
+          _standaloneQuoteVersion(trustedOffer),
     };
     attempts.insert(0, result);
     await _writeList('hotel_prebook_attempts', attempts);
     return {
       'ok': true,
-      'source': 'local',
+      'source': 'sample_fixture',
       'result': result,
       'hotelBookingAttemptId': attemptId,
     };
   }
 
   Future<dynamic> _bookHotel(Map<String, dynamic> payload) async {
-    final selected = Map<String, dynamic>.from(payload['selectedHotel'] ?? {});
     final attemptId = (payload['hotelBookingAttemptId'] ?? '').toString();
     if (attemptId.isEmpty)
       throw Exception('hotelBookingAttemptId is required.');
     final bookings = await _readList('bookings');
+    final attempts = await _readList('hotel_prebook_attempts');
+    final prebook =
+        attempts.cast<Map>().map(Map<String, dynamic>.from).firstWhere(
+              (item) => item['hotelBookingAttemptId'].toString() == attemptId,
+              orElse: () => <String, dynamic>{},
+            );
+    final trusted = prebook['validatedOffer'] is Map
+        ? Map<String, dynamic>.from(prebook['validatedOffer'] as Map)
+        : <String, dynamic>{};
+    if (trusted['currency'] != 'MYR' || trusted['priceStatus'] != 'available') {
+      throw Exception(
+          'The hotel validation is stale or unavailable. Search again.');
+    }
     final existingIndex = bookings.indexWhere(
       (item) => item['hotelBookingAttemptId'].toString() == attemptId,
     );
@@ -4239,12 +4418,14 @@ class StandaloneApiService {
       'bookingMode': 'simulation',
       'isSimulated': true,
       'confirmationLabel': 'Simulated confirmation',
-      'selectedHotel': selected,
-      'hotelName': selected['name'] ?? 'Hotel',
-      'roomType': selected['roomName'] ?? '',
-      'price': _num(payload['hotelCost'] ?? selected['price']),
-      'roomQuantity': selected['roomQuantity'] ?? payload['roomQuantity'] ?? 1,
-      'currency': selected['currency'] ?? 'MYR',
+      'selectedHotel': trusted,
+      'hotelName': trusted['name'] ?? 'Hotel',
+      'roomType': trusted['roomName'] ?? '',
+      'price': _num(trusted['price']),
+      'hotelCurrency': trusted['currency'],
+      'amountSource': 'validated_offer',
+      'roomQuantity': trusted['roomQuantity'] ?? 1,
+      'currency': trusted['currency'],
       'holder': payload['holder'] ?? {},
       'createdAt': _now(),
     };
@@ -4268,6 +4449,7 @@ class StandaloneApiService {
     trip['selectedHotel'] = booking['selectedHotel'] ??
         Map<String, dynamic>.from(payload['selectedHotel'] ?? {});
     trip['hotelCost'] = booking['price'];
+    trip['hotelCurrency'] = booking['hotelCurrency'];
     trip['hotelBookingId'] = booking['id'];
     await _replaceTrip(trip);
     return _calculateBudget(trip);
@@ -4278,7 +4460,23 @@ class StandaloneApiService {
   // ------------------------------------------------------------------
 
   Future<dynamic> _recordPayment(Map<String, dynamic> payload) async {
-    final amount = _num(payload['amount']);
+    final bookingId = (payload['bookingId'] ?? '').toString();
+    final bookings = await _readList('bookings');
+    final booking =
+        bookings.cast<Map>().map(Map<String, dynamic>.from).firstWhere(
+              (item) =>
+                  item['id'].toString() == bookingId ||
+                  item['bookingId'].toString() == bookingId ||
+                  item['bookingReference'].toString() == bookingId,
+              orElse: () => <String, dynamic>{},
+            );
+    if (booking.isNotEmpty &&
+        (booking['hotelCurrency'] ?? '').toString().toUpperCase() != 'MYR') {
+      throw Exception(
+          'Only validated MYR hotel bookings can be paid in the demo flow.');
+    }
+    final amount =
+        booking.isNotEmpty ? _num(booking['price']) : _num(payload['amount']);
     if (amount <= 0) throw Exception('Enter a positive amount.');
     final attemptId = (payload['paymentAttemptId'] ?? '').toString();
     if (attemptId.isEmpty) throw Exception('paymentAttemptId is required.');
@@ -4307,10 +4505,11 @@ class StandaloneApiService {
     final record = {
       'id': id,
       'paymentAttemptId': attemptId,
-      'bookingId': payload['bookingId'] ?? '',
+      'bookingId': bookingId,
       'amount': _money(amount),
       'currency': 'MYR',
       'paymentStatus': 'succeeded',
+      'demoPaymentStatus': 'succeeded',
       'transactionReference': 'TM-PAY-${stable.toUpperCase()}',
       'cardBrand': payload['cardBrand'] ?? 'Card',
       'cardLast4': payload['cardLast4'] ?? '',

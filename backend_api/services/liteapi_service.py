@@ -1,8 +1,20 @@
+import math
 import os
 import requests
 
 DATA_BASE = "https://api.liteapi.travel/v3.0"
 BOOK_BASE = "https://book.liteapi.travel/v3.0"
+
+
+class ProviderMutationBlocked(RuntimeError):
+    """External hotel mutations are unavailable without confirmed sandbox mode."""
+
+
+def provider_mutations_allowed():
+    # The test harness is allowed to exercise mocked provider boundaries. No
+    # production configuration currently proves that a LiteAPI key is sandbox
+    # scoped, so real external mutations fail closed.
+    return os.getenv('TRAVELMATE_TESTING', '').strip().lower() in {'1', 'true', 'yes'}
 
 
 def _headers():
@@ -43,7 +55,52 @@ def retrieveHotelOffers(payload):
     return _json_or_error(r)
 
 
+def retrieveHotelContent(hotel_id):
+    """Read property content only; never calls a booking/mutation endpoint."""
+    if not str(hotel_id or '').strip():
+        raise ValueError('hotel_id is required')
+    r = requests.get(
+        f'{DATA_BASE}/data/hotel',
+        params={'hotelId': str(hotel_id)},
+        headers=_headers(),
+        timeout=20,
+    )
+    return _json_or_error(r)
+
+
+def normalizeHotelContent(result, hotel_id=None):
+    """Return an allowlisted property projection without raw provider fields."""
+    result = result or {}
+    data = result.get('data') if isinstance(result, dict) else None
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    data = data if isinstance(data, dict) else result
+    photos = data.get('images') or data.get('photos') or []
+    if isinstance(photos, str):
+        photos = [photos]
+    image_urls = [str(item.get('url') or item.get('image') or item)
+                  for item in photos[:8]
+                  if isinstance(item, (str, dict)) and (isinstance(item, str) or item.get('url') or item.get('image'))]
+    return {
+        'hotelId': str(data.get('id') or data.get('hotelId') or hotel_id or ''),
+        'name': data.get('name') or data.get('hotelName'),
+        'description': data.get('description') or data.get('hotelDescription'),
+        'address': data.get('address') or data.get('addressLine'),
+        'amenities': data.get('amenities') if isinstance(data.get('amenities'), list) else [],
+        'imageUrls': image_urls,
+        'mainPhoto': data.get('mainPhoto') or data.get('main_photo') or (image_urls[0] if image_urls else ''),
+        'latitude': data.get('latitude') or (data.get('coordinates') or {}).get('latitude'),
+        'longitude': data.get('longitude') or (data.get('coordinates') or {}).get('longitude'),
+        'stars': data.get('stars') or data.get('starRating') or data.get('star_rating'),
+        'rating': data.get('rating') or data.get('reviewScore') or data.get('guestRating'),
+        'checkinTime': data.get('checkinTime') or data.get('checkInTime'),
+        'checkoutTime': data.get('checkoutTime') or data.get('checkOutTime'),
+    }
+
+
 def validateHotelOffer(offerId):
+    if not provider_mutations_allowed():
+        raise ProviderMutationBlocked('External hotel validation is unavailable until a confirmed sandbox environment is configured.')
     r = requests.post(
         f'{BOOK_BASE}/rates/prebook',
         headers=_headers(),
@@ -54,6 +111,8 @@ def validateHotelOffer(offerId):
 
 
 def createBookingReference(payload):
+    if not provider_mutations_allowed():
+        raise ProviderMutationBlocked('External hotel booking is unavailable until a confirmed sandbox environment is configured.')
     r = requests.post(
         f'{BOOK_BASE}/rates/book',
         headers=_headers(),
@@ -63,15 +122,61 @@ def createBookingReference(payload):
     return _json_or_error(r)
 
 
+def normalizePrebookResult(result, fallback_offer=None):
+    """Return a safe, provider-shaped prebook summary without raw payloads."""
+    result = result or {}
+    data = result.get('data') if isinstance(result, dict) else None
+    data = data if isinstance(data, dict) else result
+    prebook_id = data.get('prebookId') or result.get('prebookId') or data.get('id')
+    offer_id = data.get('offerId') or result.get('offerId') or fallback_offer
+    groups = data.get('roomTypes') or data.get('room_types') or []
+    group = groups[0] if isinstance(groups, list) and len(groups) == 1 and isinstance(groups[0], dict) else {}
+    rates = group.get('rates') if isinstance(group, dict) else []
+    rate = rates[0] if isinstance(rates, list) and len(rates) == 1 and isinstance(rates[0], dict) else {}
+    amount, basis = _extract_price(group, rate, data)
+    if amount is None:
+        amount = _money(data.get('price') or data.get('total'))
+        if amount is not None:
+            basis = 'stay_total'
+    if data.get('priceBasis'):
+        basis = str(data['priceBasis'])
+    currency = _currency(rate, group, data)
+    cancellation = _cancellation(group, rate)
+    if isinstance(data.get('cancellation'), dict):
+        cancellation = data['cancellation']
+    fees_status = data.get('taxesAndFeesStatus') or _fees(rate, group)
+    return {
+        'prebookId': str(prebook_id) if prebook_id else None,
+        'offerId': str(offer_id) if offer_id else None,
+        'status': str(data.get('status') or result.get('status') or 'prebooked'),
+        'price': amount,
+        'priceStatus': 'available' if amount is not None else 'unknown',
+        'priceBasis': basis,
+        'currency': currency,
+        'currencyStatus': 'known' if currency else 'unknown',
+        'cancellation': cancellation,
+        'taxesAndFeesStatus': fees_status,
+        'sandbox': bool(data.get('sandbox') or result.get('sandbox')),
+    }
+
+
 def _money(value):
+    """Return a finite amount, or None when the provider value is unusable."""
+    if isinstance(value, (list, tuple)):
+        parsed = [_money(item) for item in value]
+        if not parsed or any(item is None for item in parsed):
+            return None
+        return round(sum(parsed), 2)
     if isinstance(value, dict):
         for key in ('amount', 'total', 'value', 'net'):
             if value.get(key) is not None:
                 return _money(value.get(key))
+        return None
     try:
-        return float(value or 0)
+        amount = float(value)
     except (TypeError, ValueError):
-        return 0.0
+        return None
+    return amount if math.isfinite(amount) and amount >= 0 else None
 
 
 def _currency(*objects):
@@ -80,11 +185,17 @@ def _currency(*objects):
             for key in ('currency', 'currencyCode', 'currency_code'):
                 if obj.get(key):
                     return str(obj[key])
-            for key in ('retailRate', 'retail_rate', 'price'):
+            for key in ('retailRate', 'retail_rate', 'price', 'offerRetailRate'):
                 nested = obj.get(key)
-                if isinstance(nested, dict) and nested.get('currency'):
-                    return str(nested['currency'])
-    return 'MYR'
+                if isinstance(nested, dict):
+                    found = _currency(nested)
+                    if found:
+                        return found
+                elif isinstance(nested, list):
+                    found = _currency(*nested)
+                    if found:
+                        return found
+    return None
 
 
 def _first_rate(room):
@@ -94,16 +205,25 @@ def _first_rate(room):
     return room if isinstance(room, dict) else {}
 
 
-def _extract_price(room, rate):
-    candidates = [
-        rate.get('retailRate'), rate.get('retail_rate'), rate.get('price'), rate.get('total'),
-        room.get('retailRate'), room.get('price'), room.get('total'),
-    ]
-    for candidate in candidates:
+def _extract_price(room, rate, group=None):
+    """Use an explicit offer total before a single-rate total.
+
+    LiteAPI's offerRetailRate is the whole offer total. A rate retailRate is
+    only a safe fallback when no offer-level total is supplied.
+    """
+    group = group or {}
+    offer_total = group.get('offerRetailRate') or room.get('offerRetailRate')
+    amount = _money(offer_total)
+    if amount is not None:
+        return amount, 'stay_total'
+    for candidate in (
+        rate.get('retailRate'), rate.get('retail_rate'), rate.get('price'),
+        rate.get('total'), room.get('retailRate'), room.get('price'), room.get('total'),
+    ):
         amount = _money(candidate)
-        if amount > 0:
-            return amount
-    return 0.0
+        if amount is not None:
+            return amount, 'room_total'
+    return None, 'unknown'
 
 
 def _refundable(room, rate):
@@ -114,15 +234,74 @@ def _refundable(room, rate):
             if key in obj:
                 return bool(obj.get(key))
         policy = obj.get('cancellationPolicies') or obj.get('cancellation_policies')
+        if isinstance(policy, dict):
+            tag = str(policy.get('refundableTag') or '').upper()
+            if tag in {'RFN', 'RF'}:
+                return True
+            if tag in {'NRFN', 'NRF'}:
+                return False
         if isinstance(policy, list) and policy:
-            return True
-    return False
+            return None
+    return None
+
+
+def _cancellation(room, rate):
+    for obj in (rate, room):
+        policy = obj.get('cancellationPolicies') or obj.get('cancellation_policies')
+        if not policy:
+            continue
+        if isinstance(policy, dict):
+            tag = policy.get('refundableTag')
+            infos = policy.get('cancelPolicyInfos') or policy.get('cancel_policy_infos') or []
+            deadline = None
+            penalties = []
+            if isinstance(infos, list):
+                for info in infos:
+                    if not isinstance(info, dict):
+                        continue
+                    deadline = deadline or info.get('cancelTime') or info.get('cancel_time')
+                    if info.get('amount') is not None:
+                        penalties.append({
+                            'amount': _money(info.get('amount')),
+                            'currency': info.get('currency'),
+                        })
+            return {
+                'tag': str(tag).upper() if tag else None,
+                'deadline': deadline,
+                'penalties': penalties,
+                'status': 'known' if tag or deadline or penalties else 'unknown',
+            }
+        if isinstance(policy, list):
+            return {'tag': None, 'deadline': None, 'penalties': [], 'status': 'known'}
+    return {'tag': None, 'deadline': None, 'penalties': [], 'status': 'unknown'}
+
+
+def _fees(rate, room):
+    for obj in (rate, room):
+        retail = obj.get('retailRate') if isinstance(obj, dict) else None
+        values = None
+        if isinstance(retail, dict):
+            values = retail.get('taxesAndFees') or retail.get('taxes_and_fees')
+        if values is None and isinstance(obj, dict):
+            values = obj.get('taxesAndFees') or obj.get('taxes_and_fees')
+        if not isinstance(values, list):
+            continue
+        included = {bool(item.get('included')) for item in values if isinstance(item, dict) and 'included' in item}
+        if included == {True}:
+            return 'included'
+        if included == {False}:
+            return 'excluded'
+        if included:
+            return 'mixed'
+    return 'unknown'
 
 
 def normalizeHotelOffers(result):
     """Normalize both current LiteAPI response variants into one Flutter-friendly list."""
     result = result or {}
-    hotels = result.get('hotels') or result.get('data', {}).get('hotels') if isinstance(result.get('data'), dict) else result.get('hotels')
+    hotels = result.get('hotels')
+    if not isinstance(hotels, list) and isinstance(result.get('data'), dict):
+        hotels = result['data'].get('hotels')
     if not isinstance(hotels, list):
         hotels = []
 
@@ -169,7 +348,7 @@ def normalizeHotelOffers(result):
             if key in seen:
                 continue
             seen.add(key)
-            price = _extract_price(room, rate)
+            price, price_basis = _extract_price(room, rate, group)
             name = content.get('name') or group.get('hotelName') or group.get('name') or f'Hotel {hotel_id}'
             address = content.get('address') or content.get('addressLine') or group.get('address') or ''
             photo = content.get('main_photo') or content.get('mainPhoto') or content.get('mainPhotoUrl') or ''
@@ -183,14 +362,18 @@ def normalizeHotelOffers(result):
                 'address': address,
                 'rating': rating,
                 'stars': stars,
-                'price': round(price, 2),
+                'price': price,
+                'priceStatus': 'available' if price is not None else 'unknown',
+                'priceBasis': price_basis,
                 'currency': _currency(rate, room, group),
+                'currencyStatus': 'known' if _currency(rate, room, group) else 'unknown',
                 'roomName': room_name,
                 'boardName': board,
                 'refundable': _refundable(room, rate),
+                'cancellation': _cancellation(room, rate),
+                'taxesAndFeesStatus': _fees(rate, room),
                 'offerId': offer_id,
                 'mainPhoto': photo,
-                'raw': {'hotel': content, 'rateGroup': group, 'room': room},
             })
 
     # Some accounts/API response versions place an offer directly on the hotel record.
@@ -208,13 +391,17 @@ def normalizeHotelOffers(result):
                 'rating': hotel.get('rating') or 0,
                 'stars': hotel.get('stars') or 0,
                 'price': _money(hotel.get('price') or hotel.get('retailRate')),
+                'priceStatus': 'available' if _money(hotel.get('price') or hotel.get('retailRate')) is not None else 'unknown',
+                'priceBasis': 'stay_total',
                 'currency': _currency(hotel),
+                'currencyStatus': 'known' if _currency(hotel) else 'unknown',
                 'roomName': hotel.get('roomName') or 'Available room',
                 'boardName': hotel.get('boardName') or '',
-                'refundable': bool(hotel.get('refundable', False)),
+                'refundable': hotel.get('refundable'),
+                'cancellation': {'tag': None, 'deadline': None, 'penalties': [], 'status': 'unknown'},
+                'taxesAndFeesStatus': 'unknown',
                 'offerId': offer_id,
                 'mainPhoto': hotel.get('mainPhoto') or hotel.get('main_photo') or '',
-                'raw': hotel,
             })
     return items
 
