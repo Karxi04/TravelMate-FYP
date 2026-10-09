@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 class RequestTimeouts {
   static const ordinaryRead = Duration(seconds: 25);
   static const ordinaryWrite = Duration(seconds: 35);
@@ -8,6 +10,9 @@ class RequestTimeouts {
   static const personalisedGeneration = Duration(seconds: 65);
 
   static Duration forGet(String path) {
+    if (path.startsWith('/api/fr9/orders/') && path.endsWith('/reconcile')) {
+      return providerMutation;
+    }
     if (path == '/api/fr8/places/search' ||
         path == '/api/fr3/destinations/search' ||
         path == '/api/fr7/flights/search') {
@@ -24,7 +29,8 @@ class RequestTimeouts {
       return path.endsWith('/search') ? longProviderRead : providerMutation;
     }
     if (path == '/api/fr8/hotels/book' ||
-        path.startsWith('/api/fr9/payments')) {
+        path.startsWith('/api/fr9/payments') ||
+        path == '/api/fr9/checkout/session') {
       return providerMutation;
     }
     return ordinaryWrite;
@@ -57,5 +63,25 @@ class TransactionAttemptLifecycle {
 
   void startNewAttempt() {
     _current = null;
+  }
+}
+
+class CheckoutAttemptStore {
+  String _key(String scope) =>
+      'travelmate_checkout_attempt_${scope.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}';
+
+  Future<String> loadOrCreate(String scope) async {
+    final preferences = await SharedPreferences.getInstance();
+    final key = _key(scope);
+    final existing = preferences.getString(key);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final created = newTransactionAttemptId('order');
+    await preferences.setString(key, created);
+    return created;
+  }
+
+  Future<void> clear(String scope) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.remove(_key(scope));
   }
 }

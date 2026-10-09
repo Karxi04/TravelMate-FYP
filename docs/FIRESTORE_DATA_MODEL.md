@@ -56,6 +56,13 @@ Stores hotel sandbox booking references and provider results.
 ### `payment_records/{stripePaymentIntentId}`
 Stripe sandbox payment records.
 
+### `checkout_orders/{orderDocumentId}`
+Durable traveller-owned Stripe Checkout orders. Each record contains the
+opaque `orderAttemptId`, authoritative quote snapshot, MYR amount/currency,
+Checkout Session reference and URL, payment/order status, reconciliation flag,
+and timestamps. Provider idempotency keys are stored server-side and are not
+returned to clients.
+
 ### `feedback/{feedbackId}`
 Traveller destination feedback and moderation status.
 

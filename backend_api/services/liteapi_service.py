@@ -349,6 +349,17 @@ def normalizeHotelOffers(result):
                 continue
             seen.add(key)
             price, price_basis = _extract_price(room, rate, group)
+            price_scope = (
+                'provider_offer_total' if price_basis == 'stay_total'
+                else 'provider_rate_total' if price_basis == 'room_total'
+                else None
+            )
+            price_semantics = (
+                'provider_offer_total_includes_base_and_included_taxes_fees'
+                if price_basis == 'stay_total'
+                else 'provider_rate_total_single_occupancy'
+                if price_basis == 'room_total' else None
+            )
             name = content.get('name') or group.get('hotelName') or group.get('name') or f'Hotel {hotel_id}'
             address = content.get('address') or content.get('addressLine') or group.get('address') or ''
             photo = content.get('main_photo') or content.get('mainPhoto') or content.get('mainPhotoUrl') or ''
@@ -365,6 +376,8 @@ def normalizeHotelOffers(result):
                 'price': price,
                 'priceStatus': 'available' if price is not None else 'unknown',
                 'priceBasis': price_basis,
+                'priceScope': price_scope,
+                'priceSemanticsStatus': price_semantics,
                 'currency': _currency(rate, room, group),
                 'currencyStatus': 'known' if _currency(rate, room, group) else 'unknown',
                 'roomName': room_name,

@@ -1,4 +1,7 @@
+import math
+import os
 import uuid
+from urllib.parse import urlparse
 
 from flask import Blueprint, request, jsonify, g
 
@@ -6,9 +9,12 @@ from auth_utils import auth_required
 from utils import utc_now_iso
 from services.stripe_service import (
     createPaymentSession,
+    createCheckoutSession,
     normalizePaymentStatus,
     processPaymentAttempt,
+    retrieveCheckoutSession,
     returnPaymentStatus,
+    constructStripeWebhookEvent,
 )
 from services.transaction_reliability import (
     is_ambiguous_provider_error,
@@ -20,6 +26,313 @@ from sequence_contract.validators import validatePaymentInput
 from sequence_contract.firebase_firestore import claimRecord, retrieveRecord, updateRecord
 
 bp = Blueprint('fr09_payments', __name__, url_prefix='/api/fr9')
+ORDER_COLLECTION = 'checkout_orders'
+
+
+def _order_document_id(attempt_id):
+    return operation_document_id('checkout_order', g.uid, attempt_id)
+
+
+def _finite_amount(value):
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None
+    return amount if math.isfinite(amount) and amount > 0 else None
+
+
+def _safe_quote_snapshot(quote):
+    allowed = {
+        'quoteId', 'offerId', 'hotelId', 'name', 'roomName', 'boardName',
+        'price', 'currency', 'priceBasis', 'priceScope',
+        'priceSemanticsStatus', 'taxesAndFeesStatus', 'cancellation',
+        'refundable', 'source', 'sourceLabel', 'quoteCompleteness',
+        'roundTripComplete', 'travellerCount', 'passengerComposition',
+        'passengerPriceBasis', 'outboundSegments', 'returnSegments',
+        'tripType', 'priceStatus', 'currencyStatus',
+    }
+    return {key: quote.get(key) for key in allowed if key in quote}
+
+
+def _hotel_checkout_quote(payload):
+    quote_id = str(payload.get('quoteId') or '').strip()
+    offer_id = str(payload.get('offerId') or '').strip()
+    if not quote_id or not offer_id:
+        raise ValueError('A stored hotel quote and offer are required for Checkout.')
+    record = retrieveRecord('hotel_offer_quotes', f'{g.uid}_{quote_id}')
+    if not record or record.get('travellerId') != g.uid:
+        raise ValueError('The hotel quote was not found or is not owned by this traveller.')
+    offer = dict(record.get('offer') or {})
+    if str(offer.get('offerId') or '') != offer_id:
+        raise ValueError('This hotel quote is bound to a different offer.')
+    amount = _finite_amount(offer.get('price'))
+    currency = str(offer.get('currency') or '').upper()
+    if offer.get('priceStatus') != 'available' or amount is None:
+        raise ValueError('This hotel quote has no authoritative payable amount.')
+    if currency != 'MYR' or offer.get('currencyStatus') != 'known':
+        raise ValueError('This hotel quote has no validated MYR currency.')
+    if offer.get('priceBasis') != 'stay_total':
+        raise ValueError('This hotel quote does not prove a total for the requested stay and rooms.')
+    if offer.get('taxesAndFeesStatus') not in {'included', 'excluded', 'mixed'}:
+        raise ValueError('This hotel quote does not disclose its taxes and fees.')
+    snapshot = _safe_quote_snapshot({**offer, 'quoteId': quote_id})
+    return {
+        'quoteType': 'hotel', 'quoteId': quote_id, 'offerId': offer_id,
+        'amount': amount, 'currency': currency, 'quoteSnapshot': snapshot,
+        'amountBasis': 'provider_offer_total_includes_base_and_included_taxes_fees',
+        'sandbox': offer.get('rateProvenance') == 'sandbox_provider_quote',
+    }
+
+
+def _flight_checkout_quote(payload):
+    search_id = str(payload.get('searchId') or payload.get('quoteId') or '').strip()
+    option_id = str(payload.get('optionId') or '').strip()
+    if not search_id or not option_id:
+        raise ValueError('A completed flight quote and option are required for Checkout.')
+    record = retrieveRecord('flight_quotes', f'{g.uid}_{search_id}')
+    if not record or record.get('travellerId') != g.uid:
+        raise ValueError('The flight quote was not found or is not owned by this traveller.')
+    criteria = dict(record.get('criteria') or {})
+    option = next((dict(item) for item in record.get('items', [])
+                   if isinstance(item, dict) and str(item.get('optionId') or item.get('id') or '') == option_id), None)
+    if not option:
+        raise ValueError('The selected flight option is not part of the owned quote.')
+    if record.get('source') == 'sample_fixture':
+        raise ValueError('Sample flight fixtures cannot enter Checkout.')
+    amount = _finite_amount(option.get('price'))
+    currency = str(option.get('currency') or '').upper()
+    travellers = int(criteria.get('traveller_count') or 0)
+    composition = option.get('passengerComposition') or {}
+    if amount is None or currency != 'MYR' or option.get('currencyStatus') != 'known':
+        raise ValueError('This flight quote has no validated MYR payable amount.')
+    if option.get('quoteCompleteness') != 'complete' or option.get('budgetEligible') is False:
+        raise ValueError('Complete flight quote selection is required before Checkout.')
+    if criteria.get('return_date') and not option.get('roundTripComplete'):
+        raise ValueError('A complete round-trip quote is required before Checkout.')
+    if option.get('priceScope') != 'provider_ticket_price' or option.get('priceSemanticsStatus') != 'provider_response_requested_adults':
+        raise ValueError('This flight quote does not prove an adult-party ticket total.')
+    if not travellers or option.get('travellerCount') != travellers or composition.get('adults') != travellers:
+        raise ValueError('This flight quote does not match the requested adult party.')
+    if criteria.get('return_date') and not str(option.get('priceBasis') or '').startswith('provider_round_trip_'):
+        raise ValueError('This round-trip quote has no verified combined ticket total.')
+    snapshot = _safe_quote_snapshot({**option, 'quoteId': search_id, 'offerId': option_id})
+    return {
+        'quoteType': 'flight', 'quoteId': search_id, 'optionId': option_id,
+        'amount': amount, 'currency': currency, 'quoteSnapshot': snapshot,
+        'amountBasis': 'provider_ticket_price_requested_adults', 'sandbox': False,
+    }
+
+
+def _resolve_checkout_quote(payload):
+    quote_type = str(payload.get('quoteType') or '').strip().lower()
+    if quote_type == 'hotel':
+        return _hotel_checkout_quote(payload)
+    if quote_type == 'flight':
+        return _flight_checkout_quote(payload)
+    raise ValueError('quoteType must be hotel or flight.')
+
+
+def _safe_order(record):
+    return {
+        key: value for key, value in record.items()
+        if key not in {'providerIdempotencyKey'}
+    }
+
+
+def _configured_checkout_url(name, fallback):
+    value = os.getenv(name, fallback).strip()
+    parsed = urlparse(value)
+    if parsed.scheme not in {'https', 'http'} or not parsed.netloc:
+        raise RuntimeError(f'{name} is not configured with an absolute URL.')
+    return value
+
+
+def _stripe_value(obj, key, default=None):
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _order_status_from_session(session):
+    status = str(_stripe_value(session, 'status', '') or '').lower()
+    payment_status = str(_stripe_value(session, 'payment_status', '') or '').lower()
+    if status == 'expired':
+        return 'expired', payment_status
+    if status == 'complete' and payment_status in {'paid', 'no_payment_required'}:
+        return 'paid', payment_status
+    if status == 'complete':
+        return 'payment_pending', payment_status
+    return 'checkout_open', payment_status
+
+
+def _apply_checkout_session(record, session):
+    status, payment_status = _order_status_from_session(session)
+    amount_total = _stripe_value(session, 'amount_total')
+    currency = str(_stripe_value(session, 'currency', '') or '').upper()
+    expected_cents = int(round(float(record.get('amount') or 0) * 100))
+    if amount_total is not None and int(amount_total) != expected_cents:
+        status = 'payment_mismatch'
+    if currency and currency != str(record.get('currency') or '').upper():
+        status = 'payment_mismatch'
+    payment_intent = _stripe_value(session, 'payment_intent')
+    return {
+        'status': status,
+        'paymentStatus': payment_status or None,
+        'stripePaymentIntentId': str(payment_intent) if payment_intent else None,
+        'reconciliationRequired': status in {'checkout_open', 'payment_pending', 'payment_mismatch'},
+        'updatedAt': utc_now_iso(),
+    }
+
+
+@bp.post('/checkout/session')
+@auth_required(['traveller'])
+def create_checkout_session():
+    payload = request.get_json(silent=True) or {}
+    try:
+        attempt_id = normalize_attempt_id(
+            payload.get('orderAttemptId') or payload.get('paymentAttemptId'),
+            'orderAttemptId',
+        )
+        quote = _resolve_checkout_quote(payload)
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 409
+    order_id = _order_document_id(attempt_id)
+    now = utc_now_iso()
+    record = {
+        'id': order_id,
+        'travellerId': g.uid,
+        'orderAttemptId': attempt_id,
+        **quote,
+        'status': 'checkout_pending',
+        'paymentStatus': 'unpaid',
+        'provider': 'stripe_checkout_test',
+        'providerIdempotencyKey': provider_idempotency_key(
+            'checkout', g.uid, attempt_id, 'session'
+        ),
+        'createdAt': now,
+        'updatedAt': now,
+    }
+    try:
+        claimed, created = claimRecord(ORDER_COLLECTION, order_id, record)
+    except Exception:
+        return jsonify({'ok': False, 'error': 'Order storage is unavailable. Try again later.'}), 503
+    if claimed.get('travellerId') != g.uid:
+        return jsonify({'ok': False, 'error': 'This order is not owned by the current traveller.'}), 403
+    for key in ('quoteType', 'quoteId', 'offerId', 'optionId', 'amount', 'currency'):
+        if key in record and str(claimed.get(key)) != str(record.get(key)):
+            return jsonify({'ok': False, 'error': 'Order attempt is already bound to another quote.'}), 409
+    if claimed.get('checkoutSessionId') and claimed.get('checkoutUrl'):
+        return jsonify({'ok': True, 'order': _safe_order(claimed), 'reused': True})
+    try:
+        session = createCheckoutSession(
+            quote['amount'], quote['currency'], g.uid, order_id,
+            _configured_checkout_url(
+                'STRIPE_CHECKOUT_SUCCESS_URL',
+                'https://example.com/travelmate/checkout/success',
+            ),
+            _configured_checkout_url(
+                'STRIPE_CHECKOUT_CANCEL_URL',
+                'https://example.com/travelmate/checkout/cancel',
+            ),
+            metadata={
+                'orderAttemptId': attempt_id,
+                'quoteType': quote['quoteType'],
+                'quoteId': quote['quoteId'],
+            },
+            idempotency_key=claimed['providerIdempotencyKey'],
+            product_name=f"TravelMate {quote['quoteType']} test order",
+        )
+        session_id = str(_stripe_value(session, 'id', '') or '')
+        checkout_url = str(_stripe_value(session, 'url', '') or '')
+        if not session_id or not checkout_url:
+            raise RuntimeError('Stripe did not return a Checkout URL.')
+        updated = updateRecord(ORDER_COLLECTION, order_id, {
+            'checkoutSessionId': session_id,
+            'checkoutUrl': checkout_url,
+            'status': 'checkout_open',
+            'updatedAt': utc_now_iso(),
+        }) or {**claimed, 'checkoutSessionId': session_id, 'checkoutUrl': checkout_url, 'status': 'checkout_open'}
+        return jsonify({'ok': True, 'order': _safe_order(updated), 'reused': not created})
+    except Exception as exc:
+        if is_ambiguous_provider_error(exc):
+            pending = updateRecord(ORDER_COLLECTION, order_id, {
+                'status': 'checkout_pending',
+                'reconciliationRequired': True,
+                'updatedAt': utc_now_iso(),
+            }) or {**claimed, 'status': 'checkout_pending', 'reconciliationRequired': True}
+            return jsonify({'ok': True, 'order': _safe_order(pending), 'reconciliationRequired': True}), 202
+        updateRecord(ORDER_COLLECTION, order_id, {
+            'status': 'checkout_failed',
+            'failureReason': 'Stripe Checkout could not be created.',
+            'updatedAt': utc_now_iso(),
+        })
+        return jsonify({'ok': False, 'error': 'Stripe Checkout is unavailable. Configure Stripe test mode and try again.'}), 502
+
+
+@bp.get('/orders')
+@auth_required(['traveller'])
+def list_orders():
+    items = retrieveRecord(ORDER_COLLECTION, filters=[('travellerId', '==', g.uid)]) or []
+    return jsonify({'ok': True, 'items': [_safe_order(item) for item in items if isinstance(item, dict)]})
+
+
+@bp.get('/orders/<order_id>')
+@auth_required(['traveller'])
+def get_order(order_id):
+    record = retrieveRecord(ORDER_COLLECTION, order_id)
+    if not record or record.get('travellerId') != g.uid:
+        return jsonify({'ok': False, 'error': 'Order not found'}), 404
+    return jsonify({'ok': True, 'order': _safe_order(record)})
+
+
+@bp.get('/orders/<order_id>/reconcile')
+@auth_required(['traveller'])
+def reconcile_order(order_id):
+    record = retrieveRecord(ORDER_COLLECTION, order_id)
+    if not record or record.get('travellerId') != g.uid:
+        return jsonify({'ok': False, 'error': 'Order not found'}), 404
+    session_id = record.get('checkoutSessionId')
+    if not session_id:
+        return jsonify({'ok': True, 'order': _safe_order(record), 'reconciliationRequired': True}), 202
+    try:
+        session = retrieveCheckoutSession(session_id)
+        patch = _apply_checkout_session(record, session)
+        updated = updateRecord(ORDER_COLLECTION, order_id, patch) or {**record, **patch}
+        status_code = 202 if patch['reconciliationRequired'] else 200
+        return jsonify({'ok': True, 'order': _safe_order(updated), 'reused': True}), status_code
+    except Exception:
+        return jsonify({'ok': True, 'order': _safe_order(record), 'reconciliationRequired': True}), 202
+
+
+@bp.post('/webhooks/stripe')
+def stripe_webhook():
+    try:
+        event = constructStripeWebhookEvent(
+            request.get_data(), request.headers.get('Stripe-Signature', '')
+        )
+    except ValueError:
+        return jsonify({'ok': False, 'error': 'Invalid Stripe webhook'}), 400
+    except Exception:
+        return jsonify({'ok': False, 'error': 'Stripe webhook verification is unavailable'}), 503
+    event_type = str(_stripe_value(event, 'type', '') or '')
+    data = _stripe_value(_stripe_value(event, 'data', {}), 'object', {})
+    metadata = _stripe_value(data, 'metadata', {}) or {}
+    order_id = str(metadata.get('orderId') or _stripe_value(data, 'client_reference_id', '') or '').strip()
+    if not order_id:
+        return jsonify({'ok': True, 'ignored': True})
+    record = retrieveRecord(ORDER_COLLECTION, order_id)
+    if not record:
+        return jsonify({'ok': True, 'ignored': True})
+    if event_type in {'checkout.session.completed', 'checkout.session.async_payment_succeeded',
+                      'checkout.session.async_payment_failed', 'checkout.session.expired'}:
+        if event_type == 'checkout.session.async_payment_failed':
+            patch = {'status': 'payment_failed', 'paymentStatus': 'failed', 'updatedAt': utc_now_iso()}
+        elif event_type == 'checkout.session.expired':
+            patch = {'status': 'expired', 'paymentStatus': 'unpaid', 'updatedAt': utc_now_iso()}
+        else:
+            patch = _apply_checkout_session(record, data)
+        updateRecord(ORDER_COLLECTION, order_id, patch)
+    return jsonify({'ok': True, 'received': True})
 
 
 def _resolve_booking(booking_id):

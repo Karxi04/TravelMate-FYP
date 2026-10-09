@@ -142,5 +142,52 @@ def returnPaymentStatus(paymentSessionId):
     raise RuntimeError('Stripe sandbox is unavailable. Configure an sk_test_ credential or enable explicit payment simulation mode.')
 
 
+def createCheckoutSession(amount_rm, currency, traveller_id, order_id,
+                          success_url, cancel_url, metadata=None,
+                          idempotency_key=None, product_name='TravelMate order'):
+    """Create one Stripe-hosted test Checkout Session; never falls back to simulation."""
+    if not _setup():
+        raise RuntimeError('Stripe Checkout requires an sk_test_ credential.')
+    amount = float(amount_rm)
+    if amount <= 0:
+        raise ValueError('Checkout amount must be positive.')
+    return stripe.checkout.Session.create(
+        mode='payment',
+        line_items=[{
+            'price_data': {
+                'currency': str(currency).lower(),
+                'product_data': {'name': product_name},
+                'unit_amount': int(round(amount * 100)),
+            },
+            'quantity': 1,
+        }],
+        success_url=success_url,
+        cancel_url=cancel_url,
+        client_reference_id=order_id,
+        metadata={
+            'travellerId': str(traveller_id),
+            'orderId': str(order_id),
+            **{str(k): str(v) for k, v in (metadata or {}).items()},
+        },
+        idempotency_key=idempotency_key,
+        max_network_retries=0,
+    )
+
+
+def retrieveCheckoutSession(session_id):
+    if not _setup():
+        raise RuntimeError('Stripe Checkout requires an sk_test_ credential.')
+    return stripe.checkout.Session.retrieve(str(session_id))
+
+
+def constructStripeWebhookEvent(payload, signature):
+    secret = os.getenv('STRIPE_WEBHOOK_SECRET', '').strip()
+    if not secret:
+        raise RuntimeError('Stripe webhook verification is not configured.')
+    if not signature:
+        raise ValueError('Stripe webhook signature is required.')
+    return stripe.Webhook.construct_event(payload, signature, secret)
+
+
 def create_intent(amount_rm, traveller_id, booking_id=''):
     return createPaymentSession({'amount': amount_rm}, traveller_id, booking_id)

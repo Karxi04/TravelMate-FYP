@@ -63,9 +63,21 @@ Create or open a Stripe sandbox/test environment and copy the sandbox secret key
 
 ```env
 STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_CHECKOUT_SUCCESS_URL=https://example.com/travelmate/checkout/success
+STRIPE_CHECKOUT_CANCEL_URL=https://example.com/travelmate/checkout/cancel
 ```
 
-The current mobile checkout calls:
+The hosted mobile Checkout flow calls:
+
+`POST /api/fr9/checkout/session`
+
+The server accepts only an owned, complete hotel or flight quote and derives
+the amount and currency from that stored quote. It claims a durable order
+attempt before creating one Stripe test Checkout Session. The mobile app opens
+the returned hosted URL and reconciles pending orders on the next launch.
+
+The legacy payment workflow remains available at:
 
 `POST /api/fr9/payments/process`
 

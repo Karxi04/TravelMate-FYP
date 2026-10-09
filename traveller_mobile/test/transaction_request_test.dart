@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:travelmate_traveller/services/transaction_request.dart';
 
 void main() {
@@ -49,5 +50,16 @@ void main() {
     final second = newTransactionAttemptId('hotel');
     expect(first, matches(RegExp(r'^hotel_[a-f0-9]{36}$')));
     expect(second, isNot(first));
+  });
+
+  test('Checkout attempt survives app-close style recreation', () async {
+    SharedPreferences.setMockInitialValues({});
+    final first = await CheckoutAttemptStore().loadOrCreate('hotel_quote_offer');
+    final second = await CheckoutAttemptStore().loadOrCreate('hotel_quote_offer');
+    expect(first, matches(RegExp(r'^order_[a-f0-9]{36}$')));
+    expect(second, first);
+    await CheckoutAttemptStore().clear('hotel_quote_offer');
+    final replacement = await CheckoutAttemptStore().loadOrCreate('hotel_quote_offer');
+    expect(replacement, isNot(first));
   });
 }

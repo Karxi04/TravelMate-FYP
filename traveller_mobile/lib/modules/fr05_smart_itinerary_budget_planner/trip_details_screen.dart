@@ -1522,6 +1522,12 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   Widget _tripEssentials(Map<String, dynamic> t) {
     final list = activities;
     final attachments = _attachedTravelCards(t);
+    final selectedHotel = t['selectedHotel'] is Map
+        ? Map<String, dynamic>.from(t['selectedHotel'] as Map)
+        : <String, dynamic>{};
+    final selectedFlight = t['selectedFlight'] is Map
+        ? Map<String, dynamic>.from(t['selectedFlight'] as Map)
+        : <String, dynamic>{};
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const AppSectionHeader(
           title: 'Trip essentials',
@@ -1596,7 +1602,28 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           icon: Icons.credit_card_rounded,
           onPressed: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const PaymentScreen()),
+            MaterialPageRoute(
+              builder: (_) => PaymentScreen(
+                initialBookingReference:
+                    (selectedHotel['bookingReference'] ?? '').toString(),
+                initialAmount: selectedHotel['price'] is num
+                    ? (selectedHotel['price'] as num).toDouble()
+                    : selectedFlight['price'] is num
+                        ? (selectedFlight['price'] as num).toDouble()
+                        : null,
+                quoteType: (selectedHotel['quoteId'] ?? '').toString().isNotEmpty
+                    ? 'hotel'
+                    : (selectedFlight['flightSearchId'] ?? '').toString().isNotEmpty
+                        ? 'flight'
+                        : '',
+                quoteId: (selectedHotel['quoteId'] ?? '').toString(),
+                offerId: (selectedHotel['offerId'] ?? '').toString(),
+                searchId: (selectedFlight['flightSearchId'] ?? '').toString(),
+                optionId: (selectedFlight['flightOptionId'] ??
+                        selectedFlight['optionId'] ?? '')
+                    .toString(),
+              ),
+            ),
           ),
         ),
       ]),
