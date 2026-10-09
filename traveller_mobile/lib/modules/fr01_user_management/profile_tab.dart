@@ -9,6 +9,7 @@ import '../fr02_travel_preference/preferences_screen.dart';
 import 'edit_profile_screen.dart';
 import '../fr03_destination_search_information/favourites_screen.dart';
 import '../fr09_payment/payment_screen.dart';
+import '../fr09_payment/orders_screen.dart';
 import '../fr10_feedback_rating/feedback_screen.dart';
 
 class ProfileTab extends StatefulWidget {
@@ -470,6 +471,13 @@ class _ProfileTabState extends State<ProfileTab> {
                 'View, edit or delete your feedback',
                 () => open(const FeedbackScreen()),
               ),
+              if (!api.isStandalone)
+                menuTile(
+                  Icons.shopping_bag_outlined,
+                  'Orders',
+                  'Checkout orders and payment status',
+                  () => open(OrdersScreen(api: api)),
+                ),
               menuTile(
                 Icons.receipt_long_outlined,
                 'Payment records',

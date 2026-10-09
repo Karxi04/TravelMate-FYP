@@ -305,7 +305,7 @@ def checkout_return(outcome):
     session_id = str(request.args.get('session_id') or '').strip()
     if not session_id:
         return Response(
-            'TravelMate could not verify this Checkout session. Open the app and check Orders.',
+            'TravelMate could not verify this Checkout session. Open the app and go to Profile > Orders.',
             status=400, mimetype='text/plain',
         )
     try:
@@ -320,13 +320,13 @@ def checkout_return(outcome):
         status = str(updated.get('status') or '').lower()
         if status == 'paid':
             heading = 'Payment verified'
-            message = 'Stripe confirmed this test payment. Open TravelMate Orders to view it.'
+            message = 'Stripe confirmed this test payment. Open TravelMate and go to Profile > Orders to view it.'
         elif status in {'checkout_open', 'payment_pending'}:
             heading = 'Payment pending verification'
-            message = 'TravelMate has not received a final payment confirmation yet. Open Orders to retry verification.'
+            message = 'TravelMate has not received a final payment confirmation yet. Open Profile > Orders to retry verification.'
         else:
             heading = 'Payment not completed'
-            message = 'No successful payment was confirmed. Open TravelMate Orders to review the order.'
+            message = 'No successful payment was confirmed. Open TravelMate and go to Profile > Orders to review the order.'
         html = (
             '<!doctype html><meta charset="utf-8"><title>TravelMate Checkout</title>'
             f'<h1>{escape(heading)}</h1><p>{escape(message)}</p>'
@@ -335,7 +335,7 @@ def checkout_return(outcome):
         return Response(html, status=200, mimetype='text/html')
     except Exception:
         return Response(
-            'TravelMate could not verify this Checkout session. Open the app and check Orders.',
+            'TravelMate could not verify this Checkout session. Open the app and go to Profile > Orders.',
             status=502, mimetype='text/plain',
         )
 

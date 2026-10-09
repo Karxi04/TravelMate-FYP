@@ -11,6 +11,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import 'payment_status.dart';
+import 'orders_screen.dart';
 
 class PaymentScreen extends StatefulWidget {
   final String initialBookingReference;
@@ -358,6 +359,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.open_in_new_rounded),
             label: Text(busy ? 'Preparing Checkout…' : 'Open Stripe test Checkout'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => const OrdersScreen(),
+            )),
+            child: const Text('View Orders and order details'),
           ),
           const SizedBox(height: 24),
           const TravelSectionHeader(

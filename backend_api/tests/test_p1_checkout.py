@@ -310,6 +310,7 @@ def test_checkout_return_reconciles_and_keeps_order_details_private(client):
         response = client.get('/api/fr9/checkout/return/success?session_id=cs_return_p1')
     assert response.status_code == 200
     assert 'Payment verified' in response.get_data(as_text=True)
+    assert 'Profile &gt; Orders' in response.get_data(as_text=True)
     assert 'order_return_p1' not in response.get_data(as_text=True)
     assert memory.retrieve('checkout_orders', 'order_return_p1')['status'] == 'paid'
     assert memory.retrieve('checkout_orders', 'order_return_p1')['stripePaymentIntentId'] == 'pi_return_p1'
@@ -321,3 +322,28 @@ def test_placeholder_checkout_return_url_is_rejected():
     with patch.dict('os.environ', {'STRIPE_CHECKOUT_SUCCESS_URL': 'https://example.com/travelmate/success'}):
         with pytest.raises(RuntimeError, match='explicit TravelMate return URL'):
             _configured_checkout_url('STRIPE_CHECKOUT_SUCCESS_URL', 'http://127.0.0.1:5000/return')
+
+
+def test_orders_list_details_and_reconciliation_are_owner_scoped(client, mock_traveller_auth):
+    memory = MemoryPersistence()
+    memory.seed('checkout_orders', 'owned_order', {
+        'travellerId': 'test_traveller_uid', 'status': 'paid', 'amount': 163.89,
+        'currency': 'MYR', 'paymentStatus': 'paid',
+    })
+    memory.seed('checkout_orders', 'other_order', {
+        'travellerId': 'other_traveller', 'status': 'paid', 'amount': 163.89,
+        'currency': 'MYR', 'paymentStatus': 'paid',
+    })
+    headers = {'Authorization': 'Bearer test-token'}
+    with _patch_persistence(memory)[1], patch('modules.fr09_payment.routes.retrieveCheckoutSession') as stripe:
+        listing = client.get('/api/fr9/orders', headers=headers)
+        assert listing.status_code == 200
+        assert [item['id'] for item in listing.get_json()['items']] == ['owned_order']
+        detail = client.get('/api/fr9/orders/owned_order', headers=headers)
+        assert detail.status_code == 200
+        assert detail.get_json()['order']['status'] == 'paid'
+        for suffix in ['', '/reconcile']:
+            denied = client.get('/api/fr9/orders/other_order' + suffix, headers=headers)
+            assert denied.status_code == 404
+            assert 'other_traveller' not in denied.get_data(as_text=True)
+        stripe.assert_not_called()
