@@ -3,7 +3,7 @@ import os
 import uuid
 from urllib.parse import urlparse
 
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, current_app
 
 from auth_utils import auth_required
 from utils import utc_now_iso
@@ -27,6 +27,21 @@ from sequence_contract.firebase_firestore import claimRecord, retrieveRecord, up
 
 bp = Blueprint('fr09_payments', __name__, url_prefix='/api/fr9')
 ORDER_COLLECTION = 'checkout_orders'
+
+
+def _legacy_payment_mutations_enabled():
+    """Keep legacy mutations available only to the deterministic test harness."""
+    return current_app.config.get('TESTING', False) and os.getenv(
+        'TRAVELMATE_TESTING', '').strip().lower() in {'1', 'true', 'yes'}
+
+
+def _legacy_payment_route_blocked():
+    if _legacy_payment_mutations_enabled():
+        return None
+    return jsonify({
+        'ok': False,
+        'error': 'Use a validated Checkout order for payment.',
+    }), 409
 
 
 def _order_document_id(attempt_id):
@@ -166,6 +181,14 @@ def _order_status_from_session(session):
 
 
 def _apply_checkout_session(record, session):
+    if str(record.get('status') or '').lower() == 'paid':
+        return {
+            'status': 'paid',
+            'paymentStatus': 'paid',
+            'stripePaymentIntentId': record.get('stripePaymentIntentId'),
+            'reconciliationRequired': False,
+            'updatedAt': utc_now_iso(),
+        }
     status, payment_status = _order_status_from_session(session)
     amount_total = _stripe_value(session, 'amount_total')
     currency = str(_stripe_value(session, 'currency', '') or '').upper()
@@ -218,6 +241,8 @@ def create_checkout_session():
         return jsonify({'ok': False, 'error': 'Order storage is unavailable. Try again later.'}), 503
     if claimed.get('travellerId') != g.uid:
         return jsonify({'ok': False, 'error': 'This order is not owned by the current traveller.'}), 403
+    if str(claimed.get('status') or '').lower() == 'paid':
+        return jsonify({'ok': False, 'error': 'This Checkout order has already been paid.'}), 409
     for key in ('quoteType', 'quoteId', 'offerId', 'optionId', 'amount', 'currency'):
         if key in record and str(claimed.get(key)) != str(record.get(key)):
             return jsonify({'ok': False, 'error': 'Order attempt is already bound to another quote.'}), 409
@@ -323,6 +348,8 @@ def stripe_webhook():
     record = retrieveRecord(ORDER_COLLECTION, order_id)
     if not record:
         return jsonify({'ok': True, 'ignored': True})
+    if str(record.get('status') or '').lower() == 'paid':
+        return jsonify({'ok': True, 'received': True, 'ignored': True})
     if event_type in {'checkout.session.completed', 'checkout.session.async_payment_succeeded',
                       'checkout.session.async_payment_failed', 'checkout.session.expired'}:
         if event_type == 'checkout.session.async_payment_failed':
@@ -497,6 +524,9 @@ def _reconcile_payment_record(record):
 @bp.post('/payments/create-intent')
 @auth_required(['traveller'])
 def create_payment_intent():
+    blocked = _legacy_payment_route_blocked()
+    if blocked:
+        return blocked
     payload = request.get_json(silent=True) or {}
     _, booking = _resolve_booking(payload.get('bookingId'))
     if booking:
@@ -584,6 +614,9 @@ def create_payment_intent():
 @bp.post('/payments/process')
 @auth_required(['traveller'])
 def process_payment():
+    blocked = _legacy_payment_route_blocked()
+    if blocked:
+        return blocked
     payload = request.get_json(silent=True) or {}
     booking_doc_id, booking = _resolve_booking(payload.get('bookingId'))
     if booking:

@@ -193,6 +193,17 @@ def test_signed_checkout_webhook_marks_owned_order_paid(client, mock_traveller_a
     assert memory.retrieve('checkout_orders', 'order_doc_p1')['status'] == 'paid'
     assert memory.retrieve('checkout_orders', 'order_doc_p1')['stripePaymentIntentId'] == 'pi_test_p1'
 
+    failed_event = {
+        'type': 'checkout.session.async_payment_failed',
+        'data': {'object': {'metadata': {'orderId': 'order_doc_p1'}}},
+    }
+    with patch('modules.fr09_payment.routes.constructStripeWebhookEvent', return_value=failed_event), \
+         _patch_persistence(memory)[1], _patch_persistence(memory)[2]:
+        later_failure = client.post('/api/fr9/webhooks/stripe', data=b'{}', headers={
+            'Stripe-Signature': 'fixture'})
+    assert later_failure.status_code == 200
+    assert memory.retrieve('checkout_orders', 'order_doc_p1')['status'] == 'paid'
+
 
 def test_webhook_without_verification_secret_is_safe(client):
     with patch.dict('os.environ', {'STRIPE_WEBHOOK_SECRET': ''}):
@@ -228,3 +239,52 @@ def test_checkout_reconcile_is_safe_when_provider_is_still_open(client, mock_tra
             'Authorization': 'Bearer valid_test_token'})
     assert response.status_code == 202
     assert response.get_json()['order']['status'] == 'checkout_open'
+
+
+def test_legacy_payment_mutations_are_blocked_outside_test_harness(client, mock_traveller_auth):
+    with patch.dict('os.environ', {'TRAVELMATE_TESTING': 'false'}), \
+         patch('modules.fr09_payment.routes.processPaymentAttempt') as process:
+        legacy = client.post('/api/fr9/payments/process', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'paymentAttemptId': 'legacy_bypass', 'amount': 0.01,
+            })
+        intent = client.post('/api/fr9/payments/create-intent', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'paymentAttemptId': 'legacy_intent_bypass', 'amount': 0.01,
+            })
+    assert legacy.status_code == intent.status_code == 409
+    assert legacy.get_json()['error'] == 'Use a validated Checkout order for payment.'
+    assert intent.get_json()['error'] == 'Use a validated Checkout order for payment.'
+    process.assert_not_called()
+
+
+def test_paid_checkout_order_cannot_be_reused(client, mock_traveller_auth):
+    from services.transaction_reliability import operation_document_id
+
+    memory = MemoryPersistence()
+    memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_hotel_p1', _hotel_quote())
+    order_id = operation_document_id('checkout_order', 'test_traveller_uid', 'paid_attempt')
+    memory.seed('checkout_orders', order_id, {
+        'id': order_id,
+        'travellerId': 'test_traveller_uid',
+        'orderAttemptId': 'paid_attempt',
+        'quoteType': 'hotel',
+        'quoteId': 'quote_hotel_p1',
+        'offerId': 'offer_hotel_p1',
+        'amount': 220.0,
+        'currency': 'MYR',
+        'status': 'paid',
+        'paymentStatus': 'paid',
+        'checkoutSessionId': 'cs_paid_p1',
+        'checkoutUrl': 'https://checkout.stripe.test/cs_paid_p1',
+    })
+    with _patch_persistence(memory)[0], _patch_persistence(memory)[1], _patch_persistence(memory)[2], \
+         patch('modules.fr09_payment.routes.createCheckoutSession') as create:
+        response = client.post('/api/fr9/checkout/session', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'orderAttemptId': 'paid_attempt', 'quoteType': 'hotel',
+                'quoteId': 'quote_hotel_p1', 'offerId': 'offer_hotel_p1',
+            })
+    assert response.status_code == 409
+    assert 'already been paid' in response.get_json()['error']
+    create.assert_not_called()
