@@ -108,11 +108,17 @@ def _time(value):
 
 def _airport(value):
     value = value if isinstance(value, dict) else {}
+    raw_time = _time(value).strip()
+    inferred_date = None
+    clock_time = raw_time or None
+    if re.match(r'^\d{4}-\d{2}-\d{2}[ T]', raw_time):
+        inferred_date, clock_time = raw_time[:10], raw_time[11:].strip() or None
     return {
         'code': str(value.get('id') or '').strip() or None,
         'name': str(value.get('name') or '').strip() or None,
-        'date': str(value.get('date') or '').strip() or None,
-        'time': _time(value) or None,
+        'date': str(value.get('date') or '').strip() or inferred_date,
+        'time': clock_time,
+        'localDateTime': raw_time or None,
     }
 
 
@@ -127,10 +133,12 @@ def _segment(leg):
         'departureAirportName': dep['name'],
         'departureDate': dep['date'],
         'departureTime': dep['time'],
+        'departureLocalDateTime': dep['localDateTime'],
         'arrivalAirportCode': arr['code'],
         'arrivalAirportName': arr['name'],
         'arrivalDate': arr['date'],
         'arrivalTime': arr['time'],
+        'arrivalLocalDateTime': arr['localDateTime'],
         'durationMinutes': leg.get('duration'),
         'airline': airline,
         'operatingAirline': operating,
@@ -149,7 +157,7 @@ def _stops_from_legs(legs):
     return max(0, len(legs) - 1)
 
 
-def normalizeFlightResult(item, index=0, currency='MYR'):
+def normalizeFlightResult(item, index=0, currency='MYR', traveller_count=None, price_basis=None):
     item = dict(item or {})
     legs = item.get('flights') or []
     outbound_legs = item.get('outbound_flights') or item.get('outboundFlights')
@@ -180,6 +188,11 @@ def normalizeFlightResult(item, index=0, currency='MYR'):
     except (TypeError, ValueError):
         price = None
     actual_currency = str(item.get('currency') or currency or '').strip().upper() or None
+    requested_adults = traveller_count if traveller_count is not None else item.get('traveller_count')
+    try:
+        requested_adults = max(1, int(requested_adults)) if requested_adults is not None else None
+    except (TypeError, ValueError):
+        requested_adults = None
     result = {
         'id': safe_id or f'flight_{index}',
         'airline': airline,
@@ -188,10 +201,10 @@ def normalizeFlightResult(item, index=0, currency='MYR'):
         'arrivalAirport': _airport_id(arr) or None,
         'departureAirportName': dep.get('name') if isinstance(dep, dict) else None,
         'arrivalAirportName': arr.get('name') if isinstance(arr, dict) else None,
-        'departureTime': _time(dep),
-        'arrivalTime': _time(arr),
-        'outboundDate': dep.get('date') if isinstance(dep, dict) else None,
-        'returnDate': ((return_legs[0].get('departure_airport') or {}).get('date') if return_legs else None),
+        'departureTime': _airport(dep)['time'],
+        'arrivalTime': _airport(arr)['time'],
+        'outboundDate': _airport(dep)['date'],
+        'returnDate': (_airport(return_legs[0].get('departure_airport'))['date'] if return_legs else None),
         'durationMinutes': duration,
         'stops': stops,
         'stopText': 'Nonstop' if stops == 0 else f'{stops} stop' + ('s' if stops != 1 else ''),
@@ -200,11 +213,17 @@ def normalizeFlightResult(item, index=0, currency='MYR'):
         'currencyStatus': 'known' if actual_currency else 'unknown',
         'priceStatus': 'available' if price is not None else 'unknown',
         'priceBasis': (
-            item.get('price_basis') or 'itinerary_total'
+            item.get('price_basis') or price_basis or (
+                'provider_round_trip_ticket_price_requested_adults' if return_legs
+                else 'itinerary_total'
+            )
             if price is not None else None
         ),
-        'travellerCount': item.get('traveller_count'),
-        'passengerPriceBasis': item.get('passenger_price_basis'),
+        'travellerCount': requested_adults,
+        'passengerComposition': {'adults': requested_adults} if requested_adults is not None else None,
+        'passengerPriceBasis': item.get('passenger_price_basis') or 'provider_response_requested_adults' if requested_adults is not None else None,
+        'priceScope': 'provider_ticket_price' if price is not None else None,
+        'priceSemanticsStatus': 'provider_response_requested_adults' if price is not None and requested_adults is not None else None,
         'outboundSegments': [_segment(x) for x in outbound_legs],
         'returnSegments': [_segment(x) for x in return_legs],
         'tripType': 'round_trip' if return_legs else 'one_way',
@@ -219,12 +238,12 @@ def normalizeFlightResult(item, index=0, currency='MYR'):
     return result
 
 
-def normalizeFlightResults(data, currency='MYR'):
+def normalizeFlightResults(data, currency='MYR', traveller_count=None, price_basis=None):
     raw = list((data or {}).get('best_flights', []) or []) + list((data or {}).get('other_flights', []) or [])
-    return [normalizeFlightResult(item, index, currency) for index, item in enumerate(raw)]
+    return [normalizeFlightResult(item, index, currency, traveller_count, price_basis) for index, item in enumerate(raw)]
 
 
-def retrieveFlightOptions(departureId, arrivalId, outboundDate, returnDate=None, currency='MYR', travelClass=1, stops=None):
+def retrieveFlightOptions(departureId, arrivalId, outboundDate, returnDate=None, currency='MYR', travelClass=1, stops=None, adults=1, departureToken=None):
     # SerpApi requires type=2 for a one-way search. Round trip type=1 requires return_date.
     params = {
         'engine': 'google_flights',
@@ -236,17 +255,29 @@ def retrieveFlightOptions(departureId, arrivalId, outboundDate, returnDate=None,
         'type': 1 if returnDate else 2,
         'travel_class': int(travelClass or 1),
     }
+    if adults is not None:
+        params['adults'] = max(1, int(adults))
     if returnDate:
         params['return_date'] = returnDate
+    if departureToken:
+        params['departure_token'] = departureToken
     if stops not in (None, ''):
         params['stops'] = stops
     data = _request(params)
     return {
-        'items': normalizeFlightResults(data, currency),
+        'items': normalizeFlightResults(data, currency, adults),
         'search_metadata': data.get('search_metadata', {}),
         'search_parameters': data.get('search_parameters', {}),
         'raw': data,
     }
+
+
+def retrieveFlightReturns(departureToken, departureId, arrivalId, outboundDate, returnDate, currency='MYR', adults=1, travelClass=1, stops=None):
+    return retrieveFlightOptions(
+        departureId, arrivalId, outboundDate, returnDate, currency=currency,
+        travelClass=travelClass, stops=stops, adults=adults,
+        departureToken=departureToken,
+    )
 
 
 def retrieveFlightDetails(flightReference):

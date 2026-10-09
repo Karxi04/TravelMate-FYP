@@ -184,6 +184,15 @@ class FlightDetailsScreen extends StatelessWidget {
                   'Price basis: ${flight['priceBasis']} • planning reference only',
                   style: const TextStyle(color: InkWashColors.mutedInk)),
             ),
+          detailRow('Travellers', flight['travellerCount'],
+              icon: Icons.people_outline_rounded),
+          if (flight['quoteCompleteness'] == 'return_selection_pending')
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                  'Outbound candidate only. Choose a compatible return leg before selecting this trip.',
+                  style: TextStyle(color: InkWashColors.mutedInk)),
+            ),
           ...((flight['outboundSegments'] as List? ?? [])
               .whereType<Map>()
               .toList()

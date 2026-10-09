@@ -39,6 +39,7 @@ class _FlightScreenState extends State<FlightScreen> {
   String sort = 'top';
   String source = '';
   String searchId = '';
+  bool returnLoading = false;
 
   String dateText(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -171,6 +172,7 @@ class _FlightScreenState extends State<FlightScreen> {
     setState(() {
       busy = true;
       compareIds.clear();
+      returnLoading = false;
     });
     try {
       final query = <String, String>{
@@ -220,13 +222,67 @@ class _FlightScreenState extends State<FlightScreen> {
             flight: flight,
             onSelect: () {
               Navigator.pop(context);
-              selectFlight(flight);
+              roundTrip ? chooseReturn(flight) : selectFlight(flight);
             },
           ),
         ),
       );
     } catch (e) {
       if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> chooseReturn(Map<String, dynamic> outboundFlight) async {
+    if (!roundTrip || searchId.isEmpty) return;
+    setState(() => returnLoading = true);
+    try {
+      final data = await api.post('/api/fr7/flights/returns', {
+        'searchId': searchId,
+        'optionId': idOf(outboundFlight),
+      });
+      final returns = (data['items'] as List? ?? [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      if (!mounted) return;
+      if (returns.isEmpty) {
+        showError(context,
+            'No compatible return flight was found. Try another outbound option.');
+        return;
+      }
+      final selected = await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+            children: [
+              const Text('Choose your return flight',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              const Text(
+                  'The complete provider fare is shown after the return leg is selected.'),
+              const SizedBox(height: 10),
+              ...returns.map((item) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                        '${item['airline'] ?? 'Flight'} ${item['flightNumber'] ?? ''}'),
+                    subtitle: Text(
+                        '${item['departureAirport'] ?? ''} ${item['departureTime'] ?? ''} → ${item['arrivalAirport'] ?? ''} ${item['arrivalTime'] ?? ''}'),
+                    trailing: const Icon(Icons.arrow_forward_rounded),
+                    onTap: () => Navigator.pop(context, item),
+                  )),
+            ],
+          ),
+        ),
+      );
+      if (selected != null)
+        await selectFlight(outboundFlight, returnOptionId: idOf(selected));
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => returnLoading = false);
     }
   }
 
@@ -291,7 +347,8 @@ class _FlightScreenState extends State<FlightScreen> {
     }
   }
 
-  Future<void> selectFlight(Map<String, dynamic> flight) async {
+  Future<void> selectFlight(Map<String, dynamic> flight,
+      {String? returnOptionId}) async {
     try {
       final data = await api.get('/api/fr5/itineraries');
       final trips = data['items'] as List? ?? [];
@@ -334,6 +391,7 @@ class _FlightScreenState extends State<FlightScreen> {
             'itineraryId': created['id'],
             'searchId': searchId,
             'optionId': idOf(flight),
+            if (returnOptionId != null) 'returnOptionId': returnOptionId,
             'flight': flight,
           });
         }
@@ -380,6 +438,7 @@ class _FlightScreenState extends State<FlightScreen> {
         'itineraryId': selected['id'],
         'searchId': searchId,
         'optionId': idOf(flight),
+        if (returnOptionId != null) 'returnOptionId': returnOptionId,
         'flight': flight,
       });
       if (mounted) {
@@ -594,8 +653,13 @@ class _FlightScreenState extends State<FlightScreen> {
                               child: const Text('Details')),
                           const SizedBox(width: 6),
                           FilledButton.tonal(
-                              onPressed: () => selectFlight(item),
-                              child: const Text('Select')),
+                              onPressed: returnLoading
+                                  ? null
+                                  : () => roundTrip
+                                      ? chooseReturn(item)
+                                      : selectFlight(item),
+                              child:
+                                  Text(roundTrip ? 'Choose return' : 'Select')),
                         ]),
                       ]),
                 ),
