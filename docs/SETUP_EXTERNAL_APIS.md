@@ -63,9 +63,23 @@ Create or open a Stripe sandbox/test environment and copy the sandbox secret key
 
 ```env
 STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+# Local desktop defaults; for a physical phone replace 127.0.0.1 with the
+# computer's reachable LAN address and keep the /api/fr9/checkout/return path.
+STRIPE_CHECKOUT_SUCCESS_URL=http://127.0.0.1:5000/api/fr9/checkout/return/success?session_id={CHECKOUT_SESSION_ID}
+STRIPE_CHECKOUT_CANCEL_URL=http://127.0.0.1:5000/api/fr9/checkout/return/cancel?session_id={CHECKOUT_SESSION_ID}
 ```
 
-The current mobile checkout calls:
+The hosted mobile Checkout flow calls:
+
+`POST /api/fr9/checkout/session`
+
+The server accepts only an owned, complete hotel or flight quote and derives
+the amount and currency from that stored quote. It claims a durable order
+attempt before creating one Stripe test Checkout Session. The mobile app opens
+the returned hosted URL and reconciles pending orders on the next launch.
+
+The legacy payment workflow remains available at:
 
 `POST /api/fr9/payments/process`
 

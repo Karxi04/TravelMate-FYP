@@ -15,6 +15,10 @@ from sequence_contract.domain_functions import (
     buildLowerCostAlternatives, generateItinerary, groupNearbyActivities,
     checkOpeningHoursAndTravelTime, adjustWeatherSensitiveActivities, recalculateItinerary,
 )
+from services.flight_itinerary_adjustment import (
+    apply_preview as apply_flight_adjustment_preview,
+    create_preview as create_flight_adjustment_preview,
+)
 
 bp = Blueprint('fr05_itineraries', __name__, url_prefix='/api/fr5')
 
@@ -48,6 +52,17 @@ def _trusted_hotel_update(current, payload):
         'hotelBookingId': booking_id,
     })
     return trusted, None
+
+
+def _trusted_flight_update(payload):
+    flight_fields = {
+        'selectedFlight', 'flightCost', 'flightCurrency', 'flightPriceBasis',
+        'flightSearchId', 'flightOptionId', 'flightSelectionSource',
+        'flightSelectionStatus',
+    }
+    if flight_fields.intersection(payload):
+        return None, 'Flight selections must be attached through the flight search.'
+    return payload, None
 
 
 _own_itinerary = _own
@@ -355,12 +370,55 @@ def update_itinerary_route(iid):
     payload, hotel_error = _trusted_hotel_update(current, payload)
     if hotel_error:
         return jsonify({'ok': False, 'error': hotel_error}), 409
+    payload, flight_error = _trusted_flight_update(payload)
+    if flight_error:
+        return jsonify({'ok': False, 'error': flight_error}), 409
     if not validateItineraryInput({**current, **payload}):
         return jsonify({'ok': False, 'error': 'Use a title, valid date range, positive traveller count and non-negative budget'}), 400
     payload['updatedAt'] = utc_now_iso()
     merged = {**current, **payload}
     payload['budgetEstimate'] = calculateBudget(merged)
     return jsonify({'ok': True, 'itinerary': updateRecord('itineraries', iid, payload)})
+
+
+def _public_flight_preview(preview):
+    result = dict(preview or {})
+    for key in ('owner', 'tripFingerprint', 'flightFingerprint'):
+        result.pop(key, None)
+    return result
+
+
+@bp.post('/itineraries/<iid>/flight-adjustment/preview')
+@auth_required(['traveller'])
+def flight_adjustment_preview(iid):
+    current = _own(iid)
+    if not current:
+        return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    flight = current.get('selectedFlight') if isinstance(current.get('selectedFlight'), dict) else None
+    if not flight:
+        return jsonify({'ok': False, 'error': 'Select a flight before requesting an itinerary adjustment preview.'}), 409
+    preview = create_flight_adjustment_preview(current, flight, g.uid)
+    return jsonify({'ok': True, 'preview': _public_flight_preview(preview)})
+
+
+@bp.post('/itineraries/<iid>/flight-adjustment/apply')
+@auth_required(['traveller'])
+def flight_adjustment_apply(iid):
+    current = _own(iid)
+    if not current:
+        return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    payload = request.get_json(silent=True) or {}
+    preview_id = str(payload.get('previewId') or '').strip()
+    if not preview_id:
+        return jsonify({'ok': False, 'error': 'previewId is required'}), 400
+    flight = current.get('selectedFlight') if isinstance(current.get('selectedFlight'), dict) else {}
+    result, error = apply_flight_adjustment_preview(
+        preview_id, current, flight, g.uid,
+        lambda _iid, patch: updateRecord('itineraries', _iid, patch),
+    )
+    if error:
+        return jsonify({'ok': False, 'error': error}), 409 if 'stale' in error.lower() else 404
+    return jsonify(result)
 
 
 @bp.post('/itineraries/<iid>/hotel-selection/remove')
@@ -555,8 +613,12 @@ def apply_lower_cost_alternative(iid):
     patch = {'updatedAt': utc_now_iso(), 'lastAppliedLowerCostAlternative': alternative}
 
     if kind == 'flight' and data:
+        if not os.getenv('TRAVELMATE_TESTING', '').lower() in {'1', 'true', 'yes'}:
+            return jsonify({'ok': False, 'error': 'Choose a flight from a completed flight search.'}), 409
         patch['selectedFlight'] = data
         patch['flightCost'] = float(data.get('price') or 0)
+        patch['flightCurrency'] = str(data.get('currency') or 'MYR').upper()
+        patch['flightPriceBasis'] = data.get('priceBasis') or 'legacy_test_fixture'
     elif kind == 'hotel' and data:
         patch['selectedHotel'] = data
         patch['hotelCost'] = float(data.get('price') or 0)

@@ -445,6 +445,9 @@ class _HotelScreenState extends State<HotelScreen> {
             builder: (_) => PaymentScreen(
               initialBookingReference: ref.toString(),
               initialAmount: double.tryParse('${hotel['price']}'),
+              quoteType: 'hotel',
+              quoteId: (hotel['quoteId'] ?? '').toString(),
+              offerId: (hotel['offerId'] ?? '').toString(),
             ),
           ),
         );

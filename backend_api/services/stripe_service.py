@@ -16,6 +16,14 @@ def _fallback_mode():
     return os.getenv('FALLBACK_MODE', 'false').lower() in {'1', 'true', 'yes'}
 
 
+def _payment_simulation_mode():
+    """Keep payment simulation opt-in without changing other provider fallbacks."""
+    explicit = os.getenv('PAYMENT_SIMULATION_MODE')
+    if explicit is not None:
+        return explicit.strip().lower() in {'1', 'true', 'yes', 'on'}
+    return os.getenv('TRAVELMATE_TESTING', '').strip().lower() in {'1', 'true', 'yes'} and _fallback_mode()
+
+
 def normalizePaymentStatus(status):
     value = str(status or 'unknown').strip().lower()
     aliases = {
@@ -31,7 +39,7 @@ def stripePaymentMode():
     key = os.getenv('STRIPE_SECRET_KEY', '').strip()
     if key.startswith('sk_test_'):
         return 'sandbox'
-    if _fallback_mode():
+    if _payment_simulation_mode():
         return 'simulation'
     return 'unavailable'
 
@@ -66,7 +74,7 @@ def createPaymentSession(paymentInput, travellerId=None, bookingId='', idempoten
             idempotency_key=idempotencyKey,
             max_network_retries=0,
         )
-    if _fallback_mode():
+    if _payment_simulation_mode():
         sim_id = _simulation_id(idempotencyKey)
         return SimulatedPaymentIntent(sim_id, int(round(amount * 100)), status='requires_payment_method')
     raise RuntimeError('Stripe sandbox is unavailable. Configure an sk_test_ credential or enable explicit simulation mode.')
@@ -98,7 +106,7 @@ def processPaymentAttempt(paymentInput, travellerId, bookingId, idempotencyKey):
             idempotency_key=idempotencyKey,
             max_network_retries=0,
         )
-    if _fallback_mode():
+    if _payment_simulation_mode():
         sim_id = _simulation_id(idempotencyKey)
         return SimulatedPaymentIntent(sim_id, int(round(amount * 100)), status='succeeded')
     raise RuntimeError('Stripe sandbox is unavailable. Configure an sk_test_ credential or enable explicit simulation mode.')
@@ -120,14 +128,65 @@ def processSandboxPayment(paymentSessionId=None, paymentInput=None, travellerId=
     has_live_key = _setup()
     if has_live_key and not paymentSessionId.startswith('pi_sim_'):
         return stripe.PaymentIntent.retrieve(paymentSessionId)
-    return SimulatedPaymentIntent(paymentSessionId, 0, status='succeeded')
+    if _payment_simulation_mode():
+        return SimulatedPaymentIntent(paymentSessionId, 0, status='succeeded')
+    raise RuntimeError('Stripe sandbox is unavailable. Configure an sk_test_ credential or enable explicit payment simulation mode.')
 
 
 def returnPaymentStatus(paymentSessionId):
     has_live_key = _setup()
     if has_live_key and not paymentSessionId.startswith('pi_sim_'):
         return stripe.PaymentIntent.retrieve(paymentSessionId).status
-    return 'succeeded'
+    if _payment_simulation_mode():
+        return 'succeeded'
+    raise RuntimeError('Stripe sandbox is unavailable. Configure an sk_test_ credential or enable explicit payment simulation mode.')
+
+
+def createCheckoutSession(amount_rm, currency, traveller_id, order_id,
+                          success_url, cancel_url, metadata=None,
+                          idempotency_key=None, product_name='TravelMate order'):
+    """Create one Stripe-hosted test Checkout Session; never falls back to simulation."""
+    if not _setup():
+        raise RuntimeError('Stripe Checkout requires an sk_test_ credential.')
+    amount = float(amount_rm)
+    if amount <= 0:
+        raise ValueError('Checkout amount must be positive.')
+    return stripe.checkout.Session.create(
+        mode='payment',
+        line_items=[{
+            'price_data': {
+                'currency': str(currency).lower(),
+                'product_data': {'name': product_name},
+                'unit_amount': int(round(amount * 100)),
+            },
+            'quantity': 1,
+        }],
+        success_url=success_url,
+        cancel_url=cancel_url,
+        client_reference_id=order_id,
+        metadata={
+            'travellerId': str(traveller_id),
+            'orderId': str(order_id),
+            **{str(k): str(v) for k, v in (metadata or {}).items()},
+        },
+        idempotency_key=idempotency_key,
+        max_network_retries=0,
+    )
+
+
+def retrieveCheckoutSession(session_id):
+    if not _setup():
+        raise RuntimeError('Stripe Checkout requires an sk_test_ credential.')
+    return stripe.checkout.Session.retrieve(str(session_id))
+
+
+def constructStripeWebhookEvent(payload, signature):
+    secret = os.getenv('STRIPE_WEBHOOK_SECRET', '').strip()
+    if not secret:
+        raise RuntimeError('Stripe webhook verification is not configured.')
+    if not signature:
+        raise ValueError('Stripe webhook signature is required.')
+    return stripe.Webhook.construct_event(payload, signature, secret)
 
 
 def create_intent(amount_rm, traveller_id, booking_id=''):

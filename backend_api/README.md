@@ -139,7 +139,7 @@ batch.
 - FR6 `/api/fr6/locations/search`, `/api/fr6/weather`
 - FR7 `/api/fr7/flights/search`
 - FR8 `/api/fr8/places/search`, `/api/fr8/hotels/search`, `/api/fr8/hotels/prebook`, `/api/fr8/hotels/book`
-- FR9 `/api/fr9/payments/...`
+- FR9 `/api/fr9/payments/...`, `/api/fr9/checkout/session`, `/api/fr9/orders`, `/api/fr9/webhooks/stripe`
 
 ### Transaction reliability
 
@@ -158,6 +158,13 @@ ambiguous retry. A terminal failed payment requires a new attempt ID. LiteAPI
 booking has no guaranteed reconciliation lookup in the current integration;
 an ambiguous booking remains pending/verification-required and is not blindly
 submitted again. Local hotel confirmations are explicitly marked simulation.
+
+Hosted Checkout orders use server-owned hotel or flight quote records. The
+server derives the payable MYR amount, claims an owned order attempt before
+calling Stripe, and sends the traveller to Stripe test Checkout. Signed
+`checkout.session.*` webhooks update the order; travellers can also reconcile
+an open order after closing and reopening the app. Set `STRIPE_WEBHOOK_SECRET`
+from Stripe CLI or the Dashboard before treating webhook delivery as verified.
 - FR10 `/api/fr10/feedback/...`
 - FR11 `/api/fr11/chat`, `/api/fr11/history`
 - FR12 `/api/fr12/...`

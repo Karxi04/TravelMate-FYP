@@ -25,9 +25,45 @@ class FlightDetailsScreen extends StatelessWidget {
             Icon(icon, size: 19, color: InkWashColors.blueGrey),
             const SizedBox(width: 9),
           ],
-          SizedBox(width: 118, child: Text(label, style: const TextStyle(color: InkWashColors.mutedInk))),
-          Expanded(child: Text(text.isEmpty ? 'Not provided' : text, style: const TextStyle(fontWeight: FontWeight.w700))),
+          SizedBox(
+              width: 118,
+              child: Text(label,
+                  style: const TextStyle(color: InkWashColors.mutedInk))),
+          Expanded(
+              child: Text(text.isEmpty ? 'Not provided' : text,
+                  style: const TextStyle(fontWeight: FontWeight.w700))),
         ],
+      ),
+    );
+  }
+
+  Widget segmentCard(Map<String, dynamic> segment, int index) {
+    final departure =
+        '${segment['departureAirportCode'] ?? '-'} ${segment['departureTime'] ?? ''}'
+            .trim();
+    final arrival =
+        '${segment['arrivalAirportCode'] ?? '-'} ${segment['arrivalTime'] ?? ''}'
+            .trim();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkCard(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Segment ${index + 1}',
+              style: const TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          Text('$departure → $arrival',
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+          detailRow('Airline',
+              '${segment['airline'] ?? '-'} ${segment['flightNumber'] ?? ''}'),
+          if ((segment['departureDate'] ?? '').toString().isNotEmpty)
+            detailRow('Local dates',
+                '${segment['departureDate']} → ${segment['arrivalDate'] ?? ''}'),
+          detailRow(
+              'Duration',
+              segment['durationMinutes'] == null
+                  ? null
+                  : '${segment['durationMinutes']} min'),
+        ]),
       ),
     );
   }
@@ -40,7 +76,9 @@ class FlightDetailsScreen extends StatelessWidget {
       bottomNavigationBar: SafeArea(
         child: Container(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-          decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Color(0xFFE7E7E2)))),
+          decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Color(0xFFE7E7E2)))),
           child: Row(
             children: [
               Expanded(
@@ -48,12 +86,20 @@ class FlightDetailsScreen extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Total fare', style: TextStyle(color: InkWashColors.mutedInk, fontSize: 12)),
-                    Text('${flight['currency'] ?? 'MYR'} ${flight['price'] ?? '-'}', style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+                    const Text('Total fare',
+                        style: TextStyle(
+                            color: InkWashColors.mutedInk, fontSize: 12)),
+                    Text(
+                        '${flight['currency'] ?? 'Unknown currency'} ${flight['price'] ?? '-'}',
+                        style: const TextStyle(
+                            fontSize: 21, fontWeight: FontWeight.w900)),
                   ],
                 ),
               ),
-              FilledButton.icon(onPressed: onSelect, icon: const Icon(Icons.add_road_rounded), label: const Text('Select flight')),
+              FilledButton.icon(
+                  onPressed: onSelect,
+                  icon: const Icon(Icons.add_road_rounded),
+                  label: const Text('Select flight')),
             ],
           ),
         ),
@@ -66,13 +112,44 @@ class FlightDetailsScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${flight['airline'] ?? 'Airline'} ${flight['flightNumber'] ?? ''}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                Text(
+                    '${flight['airline'] ?? 'Airline'} ${flight['flightNumber'] ?? ''}',
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text((flight['departureTime'] ?? '').toString(), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)), Text((flight['departureAirport'] ?? '').toString(), style: const TextStyle(color: InkWashColors.mutedInk))])),
-                    Expanded(child: Column(children: [const Icon(Icons.flight_takeoff_rounded, color: InkWashColors.blueGrey), Text(duration, style: const TextStyle(fontSize: 12)), Text((flight['stopText'] ?? '').toString(), style: const TextStyle(fontSize: 12, color: InkWashColors.mutedInk))])),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [Text((flight['arrivalTime'] ?? '').toString(), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)), Text((flight['arrivalAirport'] ?? '').toString(), style: const TextStyle(color: InkWashColors.mutedInk))])),
+                    Expanded(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Text((flight['departureTime'] ?? '').toString(),
+                              style: const TextStyle(
+                                  fontSize: 24, fontWeight: FontWeight.w900)),
+                          Text((flight['departureAirport'] ?? '').toString(),
+                              style: const TextStyle(
+                                  color: InkWashColors.mutedInk))
+                        ])),
+                    Expanded(
+                        child: Column(children: [
+                      const Icon(Icons.flight_takeoff_rounded,
+                          color: InkWashColors.blueGrey),
+                      Text(duration, style: const TextStyle(fontSize: 12)),
+                      Text((flight['stopText'] ?? '').toString(),
+                          style: const TextStyle(
+                              fontSize: 12, color: InkWashColors.mutedInk))
+                    ])),
+                    Expanded(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                          Text((flight['arrivalTime'] ?? '').toString(),
+                              style: const TextStyle(
+                                  fontSize: 24, fontWeight: FontWeight.w900)),
+                          Text((flight['arrivalAirport'] ?? '').toString(),
+                              style: const TextStyle(
+                                  color: InkWashColors.mutedInk))
+                        ])),
                   ],
                 ),
               ],
@@ -84,27 +161,73 @@ class FlightDetailsScreen extends StatelessWidget {
           InkCard(
             child: Column(
               children: [
-                detailRow('Outbound date', flight['outboundDate'], icon: Icons.calendar_today_outlined),
-                if ((flight['returnDate'] ?? '').toString().isNotEmpty) detailRow('Return date', flight['returnDate'], icon: Icons.event_repeat_outlined),
-                detailRow('Cabin class', flight['cabinClass'] ?? 'Economy', icon: Icons.airline_seat_recline_normal_rounded),
-                detailRow('Aircraft', flight['aircraft'], icon: Icons.flight_rounded),
-                detailRow('Departure terminal', flight['departureTerminal'], icon: Icons.airport_shuttle_outlined),
-                detailRow('Arrival terminal', flight['arrivalTerminal'], icon: Icons.location_on_outlined),
+                detailRow('Outbound date', flight['outboundDate'],
+                    icon: Icons.calendar_today_outlined),
+                if ((flight['returnDate'] ?? '').toString().isNotEmpty)
+                  detailRow('Return date', flight['returnDate'],
+                      icon: Icons.event_repeat_outlined),
+                detailRow('Cabin class', flight['cabinClass'] ?? 'Economy',
+                    icon: Icons.airline_seat_recline_normal_rounded),
+                detailRow('Aircraft', flight['aircraft'],
+                    icon: Icons.flight_rounded),
+                detailRow('Departure terminal', flight['departureTerminal'],
+                    icon: Icons.airport_shuttle_outlined),
+                detailRow('Arrival terminal', flight['arrivalTerminal'],
+                    icon: Icons.location_on_outlined),
               ],
             ),
           ),
+          if ((flight['priceBasis'] ?? '').toString().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                  'Price basis: ${flight['priceBasis']} • planning reference only',
+                  style: const TextStyle(color: InkWashColors.mutedInk)),
+            ),
+          detailRow('Travellers', flight['travellerCount'],
+              icon: Icons.people_outline_rounded),
+          if (flight['quoteCompleteness'] == 'return_selection_pending')
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                  'Outbound candidate only. Choose a compatible return leg before selecting this trip.',
+                  style: TextStyle(color: InkWashColors.mutedInk)),
+            ),
+          ...((flight['outboundSegments'] as List? ?? [])
+              .whereType<Map>()
+              .toList()
+              .asMap()
+              .entries
+              .map((entry) => segmentCard(
+                  Map<String, dynamic>.from(entry.value), entry.key))),
+          if ((flight['returnSegments'] as List? ?? []).isNotEmpty) ...[
+            const TravelSectionHeader(title: 'Return segments'),
+            ...((flight['returnSegments'] as List? ?? [])
+                .whereType<Map>()
+                .toList()
+                .asMap()
+                .entries
+                .map((entry) => segmentCard(
+                    Map<String, dynamic>.from(entry.value), entry.key))),
+          ],
           const SizedBox(height: 18),
           const TravelSectionHeader(title: 'Baggage & fare conditions'),
           const SizedBox(height: 8),
           InkCard(
             child: Column(
               children: [
-                detailRow('Cabin baggage', flight['cabinBaggage'], icon: Icons.work_outline_rounded),
-                detailRow('Checked baggage', flight['checkedBaggage'], icon: Icons.luggage_outlined),
-                detailRow('Fare', flight['fareConditions'], icon: Icons.confirmation_number_outlined),
-                detailRow('Changes', flight['changePolicy'], icon: Icons.sync_alt_rounded),
-                detailRow('Refund', flight['refundPolicy'], icon: Icons.currency_exchange_rounded),
-                detailRow('Meal', flight['meal'], icon: Icons.restaurant_outlined),
+                detailRow('Cabin baggage', flight['cabinBaggage'],
+                    icon: Icons.work_outline_rounded),
+                detailRow('Checked baggage', flight['checkedBaggage'],
+                    icon: Icons.luggage_outlined),
+                detailRow('Fare', flight['fareConditions'],
+                    icon: Icons.confirmation_number_outlined),
+                detailRow('Changes', flight['changePolicy'],
+                    icon: Icons.sync_alt_rounded),
+                detailRow('Refund', flight['refundPolicy'],
+                    icon: Icons.currency_exchange_rounded),
+                detailRow('Meal', flight['meal'],
+                    icon: Icons.restaurant_outlined),
               ],
             ),
           ),
@@ -113,9 +236,13 @@ class FlightDetailsScreen extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.info_outline_rounded, color: InkWashColors.blueGrey),
+                const Icon(Icons.info_outline_rounded,
+                    color: InkWashColors.blueGrey),
                 const SizedBox(width: 10),
-                Expanded(child: Text('Fare, baggage and operational details should be rechecked before a final external booking because provider conditions can change.', style: const TextStyle(color: InkWashColors.charcoal))),
+                Expanded(
+                    child: Text(
+                        'Fare, baggage and operational details should be rechecked before a final external booking because provider conditions can change.',
+                        style: const TextStyle(color: InkWashColors.charcoal))),
               ],
             ),
           ),

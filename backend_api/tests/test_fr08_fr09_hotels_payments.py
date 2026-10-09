@@ -103,6 +103,18 @@ def test_invalid_stripe_key_is_unavailable_without_fallback():
         assert stripePaymentMode() == 'unavailable'
     create.assert_not_called()
 
+
+def test_shared_fallback_does_not_enable_payment_simulation_in_production():
+    with patch.dict('os.environ', {
+        'TRAVELMATE_TESTING': 'false',
+        'STRIPE_SECRET_KEY': 'pk_test_publishable_only',
+        'FALLBACK_MODE': 'true',
+    }), patch('services.stripe_service.stripe.PaymentIntent.create') as create:
+        with pytest.raises(RuntimeError, match='sandbox is unavailable'):
+            createPaymentSession({'amount': 10}, 'traveller', 'booking')
+        assert stripePaymentMode() == 'unavailable'
+    create.assert_not_called()
+
 def test_payment_process_authoritative_amount_and_booking_update(client, mock_traveller_auth):
     memory = MemoryPersistence()
     sample_booking = {

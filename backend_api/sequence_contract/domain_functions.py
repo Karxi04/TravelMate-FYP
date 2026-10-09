@@ -576,7 +576,14 @@ def calculateBudget(itineraryOrSelections):
     data = itineraryOrSelections or {}
     limit = _float(data.get('budgetLimit'))
     travellers = max(1, int(_float(data.get('travellerCount'), 1)))
-    flight = _float(data.get('flightCost'))
+    raw_flight = data.get('flightCost')
+    selected_flight = data.get('selectedFlight') if isinstance(data.get('selectedFlight'), dict) else {}
+    flight_currency = str(data.get('flightCurrency') or selected_flight.get('currency') or '').upper()
+    flight_basis = data.get('flightPriceBasis') or selected_flight.get('priceBasis')
+    flight_issue = bool(selected_flight) and (
+        flight_currency != 'MYR' or not flight_basis or selected_flight.get('priceStatus') == 'unknown'
+    )
+    flight = 0.0 if flight_issue else _float(raw_flight)
     nights = max(0, _trip_days(data) - 1)
     hotel_is_explicit = data.get('hotelCost') not in (None, '')
     rooms = max(1, int(_float(data.get('roomQuantity'), 1)))
@@ -597,7 +604,7 @@ def calculateBudget(itineraryOrSelections):
     activities = sum(_float(x.get('estimatedCost')) for x in data.get('activities', []))
     total = flight + hotel + car_rental + transport + food + activities
     difference = limit - total if limit else 0.0
-    status = 'attention_required' if hotel_currency_issue else ('within_budget' if not limit or total <= limit else 'over_budget')
+    status = 'attention_required' if (hotel_currency_issue or flight_issue) else ('within_budget' if not limit or total <= limit else 'over_budget')
     utilization = round((total / limit) * 100.0, 2) if limit > 0 else 0.0
 
     return {
@@ -617,10 +624,10 @@ def calculateBudget(itineraryOrSelections):
         'overBy': round(max(0.0, -difference), 2) if limit else 0.0,
         'utilizationPercent': utilization,
         'status': status,
-        'incomplete': hotel_currency_issue,
-        'attention': 'Hotel amount is excluded until a validated MYR currency is available.' if hotel_currency_issue else '',
+        'incomplete': hotel_currency_issue or flight_issue,
+        'attention': ('Flight amount is excluded until a validated MYR planning price is available.' if flight_issue else '') or ('Hotel amount is excluded until a validated MYR currency is available.' if hotel_currency_issue else ''),
         'costProvenance': {
-            'flight': 'confirmed' if flight else 'not_selected',
+            'flight': 'excluded_unknown_currency_or_basis' if flight_issue else ('confirmed_total' if flight else 'not_selected'),
             'hotel': 'excluded_unknown_currency' if hotel_currency_issue else ('confirmed_total' if hotel_is_explicit else ('estimated_from_nightly_rate' if nightly_rate else 'not_selected')),
             'carRental': 'confirmed' if car_rental else 'not_selected',
             'transport': 'provided' if data.get('transportCost') not in (None, '') else 'estimated_daily_allowance',

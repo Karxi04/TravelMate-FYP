@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/api_service.dart';
 import '../../services/transaction_request.dart';
@@ -14,11 +15,21 @@ import 'payment_status.dart';
 class PaymentScreen extends StatefulWidget {
   final String initialBookingReference;
   final double? initialAmount;
+  final String quoteType;
+  final String quoteId;
+  final String offerId;
+  final String searchId;
+  final String optionId;
 
   const PaymentScreen({
     super.key,
     this.initialBookingReference = '',
     this.initialAmount,
+    this.quoteType = '',
+    this.quoteId = '',
+    this.offerId = '',
+    this.searchId = '',
+    this.optionId = '',
   });
 
   @override
@@ -37,9 +48,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   Map<String, dynamic>? result;
   List<dynamic> history = [];
+  List<dynamic> orders = [];
   bool busy = false;
   bool showCard = false;
   final paymentAttempt = TransactionAttemptLifecycle('payment');
+  final checkoutAttempts = CheckoutAttemptStore();
+
+  bool get hostedCheckout => widget.quoteType.isNotEmpty && !api.isStandalone;
 
   @override
   void initState() {
@@ -48,7 +63,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
     amount = TextEditingController(
         text: widget.initialAmount?.toStringAsFixed(2) ?? '100.00');
     billingEmail.text = FirebaseAuth.instance.currentUser?.email ?? '';
-    Future.microtask(loadHistory);
+    Future.microtask(() async {
+      await loadHistory();
+      if (hostedCheckout) await loadOrders();
+    });
   }
 
   Future<void> loadHistory() async {
@@ -56,6 +74,100 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final data = await api.get('/api/fr9/payments');
       if (mounted) setState(() => history = data['items'] ?? []);
     } catch (_) {}
+  }
+
+  Future<void> loadOrders() async {
+    try {
+      final data = await api.get('/api/fr9/orders');
+      if (!mounted) return;
+      setState(() => orders = data['items'] ?? []);
+      for (final raw in orders.take(5)) {
+        final item = Map<String, dynamic>.from(raw as Map);
+        final status = (item['status'] ?? '').toString();
+        if (item['id'] != null &&
+            {'checkout_open', 'payment_pending', 'checkout_pending'}
+                .contains(status)) {
+          try {
+            await api.get('/api/fr9/orders/${item['id']}/reconcile');
+          } catch (_) {}
+        }
+      }
+      final refreshed = await api.get('/api/fr9/orders');
+      if (mounted) setState(() => orders = refreshed['items'] ?? []);
+    } catch (_) {}
+  }
+
+  Future<void> launchCheckout() async {
+    if (busy) return;
+    setState(() => busy = true);
+    try {
+      final scope = [
+        widget.quoteType,
+        widget.quoteId,
+        widget.offerId,
+        widget.searchId,
+        widget.optionId,
+      ].join('_');
+      final terminalOrder = orders.any((raw) {
+        final item = Map<String, dynamic>.from(raw as Map);
+        final sameQuote = item['quoteType'] == widget.quoteType &&
+            item['quoteId'] ==
+                (widget.quoteType == 'hotel' ? widget.quoteId : widget.searchId);
+        return sameQuote &&
+            {'expired', 'payment_failed', 'payment_mismatch'}
+                .contains(item['status']);
+      });
+      if (terminalOrder) await checkoutAttempts.clear(scope);
+      final attemptId = await checkoutAttempts.loadOrCreate(scope);
+      final data = await api.post('/api/fr9/checkout/session', {
+        'orderAttemptId': attemptId,
+        'quoteType': widget.quoteType,
+        if (widget.quoteType == 'hotel') ...{
+          'quoteId': widget.quoteId,
+          'offerId': widget.offerId,
+        },
+        if (widget.quoteType == 'flight') ...{
+          'searchId': widget.searchId,
+          'optionId': widget.optionId,
+        },
+      });
+      final order = data['order'] is Map
+          ? Map<String, dynamic>.from(data['order'] as Map)
+          : <String, dynamic>{};
+      final checkoutUrl = (order['checkoutUrl'] ?? '').toString();
+      if (checkoutUrl.isEmpty || !await launchUrl(Uri.parse(checkoutUrl),
+          mode: LaunchMode.externalApplication)) {
+        throw Exception('Stripe Checkout could not be opened.');
+      }
+      if (mounted) {
+        setState(() => result = {
+              'paymentStatus': order['paymentStatus'] ?? 'unpaid',
+              'orderStatus': order['status'],
+              'orderId': order['id'],
+            });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Stripe test Checkout opened. Return here to check the order status.'),
+        ));
+      }
+      await loadOrders();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> reconcileOrder(String orderId) async {
+    if (orderId.isEmpty || busy) return;
+    setState(() => busy = true);
+    try {
+      await api.get('/api/fr9/orders/$orderId/reconcile');
+      await loadOrders();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
   }
 
   String digits(String value) => value.replaceAll(RegExp(r'\D'), '');
@@ -217,8 +329,90 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
+  Widget _buildHostedCheckout() {
+    return Scaffold(
+      appBar: AppBar(title: const Text('TravelMate Checkout')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
+        children: [
+          const TravelSectionHeader(
+            title: 'Stripe test Checkout',
+            subtitle: 'Card details are entered only on Stripe-hosted Checkout.',
+          ),
+          const SizedBox(height: 12),
+          InkCard(
+            color: InkWashColors.cream,
+            child: const Text(
+              'This is a Stripe test-mode order. The selected hotel quote is a provider sandbox quote and is not live inventory. The provider offer total covers the requested stay and occupancy; any excluded property fees remain due at the property. TravelMate does not receive or store card numbers or security codes.',
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (widget.initialBookingReference.isNotEmpty)
+            Text('Booking reference: ${widget.initialBookingReference}'),
+          if (widget.initialAmount != null)
+            Text('Authoritative quote: MYR ${widget.initialAmount!.toStringAsFixed(2)}'),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: busy ? null : launchCheckout,
+            icon: busy
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.open_in_new_rounded),
+            label: Text(busy ? 'Preparing Checkout…' : 'Open Stripe test Checkout'),
+          ),
+          const SizedBox(height: 24),
+          const TravelSectionHeader(
+            title: 'Order history',
+            subtitle: 'Pending orders are reconciled when you return to the app.',
+          ),
+          const SizedBox(height: 10),
+          if (orders.isEmpty)
+            const TravelEmptyState(
+              icon: Icons.receipt_long_outlined,
+              title: 'No Checkout orders yet',
+              message: 'Your Stripe test orders will appear here.',
+            ),
+          ...orders.take(10).map((raw) {
+            final item = Map<String, dynamic>.from(raw as Map);
+            final orderId = (item['id'] ?? '').toString();
+            final status = (item['status'] ?? 'unknown').toString();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 9),
+              child: InkCard(
+                child: Row(
+                  children: [
+                    const CircleAvatar(
+                      backgroundColor: InkWashColors.paleBlue,
+                      child: Icon(Icons.receipt_long_outlined, color: InkWashColors.blueGrey),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${item['quoteType'] ?? 'Order'} · ${item['currency'] ?? 'MYR'} ${item['amount'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                          Text(status, style: const TextStyle(color: InkWashColors.mutedInk, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    if ({'checkout_open', 'payment_pending', 'checkout_pending'}.contains(status))
+                      IconButton(
+                        tooltip: 'Check status',
+                        onPressed: busy ? null : () => reconcileOrder(orderId),
+                        icon: const Icon(Icons.refresh_rounded),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (hostedCheckout) return _buildHostedCheckout();
     return Scaffold(
       appBar: AppBar(title: const Text('Secure card payment')),
       body: ListView(

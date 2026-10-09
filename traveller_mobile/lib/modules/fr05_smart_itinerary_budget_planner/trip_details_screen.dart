@@ -323,6 +323,24 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             if (t['flightCost'] != null)
               Text('Flight cost: RM ${t['flightCost']}',
                   style: const TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, children: [
+              OutlinedButton.icon(
+                onPressed: busy ? null : _previewFlightAdjustment,
+                icon: const Icon(Icons.auto_fix_high_rounded),
+                label: const Text('Adjust itinerary'),
+              ),
+              OutlinedButton.icon(
+                onPressed: busy ? null : () => _replaceFlight(t),
+                icon: const Icon(Icons.swap_horiz_rounded),
+                label: const Text('Change'),
+              ),
+              OutlinedButton.icon(
+                onPressed: busy ? null : _removeFlight,
+                icon: const Icon(Icons.remove_circle_outline_rounded),
+                label: const Text('Remove'),
+              ),
+            ]),
           ],
         ),
       ));
@@ -436,6 +454,153 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                   initialCheckin: (t['startDate'] ?? '').toString(),
                   initialCheckout: (t['endDate'] ?? '').toString(),
                 )));
+  }
+
+  Future<void> _removeFlight() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove flight from trip?'),
+        content: const Text('This removes the planning reference only.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Keep')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => busy = true);
+    try {
+      final data = await api.post(
+          '/api/fr7/itineraries/${widget.tripId}/flight-selection/remove');
+      if (mounted)
+        setState(
+            () => trip = Map<String, dynamic>.from(data['itinerary'] as Map));
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _previewFlightAdjustment() async {
+    setState(() => busy = true);
+    try {
+      final data = await api.post(
+          '/api/fr5/itineraries/${widget.tripId}/flight-adjustment/preview');
+      final preview = data['preview'] is Map
+          ? Map<String, dynamic>.from(data['preview'] as Map)
+          : <String, dynamic>{};
+      if (!mounted) return;
+      final apply = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          final changes = (preview['changes'] as List? ?? [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+          final unscheduled = (preview['newlyUnscheduled'] as List? ?? [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+          final conflicts = (preview['remainingConflicts'] as List? ?? [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+          final canApply = preview['canApply'] == true;
+          return AlertDialog(
+            title: const Text('Review flight-aware adjustment'),
+            content: SizedBox(
+              width: 520,
+              child: SingleChildScrollView(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(canApply
+                          ? 'TravelMate proposes changes only on the flight-affected dates. Your current trip stays saved until you apply this preview.'
+                          : (preview['reason'] ??
+                                  'The flight data is incomplete for a safe adjustment.')
+                              .toString()),
+                      const SizedBox(height: 12),
+                      if (preview['availability'] is Map)
+                        Text(
+                            'Availability uses Penang local time and the stated TravelMate planning assumptions.'),
+                      if (changes.isEmpty && canApply)
+                        const Text('No activity timing changes are needed.'),
+                      ...changes.map((change) => Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                                '${change['activityName'] ?? 'Activity'}: ${change['kind'] ?? 'retained'}${change['reason'] == null ? '' : ' — ${change['reason']}'}'),
+                          )),
+                      if (unscheduled.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        const Text('Would become unscheduled',
+                            style: TextStyle(fontWeight: FontWeight.w900)),
+                        ...unscheduled.map((item) => Text(
+                            '• ${item['activityName'] ?? item['activityId']}: ${item['unscheduledReason'] ?? 'Needs manual review'}')),
+                      ],
+                      if (conflicts.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        const Text('Remaining conflicts',
+                            style: TextStyle(fontWeight: FontWeight.w900)),
+                        ...conflicts.map((item) => Text(
+                            '• ${item['message'] ?? 'Manual review required'}')),
+                      ],
+                    ]),
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Keep current plan')),
+              FilledButton(
+                  onPressed: canApply
+                      ? () => Navigator.pop(dialogContext, true)
+                      : null,
+                  child: const Text('Apply changes')),
+            ],
+          );
+        },
+      );
+      if (apply != true) return;
+      final result = await api.post(
+          '/api/fr5/itineraries/${widget.tripId}/flight-adjustment/apply',
+          {'previewId': preview['previewId']});
+      if (mounted && result['itinerary'] is Map) {
+        setState(
+            () => trip = Map<String, dynamic>.from(result['itinerary'] as Map));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Flight-aware itinerary changes applied.')));
+      }
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _replaceFlight(Map<String, dynamic> t) async {
+    final flight = t['selectedFlight'] is Map
+        ? Map<String, dynamic>.from(t['selectedFlight'] as Map)
+        : <String, dynamic>{};
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FlightScreen(
+          initialDeparture: (flight['departureAirport'] ?? '').toString(),
+          initialArrival:
+              (flight['arrivalAirport'] ?? t['destinationArea'] ?? '')
+                  .toString(),
+          initialOutboundDate: (t['startDate'] ?? '').toString(),
+          initialReturnDate: (t['endDate'] ?? '').toString(),
+        ),
+      ),
+    );
+    await load();
   }
 
   Future<void> editTrip() async {
@@ -1357,6 +1522,12 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   Widget _tripEssentials(Map<String, dynamic> t) {
     final list = activities;
     final attachments = _attachedTravelCards(t);
+    final selectedHotel = t['selectedHotel'] is Map
+        ? Map<String, dynamic>.from(t['selectedHotel'] as Map)
+        : <String, dynamic>{};
+    final selectedFlight = t['selectedFlight'] is Map
+        ? Map<String, dynamic>.from(t['selectedFlight'] as Map)
+        : <String, dynamic>{};
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const AppSectionHeader(
           title: 'Trip essentials',
@@ -1431,7 +1602,28 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           icon: Icons.credit_card_rounded,
           onPressed: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const PaymentScreen()),
+            MaterialPageRoute(
+              builder: (_) => PaymentScreen(
+                initialBookingReference:
+                    (selectedHotel['bookingReference'] ?? '').toString(),
+                initialAmount: selectedHotel['price'] is num
+                    ? (selectedHotel['price'] as num).toDouble()
+                    : selectedFlight['price'] is num
+                        ? (selectedFlight['price'] as num).toDouble()
+                        : null,
+                quoteType: (selectedHotel['quoteId'] ?? '').toString().isNotEmpty
+                    ? 'hotel'
+                    : (selectedFlight['flightSearchId'] ?? '').toString().isNotEmpty
+                        ? 'flight'
+                        : '',
+                quoteId: (selectedHotel['quoteId'] ?? '').toString(),
+                offerId: (selectedHotel['offerId'] ?? '').toString(),
+                searchId: (selectedFlight['flightSearchId'] ?? '').toString(),
+                optionId: (selectedFlight['flightOptionId'] ??
+                        selectedFlight['optionId'] ?? '')
+                    .toString(),
+              ),
+            ),
           ),
         ),
       ]),

@@ -30,6 +30,8 @@ API_LIMITS = {
     "fr08_hotels.hotels_search": "provider_search",
     "fr09_payments.create_payment_intent": "payment_mutation",
     "fr09_payments.process_payment": "payment_mutation",
+    "fr09_payments.create_checkout_session": "payment_mutation",
+    "fr09_payments.reconcile_order": "payment_mutation",
     "fr09_payments.retry_payment": "payment_mutation",
     "fr09_payments.cancel_payment": "payment_mutation",
     "fr08_hotels.hotel_prebook": "hotel_mutation",

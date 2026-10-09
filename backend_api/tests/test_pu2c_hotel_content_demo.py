@@ -75,6 +75,43 @@ def test_provider_failure_does_not_silently_substitute_sample_catalog(
     assert 'Ink Wash' not in response.get_data(as_text=True)
 
 
+def test_explicit_provider_sandbox_quote_is_not_labelled_live(
+    client, mock_traveller_auth
+):
+    from tests.test_pu2b_hotel_offer_integrity import MemoryPersistence
+
+    memory = MemoryPersistence()
+    with patch.dict('os.environ', {
+        'TRAVELMATE_TESTING': 'false', 'FALLBACK_MODE': 'false',
+        'HOTEL_SAMPLE_MODE': 'false', 'LITEAPI_KEY': 'configured',
+    }), patch('modules.fr08_hotel_booking.routes.retrieveHotelOffers', return_value={
+        'sandbox': True,
+        'hotels': [{'id': 'provider-h1', 'name': 'Sandbox Hotel'}],
+        'data': [{
+            'hotelId': 'provider-h1',
+            'roomTypes': [{
+                'offerId': 'sandbox-offer-1',
+                'rates': [{
+                    'retailRate': {'total': [{'amount': 220}], 'currency': 'MYR'},
+                }],
+            }],
+        }],
+    }), patch('modules.fr08_hotel_booking.routes.retrieveHotelContent', return_value={
+        'data': {'id': 'provider-h1', 'name': 'Sandbox Hotel'},
+    }), patch('modules.fr08_hotel_booking.routes.claimRecord', side_effect=memory.claim):
+        response = client.post('/api/fr8/hotels/search', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'destination': 'Penang', 'checkin': '2030-01-01',
+                'checkout': '2030-01-03', 'adults': 2,
+        })
+    assert response.status_code == 200
+    item = response.get_json()['items'][0]
+    assert item['rateSource'] == 'liteapi_sandbox_quote'
+    assert item['rateProvenance'] == 'sandbox_provider_quote'
+    assert item['transactionMode'] == 'provider_sandbox'
+    assert 'not live inventory' in item['demoDisclosure']
+
+
 def test_explicit_sample_mode_is_labelled(client, mock_traveller_auth):
     from tests.test_pu2b_hotel_offer_integrity import MemoryPersistence
 
