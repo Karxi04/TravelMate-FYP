@@ -64,8 +64,10 @@ Create or open a Stripe sandbox/test environment and copy the sandbox secret key
 ```env
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_CHECKOUT_SUCCESS_URL=https://example.com/travelmate/checkout/success
-STRIPE_CHECKOUT_CANCEL_URL=https://example.com/travelmate/checkout/cancel
+# Local desktop defaults; for a physical phone replace 127.0.0.1 with the
+# computer's reachable LAN address and keep the /api/fr9/checkout/return path.
+STRIPE_CHECKOUT_SUCCESS_URL=http://127.0.0.1:5000/api/fr9/checkout/return/success?session_id={CHECKOUT_SESSION_ID}
+STRIPE_CHECKOUT_CANCEL_URL=http://127.0.0.1:5000/api/fr9/checkout/return/cancel?session_id={CHECKOUT_SESSION_ID}
 ```
 
 The hosted mobile Checkout flow calls:

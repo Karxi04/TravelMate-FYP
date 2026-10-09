@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import time
+import pytest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -100,6 +101,8 @@ def test_checkout_claims_owned_hotel_quote_and_reuses_session(client, mock_trave
     assert first.get_json()['order']['checkoutUrl'].startswith('https://checkout')
     assert duplicate.get_json()['reused'] is True
     assert create.call_count == 1
+    assert '/api/fr9/checkout/return/success' in create.call_args.args[4]
+    assert 'example.com' not in create.call_args.args[4]
 
 
 def test_checkout_rejects_missing_hotel_currency_and_ambiguous_basis(client, mock_traveller_auth):
@@ -288,3 +291,33 @@ def test_paid_checkout_order_cannot_be_reused(client, mock_traveller_auth):
     assert response.status_code == 409
     assert 'already been paid' in response.get_json()['error']
     create.assert_not_called()
+
+
+def test_checkout_return_reconciles_and_keeps_order_details_private(client):
+    memory = MemoryPersistence()
+    memory.seed('checkout_orders', 'order_return_p1', {
+        'id': 'order_return_p1', 'travellerId': 'test_traveller_uid',
+        'amount': 220.0, 'currency': 'MYR', 'status': 'checkout_open',
+        'paymentStatus': 'unpaid', 'checkoutSessionId': 'cs_return_p1',
+    })
+    session = SimpleNamespace(
+        id='cs_return_p1', metadata={'orderId': 'order_return_p1'},
+        status='complete', payment_status='paid', amount_total=22000,
+        currency='myr', payment_intent='pi_return_p1',
+    )
+    with patch('modules.fr09_payment.routes.retrieveCheckoutSession', return_value=session), \
+         _patch_persistence(memory)[1], _patch_persistence(memory)[2]:
+        response = client.get('/api/fr9/checkout/return/success?session_id=cs_return_p1')
+    assert response.status_code == 200
+    assert 'Payment verified' in response.get_data(as_text=True)
+    assert 'order_return_p1' not in response.get_data(as_text=True)
+    assert memory.retrieve('checkout_orders', 'order_return_p1')['status'] == 'paid'
+    assert memory.retrieve('checkout_orders', 'order_return_p1')['stripePaymentIntentId'] == 'pi_return_p1'
+
+
+def test_placeholder_checkout_return_url_is_rejected():
+    from modules.fr09_payment.routes import _configured_checkout_url
+
+    with patch.dict('os.environ', {'STRIPE_CHECKOUT_SUCCESS_URL': 'https://example.com/travelmate/success'}):
+        with pytest.raises(RuntimeError, match='explicit TravelMate return URL'):
+            _configured_checkout_url('STRIPE_CHECKOUT_SUCCESS_URL', 'http://127.0.0.1:5000/return')

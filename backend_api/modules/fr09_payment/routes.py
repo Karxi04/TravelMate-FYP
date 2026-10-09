@@ -1,9 +1,10 @@
 import math
 import os
 import uuid
+from html import escape
 from urllib.parse import urlparse
 
-from flask import Blueprint, request, jsonify, g, current_app
+from flask import Blueprint, request, jsonify, g, current_app, Response
 
 from auth_utils import auth_required
 from utils import utc_now_iso
@@ -159,6 +160,8 @@ def _configured_checkout_url(name, fallback):
     parsed = urlparse(value)
     if parsed.scheme not in {'https', 'http'} or not parsed.netloc:
         raise RuntimeError(f'{name} is not configured with an absolute URL.')
+    if parsed.hostname and parsed.hostname.lower() in {'example.com', 'www.example.com'}:
+        raise RuntimeError(f'{name} must be an explicit TravelMate return URL.')
     return value
 
 
@@ -253,11 +256,11 @@ def create_checkout_session():
             quote['amount'], quote['currency'], g.uid, order_id,
             _configured_checkout_url(
                 'STRIPE_CHECKOUT_SUCCESS_URL',
-                'https://example.com/travelmate/checkout/success',
+                'http://127.0.0.1:5000/api/fr9/checkout/return/success?session_id={CHECKOUT_SESSION_ID}',
             ),
             _configured_checkout_url(
                 'STRIPE_CHECKOUT_CANCEL_URL',
-                'https://example.com/travelmate/checkout/cancel',
+                'http://127.0.0.1:5000/api/fr9/checkout/return/cancel?session_id={CHECKOUT_SESSION_ID}',
             ),
             metadata={
                 'orderAttemptId': attempt_id,
@@ -292,6 +295,49 @@ def create_checkout_session():
             'updatedAt': utc_now_iso(),
         })
         return jsonify({'ok': False, 'error': 'Stripe Checkout is unavailable. Configure Stripe test mode and try again.'}), 502
+
+
+@bp.get('/checkout/return/<outcome>')
+def checkout_return(outcome):
+    """Show a generic server-verified return state; details stay in owned history."""
+    if outcome not in {'success', 'cancel'}:
+        return Response('TravelMate Checkout return is invalid.', status=404, mimetype='text/plain')
+    session_id = str(request.args.get('session_id') or '').strip()
+    if not session_id:
+        return Response(
+            'TravelMate could not verify this Checkout session. Open the app and check Orders.',
+            status=400, mimetype='text/plain',
+        )
+    try:
+        session = retrieveCheckoutSession(session_id)
+        metadata = _stripe_value(session, 'metadata', {}) or {}
+        order_id = str(metadata.get('orderId') or '').strip()
+        record = retrieveRecord(ORDER_COLLECTION, order_id)
+        if not order_id or not record or record.get('checkoutSessionId') != session_id:
+            raise ValueError('Checkout session is not bound to a TravelMate order.')
+        patch = _apply_checkout_session(record, session)
+        updated = updateRecord(ORDER_COLLECTION, order_id, patch) or {**record, **patch}
+        status = str(updated.get('status') or '').lower()
+        if status == 'paid':
+            heading = 'Payment verified'
+            message = 'Stripe confirmed this test payment. Open TravelMate Orders to view it.'
+        elif status in {'checkout_open', 'payment_pending'}:
+            heading = 'Payment pending verification'
+            message = 'TravelMate has not received a final payment confirmation yet. Open Orders to retry verification.'
+        else:
+            heading = 'Payment not completed'
+            message = 'No successful payment was confirmed. Open TravelMate Orders to review the order.'
+        html = (
+            '<!doctype html><meta charset="utf-8"><title>TravelMate Checkout</title>'
+            f'<h1>{escape(heading)}</h1><p>{escape(message)}</p>'
+            '<p>You can close this page and return to the TravelMate app.</p>'
+        )
+        return Response(html, status=200, mimetype='text/html')
+    except Exception:
+        return Response(
+            'TravelMate could not verify this Checkout session. Open the app and check Orders.',
+            status=502, mimetype='text/plain',
+        )
 
 
 @bp.get('/orders')
