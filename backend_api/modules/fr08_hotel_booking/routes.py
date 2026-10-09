@@ -71,9 +71,28 @@ def _testing_mode():
     return os.getenv('TRAVELMATE_TESTING', '').lower() in {'1', 'true', 'yes'}
 
 
-def _provenance(source, now=None):
+def _provider_sandbox(result):
+    if not isinstance(result, dict):
+        return False
+    candidates = [result]
+    data = result.get('data')
+    if isinstance(data, dict):
+        candidates.append(data)
+    return any(item.get('sandbox') is True for item in candidates)
+
+
+def _provenance(source, now=None, provider_sandbox=False):
     now = now or utc_now_iso()
     if source == 'liteapi':
+        if provider_sandbox:
+            return {
+                'contentSource': 'liteapi_provider',
+                'rateSource': 'liteapi_sandbox_quote',
+                'rateProvenance': 'sandbox_provider_quote',
+                'quoteRetrievedAt': now,
+                'transactionMode': 'provider_sandbox',
+                'demoDisclosure': 'Provider sandbox quote — not live inventory.',
+            }
         return {
             'contentSource': 'liteapi_provider',
             'rateSource': 'liteapi_live_quote',
@@ -303,7 +322,7 @@ def hotels_search():
         if not items:
             raise RuntimeError('LiteAPI returned no bookable offers for these dates')
         source = 'liteapi'
-        provenance = _provenance(source)
+        provenance = _provenance(source, provider_sandbox=_provider_sandbox(result))
         # LiteAPI rate responses may omit property content. Enrich only those
         # properties, by exact provider ID, and keep the read-only boundary.
         content_cache = {}
