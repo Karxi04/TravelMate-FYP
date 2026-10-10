@@ -99,6 +99,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             if (order['status'] == 'paid')
                               const Text(
                                   'Payment confirmed. No further payment is required.'),
+                            if (order['provider'] == 'stripe_checkout_test')
+                              const Text(
+                                  'Stripe test-mode payment; no real money is charged.'),
                             if (order['sandbox'] == true)
                               const Text(
                                   'Provider sandbox quote; this is not a live hotel reservation.'),

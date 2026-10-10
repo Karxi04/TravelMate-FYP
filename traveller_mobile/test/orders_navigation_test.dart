@@ -25,6 +25,7 @@ class OrdersApi extends ApiService {
       'currency': 'MYR',
       'status': status,
       'paymentStatus': status == 'paid' ? 'paid' : 'unpaid',
+      'provider': 'stripe_checkout_test',
       'sandbox': true
     };
     if (path == '/api/fr9/orders')
@@ -58,6 +59,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Order details'), findsOneWidget);
     expect(find.text('Payment confirmed. No further payment is required.'),
+        findsOneWidget);
+    expect(find.text('Stripe test-mode payment; no real money is charged.'),
         findsOneWidget);
     expect(find.text('Check payment status'), findsNothing);
     expect(find.textContaining('Pay RM'), findsNothing);
