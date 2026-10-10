@@ -181,7 +181,9 @@ class FlightDetailsScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                  'Price basis: ${flight['priceBasis']} • planning reference only',
+                  flight['checkoutEligible'] == true
+                      ? 'Validated single-adult one-way total; review again before demo Checkout.'
+                      : 'Price basis unverified; excluded from budget and Checkout.',
                   style: const TextStyle(color: InkWashColors.mutedInk)),
             ),
           detailRow('Travellers', flight['travellerCount'],

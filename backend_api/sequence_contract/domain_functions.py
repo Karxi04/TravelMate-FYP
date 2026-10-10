@@ -582,6 +582,7 @@ def calculateBudget(itineraryOrSelections):
     flight_basis = data.get('flightPriceBasis') or selected_flight.get('priceBasis')
     flight_issue = bool(selected_flight) and (
         flight_currency != 'MYR' or not flight_basis or selected_flight.get('priceStatus') == 'unknown'
+        or selected_flight.get('budgetEligible') is False
     )
     flight = 0.0 if flight_issue else _float(raw_flight)
     nights = max(0, _trip_days(data) - 1)

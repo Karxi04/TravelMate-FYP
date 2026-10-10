@@ -1597,6 +1597,27 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             ),
           ),
         ),
+        if (!api.isStandalone && selectedFlight.isNotEmpty)
+          SecondaryButton(
+            label: 'Flight demo Checkout',
+            icon: Icons.flight_rounded,
+            onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => PaymentScreen(
+                          quoteType: 'flight',
+                          api: api,
+                          searchId: (t['flightSearchId'] ??
+                                  selectedFlight['flightSearchId'] ??
+                                  '')
+                              .toString(),
+                          optionId: (t['flightOptionId'] ??
+                                  selectedFlight['optionId'] ??
+                                  '')
+                              .toString(),
+                          itineraryId: (t['id'] ?? '').toString(),
+                        ))),
+          ),
         SecondaryButton(
           label: 'Payment',
           icon: Icons.credit_card_rounded,
@@ -1611,16 +1632,20 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                     : selectedFlight['price'] is num
                         ? (selectedFlight['price'] as num).toDouble()
                         : null,
-                quoteType: (selectedHotel['quoteId'] ?? '').toString().isNotEmpty
-                    ? 'hotel'
-                    : (selectedFlight['flightSearchId'] ?? '').toString().isNotEmpty
-                        ? 'flight'
-                        : '',
+                quoteType:
+                    (selectedHotel['quoteId'] ?? '').toString().isNotEmpty
+                        ? 'hotel'
+                        : (selectedFlight['flightSearchId'] ?? '')
+                                .toString()
+                                .isNotEmpty
+                            ? 'flight'
+                            : '',
                 quoteId: (selectedHotel['quoteId'] ?? '').toString(),
                 offerId: (selectedHotel['offerId'] ?? '').toString(),
                 searchId: (selectedFlight['flightSearchId'] ?? '').toString(),
                 optionId: (selectedFlight['flightOptionId'] ??
-                        selectedFlight['optionId'] ?? '')
+                        selectedFlight['optionId'] ??
+                        '')
                     .toString(),
               ),
             ),

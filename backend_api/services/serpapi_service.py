@@ -2,6 +2,8 @@ import os
 import re
 import requests
 
+from services.flight_quote_eligibility import classify_price
+
 SERP_ENDPOINT = "https://serpapi.com/search"
 
 
@@ -214,16 +216,15 @@ def normalizeFlightResult(item, index=0, currency='MYR', traveller_count=None, p
         'priceStatus': 'available' if price is not None else 'unknown',
         'priceBasis': (
             item.get('price_basis') or price_basis or (
-                'provider_round_trip_ticket_price_requested_adults' if return_legs
-                else 'itinerary_total'
+                'provider_price_reference_unverified'
             )
             if price is not None else None
         ),
         'travellerCount': requested_adults,
         'passengerComposition': {'adults': requested_adults} if requested_adults is not None else None,
-        'passengerPriceBasis': item.get('passenger_price_basis') or 'provider_response_requested_adults' if requested_adults is not None else None,
+        'passengerPriceBasis': item.get('passenger_price_basis') or 'unverified' if requested_adults is not None else None,
         'priceScope': 'provider_ticket_price' if price is not None else None,
-        'priceSemanticsStatus': 'provider_response_requested_adults' if price is not None and requested_adults is not None else None,
+        'priceSemanticsStatus': 'unverified' if price is not None else None,
         'outboundSegments': [_segment(x) for x in outbound_legs],
         'returnSegments': [_segment(x) for x in return_legs],
         'tripType': 'round_trip' if return_legs else 'one_way',
@@ -265,7 +266,7 @@ def retrieveFlightOptions(departureId, arrivalId, outboundDate, returnDate=None,
         params['stops'] = stops
     data = _request(params)
     return {
-        'items': normalizeFlightResults(data, currency, adults),
+        'items': [classify_price(data, params, raw, normalizeFlightResult(raw, index, (data.get('search_parameters') or {}).get('currency') or '', adults)) for index, raw in enumerate(list(data.get('best_flights') or []) + list(data.get('other_flights') or []))],
         'search_metadata': data.get('search_metadata', {}),
         'search_parameters': data.get('search_parameters', {}),
         'raw': data,

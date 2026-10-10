@@ -6,6 +6,8 @@ from flask import Blueprint, request, jsonify, g
 from auth_utils import auth_required
 from services.serpapi_service import retrieveFlightOptions, retrieveFlightReturns, retrieveFlightDetails, normalizeFlightResult
 from services.local_catalog import FLIGHTS
+from services.flight_quote_eligibility import provider_time, validate_segments
+from services.flight_itinerary_adjustment import fingerprint
 from sequence_contract.validators import validateFlightSearchCriteria
 from sequence_contract.domain_functions import applyFlightFilter, compareSelectedFlights, calculateBudget
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord
@@ -143,9 +145,10 @@ def _criteria(data, currency, travellers, travel_class, stops):
     }
 
 
-def _store_quote(criteria, items, source):
+def _store_quote(criteria, items, source, metadata=None):
     search_id = f'flight_search_{uuid4().hex}'
-    retrieved_at = _now()
+    original = provider_time((metadata or {}).get('created_at'))
+    retrieved_at = original or _now()
     safe_items = []
     for index, item in enumerate(items):
         safe = dict(item)
@@ -157,15 +160,20 @@ def _store_quote(criteria, items, source):
             safe['budgetEligible'] = False
             safe['roundTripComplete'] = False
             if safe.get('price') is not None:
-                safe['priceBasis'] = 'provider_round_trip_candidate_price_requested_adults'
+                safe['priceBasis'] = 'provider_round_trip_candidate_unverified'
         else:
             safe['quoteCompleteness'] = 'complete'
             safe['selectionStage'] = 'complete'
-            safe['budgetEligible'] = True
+            safe['budgetEligible'] = safe.get('checkoutEligible', source == 'sample_fixture')
+        safe['flightSearchId'] = search_id
+        safe['flightOptionId'] = safe['optionId']
+        safe['retrievedAt'] = retrieved_at
         safe_items.append(safe)
     quote = {
         'id': search_id, 'travellerId': g.uid, 'criteria': dict(criteria),
         'source': source, 'retrievedAt': retrieved_at, 'expiresAt': _expires_at(retrieved_at),
+        'retrievalTimeStatus': 'provider_original' if original else 'unavailable',
+        'providerSearchId': (metadata or {}).get('id'),
         'quoteVersion': 1, 'selectionStage': 'outbound_candidate' if any(not x.get('returnSegments') for x in safe_items) else 'complete',
         'items': safe_items, 'returnOptions': {},
     }
@@ -177,6 +185,8 @@ def _store_quote(criteria, items, source):
 def _quote_item(payload):
     search_id = str(payload.get('searchId') or payload.get('quoteId') or '').strip()
     option_id = str(payload.get('optionId') or '').strip()
+    if not search_id or not option_id:
+        return None, None
     quote = _load_quote(search_id)
     if not quote:
         return None, None
@@ -283,6 +293,8 @@ def search_flights():
         return jsonify({'ok': False, 'error': 'Use different 3-letter airports and valid flight dates'}), 400
 
     return_date = data['return_date']
+    if any(request.args.get(k, '0') not in {'0', ''} for k in ('children', 'infants_in_seat', 'infants_on_lap')):
+        return jsonify({'ok': False, 'error': 'Flight search currently supports adults only; children and infants are unsupported.'}), 400
     currency = request.args.get('currency', 'MYR').strip().upper()
     try:
         travellers = max(1, int(request.args.get('traveller_count', 1) or 1))
@@ -324,7 +336,7 @@ def search_flights():
         item.setdefault('cacheStatus', 'live' if source == 'serpapi' else 'fixture')
         item.setdefault('transactionMode', 'planning_reference')
     try:
-        search_id, items = _store_quote(criteria, items, source)
+        search_id, items = _store_quote(criteria, items, source, result.get('search_metadata') if source == 'serpapi' else None)
     except Exception:
         return jsonify({'ok': False, 'error': 'Flight quote storage is unavailable. Try again later.'}), 503
     public_items = [_public_option(x) for x in items]
@@ -336,7 +348,7 @@ def search_flights():
         'other_flights': [],
         'source': source,
         'sourceLabel': 'Provider search result' if source == 'serpapi' else 'Explicit sample fixture (not a current schedule)',
-        'retrievedAt': _now(),
+        'retrievedAt': _FLIGHT_QUOTES[search_id]['retrievedAt'],
         'searchId': search_id,
         'criteria': criteria,
         'tripType': 'round_trip' if return_date else 'one_way',
@@ -379,7 +391,8 @@ def search_flight_returns():
             'id': option_id, 'optionId': option_id, 'outboundSegments': [], 'returnSegments': segments,
             'tripType': 'return_leg', 'roundTripComplete': False, 'quoteCompleteness': 'return_selection_pending',
             'selectionStage': 'return_candidate', 'priceStatus': 'reference_only', 'price': None,
-            'priceBasis': None, 'budgetEligible': False, '_outboundOptionId': outbound.get('optionId'),
+            'priceBasis': None, 'budgetEligible': False, 'checkoutEligible': False,
+            'returnReferencePrice': normalized.get('price'), '_outboundOptionId': outbound.get('optionId'),
         })
         options.append(option)
     quote.setdefault('returnOptions', {})[outbound['optionId']] = options
@@ -426,6 +439,7 @@ def select_flight():
     if not current:
         return jsonify({'ok': False, 'error': 'Select a valid itinerary first'}), 404
     quote, trusted = _quote_item(payload)
+    input_option = trusted
     return_option = None
     if quote and trusted and quote.get('criteria', {}).get('return_date') and not trusted.get('roundTripComplete'):
         return_option_id = str(payload.get('returnOptionId') or '').strip()
@@ -440,9 +454,12 @@ def select_flight():
             return jsonify({'ok': False, 'error': 'The selected return flight is incomplete'}), 409
         trusted.update({
             'tripType': 'round_trip', 'roundTripComplete': True, 'quoteCompleteness': 'complete',
-            'selectionStage': 'complete_round_trip', 'priceBasis': 'provider_round_trip_ticket_price_requested_adults',
-            'priceScope': 'provider_ticket_price', 'priceSemanticsStatus': 'provider_response_requested_adults',
-            'budgetEligible': True, 'priceStatus': 'available', 'returnOptionId': return_option_id,
+            'selectionStage': 'complete_round_trip', 'priceBasis': 'provider_round_trip_price_unresolved',
+            'priceScope': 'provider_ticket_price_unverified', 'priceSemanticsStatus': 'unverified',
+            'budgetEligible': False, 'checkoutEligible': False, 'priceStatus': 'reference_only',
+            'checkoutBlockReason': 'Round-trip price scope is unresolved; excluded from budget and Checkout.',
+            'priceEvidence': None, 'returnOptionId': return_option_id,
+            'returnReferencePrice': return_option.get('returnReferencePrice'),
             'returnDate': quote['criteria'].get('return_date'),
         })
     if trusted is None:
@@ -451,30 +468,40 @@ def select_flight():
         trusted = _safe_client_fixture(flight)
         trusted.update({'currency': 'MYR', 'currencyStatus': 'known', 'priceStatus': 'available', 'priceBasis': 'legacy_test_fixture', 'source': 'test_fixture', 'quoteCompleteness': 'complete', 'budgetEligible': True})
     elif isinstance(flight, dict) and flight:
-        if str(flight.get('optionId') or flight.get('id') or '').strip() not in {'', str(trusted.get('optionId') or trusted.get('id') or '')}:
+        if str(flight.get('optionId') or flight.get('id') or '').strip() not in {'', str((input_option or trusted).get('optionId') or (input_option or trusted).get('id') or '')}:
             return jsonify({'ok': False, 'error': 'Selected flight does not match the owned quote'}), 409
-        if 'price' in flight and flight.get('price') is not None and flight.get('price') != trusted.get('price'):
+        if 'price' in flight and flight.get('price') is not None and flight.get('price') != (input_option or trusted).get('price'):
             return jsonify({'ok': False, 'error': 'Selected flight price does not match the owned quote'}), 409
         for field in ('currency', 'outboundSegments', 'returnSegments'):
-            if field in flight and flight.get(field) not in (None, []) and flight.get(field) != trusted.get(field):
+            if field in flight and flight.get(field) not in (None, []) and flight.get(field) != (input_option or trusted).get(field):
                 return jsonify({'ok': False, 'error': 'Selected flight details do not match the owned quote'}), 409
     try:
-        price = float(trusted.get('price'))
+        price = float(trusted.get('price')) if trusted.get('price') is not None else 0.0
         if not math.isfinite(price) or price < 0:
             raise ValueError
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'Selected flight price is unavailable'}), 409
-    if str(trusted.get('currency') or '').upper() != 'MYR' or not trusted.get('priceBasis'):
-        return jsonify({'ok': False, 'error': 'Selected flight has no valid MYR planning price'}), 409
-    if trusted.get('quoteCompleteness') != 'complete' or trusted.get('budgetEligible') is False:
+    if trusted.get('quoteCompleteness') != 'complete':
         return jsonify({'ok': False, 'error': 'Complete flight quote is required before selection'}), 409
+    if quote:
+        try:
+            validate_segments(quote['criteria'], trusted.get('outboundSegments'), trusted.get('returnSegments') or [], detailed=False)
+        except ValueError as exc:
+            return jsonify({'ok': False, 'error': str(exc)}), 409
+        if return_option:
+            trusted['optionId'] = 'roundtrip_' + fingerprint({'outbound': input_option['optionId'], 'return': return_option_id})[:24]
+            trusted['id'] = trusted['optionId']
+            quote['items'] = [x for x in quote['items'] if x.get('optionId') != trusted['optionId']] + [dict(trusted)]
+            _persist_quote(quote)
+        trusted['flightSearchId'] = quote['id']
+        trusted['flightOptionId'] = trusted['optionId']
     conflicts = _flight_conflicts(current, trusted)
     if conflicts and not payload.get('acknowledgeConflicts'):
         return jsonify({'ok': False, 'error': 'Flight conflicts require acknowledgement', 'conflicts': conflicts, 'status': 'conflicts_require_acknowledgement'}), 409
     patch = {
         'selectedFlight': trusted,
-        'flightCost': price,
-        'flightCurrency': 'MYR',
+        'flightCost': price if trusted.get('budgetEligible', True) and trusted.get('currency') == 'MYR' else 0,
+        'flightCurrency': trusted.get('currency'),
         'flightPriceBasis': trusted.get('priceBasis'),
         'flightQuoteCompleteness': trusted.get('quoteCompleteness'),
         'flightPriceScope': trusted.get('priceScope'),

@@ -48,7 +48,7 @@ def test_return_request_forwards_owner_criteria_token_and_adults():
     assert params['type'] == 1
 
 
-def test_round_trip_requires_return_selection_and_selects_one_authoritative_total(client, mock_traveller_auth):
+def test_round_trip_requires_return_selection_but_unproven_total_stays_excluded(client, mock_traveller_auth):
     reset_flight_quotes()
     with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [_outbound()]}):
         searched = client.get('/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2027-02-10&return_date=2027-02-12&traveller_count=2', headers={'Authorization': 'Bearer valid_test_token'})
@@ -77,8 +77,11 @@ def test_round_trip_requires_return_selection_and_selects_one_authoritative_tota
     assert result['selectedFlight']['roundTripComplete'] is True
     assert len(result['selectedFlight']['outboundSegments']) == 1
     assert len(result['selectedFlight']['returnSegments']) == 1
-    assert result['itinerary']['flightCost'] == 1139
-    assert result['itinerary']['flightPriceBasis'] == 'provider_round_trip_ticket_price_requested_adults'
+    assert result['itinerary']['flightCost'] == 0
+    assert result['selectedFlight']['price'] == 1139
+    assert result['selectedFlight']['checkoutEligible'] is False
+    assert result['budget']['status'] == 'attention_required'
+    assert result['itinerary']['flightPriceBasis'] == 'provider_round_trip_price_unresolved'
 
 
 def test_round_trip_quote_survives_local_cache_reset(client, mock_traveller_auth):

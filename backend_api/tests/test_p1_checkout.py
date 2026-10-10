@@ -142,10 +142,10 @@ def test_checkout_requires_complete_adult_party_flight_quote(client, mock_travel
                 'searchId': 'search_p1', 'optionId': 'flight_option_p1',
             })
     assert response.status_code == 409
-    assert 'adult party' in response.get_json()['error']
+    assert 'stale' in response.get_json()['error']
 
 
-def test_checkout_accepts_provider_flight_quote_for_requested_adults(client, mock_traveller_auth):
+def test_checkout_rejects_locally_declared_adult_price_semantics_without_evidence(client, mock_traveller_auth):
     memory = MemoryPersistence()
     memory.seed('flight_quotes', 'test_traveller_uid_search_p1', {
         'id': 'search_p1', 'travellerId': 'test_traveller_uid', 'source': 'serpapi',
@@ -168,8 +168,8 @@ def test_checkout_accepts_provider_flight_quote_for_requested_adults(client, moc
                 'orderAttemptId': 'order_attempt_flight', 'quoteType': 'flight',
                 'searchId': 'search_p1', 'optionId': 'flight_option_p1',
             })
-    assert response.status_code == 200
-    assert response.get_json()['order']['amount'] == 800.0
+    assert response.status_code == 409
+    assert 'stale' in response.get_json()['error']
 
 
 def test_signed_checkout_webhook_marks_owned_order_paid(client, mock_traveller_auth):

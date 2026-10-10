@@ -262,7 +262,7 @@ class _FlightScreenState extends State<FlightScreen> {
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
               const SizedBox(height: 6),
               const Text(
-                  'The complete provider fare is shown after the return leg is selected.'),
+                  'Return flights remain useful planning references. Their combined price basis is not established, so round-trip Checkout stays blocked.'),
               const SizedBox(height: 10),
               ...returns.map((item) => ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -331,9 +331,12 @@ class _FlightScreenState extends State<FlightScreen> {
                                   const TextStyle(fontWeight: FontWeight.w900)),
                           Text(
                               '${f['departureTime']} → ${f['arrivalTime']} • ${f['durationMinutes']} min • ${f['stopText']}'),
-                          Text('RM ${f['price']}',
+                          Text('${f['currency'] ?? 'MYR'} ${f['price']}',
                               style: const TextStyle(
                                   fontSize: 17, fontWeight: FontWeight.w900)),
+                          Text(f['checkoutEligible'] == true
+                              ? 'Single-adult one-way ticket reference; extras may apply.'
+                              : 'Indicative price only; excluded from budget and Checkout.'),
                         ]),
                   ),
                 );
@@ -515,7 +518,7 @@ class _FlightScreenState extends State<FlightScreen> {
             controller: travellers,
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(
-              labelText: 'Travellers',
+              labelText: 'Adults',
               prefixIcon: Icon(Icons.people_outline_rounded),
             ),
           ),
@@ -637,7 +640,9 @@ class _FlightScreenState extends State<FlightScreen> {
                               icon: Icons.people_outline_rounded),
                           if ((item['priceBasis'] ?? '').toString().isNotEmpty)
                             TravelStatusPill(
-                                text: (item['priceBasis'] ?? '').toString(),
+                                text: item['checkoutEligible'] == true
+                                    ? 'Single-adult one-way ticket reference'
+                                    : 'Indicative price; excluded from budget and Checkout',
                                 icon: Icons.payments_outlined),
                         ]),
                         const SizedBox(height: 10),

@@ -24,7 +24,7 @@ def test_provider_result_is_allowlisted_and_select_requires_owned_search(client,
     assert response.status_code == 200
     data = response.get_json()
     assert data['source'] == 'serpapi'
-    assert data['items'][0]['priceBasis'] == 'itinerary_total'
+    assert data['items'][0]['priceBasis'] == 'provider_price_reference_unverified'
     assert 'raw' not in data['items'][0]
     assert data['items'][0]['outboundSegments'][0]['departureDate'] == '2026-11-01'
 

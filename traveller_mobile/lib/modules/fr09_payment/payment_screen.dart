@@ -12,6 +12,7 @@ import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import 'payment_status.dart';
 import 'orders_screen.dart';
+import 'flight_quote_summary.dart';
 
 class PaymentScreen extends StatefulWidget {
   final String initialBookingReference;
@@ -21,6 +22,9 @@ class PaymentScreen extends StatefulWidget {
   final String offerId;
   final String searchId;
   final String optionId;
+  final String itineraryId;
+  final ApiService? api;
+  final CheckoutAttemptStore? attemptStore;
 
   const PaymentScreen({
     super.key,
@@ -31,6 +35,9 @@ class PaymentScreen extends StatefulWidget {
     this.offerId = '',
     this.searchId = '',
     this.optionId = '',
+    this.itineraryId = '',
+    this.api,
+    this.attemptStore,
   });
 
   @override
@@ -45,7 +52,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   final expiry = TextEditingController();
   final cvc = TextEditingController();
   final billingEmail = TextEditingController();
-  final api = ApiService();
+  late final api = widget.api ?? ApiService();
 
   Map<String, dynamic>? result;
   List<dynamic> history = [];
@@ -53,7 +60,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool busy = false;
   bool showCard = false;
   final paymentAttempt = TransactionAttemptLifecycle('payment');
-  final checkoutAttempts = CheckoutAttemptStore();
+  late final checkoutAttempts = widget.attemptStore ?? CheckoutAttemptStore();
+  Map<String, dynamic>? flightReview;
+  String? flightFingerprint;
+  String? flightReviewError;
+  bool reviewLoading = false;
 
   bool get hostedCheckout => widget.quoteType.isNotEmpty && !api.isStandalone;
 
@@ -63,10 +74,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
     bookingId = TextEditingController(text: widget.initialBookingReference);
     amount = TextEditingController(
         text: widget.initialAmount?.toStringAsFixed(2) ?? '100.00');
-    billingEmail.text = FirebaseAuth.instance.currentUser?.email ?? '';
+    if (!hostedCheckout)
+      billingEmail.text = FirebaseAuth.instance.currentUser?.email ?? '';
     Future.microtask(() async {
       await loadHistory();
       if (hostedCheckout) await loadOrders();
+      if (hostedCheckout && widget.quoteType == 'flight')
+        await loadFlightReview();
     });
   }
 
@@ -98,8 +112,64 @@ class _PaymentScreenState extends State<PaymentScreen> {
     } catch (_) {}
   }
 
+  Future<void> loadFlightReview() async {
+    if (!mounted) return;
+    setState(() {
+      reviewLoading = true;
+      flightReview = null;
+      flightFingerprint = null;
+      flightReviewError = null;
+    });
+    try {
+      final data = await api.post('/api/fr9/checkout/flight-review', {
+        'searchId': widget.searchId,
+        'optionId': widget.optionId,
+        if (widget.itineraryId.isNotEmpty) 'itineraryId': widget.itineraryId,
+      });
+      if (mounted)
+        setState(() {
+          flightReview = Map<String, dynamic>.from(data['review'] as Map);
+          flightFingerprint = data['fingerprint'].toString();
+        });
+    } catch (e) {
+      if (mounted) setState(() => flightReviewError = userFacingApiError(e));
+    } finally {
+      if (mounted) setState(() => reviewLoading = false);
+    }
+  }
+
+  bool get flightAlreadyPaid =>
+      flightFingerprint != null &&
+      orders.any((raw) =>
+          raw is Map &&
+          raw['quoteType'] == 'flight' &&
+          raw['status'] == 'paid' &&
+          raw['quoteFingerprint'] == flightFingerprint);
+
   Future<void> launchCheckout() async {
     if (busy) return;
+    if (widget.quoteType == 'flight') {
+      if (flightReview == null ||
+          flightFingerprint == null ||
+          reviewLoading ||
+          flightAlreadyPaid) return;
+      final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+                title: const Text('Confirm flight demo quote'),
+                content: SingleChildScrollView(
+                    child: FlightQuoteSummary(quote: flightReview!)),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Confirm this quote')),
+                ],
+              ));
+      if (confirmed != true || !mounted) return;
+    }
     setState(() => busy = true);
     try {
       final scope = [
@@ -108,12 +178,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
         widget.offerId,
         widget.searchId,
         widget.optionId,
+        if (widget.quoteType == 'flight') flightFingerprint,
       ].join('_');
       final terminalOrder = orders.any((raw) {
         final item = Map<String, dynamic>.from(raw as Map);
         final sameQuote = item['quoteType'] == widget.quoteType &&
             item['quoteId'] ==
-                (widget.quoteType == 'hotel' ? widget.quoteId : widget.searchId);
+                (widget.quoteType == 'hotel'
+                    ? widget.quoteId
+                    : widget.searchId);
         return sameQuote &&
             {'expired', 'payment_failed', 'payment_mismatch'}
                 .contains(item['status']);
@@ -130,14 +203,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
         if (widget.quoteType == 'flight') ...{
           'searchId': widget.searchId,
           'optionId': widget.optionId,
+          'confirmedFlightQuote': true,
+          'flightQuoteFingerprint': flightFingerprint,
+          if (widget.itineraryId.isNotEmpty) 'itineraryId': widget.itineraryId,
         },
       });
       final order = data['order'] is Map
           ? Map<String, dynamic>.from(data['order'] as Map)
           : <String, dynamic>{};
       final checkoutUrl = (order['checkoutUrl'] ?? '').toString();
-      if (checkoutUrl.isEmpty || !await launchUrl(Uri.parse(checkoutUrl),
-          mode: LaunchMode.externalApplication)) {
+      if (checkoutUrl.isEmpty ||
+          !await launchUrl(Uri.parse(checkoutUrl),
+              mode: LaunchMode.externalApplication)) {
         throw Exception('Stripe Checkout could not be opened.');
       }
       if (mounted) {
@@ -147,12 +224,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
               'orderId': order['id'],
             });
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Stripe test Checkout opened. Return here to check the order status.'),
+          content: Text(
+              'Stripe test Checkout opened. Return here to check the order status.'),
         ));
       }
       await loadOrders();
     } catch (e) {
       if (mounted) showError(context, e);
+      if (widget.quoteType == 'flight') await loadFlightReview();
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -338,27 +417,51 @@ class _PaymentScreenState extends State<PaymentScreen> {
         children: [
           const TravelSectionHeader(
             title: 'Stripe test Checkout',
-            subtitle: 'Card details are entered only on Stripe-hosted Checkout.',
+            subtitle:
+                'Card details are entered only on Stripe-hosted Checkout.',
           ),
           const SizedBox(height: 12),
-          InkCard(
-            color: InkWashColors.cream,
-            child: const Text(
-              'This is a Stripe test-mode order. The selected hotel quote is a provider sandbox quote and is not live inventory. The provider offer total covers the requested stay and occupancy; any excluded property fees remain due at the property. TravelMate does not receive or store card numbers or security codes.',
+          if (widget.quoteType == 'flight') ...[
+            if (reviewLoading) const CircularProgressIndicator(),
+            if (flightReviewError != null) Text(flightReviewError!),
+            if (flightReview != null) FlightQuoteSummary(quote: flightReview!),
+            TextButton(
+                onPressed: busy || reviewLoading ? null : loadFlightReview,
+                child: const Text('Refresh flight quote')),
+          ] else
+            InkCard(
+              color: InkWashColors.cream,
+              child: const Text(
+                'This is a Stripe test-mode order. The selected hotel quote is a provider sandbox quote and is not live inventory. The provider offer total covers the requested stay and occupancy; any excluded property fees remain due at the property. TravelMate does not receive or store card numbers or security codes.',
+              ),
             ),
-          ),
           const SizedBox(height: 14),
           if (widget.initialBookingReference.isNotEmpty)
             Text('Booking reference: ${widget.initialBookingReference}'),
           if (widget.initialAmount != null)
-            Text('Authoritative quote: MYR ${widget.initialAmount!.toStringAsFixed(2)}'),
+            Text(
+                'Authoritative quote: MYR ${widget.initialAmount!.toStringAsFixed(2)}'),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: busy ? null : launchCheckout,
+            onPressed: busy ||
+                    (widget.quoteType == 'flight' &&
+                        (reviewLoading ||
+                            flightReview == null ||
+                            flightAlreadyPaid))
+                ? null
+                : launchCheckout,
             icon: busy
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.open_in_new_rounded),
-            label: Text(busy ? 'Preparing Checkout…' : 'Open Stripe test Checkout'),
+            label: Text(busy
+                ? 'Preparing Checkout…'
+                : flightAlreadyPaid && widget.quoteType == 'flight'
+                    ? 'This flight demo order is paid'
+                    : 'Open Stripe test Checkout'),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -369,7 +472,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
           const SizedBox(height: 24),
           const TravelSectionHeader(
             title: 'Order history',
-            subtitle: 'Pending orders are reconciled when you return to the app.',
+            subtitle:
+                'Pending orders are reconciled when you return to the app.',
           ),
           const SizedBox(height: 10),
           if (orders.isEmpty)
@@ -389,19 +493,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   children: [
                     const CircleAvatar(
                       backgroundColor: InkWashColors.paleBlue,
-                      child: Icon(Icons.receipt_long_outlined, color: InkWashColors.blueGrey),
+                      child: Icon(Icons.receipt_long_outlined,
+                          color: InkWashColors.blueGrey),
                     ),
                     const SizedBox(width: 11),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${item['quoteType'] ?? 'Order'} · ${item['currency'] ?? 'MYR'} ${item['amount'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                          Text(status, style: const TextStyle(color: InkWashColors.mutedInk, fontSize: 12)),
+                          Text(
+                              '${item['quoteType'] ?? 'Order'} · ${item['currency'] ?? 'MYR'} ${item['amount'] ?? ''}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800)),
+                          Text(status,
+                              style: const TextStyle(
+                                  color: InkWashColors.mutedInk, fontSize: 12)),
                         ],
                       ),
                     ),
-                    if ({'checkout_open', 'payment_pending', 'checkout_pending'}.contains(status))
+                    if ({'checkout_open', 'payment_pending', 'checkout_pending'}
+                        .contains(status))
                       IconButton(
                         tooltip: 'Check status',
                         onPressed: busy ? null : () => reconcileOrder(orderId),
@@ -593,7 +704,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ]),
                   const SizedBox(height: 10),
                   if (!isSuccessfulPayment(result?['paymentStatus']))
-                    const Text('We’re still checking this payment. Use Check status before trying again.'),
+                    const Text(
+                        'We’re still checking this payment. Use Check status before trying again.'),
                   Text(
                       'Amount: ${result!['currency'] ?? 'MYR'} ${result!['amount']}'),
                   Text(
@@ -619,9 +731,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
             final paymentId =
                 (item['id'] ?? item['transactionReference'] ?? '').toString();
             final status = canonicalPaymentStatus(item['paymentStatus']);
-            final kind = isSimulatedPayment(Map<String, dynamic>.from(item as Map))
-                ? 'Simulated'
-                : 'Sandbox';
+            final kind =
+                isSimulatedPayment(Map<String, dynamic>.from(item as Map))
+                    ? 'Simulated'
+                    : 'Sandbox';
             return Padding(
               padding: const EdgeInsets.only(bottom: 9),
               child: InkCard(

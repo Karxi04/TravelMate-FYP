@@ -4,6 +4,8 @@ import uuid
 from html import escape
 from urllib.parse import urlparse
 
+from services.flight_quote_eligibility import flight_review
+
 from flask import Blueprint, request, jsonify, g, current_app, Response
 
 from auth_utils import auth_required
@@ -100,43 +102,43 @@ def _hotel_checkout_quote(payload):
     }
 
 
-def _flight_checkout_quote(payload):
+def _flight_checkout_quote(payload, require_confirmation=True):
     search_id = str(payload.get('searchId') or payload.get('quoteId') or '').strip()
     option_id = str(payload.get('optionId') or '').strip()
-    if not search_id or not option_id:
-        raise ValueError('A completed flight quote and option are required for Checkout.')
     record = retrieveRecord('flight_quotes', f'{g.uid}_{search_id}')
     if not record or record.get('travellerId') != g.uid:
         raise ValueError('The flight quote was not found or is not owned by this traveller.')
-    criteria = dict(record.get('criteria') or {})
-    option = next((dict(item) for item in record.get('items', [])
-                   if isinstance(item, dict) and str(item.get('optionId') or item.get('id') or '') == option_id), None)
-    if not option:
-        raise ValueError('The selected flight option is not part of the owned quote.')
-    if record.get('source') == 'sample_fixture':
-        raise ValueError('Sample flight fixtures cannot enter Checkout.')
-    amount = _finite_amount(option.get('price'))
-    currency = str(option.get('currency') or '').upper()
-    travellers = int(criteria.get('traveller_count') or 0)
-    composition = option.get('passengerComposition') or {}
-    if amount is None or currency != 'MYR' or option.get('currencyStatus') != 'known':
-        raise ValueError('This flight quote has no validated MYR payable amount.')
-    if option.get('quoteCompleteness') != 'complete' or option.get('budgetEligible') is False:
-        raise ValueError('Complete flight quote selection is required before Checkout.')
-    if criteria.get('return_date') and not option.get('roundTripComplete'):
-        raise ValueError('A complete round-trip quote is required before Checkout.')
-    if option.get('priceScope') != 'provider_ticket_price' or option.get('priceSemanticsStatus') != 'provider_response_requested_adults':
-        raise ValueError('This flight quote does not prove an adult-party ticket total.')
-    if not travellers or option.get('travellerCount') != travellers or composition.get('adults') != travellers:
-        raise ValueError('This flight quote does not match the requested adult party.')
-    if criteria.get('return_date') and not str(option.get('priceBasis') or '').startswith('provider_round_trip_'):
-        raise ValueError('This round-trip quote has no verified combined ticket total.')
-    snapshot = _safe_quote_snapshot({**option, 'quoteId': search_id, 'offerId': option_id})
+    review = flight_review(record, option_id)
+    snapshot = review['snapshot']
+    itinerary_id = str(payload.get('itineraryId') or '').strip()
+    if itinerary_id:
+        trip = retrieveRecord('itineraries', itinerary_id)
+        if not trip or trip.get('travellerId') != g.uid:
+            raise ValueError('The selected trip is not owned by this traveller.')
+        if trip.get('flightSearchId') != search_id or trip.get('flightOptionId') != option_id or int(trip.get('travellerCount') or 0) != snapshot['travellerCount']:
+            raise ValueError('The trip flight selection changed. Review and reconfirm it.')
+    for key, expected in [('amount', snapshot['price']), ('currency', snapshot['currency']), ('outboundSegments', snapshot['outboundSegments']), ('returnSegments', snapshot['returnSegments']), ('travellerCount', snapshot['travellerCount']), ('priceBasis', snapshot['priceBasis']), ('passengerComposition', snapshot['passengerComposition'])]:
+        if key in payload and payload[key] != expected:
+            raise ValueError('Flight Checkout details do not match the owned quote.')
+    if require_confirmation and (payload.get('confirmedFlightQuote') is not True or payload.get('flightQuoteFingerprint') != review['fingerprint']):
+        raise ValueError('Flight quote changed or was not confirmed. Review all details and explicitly reconfirm.')
     return {
         'quoteType': 'flight', 'quoteId': search_id, 'optionId': option_id,
-        'amount': amount, 'currency': currency, 'quoteSnapshot': snapshot,
-        'amountBasis': 'provider_ticket_price_requested_adults', 'sandbox': False,
+        'amount': snapshot['price'], 'currency': snapshot['currency'], 'quoteSnapshot': snapshot,
+        'quoteFingerprint': review['fingerprint'], 'itineraryId': itinerary_id or None,
+        'amountBasis': snapshot['priceBasis'], 'sandbox': False,
+        'demoOrder': True, 'flightBooked': False,
     }
+
+
+@bp.post('/checkout/flight-review')
+@auth_required(['traveller'])
+def review_flight_checkout():
+    try:
+        quote = _flight_checkout_quote(request.get_json(silent=True) or {}, require_confirmation=False)
+        return jsonify({'ok': True, 'review': quote['quoteSnapshot'], 'fingerprint': quote['quoteFingerprint']})
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 409
 
 
 def _resolve_checkout_quote(payload):
@@ -196,6 +198,8 @@ def _apply_checkout_session(record, session):
     amount_total = _stripe_value(session, 'amount_total')
     currency = str(_stripe_value(session, 'currency', '') or '').upper()
     expected_cents = int(round(float(record.get('amount') or 0) * 100))
+    if record.get('quoteType') == 'flight' and (amount_total is None or not currency):
+        status = 'payment_mismatch'
     if amount_total is not None and int(amount_total) != expected_cents:
         status = 'payment_mismatch'
     if currency and currency != str(record.get('currency') or '').upper():
@@ -246,7 +250,7 @@ def create_checkout_session():
         return jsonify({'ok': False, 'error': 'This order is not owned by the current traveller.'}), 403
     if str(claimed.get('status') or '').lower() == 'paid':
         return jsonify({'ok': False, 'error': 'This Checkout order has already been paid.'}), 409
-    for key in ('quoteType', 'quoteId', 'offerId', 'optionId', 'amount', 'currency'):
+    for key in ('quoteType', 'quoteId', 'offerId', 'optionId', 'amount', 'currency', 'quoteFingerprint'):
         if key in record and str(claimed.get(key)) != str(record.get(key)):
             return jsonify({'ok': False, 'error': 'Order attempt is already bound to another quote.'}), 409
     if claimed.get('checkoutSessionId') and claimed.get('checkoutUrl'):
@@ -268,7 +272,7 @@ def create_checkout_session():
                 'quoteId': quote['quoteId'],
             },
             idempotency_key=claimed['providerIdempotencyKey'],
-            product_name=f"TravelMate {quote['quoteType']} test order",
+            product_name='TravelMate flight demo order - Stripe test payment' if quote['quoteType'] == 'flight' else f"TravelMate {quote['quoteType']} test order",
         )
         session_id = str(_stripe_value(session, 'id', '') or '')
         checkout_url = str(_stripe_value(session, 'url', '') or '')
@@ -395,6 +399,8 @@ def stripe_webhook():
     if not record:
         return jsonify({'ok': True, 'ignored': True})
     if str(record.get('status') or '').lower() == 'paid':
+        if record.get('quoteType') == 'flight' and not record.get('paymentVerification') and event_type in {'checkout.session.completed', 'checkout.session.async_payment_succeeded'} and str(_stripe_value(data, 'id', '') or '') == str(record.get('checkoutSessionId') or ''):
+            updateRecord(ORDER_COLLECTION, order_id, {'paymentVerification': {'source': 'signed_stripe_webhook', 'eventId': _stripe_value(event, 'id'), 'eventType': event_type, 'receivedAt': utc_now_iso()}})
         return jsonify({'ok': True, 'received': True, 'ignored': True})
     if event_type in {'checkout.session.completed', 'checkout.session.async_payment_succeeded',
                       'checkout.session.async_payment_failed', 'checkout.session.expired'}:
@@ -404,6 +410,10 @@ def stripe_webhook():
             patch = {'status': 'expired', 'paymentStatus': 'unpaid', 'updatedAt': utc_now_iso()}
         else:
             patch = _apply_checkout_session(record, data)
+        if record.get('quoteType') == 'flight':
+            if str(_stripe_value(data, 'id', '') or '') != str(record.get('checkoutSessionId') or ''):
+                return jsonify({'ok': True, 'ignored': True})
+            patch['paymentVerification'] = {'source': 'signed_stripe_webhook', 'eventId': _stripe_value(event, 'id'), 'eventType': event_type, 'receivedAt': utc_now_iso()}
         updateRecord(ORDER_COLLECTION, order_id, patch)
     return jsonify({'ok': True, 'received': True})
 

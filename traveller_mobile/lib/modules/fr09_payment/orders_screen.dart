@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
 import '../../widgets/ink_card.dart';
+import 'flight_quote_summary.dart';
 
 class OrdersScreen extends StatefulWidget {
   final ApiService? api;
@@ -84,7 +85,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             Text('Type: ${order['quoteType']}'),
                             if (order['createdAt'] != null)
                               Text('Created: ${order['createdAt']}'),
-                            if (order['quoteSnapshot'] is Map)
+                            if (order['quoteType'] == 'flight' &&
+                                order['quoteSnapshot'] is Map)
+                              FlightQuoteSummary(
+                                  quote: Map<String, dynamic>.from(
+                                      order['quoteSnapshot'] as Map)),
+                            if (order['quoteType'] != 'flight' &&
+                                order['quoteSnapshot'] is Map)
                               for (final field in const {
                                 'name': 'Hotel or itinerary',
                                 'roomName': 'Room',
