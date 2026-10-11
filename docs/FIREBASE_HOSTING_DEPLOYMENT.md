@@ -1,8 +1,8 @@
 # TravelMate Firebase Hosting portal preparation
 
-This preparation maps two **provisional** Firebase Hosting targets to the existing portal Cloud Run services. It creates or deploys nothing by itself.
+This preparation maps two Firebase Hosting targets to the existing portal Cloud Run services. It creates or deploys nothing by itself.
 
-| Hosting target | Confirm in Firebase Console before deployment | Expected URL after creation | Cloud Run rewrite |
+| Hosting target | Confirm existing Firebase Console site ID before deployment | Expected URL | Cloud Run rewrite |
 | --- | --- | --- | --- |
 | `operator` | `travelmate-operator-ckx` | `https://travelmate-operator-ckx.web.app` | `travelmate-operator` in `asia-southeast1` |
 | `admin` | `travelmate-admin-ckx` | `https://travelmate-admin-ckx.web.app` | `travelmate-admin` in `asia-southeast1` |
@@ -13,7 +13,7 @@ The Android application does **not** use Hosting. Set its release `API_BASE_URL`
 
 ## Preconditions — manual and approval-gated
 
-1. In Firebase Console for `travelmate2-30a8a`, open **Hosting** and create two additional sites only after approval. Confirm the actual IDs exactly match the provisional IDs above. If Firebase rejects either ID or assigns a different value, update the matching `.firebaserc` target before deployment; do not deploy it to the wrong site.
+1. In Firebase Console for `travelmate2-30a8a`, open **Hosting** and confirm the two existing site IDs exactly match the IDs above. Do not recreate either site. If either ID differs, update the matching `.firebaserc` target before deployment; do not deploy it to the wrong site.
 2. In Google Cloud Console, link billing and enable Cloud Run, Cloud Build, Artifact Registry, Secret Manager, Firebase Hosting, Firestore, and Firebase Authentication APIs. These actions can create billable usage.
 3. Create Artifact Registry repository `travelmate` in `asia-southeast1`, the service accounts named in the Cloud Run templates, Secret Manager secrets documented in [CLOUD_RUN_DEPLOYMENT.md](CLOUD_RUN_DEPLOYMENT.md), and the Firestore TTL policy for collection group `rate_limit_windows`, field `expiresAt`.
 4. Keep Cloud Run `minScale: 0`. The supplied maximums are API `2`, Operator `1`, and Admin `1`; they are capacity/cost caps, not abuse protection. Keep the API’s transactional Firestore limiter enabled and fail-closed.
