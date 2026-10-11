@@ -1,4 +1,42 @@
 {
+  "hosting": [
+    {
+      "target": "operator",
+      "public": "firebase/hosting/empty",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "run": {
+            "serviceId": "travelmate-operator",
+            "region": "asia-southeast1"
+          }
+        }
+      ]
+    },
+    {
+      "target": "admin",
+      "public": "firebase/hosting/empty",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "run": {
+            "serviceId": "travelmate-admin",
+            "region": "asia-southeast1"
+          }
+        }
+      ]
+    }
+  ],
   "firestore": {
     "rules": "firebase/firestore.rules"
   }

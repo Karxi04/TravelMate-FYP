@@ -2,6 +2,17 @@
   "projects": {
     "default": "travelmate2-30a8a"
   },
-  "targets": {},
+  "targets": {
+    "travelmate2-30a8a": {
+      "hosting": {
+        "operator": [
+          "travelmate-operator-ckx"
+        ],
+        "admin": [
+          "travelmate-admin-ckx"
+        ]
+      }
+    }
+  },
   "etags": {}
 }
