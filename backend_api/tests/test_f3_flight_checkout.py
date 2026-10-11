@@ -157,3 +157,32 @@ def test_missing_stripe_amount_or_currency_cannot_verify_flight_payment():
     record = {'quoteType': 'flight', 'status': 'checkout_open', 'amount': 120, 'currency': 'MYR'}
     for session in [{'status': 'complete', 'payment_status': 'paid', 'currency': 'myr'}, {'status': 'complete', 'payment_status': 'paid', 'amount_total': 12000}]:
         assert _apply_checkout_session(record, session)['status'] == 'payment_mismatch'
+
+
+@pytest.mark.parametrize('event_type', [
+    'checkout.session.async_payment_failed', 'checkout.session.expired',
+])
+def test_late_failed_or_expired_webhook_cannot_downgrade_paid_flight(client, event_type):
+    memory = MemoryPersistence()
+    order = {
+        'quoteType': 'flight', 'status': 'paid', 'paymentStatus': 'paid',
+        'amount': 120, 'currency': 'MYR', 'checkoutSessionId': 'cs_paid_fixture',
+        'quoteSnapshot': flight_review(quote(), 'option_f3')['snapshot'],
+    }
+    memory.seed('checkout_orders', 'order_paid_f3', order)
+    before = deepcopy(memory.retrieve('checkout_orders', 'order_paid_f3'))
+    event = {'id': 'evt_late_fixture', 'type': event_type, 'data': {'object': {
+        'id': 'cs_paid_fixture', 'metadata': {'orderId': 'order_paid_f3'},
+        'amount_total': 12000, 'currency': 'myr', 'payment_status': 'unpaid',
+        'status': 'expired' if event_type.endswith('expired') else 'complete',
+    }}}
+    body = json.dumps(event).encode()
+    timestamp = str(int(time.time()))
+    secret = 'whsec_f3_fixture'
+    signature = hmac.new(secret.encode(), timestamp.encode() + b'.' + body, hashlib.sha256).hexdigest()
+    with patch.dict('os.environ', {'STRIPE_WEBHOOK_SECRET': secret}), \
+            _patch_persistence(memory)[1], _patch_persistence(memory)[2]:
+        response = client.post('/api/fr9/webhooks/stripe', data=body,
+                               headers={'Stripe-Signature': f't={timestamp},v1={signature}'})
+    assert response.status_code == 200
+    assert memory.retrieve('checkout_orders', 'order_paid_f3') == before

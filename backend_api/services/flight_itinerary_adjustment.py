@@ -331,7 +331,8 @@ def build_preview(trip, flight, owner, preview_id):
 
 
 def create_preview(trip, flight, owner):
-    preview_id = f'flight_adjustment_{hashlib.sha256(f"{owner}:{trip.get("id")}:{fingerprint(flight)}:{fingerprint(trip)}".encode()).hexdigest()[:24]}'
+    preview_key = f'{owner}:{trip.get("id")}:{fingerprint(flight)}:{fingerprint(trip)}'
+    preview_id = f'flight_adjustment_{hashlib.sha256(preview_key.encode()).hexdigest()[:24]}'
     preview = build_preview(trip, flight, owner, preview_id)
     with _LOCK:
         _PREVIEWS[preview_id] = deepcopy(preview)
