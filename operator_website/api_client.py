@@ -1,8 +1,8 @@
-import os
 import time
 import requests
 from flask import session
 from firebase_auth_rest import refresh_id_token
+from portal_security_config import backend_base_url
 
 
 def _ensure_token():
@@ -25,5 +25,5 @@ def call_api(method, path, **kwargs):
     if token:
         headers["Authorization"] = f"Bearer {token}"
     headers.setdefault("Accept", "application/json")
-    url = os.getenv("BACKEND_URL", "http://127.0.0.1:5000").rstrip("/") + path
+    url = backend_base_url() + path
     return requests.request(method, url, headers=headers, timeout=60, **kwargs)

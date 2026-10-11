@@ -1,4 +1,6 @@
 import os
+import ipaddress
+from urllib.parse import urlsplit
 
 from flask import request, session
 from flask_wtf.csrf import CSRFError, CSRFProtect
@@ -14,6 +16,36 @@ WEAK_SECRETS = {
     "replace-with-a-random-string",
     "replace-with-another-random-string",
 }
+
+
+def backend_base_url(environ=None):
+    """Return the portal API target, rejecting local targets in cloud mode."""
+    source = environ if environ is not None else os.environ
+    environment = str(source.get("APP_ENV", "development")).strip().lower()
+    configured = str(source.get("BACKEND_URL", "")).strip().rstrip("/")
+    if environment in LOCAL_ENVIRONMENTS:
+        return configured or "http://127.0.0.1:5000"
+    if not configured:
+        raise RuntimeError("BACKEND_URL must be an explicit public HTTPS URL in deployment")
+    parsed = urlsplit(configured)
+    hostname = parsed.hostname or ""
+    if (
+        parsed.scheme != "https"
+        or not hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or hostname.lower() == "localhost"
+        or hostname.lower().endswith(".local")
+    ):
+        raise RuntimeError("BACKEND_URL must be a public HTTPS URL in deployment")
+    try:
+        if not ipaddress.ip_address(hostname).is_global:
+            raise RuntimeError("BACKEND_URL must not use a private, loopback, or emulator address")
+    except ValueError:
+        pass
+    return configured
 
 
 def env_flag(name, default=False, environ=None):

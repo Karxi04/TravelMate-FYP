@@ -1,0 +1,14 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '-f', 'backend_api/Dockerfile', '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/travelmate-api:$COMMIT_SHA', '.']
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '-f', 'operator_website/Dockerfile', '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/travelmate-operator:$COMMIT_SHA', '.']
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '-f', 'admin_website/Dockerfile', '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/travelmate-admin:$COMMIT_SHA', '.']
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/travelmate-api:$COMMIT_SHA'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/travelmate-operator:$COMMIT_SHA'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/travelmate-admin:$COMMIT_SHA'
+substitutions:
+  _REGION: asia-southeast1
+  _REPOSITORY: travelmate
