@@ -9,7 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from flask import Flask, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-from firebase_service import init_firebase
+from firebase_service import get_db, init_firebase
 from auth_utils import auth_required
 from services.stripe_service import stripePaymentMode
 from request_rate_limit import init_rate_limiter
@@ -37,7 +37,7 @@ def _allowed_cors_origins():
 
 def create_app():
     app = Flask(__name__)
-    init_rate_limiter(app)
+    init_rate_limiter(app, db_factory=get_db)
     origins = _allowed_cors_origins()
     if origins:
         CORS(app, origins=origins, supports_credentials=False)
