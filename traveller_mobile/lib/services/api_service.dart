@@ -26,11 +26,22 @@ String resolveApiBaseUrl(
   bool release = kReleaseMode,
   bool web = kIsWeb,
   TargetPlatform? platform,
+  bool localDemo = const bool.fromEnvironment('LOCAL_DEMO'),
 }) {
   final url = configuredUrl.trim().replaceFirst(RegExp(r'/+$'), '');
+  final uri = Uri.tryParse(url);
+  if (localDemo &&
+      (uri == null ||
+          uri.scheme != 'http' ||
+          uri.host.isEmpty ||
+          !_isPrivateLanIpv4(uri.host))) {
+    throw StateError(
+      'LOCAL_DEMO requires an explicit http:// private-LAN IPv4 API_BASE_URL.',
+    );
+  }
   if (release) {
-    final uri = Uri.tryParse(url);
     if (uri == null ||
+        localDemo ||
         uri.scheme != 'https' ||
         uri.host.isEmpty ||
         uri.userInfo.isNotEmpty ||
@@ -49,6 +60,16 @@ String resolveApiBaseUrl(
     return 'http://10.0.2.2:5000';
   }
   return 'http://127.0.0.1:5000';
+}
+
+bool _isPrivateLanIpv4(String host) {
+  final octets = host.split('.').map(int.tryParse).toList();
+  if (octets.length != 4 || octets.any((part) => part == null)) return false;
+  final values = octets.cast<int>();
+  if (values.any((part) => part < 0 || part > 255)) return false;
+  return values[0] == 10 ||
+      (values[0] == 172 && values[1] >= 16 && values[1] <= 31) ||
+      (values[0] == 192 && values[1] == 168);
 }
 
 bool _isUnsafeReleaseHost(String host) {

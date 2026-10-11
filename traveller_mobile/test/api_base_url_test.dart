@@ -50,4 +50,15 @@ void main() {
       'http://172.20.10.5:5000',
     );
   });
+
+  test('local demo accepts only a private-LAN HTTP API URL', () {
+    expect(
+      resolveApiBaseUrl('http://192.168.1.25:5000', localDemo: true),
+      'http://192.168.1.25:5000',
+    );
+    expect(
+      () => resolveApiBaseUrl('https://backend.example', localDemo: true),
+      throwsStateError,
+    );
+  });
 }

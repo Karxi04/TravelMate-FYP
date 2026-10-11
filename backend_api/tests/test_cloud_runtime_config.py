@@ -6,6 +6,7 @@ import sys
 import pytest
 
 from portal_security_config import backend_base_url
+from app import local_lan_network
 
 
 def test_cloud_portal_requires_a_public_https_backend():
@@ -18,6 +19,22 @@ def test_cloud_portal_requires_a_public_https_backend():
     for unsafe_url in ("", "http://api.example", "https://localhost", "https://192.168.1.5"):
         with pytest.raises(RuntimeError):
             backend_base_url({"APP_ENV": "production", "BACKEND_URL": unsafe_url})
+
+
+def test_local_lan_mode_requires_an_explicit_private_network():
+    network = local_lan_network({
+        "APP_ENV": "development",
+        "LOCAL_LAN_DEMO": "true",
+        "TRUSTED_LAN_CIDR": "192.168.10.0/24",
+    })
+    assert str(network) == "192.168.10.0/24"
+    assert local_lan_network({"APP_ENV": "development"}) is None
+    with pytest.raises(RuntimeError):
+        local_lan_network({
+            "APP_ENV": "production",
+            "LOCAL_LAN_DEMO": "true",
+            "TRUSTED_LAN_CIDR": "192.168.10.0/24",
+        })
 
 
 def test_cloud_run_files_use_gunicorn_without_secrets():
