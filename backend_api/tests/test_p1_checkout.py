@@ -1,3 +1,4 @@
+import os
 import hashlib
 import hmac
 import json
@@ -347,3 +348,11 @@ def test_orders_list_details_and_reconciliation_are_owner_scoped(client, mock_tr
             assert denied.status_code == 404
             assert 'other_traveller' not in denied.get_data(as_text=True)
         stripe.assert_not_called()
+
+
+def test_invalid_stripe_webhook_signature_is_rejected_not_unavailable(client):
+    with patch.dict(os.environ, {'STRIPE_WEBHOOK_SECRET': 'whsec_offline_fixture'}):
+        response = client.post('/api/fr9/webhooks/stripe', data=b'{}',
+                               headers={'Stripe-Signature': 'invalid'})
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'Invalid Stripe webhook'

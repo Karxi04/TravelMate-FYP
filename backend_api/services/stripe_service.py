@@ -186,7 +186,10 @@ def constructStripeWebhookEvent(payload, signature):
         raise RuntimeError('Stripe webhook verification is not configured.')
     if not signature:
         raise ValueError('Stripe webhook signature is required.')
-    return stripe.Webhook.construct_event(payload, signature, secret)
+    try:
+        return stripe.Webhook.construct_event(payload, signature, secret)
+    except stripe.SignatureVerificationError as exc:
+        raise ValueError('Invalid Stripe webhook signature.') from exc
 
 
 def create_intent(amount_rm, traveller_id, booking_id=''):

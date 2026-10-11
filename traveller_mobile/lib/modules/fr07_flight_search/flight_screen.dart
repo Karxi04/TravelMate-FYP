@@ -10,6 +10,7 @@ class FlightScreen extends StatefulWidget {
   final String? initialReturnDate;
   final String? initialDeparture;
   final String? initialArrival;
+  final ApiService? api;
 
   const FlightScreen({
     super.key,
@@ -17,6 +18,7 @@ class FlightScreen extends StatefulWidget {
     this.initialReturnDate,
     this.initialDeparture,
     this.initialArrival,
+    this.api,
   });
 
   @override
@@ -29,7 +31,7 @@ class _FlightScreenState extends State<FlightScreen> {
   final travellers = TextEditingController(text: '1');
   late final TextEditingController outbound;
   late final TextEditingController returnDate;
-  final api = ApiService();
+  late final api = widget.api ?? ApiService();
 
   List<dynamic> items = [];
   final Set<String> compareIds = {};
@@ -380,6 +382,7 @@ class _FlightScreenState extends State<FlightScreen> {
         final price = double.tryParse('${flight['price'] ?? 0}') ?? 0.0;
         final newTrip = await api.post('/api/fr5/itineraries', {
           'title': 'Trip to ${flight['arrivalAirport'] ?? 'Destination'}',
+          'destinationArea': flight['arrivalAirport'] ?? to.text.trim(),
           'startDate': start,
           'endDate': end,
           'travellerCount': int.tryParse(travellers.text.trim()) ?? 1,
