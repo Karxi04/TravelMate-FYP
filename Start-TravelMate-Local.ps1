@@ -4,9 +4,15 @@ param(
 )
 
 $root = $PSScriptRoot
-$python = Join-Path (Split-Path $root -Parent) '.venv311\Scripts\python.exe'
-if (-not (Test-Path -LiteralPath $python)) {
-    throw "Python runtime missing. Create backend_api\.venv and install backend_api\requirements-test.txt first."
+$services = @(
+    @('backend_api', 5000, (Join-Path $root 'backend_api\.venv\Scripts\python.exe')),
+    @('operator_website', 5001, (Join-Path $root 'operator_website\.venv\Scripts\python.exe')),
+    @('admin_website', 5002, (Join-Path $root 'admin_website\.venv\Scripts\python.exe'))
+)
+foreach ($service in $services) {
+    if (-not (Test-Path -LiteralPath $service[2])) {
+        throw "Python runtime missing: $($service[2]). Create the service's local .venv and install its requirements first."
+    }
 }
 foreach ($envFile in @('backend_api\.env', 'operator_website\.env', 'admin_website\.env')) {
     if (-not (Test-Path -LiteralPath (Join-Path $root $envFile))) {
@@ -15,12 +21,12 @@ foreach ($envFile in @('backend_api\.env', 'operator_website\.env', 'admin_websi
 }
 $env:LOCAL_LAN_DEMO = 'true'
 $env:TRUSTED_LAN_CIDR = $TrustedLanCidr
-foreach ($service in @(@('backend_api', 5000), @('operator_website', 5001), @('admin_website', 5002))) {
+foreach ($service in $services) {
     $port = $service[1]
     if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
         throw "Port $port is already in use. Stop that process before starting TravelMate."
     }
-    Start-Process -FilePath $python -ArgumentList 'app.py' -WorkingDirectory (Join-Path $root $service[0]) -WindowStyle Hidden
+    Start-Process -FilePath $service[2] -ArgumentList 'app.py' -WorkingDirectory (Join-Path $root $service[0]) -WindowStyle Hidden
 }
 foreach ($health in @('http://127.0.0.1:5000/api/health', 'http://127.0.0.1:5001/health', 'http://127.0.0.1:5002/health')) {
     $response = $null
