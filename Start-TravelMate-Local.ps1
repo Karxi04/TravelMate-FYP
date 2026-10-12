@@ -17,14 +17,23 @@ $env:LOCAL_LAN_DEMO = 'true'
 $env:TRUSTED_LAN_CIDR = $TrustedLanCidr
 foreach ($service in @(@('backend_api', 5000), @('operator_website', 5001), @('admin_website', 5002))) {
     $port = $service[1]
-    if (Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue) {
+    if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
         throw "Port $port is already in use. Stop that process before starting TravelMate."
     }
     Start-Process -FilePath $python -ArgumentList 'app.py' -WorkingDirectory (Join-Path $root $service[0]) -WindowStyle Hidden
 }
-Start-Sleep -Seconds 2
 foreach ($health in @('http://127.0.0.1:5000/api/health', 'http://127.0.0.1:5001/health', 'http://127.0.0.1:5002/health')) {
-    $response = Invoke-WebRequest -UseBasicParsing -Uri $health -TimeoutSec 10
+    $response = $null
+    for ($attempt = 1; $attempt -le 15 -and -not $response; $attempt++) {
+        try {
+            $response = Invoke-WebRequest -UseBasicParsing -Uri $health -TimeoutSec 2 -ErrorAction Stop
+        } catch {
+            Start-Sleep -Seconds 1
+        }
+    }
+    if (-not $response) {
+        throw "Service did not become healthy: $health"
+    }
     Write-Host "$health -> HTTP $($response.StatusCode)"
 }
 Write-Host "Phone API: http://<your-PC-LAN-IP>:5000 (trusted network: $TrustedLanCidr)"
