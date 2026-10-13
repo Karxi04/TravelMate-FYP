@@ -346,7 +346,19 @@ def booking_records():
 @bp.get('/payments')
 @auth_required(['admin'])
 def payment_records():
-    return jsonify({'ok': True, 'items': retrieveRecord('payment_records') or []})
+    query = str(request.args.get('q') or '').strip().lower()
+    status = str(request.args.get('status') or '').strip().lower()
+    product = str(request.args.get('product') or '').strip().lower()
+    items = [
+        {**item, 'productType': item.get('quoteType') or 'legacy_payment',
+         'productTitle': ((item.get('packageSnapshot') or {}).get('title') if isinstance(item.get('packageSnapshot'), dict) else '') or item.get('bookingId') or '-'}
+        for item in (retrieveRecord('checkout_orders') or []) + (retrieveRecord('payment_records') or [])
+    ]
+    if status: items = [item for item in items if str(item.get('paymentStatus') or item.get('status') or '').lower() == status]
+    if product: items = [item for item in items if str(item.get('productType') or '').lower() == product]
+    if query: items = [item for item in items if query in ' '.join(str(item.get(key) or '') for key in ('id','travellerId','productType','productTitle')).lower()]
+    items.sort(key=lambda item: str(item.get('createdAt') or ''), reverse=True)
+    return jsonify({'ok': True, 'items': items[:100]})
 
 
 def _summary(criteria=None):

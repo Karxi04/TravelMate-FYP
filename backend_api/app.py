@@ -83,9 +83,10 @@ def create_app():
     from modules.fr11_chatbot_travel_assistant import bp as fr11
     from modules.fr12_tourism_operator_management import bp as fr12
     from modules.fr13_administrator_management import bp as fr13
+    from modules.fr15_package_checkout import bp as fr15
     from modules.shared_public_content import bp as public_content
 
-    for blueprint in [fr01, fr02, fr03, fr04, fr05, fr06, fr07, fr08, fr09, fr10, fr11, fr12, fr13, public_content]:
+    for blueprint in [fr01, fr02, fr03, fr04, fr05, fr06, fr07, fr08, fr09, fr10, fr11, fr12, fr13, fr15, public_content]:
         app.register_blueprint(blueprint)
 
     @app.get("/api/health")

@@ -1,21 +1,97 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
+import '../../services/api_service.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
+import '../../modules/fr09_payment/payment_screen.dart';
 
-class TourismPackageDetailsScreen extends StatelessWidget {
+class TourismPackageDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> item;
+  /// Retained for callers with the legacy add-to-trip callback.
   final VoidCallback? onAddToTrip;
+  final ApiService? api;
 
   const TourismPackageDetailsScreen({
     super.key,
     required this.item,
     this.onAddToTrip,
+    this.api,
   });
 
+  @override
+  State<TourismPackageDetailsScreen> createState() =>
+      _TourismPackageDetailsScreenState();
+}
+
+class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScreen> {
+  late final ApiService api;
+  bool submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    api = widget.api ?? ApiService();
+  }
+
+  Future<void> _startCheckout() async {
+    if (submitting) return;
+    setState(() => submitting = true);
+    try {
+      final data = await api.get('/api/fr5/itineraries');
+      final trips = data is Map ? data['items'] as List? ?? const [] : const [];
+      if (!mounted) return;
+      if (trips.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Create a Trip first, then return to checkout this package.')));
+        return;
+      }
+      final trip = await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        showDragHandle: true,
+        builder: (_) => ListView(
+          shrinkWrap: true,
+          children: trips.map((raw) {
+            final value = Map<String, dynamic>.from(raw as Map);
+            return ListTile(
+              title: Text('${value['title'] ?? 'Trip'}'),
+              subtitle: Text('${value['destinationArea'] ?? ''}'),
+              onTap: () => Navigator.pop(context, value),
+            );
+          }).toList(),
+        ),
+      );
+      if (trip == null) return;
+      final packageId = (widget.item['id'] ?? '').toString();
+      if (packageId.isEmpty) throw Exception('This package is unavailable for checkout.');
+      final response = await api.post('/api/fr15/package-checkout-attempts', {
+        'packageId': packageId,
+        'intendedTripId': trip['id'],
+        'idempotencyKey': 'package_${packageId}_${trip['id']}',
+      });
+      final attempt = response is Map && response['attempt'] is Map
+          ? Map<String, dynamic>.from(response['attempt'] as Map)
+          : <String, dynamic>{};
+      final attemptId = (attempt['id'] ?? '').toString();
+      if (attemptId.isEmpty) throw Exception('Package checkout could not be prepared.');
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PaymentScreen(packageAttemptId: attemptId, api: api),
+        ),
+      );
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => submitting = false);
+    }
+  }
+
   String _text(String primary, [String? legacy]) =>
-      (item[primary] ?? (legacy == null ? null : item[legacy]) ?? '')
+      (widget.item[primary] ??
+              (legacy == null ? null : widget.item[legacy]) ??
+              '')
           .toString()
           .trim();
 
@@ -30,12 +106,13 @@ class TourismPackageDetailsScreen extends StatelessWidget {
   }
 
   List<Map<String, dynamic>> get _days =>
-      (item['itineraryDays'] as List? ?? const [])
+      (widget.item['itineraryDays'] as List? ?? const [])
           .whereType<Map>()
           .map((day) => Map<String, dynamic>.from(day))
           .toList();
 
-  String get _currency => _text('currency').isEmpty ? 'MYR' : _text('currency');
+  String get _currency =>
+      _text('currency').isEmpty ? 'MYR' : _text('currency');
 
   num? _number(dynamic value) =>
       value is num ? value : num.tryParse(value?.toString() ?? '');
@@ -45,18 +122,18 @@ class TourismPackageDetailsScreen extends StatelessWidget {
       : value.toStringAsFixed(2);
 
   String get _price {
-    final amount = _number(item['promotionalPrice']) ??
-        _number(item['adultPrice']) ??
-        _number(item['price']);
+    final amount = _number(widget.item['promotionalPrice']) ??
+        _number(widget.item['adultPrice']) ??
+        _number(widget.item['price']);
     if (amount == null) return '';
-    final basis = item['priceBasis'] == 'per_group' ? 'group' : 'person';
+    final basis = widget.item['priceBasis'] == 'per_group' ? 'group' : 'person';
     return '$_currency ${_money(amount)} / $basis';
   }
 
   String get _duration {
-    final days = _number(item['durationDays']);
+    final days = _number(widget.item['durationDays']);
     if (days == null || days < 1) return '';
-    final nights = _number(item['durationNights']);
+    final nights = _number(widget.item['durationNights']);
     final dayText = '${days.toInt()} ${days == 1 ? 'day' : 'days'}';
     if (nights == null) return dayText;
     return '$dayText · ${nights.toInt()} ${nights == 1 ? 'night' : 'nights'}';
@@ -118,28 +195,26 @@ class TourismPackageDetailsScreen extends StatelessWidget {
     final destination = _text('destination', 'destinationName');
     final hero = _text('heroImage', 'imageUrl');
     final description = _text('fullDescription', 'description');
-    final campaigns = (item['activeCampaigns'] as List? ?? const [])
+    final campaigns = (widget.item['activeCampaigns'] as List? ?? const [])
         .whereType<Map>()
         .map((entry) => Map<String, dynamic>.from(entry))
         .toList();
     final capacity =
-        _number(item['maximumTravellers'] ?? item['maxTravellers']);
-    final departureDates = _list(item['departureDates']);
-    final transport = _list(item['transportTypes']);
+        _number(widget.item['maximumTravellers'] ?? widget.item['maxTravellers']);
+    final departureDates = _list(widget.item['departureDates']);
+    final transport = _list(widget.item['transportTypes']);
     final meals = _days.expand((day) => _list(day['meals'])).toSet().toList();
-    final original = _number(item['originalPrice']);
-    final promo = _number(item['promotionalPrice']);
+    final original = _number(widget.item['originalPrice']);
+    final promo = _number(widget.item['promotionalPrice']);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Tourism package')),
-      bottomNavigationBar: onAddToTrip == null
-          ? null
-          : SafeArea(
+      bottomNavigationBar: SafeArea(
               minimum: const EdgeInsets.all(AppSpacing.md),
               child: FilledButton.icon(
-                onPressed: onAddToTrip,
-                icon: const Icon(Icons.add_location_alt_outlined),
-                label: const Text('Add package to trip'),
+                onPressed: submitting ? null : _startCheckout,
+                icon: const Icon(Icons.payment_outlined),
+                label: Text(submitting ? 'Preparing checkout...' : 'Checkout package'),
               ),
             ),
       body: ListView(
@@ -239,7 +314,7 @@ class TourismPackageDetailsScreen extends StatelessWidget {
                 )),
           ],
           const SizedBox(height: AppSpacing.lg),
-          _bullets('Highlights', item['highlights'], Icons.place_outlined),
+          _bullets('Highlights', widget.item['highlights'], Icons.place_outlined),
           if (_days.isNotEmpty) ...[
             _heading('Day-by-day itinerary'),
             ..._days.map((day) {
@@ -293,14 +368,14 @@ class TourismPackageDetailsScreen extends StatelessWidget {
               );
             }),
           ],
-          _bullets('What is included', item['inclusions'],
+          _bullets('What is included', widget.item['inclusions'],
               Icons.check_circle_outline),
           _bullets(
-              'Not included', item['exclusions'], Icons.remove_circle_outline),
+              'Not included', widget.item['exclusions'], Icons.remove_circle_outline),
           _bullets('Meals', meals, Icons.restaurant_outlined),
           _bullets('Transport', transport, Icons.directions_bus_outlined),
           _bullets(
-              'What to bring', item['whatToBring'], Icons.backpack_outlined),
+              'What to bring', widget.item['whatToBring'], Icons.backpack_outlined),
           _textSection(
               'Accommodation',
               [

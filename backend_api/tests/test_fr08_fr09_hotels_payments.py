@@ -474,6 +474,9 @@ def test_itinerary_attachment_retry_does_not_rebook_provider(
     memory = MemoryPersistence()
     memory.seed('itineraries', 'trip_1', {
         'travellerId': 'test_traveller_uid',
+        'destinationArea': 'Penang',
+        'startDate': '2026-11-01',
+        'endDate': '2026-11-03',
         'budgetEstimate': {},
     })
     payload = {
@@ -498,7 +501,11 @@ def test_itinerary_attachment_retry_does_not_rebook_provider(
                   'currency': 'MYR', 'currencyStatus': 'known',
                   'taxesAndFeesStatus': 'included',
                   'cancellation': {'tag': 'RFN', 'status': 'known'}},
-        'criteria': {},
+        'criteria': {
+            'destination': 'Penang', 'checkin': '2026-11-01',
+            'checkout': '2026-11-03', 'adults': 1, 'roomQuantity': 1,
+            'occupancies': [{'adults': 1}],
+        },
     })
     with patch.dict('os.environ', {'LITEAPI_KEY': 'test-key', 'FALLBACK_MODE': 'false'}), \
          patch('modules.fr08_hotel_booking.routes.claimRecord', side_effect=memory.claim), \

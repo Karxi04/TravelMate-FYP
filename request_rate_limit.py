@@ -58,6 +58,7 @@ API_LIMITS = {
     "fr09_payments.process_payment": "payment_mutation",
     "fr09_payments.retry_payment": "payment_mutation",
     "fr09_payments.cancel_payment": "payment_mutation",
+    "fr15_package_checkout.create_attempt": "payment_mutation",
     "fr11_chatbot.chat": "chat",
 }
 
