@@ -790,6 +790,24 @@ class _HotelScreenState extends State<HotelScreen> {
                                     }
                                   })),
                         ]),
+                        if ((h['mainPhoto'] ?? '').toString().isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Image.network(
+                              h['mainPhoto'].toString(),
+                              height: 150,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                height: 80,
+                                color: InkWashColors.cream,
+                                alignment: Alignment.center,
+                                child: const Text('Hotel photo unavailable'),
+                              ),
+                            ),
+                          ),
+                        ],
                         Text((h['address'] ?? '').toString(),
                             style:
                                 const TextStyle(color: InkWashColors.mutedInk)),
@@ -822,10 +840,16 @@ class _HotelScreenState extends State<HotelScreen> {
                         if ((h['boardName'] ?? '').toString().isNotEmpty)
                           Text((h['boardName']).toString()),
                         const SizedBox(height: 8),
+                        Text(
+                          '${h['checkin'] ?? ''} → ${h['checkout'] ?? ''} • ${h['roomQuantity'] ?? 1} room(s)',
+                          style: const TextStyle(
+                              color: InkWashColors.mutedInk, fontSize: 12),
+                        ),
+                        const SizedBox(height: 8),
                         Row(children: [
                           Expanded(
                               child: Text(
-                                  '${h['currency'] ?? 'MYR'} ${h['price'] ?? '-'}',
+                                  '${h['currency'] ?? 'Unknown'} ${h['price'] ?? '-'}${h['priceBasis'] == 'per_room_night' ? ' / room/night' : h['priceBasis'] == 'stay_total' ? ' total stay' : ''}',
                                   style: const TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.w900))),
