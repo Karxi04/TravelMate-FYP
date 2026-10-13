@@ -648,6 +648,51 @@ def _attach_booking_to_itinerary(document_id, booking, payload):
         }
         updated = updateRecord('hotel_bookings', document_id, patch) or {**booking, **patch}
         return updated, None
+    criteria = booking.get('stayCriteria')
+    criteria = criteria if isinstance(criteria, dict) else {}
+    try:
+        checkin = datetime.strptime(str(criteria['checkin'])[:10], '%Y-%m-%d').date()
+        checkout = datetime.strptime(str(criteria['checkout'])[:10], '%Y-%m-%d').date()
+        trip_start = datetime.strptime(str(current['startDate'])[:10], '%Y-%m-%d').date()
+        trip_end = datetime.strptime(str(current['endDate'])[:10], '%Y-%m-%d').date()
+    except (KeyError, TypeError, ValueError):
+        checkin = checkout = trip_start = trip_end = None
+    if not all((checkin, checkout, trip_start, trip_end)):
+        if not payload.get('acknowledgeCompatibilityUnverified'):
+            patch = {
+                'itineraryId': itinerary_id,
+                'itineraryAttachmentStatus': 'compatibility_unverified',
+                'itineraryAttachmentError': 'This historical booking has no verified stay dates. Confirm before attaching it to this trip.',
+                'updatedAt': utc_now_iso(),
+            }
+            return updateRecord('hotel_bookings', document_id, patch) or {**booking, **patch}, None
+        checkin = checkout = trip_start = trip_end = None
+    if checkin and checkout and trip_start and trip_end and not (trip_start <= checkin < checkout <= trip_end):
+        patch = {
+            'itineraryId': itinerary_id,
+            'itineraryAttachmentStatus': 'incompatible',
+            'itineraryAttachmentError': 'Hotel dates must fall within the trip dates; checkout on the trip end date is allowed.',
+            'updatedAt': utc_now_iso(),
+        }
+        return updateRecord('hotel_bookings', document_id, patch) or {**booking, **patch}, None
+    stay_destination = normalize_destination_scope((criteria or {}).get('destination'))
+    trip_destination = normalize_destination_scope(current.get('destinationArea'))
+    if (stay_destination.get('resolved') and trip_destination.get('resolved') and
+            stay_destination.get('state') != trip_destination.get('state')):
+        patch = {
+            'itineraryId': itinerary_id,
+            'itineraryAttachmentStatus': 'incompatible',
+            'itineraryAttachmentError': 'The hotel destination does not match this trip destination.',
+            'updatedAt': utc_now_iso(),
+        }
+        return updateRecord('hotel_bookings', document_id, patch) or {**booking, **patch}, None
+    if current.get('hotelBookingId') == document_id:
+        patch = {
+            'itineraryId': itinerary_id,
+            'itineraryAttachmentStatus': 'succeeded',
+            'updatedAt': utc_now_iso(),
+        }
+        return updateRecord('hotel_bookings', document_id, patch) or {**booking, **patch}, current
     selected_hotel = booking.get('selectedHotel') or {}
     hotel_cost = float(booking.get('hotelCost') or 0)
     trip_patch = {
@@ -737,6 +782,7 @@ def hotel_book():
         'providerRequestKey': provider_key,
         'selectedHotel': selected_hotel,
         'roomQuantity': selected_hotel.get('roomQuantity') or prebook_record.get('criteria', {}).get('roomQuantity') or 1,
+        'stayCriteria': dict(prebook_record.get('criteria') or {}),
         'hotelCost': hotel_cost,
         'hotelCurrency': str(selected_hotel.get('currency')).upper(),
         'amountSource': 'validated_offer',
