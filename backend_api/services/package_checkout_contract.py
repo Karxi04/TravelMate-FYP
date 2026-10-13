@@ -1,6 +1,7 @@
 """Server-owned package checkout preparation; Stripe activation is deliberately separate."""
 from copy import deepcopy
 from datetime import datetime, timezone
+import hashlib
 
 from services.public_content_projection import eligible_package
 
@@ -21,7 +22,7 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None):
     except (TypeError, ValueError):
         raise ValueError('Package has no authoritative payable price.')
     currency = str(package.get('currency') or '').upper()
-    if price < 0 or currency != 'MYR':
+    if price <= 0 or currency != 'MYR':
         raise ValueError('Package has no supported authoritative currency.')
     if package.get('taxIncluded') is None and not package.get('taxNotes'):
         raise ValueError('Package tax and fee treatment is not established.')
@@ -40,3 +41,36 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None):
         'revision': package.get('updatedAt') or package.get('createdAt'),
         'snapshotCreatedAt': now or datetime.now(timezone.utc).isoformat(),
     }
+
+
+def create_package_attempt(claim, traveller_id, package, operator, idempotency_key,
+                           intended_trip=None, quantity=1, now=None):
+    """Atomically claim a future-payment attempt; never creates a checkout session."""
+    if not idempotency_key:
+        raise ValueError('An idempotency key is required.')
+    if intended_trip is not None and intended_trip.get('travellerId') != traveller_id:
+        raise ValueError('The intended trip is not owned by this traveller.')
+    snapshot = prepare_package_snapshot(package, operator, quantity, now)
+    destination = str(snapshot.get('destination') or '').strip().lower()
+    trip_destination = str((intended_trip or {}).get('destinationArea') or '').strip().lower()
+    if destination and trip_destination and destination not in trip_destination and trip_destination not in destination:
+        raise ValueError('Package destination is incompatible with the intended trip.')
+    attempt_id = 'package_checkout_' + hashlib.sha256(
+        f'{traveller_id}:{idempotency_key}'.encode()).hexdigest()[:24]
+    record = {
+        'id': attempt_id, 'attemptType': 'package_checkout', 'travellerId': traveller_id,
+        'idempotencyKey': idempotency_key, 'packageId': snapshot['packageId'],
+        'operatorId': snapshot['operatorId'], 'packageSnapshot': snapshot,
+        'amount': snapshot['price'], 'currency': snapshot['currency'],
+        'taxIncluded': snapshot['taxIncluded'], 'taxNotes': snapshot['taxNotes'],
+        'packageRevision': snapshot['revision'], 'quantity': quantity,
+        'intendedTripId': (intended_trip or {}).get('id'),
+        'checkoutStatus': 'checkout_pending', 'paymentStatus': 'payment_pending',
+        'fulfillmentStatus': 'fulfillment_pending', 'createdAt': snapshot['snapshotCreatedAt'],
+        'updatedAt': snapshot['snapshotCreatedAt'],
+    }
+    existing, created = claim('package_checkout_attempts', attempt_id, record)
+    if not created and (existing.get('packageId') != record['packageId'] or
+                        existing.get('intendedTripId') != record['intendedTripId']):
+        raise ValueError('Idempotency key is already bound to another package or trip.')
+    return existing, created
