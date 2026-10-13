@@ -25,6 +25,9 @@ void main() {
     'http://10.0.2.2:5000',
     'https://10.0.2.2',
     'https://10.0.3.2',
+    'https://192.168.1.5',
+    'https://172.20.10.5',
+    'https://api.travelmate.local',
     'https://user:password@backend.example',
     'https://backend.example?token=test',
     'https://backend.example#fragment',
@@ -45,6 +48,17 @@ void main() {
     expect(
       resolveApiBaseUrl('http://172.20.10.5:5000', release: false),
       'http://172.20.10.5:5000',
+    );
+  });
+
+  test('local demo accepts only a private-LAN HTTP API URL', () {
+    expect(
+      resolveApiBaseUrl('http://192.168.1.25:5000', localDemo: true),
+      'http://192.168.1.25:5000',
+    );
+    expect(
+      () => resolveApiBaseUrl('https://backend.example', localDemo: true),
+      throwsStateError,
     );
   });
 }

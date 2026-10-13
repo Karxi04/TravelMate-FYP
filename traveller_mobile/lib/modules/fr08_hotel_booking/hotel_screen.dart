@@ -8,18 +8,21 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import 'hotel_details_screen.dart';
+import 'hotel_trip_attachment.dart';
 import '../fr09_payment/payment_screen.dart';
 
 class HotelScreen extends StatefulWidget {
   final String? initialDestination;
   final String? initialCheckin;
   final String? initialCheckout;
+  final ApiService? api;
 
   const HotelScreen({
     super.key,
     this.initialDestination,
     this.initialCheckin,
     this.initialCheckout,
+    this.api,
   });
 
   @override
@@ -32,7 +35,7 @@ class _HotelScreenState extends State<HotelScreen> {
   late final TextEditingController checkout;
   final adults = TextEditingController(text: '2');
   final roomQuantity = TextEditingController(text: '1');
-  final api = ApiService();
+  late final ApiService api;
 
   List<dynamic> items = [];
   final Set<String> compareIds = {};
@@ -69,6 +72,7 @@ class _HotelScreenState extends State<HotelScreen> {
   @override
   void initState() {
     super.initState();
+    api = widget.api ?? ApiService();
     final start = DateTime.now().add(const Duration(days: 30));
     destination = TextEditingController(
         text: widget.initialDestination?.trim().isNotEmpty == true
@@ -380,7 +384,7 @@ class _HotelScreenState extends State<HotelScreen> {
 
     setState(() => busy = true);
     try {
-      final data = await api.post('/api/fr8/hotels/book', {
+      final bookingRequest = <String, dynamic>{
         'hotelBookingAttemptId': attemptId,
         'validationId': validationId,
         'holder': {
@@ -403,7 +407,8 @@ class _HotelScreenState extends State<HotelScreen> {
             int.tryParse(roomQuantity.text.trim()) ??
             1,
         'hotelCost': hotel['price'] ?? 0,
-      });
+      };
+      var data = await api.post('/api/fr8/hotels/book', bookingRequest);
       if (!mounted) return;
       setState(() => lastBooking = data['booking'] is Map
           ? Map<String, dynamic>.from(data['booking'] as Map)
@@ -415,6 +420,94 @@ class _HotelScreenState extends State<HotelScreen> {
           ),
         ));
         return;
+      }
+      if (itinerary != null) {
+        var attachmentOutcome = hotelTripAttachmentOutcome(
+            lastBooking?['itineraryAttachmentStatus']);
+        if (attachmentOutcome == HotelTripAttachmentOutcome.unverified) {
+          final acknowledge = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Compatibility cannot be verified'),
+              content: const Text(
+                  'This hotel booking was created before Trip compatibility information was recorded. We cannot verify that its dates and destination match your selected Trip.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Add Anyway')),
+              ],
+            ),
+          );
+          if (acknowledge == true) {
+            data = await api.post('/api/fr8/hotels/book', {
+              ...bookingRequest,
+              'acknowledgeCompatibilityUnverified': true,
+            });
+            if (!mounted) return;
+            setState(() => lastBooking = data['booking'] is Map
+                ? Map<String, dynamic>.from(data['booking'] as Map)
+                : lastBooking);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Booking created, but it was not added to the trip.'),
+            ));
+          }
+        }
+        attachmentOutcome = hotelTripAttachmentOutcome(
+            lastBooking?['itineraryAttachmentStatus']);
+        final attachmentError =
+            lastBooking?['itineraryAttachmentError']?.toString();
+        if (attachmentOutcome == HotelTripAttachmentOutcome.attached) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Hotel booking added to the trip budget.'),
+          ));
+        } else if (attachmentOutcome == HotelTripAttachmentOutcome.incompatible ||
+            attachmentOutcome == HotelTripAttachmentOutcome.failed) {
+          final chooseAnotherTrip = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Hotel was not added to this trip'),
+              content: Text(attachmentError?.isNotEmpty == true
+                  ? attachmentError!
+                  : 'The hotel booking could not be added to the selected trip.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Choose another trip')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Continue')),
+              ],
+            ),
+          );
+          if (chooseAnotherTrip == true) {
+            final replacement = await chooseItinerary();
+            if (replacement != null) {
+              data = await api.post('/api/fr8/hotels/book', {
+                ...bookingRequest,
+                'itineraryId': replacement['id'],
+              });
+              if (!mounted) return;
+              setState(() => lastBooking = data['booking'] is Map
+                  ? Map<String, dynamic>.from(data['booking'] as Map)
+                  : lastBooking);
+              if (hotelTripAttachmentOutcome(
+                      lastBooking?['itineraryAttachmentStatus']) ==
+                  HotelTripAttachmentOutcome.attached) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Hotel booking added to the trip budget.'),
+                ));
+              } else {
+                showError(context,
+                    lastBooking?['itineraryAttachmentError'] ??
+                        'The hotel booking was not added to the selected trip.');
+              }
+            }
+          }
+        }
       }
       final ref = lastBooking?['bookingReference'] ?? '-';
       final simulated = lastBooking?['isSimulated'] == true;

@@ -1,15 +1,16 @@
 import os
 import sys
+import ipaddress
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from flask import Flask, jsonify
+from flask import Flask, abort, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
-from firebase_service import init_firebase
+from firebase_service import get_db, init_firebase
 from auth_utils import auth_required
 from services.stripe_service import stripePaymentMode
 from request_rate_limit import init_rate_limiter
@@ -35,9 +36,35 @@ def _allowed_cors_origins():
     return origins
 
 
+def local_lan_network(environ=None):
+    source = environ if environ is not None else os.environ
+    environment = str(source.get("APP_ENV", "development")).strip().lower()
+    enabled = str(source.get("LOCAL_LAN_DEMO", "")).strip().lower() in {"1", "true", "yes", "on"}
+    if not enabled:
+        return None
+    if environment not in {"development", "dev", "local", "demo"}:
+        raise RuntimeError("LOCAL_LAN_DEMO is allowed only in an explicit local environment")
+    cidr = str(source.get("TRUSTED_LAN_CIDR", "")).strip()
+    try:
+        network = ipaddress.ip_network(cidr, strict=False)
+    except ValueError as exc:
+        raise RuntimeError("LOCAL_LAN_DEMO requires a valid TRUSTED_LAN_CIDR") from exc
+    if network.version != 4 or not network.network_address.is_private:
+        raise RuntimeError("TRUSTED_LAN_CIDR must be a private IPv4 network")
+    return network
+
+
 def create_app():
     app = Flask(__name__)
-    init_rate_limiter(app)
+    trusted_lan = local_lan_network()
+    if trusted_lan:
+        @app.before_request
+        def allow_only_trusted_lan():
+            peer = ipaddress.ip_address(request.remote_addr or "")
+            if peer.is_loopback or peer in trusted_lan:
+                return None
+            abort(403)
+    init_rate_limiter(app, db_factory=get_db)
     origins = _allowed_cors_origins()
     if origins:
         CORS(app, origins=origins, supports_credentials=False)
@@ -88,8 +115,9 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
+    bind_host = "0.0.0.0" if local_lan_network() else "127.0.0.1"
     app.run(
-        host="0.0.0.0",
+        host=bind_host,
         port=int(os.getenv("PORT", "5000")),
         debug=_truthy("FLASK_DEBUG"),
     )

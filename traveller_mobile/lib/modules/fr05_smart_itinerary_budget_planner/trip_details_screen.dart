@@ -454,6 +454,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                   initialCheckin: (t['startDate'] ?? '').toString(),
                   initialCheckout: (t['endDate'] ?? '').toString(),
                 )));
+    if (mounted) await load();
   }
 
   Future<void> _removeFlight() async {
@@ -1572,16 +1573,19 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         SecondaryButton(
           label: 'Hotels',
           icon: Icons.hotel_rounded,
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => HotelScreen(
-                initialDestination: (t['destinationArea'] ?? '').toString(),
-                initialCheckin: (t['startDate'] ?? '').toString(),
-                initialCheckout: (t['endDate'] ?? '').toString(),
+          onPressed: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => HotelScreen(
+                  initialDestination: (t['destinationArea'] ?? '').toString(),
+                  initialCheckin: (t['startDate'] ?? '').toString(),
+                  initialCheckout: (t['endDate'] ?? '').toString(),
+                ),
               ),
-            ),
-          ),
+            );
+            if (mounted) await load();
+          },
         ),
         SecondaryButton(
           label: 'Car rental',
