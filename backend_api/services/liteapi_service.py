@@ -367,6 +367,9 @@ def normalizeHotelOffers(result):
             rating = content.get('rating') or content.get('reviewScore') or group.get('rating') or 0
             room_name = room.get('roomName') or room.get('name') or room.get('roomType') or rate.get('roomName') or 'Available room'
             board = rate.get('boardName') or rate.get('boardType') or room.get('boardName') or ''
+            room_images = room.get('imageUrls') or room.get('images') or room.get('photos') or []
+            if not isinstance(room_images, list):
+                room_images = []
             items.append({
                 'hotelId': hotel_id,
                 'name': name,
@@ -387,6 +390,13 @@ def normalizeHotelOffers(result):
                 'taxesAndFeesStatus': _fees(rate, room),
                 'offerId': offer_id,
                 'mainPhoto': photo,
+                # Optional provider fields remain absent when LiteAPI does not supply them.
+                'roomImageUrls': [str(image.get('url') if isinstance(image, dict) else image)
+                                  for image in room_images if image],
+                'bedType': room.get('bedType') or room.get('bed_type'),
+                'roomSize': room.get('roomSize') or room.get('size'),
+                'maxOccupancy': room.get('maxOccupancy') or room.get('maxGuests'),
+                'roomAmenities': room.get('amenities') if isinstance(room.get('amenities'), list) else [],
             })
 
     # Some accounts/API response versions place an offer directly on the hotel record.
