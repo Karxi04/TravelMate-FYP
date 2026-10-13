@@ -12,12 +12,16 @@ def create_attempt():
     package = retrieveRecord('tourism_packages', str(payload.get('packageId') or ''))
     trip_id = str(payload.get('intendedTripId') or '').strip()
     trip = retrieveRecord('itineraries', trip_id) if trip_id else None
+    if trip_id and not trip:
+        return jsonify({'ok': False, 'error': 'The intended trip was not found.'}), 404
     try:
         attempt, created = create_package_attempt(claimRecord, g.uid, package or {},
             retrieveRecord('users', (package or {}).get('operatorId')) or {},
             str(payload.get('idempotencyKey') or ''), trip, payload.get('quantity', 1))
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 409
+    except Exception:
+        return jsonify({'ok': False, 'error': 'Package checkout preparation is temporarily unavailable.'}), 503
     return jsonify({'ok': True, 'attempt': attempt, 'reused': not created})
 
 @bp.get('/<attempt_id>')
