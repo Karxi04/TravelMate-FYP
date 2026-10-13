@@ -58,6 +58,14 @@ class HotelDetailsScreen extends StatelessWidget {
         .where((e) => e.isNotEmpty)
         .take(6)
         .toList();
+    final roomImages = (hotel['roomImageUrls'] as List? ?? [])
+        .map((e) => e.toString())
+        .where((e) => e.isNotEmpty)
+        .take(6)
+        .toList();
+    final roomAmenities = (hotel['roomAmenities'] as List? ?? [])
+        .map((e) => e.toString())
+        .toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Hotel details')),
@@ -86,7 +94,7 @@ class HotelDetailsScreen extends StatelessWidget {
               FilledButton.icon(
                   onPressed: onProceed,
                   icon: const Icon(Icons.hotel_class_outlined),
-                  label: const Text('Continue')),
+                  label: const Text('Select room')),
             ],
           ),
         ),
@@ -166,6 +174,8 @@ class HotelDetailsScreen extends StatelessWidget {
                 row('Bed', hotel['bedType'], icon: Icons.king_bed_outlined),
                 row('Room size', hotel['roomSize'],
                     icon: Icons.square_foot_rounded),
+                row('Maximum guests', hotel['maxOccupancy'],
+                    icon: Icons.people_outline_rounded),
                 row('Board', hotel['boardName'],
                     icon: Icons.restaurant_outlined),
                 row('Check-in',
@@ -193,6 +203,31 @@ class HotelDetailsScreen extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 18),
+          const TravelSectionHeader(title: 'Selected room photos'),
+          const SizedBox(height: 8),
+          if (roomImages.isEmpty)
+            const InkCard(
+                child: Text('Room photos unavailable from this provider offer.'))
+          else
+            SizedBox(
+              height: 170,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: roomImages.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (_, index) => ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.network(roomImages[index], width: 240, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(width: 240, color: InkWashColors.cream,
+                          alignment: Alignment.center, child: const Icon(Icons.bed_outlined, size: 40))),
+                ),
+              ),
+            ),
+          if (roomAmenities.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('Room facilities: ${roomAmenities.join(' • ')}'),
+          ],
           const SizedBox(height: 18),
           const TravelSectionHeader(title: 'Amenities'),
           const SizedBox(height: 8),
