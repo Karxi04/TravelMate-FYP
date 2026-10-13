@@ -23,11 +23,17 @@ from services.transaction_reliability import (
     operation_document_id,
     provider_idempotency_key,
 )
+from services.package_checkout_contract import (
+    package_amount_minor_units,
+    package_trip_compatible,
+)
 from sequence_contract.validators import validatePaymentInput
 from sequence_contract.firebase_firestore import claimRecord, retrieveRecord, updateRecord
 
 bp = Blueprint('fr09_payments', __name__, url_prefix='/api/fr9')
 ORDER_COLLECTION = 'checkout_orders'
+PACKAGE_ATTEMPT_COLLECTION = 'package_checkout_attempts'
+PACKAGE_FULFILLMENT_COLLECTION = 'package_fulfillments'
 
 
 def _legacy_payment_mutations_enabled():
@@ -195,7 +201,7 @@ def _apply_checkout_session(record, session):
     status, payment_status = _order_status_from_session(session)
     amount_total = _stripe_value(session, 'amount_total')
     currency = str(_stripe_value(session, 'currency', '') or '').upper()
-    expected_cents = int(round(float(record.get('amount') or 0) * 100))
+    expected_cents = int(record.get('amountMinor') or round(float(record.get('amount') or 0) * 100))
     if amount_total is not None and int(amount_total) != expected_cents:
         status = 'payment_mismatch'
     if currency and currency != str(record.get('currency') or '').upper():
@@ -208,6 +214,141 @@ def _apply_checkout_session(record, session):
         'reconciliationRequired': status in {'checkout_open', 'payment_pending', 'payment_mismatch'},
         'updatedAt': utc_now_iso(),
     }
+
+
+def _package_attempt_for_checkout(attempt_id):
+    attempt = retrieveRecord(PACKAGE_ATTEMPT_COLLECTION, attempt_id)
+    if not attempt or attempt.get('travellerId') != g.uid:
+        raise PermissionError('Package checkout attempt was not found.')
+    snapshot = attempt.get('packageSnapshot') or {}
+    package_amount_minor_units(snapshot)
+    if str(attempt.get('checkoutStatus') or '').lower() in {'paid', 'cancelled', 'expired'}:
+        raise ValueError('This package checkout attempt is no longer payable.')
+    return attempt, snapshot
+
+
+def _package_order_document_id(attempt_id):
+    return operation_document_id('package_checkout_order', g.uid, attempt_id)
+
+
+def _fulfill_package_order(order):
+    """Attach one immutable package snapshot once; payment is never rolled back here."""
+    attempt_id = str(order.get('packageAttemptId') or '')
+    attempt = retrieveRecord(PACKAGE_ATTEMPT_COLLECTION, attempt_id)
+    if not attempt or attempt.get('travellerId') != order.get('travellerId'):
+        return {'fulfillmentStatus': 'fulfillment_failed', 'fulfillmentRetryRequired': True,
+                'fulfillmentError': 'The package purchase intent is unavailable.'}
+    trip_id = str(attempt.get('intendedTripId') or '')
+    trip = retrieveRecord('itineraries', trip_id) if trip_id else None
+    if not trip:
+        return {'fulfillmentStatus': 'fulfillment_pending', 'fulfillmentRetryRequired': True,
+                'fulfillmentError': 'No valid Trip is currently bound to this package payment.'}
+    snapshot = attempt.get('packageSnapshot') or {}
+    if trip.get('travellerId') != order.get('travellerId') or not package_trip_compatible(snapshot, trip):
+        return {'fulfillmentStatus': 'fulfillment_failed', 'fulfillmentRetryRequired': True,
+                'fulfillmentError': 'The current Trip cannot safely receive this package.'}
+    fulfillment_id = operation_document_id('package_fulfillment', order['travellerId'], attempt_id)
+    claimed, created = claimRecord(PACKAGE_FULFILLMENT_COLLECTION, fulfillment_id, {
+        'id': fulfillment_id, 'travellerId': order['travellerId'], 'checkoutOrderId': order['id'],
+        'packageAttemptId': attempt_id, 'tripId': trip_id, 'status': 'fulfillment_pending',
+        'createdAt': utc_now_iso(), 'updatedAt': utc_now_iso(),
+    })
+    purchases = list(trip.get('purchasedPackages') or [])
+    attached = next((item for item in purchases if isinstance(item, dict) and
+                     item.get('packageAttemptId') == attempt_id), None)
+    if not attached:
+        association = {
+            'packageAttemptId': attempt_id, 'checkoutOrderId': order['id'],
+            'packageId': snapshot.get('packageId'), 'operatorId': snapshot.get('operatorId'),
+            'packageSnapshot': snapshot, 'fulfilledAt': utc_now_iso(),
+        }
+        purchases.append(association)
+        updateRecord('itineraries', trip_id, {'purchasedPackages': purchases, 'updatedAt': utc_now_iso()})
+    if created or claimed.get('status') != 'fulfilled':
+        updateRecord(PACKAGE_FULFILLMENT_COLLECTION, fulfillment_id, {
+            'status': 'fulfilled', 'updatedAt': utc_now_iso(),
+        })
+    return {'fulfillmentStatus': 'fulfilled', 'fulfillmentRetryRequired': False,
+            'fulfilledTripId': trip_id}
+
+
+def _apply_package_payment(order, session):
+    patch = _apply_checkout_session(order, session)
+    if patch['status'] != 'paid':
+        return patch
+    fulfillment = _fulfill_package_order(order)
+    updateRecord(PACKAGE_ATTEMPT_COLLECTION, order['packageAttemptId'], {
+        'checkoutStatus': 'checkout_complete', 'paymentStatus': 'paid',
+        **fulfillment, 'updatedAt': utc_now_iso(),
+    })
+    return {**patch, **fulfillment}
+
+
+@bp.post('/package-checkout-attempts/<attempt_id>/checkout/session')
+@auth_required(['traveller'])
+def create_package_checkout_session(attempt_id):
+    try:
+        attempt, snapshot = _package_attempt_for_checkout(attempt_id)
+    except PermissionError:
+        return jsonify({'ok': False, 'error': 'Package checkout attempt was not found.'}), 404
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 409
+    minor_units = package_amount_minor_units(snapshot)
+    order_id = _package_order_document_id(attempt_id)
+    now = utc_now_iso()
+    record = {
+        'id': order_id, 'travellerId': g.uid, 'orderAttemptId': attempt_id,
+        'packageAttemptId': attempt_id, 'quoteType': 'package',
+        'packageId': snapshot.get('packageId'), 'operatorId': snapshot.get('operatorId'),
+        'packageSnapshot': snapshot, 'amount': minor_units / 100,
+        'amountMinor': minor_units, 'currency': 'MYR', 'taxIncluded': snapshot.get('taxIncluded'),
+        'taxNotes': snapshot.get('taxNotes'), 'status': 'checkout_pending',
+        'paymentStatus': 'unpaid', 'fulfillmentStatus': 'fulfillment_pending',
+        'provider': 'stripe_checkout_test',
+        'providerIdempotencyKey': provider_idempotency_key('package_checkout', g.uid, attempt_id, 'session'),
+        'createdAt': now, 'updatedAt': now,
+    }
+    try:
+        claimed, created = claimRecord(ORDER_COLLECTION, order_id, record)
+    except Exception:
+        return jsonify({'ok': False, 'error': 'Order storage is unavailable. Try again later.'}), 503
+    if claimed.get('travellerId') != g.uid:
+        return jsonify({'ok': False, 'error': 'This order is not owned by the current traveller.'}), 403
+    if claimed.get('packageAttemptId') != attempt_id or str(claimed.get('amountMinor')) != str(minor_units):
+        return jsonify({'ok': False, 'error': 'Package checkout attempt is already bound to another order.'}), 409
+    if str(claimed.get('status') or '').lower() == 'paid':
+        return jsonify({'ok': False, 'error': 'This package Checkout order has already been paid.'}), 409
+    if claimed.get('checkoutSessionId') and claimed.get('checkoutUrl'):
+        return jsonify({'ok': True, 'order': _safe_order(claimed), 'reused': True})
+    try:
+        session = createCheckoutSession(
+            snapshot['price'], 'MYR', g.uid, order_id,
+            _configured_checkout_url('STRIPE_CHECKOUT_SUCCESS_URL',
+                'http://127.0.0.1:5000/api/fr9/checkout/return/success?session_id={CHECKOUT_SESSION_ID}'),
+            _configured_checkout_url('STRIPE_CHECKOUT_CANCEL_URL',
+                'http://127.0.0.1:5000/api/fr9/checkout/return/cancel?session_id={CHECKOUT_SESSION_ID}'),
+            metadata={'packageAttemptId': attempt_id, 'quoteType': 'package'},
+            idempotency_key=claimed['providerIdempotencyKey'],
+            product_name=f"TravelMate package test order: {snapshot.get('title') or snapshot.get('packageId')}",
+        )
+        session_id, checkout_url = str(_stripe_value(session, 'id', '') or ''), str(_stripe_value(session, 'url', '') or '')
+        if not session_id or not checkout_url:
+            raise RuntimeError('Stripe did not return a Checkout URL.')
+        patch = {'checkoutSessionId': session_id, 'checkoutUrl': checkout_url,
+                 'status': 'checkout_open', 'updatedAt': utc_now_iso()}
+        updated = updateRecord(ORDER_COLLECTION, order_id, patch) or {**claimed, **patch}
+        updateRecord(PACKAGE_ATTEMPT_COLLECTION, attempt_id, {
+            'checkoutStatus': 'checkout_open', 'checkoutOrderId': order_id,
+            'updatedAt': utc_now_iso(),
+        })
+        return jsonify({'ok': True, 'order': _safe_order(updated), 'reused': not created})
+    except Exception as exc:
+        if is_ambiguous_provider_error(exc):
+            updateRecord(ORDER_COLLECTION, order_id, {'reconciliationRequired': True, 'updatedAt': utc_now_iso()})
+            return jsonify({'ok': True, 'order': _safe_order(claimed), 'reconciliationRequired': True}), 202
+        updateRecord(ORDER_COLLECTION, order_id, {'status': 'checkout_failed',
+            'failureReason': 'Stripe Checkout could not be created.', 'updatedAt': utc_now_iso()})
+        return jsonify({'ok': False, 'error': 'Stripe Checkout is unavailable. Configure Stripe test mode and try again.'}), 502
 
 
 @bp.post('/checkout/session')
@@ -315,7 +456,9 @@ def checkout_return(outcome):
         record = retrieveRecord(ORDER_COLLECTION, order_id)
         if not order_id or not record or record.get('checkoutSessionId') != session_id:
             raise ValueError('Checkout session is not bound to a TravelMate order.')
-        patch = _apply_checkout_session(record, session)
+        patch = (_apply_package_payment(record, session)
+                 if record.get('quoteType') == 'package'
+                 else _apply_checkout_session(record, session))
         updated = updateRecord(ORDER_COLLECTION, order_id, patch) or {**record, **patch}
         status = str(updated.get('status') or '').lower()
         if status == 'paid':
@@ -367,7 +510,9 @@ def reconcile_order(order_id):
         return jsonify({'ok': True, 'order': _safe_order(record), 'reconciliationRequired': True}), 202
     try:
         session = retrieveCheckoutSession(session_id)
-        patch = _apply_checkout_session(record, session)
+        patch = (_apply_package_payment(record, session)
+                 if record.get('quoteType') == 'package'
+                 else _apply_checkout_session(record, session))
         updated = updateRecord(ORDER_COLLECTION, order_id, patch) or {**record, **patch}
         status_code = 202 if patch['reconciliationRequired'] else 200
         return jsonify({'ok': True, 'order': _safe_order(updated), 'reused': True}), status_code
@@ -394,7 +539,11 @@ def stripe_webhook():
     record = retrieveRecord(ORDER_COLLECTION, order_id)
     if not record:
         return jsonify({'ok': True, 'ignored': True})
-    if str(record.get('status') or '').lower() == 'paid':
+    if record.get('quoteType') == 'package':
+        if (str(metadata.get('packageAttemptId') or '') != str(record.get('packageAttemptId') or '') or
+                str(_stripe_value(data, 'id', '') or '') != str(record.get('checkoutSessionId') or '')):
+            return jsonify({'ok': False, 'error': 'Stripe event does not match checkout order.'}), 400
+    if str(record.get('status') or '').lower() == 'paid' and record.get('quoteType') != 'package':
         return jsonify({'ok': True, 'received': True, 'ignored': True})
     if event_type in {'checkout.session.completed', 'checkout.session.async_payment_succeeded',
                       'checkout.session.async_payment_failed', 'checkout.session.expired'}:
@@ -403,8 +552,17 @@ def stripe_webhook():
         elif event_type == 'checkout.session.expired':
             patch = {'status': 'expired', 'paymentStatus': 'unpaid', 'updatedAt': utc_now_iso()}
         else:
-            patch = _apply_checkout_session(record, data)
+            patch = (_apply_package_payment(record, data)
+                     if record.get('quoteType') == 'package'
+                     else _apply_checkout_session(record, data))
         updateRecord(ORDER_COLLECTION, order_id, patch)
+        if record.get('quoteType') == 'package' and event_type in {
+            'checkout.session.async_payment_failed', 'checkout.session.expired',
+        }:
+            updateRecord(PACKAGE_ATTEMPT_COLLECTION, record['packageAttemptId'], {
+                'checkoutStatus': patch['status'], 'paymentStatus': patch['paymentStatus'],
+                'fulfillmentStatus': 'fulfillment_pending', 'updatedAt': utc_now_iso(),
+            })
     return jsonify({'ok': True, 'received': True})
 
 

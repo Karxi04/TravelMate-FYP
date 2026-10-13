@@ -1,6 +1,7 @@
 import os
 import hashlib
 import uuid
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import stripe
 
 
@@ -87,6 +88,16 @@ def _simulation_id(idempotency_key):
     return f"pi_sim_{uuid.uuid4().hex[:16]}"
 
 
+def checkout_minor_units(amount_rm):
+    try:
+        amount = Decimal(str(amount_rm)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError('Checkout amount must be positive.')
+    if amount <= 0:
+        raise ValueError('Checkout amount must be positive.')
+    return int(amount * 100)
+
+
 def processPaymentAttempt(paymentInput, travellerId, bookingId, idempotencyKey):
     """Create and confirm exactly one authoritative payment attempt."""
     has_live_key = _setup()
@@ -148,16 +159,14 @@ def createCheckoutSession(amount_rm, currency, traveller_id, order_id,
     """Create one Stripe-hosted test Checkout Session; never falls back to simulation."""
     if not _setup():
         raise RuntimeError('Stripe Checkout requires an sk_test_ credential.')
-    amount = float(amount_rm)
-    if amount <= 0:
-        raise ValueError('Checkout amount must be positive.')
+    amount_minor = checkout_minor_units(amount_rm)
     return stripe.checkout.Session.create(
         mode='payment',
         line_items=[{
             'price_data': {
                 'currency': str(currency).lower(),
                 'product_data': {'name': product_name},
-                'unit_amount': int(round(amount * 100)),
+                'unit_amount': amount_minor,
             },
             'quantity': 1,
         }],
