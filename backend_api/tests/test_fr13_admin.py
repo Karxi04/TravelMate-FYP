@@ -23,6 +23,27 @@ def test_admin_users_access(client, mock_admin_auth):
         assert data['ok'] is True
         assert len(data['items']) == 2
 
+
+def test_admin_payment_history_is_forbidden_for_traveller(client, mock_traveller_auth):
+    forbidden = client.get('/api/fr13/payments', headers={'Authorization': 'Bearer valid_test_token'})
+    assert forbidden.status_code == 403
+
+
+def test_admin_payment_history_filters_package_orders(client, mock_admin_auth):
+    orders = [{
+        'id': 'order-package-1', 'quoteType': 'package', 'travellerId': 'traveller-1',
+        'paymentStatus': 'paid', 'createdAt': '2026-10-13T10:00:00Z',
+        'packageSnapshot': {'title': 'Penang Heritage Escape'},
+    }]
+    with patch('modules.fr13_administrator_management.routes.retrieveRecord',
+               side_effect=lambda collection: orders if collection == 'checkout_orders' else []):
+        response = client.get('/api/fr13/payments?product=package&q=heritage',
+                              headers={'Authorization': 'Bearer valid_test_token'})
+    assert response.status_code == 200
+    assert response.get_json()['items'] == [{
+        **orders[0], 'productType': 'package', 'productTitle': 'Penang Heritage Escape'
+    }]
+
 def test_admin_review_package(client, mock_admin_auth):
     sample_pkg = {
         'id': 'pkg_pending_1',

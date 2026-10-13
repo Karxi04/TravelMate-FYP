@@ -20,6 +20,8 @@ class PaymentScreen extends StatefulWidget {
   final String offerId;
   final String searchId;
   final String optionId;
+  final String packageAttemptId;
+  final ApiService? api;
 
   const PaymentScreen({
     super.key,
@@ -30,6 +32,8 @@ class PaymentScreen extends StatefulWidget {
     this.offerId = '',
     this.searchId = '',
     this.optionId = '',
+    this.packageAttemptId = '',
+    this.api,
   });
 
   @override
@@ -44,7 +48,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   final expiry = TextEditingController();
   final cvc = TextEditingController();
   final billingEmail = TextEditingController();
-  final api = ApiService();
+  late final ApiService api;
 
   Map<String, dynamic>? result;
   List<dynamic> history = [];
@@ -54,11 +58,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
   final paymentAttempt = TransactionAttemptLifecycle('payment');
   final checkoutAttempts = CheckoutAttemptStore();
 
-  bool get hostedCheckout => widget.quoteType.isNotEmpty && !api.isStandalone;
+  bool get hostedCheckout =>
+      (widget.quoteType.isNotEmpty || widget.packageAttemptId.isNotEmpty) && !api.isStandalone;
 
   @override
   void initState() {
     super.initState();
+    api = widget.api ?? ApiService();
     bookingId = TextEditingController(text: widget.initialBookingReference);
     amount = TextEditingController(
         text: widget.initialAmount?.toStringAsFixed(2) ?? '100.00');
@@ -101,7 +107,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     if (busy) return;
     setState(() => busy = true);
     try {
-      final scope = [
+      final scope = widget.packageAttemptId.isNotEmpty ? widget.packageAttemptId : [
         widget.quoteType,
         widget.quoteId,
         widget.offerId,
@@ -119,7 +125,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
       });
       if (terminalOrder) await checkoutAttempts.clear(scope);
       final attemptId = await checkoutAttempts.loadOrCreate(scope);
-      final data = await api.post('/api/fr9/checkout/session', {
+      final data = await api.post(widget.packageAttemptId.isNotEmpty
+          ? '/api/fr9/package-checkout-attempts/${widget.packageAttemptId}/checkout/session'
+          : '/api/fr9/checkout/session', {
+        if (widget.packageAttemptId.isEmpty)
         'orderAttemptId': attemptId,
         'quoteType': widget.quoteType,
         if (widget.quoteType == 'hotel') ...{

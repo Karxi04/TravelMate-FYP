@@ -1,14 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/core/operator_content/package_details_screen.dart';
+import 'package:travelmate_traveller/services/api_service.dart';
+
+class _PackageDetailsApi extends ApiService {
+  @override
+  Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (path == '/api/fr5/itineraries') {
+      return {
+        'items': [
+          {'id': 'trip-1', 'title': 'Penang trip', 'destinationArea': 'Penang'}
+        ]
+      };
+    }
+    return {'items': []};
+  }
+}
 
 void main() {
   testWidgets('complete package shows traveller-ready product details',
       (tester) async {
-    var added = false;
+    var legacyCallbackCalled = false;
     await tester.pumpWidget(MaterialApp(
       home: TourismPackageDetailsScreen(
         item: {
+          'id': 'package-1',
           'title': 'Penang Heritage Escape',
           'destination': 'George Town, Penang',
           'fullDescription': 'A guided two-day local experience.',
@@ -39,7 +55,8 @@ void main() {
           'cancellationPolicy': 'Cancel seven days before departure.',
           'operatorName': 'Penang Local Tours',
         },
-        onAddToTrip: () => added = true,
+        api: _PackageDetailsApi(),
+        onAddToTrip: () => legacyCallbackCalled = true,
       ),
     ));
 
@@ -60,8 +77,10 @@ void main() {
     await tester.scrollUntilVisible(find.text('Tourism Operator'), 300,
         scrollable: find.byType(Scrollable).first);
     expect(find.text('Tourism Operator'), findsOneWidget);
-    await tester.tap(find.text('Add package to trip'));
-    expect(added, isTrue);
+    await tester.tap(find.text('Checkout package'));
+    await tester.pumpAndSettle();
+    expect(find.text('Penang trip'), findsOneWidget);
+    expect(legacyCallbackCalled, isFalse);
   });
 
   testWidgets('legacy package stays readable and omits empty placeholders',
