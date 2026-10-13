@@ -83,6 +83,8 @@ def test_package_checkout_rejects_unowned_or_invalid_attempt(client, package_pay
         'travellerId': 'traveller-1', 'packageSnapshot': {'price': 0, 'currency': 'MYR'},
     })
     assert start_checkout(client, headers).status_code == 409
+    seed_attempt(memory, paymentStatus='paid')
+    assert start_checkout(client, headers).status_code == 409
 
 
 def test_package_checkout_timeout_is_pending_not_false_success(client, package_payment):

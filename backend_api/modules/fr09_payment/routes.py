@@ -222,7 +222,8 @@ def _package_attempt_for_checkout(attempt_id):
         raise PermissionError('Package checkout attempt was not found.')
     snapshot = attempt.get('packageSnapshot') or {}
     package_amount_minor_units(snapshot)
-    if str(attempt.get('checkoutStatus') or '').lower() in {'paid', 'cancelled', 'expired'}:
+    if (str(attempt.get('checkoutStatus') or '').lower() in {'paid', 'cancelled', 'expired'} or
+            str(attempt.get('paymentStatus') or '').lower() in {'paid', 'succeeded'}):
         raise ValueError('This package checkout attempt is no longer payable.')
     return attempt, snapshot
 
