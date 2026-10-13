@@ -81,7 +81,6 @@ def package_api(client, monkeypatch):
 
     monkeypatch.setattr("auth_utils.auth.verify_id_token", verify)
     monkeypatch.setattr("auth_utils.get_db", user_database)
-    monkeypatch.setattr("auth_utils.rate_limit_response", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("modules.fr15_package_checkout.routes.retrieveRecord", memory.retrieve)
     monkeypatch.setattr("modules.fr15_package_checkout.routes.claimRecord", memory.claim)
 
@@ -182,6 +181,19 @@ def test_route_concurrent_retries_produce_one_atomic_attempt(app, package_api):
     assert len({body["attempt"]["id"] for body in bodies}) == 1
     assert sum(not body["reused"] for body in bodies) == 1
     assert len(memory.collections["package_checkout_attempts"]) == 1
+
+
+def test_route_applies_existing_payment_mutation_rate_limit(app, client, package_api):
+    memory, _identity, headers = package_api
+    seed_package(memory)
+    limiter = app.extensions["request_rate_limiter"]
+    limiter.limits["payment_mutation"] = 1
+    first = post(client, headers(), packageId="package-1", idempotencyKey="rate-first")
+    limited = post(client, headers(), packageId="package-1", idempotencyKey="rate-second")
+    assert first.status_code == 200
+    assert limited.status_code == 429
+    assert limited.headers["Retry-After"]
+    assert limited.get_json()["retryAfterSeconds"] >= 1
 
 
 def test_route_get_is_owner_only(client, package_api):
