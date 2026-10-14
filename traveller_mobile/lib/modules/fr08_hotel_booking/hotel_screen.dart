@@ -15,6 +15,9 @@ class HotelScreen extends StatefulWidget {
   final String? initialDestination;
   final String? initialCheckin;
   final String? initialCheckout;
+  final int? initialAdults;
+  final int? initialChildren;
+  final bool requiresGuestConfirmation;
   final ApiService? api;
 
   const HotelScreen({
@@ -22,6 +25,9 @@ class HotelScreen extends StatefulWidget {
     this.initialDestination,
     this.initialCheckin,
     this.initialCheckout,
+    this.initialAdults,
+    this.initialChildren,
+    this.requiresGuestConfirmation = false,
     this.api,
   });
 
@@ -33,7 +39,8 @@ class _HotelScreenState extends State<HotelScreen> {
   late final TextEditingController destination;
   late final TextEditingController checkin;
   late final TextEditingController checkout;
-  final adults = TextEditingController(text: '2');
+  late final TextEditingController adults;
+  late final TextEditingController children;
   final roomQuantity = TextEditingController(text: '1');
   late final ApiService api;
 
@@ -86,6 +93,11 @@ class _HotelScreenState extends State<HotelScreen> {
         text: widget.initialCheckout?.trim().isNotEmpty == true
             ? widget.initialCheckout!.trim()
             : dateText(start.add(const Duration(days: 2))));
+    adults = TextEditingController(
+        text: widget.requiresGuestConfirmation && widget.initialAdults == null
+            ? ''
+            : '${widget.initialAdults ?? 2}');
+    children = TextEditingController(text: '${widget.initialChildren ?? 0}');
   }
 
   @override
@@ -94,6 +106,7 @@ class _HotelScreenState extends State<HotelScreen> {
     checkin.dispose();
     checkout.dispose();
     adults.dispose();
+    children.dispose();
     roomQuantity.dispose();
     super.dispose();
   }
@@ -116,14 +129,29 @@ class _HotelScreenState extends State<HotelScreen> {
       showError(context, 'Check-out must be after check-in.');
       return;
     }
+    if (widget.requiresGuestConfirmation && adults.text.trim().isEmpty) {
+      showError(context,
+          'Confirm the number of adults before searching for this Trip.');
+      return;
+    }
     final adultCount = int.tryParse(adults.text.trim()) ?? 0;
+    final childCount = int.tryParse(children.text.trim()) ?? -1;
     final roomCount = int.tryParse(roomQuantity.text.trim()) ?? 0;
     if (adultCount <= 0) {
       showError(context, 'Adults must be at least 1.');
       return;
     }
+    if (childCount < 0) {
+      showError(context, 'Children cannot be negative.');
+      return;
+    }
     if (roomCount <= 0) {
       showError(context, 'Rooms must be at least 1.');
+      return;
+    }
+    if (childCount > 0 && roomCount != 1) {
+      showError(context,
+          'Choose one room or confirm room-by-room guest ages before searching.');
       return;
     }
     setState(() {
@@ -137,7 +165,12 @@ class _HotelScreenState extends State<HotelScreen> {
         'checkin': checkin.text.trim(),
         'checkout': checkout.text.trim(),
         'adults': adultCount,
+        'children': childCount,
         'roomQuantity': roomCount,
+        if (roomCount == 1)
+          'occupancies': [
+            {'adults': adultCount, if (childCount > 0) 'children': childCount}
+          ],
         'currency': 'MYR',
         'guestNationality': 'MY',
         'refundable': refundableOnly,
@@ -693,6 +726,17 @@ class _HotelScreenState extends State<HotelScreen> {
               controller: adults,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Adults')),
+          const SizedBox(height: 9),
+          TextField(
+              controller: children,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Children')),
+          const SizedBox(height: 6),
+          Text(
+              widget.requiresGuestConfirmation
+                  ? 'This Trip only stores a total traveller count. Confirm adults and children before searching.'
+                  : 'Guest ages are not inferred from a Trip total. Confirm adults and children before searching.',
+              style: const TextStyle(color: InkWashColors.mutedInk, fontSize: 12)),
           const SizedBox(height: 9),
           TextField(
               controller: roomQuantity,

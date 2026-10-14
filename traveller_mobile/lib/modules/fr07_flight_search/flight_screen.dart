@@ -434,13 +434,49 @@ class _FlightScreenState extends State<FlightScreen> {
         ),
       );
       if (selected == null) return;
-      final result = await api.post('/api/fr7/flights/select', {
+      final request = <String, dynamic>{
         'itineraryId': selected['id'],
         'searchId': searchId,
         'optionId': idOf(flight),
         if (returnOptionId != null) 'returnOptionId': returnOptionId,
         'flight': flight,
-      });
+      };
+      Map<String, dynamic> result;
+      try {
+        result = await api.post('/api/fr7/flights/select', request);
+      } on ApiException catch (error) {
+        if (error.data['status'] != 'conflicts_require_acknowledgement') {
+          rethrow;
+        }
+        final conflicts = (error.data['conflicts'] as List? ?? const [])
+            .whereType<Map>()
+            .map((item) => item['message']?.toString())
+            .whereType<String>()
+            .toList();
+        if (!mounted) return;
+        final acknowledge = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Review itinerary timing'),
+            content: Text(conflicts.isEmpty
+                ? 'This flight may overlap your saved itinerary activities.'
+                : '${conflicts.join('\n\n')}\n\nYou can keep the flight and review these activities afterwards.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Choose another flight')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Keep flight')),
+            ],
+          ),
+        );
+        if (acknowledge != true) return;
+        result = await api.post('/api/fr7/flights/select', {
+          ...request,
+          'acknowledgeConflicts': true,
+        });
+      }
       if (mounted) {
         final budget = result['budget'] is Map
             ? Map<String, dynamic>.from(result['budget'] as Map)

@@ -166,6 +166,8 @@ def _persist_quotes(items, criteria, source):
     output = []
     for item in items:
         item = dict(item)
+        item['checkin'] = criteria.get('checkin')
+        item['checkout'] = criteria.get('checkout')
         item['quoteVersion'] = _quote_version(item)
         quote_id = hashlib.sha256(json.dumps({
             'uid': g.uid, 'criteria': criteria, 'offer': item,

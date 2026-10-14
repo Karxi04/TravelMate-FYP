@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
+import 'hotel_description.dart';
 
 class HotelDetailsScreen extends StatelessWidget {
   final Map<String, dynamic> hotel;
@@ -38,6 +39,14 @@ class HotelDetailsScreen extends StatelessWidget {
     );
   }
 
+  String stayDate(dynamic date, dynamic time) {
+    final values = [date, time]
+        .map((value) => (value ?? '').toString().trim())
+        .where((value) => value.isNotEmpty && value != '-')
+        .toList();
+    return values.isEmpty ? 'Not provided' : values.join(' • ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final amenities =
@@ -66,6 +75,15 @@ class HotelDetailsScreen extends StatelessWidget {
     final roomAmenities = (hotel['roomAmenities'] as List? ?? [])
         .map((e) => e.toString())
         .toList();
+    final descriptionStyle =
+        Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: InkWashColors.ink,
+                  height: 1.5,
+                  decoration: TextDecoration.none,
+                  decorationColor: Colors.transparent,
+                  backgroundColor: Colors.transparent,
+                ) ??
+            const TextStyle(color: InkWashColors.ink, height: 1.5);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Hotel details')),
@@ -161,9 +179,13 @@ class HotelDetailsScreen extends StatelessWidget {
           const TravelSectionHeader(title: 'About this stay'),
           const SizedBox(height: 8),
           InkCard(
-              child: Text((hotel['description'] ??
-                      'Hotel information is available for the selected offer.')
-                  .toString())),
+              child: RichText(
+                  text: TextSpan(
+                      style: descriptionStyle,
+                      children: HotelDescription.spans((hotel['description'] ??
+                              'Hotel information is available for the selected offer.')
+                          .toString(),
+                          bodyStyle: descriptionStyle)))),
           const SizedBox(height: 18),
           const TravelSectionHeader(title: 'Room & stay details'),
           const SizedBox(height: 8),
@@ -178,11 +200,9 @@ class HotelDetailsScreen extends StatelessWidget {
                     icon: Icons.people_outline_rounded),
                 row('Board', hotel['boardName'],
                     icon: Icons.restaurant_outlined),
-                row('Check-in',
-                    '${hotel['checkin'] ?? ''} • ${hotel['checkInTime'] ?? ''}',
+                row('Check-in', stayDate(hotel['checkin'], hotel['checkInTime']),
                     icon: Icons.login_rounded),
-                row('Check-out',
-                    '${hotel['checkout'] ?? ''} • ${hotel['checkOutTime'] ?? ''}',
+                row('Check-out', stayDate(hotel['checkout'], hotel['checkOutTime']),
                     icon: Icons.logout_rounded),
                 row(
                     'Price basis',

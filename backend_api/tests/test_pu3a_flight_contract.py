@@ -61,6 +61,18 @@ def test_round_trip_segments_remain_separate(client, mock_traveller_auth):
     assert flight['returnSegments'][0]['arrivalAirportCode'] == 'KUL'
 
 
+def test_return_candidate_uses_only_reverse_leg_on_requested_date():
+    from modules.fr07_flight_search.routes import _return_segments
+    criteria = {'departure_id': 'KUL', 'arrival_id': 'PEN', 'return_date': '2026-11-05'}
+    candidate = {
+        'outboundSegments': [{'departureAirportCode': 'KUL', 'arrivalAirportCode': 'PEN', 'departureDate': '2026-11-01'}],
+        'returnSegments': [{'departureAirportCode': 'PEN', 'arrivalAirportCode': 'KUL', 'departureDate': '2026-11-05'}],
+    }
+    assert _return_segments(candidate, criteria) == candidate['returnSegments']
+    candidate['returnSegments'][0]['departureDate'] = '2026-11-04'
+    assert _return_segments(candidate, criteria) == []
+
+
 def test_flight_remove_preserves_other_trip_content(client, mock_traveller_auth):
     itinerary = {'id': 'pu3a_remove', 'travellerId': 'test_traveller_uid', 'selectedFlight': {'id': 'x'}, 'flightCost': 180, 'hotelCost': 200, 'selectedHotel': {'name': 'Hotel'}, 'activities': []}
     with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary), patch('modules.fr07_flight_search.routes.updateRecord', side_effect=lambda c, i, p: {**itinerary, **p}):

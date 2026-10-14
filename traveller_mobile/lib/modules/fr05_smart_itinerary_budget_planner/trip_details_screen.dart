@@ -81,6 +81,22 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     return int.tryParse('${t['tripDays'] ?? 1}') ?? 1;
   }
 
+  int? _tripAdults(Map<String, dynamic> t) {
+    for (final key in ['adults', 'adultCount', 'travellerAdults']) {
+      final value = int.tryParse('${t[key] ?? ''}');
+      if (value != null && value > 0) return value;
+    }
+    return null;
+  }
+
+  int? _tripChildren(Map<String, dynamic> t) {
+    for (final key in ['children', 'childCount', 'travellerChildren']) {
+      final value = int.tryParse('${t[key] ?? ''}');
+      if (value != null && value >= 0) return value;
+    }
+    return null;
+  }
+
   String _dateRange(Map<String, dynamic> t) {
     final range = (t['tripDateRangeLabel'] ?? '').toString();
     if (range.isNotEmpty) return range;
@@ -197,8 +213,28 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         .whereType<Map>()
         .map((day) => Map<String, dynamic>.from(day))
         .toList();
-    if (stored.isNotEmpty) return stored;
     final start = DateTime.tryParse((t['startDate'] ?? '').toString());
+    if (stored.isNotEmpty) {
+      final byDay = <int, Map<String, dynamic>>{
+        for (final day in stored)
+          if (int.tryParse('${day['dayNo']}') != null)
+            int.parse('${day['dayNo']}'): day,
+      };
+      return List.generate(_tripDays(t), (index) {
+        final dayNo = index + 1;
+        final day = Map<String, dynamic>.from(
+            byDay[dayNo] ?? <String, dynamic>{'activities': const []});
+        day['dayNo'] = dayNo;
+        if (start != null) {
+          day['dayDate'] = start
+              .add(Duration(days: index))
+              .toIso8601String()
+              .split('T')
+              .first;
+        }
+        return day;
+      });
+    }
     return List.generate(_tripDays(t), (index) {
       final dayNo = index + 1;
       final dayActivities = activities
@@ -453,6 +489,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                   initialDestination: (t['destinationArea'] ?? '').toString(),
                   initialCheckin: (t['startDate'] ?? '').toString(),
                   initialCheckout: (t['endDate'] ?? '').toString(),
+                  initialAdults: _tripAdults(t),
+                  initialChildren: _tripChildren(t),
+                  requiresGuestConfirmation: _tripAdults(t) == null,
                 )));
     if (mounted) await load();
   }
@@ -621,10 +660,12 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         BuildContext c, TextEditingController controller) async {
       final initial = DateTime.tryParse(controller.text) ??
           DateTime.now().add(const Duration(days: 7));
+      final today = DateTime.now();
+      final firstDate = DateTime(today.year, today.month, today.day);
       final picked = await showDatePicker(
         context: c,
-        initialDate: initial,
-        firstDate: DateTime.now().subtract(const Duration(days: 1)),
+        initialDate: initial.isBefore(firstDate) ? firstDate : initial,
+        firstDate: firstDate,
         lastDate: DateTime.now().add(const Duration(days: 730)),
       );
       if (picked != null) {
@@ -693,6 +734,12 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                 onPressed: () {
                   if (title.text.trim().isEmpty ||
                       destination.text.trim().isEmpty) return;
+                  final startDate = DateTime.tryParse(start.text.trim());
+                  final endDate = DateTime.tryParse(end.text.trim());
+                  if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
+                    showError(sheetContext, 'End date must be on or after the start date.');
+                    return;
+                  }
                   Navigator.pop(sheetContext, {
                     'title': title.text.trim(),
                     'destinationArea': destination.text.trim(),
@@ -1581,6 +1628,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                   initialDestination: (t['destinationArea'] ?? '').toString(),
                   initialCheckin: (t['startDate'] ?? '').toString(),
                   initialCheckout: (t['endDate'] ?? '').toString(),
+                  initialAdults: _tripAdults(t),
+                  initialChildren: _tripChildren(t),
+                  requiresGuestConfirmation: _tripAdults(t) == null,
                 ),
               ),
             );

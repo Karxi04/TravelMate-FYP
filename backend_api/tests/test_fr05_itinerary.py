@@ -46,6 +46,84 @@ def test_apply_lower_cost_alternative_success(client, mock_traveller_auth):
         assert 'budget' in data
 
 
+def test_trip_date_update_persists_when_no_attached_travel_conflicts(client, mock_traveller_auth):
+    itinerary = {
+        'id': 'editable-trip', 'travellerId': 'test_traveller_uid', 'title': 'Penang',
+        'destinationArea': 'Penang', 'startDate': '2026-11-01', 'endDate': '2026-11-03',
+        'travellerCount': 1, 'budgetLimit': 500, 'activities': [],
+    }
+    with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord', return_value=itinerary), \
+         patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord', side_effect=lambda _c, _i, data: {**itinerary, **data}):
+        response = client.put('/api/fr5/itineraries/editable-trip', headers={'Authorization': 'Bearer valid_test_token'}, json={
+            'startDate': '2026-11-02', 'endDate': '2026-11-04',
+        })
+    assert response.status_code == 200
+    assert response.get_json()['itinerary']['startDate'] == '2026-11-02'
+
+
+def test_trip_date_update_redates_existing_schedule_and_adds_new_days(client, mock_traveller_auth):
+    itinerary = {
+        'id': 'schedule-trip', 'travellerId': 'test_traveller_uid', 'title': 'Penang',
+        'destinationArea': 'Penang', 'startDate': '2026-11-01', 'endDate': '2026-11-03',
+        'travellerCount': 1, 'budgetLimit': 500,
+        'activities': [{'dayNo': 2, 'title': 'Keep this activity'}],
+        'dailySchedule': [
+            {'dayNo': 1, 'dayDate': '2026-11-01', 'activities': []},
+            {'dayNo': 2, 'dayDate': '2026-11-02', 'activities': [{'title': 'Keep this activity'}]},
+            {'dayNo': 3, 'dayDate': '2026-11-03', 'activities': []},
+        ],
+    }
+    with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord', return_value=itinerary), \
+         patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord', side_effect=lambda _c, _i, data: {**itinerary, **data}):
+        response = client.put('/api/fr5/itineraries/schedule-trip', headers={'Authorization': 'Bearer valid_test_token'}, json={
+            'startDate': '2026-11-05', 'endDate': '2026-11-09',
+        })
+    assert response.status_code == 200
+    updated = response.get_json()['itinerary']
+    assert updated['tripDays'] == 5
+    assert [day['dayDate'] for day in updated['dailySchedule']] == [
+        '2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08', '2026-11-09',
+    ]
+    assert updated['dailySchedule'][1]['activities'] == [{'title': 'Keep this activity'}]
+
+
+def test_trip_date_update_does_not_remove_scheduled_activity(client, mock_traveller_auth):
+    itinerary = {
+        'id': 'schedule-trip', 'travellerId': 'test_traveller_uid', 'title': 'Penang',
+        'destinationArea': 'Penang', 'startDate': '2026-11-01', 'endDate': '2026-11-05',
+        'travellerCount': 1, 'budgetLimit': 500,
+        'activities': [{'dayNo': 5, 'title': 'Keep this activity'}],
+        'dailySchedule': [{'dayNo': 5, 'activities': [{'title': 'Keep this activity'}]}],
+    }
+    with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord', return_value=itinerary), \
+         patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord') as update:
+        response = client.put('/api/fr5/itineraries/schedule-trip', headers={'Authorization': 'Bearer valid_test_token'}, json={
+            'endDate': '2026-11-03',
+        })
+    assert response.status_code == 409
+    assert response.get_json()['conflicts'][0]['type'] == 'itinerary_schedule'
+    update.assert_not_called()
+
+
+def test_trip_date_update_rejects_attached_hotel_conflict(client, mock_traveller_auth):
+    itinerary = {
+        'id': 'hotel-trip', 'travellerId': 'test_traveller_uid', 'title': 'Penang',
+        'destinationArea': 'Penang', 'startDate': '2026-11-01', 'endDate': '2026-11-05',
+        'travellerCount': 1, 'budgetLimit': 500, 'hotelBookingId': 'hotel-1', 'activities': [],
+    }
+    booking = {'id': 'hotel-1', 'stayCriteria': {'checkin': '2026-11-02', 'checkout': '2026-11-05'}}
+    def retrieve(collection, document_id=None, **_kwargs):
+        return itinerary if collection == 'itineraries' else booking if collection == 'hotel_bookings' else None
+    with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord', side_effect=retrieve), \
+         patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord') as update:
+        response = client.put('/api/fr5/itineraries/hotel-trip', headers={'Authorization': 'Bearer valid_test_token'}, json={
+            'startDate': '2026-11-01', 'endDate': '2026-11-04',
+        })
+    assert response.status_code == 409
+    assert response.get_json()['conflicts'][0]['type'] == 'hotel_dates'
+    update.assert_not_called()
+
+
 def test_itinerary_generation_uses_linked_destination_snapshot(client, mock_traveller_auth):
     itinerary = {
         'id': 'itin_snapshot',

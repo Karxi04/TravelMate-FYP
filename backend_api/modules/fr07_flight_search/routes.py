@@ -184,6 +184,24 @@ def _quote_item(payload):
     return quote, option
 
 
+def _return_segments(option, criteria):
+    """Accept only the reverse leg requested for the selected outbound quote."""
+    expected_departure = str(criteria.get('arrival_id') or '').upper()
+    expected_arrival = str(criteria.get('departure_id') or '').upper()
+    expected_date = str(criteria.get('return_date') or '')[:10]
+    for segments in (option.get('returnSegments'), option.get('outboundSegments')):
+        segments = list(segments or [])
+        if not segments:
+            continue
+        first, last = segments[0], segments[-1]
+        departure = str(first.get('departureAirportCode') or first.get('departureAirport') or '').upper()
+        arrival = str(last.get('arrivalAirportCode') or last.get('arrivalAirport') or '').upper()
+        date = str(first.get('departureDate') or '')[:10]
+        if departure == expected_departure and arrival == expected_arrival and date == expected_date:
+            return segments
+    return []
+
+
 def _safe_client_fixture(flight):
     allowed = {'id', 'airline', 'flightNumber', 'departureAirport', 'arrivalAirport', 'departureTime', 'arrivalTime', 'price', 'currency', 'durationMinutes', 'stops', 'stopText', 'outboundDate', 'returnDate'}
     return {k: flight[k] for k in allowed if k in flight}
@@ -197,15 +215,30 @@ def _flight_conflicts(itinerary, flight):
     warnings = []
     arrival = next((x for x in reversed(flight.get('outboundSegments') or []) if isinstance(x, dict)), None)
     departure = next((x for x in (flight.get('returnSegments') or []) if isinstance(x, dict)), None)
+    try:
+        trip_start = datetime.fromisoformat(str(itinerary.get('startDate'))[:10]).date()
+    except (TypeError, ValueError):
+        trip_start = None
+
+    def trip_day(segment, field):
+        if not trip_start or not segment:
+            return None
+        try:
+            return (datetime.fromisoformat(str(segment.get(field))[:10]).date() - trip_start).days + 1
+        except (TypeError, ValueError):
+            return None
+
+    arrival_day = trip_day(arrival, 'arrivalDate') or trip_day(arrival, 'departureDate')
+    departure_day = trip_day(departure, 'departureDate')
     activities = itinerary.get('activities') or []
     for activity in activities:
         if not isinstance(activity, dict):
             continue
         day = int(activity.get('dayNo') or 1)
         time_value = str(activity.get('scheduledStartTime') or activity.get('timeSlot') or '').strip().lower()
-        if arrival and day == 1 and any(token in time_value for token in ('morning', '08:', '09:', '10:', '11:')):
+        if arrival_day and day == arrival_day and any(token in time_value for token in ('morning', '08:', '09:', '10:', '11:')):
             warnings.append({'type': 'arrival_activity', 'activityId': activity.get('activityId'), 'message': 'This activity may begin before the outbound flight arrives.', 'precision': 'local_time_only', 'timezoneStatus': 'unavailable'})
-        if departure and day == int(itinerary.get('tripDays') or 999) and any(token in time_value for token in ('evening', '18:', '19:', '20:', '21:', '22:')):
+        if departure_day and day == departure_day and any(token in time_value for token in ('evening', '18:', '19:', '20:', '21:', '22:')):
             warnings.append({'type': 'departure_activity', 'activityId': activity.get('activityId'), 'message': 'This activity may extend too close to the return flight.', 'precision': 'local_time_only', 'timezoneStatus': 'unavailable'})
     return warnings
 
@@ -368,7 +401,7 @@ def search_flight_returns():
     seen = set()
     for index, raw in enumerate(result.get('items', [])):
         normalized = raw if isinstance(raw, dict) and 'outboundSegments' in raw else normalizeFlightResult(raw, index, criteria['currency'], criteria['traveller_count'])
-        segments = list(normalized.get('outboundSegments') or normalized.get('returnSegments') or [])
+        segments = _return_segments(normalized, criteria)
         signature = repr([(x.get('flightNumber'), x.get('departureDate'), x.get('departureTime'), x.get('arrivalDate'), x.get('arrivalTime')) for x in segments])
         if not segments or signature in seen:
             continue

@@ -80,6 +80,106 @@ def _trip_days(current):
     return 1
 
 
+def _trip_date_conflicts(current, proposed):
+    """Return only definite conflicts; incomplete historical records remain editable."""
+    from datetime import date
+    try:
+        start = date.fromisoformat(str(proposed['startDate'])[:10])
+        end = date.fromisoformat(str(proposed['endDate'])[:10])
+    except (KeyError, TypeError, ValueError):
+        return []
+    conflicts = []
+    booking_id = str(current.get('hotelBookingId') or '').strip()
+    if booking_id:
+        booking = retrieveRecord('hotel_bookings', booking_id) or {}
+        criteria = booking.get('stayCriteria') if isinstance(booking.get('stayCriteria'), dict) else {}
+        try:
+            checkin = date.fromisoformat(str(criteria['checkin'])[:10])
+            checkout = date.fromisoformat(str(criteria['checkout'])[:10])
+            if not (start <= checkin < checkout <= end):
+                conflicts.append({'type': 'hotel_dates', 'message': 'Attached hotel dates would no longer fit this trip.'})
+        except (KeyError, TypeError, ValueError):
+            pass
+    flight = current.get('selectedFlight') if isinstance(current.get('selectedFlight'), dict) else {}
+    for segment in list(flight.get('outboundSegments') or []) + list(flight.get('returnSegments') or []):
+        if not isinstance(segment, dict):
+            continue
+        for field in ('departureDate', 'arrivalDate'):
+            value = str(segment.get(field) or '')[:10]
+            if not value:
+                continue
+            try:
+                if not (start <= date.fromisoformat(value) <= end):
+                    conflicts.append({'type': 'flight_dates', 'message': 'Attached flight dates would no longer fit this trip.'})
+                    break
+            except ValueError:
+                continue
+    for association in current.get('purchasedPackages') or []:
+        snapshot = association.get('packageSnapshot') if isinstance(association, dict) else {}
+        days = snapshot.get('itineraryDays') if isinstance(snapshot, dict) else []
+        required_days = max((int(day.get('dayNumber') or 0) for day in days if isinstance(day, dict)), default=0)
+        if required_days and (end - start).days + 1 < required_days:
+            conflicts.append({'type': 'package_duration', 'message': 'Attached package itinerary days would no longer fit this trip.'})
+    return conflicts
+
+
+def _synchronise_daily_schedule(current, proposed):
+    """Re-date preserved day records without discarding itinerary content."""
+    from datetime import date, timedelta
+    try:
+        start = date.fromisoformat(str(proposed['startDate'])[:10])
+        days = _trip_days(proposed)
+    except (KeyError, TypeError, ValueError):
+        return None, []
+
+    conflicts = []
+    for activity in current.get('activities') or []:
+        try:
+            activity_day = int(activity.get('dayNo') or 0) if isinstance(activity, dict) else 0
+        except (TypeError, ValueError):
+            activity_day = 0
+        if activity_day > days:
+            conflicts.append({
+                'type': 'itinerary_schedule',
+                'message': 'Trip dates would remove scheduled itinerary activities.',
+            })
+            break
+
+    stored = current.get('dailySchedule')
+    if not isinstance(stored, list):
+        return None, conflicts
+
+    by_day = {}
+    for raw_day in stored:
+        if not isinstance(raw_day, dict):
+            continue
+        try:
+            day_no = int(raw_day.get('dayNo') or 0)
+        except (TypeError, ValueError):
+            continue
+        if day_no < 1:
+            continue
+        if day_no > days:
+            if raw_day.get('activities') or raw_day.get('planningBlocks'):
+                conflicts.append({
+                    'type': 'itinerary_schedule',
+                    'message': 'Trip dates would remove scheduled itinerary activities.',
+                })
+            continue
+        by_day[day_no] = dict(raw_day)
+
+    if conflicts:
+        return None, conflicts
+
+    schedule = []
+    for day_no in range(1, days + 1):
+        day = by_day.get(day_no, {'dayNo': day_no, 'activities': []})
+        day['dayNo'] = day_no
+        day['dayDate'] = (start + timedelta(days=day_no - 1)).isoformat()
+        schedule.append(day)
+    return schedule, []
+
+
 def _normalise_location(value):
     return re.sub(r'[^a-z0-9]+', ' ', str(value or '').lower()).strip()
 
@@ -375,6 +475,17 @@ def update_itinerary_route(iid):
         return jsonify({'ok': False, 'error': flight_error}), 409
     if not validateItineraryInput({**current, **payload}):
         return jsonify({'ok': False, 'error': 'Use a title, valid date range, positive traveller count and non-negative budget'}), 400
+    if 'startDate' in payload or 'endDate' in payload:
+        conflicts = _trip_date_conflicts(current, {**current, **payload})
+        daily_schedule, schedule_conflicts = _synchronise_daily_schedule(
+            current, {**current, **payload}
+        )
+        conflicts.extend(schedule_conflicts)
+        if conflicts:
+            return jsonify({'ok': False, 'error': 'Trip dates conflict with saved travel or itinerary activities.', 'conflicts': conflicts}), 409
+        payload['tripDays'] = _trip_days({**current, **payload})
+        if daily_schedule is not None:
+            payload['dailySchedule'] = daily_schedule
     payload['updatedAt'] = utc_now_iso()
     merged = {**current, **payload}
     payload['budgetEstimate'] = calculateBudget(merged)
