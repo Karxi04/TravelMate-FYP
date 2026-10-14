@@ -110,6 +110,8 @@ def test_explicit_provider_sandbox_quote_is_not_labelled_live(
     assert item['rateProvenance'] == 'sandbox_provider_quote'
     assert item['transactionMode'] == 'provider_sandbox'
     assert 'not live inventory' in item['demoDisclosure']
+    assert item['checkin'] == '2030-01-01'
+    assert item['checkout'] == '2030-01-03'
 
 
 def test_explicit_sample_mode_is_labelled(client, mock_traveller_auth):
