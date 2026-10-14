@@ -81,6 +81,46 @@ def test_round_trip_requires_return_selection_and_selects_one_authoritative_tota
     assert result['itinerary']['flightPriceBasis'] == 'provider_round_trip_ticket_price_requested_adults'
 
 
+def test_round_trip_conflict_refers_to_the_actual_segment_date(client, mock_traveller_auth):
+    from modules.fr07_flight_search.routes import _flight_conflicts
+    flight = {
+        'outboundSegments': [{'arrivalDate': '2027-02-11'}],
+        'returnSegments': [{'departureDate': '2027-02-12'}],
+    }
+    itinerary = {
+        'startDate': '2027-02-10', 'endDate': '2027-02-12',
+        'activities': [{'dayNo': 1, 'timeSlot': 'morning'}],
+    }
+    assert _flight_conflicts(itinerary, flight) == []
+
+
+def test_round_trip_conflict_requires_one_explicit_acknowledgement(client, mock_traveller_auth):
+    reset_flight_quotes()
+    with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [_outbound()]}):
+        searched = client.get('/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2027-02-10&return_date=2027-02-12', headers={'Authorization': 'Bearer valid_test_token'})
+    outbound = searched.get_json()['items'][0]
+    with patch('modules.fr07_flight_search.routes.retrieveFlightReturns', return_value={'items': [_return()]}):
+        returns = client.post('/api/fr7/flights/returns', headers={'Authorization': 'Bearer valid_test_token'}, json={'searchId': searched.get_json()['searchId'], 'optionId': outbound['id']})
+    itinerary = {
+        'id': 'timing-trip', 'travellerId': 'test_traveller_uid', 'budgetLimit': 5000,
+        'travellerCount': 2, 'startDate': '2027-02-10', 'endDate': '2027-02-12',
+        'activities': [{'dayNo': 1, 'timeSlot': 'morning'}],
+    }
+    request = {
+        'itineraryId': 'timing-trip', 'searchId': searched.get_json()['searchId'],
+        'optionId': outbound['id'], 'returnOptionId': returns.get_json()['items'][0]['id'],
+        'flight': outbound,
+    }
+    with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary), \
+         patch('modules.fr07_flight_search.routes.updateRecord', side_effect=lambda _c, _i, data: {**itinerary, **data}):
+        blocked = client.post('/api/fr7/flights/select', headers={'Authorization': 'Bearer valid_test_token'}, json=request)
+        accepted = client.post('/api/fr7/flights/select', headers={'Authorization': 'Bearer valid_test_token'}, json={**request, 'acknowledgeConflicts': True})
+    assert blocked.status_code == 409
+    assert blocked.get_json()['status'] == 'conflicts_require_acknowledgement'
+    assert accepted.status_code == 200
+    assert accepted.get_json()['itinerary']['flightConflictStatus'] == 'acknowledged'
+
+
 def test_round_trip_quote_survives_local_cache_reset(client, mock_traveller_auth):
     reset_flight_quotes()
     with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [_outbound()]}):
