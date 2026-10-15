@@ -25,7 +25,11 @@ from sequence_contract.firebase_firestore import (
     deleteRecord,
 )
 from services.public_content_projection import public_review
-from services.malaysian_locality import normalize_destination_scope, filter_candidates
+from services.malaysian_locality import (
+    normalize_destination_scope,
+    normalize_candidate_geography,
+    filter_candidates,
+)
 
 bp = Blueprint('fr03_destinations', __name__, url_prefix='/api/fr3')
 
@@ -71,24 +75,76 @@ def _result_identity_values(item):
     }
 
 
+def _canonical_place_name(item):
+    name = _search_text(item.get('title') or item.get('name'))
+    return {
+        'kek lok si': 'kek lok si temple',
+    }.get(name, name)
+
+
+def _same_place(left, right):
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return False
+    left_ids = _result_identity_values(left)
+    right_ids = _result_identity_values(right)
+    if left_ids and right_ids and left_ids.intersection(right_ids):
+        return True
+    left_name = _canonical_place_name(left)
+    right_name = _canonical_place_name(right)
+    if not left_name or left_name != right_name:
+        return False
+
+    left_coords = _coords(left)
+    right_coords = _coords(right)
+    if left_coords and right_coords:
+        distance = _distance_km(left_coords, right_coords)
+        return distance is not None and distance <= 0.5
+
+    left_geo = normalize_candidate_geography(left)
+    right_geo = normalize_candidate_geography(right)
+    if left_geo.get('state') and right_geo.get('state'):
+        if left_geo['state'] != right_geo['state']:
+            return False
+        if (left_geo.get('city') and right_geo.get('city') and
+                left_geo['city'] != right_geo['city']):
+            return False
+        return True
+
+    left_address = _search_text(left.get('address') or left.get('location'))
+    right_address = _search_text(right.get('address') or right.get('location'))
+    if left_address and right_address:
+        return left_address in right_address or right_address in left_address
+    return True
+
+
+def _enrich_search_result(item):
+    """Fill missing trusted geography without replacing provider fields."""
+    enriched = dict(item or {})
+    for local in DESTINATIONS:
+        if _same_place(enriched, local):
+            for field in ('address', 'gps_coordinates', 'city', 'state'):
+                if not enriched.get(field) and local.get(field):
+                    enriched[field] = local[field]
+            break
+
+    title_scope = normalize_destination_scope(
+        enriched.get('title') or enriched.get('name') or ''
+    )
+    if title_scope.get('state') and not enriched.get('state'):
+        enriched['state'] = title_scope['state']
+    if title_scope.get('city') and not enriched.get('city'):
+        enriched['city'] = title_scope['city']
+    return enriched
+
+
 def _deduplicate_results(items):
     output = []
-    seen_ids = set()
-    seen_names = set()
     for item in items or []:
         if not isinstance(item, dict):
             continue
-        identities = _result_identity_values(item)
-        name_key = '|'.join((
-            _search_text(item.get('title') or item.get('name')),
-            _search_text(item.get('address') or item.get('location')),
-        ))
-        if identities.intersection(seen_ids) or (name_key != '|' and name_key in seen_names):
+        if any(_same_place(item, existing) for existing in output):
             continue
         output.append(item)
-        seen_ids.update(identities)
-        if name_key != '|':
-            seen_names.add(name_key)
     return output
 
 
@@ -237,9 +293,12 @@ def search_destinations():
         data = retrieveDestinationResults(q, location)
         results = data.get('local_results', [])
         source = 'serpapi'
-    except Exception as exc:
+    except Exception:
         if not _fallback_mode():
-            return jsonify({'ok': False, 'error': str(exc)}), 502
+            return jsonify({
+                'ok': False,
+                'error': 'Place search is temporarily unavailable. Please try again.',
+            }), 502
         normalized_query = _search_text(q)
         query_words = set(normalized_query.split())
         matched = []
@@ -265,7 +324,7 @@ def search_destinations():
     except Exception:
         pass
 
-    results = _deduplicate_results(results)
+    results = _deduplicate_results(_enrich_search_result(item) for item in results)
     requested_scope = normalize_destination_scope(location)
     if requested_scope.get('state') or requested_scope.get('city'):
         results, _rejected = filter_candidates(results, requested_scope)
@@ -389,8 +448,7 @@ def nearby_places(place_id):
     base_coords = _coords(base)
     items = []
     for row in DESTINATIONS:
-        did = _destination_id(row)
-        if did and did == _destination_id(base):
+        if _same_place(row, base):
             continue
         distance = _distance_km(base_coords, _coords(row))
         if distance is None:
@@ -399,7 +457,8 @@ def nearby_places(place_id):
             item = dict(row)
             item['distanceKm'] = round(distance, 1)
             item['nearbyReason'] = f"{item.get('title', 'Place')} is about {distance:.1f} km from {base.get('title') or base.get('name') or 'the selected place'}."
-            items.append(item)
+            if not any(_same_place(item, existing) for existing in items):
+                items.append(item)
     items.sort(key=lambda x: x.get('distanceKm', 999))
     for item in items[:12]:
         _cache(item)

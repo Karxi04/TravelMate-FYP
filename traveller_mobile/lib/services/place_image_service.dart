@@ -21,9 +21,11 @@ class PlaceImageService {
   static final Map<String, String> _ownerByImageUrl = <String, String>{};
   static final Map<String, Set<String>> _failedUrlsByPlace =
       <String, Set<String>>{};
+  static final Map<String, int> _sameUrlRetryCount = <String, int>{};
 
   static const Map<String, String> _wikipediaTitleHints = <String, String>{
     'george town unesco heritage area': 'George Town, Penang',
+    'george town heritage core': 'George Town, Penang',
     'george town food trail': 'Penang cuisine',
     'penang road chendul area': 'Cendol',
     'air itam curry mee area': 'Curry mee',
@@ -41,6 +43,14 @@ class PlaceImageService {
   };
 
   static String _placeKey(Map<String, dynamic> place) {
+    final title =
+        (place['title'] ?? place['name'] ?? place['activityName'] ?? 'place')
+            .toString()
+            .trim();
+    final canonicalTitle = _wikipediaTitleHints[title.toLowerCase()];
+    if (canonicalTitle != null) {
+      return 'known:${canonicalTitle.toLowerCase()}';
+    }
     final id = (place['destinationId'] ??
             place['placeId'] ??
             place['place_id'] ??
@@ -51,8 +61,8 @@ class PlaceImageService {
         .toString()
         .trim();
     if (id.isNotEmpty) return id.toLowerCase();
-    final title = (place['title'] ?? place['name'] ?? 'place').toString().trim();
-    final address = (place['address'] ?? place['location'] ?? '').toString().trim();
+    final address =
+        (place['address'] ?? place['location'] ?? '').toString().trim();
     return '${title.toLowerCase()}|${address.toLowerCase()}';
   }
 
@@ -124,8 +134,9 @@ class PlaceImageService {
     return pending;
   }
 
-  /// Clears a failed resolution and retries it. A URL that failed to render is
-  /// skipped so the next provider/fallback candidate can be attempted.
+  /// Clears a failed resolution and retries it. With several provider images,
+  /// a failed URL is skipped immediately. A sole image gets one same-URL retry
+  /// for transient network failures before fallback resolution is attempted.
   static Future<String?> retry(
     Map<String, dynamic> place, {
     String? failedUrl,
@@ -133,9 +144,17 @@ class PlaceImageService {
     final key = _placeKey(place);
     final rejected = failedUrl?.trim();
     if (rejected != null && rejected.isNotEmpty) {
-      _failedUrlsByPlace.putIfAbsent(key, () => <String>{}).add(rejected);
-      if (_ownerByImageUrl[rejected] == key) {
-        _ownerByImageUrl.remove(rejected);
+      final explicitUrls = _explicitImageUrls(place);
+      final retryKey = '$key|$rejected';
+      final shouldRetrySameUrl =
+          explicitUrls.length <= 1 && (_sameUrlRetryCount[retryKey] ?? 0) == 0;
+      if (shouldRetrySameUrl) {
+        _sameUrlRetryCount[retryKey] = 1;
+      } else {
+        _failedUrlsByPlace.putIfAbsent(key, () => <String>{}).add(rejected);
+        if (_ownerByImageUrl[rejected] == key) {
+          _ownerByImageUrl.remove(rejected);
+        }
       }
     }
     _resolvedByPlace.remove(key);
@@ -145,12 +164,22 @@ class PlaceImageService {
 
   static List<String> explicitImageUrlsForTesting(
     Map<String, dynamic> place,
-  ) => List<String>.unmodifiable(_explicitImageUrls(place));
+  ) =>
+      List<String>.unmodifiable(_explicitImageUrls(place));
 
   static bool searchIdentityMatchesForTesting(
     String query,
     String candidateTitle,
-  ) => _matchesSearchIdentity(query, candidateTitle);
+  ) =>
+      _matchesSearchIdentity(query, candidateTitle);
+
+  static List<String> wikipediaSummaryImagesForTesting(
+    String articleTitle,
+    Object? decoded,
+  ) =>
+      List<String>.unmodifiable(
+        _wikipediaSummaryImageUrls(articleTitle, decoded),
+      );
 
   static Future<String?> _resolveInternal(
     String key,
@@ -162,9 +191,14 @@ class PlaceImageService {
       if (_claimImage(key, url)) return url;
     }
 
-    final title = (place['title'] ?? place['name'] ?? '').toString().trim();
-    final address = (place['address'] ?? place['location'] ?? '').toString().trim();
-    final category = (place['category'] ?? place['type'] ?? '').toString().trim();
+    final title =
+        (place['title'] ?? place['name'] ?? place['activityName'] ?? '')
+            .toString()
+            .trim();
+    final address =
+        (place['address'] ?? place['location'] ?? '').toString().trim();
+    final category =
+        (place['category'] ?? place['type'] ?? '').toString().trim();
 
     if (title.isEmpty) return null;
 
@@ -186,6 +220,13 @@ class PlaceImageService {
       addQuery('$title $category $locationContext');
     }
 
+    if (hintedTitle != null) {
+      for (final candidate in await _wikipediaSummaryImages(hintedTitle)) {
+        if (failedUrls.contains(candidate)) continue;
+        if (_claimImage(key, candidate)) return candidate;
+      }
+    }
+
     for (final query in queries) {
       final candidates = await _searchWikipedia(query);
       for (final candidate in candidates) {
@@ -203,6 +244,54 @@ class PlaceImageService {
     }
 
     return null;
+  }
+
+  static Future<List<String>> _wikipediaSummaryImages(
+      String articleTitle) async {
+    try {
+      final uri = Uri(
+        scheme: 'https',
+        host: 'en.wikipedia.org',
+        pathSegments: <String>[
+          'api',
+          'rest_v1',
+          'page',
+          'summary',
+          articleTitle,
+        ],
+      );
+      final response = await http.get(
+        uri,
+        headers: const {
+          'User-Agent': 'TravelMate-FYP/1.0 (student travel planning app)',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return const [];
+      final decoded = jsonDecode(response.body);
+      return _wikipediaSummaryImageUrls(articleTitle, decoded);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static List<String> _wikipediaSummaryImageUrls(
+    String articleTitle,
+    Object? decoded,
+  ) {
+    if (decoded is! Map) return const [];
+    final returnedTitle = (decoded['title'] ?? '').toString();
+    if (!_matchesSearchIdentity(articleTitle, returnedTitle)) return const [];
+    final urls = <String>[];
+    for (final field in const ['originalimage', 'thumbnail']) {
+      final image = decoded[field];
+      if (image is! Map) continue;
+      final source = (image['source'] ?? '').toString().trim();
+      if (source.startsWith('http') && !urls.contains(source)) {
+        urls.add(source);
+      }
+    }
+    return urls;
   }
 
   static String _shortLocation(String address) {

@@ -23,6 +23,19 @@ class TripDetailsScreen extends StatefulWidget {
 }
 
 class _TripDetailsScreenState extends State<TripDetailsScreen> {
+  static const _placeImageFields = <String>[
+    'thumbnail',
+    'image',
+    'imageUrl',
+    'mainPhoto',
+    'main_photo',
+    'photo',
+    'photos',
+    'images',
+    'heroImage',
+    'galleryImages',
+  ];
+
   late final ApiService api;
   Map<String, dynamic>? trip;
   bool loading = true;
@@ -277,13 +290,52 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             .toList();
     final result = source
         .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
+        .map((item) =>
+            _mergeCurrentActivitySnapshot(Map<String, dynamic>.from(item)))
         .toList();
     result.sort((a, b) => (a['scheduledStartTime'] ?? a['timeSlot'] ?? '')
         .toString()
         .compareTo(
             (b['scheduledStartTime'] ?? b['timeSlot'] ?? '').toString()));
     return result;
+  }
+
+  Map<String, dynamic> _mergeCurrentActivitySnapshot(
+      Map<String, dynamic> scheduled) {
+    final activityId = (scheduled['activityId'] ?? '').toString();
+    final destinationId = (scheduled['destinationId'] ?? '').toString();
+    Map<String, dynamic>? current;
+    for (final candidate in activities) {
+      if (activityId.isNotEmpty &&
+          (candidate['activityId'] ?? '').toString() == activityId) {
+        current = candidate;
+        break;
+      }
+    }
+    if (current == null && destinationId.isNotEmpty) {
+      for (final candidate in activities) {
+        if ((candidate['destinationId'] ?? '').toString() == destinationId) {
+          current = candidate;
+          break;
+        }
+      }
+    }
+    if (current == null) return scheduled;
+    final merged = <String, dynamic>{...current, ...scheduled};
+    for (final field in _placeImageFields) {
+      final value = current[field];
+      if (_hasImageValue(value)) {
+        merged[field] = value;
+      }
+    }
+    return merged;
+  }
+
+  bool _hasImageValue(dynamic value) {
+    if (value is String) return value.trim().isNotEmpty;
+    if (value is List) return value.isNotEmpty;
+    if (value is Map) return value.isNotEmpty;
+    return false;
   }
 
   List<Map<String, dynamic>> _planningBlocks(Map<String, dynamic> day) =>
@@ -799,6 +851,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           'openingHours': place['openingHours'] ?? '',
           'recommendedDurationMinutes':
               place['recommendedDurationMinutes'] ?? 90,
+          for (final field in _placeImageFields)
+            if (place[field] != null) field: place[field],
           'dayNo': 1,
         });
       }
@@ -983,13 +1037,19 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       'openingHours': activity['openingHours'] ?? '',
       'estimatedCost': activity['estimatedCost'] ?? 0,
       'indoor': activity['indoor'] ?? false,
+      for (final field in _placeImageFields)
+        if (activity[field] != null) field: activity[field],
     };
     try {
       if (id.isNotEmpty) {
         final data =
             await api.get('/api/fr3/destinations/${Uri.encodeComponent(id)}');
-        if (data['destination'] is Map)
-          initial = Map<String, dynamic>.from(data['destination'] as Map);
+        if (data['destination'] is Map) {
+          initial = {
+            ...initial,
+            ...Map<String, dynamic>.from(data['destination'] as Map),
+          };
+        }
       }
     } catch (_) {}
     if (!mounted) return;
