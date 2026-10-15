@@ -1,1 +1,98 @@
-{% extends 'base.html' %}{% block title %}Administrator Login | TravelMate{% endblock %}{% block body %}<div class="auth"><section class="auth-art"><div><div class="mark">TM</div><h1>Administrator<br>Website</h1><p>Manage user accounts, review tourism content, moderate traveller feedback and generate system reports.</p></div><div class="swatches"><span></span><span></span><span></span><span></span></div></section><section class="auth-panel"><form class="auth-card" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><h2>Administrator Login</h2><p class="muted">Admin accounts are created by the system setup script, not public registration.</p>{% for c,m in get_flashed_messages(with_categories=true) %}<div class="msg {{c}}">{{m}}</div>{% endfor %}<div class="field"><label>Administrator email</label><input class="input" name="email" type="email" required></div><div class="field"><label>Password</label><input class="input" name="password" type="password" required></div><button class="btn secondary" style="width:100%">Login</button></form></section></div>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Administrator Login | TravelMate{% endblock %}
+{% block body %}
+<div class="auth">
+  <section class="auth-art">
+    <div>
+      <div class="mark">TM</div>
+      <div class="auth-brand-tag">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Penang Tourism Intelligence
+      </div>
+      <h1>Administrator<br>Portal</h1>
+      <p>Authoritative administration console for TravelMate. Oversee tourism offerings, moderate user submissions, audit operations, and generate system reports.</p>
+
+      <div class="auth-features">
+        <div class="auth-feature-item">
+          <div class="auth-feature-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2"><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+          </div>
+          <div>
+            <strong>Tourism Content Moderation</strong>
+            <span>Review, approve, or reject tourism packages and promotional campaigns.</span>
+          </div>
+        </div>
+
+        <div class="auth-feature-item">
+          <div class="auth-feature-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <div>
+            <strong>Role & Account Governance</strong>
+            <span>Enforce access control for travellers, verify operator credentials, and monitor roles.</span>
+          </div>
+        </div>
+
+        <div class="auth-feature-item">
+          <div class="auth-feature-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          </div>
+          <div>
+            <strong>System Audit & Reporting</strong>
+            <span>Track bookings, supervise payments, and export compliance-ready activity summaries.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-art-footer">
+      <span>TravelMate FYP • Penang Tourism Platform</span>
+      <span>Administrator Console</span>
+    </div>
+  </section>
+
+  <section class="auth-panel">
+    <div class="auth-card">
+      <div class="auth-card-header">
+        <span class="auth-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Administrator Sign-In
+        </span>
+        <h2>Administrator Login</h2>
+        <p class="muted">Access is restricted to authorized platform administrators. Credentials are provisioned via system security setup.</p>
+      </div>
+
+      {% for c,m in get_flashed_messages(with_categories=true) %}
+      <div class="msg {{c}}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>{{m}}</span>
+      </div>
+      {% endfor %}
+
+      <form method="post" action="{{ url_for('admin_fr01.login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="field">
+          <label for="admin-email">Administrator Email</label>
+          <input id="admin-email" class="input" name="email" type="email" autocomplete="email" required placeholder="admin@travelmate.com">
+        </div>
+
+        <div class="field">
+          <label for="admin-password">Password</label>
+          <input id="admin-password" class="input" name="password" type="password" autocomplete="current-password" required placeholder="Enter administrator password">
+        </div>
+
+        <button class="btn primary" type="submit" style="width:100%;margin-top:12px;">
+          <span>Sign In to Console</span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </button>
+      </form>
+
+      <div class="auth-card-footer">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>TravelMate Administrator Portal</span>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

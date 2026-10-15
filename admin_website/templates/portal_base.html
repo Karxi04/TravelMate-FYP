@@ -1,3 +1,149 @@
-{% extends 'base.html' %}{% block body %}
-<div class="layout"><aside class="sidebar"><div class="brand"><div class="logo">TM</div><div><strong>TravelMate</strong><br><small>Administrator Website</small></div></div><nav><a href="{{ url_for('admin_fr13.dashboard') }}">▦ Dashboard</a><a href="{{ url_for('admin_fr13.users') }}">○ User Accounts</a><a href="{{ url_for('admin_fr13.destinations') }}">⌖ Destinations</a><a href="{{ url_for('admin_fr13.activities') }}">◉ Activities</a><a href="{{ url_for('admin_fr13.packages') }}">□ Package Reviews</a><a href="{{ url_for('admin_fr13.campaigns') }}">◇ Promotion Reviews</a><a href="{{ url_for('admin_fr13.feedback') }}">☆ Traveller Feedback</a><a href="{{ url_for('admin_fr13.bookings') }}">▣ Bookings</a><a href="{{ url_for('admin_fr13.payments') }}">◍ Payments</a><a href="{{ url_for('admin_fr13.reports') }}">▤ System Reports</a></nav><div class="footer"><nav><form method="post" action="{{ url_for('admin_fr01.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn outline" type="submit">↪ Logout</button></form></nav></div></aside><section class="content"><header class="topbar"><div><strong>Administrator Management</strong><div class="muted" style="font-size:12px">Separate admin web application</div></div><div class="avatar">AD</div></header><main class="main">{% for c,m in get_flashed_messages(with_categories=true) %}<div class="msg {{c}}">{{m}}</div>{% endfor %}{% block content %}{% endblock %}</main></section></div>
+{% extends 'base.html' %}
+{% block body %}
+<div class="layout">
+  <div class="sidebar-backdrop" onclick="document.querySelector('.layout').classList.remove('sidebar-open')" aria-hidden="true"></div>
+
+  <aside class="sidebar">
+    <div>
+      <div class="brand">
+        <div class="logo">TM</div>
+        <div>
+          <strong>TravelMate</strong>
+          <small>Administrator Portal</small>
+        </div>
+      </div>
+
+      <nav aria-label="Administrator portal navigation">
+        <div class="sidebar-nav-section">
+          <span class="sidebar-nav-title">Overview</span>
+        </div>
+        <a href="{{ url_for('admin_fr13.dashboard') }}" class="{% if request.endpoint == 'admin_fr13.dashboard' %}active{% endif %}">
+          <span class="nav-item-content">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span>Dashboard</span>
+          </span>
+        </a>
+
+        <div class="sidebar-nav-section">
+          <span class="sidebar-nav-title">Moderation & Review</span>
+        </div>
+        <a href="{{ url_for('admin_fr13.packages') }}" class="{% if request.endpoint in ['admin_fr13.packages', 'admin_fr13.package_details'] %}active{% endif %}">
+          <span class="nav-item-content">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            <span>Package Reviews</span>
+          </span>
+        </a>
+        <a href="{{ url_for('admin_fr13.campaigns') }}" class="{% if request.endpoint in ['admin_fr13.campaigns', 'admin_fr13.campaign_detail', 'admin_fr13.campaign_details'] %}active{% endif %}">
+          <span class="nav-item-content">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+            <span>Promotion Reviews</span>
+          </span>
+        </a>
+        <a href="{{ url_for('admin_fr13.feedback') }}" class="{% if request.endpoint in ['admin_fr13.feedback', 'admin_fr13.feedback_details'] %}active{% endif %}">
+          <span class="nav-item-content">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span>Traveller Feedback</span>
+          </span>
+        </a>
+
+        <div class="sidebar-nav-section">
+          <span class="sidebar-nav-title">Catalog</span>
+        </div>
+        <a href="{{ url_for('admin_fr13.destinations') }}" class="{% if request.endpoint in ['admin_fr13.destinations', 'admin_fr13.destination_details'] %}active{% endif %}">
+          <span class="nav-item-content">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span>Destinations</span>
+          </span>
+        </a>
+        <a href="{{ url_for('admin_fr13.activities') }}" class="{% if request.endpoint in ['admin_fr13.activities', 'admin_fr13.activity_details'] %}active{% endif %}">
+          <span class="nav-item-content">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+            <span>Activities</span>
+          </span>
+        </a>
+
+        <div class="sidebar-nav-section">
+          <span class="sidebar-nav-title">System & Governance</span>
+        </div>
+        <a href="{{ url_for('admin_fr13.users') }}" class="{% if request.endpoint in ['admin_fr13.users', 'admin_fr13.update_user'] %}active{% endif %}">
+          <span class="nav-item-content">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>User Accounts</span>
+          </span>
+        </a>
+        <a href="{{ url_for('admin_fr13.bookings') }}" class="{% if request.endpoint == 'admin_fr13.bookings' %}active{% endif %}">
+          <span class="nav-item-content">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span>Bookings</span>
+          </span>
+        </a>
+        <a href="{{ url_for('admin_fr13.payments') }}" class="{% if request.endpoint == 'admin_fr13.payments' %}active{% endif %}">
+          <span class="nav-item-content">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            <span>Payments</span>
+          </span>
+        </a>
+        <a href="{{ url_for('admin_fr13.reports') }}" class="{% if request.endpoint in ['admin_fr13.reports', 'admin_fr13.export_report'] %}active{% endif %}">
+          <span class="nav-item-content">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <span>System Reports</span>
+          </span>
+        </a>
+      </nav>
+    </div>
+
+    <div class="footer">
+      <div class="sidebar-user-indicator">
+        <span class="status-pulse" aria-hidden="true"></span>
+        <span>Admin Session Active</span>
+      </div>
+      <form method="post" action="{{ url_for('admin_fr01.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn" type="submit" aria-label="Sign out of Administrator Portal">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span>Sign Out</span>
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <section class="content">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="mobile-menu-btn" type="button" aria-label="Toggle navigation menu" onclick="document.querySelector('.layout').classList.toggle('sidebar-open')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div>
+          <h2 class="topbar-title">Administrator Management</h2>
+          <div class="topbar-subtitle">TravelMate Penang Tourism Platform • Moderation & Audit Console</div>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <div class="system-badge">
+          <span class="system-badge-dot" aria-hidden="true"></span>
+          <span>Port 5002 • Online</span>
+        </div>
+        <div class="user-profile-badge">
+          <div class="avatar" aria-hidden="true">AD</div>
+          <div class="user-meta">
+            <span class="user-meta-name">Administrator</span>
+            <span class="user-meta-role">Admin</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      {% for c,m in get_flashed_messages(with_categories=true) %}
+      <div class="msg {{c}}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>{{m}}</span>
+      </div>
+      {% endfor %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </section>
+</div>
 {% endblock %}
