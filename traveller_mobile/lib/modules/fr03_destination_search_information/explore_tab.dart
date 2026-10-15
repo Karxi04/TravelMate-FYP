@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/utils/destination_utils.dart';
@@ -20,7 +22,7 @@ class ExploreTab extends StatefulWidget {
   const ExploreTab({
     super.key,
     this.initialQuery = '',
-    this.initialLocation = 'Malaysia',
+    this.initialLocation = 'Penang',
     this.api,
   });
 
@@ -46,6 +48,7 @@ class _ExploreTabState extends State<ExploreTab> {
   String? queryError;
   String? searchError;
   int searchVersion = 0;
+  Timer? searchDebounce;
 
   final categories = const [
     ('All', Icons.explore_outlined),
@@ -74,6 +77,7 @@ class _ExploreTabState extends State<ExploreTab> {
 
   @override
   void dispose() {
+    searchDebounce?.cancel();
     query.dispose();
     location.dispose();
     super.dispose();
@@ -94,14 +98,13 @@ class _ExploreTabState extends State<ExploreTab> {
   }
 
   Future<void> search() async {
+    searchDebounce?.cancel();
     final text = query.text.trim();
     if (text.isEmpty) {
       setState(
           () => queryError = 'Enter a place, food, or activity to search.');
       return;
     }
-    if (loading) return;
-
     final version = ++searchVersion;
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
@@ -132,15 +135,30 @@ class _ExploreTabState extends State<ExploreTab> {
             (data['locationUsed'] ?? requestedLocation).toString().trim();
         resultSource = (data['source'] ?? '').toString();
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted || version != searchVersion) return;
       setState(() {
-        searchError =
-            'We couldn’t load places right now. Check your connection and try again.';
+        searchError = userFacingApiError(error);
       });
     } finally {
       if (mounted && version == searchVersion) setState(() => loading = false);
     }
+  }
+
+  void _scheduleSearch(String value) {
+    searchDebounce?.cancel();
+    if (value.trim().isEmpty) {
+      searchVersion += 1;
+      setState(() {
+        loading = false;
+        hasSearched = false;
+        queryError = null;
+        searchError = null;
+        results = [];
+      });
+      return;
+    }
+    searchDebounce = Timer(const Duration(milliseconds: 450), search);
   }
 
   Future<void> _addToTrip(Map<String, dynamic> item) async {
@@ -175,15 +193,28 @@ class _ExploreTabState extends State<ExploreTab> {
     }
   }
 
-  Future<void> _viewDetails(Map<String, dynamic> item) => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => DestinationDetailsScreen(
-            initialDestination: Map<String, dynamic>.from(item),
-            api: api,
-          ),
+  bool _isArea(Map<String, dynamic> item) => item['resultKind'] == 'area';
+
+  Future<void> _viewResult(Map<String, dynamic> item) async {
+    if (_isArea(item)) {
+      final area = (item['title'] ?? item['name'] ?? '').toString().trim();
+      if (area.isEmpty) return;
+      location.text = area;
+      query.text = 'places to visit';
+      query.selection = TextSelection.collapsed(offset: query.text.length);
+      await search();
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DestinationDetailsScreen(
+          initialDestination: Map<String, dynamic>.from(item),
+          api: api,
         ),
-      );
+      ),
+    );
+  }
 
   void _selectCategory(String value) {
     if (value == 'Hotels') {
@@ -210,8 +241,11 @@ class _ExploreTabState extends State<ExploreTab> {
             key: const ValueKey('explore-search-field'),
             controller: query,
             hint: 'Search places, food, attractions…',
+            onChanged: _scheduleSearch,
             onSubmitted: (_) => search(),
             onClear: () {
+              searchDebounce?.cancel();
+              searchVersion += 1;
               query.clear();
               setState(() {
                 queryError = null;
@@ -410,12 +444,14 @@ class _ExploreTabState extends State<ExploreTab> {
             child: DestinationCard(
               destination: item,
               source: resultSource,
-              onView: () => _viewDetails(item),
+              onView: () => _viewResult(item),
               saved: savedIds.contains(DestinationUtils.resolveId(item)),
-              onSave: savingIds.contains(DestinationUtils.resolveId(item))
+              onSave: _isArea(item) ||
+                      savingIds.contains(DestinationUtils.resolveId(item))
                   ? null
                   : () => _saveDestination(item),
-              onAddToTrip: addingIds.contains(DestinationUtils.resolveId(item))
+              onAddToTrip: _isArea(item) ||
+                      addingIds.contains(DestinationUtils.resolveId(item))
                   ? null
                   : () => _addToTrip(item),
             ),

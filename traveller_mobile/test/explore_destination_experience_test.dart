@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/core/navigation/app_shell_navigation.dart';
@@ -40,6 +42,9 @@ class _ExploreApi extends ApiService {
   bool emptySearch = false;
   bool openingAvailable = true;
   bool detailsFallback = false;
+  final List<Map<String, String>> searchQueries = [];
+  final Map<String, List<Map<String, dynamic>>> resultsByQuery = {};
+  final Map<String, Completer<List<Map<String, dynamic>>>> pendingByQuery = {};
   List<Map<String, dynamic>> trips = [
     {
       'id': 'trip_1',
@@ -52,13 +57,22 @@ class _ExploreApi extends ApiService {
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
     if (path == '/api/fr3/destinations/search') {
       searchCalls += 1;
+      final params = Map<String, String>.from(query ?? const {});
+      searchQueries.add(params);
       if (failSearchOnce) {
         failSearchOnce = false;
         throw Exception('provider stack trace');
       }
+      final searchText = params['q'] ?? '';
+      final pending = pendingByQuery[searchText];
+      final configuredResults = pending == null
+          ? resultsByQuery[searchText]
+          : await pending.future;
       return {
         'ok': true,
-        'results': emptySearch ? <dynamic>[] : [_place()],
+        'results': emptySearch
+            ? <dynamic>[]
+            : configuredResults ?? [_place()],
         'source': 'local',
         'locationUsed': query?['location'] ?? 'Malaysia',
       };
@@ -201,11 +215,71 @@ void main() {
     final api = _ExploreApi();
     await _pumpExplore(tester, api);
 
-    expect(find.text('Explore Malaysia'), findsOneWidget);
+    expect(find.text('Explore Penang'), findsOneWidget);
     expect(find.text('Search places, food, attractions…'), findsOneWidget);
     expect(find.text('Interests'), findsOneWidget);
     expect(find.text('Find somewhere memorable'), findsOneWidget);
     expect(api.searchCalls, 0);
+  });
+
+  testWidgets('typing is debounced and stale responses are ignored',
+      (tester) async {
+    final api = _ExploreApi();
+    final first = Completer<List<Map<String, dynamic>>>();
+    final second = Completer<List<Map<String, dynamic>>>();
+    api.pendingByQuery['first'] = first;
+    api.pendingByQuery['second'] = second;
+    await _pumpExplore(tester, api);
+
+    await tester.enterText(find.byType(TextField).first, 'first');
+    await tester.pump(const Duration(milliseconds: 449));
+    expect(api.searchCalls, 0);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(api.searchCalls, 1);
+
+    await tester.enterText(find.byType(TextField).first, 'second');
+    await tester.pump(const Duration(milliseconds: 450));
+    expect(api.searchCalls, 2);
+
+    second.complete([
+      {..._place(), 'destinationId': 'second', 'title': 'Second result'}
+    ]);
+    await tester.pump();
+    first.complete([
+      {..._place(), 'destinationId': 'first', 'title': 'Stale first result'}
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Second result'), findsWidgets);
+    expect(find.text('Stale first result'), findsNothing);
+  });
+
+  testWidgets('area results lead to area-focused place discovery',
+      (tester) async {
+    final api = _ExploreApi();
+    api.resultsByQuery['George Town'] = [
+      {
+        'destinationId': 'area_george_town',
+        'title': 'George Town',
+        'type': 'City',
+        'resultKind': 'area',
+      }
+    ];
+    api.resultsByQuery['places to visit'] = [
+      {..._place(), 'title': 'Chew Jetty'}
+    ];
+    await _pumpExplore(tester, api);
+    await _search(tester, 'George Town');
+
+    final areaAction =
+        find.byKey(const ValueKey('destination-view-area_george_town'));
+    await _show(tester, areaAction);
+    await tester.tap(areaAction);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Chew Jetty'), findsWidgets);
+    expect(api.searchQueries.last['location'], 'George Town');
+    expect(api.searchQueries.last['q'], 'places to visit');
   });
 
   testWidgets('search renders a generic destination card and fallback source',
@@ -215,7 +289,7 @@ void main() {
     await _search(tester, 'Penang culture');
 
     expect(api.searchCalls, 1);
-    expect(find.text('Kek Lok Si Temple'), findsOneWidget);
+    expect(find.text('Kek Lok Si Temple'), findsWidgets);
     expect(find.text('Culture'), findsWidgets);
     expect(find.text('Fallback source'), findsWidgets);
     expect(find.textContaining('% match'), findsNothing);
@@ -239,7 +313,7 @@ void main() {
     await tester.tap(find.text('Try again'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Kek Lok Si Temple'), findsOneWidget);
+    expect(find.text('Kek Lok Si Temple'), findsWidgets);
   });
 
   testWidgets('destination card pushes details and back returns to one Explore',
@@ -298,7 +372,7 @@ void main() {
     final api = _ExploreApi()..detailsFallback = true;
     await _pumpDetails(tester, api, personalized: true);
 
-    expect(find.text('Kek Lok Si Temple'), findsOneWidget);
+    expect(find.text('Kek Lok Si Temple'), findsWidgets);
     expect(find.text('Air Itam, Penang'), findsWidgets);
     await _show(tester, find.text('Cached source'));
     expect(find.text('Cached source'), findsOneWidget);
