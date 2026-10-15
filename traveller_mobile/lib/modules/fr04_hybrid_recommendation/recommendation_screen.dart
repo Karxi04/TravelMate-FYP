@@ -251,6 +251,19 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         'openingHours': item['openingHours'] ?? '',
         'indoor': item['indoor'] ?? false,
         'recommendedDurationMinutes': item['recommendedDurationMinutes'] ?? 90,
+        for (final key in const [
+          'thumbnail',
+          'image',
+          'imageUrl',
+          'mainPhoto',
+          'main_photo',
+          'photo',
+          'photos',
+          'images',
+          'heroImage',
+          'galleryImages',
+        ])
+          if (item[key] != null) key: item[key],
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

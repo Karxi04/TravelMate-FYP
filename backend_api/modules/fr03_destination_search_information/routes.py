@@ -25,6 +25,7 @@ from sequence_contract.firebase_firestore import (
     deleteRecord,
 )
 from services.public_content_projection import public_review
+from services.malaysian_locality import normalize_destination_scope, filter_candidates
 
 bp = Blueprint('fr03_destinations', __name__, url_prefix='/api/fr3')
 
@@ -46,6 +47,77 @@ def _destination_id(item):
         or item.get('title')
         or ''
     ).strip()
+
+
+_SEARCH_ALIASES = {
+    'georgetown': 'george town',
+    'kek loksi': 'kek lok si',
+    'pulau pinang': 'penang',
+}
+
+
+def _search_text(value):
+    text = re.sub(r'[^a-z0-9]+', ' ', str(value or '').lower()).strip()
+    for alias, canonical in _SEARCH_ALIASES.items():
+        text = re.sub(rf'\b{re.escape(alias)}\b', canonical, text)
+    return text
+
+
+def _result_identity_values(item):
+    return {
+        str(item.get(field) or '').strip().lower()
+        for field in ('place_id', 'data_id', 'data_cid', 'destinationId', 'id')
+        if str(item.get(field) or '').strip()
+    }
+
+
+def _deduplicate_results(items):
+    output = []
+    seen_ids = set()
+    seen_names = set()
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        identities = _result_identity_values(item)
+        name_key = '|'.join((
+            _search_text(item.get('title') or item.get('name')),
+            _search_text(item.get('address') or item.get('location')),
+        ))
+        if identities.intersection(seen_ids) or (name_key != '|' and name_key in seen_names):
+            continue
+        output.append(item)
+        seen_ids.update(identities)
+        if name_key != '|':
+            seen_names.add(name_key)
+    return output
+
+
+def _relevance_rank(item, query):
+    query_text = _search_text(query)
+    title = _search_text(item.get('title') or item.get('name'))
+    category = _search_text(item.get('type') or item.get('category'))
+    address = _search_text(item.get('address') or item.get('location'))
+    query_tokens = set(query_text.split())
+    title_tokens = set(title.split())
+    if title == query_text:
+        tier = 0
+    elif title.startswith(query_text):
+        tier = 1
+    elif query_text and query_text in title:
+        tier = 2
+    elif query_tokens and query_tokens.issubset(title_tokens):
+        tier = 3
+    elif query_tokens.intersection(title_tokens):
+        tier = 4
+    elif query_text in f'{category} {address}':
+        tier = 5
+    else:
+        tier = 6
+    try:
+        rating = float(item.get('rating') or 0)
+    except (TypeError, ValueError):
+        rating = 0
+    return tier, -rating, title
 
 
 def _cache(item):
@@ -168,11 +240,12 @@ def search_destinations():
     except Exception as exc:
         if not _fallback_mode():
             return jsonify({'ok': False, 'error': str(exc)}), 502
-        query_words = set(re.findall(r'\w+', q.lower()))
+        normalized_query = _search_text(q)
+        query_words = set(normalized_query.split())
         matched = []
         for x in _all_destinations():
-            text = (' '.join(str(x.get(k, '')) for k in ['title', 'name', 'type', 'category', 'description', 'location', 'address', 'city', 'state'])).lower()
-            if q.lower() in text or (query_words and query_words.issubset(set(re.findall(r'\w+', text)))):
+            text = _search_text(' '.join(str(x.get(k, '')) for k in ['title', 'name', 'type', 'category', 'description', 'location', 'address', 'city', 'state']))
+            if normalized_query in text or (query_words and query_words.issubset(set(text.split()))):
                 matched.append(dict(x))
             elif query_words and any(word in text for word in query_words if len(word) > 3):
                 matched.append(dict(x))
@@ -184,17 +257,23 @@ def search_destinations():
         admin_items = retrieveRecord('admin_destinations') or []
         for ad in admin_items:
             if isinstance(ad, dict) and ad.get('status', 'active') != 'archived':
-                text = (' '.join(str(ad.get(k, '')) for k in ['title', 'name', 'type', 'category', 'description', 'location', 'address', 'city', 'state'])).lower()
-                if q.lower() in text:
+                text = _search_text(' '.join(str(ad.get(k, '')) for k in ['title', 'name', 'type', 'category', 'description', 'location', 'address', 'city', 'state']))
+                if _search_text(q) in text:
                     did = _destination_id(ad)
                     if not any(_destination_id(r) == did for r in results):
                         results.insert(0, dict(ad))
     except Exception:
         pass
 
-    results = applyDestinationSorting(
-        applyDestinationFilter(results, filterOption),
-        sortOption,
+    results = _deduplicate_results(results)
+    requested_scope = normalize_destination_scope(location)
+    if requested_scope.get('state') or requested_scope.get('city'):
+        results, _rejected = filter_candidates(results, requested_scope)
+    results = applyDestinationFilter(results, filterOption)
+    results = (
+        applyDestinationSorting(results, sortOption)
+        if sortOption
+        else sorted(results, key=lambda item: _relevance_rank(item, q))
     )
 
     for item in results[:30]:
@@ -203,7 +282,12 @@ def search_destinations():
             item['destinationId'] = did
         _cache(item)
 
-    return jsonify({'ok': True, 'results': results, 'source': source})
+    return jsonify({
+        'ok': True,
+        'results': results,
+        'source': source,
+        'locationUsed': requested_scope.get('canonicalName') or location,
+    })
 
 
 @bp.get('/destinations/<path:place_id>')

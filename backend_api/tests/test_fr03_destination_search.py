@@ -97,3 +97,81 @@ def test_destination_details_unknown_returns_none(client, mock_traveller_auth):
         assert data['ok'] is True
         assert data['destination'] is None
         assert data['detailsAvailable'] is False
+
+
+def test_destination_search_exact_alias_outranks_more_popular_partial(
+        client, mock_traveller_auth, isolated_destination_search):
+    provider, _cache_read, _cache_write = isolated_destination_search
+    provider.return_value = {'local_results': [
+        {
+            'place_id': 'food_trail', 'title': 'George Town Food Trail',
+            'rating': 4.9, 'address': 'George Town, Penang, Malaysia',
+        },
+        {
+            'place_id': 'george_town', 'title': 'George Town',
+            'rating': 4.2, 'address': 'Penang, Malaysia',
+        },
+    ]}
+
+    response = client.get(
+        '/api/fr3/destinations/search?q=georgetown&location=Penang',
+        headers={'Authorization': 'Bearer valid_test_token'},
+    )
+
+    assert response.status_code == 200
+    results = response.get_json()['results']
+    assert [item['place_id'] for item in results] == ['george_town', 'food_trail']
+
+
+def test_destination_search_deduplicates_provider_identity_and_rejects_wrong_state(
+        client, mock_traveller_auth, isolated_destination_search):
+    provider, _cache_read, _cache_write = isolated_destination_search
+    provider.return_value = {'local_results': [
+        {
+            'place_id': 'shared_place', 'title': 'Penang Hill',
+            'address': 'Air Itam, Penang, Malaysia',
+        },
+        {
+            'place_id': 'shared_place', 'title': 'Penang Hill duplicate',
+            'address': 'Air Itam, Penang, Malaysia',
+        },
+        {
+            'place_id': 'wrong_state', 'title': 'Hill View',
+            'address': 'Johor Bahru, Johor, Malaysia',
+        },
+    ]}
+
+    response = client.get(
+        '/api/fr3/destinations/search?q=hill&location=Penang',
+        headers={'Authorization': 'Bearer valid_test_token'},
+    )
+
+    assert response.status_code == 200
+    results = response.get_json()['results']
+    assert [item['place_id'] for item in results] == ['shared_place']
+    assert response.get_json()['locationUsed'] == 'Penang, Malaysia'
+
+
+def test_destination_search_alias_is_normalized_inside_partial_names(
+        client, mock_traveller_auth, isolated_destination_search):
+    provider, _cache_read, _cache_write = isolated_destination_search
+    provider.return_value = {'local_results': [
+        {
+            'place_id': 'heritage_walk',
+            'title': 'George Town Heritage Walk',
+            'address': 'George Town, Penang, Malaysia',
+        },
+        {
+            'place_id': 'generic_walk',
+            'title': 'Malaysian Heritage Walk',
+            'address': 'George Town, Penang, Malaysia',
+        },
+    ]}
+
+    response = client.get(
+        '/api/fr3/destinations/search?q=georgetown heritage&location=Penang',
+        headers={'Authorization': 'Bearer valid_test_token'},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()['results'][0]['place_id'] == 'heritage_walk'

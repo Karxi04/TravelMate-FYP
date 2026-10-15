@@ -12,6 +12,38 @@ from services.stripe_service import (
 )
 
 
+def test_hotel_search_empty_inventory_is_no_results_not_provider_failure(
+        client, mock_traveller_auth):
+    with patch(
+        'modules.fr08_hotel_booking.routes.retrieveHotelOffers',
+        return_value={'data': [], 'sandbox': True},
+    ), patch(
+        'modules.fr08_hotel_booking.routes.normalizeHotelOffers',
+        return_value=[],
+    ), patch(
+        'modules.fr08_hotel_booking.routes._persist_quotes',
+        return_value=[],
+    ):
+        response = client.post(
+            '/api/fr8/hotels/search',
+            headers={'Authorization': 'Bearer valid_test_token'},
+            json={
+                'destination': 'Penang',
+                'checkin': '2026-11-10',
+                'checkout': '2026-11-12',
+                'adults': 2,
+                'roomQuantity': 1,
+            },
+        )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['ok'] is True
+    assert data['items'] == []
+    assert data['noResults'] is True
+    assert data['source'] == 'liteapi'
+
+
 class MemoryPersistence:
     def __init__(self):
         self.collections = {}

@@ -147,6 +147,10 @@ def test_itinerary_generation_uses_linked_destination_snapshot(client, mock_trav
             'title': 'Penang Hill',
             'address': 'Air Itam, Penang, Malaysia',
             'category': 'Nature',
+            'photos': [
+                {'thumbnail': 'https://images.example/penang-hill-thumb.jpg'},
+                {'image': 'https://images.example/penang-hill.jpg'},
+            ],
         }],
     }
 
@@ -180,6 +184,9 @@ def test_itinerary_generation_uses_linked_destination_snapshot(client, mock_trav
     assert response.status_code == 200
     data = response.get_json()
     assert [item['destinationId'] for item in data['itinerary']['activities']] == ['penang_hill']
+    assert data['itinerary']['activities'][0]['photos'][1]['image'] == (
+        'https://images.example/penang-hill.jpg'
+    )
     assert data['smartFeatures']['recommendationGenerationId'] == 'rec_penang'
     assert data['smartFeatures']['destinationSource'] == 'cache'
     assert mock_update.call_args.args[0:2] == ('itineraries', 'itin_snapshot')

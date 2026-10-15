@@ -321,8 +321,6 @@ def hotels_search():
     try:
         result = retrieveHotelOffers(req)
         items = normalizeHotelOffers(result)
-        if not items:
-            raise RuntimeError('LiteAPI returned no bookable offers for these dates')
         source = 'liteapi'
         provenance = _provenance(source, provider_sandbox=_provider_sandbox(result))
         # LiteAPI rate responses may omit property content. Enrich only those
@@ -386,6 +384,7 @@ def hotels_search():
         'rateSource': provenance['rateSource'],
         'quoteRetrievedAt': provenance['quoteRetrievedAt'],
         'transactionMode': provenance['transactionMode'],
+        'noResults': not items,
     })
 
 
