@@ -572,6 +572,7 @@ class TravelPlaceImage extends StatefulWidget {
 
 class _TravelPlaceImageState extends State<TravelPlaceImage> {
   late Future<String?> _imageFuture;
+  int _imageRevision = 0;
 
   Map<String, dynamic> get place => widget.place;
   double? get height => widget.height;
@@ -593,8 +594,11 @@ class _TravelPlaceImageState extends State<TravelPlaceImage> {
     }
   }
 
-  String get _title =>
-      (place['title'] ?? place['name'] ?? 'Travel destination').toString();
+  String get _title => (place['title'] ??
+          place['name'] ??
+          place['activityName'] ??
+          'Travel destination')
+      .toString();
 
   String get _category =>
       (place['category'] ?? place['type'] ?? 'Place').toString();
@@ -630,6 +634,7 @@ class _TravelPlaceImageState extends State<TravelPlaceImage> {
 
   void _retry([String? failedUrl]) {
     setState(() {
+      _imageRevision += 1;
       _imageFuture = PlaceImageService.retry(place, failedUrl: failedUrl);
     });
   }
@@ -637,7 +642,8 @@ class _TravelPlaceImageState extends State<TravelPlaceImage> {
   Widget _fallback([String? failedUrl]) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxHeight <= 110 || constraints.maxWidth <= 110;
+        final compact =
+            constraints.maxHeight <= 110 || constraints.maxWidth <= 110;
         return Container(
           color: InkWashColors.paleBlue,
           alignment: Alignment.center,
@@ -714,6 +720,7 @@ class _TravelPlaceImageState extends State<TravelPlaceImage> {
 
         return Image.network(
           url,
+          key: ValueKey('place-image-$url-$_imageRevision'),
           fit: BoxFit.cover,
           gaplessPlayback: true,
           excludeFromSemantics: true,

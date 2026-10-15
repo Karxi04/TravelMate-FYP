@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/trip_details_screen.dart';
 import 'package:travelmate_traveller/services/api_service.dart';
+import 'package:travelmate_traveller/widgets/travel_widgets.dart';
 
 Map<String, dynamic> _activity({
   required String id,
@@ -162,6 +163,8 @@ class _TripApi extends ApiService {
   int deleteCalls = 0;
   int moveCalls = 0;
   int searchCalls = 0;
+  final List<Map<String, dynamic>> activityPosts = [];
+  List<Map<String, dynamic>> searchResults = [];
   Map<String, dynamic>? lastGenerationBody;
   Map<String, dynamic>? lastMoveBody;
   List<String> lastOrder = [];
@@ -201,7 +204,7 @@ class _TripApi extends ApiService {
     }
     if (path == '/api/fr3/destinations/search') {
       searchCalls += 1;
-      return {'ok': true, 'results': <dynamic>[]};
+      return {'ok': true, 'results': searchResults};
     }
     if (path.startsWith('/api/fr3/destinations/')) {
       return {
@@ -220,6 +223,10 @@ class _TripApi extends ApiService {
 
   @override
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
+    if (path == '/api/fr5/itineraries/trip_target/activities') {
+      activityPosts.add(Map<String, dynamic>.from(body ?? const {}));
+      return {'ok': true, 'itinerary': trip};
+    }
     if (path == '/api/fr5/itineraries/trip_target/generate') {
       generationCalls += 1;
       lastGenerationBody = Map<String, dynamic>.from(body ?? const {});
@@ -365,6 +372,61 @@ void main() {
     await _show(tester, find.text('George Town Night Market'));
     expect(find.text('George Town Night Market'), findsOneWidget);
     expect(find.text('Kek Lok Si Temple'), findsNothing);
+  });
+
+  testWidgets('day cards merge saved images from current activity snapshots',
+      (tester) async {
+    final api = _TripApi();
+    final current = (api.trip['activities'] as List).first as Map;
+    current['imageUrl'] = 'https://images.example/kek-lok-si.jpg';
+    final stored = ((api.trip['dailySchedule'] as List).first
+        as Map)['activities'] as List;
+    stored[0] = Map<String, dynamic>.from(stored.first as Map)
+      ..['activityId'] = 'legacy-a1'
+      ..remove('imageUrl');
+
+    await _pumpTrip(tester, api);
+
+    final image = tester
+        .widgetList<TravelPlaceImage>(find.byType(TravelPlaceImage))
+        .firstWhere(
+            (widget) => widget.place['destinationId'] == 'destination_a1');
+    expect(image.place['imageUrl'], 'https://images.example/kek-lok-si.jpg');
+  });
+
+  testWidgets('add-place flow preserves provider image fields in Trip request',
+      (tester) async {
+    final api = _TripApi();
+    api.searchResults = [
+      {
+        'destinationId': 'provider_penang_hill',
+        'title': 'Penang Hill',
+        'address': 'Air Itam, Penang',
+        'thumbnail': 'https://images.example/penang-hill-thumb.jpg',
+        'photos': [
+          {'image': 'https://images.example/penang-hill-full.jpg'}
+        ],
+      }
+    ];
+    await _pumpTrip(tester, api);
+    await _show(tester, find.text('Edit itinerary'));
+    await tester.tap(find.text('Edit itinerary'));
+    await tester.pump();
+    await _show(tester, find.text('Search and add places'));
+    await tester.tap(find.text('Search and add places'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Penang Hill'));
+    await tester.pump();
+    await tester.tap(find.text('Add 1'));
+    await tester.pumpAndSettle();
+
+    expect(api.activityPosts, hasLength(1));
+    expect(api.activityPosts.single['thumbnail'],
+        'https://images.example/penang-hill-thumb.jpg');
+    expect(api.activityPosts.single['photos'], [
+      {'image': 'https://images.example/penang-hill-full.jpg'}
+    ]);
   });
 
   testWidgets('budget and unscheduled suggestions use product language',
