@@ -550,7 +550,7 @@ class TravelStatusPill extends StatelessWidget {
   }
 }
 
-class TravelPlaceImage extends StatelessWidget {
+class TravelPlaceImage extends StatefulWidget {
   final Map<String, dynamic> place;
   final double? height;
   final double? width;
@@ -565,6 +565,33 @@ class TravelPlaceImage extends StatelessWidget {
     this.aspectRatio,
     this.borderRadius = const BorderRadius.all(Radius.circular(18)),
   });
+
+  @override
+  State<TravelPlaceImage> createState() => _TravelPlaceImageState();
+}
+
+class _TravelPlaceImageState extends State<TravelPlaceImage> {
+  late Future<String?> _imageFuture;
+
+  Map<String, dynamic> get place => widget.place;
+  double? get height => widget.height;
+  double? get width => widget.width;
+  double? get aspectRatio => widget.aspectRatio;
+  BorderRadius get borderRadius => widget.borderRadius;
+
+  @override
+  void initState() {
+    super.initState();
+    _imageFuture = PlaceImageService.resolve(place);
+  }
+
+  @override
+  void didUpdateWidget(covariant TravelPlaceImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.place, widget.place)) {
+      _imageFuture = PlaceImageService.resolve(place);
+    }
+  }
 
   String get _title =>
       (place['title'] ?? place['name'] ?? 'Travel destination').toString();
@@ -601,42 +628,74 @@ class TravelPlaceImage extends StatelessWidget {
     return Icons.landscape_rounded;
   }
 
-  Widget _fallback() {
-    return Container(
-      color: InkWashColors.paleBlue,
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            _fallbackIcon(),
-            color: InkWashColors.blueGrey,
-            size: 38,
-          ),
-          const SizedBox(height: 7),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              _title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: InkWashColors.mutedInk,
-                fontWeight: FontWeight.w700,
-                fontSize: 11,
+  void _retry([String? failedUrl]) {
+    setState(() {
+      _imageFuture = PlaceImageService.retry(place, failedUrl: failedUrl);
+    });
+  }
+
+  Widget _fallback([String? failedUrl]) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight <= 110 || constraints.maxWidth <= 110;
+        return Container(
+          color: InkWashColors.paleBlue,
+          alignment: Alignment.center,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _fallbackIcon(),
+                      color: InkWashColors.blueGrey,
+                      size: compact ? 28 : 38,
+                    ),
+                    if (!compact) ...[
+                      const SizedBox(height: 7),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          _title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: InkWashColors.mutedInk,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-            ),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: IconButton(
+                  key: const ValueKey('place-image-retry'),
+                  tooltip: 'Retry image',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: compact ? 16 : 20,
+                  onPressed: () => _retry(failedUrl),
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final image = FutureBuilder<String?>(
-      future: PlaceImageService.resolve(place),
+      future: _imageFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return Container(
@@ -658,7 +717,7 @@ class TravelPlaceImage extends StatelessWidget {
           fit: BoxFit.cover,
           gaplessPlayback: true,
           excludeFromSemantics: true,
-          errorBuilder: (context, error, stackTrace) => _fallback(),
+          errorBuilder: (context, error, stackTrace) => _fallback(url),
           loadingBuilder: (context, child, progress) {
             if (progress == null) return child;
             return Container(

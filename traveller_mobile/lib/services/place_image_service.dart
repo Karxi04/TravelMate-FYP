@@ -19,6 +19,8 @@ class PlaceImageService {
   static final Map<String, Future<String?>> _pendingByPlace =
       <String, Future<String?>>{};
   static final Map<String, String> _ownerByImageUrl = <String, String>{};
+  static final Map<String, Set<String>> _failedUrlsByPlace =
+      <String, Set<String>>{};
 
   static const Map<String, String> _wikipediaTitleHints = <String, String>{
     'george town unesco heritage area': 'George Town, Penang',
@@ -42,6 +44,8 @@ class PlaceImageService {
     final id = (place['destinationId'] ??
             place['placeId'] ??
             place['place_id'] ??
+            place['data_id'] ??
+            place['data_cid'] ??
             place['id'] ??
             '')
         .toString()
@@ -56,6 +60,12 @@ class PlaceImageService {
     final urls = <String>[];
 
     void add(dynamic raw) {
+      if (raw is List) {
+        for (final item in raw) {
+          add(item);
+        }
+        return;
+      }
       if (raw is Map) {
         add(raw['thumbnail']);
         add(raw['image']);
@@ -77,6 +87,8 @@ class PlaceImageService {
     add(place['mainPhoto']);
     add(place['main_photo']);
     add(place['photo']);
+    add(place['heroImage']);
+    add(place['galleryImages']);
     add(place['photos']);
     add(place['images']);
     return urls;
@@ -100,11 +112,10 @@ class PlaceImageService {
     if (existing != null) return existing;
 
     final pending = _resolveInternal(key, place).then((value) {
-      _resolvedByPlace[key] = value;
+      if (value != null) _resolvedByPlace[key] = value;
       _pendingByPlace.remove(key);
       return value;
     }).catchError((_) {
-      _resolvedByPlace[key] = null;
       _pendingByPlace.remove(key);
       return null;
     });
@@ -113,11 +124,41 @@ class PlaceImageService {
     return pending;
   }
 
+  /// Clears a failed resolution and retries it. A URL that failed to render is
+  /// skipped so the next provider/fallback candidate can be attempted.
+  static Future<String?> retry(
+    Map<String, dynamic> place, {
+    String? failedUrl,
+  }) {
+    final key = _placeKey(place);
+    final rejected = failedUrl?.trim();
+    if (rejected != null && rejected.isNotEmpty) {
+      _failedUrlsByPlace.putIfAbsent(key, () => <String>{}).add(rejected);
+      if (_ownerByImageUrl[rejected] == key) {
+        _ownerByImageUrl.remove(rejected);
+      }
+    }
+    _resolvedByPlace.remove(key);
+    _pendingByPlace.remove(key);
+    return resolve(place);
+  }
+
+  static List<String> explicitImageUrlsForTesting(
+    Map<String, dynamic> place,
+  ) => List<String>.unmodifiable(_explicitImageUrls(place));
+
+  static bool searchIdentityMatchesForTesting(
+    String query,
+    String candidateTitle,
+  ) => _matchesSearchIdentity(query, candidateTitle);
+
   static Future<String?> _resolveInternal(
     String key,
     Map<String, dynamic> place,
   ) async {
+    final failedUrls = _failedUrlsByPlace[key] ?? const <String>{};
     for (final url in _explicitImageUrls(place)) {
+      if (failedUrls.contains(url)) continue;
       if (_claimImage(key, url)) return url;
     }
 
@@ -148,6 +189,7 @@ class PlaceImageService {
     for (final query in queries) {
       final candidates = await _searchWikipedia(query);
       for (final candidate in candidates) {
+        if (failedUrls.contains(candidate)) continue;
         if (_claimImage(key, candidate)) return candidate;
       }
     }
@@ -155,6 +197,7 @@ class PlaceImageService {
     for (final query in queries.reversed) {
       final candidates = await _searchCommons(query);
       for (final candidate in candidates) {
+        if (failedUrls.contains(candidate)) continue;
         if (_claimImage(key, candidate)) return candidate;
       }
     }
@@ -210,6 +253,7 @@ class PlaceImageService {
         if (raw is! Map) continue;
         final pageTitle = (raw['title'] ?? '').toString().toLowerCase();
         if (_looksLikeNonPhoto(pageTitle)) continue;
+        if (!_matchesSearchIdentity(query, pageTitle)) continue;
         final thumb = raw['thumbnail'];
         if (thumb is Map) {
           final source = (thumb['source'] ?? '').toString().trim();
@@ -262,6 +306,7 @@ class PlaceImageService {
         if (raw is! Map) continue;
         final pageTitle = (raw['title'] ?? '').toString().toLowerCase();
         if (_looksLikeNonPhoto(pageTitle)) continue;
+        if (!_matchesSearchIdentity(query, pageTitle)) continue;
         final infos = raw['imageinfo'];
         if (infos is! List || infos.isEmpty || infos.first is! Map) continue;
         final info = infos.first as Map;
@@ -289,5 +334,28 @@ class PlaceImageService {
       'wordmark',
     ];
     return bad.any(title.contains);
+  }
+
+  static bool _matchesSearchIdentity(String query, String candidateTitle) {
+    const ignored = <String>{
+      'area',
+      'attraction',
+      'centre',
+      'center',
+      'malaysia',
+      'place',
+      'restaurant',
+      'tourist',
+    };
+    Set<String> tokens(String value) => RegExp(r'[a-z0-9]+')
+        .allMatches(value.toLowerCase())
+        .map((match) => match.group(0)!)
+        .where((token) => token.length > 2 && !ignored.contains(token))
+        .toSet();
+
+    final expected = tokens(query);
+    final actual = tokens(candidateTitle.replaceFirst('file:', ''));
+    if (expected.isEmpty || actual.isEmpty) return false;
+    return expected.every(actual.contains);
   }
 }

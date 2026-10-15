@@ -121,6 +121,19 @@ Future<bool> addDestinationToTrip({
       'openingHours':
           destination['openingHours'] ?? destination['open_state'] ?? '',
       'recommendedDurationMinutes': duration <= 0 ? 90 : duration,
+      for (final key in const [
+        'thumbnail',
+        'image',
+        'imageUrl',
+        'mainPhoto',
+        'main_photo',
+        'photo',
+        'photos',
+        'images',
+        'heroImage',
+        'galleryImages',
+      ])
+        if (destination[key] != null) key: destination[key],
     });
 
     if (context.mounted) {

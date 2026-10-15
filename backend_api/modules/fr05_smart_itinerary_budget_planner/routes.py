@@ -266,6 +266,35 @@ def _snapshot_activity_error(current, snapshot):
     return None
 
 
+_PLACE_IMAGE_FIELDS = (
+    'thumbnail', 'image', 'imageUrl', 'mainPhoto', 'main_photo', 'photo',
+    'photos', 'images', 'heroImage', 'galleryImages',
+)
+
+
+def _safe_image_value(value):
+    if isinstance(value, str):
+        value = value.strip()
+        return value if value.startswith(('https://', 'http://')) else None
+    if isinstance(value, list):
+        values = [_safe_image_value(item) for item in value[:8]]
+        return [item for item in values if item not in (None, [], {})]
+    if isinstance(value, dict):
+        allowed = ('thumbnail', 'image', 'link', 'url', 'source')
+        result = {key: _safe_image_value(value.get(key)) for key in allowed if key in value}
+        return {key: item for key, item in result.items() if item not in (None, [], {})}
+    return None
+
+
+def _place_image_snapshot(item):
+    snapshot = {}
+    for field in _PLACE_IMAGE_FIELDS:
+        value = _safe_image_value(item.get(field))
+        if value not in (None, [], {}):
+            snapshot[field] = value
+    return snapshot
+
+
 def _activity_from_destination(item, index):
     item = dict(item or {})
     gps = item.get('gps_coordinates') or item.get('gpsCoordinates') or {}
@@ -288,6 +317,7 @@ def _activity_from_destination(item, index):
         'providerDurationMinutes': item.get('providerDurationMinutes'),
         'durationSource': item.get('durationSource') or '',
         'recommendationGenerationId': item.get('recommendationGenerationId') or '',
+        **_place_image_snapshot(item),
     }
 
 
@@ -583,6 +613,7 @@ def add_activity_route(iid):
            if payload.get('recommendedDurationMinutes') not in (None, '') else {}),
         'providerDurationMinutes': payload.get('providerDurationMinutes'),
         'durationSource': payload.get('durationSource') or '',
+        **_place_image_snapshot(payload),
     }
     updated = addActivity(current, activity)
     recalculated = recalculateItinerary(
