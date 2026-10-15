@@ -1,1 +1,16 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{% block title %}TravelMate Administrator{% endblock %}</title><link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"></head><body>{% block body %}{% endblock %}</body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1E242D">
+  <meta name="description" content="TravelMate Penang Tourism Platform - Authoritative Administrator Management Portal">
+  <title>{% block title %}TravelMate Administrator{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  {% block body %}{% endblock %}
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

@@ -1,39 +1,246 @@
 {% extends 'portal_base.html' %}
 {% block title %}Admin Dashboard | TravelMate{% endblock %}
+
 {% block content %}
 <div class="page-title">
-  <div><span class="eyebrow">ADMINISTRATION</span><h1>System overview</h1><p>Review user activity, operator submissions, Traveller feedback and system records.</p></div>
-  <div class="actions"><a class="btn outline" href="{{ url_for('admin_fr13.reports') }}">System reports</a><a class="btn primary" href="{{ url_for('admin_fr13.packages') }}">Review packages</a></div>
+  <div>
+    <span class="eyebrow">ADMINISTRATION • SYSTEM OVERVIEW</span>
+    <h1>System Overview</h1>
+    <p>Supervise platform metrics, review operator offerings, moderate traveller community feedback, and audit system operations.</p>
+  </div>
+  <div class="actions">
+    <a class="btn outline" href="{{ url_for('admin_fr13.reports') }}">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span>System reports</span>
+    </a>
+    <a class="btn primary" href="{{ url_for('admin_fr13.packages') }}">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+      <span>Review packages</span>
+    </a>
+  </div>
 </div>
-{% set c=report.get('counts',{}) %}
-{% set summary=report.get('summary',{}) %}
-{% set users=summary.get('users',{}) %}
-{% set packages=summary.get('packages',{}) %}
-{% set campaigns=summary.get('campaigns',{}) %}
-{% set feedback=summary.get('feedback',{}) %}
+
+{% set c = report.get('counts', {}) %}
+{% set summary = report.get('summary', {}) %}
+{% set users = summary.get('users', {}) %}
+{% set packages = summary.get('packages', {}) %}
+{% set campaigns = summary.get('campaigns', {}) %}
+{% set feedback = summary.get('feedback', {}) %}
+{% set total_pending = packages.get('pending', 0) + campaigns.get('pending', 0) + feedback.get('pending', 0) %}
+
 <div class="grid g4">
-  <div class="card cream"><div class="metric">{{c.get('users',0)}}</div><div class="metric-label">Users</div><div class="metric-help">{{users.get('travellers',0)}} travellers · {{users.get('operators',0)}} operators</div></div>
-  <div class="card"><div class="metric">{{packages.get('pending',0)}}</div><div class="metric-label">Package queue</div><div class="metric-help">{{packages.get('approved',0)}} approved · {{packages.get('rejected',0)}} rejected</div></div>
-  <div class="card"><div class="metric">{{campaigns.get('pending',0)}}</div><div class="metric-label">Campaign queue</div><div class="metric-help">{{campaigns.get('active',0)}} active · {{campaigns.get('rejected',0)}} rejected</div></div>
-  <div class="card"><div class="metric">{{feedback.get('pending',0)}}</div><div class="metric-label">Feedback queue</div><div class="metric-help">{{feedback.get('visible',0)}} visible · {{feedback.get('removed',0)}} removed</div></div>
+  <div class="card metric-card">
+    <div>
+      <div class="metric-header">
+        <div class="metric-icon-wrap" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <span class="badge neutral">Total</span>
+      </div>
+      <div class="metric">{{ c.get('users', 0) }}</div>
+      <div class="metric-label">Registered Accounts</div>
+    </div>
+    <div class="metric-help">{{ users.get('travellers', 0) }} travellers · {{ users.get('operators', 0) }} operators · {{ users.get('administrators', 0) }} admins</div>
+  </div>
+
+  <div class="card metric-card">
+    <div>
+      <div class="metric-header">
+        <div class="metric-icon-wrap" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        </div>
+        {% if packages.get('pending', 0) > 0 %}
+          <span class="badge warning">{{ packages.get('pending', 0) }} Pending</span>
+        {% else %}
+          <span class="badge success">Queue Clear</span>
+        {% endif %}
+      </div>
+      <div class="metric">{{ packages.get('pending', 0) }}</div>
+      <div class="metric-label">Package Queue</div>
+    </div>
+    <div class="metric-help">{{ packages.get('approved', 0) }} approved · {{ packages.get('rejected', 0) }} rejected</div>
+  </div>
+
+  <div class="card metric-card">
+    <div>
+      <div class="metric-header">
+        <div class="metric-icon-wrap" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        </div>
+        {% if campaigns.get('pending', 0) > 0 %}
+          <span class="badge warning">{{ campaigns.get('pending', 0) }} Pending</span>
+        {% else %}
+          <span class="badge success">Queue Clear</span>
+        {% endif %}
+      </div>
+      <div class="metric">{{ campaigns.get('pending', 0) }}</div>
+      <div class="metric-label">Campaign Queue</div>
+    </div>
+    <div class="metric-help">{{ campaigns.get('active', 0) }} active · {{ campaigns.get('rejected', 0) }} rejected</div>
+  </div>
+
+  <div class="card metric-card">
+    <div>
+      <div class="metric-header">
+        <div class="metric-icon-wrap" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        {% if feedback.get('pending', 0) > 0 %}
+          <span class="badge warning">{{ feedback.get('pending', 0) }} Pending</span>
+        {% else %}
+          <span class="badge success">Queue Clear</span>
+        {% endif %}
+      </div>
+      <div class="metric">{{ feedback.get('pending', 0) }}</div>
+      <div class="metric-label">Feedback Queue</div>
+    </div>
+    <div class="metric-help">{{ feedback.get('visible', 0) }} visible · {{ feedback.get('removed', 0) }} removed</div>
+  </div>
 </div>
-<div class="grid g2 dashboard-panels">
-  <div class="card">
-    <span class="eyebrow">REVIEW QUEUE</span><h3>Moderation workspace</h3>
-    <p class="muted">{{packages.get('pending',0) + campaigns.get('pending',0) + feedback.get('pending',0)}} item(s) need administrator review.</p>
-    <div class="quick-list">
-      <a href="{{ url_for('admin_fr13.packages') }}"><span class="quick-icon">□</span><span><strong>Package reviews</strong><small>Approve or reject submitted tourism packages with comments.</small></span><b>›</b></a>
-      <a href="{{ url_for('admin_fr13.campaigns') }}"><span class="quick-icon">◇</span><span><strong>Promotion reviews</strong><small>Review promotional campaign content and dates.</small></span><b>›</b></a>
-      <a href="{{ url_for('admin_fr13.feedback') }}"><span class="quick-icon">☆</span><span><strong>Traveller feedback</strong><small>Review feedback and remove inappropriate records.</small></span><b>›</b></a>
+
+{% if total_pending > 0 %}
+<div class="moderation-banner">
+  <div class="moderation-banner-content">
+    <div class="moderation-banner-icon" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <div>
+      <strong>Moderation Attention Required</strong>
+      <p>{{ total_pending }} submission(s) currently awaiting administrative decision across packages, promotions, or traveller feedback.</p>
     </div>
   </div>
-  <div class="card">
-    <span class="eyebrow">MANAGEMENT</span><h3>System controls</h3>
-    <div class="quick-list">
-      <a href="{{ url_for('admin_fr13.users') }}"><span class="quick-icon">○</span><span><strong>User accounts</strong><small>Manage permitted roles and account status.</small></span><b>›</b></a>
-      <a href="{{ url_for('admin_fr13.reports') }}"><span class="quick-icon">▤</span><span><strong>Generate reports</strong><small>Review system counts and export report records.</small></span><b>›</b></a>
+  <a class="btn primary" href="{{ url_for('admin_fr13.packages') }}" style="padding:6px 14px;font-size:12px;white-space:nowrap">
+    Process Queues
+  </a>
+</div>
+{% else %}
+<div class="moderation-banner clear">
+  <div class="moderation-banner-content">
+    <div class="moderation-banner-icon" aria-hidden="true" style="color:var(--success)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
     </div>
-    <p class="muted" style="margin-top:14px">Last generated: {{ report.get('generatedAt','-') }}</p>
+    <div>
+      <strong>All Moderation Queues Cleared</strong>
+      <p>No pending operator submissions or flagged feedback require attention at this time.</p>
+    </div>
+  </div>
+  <a class="btn outline" href="{{ url_for('admin_fr13.packages') }}" style="padding:6px 14px;font-size:12px;white-space:nowrap">
+    View Packages
+  </a>
+</div>
+{% endif %}
+
+<div class="grid g2 dashboard-panels">
+  <div class="card">
+    <span class="eyebrow">REVIEW QUEUE</span>
+    <h3>Moderation workspace</h3>
+    <p class="muted">{{ total_pending }} item(s) need administrator review.</p>
+    <div class="quick-list">
+      <a href="{{ url_for('admin_fr13.packages') }}">
+        <span class="quick-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        </span>
+        <span>
+          <strong>Package reviews</strong>
+          <small>Approve or reject submitted tourism packages with comments.</small>
+        </span>
+        <div style="display:flex;align-items:center;gap:8px">
+          {% if packages.get('pending', 0) > 0 %}
+            <span class="badge warning">{{ packages.get('pending', 0) }} pending</span>
+          {% else %}
+            <span class="badge neutral">0 pending</span>
+          {% endif %}
+          <span class="quick-arrow" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </span>
+        </div>
+      </a>
+
+      <a href="{{ url_for('admin_fr13.campaigns') }}">
+        <span class="quick-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        </span>
+        <span>
+          <strong>Promotion reviews</strong>
+          <small>Review promotional campaign content and dates.</small>
+        </span>
+        <div style="display:flex;align-items:center;gap:8px">
+          {% if campaigns.get('pending', 0) > 0 %}
+            <span class="badge warning">{{ campaigns.get('pending', 0) }} pending</span>
+          {% else %}
+            <span class="badge neutral">0 pending</span>
+          {% endif %}
+          <span class="quick-arrow" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </span>
+        </div>
+      </a>
+
+      <a href="{{ url_for('admin_fr13.feedback') }}">
+        <span class="quick-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </span>
+        <span>
+          <strong>Traveller feedback</strong>
+          <small>Review feedback and remove inappropriate records.</small>
+        </span>
+        <div style="display:flex;align-items:center;gap:8px">
+          {% if feedback.get('pending', 0) > 0 %}
+            <span class="badge warning">{{ feedback.get('pending', 0) }} pending</span>
+          {% else %}
+            <span class="badge neutral">0 pending</span>
+          {% endif %}
+          <span class="quick-arrow" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </span>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <div class="card">
+    <span class="eyebrow">MANAGEMENT</span>
+    <h3>System controls</h3>
+    <p class="muted">Access administration tools, role configurations, and audit reports.</p>
+    <div class="quick-list">
+      <a href="{{ url_for('admin_fr13.users') }}">
+        <span class="quick-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </span>
+        <span>
+          <strong>User accounts</strong>
+          <small>Manage permitted roles and account status.</small>
+        </span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge neutral">{{ c.get('users', 0) }} accounts</span>
+          <span class="quick-arrow" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </span>
+        </div>
+      </a>
+
+      <a href="{{ url_for('admin_fr13.reports') }}">
+        <span class="quick-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </span>
+        <span>
+          <strong>Generate reports</strong>
+          <small>Review system counts and export report records.</small>
+        </span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge primary">Export Reports</span>
+          <span class="quick-arrow" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </span>
+        </div>
+      </a>
+    </div>
+
+    <div class="timestamp-pill">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span>Last generated:</span>
+      <code>{{ report.get('generatedAt', '-') }}</code>
+    </div>
   </div>
 </div>
 {% endblock %}

@@ -1,4 +1,5 @@
 import time
+import requests
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash
 from firebase_auth_rest import authenticateCredentials, createUserAccount, sendPasswordResetEmail, signOutUser
 from api_client import call_api
@@ -26,34 +27,76 @@ def _api_error(response, fallback="Request failed"):
     return text if text and text != fallback else "We couldn't complete that request. Try again."
 
 
+def _clean_firebase_error(data):
+    error_code = data.get("error", {}).get("message", "Login failed") if isinstance(data, dict) else "Login failed"
+    if error_code in {"INVALID_LOGIN_CREDENTIALS", "INVALID_PASSWORD", "EMAIL_NOT_FOUND"}:
+        return "Invalid email or password."
+    if error_code == "USER_DISABLED":
+        return "This account has been disabled. Please contact support."
+    if error_code == "TOO_MANY_ATTEMPTS_TRY_LATER":
+        return "Too many failed attempts. Please try again later."
+    return str(error_code).replace("_", " ").capitalize() if error_code else "Login failed."
+
+
 @bp.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         try:
             data, status = authenticateCredentials(request.form["email"], request.form["password"])
-        except Exception as exc:
+        except Exception:
             flash("We couldn't sign you in. Check your connection and try again.", "error")
             return render_template("fr01_user_management/login.html")
+
         if status == 200:
             _store_auth(data)
-            me = call_api("GET", "/api/fr1/me")
-            profile = me.json().get("profile") if me.ok else None
-            user_role = str(profile.get("role", "") if profile else "").strip().lower()
-            if profile:
-                session["portal_role"] = user_role
-                session["verification_status"] = str(profile.get("verificationStatus", "pending")).lower()
-            if not profile or user_role not in {"operator", "tourism_operator", "admin"}:
+            try:
+                me = call_api("GET", "/api/fr1/me")
+            except requests.RequestException:
+                session.clear()
+                flash("Backend service is temporarily unavailable. Please try again shortly.", "error")
+                return render_template("fr01_user_management/login.html")
+
+            if not me.ok:
+                session.clear()
+                if me.status_code in (401, 403):
+                    flash("Authentication session expired or invalid. Please sign in again.", "error")
+                elif me.status_code >= 500:
+                    flash("Backend service is temporarily unavailable. Please try again shortly.", "error")
+                else:
+                    flash("Unable to verify account with backend service. Please try again.", "error")
+                return render_template("fr01_user_management/login.html")
+
+            try:
+                body = me.json()
+            except (ValueError, AttributeError):
+                session.clear()
+                flash("Received an invalid response from backend service. Please try again.", "error")
+                return render_template("fr01_user_management/login.html")
+
+            profile = body.get("profile") if isinstance(body, dict) else None
+            if not profile or not isinstance(profile, dict):
+                session.clear()
+                flash("User profile could not be found. Please contact support.", "error")
+                return render_template("fr01_user_management/login.html")
+
+            user_role = str(profile.get("role", "")).strip().lower()
+            if user_role not in {"operator", "tourism_operator", "admin"}:
                 session.clear()
                 flash("This account is not a Tourism Operator account.", "error")
-            elif user_role != "admin" and str(profile.get("verificationStatus", "pending")).lower() not in {"approved", "verified"}:
-                verification = str(profile.get("verificationStatus", "pending")).lower()
-                if verification in {"rejected", "disabled", "deactivated"}:
+                return render_template("fr01_user_management/login.html")
+
+            session["portal_role"] = user_role
+            verification_status = str(profile.get("verificationStatus", "pending")).strip().lower()
+            session["verification_status"] = verification_status
+
+            if user_role != "admin" and verification_status not in {"approved", "verified"}:
+                if verification_status in {"rejected", "disabled", "deactivated"}:
                     flash("Your operator account needs attention before publishing can begin.", "error")
                 return redirect(url_for("operator_fr01.verification"))
             else:
                 return redirect(url_for("operator_fr12.dashboard"))
         else:
-            flash(data.get("error", {}).get("message", "Login failed"), "error")
+            flash(_clean_firebase_error(data), "error")
     return render_template("fr01_user_management/login.html")
 
 

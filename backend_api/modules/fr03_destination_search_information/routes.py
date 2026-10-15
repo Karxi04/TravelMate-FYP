@@ -57,6 +57,21 @@ _SEARCH_ALIASES = {
     'georgetown': 'george town',
     'kek loksi': 'kek lok si',
     'pulau pinang': 'penang',
+    'curry me': 'curry mee',
+    'char kway teow': 'char koay teow',
+    'ayer itam': 'air itam',
+    'attractions': 'attraction',
+    'restaurants': 'restaurant',
+}
+
+_SEARCH_NOISE = {
+    'best', 'find', 'in', 'malaysia', 'near', 'penang', 'place', 'places',
+    'show', 'the', 'to', 'top',
+}
+
+_AREA_TYPES = {
+    'administrative area', 'city', 'locality', 'neighborhood', 'neighbourhood',
+    'sublocality', 'town',
 }
 
 
@@ -65,6 +80,112 @@ def _search_text(value):
     for alias, canonical in _SEARCH_ALIASES.items():
         text = re.sub(rf'\b{re.escape(alias)}\b', canonical, text)
     return text
+
+
+def _search_scope(location):
+    requested = normalize_destination_scope(location or 'Penang')
+    if requested.get('state') != 'Penang':
+        requested = normalize_destination_scope('Penang')
+    provider_location = requested.get('canonicalName') or 'Penang, Malaysia'
+    state_scope = normalize_destination_scope('Penang')
+    return requested, state_scope, provider_location
+
+
+def _provider_query(query):
+    normalized = _search_text(query)
+    query_scope = normalize_destination_scope(normalized)
+    city = query_scope.get('city')
+    if city:
+        exact_area_names = {
+            _search_text(city),
+            _search_text(f'{city} Penang'),
+            _search_text(f'{city} Penang Malaysia'),
+        }
+        if normalized in exact_area_names:
+            return f'places to visit {city}'
+    if normalized in {'penang attraction', 'attraction penang'}:
+        return 'tourist attractions'
+    return normalized
+
+
+def _provider_results(data):
+    if not isinstance(data, dict) or data.get('error'):
+        raise ValueError('Malformed place-search provider response')
+    if 'local_results' in data:
+        if not isinstance(data['local_results'], list):
+            raise ValueError('Malformed place-search provider response')
+        raw_results = data['local_results']
+    elif 'place_results' in data:
+        if not isinstance(data['place_results'], dict) or not data['place_results']:
+            raise ValueError('Malformed place-search provider response')
+        raw_results = [data['place_results']]
+    else:
+        raise ValueError('Malformed place-search provider response')
+    output = []
+    for provider_order, raw in enumerate(raw_results):
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        position = item.get('position')
+        if not item.get('gps_coordinates') and isinstance(position, dict):
+            item['gps_coordinates'] = {
+                'latitude': position.get('latitude', position.get('lat')),
+                'longitude': position.get('longitude', position.get('lng')),
+            }
+        item.setdefault('source', 'serpapi')
+        item['resultKind'] = _result_kind(item)
+        item['_providerOrder'] = provider_order
+        output.append(item)
+    return output
+
+
+def _kind_from_type(value):
+    text = _search_text(value)
+    if any(area_type in text for area_type in _AREA_TYPES):
+        return 'area'
+    if any(term in text for term in (
+            'restaurant', 'food', 'cafe', 'coffee shop', 'hawker')):
+        return 'restaurant'
+    if any(term in text for term in ('temple', 'mosque', 'church', 'cultural')):
+        return 'cultural_site'
+    if any(term in text for term in ('landmark', 'monument')):
+        return 'landmark'
+    if any(term in text for term in (
+            'attraction', 'museum', 'park', 'garden', 'beach', 'tourist')):
+        return 'attraction'
+    return None
+
+
+def _result_kind(item):
+    primary_kind = _kind_from_type(item.get('type') or item.get('category'))
+    if primary_kind:
+        return primary_kind
+    secondary_types = item.get('types')
+    for secondary_type in secondary_types if isinstance(secondary_types, list) else []:
+        secondary_kind = _kind_from_type(secondary_type)
+        if secondary_kind:
+            return secondary_kind
+    return 'place'
+
+
+def _filter_by_category(items, filter_option):
+    selected = _search_text(filter_option)
+    if not selected or selected == 'all':
+        return list(items)
+    category_terms = {
+        'food': {'restaurant', 'food', 'cafe', 'hawker'},
+        'culture': {'culture', 'cultural', 'heritage', 'museum', 'temple', 'mosque', 'church'},
+        'nature': {'nature', 'park', 'garden', 'hill', 'beach', 'outdoor'},
+        'shopping': {'shopping', 'mall', 'market'},
+    }.get(selected)
+    if not category_terms:
+        return applyDestinationFilter(items, filter_option)
+    return [
+        item for item in items
+        if any(term in _search_text(' '.join(str(item.get(field) or '') for field in (
+            'type', 'category', 'title', 'description', 'resultKind'
+        ))) for term in category_terms)
+    ]
 
 
 def _result_identity_values(item):
@@ -134,6 +255,8 @@ def _enrich_search_result(item):
         enriched['state'] = title_scope['state']
     if title_scope.get('city') and not enriched.get('city'):
         enriched['city'] = title_scope['city']
+    if not enriched.get('resultKind'):
+        enriched['resultKind'] = _result_kind(enriched)
     return enriched
 
 
@@ -153,7 +276,7 @@ def _relevance_rank(item, query):
     title = _search_text(item.get('title') or item.get('name'))
     category = _search_text(item.get('type') or item.get('category'))
     address = _search_text(item.get('address') or item.get('location'))
-    query_tokens = set(query_text.split())
+    query_tokens = set(query_text.split()) - _SEARCH_NOISE
     title_tokens = set(title.split())
     if title == query_text:
         tier = 0
@@ -163,9 +286,10 @@ def _relevance_rank(item, query):
         tier = 2
     elif query_tokens and query_tokens.issubset(title_tokens):
         tier = 3
-    elif query_tokens.intersection(title_tokens):
+    elif query_tokens and query_tokens.issubset(set(
+            f'{title} {category} {address}'.split())):
         tier = 4
-    elif query_text in f'{category} {address}':
+    elif query_tokens.intersection(set(f'{title} {category} {address}'.split())):
         tier = 5
     else:
         tier = 6
@@ -173,7 +297,9 @@ def _relevance_rank(item, query):
         rating = float(item.get('rating') or 0)
     except (TypeError, ValueError):
         rating = 0
-    return tier, -rating, title
+    provider_order = item.get('_providerOrder')
+    provider_order = provider_order if isinstance(provider_order, int) else 999
+    return tier, provider_order, -rating, title
 
 
 def _cache(item):
@@ -280,7 +406,7 @@ def _merge_destination(cached, provider):
 @auth_required(['traveller'])
 def search_destinations():
     q = request.args.get('q', '').strip()
-    location = request.args.get('location', 'Malaysia').strip() or 'Malaysia'
+    location = request.args.get('location', 'Penang').strip() or 'Penang'
     filterOption = request.args.get('filter')
     sortOption = request.args.get('sort')
 
@@ -289,16 +415,26 @@ def search_destinations():
     if not validateFilterOption(filterOption) or not validateSortingOption(sortOption):
         return jsonify({'ok': False, 'error': 'Invalid filter or sort option'}), 400
 
+    requested_scope, penang_scope, provider_location = _search_scope(location)
+    interpreted_query = _provider_query(q)
+    coordinates = {
+        'latitude': penang_scope.get('latitude'),
+        'longitude': penang_scope.get('longitude'),
+    }
+    provider_unavailable = False
     try:
-        data = retrieveDestinationResults(q, location)
-        results = data.get('local_results', [])
-        source = 'serpapi'
+        data = retrieveDestinationResults(
+            interpreted_query,
+            provider_location,
+            coordinates,
+        )
     except Exception:
         if not _fallback_mode():
             return jsonify({
                 'ok': False,
                 'error': 'Place search is temporarily unavailable. Please try again.',
             }), 502
+        provider_unavailable = True
         normalized_query = _search_text(q)
         query_words = set(normalized_query.split())
         matched = []
@@ -310,6 +446,21 @@ def search_destinations():
                 matched.append(dict(x))
         results = matched
         source = 'local'
+
+        if not results:
+            return jsonify({
+                'ok': False,
+                'error': 'Live place search is temporarily unavailable. Please try again.',
+            }), 502
+    else:
+        try:
+            results = _provider_results(data)
+        except ValueError:
+            return jsonify({
+                'ok': False,
+                'error': 'Place search returned an unsupported response. Please try again.',
+            }), 502
+        source = 'serpapi'
 
     # Always merge matching admin-managed destinations from Firestore
     try:
@@ -325,10 +476,8 @@ def search_destinations():
         pass
 
     results = _deduplicate_results(_enrich_search_result(item) for item in results)
-    requested_scope = normalize_destination_scope(location)
-    if requested_scope.get('state') or requested_scope.get('city'):
-        results, _rejected = filter_candidates(results, requested_scope)
-    results = applyDestinationFilter(results, filterOption)
+    results, _rejected = filter_candidates(results, penang_scope)
+    results = _filter_by_category(results, filterOption)
     results = (
         applyDestinationSorting(results, sortOption)
         if sortOption
@@ -336,6 +485,7 @@ def search_destinations():
     )
 
     for item in results[:30]:
+        item.pop('_providerOrder', None)
         did = _destination_id(item)
         if did and not item.get('destinationId'):
             item['destinationId'] = did
@@ -345,7 +495,8 @@ def search_destinations():
         'ok': True,
         'results': results,
         'source': source,
-        'locationUsed': requested_scope.get('canonicalName') or location,
+        'locationUsed': requested_scope.get('canonicalName') or provider_location,
+        'providerUnavailable': provider_unavailable,
     })
 
 
