@@ -1,0 +1,215 @@
+{% extends 'portal_base.html' %}
+{% block title %}Booking #{{ booking.orderReference }} | TravelMate Operator{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <div style="margin-bottom: 8px;">
+      <a class="btn outline btn-sm" href="{{ url_for('operator_fr12.bookings') }}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        <span>Back to Bookings</span>
+      </a>
+    </div>
+    <span class="eyebrow">Booking Reference #{{ booking.orderReference }}</span>
+    <h1>Order Details & Party Breakdown</h1>
+    <p>Sanitized read-only projection of traveller package order and platform fulfillment.</p>
+  </div>
+  <div class="actions">
+    {% if booking.testMode %}
+      <span class="badge-test-mode" style="font-size: 13px; padding: 6px 14px;">🧪 Stripe Test Mode</span>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Honest System Disclosure Banner -->
+<div class="booking-notice-card" role="region" aria-label="System Disclosures">
+  <div class="booking-notice-icon" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  </div>
+  <div class="booking-notice-content">
+    <strong>Authoritative Supplier Reservation Status: NOT CREATED</strong>
+    <p>
+      This booking was recorded following verified payment in <strong>Stripe Test Mode</strong>. An independent <strong>Package Trip</strong> has been created in the traveller's mobile application. However, <strong>third-party supplier reservations are NOT created automatically</strong> by TravelMate. You must confirm hotel accommodation, docents, and transport with third-party providers manually.
+    </p>
+  </div>
+</div>
+
+<div class="grid g2" style="margin-top: 20px;">
+  <!-- Left Column: Excursion & Party Details -->
+  <div style="display: flex; flex-direction: column; gap: 20px;">
+    <!-- Package Details Card -->
+    <div class="card">
+      <div class="card-heading">
+        <div>
+          <span class="eyebrow">Tourism Package</span>
+          <h3>Excursion Information</h3>
+        </div>
+      </div>
+      <div class="detail-row">
+        <span>Package Title</span>
+        <strong>{{ booking.packageTitle or 'Tourism Package' }}</strong>
+      </div>
+      <div class="detail-row">
+        <span>Package Catalog ID</span>
+        <span style="font-family: ui-monospace, monospace; font-size: 13px; color: var(--ink);">
+          {{ booking.packageId or '—' }}
+        </span>
+      </div>
+      <div class="detail-row">
+        <span>Scheduled Departure Date</span>
+        <strong>
+          {% if booking.departureDate %}
+            📅 {{ booking.departureDate }}
+          {% else %}
+            Flexible / On Demand (Unspecified)
+          {% endif %}
+        </strong>
+      </div>
+      <div class="detail-row">
+        <span>Booking Created</span>
+        <span>
+          {% if booking.createdAt %}
+            {{ booking.createdAt }}
+          {% else %}
+            Timestamp unrecorded
+          {% endif %}
+        </span>
+      </div>
+    </div>
+
+    <!-- Party & Group Composition Card -->
+    <div class="card">
+      <div class="card-heading">
+        <div>
+          <span class="eyebrow">Participants</span>
+          <h3>Group Party Composition</h3>
+        </div>
+      </div>
+      <div class="detail-row">
+        <span>Total Group Size</span>
+        <strong>
+          {% if booking.groupSize %}
+            {{ booking.groupSize }} traveller{% if booking.groupSize != 1 %}s{% endif %} (pax)
+          {% else %}
+            <span class="muted">Legacy booking (Group count unspecified)</span>
+          {% endif %}
+        </strong>
+      </div>
+      <div class="detail-row">
+        <span>Adult Participants</span>
+        <span>
+          {% if booking.adults is not none %}
+            {{ booking.adults }} Adult{% if booking.adults != 1 %}s{% endif %}
+          {% else %}
+            <span class="muted">Not recorded</span>
+          {% endif %}
+        </span>
+      </div>
+      <div class="detail-row">
+        <span>Child Participants</span>
+        <span>
+          {% if booking.children is not none %}
+            {{ booking.children }} Child{% if booking.children != 1 %}ren{% endif %}
+          {% else %}
+            <span class="muted">Not recorded</span>
+          {% endif %}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Column: Financials & Fulfillment -->
+  <div style="display: flex; flex-direction: column; gap: 20px;">
+    <!-- Financials & Payment Card -->
+    <div class="card">
+      <div class="card-heading">
+        <div>
+          <span class="eyebrow">Financial Verification</span>
+          <h3>Payment & Checkout Status</h3>
+        </div>
+      </div>
+      <div class="detail-row">
+        <span>Total Amount Charged</span>
+        <strong style="font-size: 18px; color: var(--ink);">
+          {% if booking.groupTotal is not none %}
+            {{ booking.currency or 'MYR' }} {{ '%.2f'|format(booking.groupTotal|float) }}
+          {% else %}
+            —
+          {% endif %}
+        </strong>
+      </div>
+      <div class="detail-row">
+        <span>Payment Status</span>
+        <span>
+          {% set pay_status = (booking.paymentStatus or 'unknown')|lower %}
+          {% if pay_status == 'paid' %}
+            <span class="status approved">Paid{% if booking.testMode %} (Stripe Test){% endif %}</span>
+          {% elif pay_status in ['pending', 'payment_pending'] %}
+            <span class="status pending">Payment Pending</span>
+          {% elif pay_status in ['failed', 'payment_failed'] %}
+            <span class="status rejected">Payment Failed</span>
+          {% else %}
+            <span class="status draft">{{ pay_status|capitalize }}</span>
+          {% endif %}
+        </span>
+      </div>
+      <div class="detail-row">
+        <span>Payment Gateway</span>
+        <span>
+          {% if booking.testMode %}
+            Stripe Checkout (Test Mode Sandbox)
+          {% else %}
+            Stripe Checkout
+          {% endif %}
+        </span>
+      </div>
+      <div class="detail-row">
+        <span>Order State</span>
+        <span style="text-transform: capitalize; font-weight: 600; color: var(--ink);">
+          {{ booking.orderStatus or '—' }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Fulfillment & Supplier Coordination Card -->
+    <div class="card">
+      <div class="card-heading">
+        <div>
+          <span class="eyebrow">Fulfillment & Operations</span>
+          <h3>Platform & Supplier Status</h3>
+        </div>
+      </div>
+      <div class="detail-row">
+        <span>TravelMate Platform Fulfillment</span>
+        <span>
+          {% set ful_status = (booking.fulfillmentStatus or 'unknown')|lower %}
+          {% if ful_status == 'fulfilled' %}
+            <span class="badge-fulfillment fulfilled">Trip Created in App</span>
+          {% elif ful_status in ['pending', 'fulfillment_pending'] %}
+            <span class="badge-fulfillment pending">Fulfillment Pending</span>
+          {% else %}
+            <span class="badge-fulfillment fallback">{{ ful_status|replace('_', ' ')|title }}</span>
+          {% endif %}
+        </span>
+      </div>
+      <div class="detail-row">
+        <span>Third-Party Supplier Reservation</span>
+        <span class="badge-supplier unconfirmed">
+          ⚠️ Not Created (Operator Action Required)
+        </span>
+      </div>
+      <div style="margin-top: 14px; padding: 12px 14px; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.5; color: #92400E;">
+        <strong>Operator Coordination Notice:</strong>
+        External supplier reservations (such as local hotel stays, docent reservations, and ferry tickets) are not issued automatically by the platform. Please confirm all third-party arrangements with your service partners.
+      </div>
+    </div>
+
+    <!-- Integrity Safeguard Notice -->
+    <div class="card cream" style="padding: 16px 20px;">
+      <div style="font-size: 12px; color: var(--ink-secondary); line-height: 1.5;">
+        🔒 <strong>Read-Only Governance:</strong> Ticket issuance, cancellations, and refunds cannot be triggered as cosmetic UI toggles. Authoritative state transitions are governed by Stripe webhooks and backend fulfillment contracts.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

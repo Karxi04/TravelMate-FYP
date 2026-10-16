@@ -179,9 +179,11 @@ def dashboard():
         return redirect(url_for("operator_fr01.login"))
     package_response = call_api("GET", "/api/fr12/packages")
     campaign_response = call_api("GET", "/api/fr12/campaigns")
+    booking_response = call_api("GET", "/api/fr12/bookings")
     me = call_api("GET", "/api/fr1/me")
     packages = package_response.json().get("items", []) if package_response.ok else []
     campaigns = campaign_response.json().get("items", []) if campaign_response.ok else []
+    bookings_data = booking_response.json().get("items", []) if booking_response.ok else []
     summary = {
         "totalPackages": len(packages),
         "draftPackages": sum(1 for item in packages if str(item.get("approvalStatus", "draft")).lower() in {"", "draft"}),
@@ -191,6 +193,8 @@ def dashboard():
         "totalCampaigns": len(campaigns),
         "pendingCampaigns": sum(1 for item in campaigns if str(item.get("reviewStatus", "")).lower() in {"pending", "submitted"}),
         "activeCampaigns": sum(1 for item in campaigns if str(item.get("campaignStatus", "")).lower() in {"active", "approved"}),
+        "totalBookings": len(bookings_data),
+        "paidBookings": sum(1 for item in bookings_data if str(item.get("paymentStatus", "")).lower() == "paid"),
     }
     attention = []
     for package in packages:
@@ -215,6 +219,94 @@ def dashboard():
         summary=summary,
         profile=me.json().get("profile", {}) if me.ok else {},
         attention=attention,
+    )
+
+
+def _safe_float(val, default=0.0):
+    try:
+        return float(val or default)
+    except (ValueError, TypeError):
+        return default
+
+
+@bp.route("/bookings")
+def bookings():
+    if not guard():
+        return redirect(url_for("operator_fr01.login"))
+    response = call_api("GET", "/api/fr12/bookings")
+    backend_error = not response.ok
+    if backend_error:
+        flash(_error(response, fallback="Unable to retrieve bookings from the server."), "error")
+        all_items = []
+    else:
+        all_items = response.json().get("items", []) or []
+
+    query = request.args.get("q", "").strip().lower()
+    status = request.args.get("status", "all").strip().lower()
+
+    items = list(all_items)
+    if status != "all":
+        if status == "paid":
+            items = [b for b in items if str(b.get("paymentStatus", "")).lower() == "paid"]
+        elif status == "pending":
+            items = [b for b in items if str(b.get("paymentStatus", "")).lower() in {"pending", "payment_pending"}]
+        elif status == "fulfilled":
+            items = [b for b in items if str(b.get("fulfillmentStatus", "")).lower() == "fulfilled"]
+        elif status == "test":
+            items = [b for b in items if b.get("testMode")]
+
+    if query:
+        items = [
+            b for b in items
+            if query in " ".join([
+                str(b.get("orderReference") or ""),
+                str(b.get("packageTitle") or ""),
+                str(b.get("departureDate") or ""),
+                str(b.get("paymentStatus") or ""),
+            ]).lower()
+        ]
+
+    summary = {
+        "total": len(all_items),
+        "paid": sum(1 for b in all_items if str(b.get("paymentStatus", "")).lower() == "paid"),
+        "pending": sum(1 for b in all_items if str(b.get("paymentStatus", "")).lower() in {"pending", "payment_pending"}),
+        "fulfilled": sum(1 for b in all_items if str(b.get("fulfillmentStatus", "")).lower() == "fulfilled"),
+        "unconfirmed_supplier": sum(1 for b in all_items if b.get("supplierReservationStatus") == "not_created"),
+        "test_orders": sum(1 for b in all_items if b.get("testMode")),
+        "total_revenue": sum(
+            _safe_float(b.get("groupTotal"))
+            for b in all_items
+            if str(b.get("paymentStatus", "")).lower() == "paid"
+        ),
+    }
+
+    return render_template(
+        "fr12_tourism_operator_management/bookings.html",
+        items=items,
+        total_items_count=len(all_items),
+        summary=summary,
+        status=status,
+        query=query,
+        backend_error=backend_error,
+    )
+
+
+@bp.route("/bookings/<order_reference>")
+def booking_detail(order_reference):
+    if not guard():
+        return redirect(url_for("operator_fr01.login"))
+    response = call_api("GET", "/api/fr12/bookings")
+    if not response.ok:
+        flash(_error(response, fallback="Unable to retrieve booking details."), "error")
+        return redirect(url_for("operator_fr12.bookings"))
+    items = response.json().get("items", []) or []
+    item = next((b for b in items if str(b.get("orderReference", "")).strip() == str(order_reference).strip()), None)
+    if not item:
+        flash(f"Booking reference '{order_reference}' not found or not accessible.", "error")
+        return redirect(url_for("operator_fr12.bookings"))
+    return render_template(
+        "fr12_tourism_operator_management/booking_detail.html",
+        booking=item,
     )
 
 

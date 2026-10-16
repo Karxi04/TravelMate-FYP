@@ -1,0 +1,265 @@
+{% extends 'portal_base.html' %}
+{% block title %}Package Bookings | TravelMate Operator{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <span class="eyebrow">Tourism Operator Management</span>
+    <h1>Package Bookings & Orders</h1>
+    <p>View and manage incoming traveller bookings, party compositions, Stripe test payments, and platform trip fulfillment.</p>
+  </div>
+  <div class="actions">
+    <a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+      <span>Package Catalog</span>
+    </a>
+  </div>
+</div>
+
+<!-- Honest System Disclosure Banner -->
+<div class="booking-notice-card" role="region" aria-label="System Disclosures">
+  <div class="booking-notice-icon" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  </div>
+  <div class="booking-notice-content">
+    <strong>Authoritative Stripe Test Mode & External Supplier Reservation Disclosures</strong>
+    <p>
+      Transactions in TravelMate are currently simulated in <strong>Stripe Test Mode</strong>. While package orders automatically fulfill an independent <strong>Package Trip</strong> inside the traveller's mobile app, <strong>third-party supplier reservations</strong> (hotel rooms, ferry/van transfers, docent fees) are <strong>NOT automatically booked with external providers</strong>. Operators must confirm external supplier logistics directly.
+    </p>
+  </div>
+</div>
+
+<!-- Metrics Overview Ribbon -->
+<div class="grid g4 operator-stats" style="margin-bottom: 24px;">
+  <div class="metric-card accent-blue">
+    <div class="metric-card-top">
+      <span class="metric-label">Total Bookings</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.total }}</div>
+    <div class="metric-help">All recorded package orders</div>
+  </div>
+
+  <div class="metric-card accent-green">
+    <div class="metric-card-top">
+      <span class="metric-label">Paid Orders</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.paid }}</div>
+    <div class="metric-help">MYR {{ '%.2f'|format(summary.total_revenue) }} total paid</div>
+  </div>
+
+  <div class="metric-card accent-blue">
+    <div class="metric-card-top">
+      <span class="metric-label">In-App Trips Created</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.fulfilled }}</div>
+    <div class="metric-help">Fulfilled in traveller app</div>
+  </div>
+
+  <div class="metric-card accent-amber">
+    <div class="metric-card-top">
+      <span class="metric-label">Supplier Reservations</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.unconfirmed_supplier }} Unconfirmed</div>
+    <div class="metric-help">Requires manual operator booking</div>
+  </div>
+</div>
+
+<!-- Toolbar: Search and Filter -->
+<div class="toolbar">
+  <form class="actions" method="get">
+    <input class="input search-input" name="q" value="{{ query }}" placeholder="Search by order ref, package, date...">
+    <select class="input filter-input" name="status" aria-label="Filter by booking status">
+      <option value="all" {% if status == 'all' %}selected{% endif %}>All Bookings</option>
+      <option value="paid" {% if status == 'paid' %}selected{% endif %}>Paid Orders</option>
+      <option value="pending" {% if status == 'pending' %}selected{% endif %}>Payment Pending</option>
+      <option value="fulfilled" {% if status == 'fulfilled' %}selected{% endif %}>Trip Fulfilled</option>
+      <option value="test" {% if status == 'test' %}selected{% endif %}>Stripe Test Mode Only</option>
+    </select>
+    <button class="btn outline" type="submit">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+      <span>Filter</span>
+    </button>
+    {% if query or status != 'all' %}
+      <a class="btn outline" href="{{ url_for('operator_fr12.bookings') }}" style="color: var(--ink-muted);">Clear</a>
+    {% endif %}
+  </form>
+
+  <span class="muted" style="font-size: 13px; font-weight: 600;">
+    {{ items|length }} booking{% if items|length != 1 %}s{% endif %} found
+  </span>
+</div>
+
+{% if backend_error %}
+<div class="card" style="text-align: center; padding: 36px 20px; border-color: var(--danger-border); background: #FFF5F5;">
+  <div style="font-weight: 700; color: var(--danger); font-size: 16px; margin-bottom: 8px;">Backend Service Unavailable</div>
+  <p style="color: var(--ink-secondary); font-size: 14px; max-width: 480px; margin: 0 auto 16px;">
+    The bookings service could not be reached. Please verify that the TravelMate backend API is running on port 5000.
+  </p>
+  <a class="btn outline" href="{{ url_for('operator_fr12.bookings') }}">Retry Request</a>
+</div>
+{% elif not items %}
+<div class="card empty-state">
+  <div class="empty-icon" aria-hidden="true">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+  </div>
+  <strong>No package bookings found</strong>
+  <p>
+    {% if query or status != 'all' %}
+      No bookings matched your filter criteria. Try resetting the filters.
+    {% else %}
+      When travellers book your published Penang packages through the TravelMate mobile app, their orders will appear here.
+    {% endif %}
+  </p>
+  <div class="empty-actions">
+    {% if query or status != 'all' %}
+      <a class="btn outline" href="{{ url_for('operator_fr12.bookings') }}">Reset Filters</a>
+    {% else %}
+      <a class="btn primary" href="{{ url_for('operator_fr12.packages') }}">Manage Package Catalog</a>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<section class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="min-width: 170px;">Order Reference</th>
+        <th style="min-width: 240px;">Package Excursion</th>
+        <th style="min-width: 130px;">Departure</th>
+        <th style="min-width: 150px;">Party Breakdown</th>
+        <th style="min-width: 120px;">Amount</th>
+        <th style="min-width: 130px;">Payment Status</th>
+        <th style="min-width: 140px;">In-App Fulfillment</th>
+        <th style="min-width: 160px;">Supplier Status</th>
+        <th style="min-width: 110px; text-align: right;">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td>
+          <div style="font-weight: 700; color: var(--ink); font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px;">
+            {{ item.orderReference }}
+          </div>
+          <div style="font-size: 11px; color: var(--ink-muted); margin-top: 3px;">
+            {% if item.createdAt %}
+              {{ item.createdAt[:10] }}
+            {% else %}
+              Date unrecorded
+            {% endif %}
+          </div>
+          {% if item.testMode %}
+            <span class="badge-test-mode" title="Processed in Stripe Test Mode">🧪 Stripe Test</span>
+          {% endif %}
+        </td>
+
+        <td>
+          <strong style="color: var(--ink); font-size: 14px; display: block;">
+            {{ item.packageTitle or 'Tourism Package' }}
+          </strong>
+          <span style="font-size: 11px; color: var(--ink-muted);">
+            ID: {{ item.packageId or '—' }}
+          </span>
+        </td>
+
+        <td>
+          {% if item.departureDate %}
+            <span class="departure-chip">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <span>{{ item.departureDate }}</span>
+            </span>
+          {% else %}
+            <span class="muted-chip">Flexible / On Demand</span>
+          {% endif %}
+        </td>
+
+        <td>
+          {% if item.groupSize %}
+            <div style="font-weight: 700; color: var(--ink);">
+              {{ item.groupSize }} pax
+            </div>
+            {% if item.adults is not none or item.children is not none %}
+              <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 2px;">
+                {{ item.adults or 0 }} Adult{% if item.adults != 1 %}s{% endif %}{% if item.children %}, {{ item.children }} Child{% if item.children != 1 %}ren{% endif %}{% endif %}
+              </div>
+            {% else %}
+              <div style="font-size: 11px; color: var(--ink-muted); margin-top: 2px;">
+                Breakdown not specified
+              </div>
+            {% endif %}
+          {% else %}
+            <span class="badge-legacy" title="Legacy order record without structured participants">
+              Legacy (Unspecified)
+            </span>
+          {% endif %}
+        </td>
+
+        <td>
+          {% if item.groupTotal is not none %}
+            <strong style="color: var(--ink); font-size: 14px;">
+              {{ item.currency or 'MYR' }} {{ '%.2f'|format(item.groupTotal|float) }}
+            </strong>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+
+        <td>
+          {% set pay_status = (item.paymentStatus or 'unknown')|lower %}
+          {% if pay_status == 'paid' %}
+            <span class="status approved">
+              Paid{% if item.testMode %} (Test){% endif %}
+            </span>
+          {% elif pay_status in ['pending', 'payment_pending'] %}
+            <span class="status pending">Pending</span>
+          {% elif pay_status in ['failed', 'payment_failed'] %}
+            <span class="status rejected">Failed</span>
+          {% else %}
+            <span class="status draft">{{ pay_status|capitalize }}</span>
+          {% endif %}
+        </td>
+
+        <td>
+          {% set ful_status = (item.fulfillmentStatus or 'unknown')|lower %}
+          {% if ful_status == 'fulfilled' %}
+            <span class="badge-fulfillment fulfilled">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Trip Created in App</span>
+            </span>
+          {% elif ful_status in ['pending', 'fulfillment_pending'] %}
+            <span class="badge-fulfillment pending">Trip Pending</span>
+          {% else %}
+            <span class="badge-fulfillment fallback">{{ ful_status|replace('_', ' ')|title }}</span>
+          {% endif %}
+        </td>
+
+        <td>
+          <span class="badge-supplier unconfirmed" title="Actual third-party supplier reservation must be coordinated manually by the operator">
+            ⚠️ Not Created (Manual)
+          </span>
+        </td>
+
+        <td style="text-align: right;">
+          <a class="btn outline btn-sm" href="{{ url_for('operator_fr12.booking_detail', order_reference=item.orderReference) }}">
+            <span>Details</span>
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}
