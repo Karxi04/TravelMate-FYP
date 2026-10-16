@@ -495,9 +495,43 @@ class _HomeTabState extends State<HomeTab> {
     });
   }
 
+  bool _isPackagePromoActive(Map<String, dynamic> item) {
+    final promo = item['promotionalPrice'];
+    final promoNum = promo is num ? promo : num.tryParse(promo?.toString() ?? '');
+    if (promoNum == null || promoNum <= 0) return false;
+    final regular = item['adultPrice'] ?? item['price'];
+    final regularNum = regular is num ? regular : num.tryParse(regular?.toString() ?? '');
+    if (regularNum != null && promoNum >= regularNum) return false;
+
+    final startStr = item['promotionStart']?.toString().trim();
+    final endStr = item['promotionEnd']?.toString().trim();
+    if ((startStr == null || startStr.isEmpty) && (endStr == null || endStr.isEmpty)) {
+      return false;
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (startStr != null && startStr.isNotEmpty) {
+      final start = DateTime.tryParse(startStr);
+      if (start != null) {
+        final startDate = DateTime(start.year, start.month, start.day);
+        if (today.isBefore(startDate)) return false;
+      }
+    }
+    if (endStr != null && endStr.isNotEmpty) {
+      final end = DateTime.tryParse(endStr);
+      if (end != null) {
+        final endDate = DateTime(end.year, end.month, end.day);
+        if (today.isAfter(endDate)) return false;
+      }
+    }
+    return true;
+  }
+
   String _packagePrice(Map<String, dynamic> item) {
-    final value =
-        item['promotionalPrice'] ?? item['adultPrice'] ?? item['price'];
+    final value = _isPackagePromoActive(item)
+        ? (item['promotionalPrice'] ?? item['adultPrice'] ?? item['price'])
+        : (item['adultPrice'] ?? item['price']);
     final amount = value is num ? value : num.tryParse(value?.toString() ?? '');
     if (amount == null) return '';
     final currency = (item['currency'] ?? 'MYR').toString();

@@ -53,6 +53,7 @@ def eligible_package(**extra):
         "taxIncluded": True,
         "approvalStatus": "approved",
         "availabilityStatus": "available",
+        "priceBasis": "per_person",
         "updatedAt": "package-revision-1",
         **extra,
     }

@@ -1,6 +1,6 @@
 """Server-owned package checkout preparation; Stripe activation is deliberately separate."""
 from copy import deepcopy
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 
@@ -111,6 +111,91 @@ def package_trip_compatible(snapshot, trip):
                 destination not in trip_destination and trip_destination not in destination)
 
 
+MYT_TIMEZONE = timezone(timedelta(hours=8))
+
+
+def _parse_iso_date(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    if 'T' in text:
+        text = text.split('T')[0]
+    elif ' ' in text:
+        text = text.split(' ')[0]
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _resolve_reference_date(now=None):
+    """
+    Authoritative promotion date evaluation:
+    - If now is supplied as a date, datetime or ISO string, its date is used.
+    - Otherwise, default to the current calendar date in Malaysia Standard Time (UTC+8).
+    """
+    if now is not None:
+        parsed = _parse_iso_date(now)
+        if parsed:
+            return parsed
+    return datetime.now(MYT_TIMEZONE).date()
+
+
+def is_package_promotion_active(package, now_ref=None):
+    """
+    Check whether a promotional discount applies to the package.
+    Documented semantics:
+    - Package must define a positive promotionalPrice.
+    - Promotional price must be strictly less than the regular price.
+    - At least one promotion boundary date (promotionStart or promotionEnd) must be configured.
+    - If promotionStart is configured, evaluation date >= promotionStart.
+    - If promotionEnd is configured, evaluation date <= promotionEnd.
+    - Promotion date boundaries are evaluated in Malaysia Standard Time (UTC+8) by default.
+    """
+    if not package or not isinstance(package, dict):
+        return False
+    promo_raw = package.get('promotionalPrice')
+    if promo_raw in (None, ''):
+        return False
+    try:
+        promo_price = Decimal(str(promo_raw)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError):
+        return False
+    if promo_price <= 0:
+        return False
+
+    regular_raw = package.get('adultPrice', package.get('price'))
+    if regular_raw not in (None, ''):
+        try:
+            regular_price = Decimal(str(regular_raw)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            if promo_price >= regular_price:
+                return False
+        except (InvalidOperation, TypeError, ValueError):
+            return False
+
+    start_date = _parse_iso_date(package.get('promotionStart'))
+    end_date = _parse_iso_date(package.get('promotionEnd'))
+
+    if not start_date and not end_date:
+        return False
+    if start_date and end_date and start_date > end_date:
+        return False
+
+    ref_date = _resolve_reference_date(now_ref)
+    if start_date and ref_date < start_date:
+        return False
+    if end_date and ref_date > end_date:
+        return False
+
+    return True
+
+
 def prepare_package_snapshot(package, operator, quantity=1, now=None,
                              participants=None, departure_date=None):
     if not eligible_package(package):
@@ -125,22 +210,47 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None,
     if _integer_count(quantity, 'Package quantity') != 1:
         raise ValueError('Package quantity is not supported by the current contract.')
     group = _participants(package, participants)
-    price_basis = str(package.get('priceBasis') or 'per_person').strip().lower()
-    if price_basis not in {'per_person', 'per_group'}:
-        raise ValueError('Package price basis is not supported for checkout.')
-    adult_price = _money(package.get('adultPrice', package.get('price')), 'adult price')
+    raw_basis = package.get('priceBasis')
+    if not raw_basis or str(raw_basis).strip().lower() not in {'per_person', 'per_group'}:
+        raise ValueError('Package has no verified price basis for checkout.')
+    price_basis = str(raw_basis).strip().lower()
+
+    regular_adult_price = _money(package.get('adultPrice', package.get('price')), 'adult price')
     child_raw = package.get('childPrice')
     child_price = None if child_raw in (None, '') else _money(child_raw, 'child price')
-    if adult_price <= 0:
+    if regular_adult_price <= 0:
         raise ValueError('Package has no authoritative payable price.')
+
+    is_promo_active = is_package_promotion_active(package, now_ref=now)
+    promo_raw = package.get('promotionalPrice')
+    promotional_price = None
+    if is_promo_active and promo_raw not in (None, ''):
+        promotional_price = _money(promo_raw, 'promotional price')
+
+    effective_adult_price = regular_adult_price
     if price_basis == 'per_person':
+        if is_promo_active and promotional_price is not None:
+            effective_adult_price = promotional_price
         if group['children'] and child_price is None:
             raise ValueError('Child pricing is not defined for this package.')
-        total = adult_price * group['adults'] + (child_price or Decimal('0')) * group['children']
-    else:
-        total = adult_price
+        total = effective_adult_price * group['adults'] + (child_price or Decimal('0')) * group['children']
+    else:  # per_group
+        if is_promo_active and promotional_price is not None:
+            total = promotional_price
+        else:
+            total = regular_adult_price
+
     if total <= 0:
         raise ValueError('Package has no authoritative payable price.')
+
+    original_raw = package.get('originalPrice')
+    original_price = None
+    if original_raw not in (None, ''):
+        try:
+            original_price = _money(original_raw, 'original price')
+        except ValueError:
+            original_price = None
+
     selected_departure = _departure_date(package, departure_date)
     return {
         'contractVersion': 2,
@@ -154,8 +264,12 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None,
         'accommodation': {k: package.get(k) for k in ('accommodationName', 'accommodationCategory', 'roomType', 'accommodationNotes')},
         'transport': {k: package.get(k) for k in ('transportTypes', 'transportNotes')},
         'priceBasis': price_basis,
-        'adultUnitPrice': _json_money(adult_price),
+        'regularAdultUnitPrice': _json_money(regular_adult_price),
+        'adultUnitPrice': _json_money(effective_adult_price),
         'childUnitPrice': None if child_price is None else _json_money(child_price),
+        'isPromotionEligible': is_promo_active,
+        'promotionalUnitPrice': _json_money(promotional_price) if promotional_price is not None else None,
+        'originalPrice': _json_money(original_price) if original_price is not None else None,
         'participants': group, 'groupSize': group['total'],
         'price': _json_money(total), 'amountMinor': int(total * 100),
         'currency': currency, 'taxIncluded': package.get('taxIncluded'), 'taxNotes': package.get('taxNotes'),

@@ -35,8 +35,8 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
   void initState() {
     super.initState();
     api = widget.api ?? ApiService();
-    final minimum = _number(widget.item['minimumTravellers'])?.toInt() ?? 1;
-    adults = minimum < 1 ? 1 : minimum;
+    adults = 1;
+    children = 0;
     final dates = _list(widget.item['departureDates']);
     if (dates.length == 1) selectedDepartureDate = dates.first;
   }
@@ -47,14 +47,28 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
     try {
       final packageId = (widget.item['id'] ?? '').toString();
       if (packageId.isEmpty) throw Exception('This package is unavailable for checkout.');
+      if (!_hasVerifiedPriceBasis) {
+        throw Exception('Package pricing basis is not verified. Please contact the operator.');
+      }
       if (_departureDates.isNotEmpty && selectedDepartureDate == null) {
         throw Exception('Select an available departure date.');
+      }
+      final totalTravellers = adults + children;
+      if (totalTravellers < _minimumTravellers) {
+        throw Exception(
+          'This package requires at least $_minimumTravellers travellers (currently $totalTravellers).',
+        );
+      }
+      if (_maximumTravellers != null && totalTravellers > _maximumTravellers!) {
+        throw Exception(
+          'This package capacity is ${_maximumTravellers!} travellers (currently $totalTravellers).',
+        );
       }
       if (_priceBasis == 'per_person' && children > 0 && _childPrice == null) {
         throw Exception('Child pricing is not available for this package.');
       }
-      final total = _groupTotal;
-      if (total == null || total <= 0) {
+      final clientTotal = _groupTotal?.toDouble();
+      if (clientTotal == null || clientTotal <= 0) {
         throw Exception('This package has no supported checkout price.');
       }
       final scopeDate = selectedDepartureDate ?? 'open';
@@ -69,13 +83,26 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
           : <String, dynamic>{};
       final attemptId = (attempt['id'] ?? '').toString();
       if (attemptId.isEmpty) throw Exception('Package checkout could not be prepared.');
+
+      // Server-authoritative quote matching and tamper protection
+      final serverAmount = _number(attempt['amount'])?.toDouble();
+      if (serverAmount == null) {
+        throw Exception('Server did not return an authoritative payable total.');
+      }
+      if ((serverAmount - clientTotal).abs() > 0.01) {
+        throw Exception(
+          'Checkout price mismatch: server quote is $_currency ${_money(serverAmount)}, '
+          'but estimate was $_currency ${_money(clientTotal)}. Please refresh and try again.',
+        );
+      }
+
       if (!mounted) return;
       await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => PaymentScreen(
             packageAttemptId: attemptId,
-            initialAmount: _number(attempt['amount'])?.toDouble(),
+            initialAmount: serverAmount,
             api: api,
           ),
         ),
@@ -121,13 +148,62 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
   num? _number(dynamic value) =>
       value is num ? value : num.tryParse(value?.toString() ?? '');
 
-  String get _priceBasis =>
-      widget.item['priceBasis'] == 'per_group' ? 'per_group' : 'per_person';
+  String? get _rawPriceBasis =>
+      widget.item['priceBasis']?.toString().trim().toLowerCase();
 
-  num? get _adultPrice =>
+  bool get _hasVerifiedPriceBasis =>
+      _rawPriceBasis == 'per_person' || _rawPriceBasis == 'per_group';
+
+  String get _priceBasis =>
+      _hasVerifiedPriceBasis ? _rawPriceBasis! : 'unverified';
+
+  num? get _regularAdultPrice =>
       _number(widget.item['adultPrice']) ?? _number(widget.item['price']);
 
   num? get _childPrice => _number(widget.item['childPrice']);
+
+  num? get _originalPrice => _number(widget.item['originalPrice']);
+
+  num? get _promotionalPrice => _number(widget.item['promotionalPrice']);
+
+  bool get _isPromotionEligible {
+    final promo = _promotionalPrice;
+    if (promo == null || promo <= 0) return false;
+    final regular = _regularAdultPrice;
+    if (regular != null && promo >= regular) return false;
+
+    final startStr = widget.item['promotionStart']?.toString().trim();
+    final endStr = widget.item['promotionEnd']?.toString().trim();
+    if ((startStr == null || startStr.isEmpty) &&
+        (endStr == null || endStr.isEmpty)) {
+      return false;
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (startStr != null && startStr.isNotEmpty) {
+      final start = DateTime.tryParse(startStr);
+      if (start != null) {
+        final startDate = DateTime(start.year, start.month, start.day);
+        if (today.isBefore(startDate)) return false;
+      }
+    }
+    if (endStr != null && endStr.isNotEmpty) {
+      final end = DateTime.tryParse(endStr);
+      if (end != null) {
+        final endDate = DateTime(end.year, end.month, end.day);
+        if (today.isAfter(endDate)) return false;
+      }
+    }
+    return true;
+  }
+
+  num? get _effectiveAdultPrice =>
+      (_isPromotionEligible && _promotionalPrice != null)
+          ? _promotionalPrice
+          : _regularAdultPrice;
+
+  num? get _adultPrice => _effectiveAdultPrice;
 
   List<String> get _departureDates => _list(widget.item['departureDates']);
 
@@ -138,11 +214,29 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
       (_number(widget.item['minimumTravellers'])?.toInt() ?? 1).clamp(1, 50).toInt();
 
   num? get _groupTotal {
-    final adultPrice = _adultPrice;
-    if (adultPrice == null) return null;
-    if (_priceBasis == 'per_group') return adultPrice;
+    if (!_hasVerifiedPriceBasis) return null;
+    if (_priceBasis == 'per_group') {
+      if (_isPromotionEligible && _promotionalPrice != null) {
+        return _promotionalPrice;
+      }
+      return _regularAdultPrice;
+    }
+    final adultRate = _effectiveAdultPrice;
+    if (adultRate == null) return null;
     if (children > 0 && _childPrice == null) return null;
-    return adultPrice * adults + (_childPrice ?? 0) * children;
+    return adultRate * adults + (_childPrice ?? 0) * children;
+  }
+
+  num? get _calculatedSavings {
+    if (!_isPromotionEligible ||
+        _promotionalPrice == null ||
+        _regularAdultPrice == null) {
+      return null;
+    }
+    final diff = _regularAdultPrice! - _promotionalPrice!;
+    if (diff <= 0) return null;
+    if (_priceBasis == 'per_group') return diff;
+    return diff * adults;
   }
 
   String _money(num value) => value == value.roundToDouble()
@@ -246,17 +340,24 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
     final meals = _days.expand((day) => _list(day['meals'])).toSet().toList();
     final canAddParticipant =
         _maximumTravellers == null || adults + children < _maximumTravellers!;
+    final canAddChild = canAddParticipant && _childPrice != null;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Tourism package')),
       bottomNavigationBar: SafeArea(
-              minimum: const EdgeInsets.all(AppSpacing.md),
-              child: FilledButton.icon(
-                onPressed: submitting ? null : _startCheckout,
-                icon: const Icon(Icons.payment_outlined),
-                label: Text(submitting ? 'Preparing checkout...' : 'Checkout package'),
-              ),
-            ),
+        minimum: const EdgeInsets.all(AppSpacing.md),
+        child: FilledButton.icon(
+          onPressed: (submitting || !_hasVerifiedPriceBasis) ? null : _startCheckout,
+          icon: const Icon(Icons.payment_outlined),
+          label: Text(
+            submitting
+                ? 'Preparing checkout...'
+                : !_hasVerifiedPriceBasis
+                    ? 'Price basis unverified'
+                    : 'Checkout package',
+          ),
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg,
@@ -296,6 +397,36 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
           Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: [
             if (_price.isNotEmpty)
               TravelStatusPill(text: _price, icon: Icons.payments_outlined),
+            if (_priceBasis == 'per_person' && _childPrice != null)
+              TravelStatusPill(
+                text: '$_currency ${_money(_childPrice!)} / child',
+                icon: Icons.child_care_outlined,
+              ),
+            if (_priceBasis == 'per_person' && _childPrice == null && _regularAdultPrice != null)
+              const TravelStatusPill(
+                text: 'Child rate unavailable',
+                icon: Icons.info_outline,
+              ),
+            if (_hasVerifiedPriceBasis)
+              TravelStatusPill(
+                text: _priceBasis == 'per_group' ? 'Fixed group pricing' : 'Per person pricing',
+                icon: Icons.sell_outlined,
+              ),
+            if (!_hasVerifiedPriceBasis)
+              const TravelStatusPill(
+                text: 'Unverified price basis',
+                icon: Icons.warning_amber_outlined,
+              ),
+            if (_isPromotionEligible)
+              const TravelStatusPill(
+                text: 'Special promo rate',
+                icon: Icons.local_offer_outlined,
+              ),
+            if (_originalPrice != null && _originalPrice! > (_effectiveAdultPrice ?? 0))
+              TravelStatusPill(
+                text: 'Orig. $_currency ${_money(_originalPrice!)}',
+                icon: Icons.history_outlined,
+              ),
             if (_duration.isNotEmpty)
               TravelStatusPill(
                   text: _duration, icon: Icons.calendar_today_outlined),
@@ -312,30 +443,72 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
               _heading('Your group'),
               Text(_priceBasis == 'per_group'
                   ? 'This is a fixed group price within the package capacity.'
-                  : _childPrice == null
-                      ? 'Adult pricing is available. Child pricing is not defined.'
-                      : 'Adults and children use the approved rates shown by the operator.'),
+                  : !_hasVerifiedPriceBasis
+                      ? 'Pricing basis is not verified for this package. Checkout is disabled.'
+                      : _childPrice == null
+                          ? 'Adult pricing is available. Child rate unavailable.'
+                          : 'Adults: $_currency ${_money(_effectiveAdultPrice!)} · Children: $_currency ${_money(_childPrice!)}'),
+              if (_minimumTravellers > 1) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Minimum requirement: $_minimumTravellers travellers',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: adults + children < _minimumTravellers
+                        ? AppColors.warning
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ],
               const SizedBox(height: AppSpacing.sm),
               Row(children: [
                 _participantCounter(
-                  'Adults', adults,
-                  adults > 1 && adults + children > _minimumTravellers
-                      ? () => setState(() => adults -= 1)
-                      : null,
+                  'Adults',
+                  adults,
+                  adults > 1 ? () => setState(() => adults -= 1) : null,
                   canAddParticipant ? () => setState(() => adults += 1) : null,
                   'package-adults',
                 ),
               ]),
               Row(children: [
                 _participantCounter(
-                  'Children', children,
-                  children > 0 && adults + children > _minimumTravellers
-                      ? () => setState(() => children -= 1)
-                      : null,
-                  canAddParticipant ? () => setState(() => children += 1) : null,
+                  'Children',
+                  children,
+                  children > 0 ? () => setState(() => children -= 1) : null,
+                  canAddChild ? () => setState(() => children += 1) : null,
                   'package-children',
                 ),
               ]),
+              if (_priceBasis == 'per_person' && _childPrice == null)
+                const Padding(
+                  padding: EdgeInsets.only(top: AppSpacing.xxs),
+                  child: Text(
+                    'Child rate unavailable — children cannot be added to this booking.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ),
+              if (adults + children < _minimumTravellers) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: AppColors.warningSoft,
+                    borderRadius: BorderRadius.circular(AppRadii.small),
+                    border: Border.all(color: AppColors.warning),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.info_outline, size: 18, color: AppColors.warning),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        'Minimum group size: $_minimumTravellers travellers required (currently ${adults + children}).',
+                        style: const TextStyle(fontWeight: FontWeight.w600, color: InkWashColors.ink),
+                      ),
+                    ),
+                  ]),
+                ),
+              ],
               if (_departureDates.isNotEmpty) ...[
                 const SizedBox(height: AppSpacing.sm),
                 DropdownButtonFormField<String>(
@@ -349,6 +522,22 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
                 ),
               ],
               const Divider(height: AppSpacing.lg),
+              if (_hasVerifiedPriceBasis && _groupTotal != null) ...[
+                if (_priceBasis == 'per_person')
+                  Text(
+                    '$adults Adult${adults > 1 ? 's' : ''} × $_currency ${_money(_effectiveAdultPrice!)}'
+                    '${children > 0 && _childPrice != null ? ' + $children Child${children > 1 ? 'ren' : ''} × $_currency ${_money(_childPrice!)}' : ''}',
+                    style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                  ),
+                if (_calculatedSavings != null) ...[
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    'Promotional savings: $_currency ${_money(_calculatedSavings!)}',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.success),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.xs),
+              ],
               Text(
                 _groupTotal == null
                     ? 'Group total unavailable'
