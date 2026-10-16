@@ -4,16 +4,23 @@ import 'package:travelmate_traveller/core/operator_content/package_details_scree
 import 'package:travelmate_traveller/services/api_service.dart';
 
 class _PackageDetailsApi extends ApiService {
+  String? postedPath;
+  Map<String, dynamic>? postedPayload;
+
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
-    if (path == '/api/fr5/itineraries') {
-      return {
-        'items': [
-          {'id': 'trip-1', 'title': 'Penang trip', 'destinationArea': 'Penang'}
-        ]
-      };
-    }
     return {'items': []};
+  }
+
+  @override
+  Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
+    postedPath = path;
+    postedPayload = Map<String, dynamic>.from(body ?? const {});
+    return {
+      'ok': true,
+      // Stop before PaymentScreen: this focused widget test has no Firebase app.
+      'attempt': <String, dynamic>{},
+    };
   }
 }
 
@@ -21,6 +28,7 @@ void main() {
   testWidgets('complete package shows traveller-ready product details',
       (tester) async {
     var legacyCallbackCalled = false;
+    final api = _PackageDetailsApi();
     await tester.pumpWidget(MaterialApp(
       home: TourismPackageDetailsScreen(
         item: {
@@ -32,6 +40,7 @@ void main() {
           'durationNights': 1,
           'currency': 'MYR',
           'adultPrice': 320,
+          'childPrice': 160,
           'originalPrice': 380,
           'promotionalPrice': 300,
           'priceBasis': 'per_person',
@@ -55,16 +64,24 @@ void main() {
           'cancellationPolicy': 'Cancel seven days before departure.',
           'operatorName': 'Penang Local Tours',
         },
-        api: _PackageDetailsApi(),
+        api: api,
         onAddToTrip: () => legacyCallbackCalled = true,
       ),
     ));
 
     expect(find.text('Penang Heritage Escape'), findsOneWidget);
-    expect(find.text('MYR 300 / person'), findsOneWidget);
+    expect(find.text('MYR 320 / adult'), findsOneWidget);
     expect(find.text('2 days · 1 night'), findsOneWidget);
     await tester.scrollUntilVisible(
-        find.text('Day-by-day itinerary'), 300,
+        find.byKey(const ValueKey('package-group-booking')), 300,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.text('Group total: MYR 320'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('package-adults-add')));
+    await tester.tap(find.byKey(const ValueKey('package-children-add')));
+    await tester.pump();
+    expect(find.text('Group total: MYR 800'), findsOneWidget);
+    await tester.scrollUntilVisible(
+        find.text('Day 1 · Heritage quarter'), 300,
         scrollable: find.byType(Scrollable).first);
     expect(find.text('Day-by-day itinerary'), findsOneWidget);
     expect(find.text('Day 1 · Heritage quarter'), findsOneWidget);
@@ -79,7 +96,10 @@ void main() {
     expect(find.text('Tourism Operator'), findsOneWidget);
     await tester.tap(find.text('Checkout package'));
     await tester.pumpAndSettle();
-    expect(find.text('Penang trip'), findsOneWidget);
+    expect(api.postedPath, '/api/fr15/package-checkout-attempts');
+    expect(api.postedPayload?['participants'], {'adults': 2, 'children': 1});
+    expect(api.postedPayload?['departureDate'], '2026-12-10');
+    expect(api.postedPayload?.containsKey('intendedTripId'), isFalse);
     expect(legacyCallbackCalled, isFalse);
   });
 
@@ -97,7 +117,7 @@ void main() {
     ));
 
     expect(find.text('Legacy Island Tour'), findsOneWidget);
-    expect(find.text('MYR 88 / person'), findsOneWidget);
+    expect(find.text('MYR 88 / adult'), findsOneWidget);
     expect(find.text('1 day'), findsOneWidget);
     final visibleText = tester
         .widgetList<Text>(find.byType(Text))

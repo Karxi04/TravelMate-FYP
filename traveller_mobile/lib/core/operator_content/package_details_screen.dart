@@ -27,47 +27,42 @@ class TourismPackageDetailsScreen extends StatefulWidget {
 class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScreen> {
   late final ApiService api;
   bool submitting = false;
+  int adults = 1;
+  int children = 0;
+  String? selectedDepartureDate;
 
   @override
   void initState() {
     super.initState();
     api = widget.api ?? ApiService();
+    final minimum = _number(widget.item['minimumTravellers'])?.toInt() ?? 1;
+    adults = minimum < 1 ? 1 : minimum;
+    final dates = _list(widget.item['departureDates']);
+    if (dates.length == 1) selectedDepartureDate = dates.first;
   }
 
   Future<void> _startCheckout() async {
     if (submitting) return;
     setState(() => submitting = true);
     try {
-      final data = await api.get('/api/fr5/itineraries');
-      final trips = data is Map ? data['items'] as List? ?? const [] : const [];
-      if (!mounted) return;
-      if (trips.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Create a Trip first, then return to checkout this package.')));
-        return;
-      }
-      final trip = await showModalBottomSheet<Map<String, dynamic>>(
-        context: context,
-        showDragHandle: true,
-        builder: (_) => ListView(
-          shrinkWrap: true,
-          children: trips.map((raw) {
-            final value = Map<String, dynamic>.from(raw as Map);
-            return ListTile(
-              title: Text('${value['title'] ?? 'Trip'}'),
-              subtitle: Text('${value['destinationArea'] ?? ''}'),
-              onTap: () => Navigator.pop(context, value),
-            );
-          }).toList(),
-        ),
-      );
-      if (trip == null) return;
       final packageId = (widget.item['id'] ?? '').toString();
       if (packageId.isEmpty) throw Exception('This package is unavailable for checkout.');
+      if (_departureDates.isNotEmpty && selectedDepartureDate == null) {
+        throw Exception('Select an available departure date.');
+      }
+      if (_priceBasis == 'per_person' && children > 0 && _childPrice == null) {
+        throw Exception('Child pricing is not available for this package.');
+      }
+      final total = _groupTotal;
+      if (total == null || total <= 0) {
+        throw Exception('This package has no supported checkout price.');
+      }
+      final scopeDate = selectedDepartureDate ?? 'open';
       final response = await api.post('/api/fr15/package-checkout-attempts', {
         'packageId': packageId,
-        'intendedTripId': trip['id'],
-        'idempotencyKey': 'package_${packageId}_${trip['id']}',
+        'participants': {'adults': adults, 'children': children},
+        if (selectedDepartureDate != null) 'departureDate': selectedDepartureDate,
+        'idempotencyKey': 'package_${packageId}_${adults}_${children}_$scopeDate',
       });
       final attempt = response is Map && response['attempt'] is Map
           ? Map<String, dynamic>.from(response['attempt'] as Map)
@@ -78,9 +73,18 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => PaymentScreen(packageAttemptId: attemptId, api: api),
+          builder: (_) => PaymentScreen(
+            packageAttemptId: attemptId,
+            initialAmount: _number(attempt['amount'])?.toDouble(),
+            api: api,
+          ),
         ),
       );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('After verified payment, your new Package Trip will appear under Trips.'),
+        ));
+      }
     } catch (error) {
       if (mounted) showError(context, error);
     } finally {
@@ -117,17 +121,53 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
   num? _number(dynamic value) =>
       value is num ? value : num.tryParse(value?.toString() ?? '');
 
+  String get _priceBasis =>
+      widget.item['priceBasis'] == 'per_group' ? 'per_group' : 'per_person';
+
+  num? get _adultPrice =>
+      _number(widget.item['adultPrice']) ?? _number(widget.item['price']);
+
+  num? get _childPrice => _number(widget.item['childPrice']);
+
+  List<String> get _departureDates => _list(widget.item['departureDates']);
+
+  int? get _maximumTravellers =>
+      _number(widget.item['maximumTravellers'] ?? widget.item['maxTravellers'])?.toInt();
+
+  int get _minimumTravellers =>
+      (_number(widget.item['minimumTravellers'])?.toInt() ?? 1).clamp(1, 50).toInt();
+
+  num? get _groupTotal {
+    final adultPrice = _adultPrice;
+    if (adultPrice == null) return null;
+    if (_priceBasis == 'per_group') return adultPrice;
+    if (children > 0 && _childPrice == null) return null;
+    return adultPrice * adults + (_childPrice ?? 0) * children;
+  }
+
   String _money(num value) => value == value.roundToDouble()
       ? value.toStringAsFixed(0)
       : value.toStringAsFixed(2);
 
   String get _price {
-    final amount = _number(widget.item['promotionalPrice']) ??
-        _number(widget.item['adultPrice']) ??
-        _number(widget.item['price']);
+    final amount = _adultPrice;
     if (amount == null) return '';
-    final basis = widget.item['priceBasis'] == 'per_group' ? 'group' : 'person';
+    final basis = _priceBasis == 'per_group' ? 'group' : 'adult';
     return '$_currency ${_money(amount)} / $basis';
+  }
+
+  Widget _participantCounter(String label, int value, VoidCallback? subtract,
+      VoidCallback? add, String keyName) {
+    return Expanded(
+      child: Semantics(
+        label: '$label count $value',
+        child: Row(children: [
+          Expanded(child: Text('$label: $value', style: const TextStyle(fontWeight: FontWeight.w700))),
+          IconButton(key: ValueKey('$keyName-remove'), onPressed: subtract, icon: const Icon(Icons.remove_circle_outline)),
+          IconButton(key: ValueKey('$keyName-add'), onPressed: add, icon: const Icon(Icons.add_circle_outline)),
+        ]),
+      ),
+    );
   }
 
   String get _duration {
@@ -204,8 +244,8 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
     final departureDates = _list(widget.item['departureDates']);
     final transport = _list(widget.item['transportTypes']);
     final meals = _days.expand((day) => _list(day['meals'])).toSet().toList();
-    final original = _number(widget.item['originalPrice']);
-    final promo = _number(widget.item['promotionalPrice']);
+    final canAddParticipant =
+        _maximumTravellers == null || adults + children < _maximumTravellers!;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Tourism package')),
@@ -264,13 +304,64 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
                   text: 'Up to ${capacity.toInt()} travellers',
                   icon: Icons.group_outlined),
           ]),
-          if (original != null && promo != null && original > promo) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Text('Usual price $_currency ${_money(original)}',
-                style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    decoration: TextDecoration.lineThrough)),
-          ],
+          const SizedBox(height: AppSpacing.lg),
+          InkCard(
+            key: const ValueKey('package-group-booking'),
+            color: InkWashColors.cream,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _heading('Your group'),
+              Text(_priceBasis == 'per_group'
+                  ? 'This is a fixed group price within the package capacity.'
+                  : _childPrice == null
+                      ? 'Adult pricing is available. Child pricing is not defined.'
+                      : 'Adults and children use the approved rates shown by the operator.'),
+              const SizedBox(height: AppSpacing.sm),
+              Row(children: [
+                _participantCounter(
+                  'Adults', adults,
+                  adults > 1 && adults + children > _minimumTravellers
+                      ? () => setState(() => adults -= 1)
+                      : null,
+                  canAddParticipant ? () => setState(() => adults += 1) : null,
+                  'package-adults',
+                ),
+              ]),
+              Row(children: [
+                _participantCounter(
+                  'Children', children,
+                  children > 0 && adults + children > _minimumTravellers
+                      ? () => setState(() => children -= 1)
+                      : null,
+                  canAddParticipant ? () => setState(() => children += 1) : null,
+                  'package-children',
+                ),
+              ]),
+              if (_departureDates.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.sm),
+                DropdownButtonFormField<String>(
+                  key: const ValueKey('package-departure-date'),
+                  initialValue: selectedDepartureDate,
+                  decoration: const InputDecoration(labelText: 'Departure date'),
+                  items: _departureDates
+                      .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+                      .toList(),
+                  onChanged: (value) => setState(() => selectedDepartureDate = value),
+                ),
+              ],
+              const Divider(height: AppSpacing.lg),
+              Text(
+                _groupTotal == null
+                    ? 'Group total unavailable'
+                    : 'Group total: $_currency ${_money(_groupTotal!)}',
+                key: const ValueKey('package-group-total'),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              const Text('One signed-in traveller pays for the complete group. Stripe Checkout remains in Test Mode.'),
+              const SizedBox(height: AppSpacing.xs),
+              const Text('Verified payment creates a new independent Package Trip; existing personal Trips are not changed.'),
+            ]),
+          ),
           if (description.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.lg),
             InkCard(

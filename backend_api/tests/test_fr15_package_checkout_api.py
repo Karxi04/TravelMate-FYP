@@ -120,10 +120,46 @@ def test_route_creates_server_owned_pending_attempt_without_provider_side_effect
     attempt = body["attempt"]
     assert body["ok"] is True and body["reused"] is False
     assert attempt["amount"] == 450 and attempt["packageSnapshot"]["price"] == 450
+    assert attempt["participants"] == {"adults": 1, "children": 0, "total": 1}
+    assert attempt["fulfillmentMode"] == "independent_package_trip"
+    assert "intendedTripId" not in attempt
     assert attempt["paymentStatus"] == "payment_pending"
     assert attempt["fulfillmentStatus"] == "fulfillment_pending"
     assert set(memory.collections) == {"users", "tourism_packages", "package_checkout_attempts"}
     create_session.assert_not_called()
+
+
+def test_route_calculates_group_total_and_rejects_client_amount_tampering(client, package_api):
+    memory, _identity, headers = package_api
+    seed_package(memory, childPrice=175, maximumTravellers=6, departureDates=["2027-02-10"])
+    response = post(
+        client, headers(), packageId="package-1", idempotencyKey="group-price",
+        participants={"adults": 2, "children": 1}, departureDate="2027-02-10",
+        amount=1, amountMinor=1, price=1, paymentStatus="paid",
+    )
+    assert response.status_code == 200
+    attempt = response.get_json()["attempt"]
+    assert attempt["amount"] == 1075
+    assert attempt["packageSnapshot"]["amountMinor"] == 107500
+    assert attempt["groupSize"] == 3
+    assert attempt["paymentStatus"] == "payment_pending"
+    assert attempt["selectedDepartureDate"] == "2027-02-10"
+
+
+def test_route_rejects_unsupported_children_and_excess_capacity(client, package_api):
+    memory, _identity, headers = package_api
+    seed_package(memory, maximumTravellers=2)
+    unsupported = post(
+        client, headers(), packageId="package-1", idempotencyKey="no-child-price",
+        participants={"adults": 1, "children": 1},
+    )
+    excessive = post(
+        client, headers(), packageId="package-1", idempotencyKey="too-large",
+        participants={"adults": 3, "children": 0},
+    )
+    assert unsupported.status_code == excessive.status_code == 409
+    assert "Child pricing" in unsupported.get_json()["error"]
+    assert "capacity" in excessive.get_json()["error"]
 
 
 @pytest.mark.parametrize("package_data", [
@@ -163,6 +199,22 @@ def test_route_idempotency_returns_same_attempt_and_rejects_conflicting_reuse(cl
     assert first.get_json()["attempt"]["id"] == repeat.get_json()["attempt"]["id"]
     assert repeat.get_json()["reused"] is True
     assert conflict.status_code == 409
+    assert len(memory.collections["package_checkout_attempts"]) == 1
+
+
+def test_route_idempotency_rejects_changed_participants(client, package_api):
+    memory, _identity, headers = package_api
+    seed_package(memory, childPrice=100)
+    first = post(
+        client, headers(), packageId="package-1", idempotencyKey="group-same-key",
+        participants={"adults": 2, "children": 0},
+    )
+    changed = post(
+        client, headers(), packageId="package-1", idempotencyKey="group-same-key",
+        participants={"adults": 2, "children": 1},
+    )
+    assert first.status_code == 200
+    assert changed.status_code == 409
     assert len(memory.collections["package_checkout_attempts"]) == 1
 
 

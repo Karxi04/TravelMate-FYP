@@ -45,6 +45,39 @@ def packages():
     if not items and g.role == 'admin':
         items = retrieveRecord('tourism_packages')
     return jsonify({'ok': True, 'items': [package_for_read(item) for item in items]})
+
+
+def _booking_projection(order):
+    snapshot = order.get('packageSnapshot') or {}
+    participants = order.get('participants') or snapshot.get('participants') or {}
+    return {
+        'orderReference': order.get('id'),
+        'packageId': order.get('packageId') or snapshot.get('packageId'),
+        'packageTitle': snapshot.get('title'),
+        'departureDate': order.get('departureDate') or snapshot.get('selectedDepartureDate'),
+        'groupSize': order.get('groupSize') or snapshot.get('groupSize') or participants.get('total'),
+        'adults': participants.get('adults'), 'children': participants.get('children'),
+        'paymentStatus': order.get('paymentStatus'), 'orderStatus': order.get('status'),
+        'fulfillmentStatus': order.get('fulfillmentStatus'),
+        'groupTotal': order.get('amount'), 'currency': order.get('currency'),
+        'supplierReservationStatus': 'not_created',
+        'testMode': order.get('provider') == 'stripe_checkout_test',
+        'createdAt': order.get('createdAt'),
+    }
+
+
+@bp.get('/bookings')
+@auth_required(['operator', 'admin'])
+def package_bookings():
+    filters = [('operatorId', '==', g.uid)] if g.role == 'operator' else None
+    orders = retrieveRecord('checkout_orders', filters=filters) or []
+    items = [
+        _booking_projection(order) for order in orders
+        if isinstance(order, dict) and order.get('quoteType') == 'package'
+    ]
+    return jsonify({'ok': True, 'items': items})
+
+
 @bp.post('/packages')
 @auth_required(['operator'])
 def create_package_route():

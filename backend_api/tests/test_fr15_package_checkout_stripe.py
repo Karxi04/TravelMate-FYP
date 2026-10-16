@@ -53,6 +53,32 @@ def seed_attempt(memory, trip_id='trip-1', **extra):
     return snapshot
 
 
+def seed_group_attempt(memory, **extra):
+    snapshot = {
+        'contractVersion': 2,
+        'packageId': 'package-1', 'operatorId': 'operator-1',
+        'title': 'Penang Weekend', 'destination': 'Penang',
+        'durationDays': 2, 'selectedDepartureDate': '2027-02-10',
+        'priceBasis': 'per_person', 'adultUnitPrice': 450.25,
+        'childUnitPrice': 175, 'price': 1075.50, 'amountMinor': 107550,
+        'currency': 'MYR', 'taxIncluded': True,
+        'participants': {'adults': 2, 'children': 1, 'total': 3}, 'groupSize': 3,
+        'itineraryDays': [{
+            'dayNumber': 1, 'title': 'Heritage day',
+            'description': 'Approved package itinerary.',
+            'activities': ['Heritage walk'],
+        }],
+    }
+    memory.seed('package_checkout_attempts', 'attempt-1', {
+        'travellerId': 'traveller-1', 'packageSnapshot': snapshot,
+        'checkoutStatus': 'checkout_pending', 'paymentStatus': 'payment_pending',
+        'participants': snapshot['participants'], 'groupSize': 3,
+        'selectedDepartureDate': '2027-02-10',
+        'fulfillmentMode': 'independent_package_trip', **extra,
+    })
+    return snapshot
+
+
 def session_response():
     return SimpleNamespace(id='cs_package_1', url='https://checkout.stripe.test/cs_package_1')
 
@@ -121,6 +147,93 @@ def test_signed_paid_webhook_fulfills_trip_once_without_supplier_booking(client,
     assert memory.retrieve('package_checkout_attempts', 'attempt-1')['fulfillmentStatus'] == 'fulfilled'
     assert len(memory.retrieve('itineraries', 'trip-1')['purchasedPackages']) == 1
     assert 'hotel_bookings' not in memory.collections and 'flight_bookings' not in memory.collections
+
+
+def test_group_checkout_creates_one_independent_package_trip_and_preserves_personal_trip(
+        client, package_payment):
+    memory, headers = package_payment
+    snapshot = seed_group_attempt(memory)
+    personal = {
+        'travellerId': 'traveller-1', 'title': 'My personal trip',
+        'destinationArea': 'Penang', 'activities': [{'activityName': 'Personal plan'}],
+    }
+    memory.seed('itineraries', 'personal-trip', personal)
+    with patch(
+        'modules.fr09_payment.routes.createCheckoutSession', return_value=session_response()
+    ) as create:
+        order = start_checkout(client, headers).get_json()['order']
+    assert order['amountMinor'] == 107550
+    assert order['groupSize'] == 3
+    assert create.call_args.args[0] == 1075.50
+    assert create.call_args.args[1] == 'MYR'
+    event = _event(order)
+    with patch('modules.fr09_payment.routes.constructStripeWebhookEvent', return_value=event):
+        first = client.post('/api/fr9/webhooks/stripe', data=b'{}', headers={'Stripe-Signature': 'fixture'})
+        duplicate = client.post('/api/fr9/webhooks/stripe', data=b'{}', headers={'Stripe-Signature': 'fixture'})
+    assert first.status_code == duplicate.status_code == 200
+    saved_personal = memory.retrieve('itineraries', 'personal-trip')
+    assert saved_personal == {'id': 'personal-trip', **personal}
+    package_trips = [
+        item for key, item in memory.collections['itineraries'].items()
+        if key != 'personal-trip'
+    ]
+    assert len(package_trips) == 1
+    trip = package_trips[0]
+    assert trip['tripType'] == 'package' and trip['packageTrip'] is True
+    assert trip['travellerCount'] == 3 and trip['participants'] == snapshot['participants']
+    assert trip['startDate'] == '2027-02-10' and trip['endDate'] == '2027-02-11'
+    assert trip['packageSnapshot'] == snapshot
+    assert trip['dailySchedule'][0]['activities'][0]['activityName'] == 'Heritage walk'
+    assert trip['supplierReservationStatus'] == 'not_created'
+    assert len(memory.collections['package_fulfillments']) == 1
+    assert 'hotel_bookings' not in memory.collections and 'flight_bookings' not in memory.collections
+
+
+def test_unverified_group_payment_cannot_create_package_trip(client, package_payment):
+    memory, headers = package_payment
+    seed_group_attempt(memory)
+    with patch('modules.fr09_payment.routes.createCheckoutSession', return_value=session_response()):
+        order = start_checkout(client, headers).get_json()['order']
+    with patch(
+        'modules.fr09_payment.routes.constructStripeWebhookEvent',
+        return_value=_event(order, amount_total=1),
+    ):
+        response = client.post(
+            '/api/fr9/webhooks/stripe', data=b'{}', headers={'Stripe-Signature': 'fixture'}
+        )
+    assert response.status_code == 200
+    assert memory.retrieve('checkout_orders', order['id'])['status'] == 'payment_mismatch'
+    assert not memory.collections.get('itineraries')
+
+
+def test_paid_group_trip_creation_recovers_after_transient_persistence_failure(
+        client, package_payment, monkeypatch):
+    memory, headers = package_payment
+    seed_group_attempt(memory)
+    with patch('modules.fr09_payment.routes.createCheckoutSession', return_value=session_response()):
+        order = start_checkout(client, headers).get_json()['order']
+    original_claim = memory.claim
+    failed = {'value': False}
+
+    def fail_trip_once(collection, document_id, data):
+        if collection == 'itineraries' and not failed['value']:
+            failed['value'] = True
+            raise RuntimeError('temporary persistence failure')
+        return original_claim(collection, document_id, data)
+
+    monkeypatch.setattr('modules.fr09_payment.routes.claimRecord', fail_trip_once)
+    event = _event(order)
+    with patch('modules.fr09_payment.routes.constructStripeWebhookEvent', return_value=event):
+        response = client.post('/api/fr9/webhooks/stripe', data=b'{}', headers={'Stripe-Signature': 'fixture'})
+    assert response.status_code == 200
+    saved = memory.retrieve('checkout_orders', order['id'])
+    assert saved['status'] == 'paid' and saved['fulfillmentStatus'] == 'fulfillment_pending'
+    monkeypatch.setattr('modules.fr09_payment.routes.claimRecord', original_claim)
+    with patch('modules.fr09_payment.routes.retrieveCheckoutSession', return_value=event['data']['object']):
+        reconciled = client.get(f"/api/fr9/orders/{order['id']}/reconcile", headers=headers)
+    assert reconciled.status_code == 200
+    assert len(memory.collections['itineraries']) == 1
+    assert memory.retrieve('checkout_orders', order['id'])['fulfillmentStatus'] == 'fulfilled'
 
 
 @pytest.mark.parametrize('extra', [

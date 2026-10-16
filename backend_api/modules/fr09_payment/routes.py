@@ -1,6 +1,8 @@
 import math
 import os
 import uuid
+from copy import deepcopy
+from datetime import date, timedelta
 from html import escape
 from urllib.parse import urlparse
 
@@ -232,13 +234,9 @@ def _package_order_document_id(attempt_id):
     return operation_document_id('package_checkout_order', g.uid, attempt_id)
 
 
-def _fulfill_package_order(order):
-    """Attach one immutable package snapshot once; payment is never rolled back here."""
+def _legacy_package_fulfillment(order, attempt):
+    """Keep already-created quantity-one attempts on their original path."""
     attempt_id = str(order.get('packageAttemptId') or '')
-    attempt = retrieveRecord(PACKAGE_ATTEMPT_COLLECTION, attempt_id)
-    if not attempt or attempt.get('travellerId') != order.get('travellerId'):
-        return {'fulfillmentStatus': 'fulfillment_failed', 'fulfillmentRetryRequired': True,
-                'fulfillmentError': 'The package purchase intent is unavailable.'}
     trip_id = str(attempt.get('intendedTripId') or '')
     trip = retrieveRecord('itineraries', trip_id) if trip_id else None
     if not trip:
@@ -273,6 +271,109 @@ def _fulfill_package_order(order):
             'fulfilledTripId': trip_id}
 
 
+def _package_trip_schedule(snapshot):
+    start_text = str(snapshot.get('selectedDepartureDate') or '')
+    start = date.fromisoformat(start_text) if start_text else None
+    schedule, activities = [], []
+    for index, raw_day in enumerate(snapshot.get('itineraryDays') or []):
+        if not isinstance(raw_day, dict):
+            continue
+        day_number = index + 1
+        day_items = []
+        for item_index, raw_activity in enumerate(raw_day.get('activities') or []):
+            if isinstance(raw_activity, dict):
+                activity = deepcopy(raw_activity)
+                activity.setdefault('activityName', activity.get('title') or activity.get('name') or 'Package activity')
+            else:
+                activity = {
+                    'activityName': str(raw_activity),
+                    'category': 'Package itinerary',
+                }
+            activity.setdefault('activityId', f'package_{day_number}_{item_index + 1}')
+            activity.update({'dayNo': day_number, 'source': 'purchased_package_snapshot'})
+            day_items.append(activity)
+            activities.append(activity)
+        schedule.append({
+            'dayNo': day_number,
+            'dayDate': (start + timedelta(days=index)).isoformat() if start else '',
+            'title': raw_day.get('title'), 'description': raw_day.get('description'),
+            'activities': day_items, 'meals': deepcopy(raw_day.get('meals') or []),
+            'accommodation': raw_day.get('accommodation'),
+            'transportNotes': raw_day.get('transportNotes'),
+            'planningBlocks': [], 'estimatedCost': 0,
+            'weather': {'source': 'unavailable'},
+        })
+    return schedule, activities
+
+
+def _independent_package_fulfillment(order, attempt):
+    attempt_id = str(order.get('packageAttemptId') or '')
+    snapshot = attempt.get('packageSnapshot') or {}
+    traveller_id = str(order.get('travellerId') or '')
+    fulfillment_id = operation_document_id('package_fulfillment', traveller_id, attempt_id)
+    trip_id = operation_document_id('package_trip', traveller_id, attempt_id)
+    now = utc_now_iso()
+    claimed, _created = claimRecord(PACKAGE_FULFILLMENT_COLLECTION, fulfillment_id, {
+        'id': fulfillment_id, 'travellerId': traveller_id, 'checkoutOrderId': order['id'],
+        'packageAttemptId': attempt_id, 'tripId': trip_id, 'status': 'fulfillment_pending',
+        'createdAt': now, 'updatedAt': now,
+    })
+    if (claimed.get('checkoutOrderId') != order.get('id') or claimed.get('tripId') != trip_id):
+        return {'fulfillmentStatus': 'fulfillment_failed', 'fulfillmentRetryRequired': True,
+                'fulfillmentError': 'The package fulfillment claim is inconsistent.'}
+    schedule, activities = _package_trip_schedule(snapshot)
+    start_text = str(snapshot.get('selectedDepartureDate') or '')
+    duration = int(snapshot.get('durationDays') or len(schedule) or 1)
+    start = date.fromisoformat(start_text) if start_text else None
+    end_text = (start + timedelta(days=duration - 1)).isoformat() if start else ''
+    trip_record = {
+        'id': trip_id, 'travellerId': traveller_id,
+        'title': snapshot.get('title') or 'Purchased travel package',
+        'destinationArea': snapshot.get('destination') or '',
+        'startDate': start_text, 'endDate': end_text, 'tripDays': max(1, duration),
+        'travellerCount': snapshot.get('groupSize') or 1,
+        'participants': deepcopy(snapshot.get('participants') or {'adults': 1, 'children': 0, 'total': 1}),
+        'tripType': 'package', 'packageTrip': True, 'status': 'planned',
+        'activities': activities, 'dailySchedule': schedule,
+        'packageSnapshot': deepcopy(snapshot), 'packageId': snapshot.get('packageId'),
+        'operatorId': snapshot.get('operatorId'), 'packageAttemptId': attempt_id,
+        'checkoutOrderId': order.get('id'), 'paidTotal': order.get('amount'),
+        'paidTotalMinor': order.get('amountMinor'), 'currency': order.get('currency'),
+        'supplierReservationStatus': 'not_created',
+        'budgetLimit': order.get('amount'),
+        'budgetEstimate': {
+            'total': order.get('amount'), 'currency': order.get('currency'),
+            'source': 'verified_package_payment',
+        },
+        'createdAt': now, 'updatedAt': now,
+    }
+    trip, _trip_created = claimRecord('itineraries', trip_id, trip_record)
+    if (trip.get('travellerId') != traveller_id or trip.get('checkoutOrderId') != order.get('id')):
+        return {'fulfillmentStatus': 'fulfillment_failed', 'fulfillmentRetryRequired': True,
+                'fulfillmentError': 'The package Trip claim is inconsistent.'}
+    updateRecord(PACKAGE_FULFILLMENT_COLLECTION, fulfillment_id, {
+        'status': 'fulfilled', 'updatedAt': utc_now_iso(),
+    })
+    return {'fulfillmentStatus': 'fulfilled', 'fulfillmentRetryRequired': False,
+            'fulfilledTripId': trip_id}
+
+
+def _fulfill_package_order(order):
+    """Fulfill verified payment idempotently; never roll payment back here."""
+    attempt_id = str(order.get('packageAttemptId') or '')
+    attempt = retrieveRecord(PACKAGE_ATTEMPT_COLLECTION, attempt_id)
+    if not attempt or attempt.get('travellerId') != order.get('travellerId'):
+        return {'fulfillmentStatus': 'fulfillment_failed', 'fulfillmentRetryRequired': True,
+                'fulfillmentError': 'The package purchase intent is unavailable.'}
+    if attempt.get('fulfillmentMode') == 'independent_package_trip':
+        try:
+            return _independent_package_fulfillment(order, attempt)
+        except Exception:
+            return {'fulfillmentStatus': 'fulfillment_pending', 'fulfillmentRetryRequired': True,
+                    'fulfillmentError': 'The paid Package Trip is awaiting recovery.'}
+    return _legacy_package_fulfillment(order, attempt)
+
+
 def _apply_package_payment(order, session):
     patch = _apply_checkout_session(order, session)
     if patch['status'] != 'paid':
@@ -304,6 +405,9 @@ def create_package_checkout_session(attempt_id):
         'packageSnapshot': snapshot, 'amount': minor_units / 100,
         'amountMinor': minor_units, 'currency': 'MYR', 'taxIncluded': snapshot.get('taxIncluded'),
         'taxNotes': snapshot.get('taxNotes'), 'status': 'checkout_pending',
+        'participants': snapshot.get('participants'), 'groupSize': snapshot.get('groupSize'),
+        'departureDate': snapshot.get('selectedDepartureDate'),
+        'fulfillmentMode': attempt.get('fulfillmentMode'),
         'paymentStatus': 'unpaid', 'fulfillmentStatus': 'fulfillment_pending',
         'provider': 'stripe_checkout_test',
         'providerIdempotencyKey': provider_idempotency_key('package_checkout', g.uid, attempt_id, 'session'),
