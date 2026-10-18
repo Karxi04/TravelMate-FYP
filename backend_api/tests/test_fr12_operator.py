@@ -45,6 +45,81 @@ def test_admin_operator_override_remains_allowed(client, mock_admin_auth):
         )
     assert response.status_code == 200
 
+
+def test_operator_booking_projection_is_owner_scoped_and_sanitized(client, mock_operator_auth):
+    orders = [
+        {
+            'id': 'order-own', 'quoteType': 'package',
+            'operatorId': 'test_operator_uid', 'travellerId': 'traveller-secret',
+            'packageId': 'package-1',
+            'packageSnapshot': {
+                'title': 'Penang Heritage', 'selectedDepartureDate': '2027-02-10',
+                'participants': {'adults': 2, 'children': 1, 'total': 3},
+            },
+            'amount': 1075.50, 'currency': 'MYR', 'status': 'paid',
+            'paymentStatus': 'paid', 'fulfillmentStatus': 'fulfilled',
+            'provider': 'stripe_checkout_test',
+            'stripePaymentIntentId': 'pi_secret', 'createdAt': '2026-10-16T00:00:00Z',
+        },
+        {
+            'id': 'order-other', 'quoteType': 'package',
+            'operatorId': 'other-operator', 'packageSnapshot': {'title': 'Other'},
+        },
+        {
+            'id': 'order-own-legacy', 'quoteType': 'package',
+            'operatorId': 'test_operator_uid',
+            'packageSnapshot': {'title': 'Legacy Package'},
+            'amount': 100, 'currency': 'MYR', 'status': 'paid',
+        },
+    ]
+
+    def retrieve(_collection, document_id=None, filters=None, limit=None):
+        values = orders
+        for field, operator, expected in filters or []:
+            assert operator == '=='
+            values = [item for item in values if item.get(field) == expected]
+        return values
+
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=retrieve):
+        response = client.get(
+            '/api/fr12/bookings', headers={'Authorization': 'Bearer valid_test_token'}
+        )
+    assert response.status_code == 200
+    items = response.get_json()['items']
+    assert len(items) == 2 and items[0]['orderReference'] == 'order-own'
+    assert items[0]['groupSize'] == 3 and items[0]['supplierReservationStatus'] == 'not_created'
+    assert items[0]['testMode'] is True
+    assert 'travellerId' not in items[0] and 'stripePaymentIntentId' not in items[0]
+    legacy = items[1]
+    assert legacy['orderReference'] == 'order-own-legacy'
+    assert legacy['groupSize'] is None and legacy['adults'] is None and legacy['children'] is None
+    assert legacy['supplierReservationStatus'] == 'not_created'
+
+
+def test_operator_booking_projection_rejects_traveller(client, mock_traveller_auth):
+    response = client.get(
+        '/api/fr12/bookings', headers={'Authorization': 'Bearer valid_test_token'}
+    )
+    assert response.status_code == 403
+
+
+def test_admin_booking_projection_can_read_all_package_orders(client, mock_admin_auth):
+    orders = [
+        {'id': 'one', 'quoteType': 'package', 'operatorId': 'operator-1'},
+        {'id': 'two', 'quoteType': 'package', 'operatorId': 'operator-2'},
+        {'id': 'hotel', 'quoteType': 'hotel'},
+    ]
+    with patch(
+        'modules.fr12_tourism_operator_management.routes.retrieveRecord',
+        return_value=orders,
+    ) as retrieve:
+        response = client.get(
+            '/api/fr12/bookings', headers={'Authorization': 'Bearer valid_test_token'}
+        )
+    assert response.status_code == 200
+    assert [item['orderReference'] for item in response.get_json()['items']] == ['one', 'two']
+    retrieve.assert_called_once_with('checkout_orders', filters=None)
+
 def test_operator_packages_crud(client, mock_operator_auth):
     sample_pkg = {
         'packageTitle': 'Penang Heritage Walking Tour',

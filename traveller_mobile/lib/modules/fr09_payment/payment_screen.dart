@@ -68,7 +68,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
     bookingId = TextEditingController(text: widget.initialBookingReference);
     amount = TextEditingController(
         text: widget.initialAmount?.toStringAsFixed(2) ?? '100.00');
-    billingEmail.text = FirebaseAuth.instance.currentUser?.email ?? '';
+    try {
+      billingEmail.text = FirebaseAuth.instance.currentUser?.email ?? '';
+    } catch (_) {}
     Future.microtask(() async {
       await loadHistory();
       if (hostedCheckout) await loadOrders();

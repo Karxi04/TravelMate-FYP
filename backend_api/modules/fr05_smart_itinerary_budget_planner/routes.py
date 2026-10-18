@@ -32,6 +32,12 @@ def _own(iid):
     return data if data and data.get('travellerId') == g.uid else None
 
 
+def _is_package_trip(trip):
+    if not trip or not isinstance(trip, dict):
+        return False
+    return trip.get('tripType') == 'package' or bool(trip.get('packageTrip'))
+
+
 def _trusted_hotel_update(current, payload):
     hotel_fields = {'selectedHotel', 'hotelCost', 'hotelCurrency', 'hotelBookingId'}
     if not hotel_fields.intersection(payload):
@@ -477,6 +483,15 @@ def list_itineraries():
     return jsonify({'ok': True, 'items': retrieveRecord('itineraries', filters=[('travellerId', '==', g.uid)])})
 
 
+@bp.get('/itineraries/<iid>')
+@auth_required(['traveller'])
+def get_itinerary_route(iid):
+    current = _own(iid)
+    if not current:
+        return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    return jsonify({'ok': True, 'itinerary': current})
+
+
 @bp.post('/itineraries')
 @auth_required(['traveller'])
 def create_itinerary_route():
@@ -496,6 +511,8 @@ def update_itinerary_route(iid):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     payload = request.get_json(silent=True) or {}
     payload, hotel_error = _trusted_hotel_update(current, payload)
     if hotel_error:
@@ -535,6 +552,8 @@ def flight_adjustment_preview(iid):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     flight = current.get('selectedFlight') if isinstance(current.get('selectedFlight'), dict) else None
     if not flight:
         return jsonify({'ok': False, 'error': 'Select a flight before requesting an itinerary adjustment preview.'}), 409
@@ -548,6 +567,8 @@ def flight_adjustment_apply(iid):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     payload = request.get_json(silent=True) or {}
     preview_id = str(payload.get('previewId') or '').strip()
     if not preview_id:
@@ -569,6 +590,8 @@ def remove_hotel_selection(iid):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     patch = {
         'selectedHotel': None,
         'hotelCost': 0,
@@ -590,6 +613,8 @@ def add_activity_route(iid):
     payload = request.get_json(silent=True) or {}
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     if payload.get('destinationId') and not validateSelectedDestination(payload.get('destinationId')):
         return jsonify({'ok': False, 'error': 'Invalid destination'}), 400
     if payload.get('destinationId') and checkDestinationExists(current, payload.get('destinationId')):
@@ -640,6 +665,8 @@ def remove_activity_route(iid, activity_id):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     updated = removeActivity(current, activity_id)
     recalculated = recalculateItinerary(
         {**current, 'activities': updated['activities']},
@@ -662,6 +689,8 @@ def update_activity_route(iid, activity_id):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     updated = updateActivity(current, activity_id, request.get_json(silent=True) or {})
     recalculated = recalculateItinerary(
         {**current, 'activities': updated['activities']},
@@ -684,6 +713,8 @@ def rearrange_activity_route(iid):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     updated = rearrangeActivity(current, (request.get_json(silent=True) or {}).get('orderedActivityIds', []))
     recalculated = recalculateItinerary(
         {**current, 'activities': updated['activities']},
@@ -706,6 +737,13 @@ def budget_comparison(iid):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        budget = current.get('budgetEstimate') or {
+            'total': current.get('paidTotal', 0),
+            'currency': current.get('currency', 'MYR'),
+            'source': 'verified_package_payment',
+        }
+        return jsonify({'ok': True, 'budget': budget})
     budget = calculateBudget(current)
     budget['comparison'] = compareBudget(budget)
     updateRecord('itineraries', iid, {'budgetEstimate': budget})
@@ -718,6 +756,8 @@ def lower_cost_alternatives(iid):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     payload = request.get_json(silent=True) or {}
     flights = []
     if all(payload.get(k) for k in ['departure_id', 'arrival_id', 'outbound_date']):
@@ -747,6 +787,8 @@ def apply_lower_cost_alternative(iid):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     payload = request.get_json(silent=True) or {}
     alternative = payload.get('alternative') if isinstance(payload.get('alternative'), dict) else payload
     kind = str(alternative.get('alternativeType') or alternative.get('type') or '').lower()
@@ -942,6 +984,8 @@ def generate_itinerary_route(iid):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     payload = request.get_json(silent=True) or {}
     snapshot, snapshot_error = _recommendation_snapshot(current, payload)
     if snapshot_error:
@@ -980,6 +1024,8 @@ def save_itinerary_route(iid):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     if not validateItineraryForSaving(current):
         return jsonify({'ok': False, 'error': 'Itinerary cannot be saved'}), 400
     return jsonify({'ok': True, 'itinerary': updateRecord('itineraries', iid, {'status': 'planned', 'plannedAt': utc_now_iso(), 'updatedAt': utc_now_iso()})})
@@ -988,7 +1034,11 @@ def save_itinerary_route(iid):
 @bp.delete('/itineraries/<iid>')
 @auth_required(['traveller'])
 def delete_itinerary_route(iid):
-    if not _own(iid):
+    current = _own(iid)
+    if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be deleted.'}), 409
     deleteRecord('itineraries', iid)
     return jsonify({'ok': True})
+

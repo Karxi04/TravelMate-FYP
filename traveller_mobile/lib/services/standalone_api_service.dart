@@ -118,9 +118,25 @@ class StandaloneApiService {
     if (path == '/api/fr5/itineraries') {
       return {'ok': true, 'items': await _readList('itineraries')};
     }
+    if (path.startsWith('/api/fr5/itineraries/') &&
+        path.split('/').length == 5 &&
+        !path.endsWith('/budget')) {
+      final id = path.split('/')[4];
+      final trip = await _tripById(id);
+      if (trip == null) {
+        throw Exception('Itinerary not found.');
+      }
+      return {'ok': true, 'itinerary': trip};
+    }
     if (path.startsWith('/api/fr5/itineraries/') && path.endsWith('/budget')) {
       final id = path.split('/')[4];
       final trip = await _tripById(id);
+      if (trip != null && _isPackageTrip(trip) && trip['budgetEstimate'] is Map) {
+        return {
+          'ok': true,
+          'budget': Map<String, dynamic>.from(trip['budgetEstimate'] as Map),
+        };
+      }
       return {'ok': true, 'budget': _calculateBudget(trip ?? {})};
     }
     if (path == '/api/fr6/locations/search') {
@@ -371,6 +387,14 @@ class StandaloneApiService {
     if (path.startsWith('/api/fr5/itineraries/')) {
       final id = path.split('/').last;
       final trips = await _readList('itineraries');
+      final target = trips.cast<Map>().firstWhere(
+            (e) => e['id'].toString() == id,
+            orElse: () => <String, dynamic>{},
+          );
+      if (target.isNotEmpty &&
+          _isPackageTrip(Map<String, dynamic>.from(target))) {
+        throw Exception('Purchased package trips cannot be deleted.');
+      }
       trips.removeWhere((e) => e['id'].toString() == id);
       await _writeList('itineraries', trips);
       return {'ok': true};
@@ -3252,6 +3276,11 @@ class StandaloneApiService {
     return {'ok': true, 'id': id, 'itinerary': trip};
   }
 
+  bool _isPackageTrip(Map<String, dynamic>? trip) {
+    if (trip == null) return false;
+    return trip['tripType'] == 'package' || trip['packageTrip'] == true;
+  }
+
   Future<Map<String, dynamic>?> _tripById(String id) async {
     final trips = await _readList('itineraries');
     for (final trip in trips) {
@@ -3275,6 +3304,9 @@ class StandaloneApiService {
   Future<dynamic> _updateTrip(String id, Map<String, dynamic> payload) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     final hotelKeys = {
       'selectedHotel',
       'hotelCost',
@@ -3327,6 +3359,9 @@ class StandaloneApiService {
   Future<dynamic> _removeHotelSelection(String id) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     trip['selectedHotel'] = null;
     trip['hotelCost'] = 0;
     trip['hotelCurrency'] = null;
@@ -3342,6 +3377,9 @@ class StandaloneApiService {
   Future<dynamic> _addActivity(String id, Map<String, dynamic> payload) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     final activities = (trip['activities'] as List? ?? [])
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
@@ -3375,6 +3413,9 @@ class StandaloneApiService {
   Future<dynamic> _removeActivity(String id, String activityId) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     final activities = (trip['activities'] as List? ?? [])
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
@@ -3403,6 +3444,9 @@ class StandaloneApiService {
       String id, String activityId, Map<String, dynamic> payload) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     final activities = (trip['activities'] as List? ?? [])
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
@@ -3432,6 +3476,9 @@ class StandaloneApiService {
       String id, Map<String, dynamic> payload) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     final current = (trip['activities'] as List? ?? [])
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
@@ -3606,6 +3653,17 @@ class StandaloneApiService {
       String id, Map<String, dynamic> payload) async {
     var trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      return {
+        'ok': false,
+        'error': 'Purchased package trips cannot be modified or recalculated.',
+        'id': id,
+        'tripId': id,
+        'status': trip['status'] ?? 'planned',
+        'stage': 'package_protection',
+        'retryable': false,
+      };
+    }
 
     try {
       await _snapshotForTrip(trip, payload);
@@ -3692,6 +3750,9 @@ class StandaloneApiService {
   Future<dynamic> _saveTrip(String id) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     trip['status'] = 'planned';
     trip['plannedAt'] = _now();
     trip['updatedAt'] = _now();
@@ -3800,6 +3861,9 @@ class StandaloneApiService {
   Future<dynamic> _lowerCostAlternatives(String id) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     final budget = _calculateBudget(trip);
     final over = _num(budget['overBy']);
     final items = <Map<String, dynamic>>[
@@ -3840,6 +3904,9 @@ class StandaloneApiService {
       String id, Map<String, dynamic> payload) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     final alternative = Map<String, dynamic>.from(payload['alternative'] is Map
         ? payload['alternative'] as Map
         : payload);
@@ -4149,6 +4216,9 @@ class StandaloneApiService {
     final flight = Map<String, dynamic>.from(payload['flight'] ?? {});
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     trip['selectedFlight'] = flight;
     trip['flightCost'] = _num(flight['price']);
     trip['flightCurrency'] =
@@ -4165,6 +4235,9 @@ class StandaloneApiService {
   Future<dynamic> _removeFlightSelection(String id) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     trip['selectedFlight'] = null;
     trip['flightCost'] = 0;
     trip['flightCurrency'] = null;
@@ -4209,6 +4282,9 @@ class StandaloneApiService {
   Future<dynamic> _flightAdjustmentPreview(String id) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     final flight = trip['selectedFlight'] is Map
         ? Map<String, dynamic>.from(trip['selectedFlight'] as Map)
         : <String, dynamic>{};
@@ -4504,6 +4580,9 @@ class StandaloneApiService {
     }
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
+    if (_isPackageTrip(trip)) {
+      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    }
     final flight = trip['selectedFlight'] is Map
         ? Map<String, dynamic>.from(trip['selectedFlight'] as Map)
         : <String, dynamic>{};

@@ -1,5 +1,100 @@
-{% extends 'portal_base.html' %}{% block title %}Business Profile | TravelMate{% endblock %}{% block content %}
-{% set p=form or profile or {} %}{% set verification=profile.get('verificationStatus','pending') %}
-<div class="page-title"><div><span class="eyebrow">ACCOUNT</span><h1>Business profile</h1><p>Keep the information that travellers and Administrators need up to date.</p></div></div>
-<div class="grid g2 profile-layout"><form class="card" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><section class="form-section compact-section"><div class="section-heading"><span>1</span><div><h3>Business information</h3><p>These details identify your tourism business.</p></div></div><div class="field"><label for="companyName">Organization name *</label><input id="companyName" class="input" name="companyName" value="{{ p.get('companyName','') }}" required></div><div class="field"><label for="name">Contact name *</label><input id="name" class="input" name="name" value="{{ p.get('name','') }}" required></div><div class="field"><label for="businessContact">Business phone *</label><input id="businessContact" class="input" name="businessContact" type="tel" value="{{ p.get('businessContact',p.get('phoneNo','')) }}" required></div><div class="field"><label for="phoneNo">Alternate phone</label><input id="phoneNo" class="input" name="phoneNo" type="tel" value="{{ p.get('phoneNo','') }}"></div><button class="btn primary">Save profile</button></section></form><div><section class="card cream account-card"><span class="eyebrow">ACCOUNT STATUS</span><h3>{{ {'pending':'Pending verification','approved':'Verified','verified':'Verified','rejected':'Needs attention','disabled':'Needs attention'}.get(verification,'Needs attention') }}</h3><p>{% if verification in ['approved','verified'] %}Your operator account can create packages and submit campaigns for review.{% elif verification == 'rejected' %}Please update your details and contact TravelMate support if you need help with verification.{% else %}Your account is awaiting TravelMate administrator approval. You can update this profile while you wait.{% endif %}</p><span class="status {{ verification }}">{{ {'pending':'Pending verification','approved':'Verified','verified':'Verified','rejected':'Needs attention','disabled':'Needs attention'}.get(verification,'Needs attention') }}</span></section><section class="card read-only-card"><span class="eyebrow">READ-ONLY ACCOUNT DETAILS</span><div class="detail-row"><span>Business email</span><strong>{{ profile.get('email','Not provided') }}</strong></div><div class="detail-row"><span>Registration number</span><strong>{{ profile.get('registrationNo','Not provided') }}</strong></div></section></div></div>
+{% extends 'portal_base.html' %}
+{% block title %}Business Profile | TravelMate{% endblock %}
+
+{% block content %}
+{% set p = form or profile or {} %}
+{% set verification = profile.get('verificationStatus', 'pending')|lower %}
+
+<div class="page-title">
+  <div>
+    <span class="eyebrow">Account Administration</span>
+    <h1>Business Profile</h1>
+    <p>Manage your registered tourism business details, contact channels, and view platform accreditation status.</p>
+  </div>
+</div>
+
+<div class="grid g2 profile-layout">
+  <!-- Editable Profile Form -->
+  <form class="card" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="card-heading">
+      <div>
+        <span class="eyebrow">Entity Information</span>
+        <h3>Business Details</h3>
+      </div>
+    </div>
+    <p class="muted" style="font-size: 13px; margin: 0 0 16px;">
+      These details identify your tourism business across Penang travel packages and promotional materials.
+    </p>
+
+    <div class="field">
+      <label for="companyName">Organization / Operating Name *</label>
+      <input id="companyName" class="input" name="companyName" value="{{ p.get('companyName', '') }}" placeholder="e.g. Penang Heritage Trails & Tours" required>
+    </div>
+
+    <div class="field">
+      <label for="name">Primary Contact Person *</label>
+      <input id="name" class="input" name="name" value="{{ p.get('name', '') }}" placeholder="e.g. Sarah Tan" required>
+    </div>
+
+    <div class="field">
+      <label for="businessContact">Official Business Phone *</label>
+      <input id="businessContact" class="input" name="businessContact" type="tel" value="{{ p.get('businessContact', p.get('phoneNo', '')) }}" placeholder="+60 12-345 6789" required>
+    </div>
+
+    <div class="field">
+      <label for="phoneNo">Alternate Phone / Hotline</label>
+      <input id="phoneNo" class="input" name="phoneNo" type="tel" value="{{ p.get('phoneNo', '') }}" placeholder="Optional secondary contact">
+    </div>
+
+    <div style="margin-top: 24px;">
+      <button class="btn primary" type="submit">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        <span>Save Profile Changes</span>
+      </button>
+    </div>
+  </form>
+
+  <!-- Accreditation & Read-Only Specs -->
+  <div style="display: flex; flex-direction: column; gap: 20px;">
+    <!-- Account Status Card -->
+    <section class="card cream account-card">
+      <span class="eyebrow">Accreditation Status</span>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 12px;">
+        <h3 style="margin: 0; font-size: 20px;">
+          {{ {'pending': 'Pending Verification', 'approved': 'Verified Partner', 'verified': 'Verified Partner', 'rejected': 'Needs Attention', 'disabled': 'Needs Attention'}.get(verification, 'Needs Attention') }}
+        </h3>
+        <span class="status {{ verification }}">
+          {{ {'pending': 'Pending', 'approved': 'Verified', 'verified': 'Verified', 'rejected': 'Needs Attention', 'disabled': 'Disabled'}.get(verification, 'Needs Attention') }}
+        </span>
+      </div>
+
+      <p style="font-size: 13px; color: var(--ink-secondary); line-height: 1.5; margin: 0;">
+        {% if verification in ['approved', 'verified'] %}
+          Your Tourism Operator account is active and verified by TravelMate administrators. You have full publishing privileges for packages and campaigns.
+        {% elif verification == 'rejected' %}
+          Your operator verification requires additional documentation or updates. Please review your registered details and contact administrator support.
+        {% else %}
+          Your account is currently awaiting TravelMate administrator accreditation. You may build package drafts while awaiting approval.
+        {% endif %}
+      </p>
+    </section>
+
+    <!-- Read-Only Account Details -->
+    <section class="card read-only-card">
+      <span class="eyebrow">Immutable Credentials</span>
+      <h3 style="margin: 4px 0 12px; font-size: 16px;">System Account Identifiers</h3>
+
+      <div class="detail-row" style="border-bottom: 1px solid var(--border-subtle);">
+        <span>Registered Business Email</span>
+        <strong>{{ profile.get('email', 'Not provided') }}</strong>
+      </div>
+
+      <div class="detail-row">
+        <span>Business Registration Number (SSM / MOTAC)</span>
+        <strong>{{ profile.get('registrationNo', 'Not provided') }}</strong>
+      </div>
+    </section>
+  </div>
+</div>
 {% endblock %}

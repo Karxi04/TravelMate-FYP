@@ -1,5 +1,30 @@
-{% extends 'portal_base.html' %}{% block title %}Edit Package | TravelMate{% endblock %}{% block content %}
-<div class="page-title"><div><span class="eyebrow">PACKAGE V2</span><h1>Edit Tourism Package</h1><p>Saving an approved package returns it to draft so the Administrator can review the change.</p></div><a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">Back to packages</a></div>
-{% if item.get('reviewReason',item.get('reviewComment')) %}<div class="review-feedback"><strong>Administrator feedback</strong><p>{{ item.get('reviewReason',item.get('reviewComment')) }}</p></div>{% endif %}
-<form class="card cream package-editor" method="post">{% include 'fr12_tourism_operator_management/_package_form.html' %}<div class="review-bar"><span>Review all details before resubmitting a changed package.</span><div class="actions"><a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">Cancel</a><button class="btn primary">Save Changes</button></div></div></form>
+{% extends 'portal_base.html' %}
+{% block title %}Edit Package | TravelMate{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <span class="eyebrow">Package Editor</span>
+    <h1>Edit Tourism Package</h1>
+    <p>Update itinerary details, pricing, or media. If this package was previously approved, saving edits returns it to draft for review.</p>
+  </div>
+  <a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+    <span>Back to Packages</span>
+  </a>
+</div>
+
+{% if item.get('reviewReason', item.get('reviewComment')) %}
+  <div class="review-feedback">
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <strong>Administrator Review Feedback</strong>
+    </div>
+    <p>{{ item.get('reviewReason', item.get('reviewComment')) }}</p>
+  </div>
+{% endif %}
+
+<form class="card package-editor" method="post">
+  {% include 'fr12_tourism_operator_management/_package_form.html' %}
+</form>
 {% endblock %}

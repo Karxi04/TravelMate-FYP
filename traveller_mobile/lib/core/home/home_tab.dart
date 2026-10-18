@@ -8,6 +8,7 @@ import '../../modules/fr02_travel_preference/preferences_screen.dart';
 import '../../modules/fr03_destination_search_information/destination_details_screen.dart';
 import '../../modules/fr03_destination_search_information/explore_tab.dart';
 import '../../modules/fr04_hybrid_recommendation/recommendation_screen.dart';
+import '../../modules/fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
 import '../../modules/fr05_smart_itinerary_budget_planner/personalized_planning_screen.dart';
 import '../../modules/fr05_smart_itinerary_budget_planner/trip_details_screen.dart';
 import '../../modules/fr05_smart_itinerary_budget_planner/trips_tab.dart';
@@ -383,7 +384,10 @@ class _HomeTabState extends State<HomeTab> {
   Future<void> addToTrip(Map<String, dynamic> item) async {
     try {
       final data = await api.get('/api/fr5/itineraries');
-      final available = data['items'] as List? ?? [];
+      final available = (data['items'] as List? ?? [])
+          .whereType<Map>()
+          .where((t) => t['tripType'] != 'package' && t['packageTrip'] != true)
+          .toList();
       if (!mounted) return;
       if (available.isEmpty) {
         final plan = await showDialog<bool>(
@@ -433,7 +437,7 @@ class _HomeTabState extends State<HomeTab> {
               ),
               const SizedBox(height: AppSpacing.xs),
               ...available.map((raw) {
-                final trip = Map<String, dynamic>.from(raw as Map);
+                final trip = Map<String, dynamic>.from(raw);
                 return ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const CircleAvatar(
@@ -475,29 +479,44 @@ class _HomeTabState extends State<HomeTab> {
     }
   }
 
-  Future<void> addPackageToTrip(Map<String, dynamic> item) async {
-    await addToTrip({
-      'destinationId':
-          'package_${item['id'] ?? item['title'] ?? item['packageTitle'] ?? ''}',
-      'title': item['title'] ?? item['packageTitle'] ?? 'Tourism package',
-      'address': item['destination'] ?? item['destinationName'] ?? '',
-      'estimatedCost':
-          item['promotionalPrice'] ?? item['adultPrice'] ?? item['price'] ?? 0,
-      'gps_coordinates':
-          item['gps_coordinates'] ?? item['gpsCoordinates'] ?? {},
-      'type': item['type'] ?? item['category'] ?? 'Tourism package',
-      'category': 'Tourism package',
-      'description': item['fullDescription'] ?? item['description'] ?? '',
-      'openingHours': item['openingHours'] ?? '',
-      'indoor': item['indoor'] ?? false,
-      'recommendedDurationMinutes': item['recommendedDurationMinutes'] ?? 180,
-      'packageId': item['id'] ?? '',
-    });
+
+  bool _isPackagePromoActive(Map<String, dynamic> item) {
+    final promo = item['promotionalPrice'];
+    final promoNum = promo is num ? promo : num.tryParse(promo?.toString() ?? '');
+    if (promoNum == null || promoNum <= 0) return false;
+    final regular = item['adultPrice'] ?? item['price'];
+    final regularNum = regular is num ? regular : num.tryParse(regular?.toString() ?? '');
+    if (regularNum != null && promoNum >= regularNum) return false;
+
+    final startStr = item['promotionStart']?.toString().trim();
+    final endStr = item['promotionEnd']?.toString().trim();
+    if ((startStr == null || startStr.isEmpty) && (endStr == null || endStr.isEmpty)) {
+      return false;
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (startStr != null && startStr.isNotEmpty) {
+      final start = DateTime.tryParse(startStr);
+      if (start != null) {
+        final startDate = DateTime(start.year, start.month, start.day);
+        if (today.isBefore(startDate)) return false;
+      }
+    }
+    if (endStr != null && endStr.isNotEmpty) {
+      final end = DateTime.tryParse(endStr);
+      if (end != null) {
+        final endDate = DateTime(end.year, end.month, end.day);
+        if (today.isAfter(endDate)) return false;
+      }
+    }
+    return true;
   }
 
   String _packagePrice(Map<String, dynamic> item) {
-    final value =
-        item['promotionalPrice'] ?? item['adultPrice'] ?? item['price'];
+    final value = _isPackagePromoActive(item)
+        ? (item['promotionalPrice'] ?? item['adultPrice'] ?? item['price'])
+        : (item['adultPrice'] ?? item['price']);
     final amount = value is num ? value : num.tryParse(value?.toString() ?? '');
     if (amount == null) return '';
     final currency = (item['currency'] ?? 'MYR').toString();
@@ -529,14 +548,15 @@ class _HomeTabState extends State<HomeTab> {
           Row(
             children: [
               Container(
-                width: AppSizes.minimumTapTarget,
-                height: AppSizes.minimumTapTarget,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: AppColors.primarySoft,
                   borderRadius: AppRadii.control,
                 ),
                 child: const Icon(
                   Icons.explore_outlined,
+                  size: 20,
                   color: AppColors.primaryStrong,
                 ),
               ),
@@ -552,9 +572,12 @@ class _HomeTabState extends State<HomeTab> {
                           .labelMedium
                           ?.copyWith(color: AppColors.textSecondary),
                     ),
+                    const SizedBox(height: 1),
                     Text(
                       travelPersonality,
-                      style: Theme.of(context).textTheme.titleLarge,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
                     Text(
                       preferenceSummary,
@@ -575,10 +598,10 @@ class _HomeTabState extends State<HomeTab> {
             ],
           ),
           if (interests.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AppSpacing.xs),
             Wrap(
               spacing: AppSpacing.xs,
-              runSpacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xxs,
               children: interests
                   .take(4)
                   .map(
@@ -597,7 +620,6 @@ class _HomeTabState extends State<HomeTab> {
 
   Widget _planningCard() {
     return InkCard(
-      color: InkWashColors.cream,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -605,21 +627,33 @@ class _HomeTabState extends State<HomeTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Plan your next trip',
-                  style: Theme.of(context).textTheme.headlineSmall,
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 16,
+                      color: AppColors.primaryStrong,
+                    ),
+                    const SizedBox(width: AppSpacing.xxs),
+                    Text(
+                      'Plan your next trip',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: AppSpacing.xxs),
                 Text(
                   'Turn your preferences into a personalised itinerary and budget.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: AppColors.textSecondary,
                       ),
                 ),
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.sm),
                 PrimaryButton(
                   label: 'Plan a trip',
-                  icon: Icons.auto_awesome_rounded,
+                  icon: Icons.add_rounded,
                   onPressed: () => open(
                     PersonalizedPlanningScreen(api: widget.api),
                     refreshCoreOnReturn: true,
@@ -627,13 +661,6 @@ class _HomeTabState extends State<HomeTab> {
                 ),
               ],
             ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          const Icon(
-            Icons.map_outlined,
-            size: 58,
-            color: AppColors.primary,
-            semanticLabel: 'Trip planning',
           ),
         ],
       ),
@@ -701,8 +728,8 @@ class _HomeTabState extends State<HomeTab> {
                   padding: const EdgeInsets.only(right: AppSpacing.sm),
                   child: SizedBox(
                     width: math.min(
-                      MediaQuery.sizeOf(context).width * .82,
-                      330,
+                      MediaQuery.sizeOf(context).width * .76,
+                      280,
                     ),
                     child: RecommendationCard(
                       recommendation: item,
@@ -732,21 +759,26 @@ class _HomeTabState extends State<HomeTab> {
 
   Widget _continuePlanningSection(Map<String, dynamic>? trip) {
     if (trip == null) return const SizedBox.shrink();
+    final isPackage = trip['tripType'] == 'package' || trip['packageTrip'] == true;
     final activities = trip['activities'] as List? ?? [];
     final budget = _budgetSummary(trip);
     final status = (trip['status'] ?? 'draft').toString();
-    final tone = status == 'generation_failed'
-        ? AppStatusTone.error
-        : status == 'planned'
-            ? AppStatusTone.success
-            : AppStatusTone.info;
+    final tone = isPackage
+        ? AppStatusTone.success
+        : status == 'generation_failed'
+            ? AppStatusTone.error
+            : status == 'planned'
+                ? AppStatusTone.success
+                : AppStatusTone.info;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         AppSectionHeader(
-          title: 'Continue planning',
-          subtitle: 'Pick up your latest travel plan',
+          title: isPackage ? 'Your package trip' : 'Continue planning',
+          subtitle: isPackage
+              ? 'View your verified operator itinerary'
+              : 'Pick up your latest travel plan',
           actionLabel: 'All trips',
           onAction: openTripsTab,
         ),
@@ -755,7 +787,14 @@ class _HomeTabState extends State<HomeTab> {
           key: ValueKey('continue-trip-${trip['id']}'),
           borderRadius: AppRadii.card,
           onTap: () => open(
-            TripDetailsScreen(tripId: trip['id'].toString(), api: api),
+            isPackage
+                ? PackageTripDetailsScreen(
+                    key: ValueKey('continue-package-${trip['id']}'),
+                    tripId: trip['id'].toString(),
+                    api: api,
+                    initialTrip: trip,
+                  )
+                : TripDetailsScreen(tripId: trip['id'].toString(), api: api),
             refreshCoreOnReturn: true,
           ),
           child: InkCard(
@@ -766,12 +805,12 @@ class _HomeTabState extends State<HomeTab> {
                   width: 54,
                   height: 54,
                   decoration: BoxDecoration(
-                    color: AppColors.primarySoft,
+                    color: isPackage ? AppColors.successSoft : AppColors.primarySoft,
                     borderRadius: AppRadii.control,
                   ),
-                  child: const Icon(
-                    Icons.route_rounded,
-                    color: AppColors.primaryStrong,
+                  child: Icon(
+                    isPackage ? Icons.verified_rounded : Icons.route_rounded,
+                    color: isPackage ? AppColors.success : AppColors.primaryStrong,
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
@@ -788,7 +827,7 @@ class _HomeTabState extends State<HomeTab> {
                             ),
                           ),
                           StatusChip(
-                            text: status.replaceAll('_', ' '),
+                            text: isPackage ? 'Purchased Package' : status.replaceAll('_', ' '),
                             tone: tone,
                           ),
                         ],
@@ -802,13 +841,17 @@ class _HomeTabState extends State<HomeTab> {
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        '${_tripDays(trip)} days · ${activities.length} activities',
+                        isPackage
+                            ? '${_tripDays(trip)} days · Official operator itinerary'
+                            : '${_tripDays(trip)} days · ${activities.length} activities',
                         style: Theme.of(context).textTheme.labelMedium,
                       ),
                       if (budget != null) ...[
                         const SizedBox(height: AppSpacing.xxs),
                         Text(
-                          budget,
+                          isPackage
+                              ? 'RM ${trip['paidTotal'] ?? 0} paid'
+                              : budget,
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: AppColors.textSecondary,
@@ -893,8 +936,16 @@ class _HomeTabState extends State<HomeTab> {
         (item['destination'] ?? item['destinationName'] ?? '').toString();
     final price = _packagePrice(item);
     final duration = _packageDuration(item);
-    return InkCard(
-      padding: EdgeInsets.zero,
+    return InkWell(
+      borderRadius: AppRadii.card,
+      onTap: () => open(
+        TourismPackageDetailsScreen(
+          item: item,
+          api: api,
+        ),
+      ),
+      child: InkCard(
+        padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -949,35 +1000,28 @@ class _HomeTabState extends State<HomeTab> {
                             color: AppColors.textSecondary,
                           )),
                 const SizedBox(height: AppSpacing.sm),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SecondaryButton(
-                        label: 'View',
-                        onPressed: () => open(
-                          TourismPackageDetailsScreen(
-                            item: item,
-                            onAddToTrip: () => addPackageToTrip(item),
-                          ),
-                        ),
+                SizedBox(
+                  width: double.infinity,
+                  child: PrimaryButton(
+                    key: ValueKey('package-view-btn-${item['id'] ?? title}'),
+                    label: 'View Package',
+                    icon: Icons.arrow_forward_rounded,
+                    onPressed: () => open(
+                      TourismPackageDetailsScreen(
+                        item: item,
+                        api: api,
                       ),
                     ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Expanded(
-                      child: PrimaryButton(
-                        label: 'Add to trip',
-                        onPressed: () => addPackageToTrip(item),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ],
             ),
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _toolsSection() {
     final tools = <(IconData, String, Widget)>[
@@ -994,18 +1038,44 @@ class _HomeTabState extends State<HomeTab> {
           subtitle: 'Helpful details when you need them',
         ),
         const SizedBox(height: AppSpacing.sm),
-        Wrap(
-          spacing: AppSpacing.xs,
-          runSpacing: AppSpacing.xs,
-          children: tools
-              .map(
-                (tool) => ActionChip(
-                  avatar: Icon(tool.$1, size: 18),
-                  label: Text(tool.$2),
-                  onPressed: () => open(tool.$3),
+        Row(
+          children: tools.map((tool) {
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+                child: InkWell(
+                  onTap: () => open(tool.$3),
+                  borderRadius: AppRadii.control,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.sm,
+                      horizontal: AppSpacing.xxs,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: AppRadii.control,
+                      border: Border.all(color: AppColors.divider),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(tool.$1, size: 22, color: AppColors.primary),
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          tool.$2,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              )
-              .toList(),
+              ),
+            );
+          }).toList(),
         ),
       ],
     );
@@ -1134,25 +1204,25 @@ class _HomeTabState extends State<HomeTab> {
                 ),
                 onClear: () => searchController.clear(),
               ),
-              const SizedBox(height: AppSpacing.xxl),
+              const SizedBox(height: AppSpacing.md),
               _forYouSection(),
               if (trip != null) ...[
-                const SizedBox(height: AppSpacing.xxl),
+                const SizedBox(height: AppSpacing.lg),
                 _continuePlanningSection(trip),
               ],
+              const SizedBox(height: AppSpacing.lg),
+              _toolsSection(),
               if (interests.isNotEmpty ||
                   tourismPackages.isNotEmpty ||
                   loadingSharedContent) ...[
-                const SizedBox(height: AppSpacing.xxl),
+                const SizedBox(height: AppSpacing.lg),
                 _inspirationSection(),
               ],
-              const SizedBox(height: AppSpacing.xxl),
-              _toolsSection(),
               if (promotionalCampaigns.isNotEmpty) ...[
-                const SizedBox(height: AppSpacing.xxl),
+                const SizedBox(height: AppSpacing.lg),
                 _offersSection(),
               ],
-              const SizedBox(height: AppSpacing.xxl),
+              const SizedBox(height: AppSpacing.lg),
             ],
           ),
         ),

@@ -1,14 +1,17 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
-import '../../theme/app_theme.dart';
+import '../../modules/fr09_payment/payment_screen.dart';
 import '../../services/api_service.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
-import '../../modules/fr09_payment/payment_screen.dart';
 
 class TourismPackageDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> item;
-  /// Retained for callers with the legacy add-to-trip callback.
+
+  /// Retained for backwards compatibility with legacy callers.
   final VoidCallback? onAddToTrip;
   final ApiService? api;
 
@@ -24,63 +27,106 @@ class TourismPackageDetailsScreen extends StatefulWidget {
       _TourismPackageDetailsScreenState();
 }
 
-class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScreen> {
+class _TourismPackageDetailsScreenState
+    extends State<TourismPackageDetailsScreen> {
   late final ApiService api;
   bool submitting = false;
+  int adults = 1;
+  int children = 0;
+  String? selectedDepartureDate;
+  int _selectedTab = 0;
+  bool _fullDescriptionExpanded = false;
 
   @override
   void initState() {
     super.initState();
     api = widget.api ?? ApiService();
+    adults = 1;
+    children = 0;
+    final dates = _list(widget.item['departureDates']);
+    if (dates.length == 1) selectedDepartureDate = dates.first;
   }
 
   Future<void> _startCheckout() async {
     if (submitting) return;
     setState(() => submitting = true);
     try {
-      final data = await api.get('/api/fr5/itineraries');
-      final trips = data is Map ? data['items'] as List? ?? const [] : const [];
-      if (!mounted) return;
-      if (trips.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Create a Trip first, then return to checkout this package.')));
-        return;
-      }
-      final trip = await showModalBottomSheet<Map<String, dynamic>>(
-        context: context,
-        showDragHandle: true,
-        builder: (_) => ListView(
-          shrinkWrap: true,
-          children: trips.map((raw) {
-            final value = Map<String, dynamic>.from(raw as Map);
-            return ListTile(
-              title: Text('${value['title'] ?? 'Trip'}'),
-              subtitle: Text('${value['destinationArea'] ?? ''}'),
-              onTap: () => Navigator.pop(context, value),
-            );
-          }).toList(),
-        ),
-      );
-      if (trip == null) return;
       final packageId = (widget.item['id'] ?? '').toString();
-      if (packageId.isEmpty) throw Exception('This package is unavailable for checkout.');
+      if (packageId.isEmpty) {
+        throw Exception('This package is unavailable for checkout.');
+      }
+      if (!_hasVerifiedPriceBasis) {
+        throw Exception(
+            'Package pricing basis is not verified. Please contact the operator.');
+      }
+      if (_departureDates.isNotEmpty && selectedDepartureDate == null) {
+        throw Exception('Select an available departure date.');
+      }
+      final totalTravellers = adults + children;
+      if (totalTravellers < _minimumTravellers) {
+        throw Exception(
+          'This package requires at least $_minimumTravellers travellers (currently $totalTravellers).',
+        );
+      }
+      if (_maximumTravellers != null && totalTravellers > _maximumTravellers!) {
+        throw Exception(
+          'This package capacity is ${_maximumTravellers!} travellers (currently $totalTravellers).',
+        );
+      }
+      if (_priceBasis == 'per_person' && children > 0 && _childPrice == null) {
+        throw Exception('Child pricing is not available for this package.');
+      }
+      final clientTotal = _groupTotal?.toDouble();
+      if (clientTotal == null || clientTotal <= 0) {
+        throw Exception('This package has no supported checkout price.');
+      }
+      final scopeDate = selectedDepartureDate ?? 'open';
       final response = await api.post('/api/fr15/package-checkout-attempts', {
         'packageId': packageId,
-        'intendedTripId': trip['id'],
-        'idempotencyKey': 'package_${packageId}_${trip['id']}',
+        'participants': {'adults': adults, 'children': children},
+        if (selectedDepartureDate != null)
+          'departureDate': selectedDepartureDate,
+        'idempotencyKey':
+            'package_${packageId}_${adults}_${children}_$scopeDate',
       });
       final attempt = response is Map && response['attempt'] is Map
           ? Map<String, dynamic>.from(response['attempt'] as Map)
           : <String, dynamic>{};
       final attemptId = (attempt['id'] ?? '').toString();
-      if (attemptId.isEmpty) throw Exception('Package checkout could not be prepared.');
+      if (attemptId.isEmpty) {
+        throw Exception('Package checkout could not be prepared.');
+      }
+
+      // Server-authoritative quote matching and tamper protection
+      final serverAmount = _number(attempt['amount'])?.toDouble();
+      if (serverAmount == null) {
+        throw Exception(
+            'Server did not return an authoritative payable total.');
+      }
+      if ((serverAmount - clientTotal).abs() > 0.01) {
+        throw Exception(
+          'Checkout price mismatch: server quote is $_currency ${_money(serverAmount)}, '
+          'but estimate was $_currency ${_money(clientTotal)}. Please refresh and try again.',
+        );
+      }
+
       if (!mounted) return;
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => PaymentScreen(packageAttemptId: attemptId, api: api),
+          builder: (_) => PaymentScreen(
+            packageAttemptId: attemptId,
+            initialAmount: serverAmount,
+            api: api,
+          ),
         ),
       );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'After verified payment, your new Package Trip will appear under Trips.'),
+        ));
+      }
     } catch (error) {
       if (mounted) showError(context, error);
     } finally {
@@ -117,16 +163,108 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
   num? _number(dynamic value) =>
       value is num ? value : num.tryParse(value?.toString() ?? '');
 
+  String? get _rawPriceBasis =>
+      widget.item['priceBasis']?.toString().trim().toLowerCase();
+
+  bool get _hasVerifiedPriceBasis =>
+      _rawPriceBasis == 'per_person' || _rawPriceBasis == 'per_group';
+
+  String get _priceBasis =>
+      _hasVerifiedPriceBasis ? _rawPriceBasis! : 'unverified';
+
+  num? get _regularAdultPrice =>
+      _number(widget.item['adultPrice']) ?? _number(widget.item['price']);
+
+  num? get _childPrice => _number(widget.item['childPrice']);
+
+  num? get _originalPrice => _number(widget.item['originalPrice']);
+
+  num? get _promotionalPrice => _number(widget.item['promotionalPrice']);
+
+  bool get _isPromotionEligible {
+    final promo = _promotionalPrice;
+    if (promo == null || promo <= 0) return false;
+    final regular = _regularAdultPrice;
+    if (regular != null && promo >= regular) return false;
+
+    final startStr = widget.item['promotionStart']?.toString().trim();
+    final endStr = widget.item['promotionEnd']?.toString().trim();
+    if ((startStr == null || startStr.isEmpty) &&
+        (endStr == null || endStr.isEmpty)) {
+      return false;
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (startStr != null && startStr.isNotEmpty) {
+      final start = DateTime.tryParse(startStr);
+      if (start != null) {
+        final startDate = DateTime(start.year, start.month, start.day);
+        if (today.isBefore(startDate)) return false;
+      }
+    }
+    if (endStr != null && endStr.isNotEmpty) {
+      final end = DateTime.tryParse(endStr);
+      if (end != null) {
+        final endDate = DateTime(end.year, end.month, end.day);
+        if (today.isAfter(endDate)) return false;
+      }
+    }
+    return true;
+  }
+
+  num? get _effectiveAdultPrice =>
+      (_isPromotionEligible && _promotionalPrice != null)
+          ? _promotionalPrice
+          : _regularAdultPrice;
+
+  num? get _adultPrice => _effectiveAdultPrice;
+
+  List<String> get _departureDates => _list(widget.item['departureDates']);
+
+  int? get _maximumTravellers =>
+      _number(widget.item['maximumTravellers'] ?? widget.item['maxTravellers'])
+          ?.toInt();
+
+  int get _minimumTravellers =>
+      (_number(widget.item['minimumTravellers'])?.toInt() ?? 1)
+          .clamp(1, 50)
+          .toInt();
+
+  num? get _groupTotal {
+    if (!_hasVerifiedPriceBasis) return null;
+    if (_priceBasis == 'per_group') {
+      if (_isPromotionEligible && _promotionalPrice != null) {
+        return _promotionalPrice;
+      }
+      return _regularAdultPrice;
+    }
+    final adultRate = _effectiveAdultPrice;
+    if (adultRate == null) return null;
+    if (children > 0 && _childPrice == null) return null;
+    return adultRate * adults + (_childPrice ?? 0) * children;
+  }
+
+  num? get _calculatedSavings {
+    if (!_isPromotionEligible ||
+        _promotionalPrice == null ||
+        _regularAdultPrice == null) {
+      return null;
+    }
+    final diff = _regularAdultPrice! - _promotionalPrice!;
+    if (diff <= 0) return null;
+    if (_priceBasis == 'per_group') return diff;
+    return diff * adults;
+  }
+
   String _money(num value) => value == value.roundToDouble()
       ? value.toStringAsFixed(0)
       : value.toStringAsFixed(2);
 
   String get _price {
-    final amount = _number(widget.item['promotionalPrice']) ??
-        _number(widget.item['adultPrice']) ??
-        _number(widget.item['price']);
+    final amount = _adultPrice;
     if (amount == null) return '';
-    final basis = widget.item['priceBasis'] == 'per_group' ? 'group' : 'person';
+    final basis = _priceBasis == 'per_group' ? 'group' : 'adult';
     return '$_currency ${_money(amount)} / $basis';
   }
 
@@ -139,33 +277,474 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
     return '$dayText · ${nights.toInt()} ${nights == 1 ? 'night' : 'nights'}';
   }
 
+  String _cleanOverviewText(String raw) {
+    if (raw.trim().isEmpty) return '';
+    // Strip repeated Day 1/2/3 sections from overview introduction
+    final daySplit = raw.split(RegExp(
+      r'(?:\r?\n\s*|\A)(?:[*#_\s]*Day\s*1\b|[*#_\s]*Itinerary\b)',
+      caseSensitive: false,
+    ));
+    String intro = daySplit.first.trim();
+    if (intro.isEmpty && daySplit.length > 1) {
+      intro = raw.trim();
+    }
+    // Normalize raw markdown artifacts like **Day 1**, ###, etc.
+    return intro
+        .replaceAll(RegExp(r'\*\*([^*]+)\*\*'), r'$1')
+        .replaceAll(RegExp(r'#{1,6}\s*'), '')
+        .trim();
+  }
+
+  List<Map<String, String?>> _extractActivities(dynamic rawActivities) {
+    if (rawActivities == null) return const [];
+    List<dynamic> list;
+    if (rawActivities is List) {
+      list = rawActivities;
+    } else if (rawActivities is String) {
+      list = rawActivities
+          .replaceAll('\r', '')
+          .split('\n')
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
+    } else {
+      return const [];
+    }
+
+    final results = <Map<String, String?>>[];
+    final timePattern =
+        RegExp(r'^(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\s*[-:–—]\s*(.+)$');
+
+    for (final item in list) {
+      if (item is Map) {
+        final name = (item['activityName'] ??
+                item['title'] ??
+                item['name'] ??
+                '')
+            .toString()
+            .trim();
+        final time = (item['scheduledTime'] ??
+                item['timeSlot'] ??
+                item['time'] ??
+                '')
+            .toString()
+            .trim();
+        final location =
+            (item['location'] ?? item['address'] ?? '').toString().trim();
+        final description = (item['description'] ?? '').toString().trim();
+
+        if (name.isEmpty && description.isEmpty) continue;
+
+        final match = timePattern.firstMatch(name);
+        if (match != null) {
+          results.add({
+            'name': match.group(2)!.trim(),
+            'time': time.isNotEmpty ? time : match.group(1)!.trim(),
+            'location': location.isNotEmpty ? location : null,
+            'description': description.isNotEmpty ? description : null,
+          });
+        } else {
+          results.add({
+            'name': name.isNotEmpty ? name : 'Activity',
+            'time': time.isNotEmpty ? time : null,
+            'location': location.isNotEmpty ? location : null,
+            'description': description.isNotEmpty ? description : null,
+          });
+        }
+      } else if (item is String) {
+        final text = item.trim();
+        if (text.isEmpty) continue;
+        final match = timePattern.firstMatch(text);
+        if (match != null) {
+          results.add({
+            'name': match.group(2)!.trim(),
+            'time': match.group(1)!.trim(),
+            'location': null,
+            'description': null,
+          });
+        } else {
+          results.add({
+            'name': text,
+            'time': null,
+            'location': null,
+            'description': null,
+          });
+        }
+      }
+    }
+    return results;
+  }
+
+  Widget _participantCounter(String label, int value, VoidCallback? subtract,
+      VoidCallback? add, String keyName) {
+    return Expanded(
+      child: Semantics(
+        label: '$label count $value',
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: AppRadii.control,
+            border: Border.all(color: AppColors.divider),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$label: $value',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              IconButton(
+                key: ValueKey('$keyName-remove'),
+                onPressed: subtract,
+                icon: const Icon(Icons.remove_circle_outline),
+                iconSize: 22,
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                key: ValueKey('$keyName-add'),
+                onPressed: add,
+                icon: const Icon(Icons.add_circle_outline),
+                iconSize: 22,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openBookingModal() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final totalTravellers = adults + children;
+            final canAddParticipant = _maximumTravellers == null ||
+                totalTravellers < _maximumTravellers!;
+            final canAddChild = canAddParticipant && _childPrice != null;
+            final meetsMin = totalTravellers >= _minimumTravellers;
+
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(AppRadii.large),
+                ),
+              ),
+              child: SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Handle and title
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.md,
+                        AppSpacing.sm,
+                        AppSpacing.sm,
+                        AppSpacing.xs,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Select Travellers & Date',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded),
+                            onPressed: () => Navigator.pop(modalContext),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        child: Container(
+                          key: const ValueKey('package-group-booking'),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _priceBasis == 'per_group'
+                                    ? 'This is a fixed group price within the package capacity.'
+                                    : !_hasVerifiedPriceBasis
+                                        ? 'Pricing basis is not verified for this package. Checkout is disabled.'
+                                        : _childPrice == null
+                                            ? 'Adult pricing is available. Child rate unavailable.'
+                                            : 'Adults: $_currency ${_money(_effectiveAdultPrice!)} · Children: $_currency ${_money(_childPrice!)}',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: AppColors.textSecondary,
+                                    ),
+                              ),
+                              if (_minimumTravellers > 1) ...[
+                                const SizedBox(height: AppSpacing.xs),
+                                Text(
+                                  'Minimum requirement: $_minimumTravellers travellers',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: totalTravellers < _minimumTravellers
+                                        ? AppColors.warning
+                                        : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: AppSpacing.sm),
+                              Row(
+                                children: [
+                                  _participantCounter(
+                                    'Adults',
+                                    adults,
+                                    adults > 1
+                                        ? () {
+                                            setState(() => adults -= 1);
+                                            setModalState(() {});
+                                          }
+                                        : null,
+                                    canAddParticipant
+                                        ? () {
+                                            setState(() => adults += 1);
+                                            setModalState(() {});
+                                          }
+                                        : null,
+                                    'package-adults',
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: AppSpacing.xs),
+                              Row(
+                                children: [
+                                  _participantCounter(
+                                    'Children',
+                                    children,
+                                    children > 0
+                                        ? () {
+                                            setState(() => children -= 1);
+                                            setModalState(() {});
+                                          }
+                                        : null,
+                                    canAddChild
+                                        ? () {
+                                            setState(() => children += 1);
+                                            setModalState(() {});
+                                          }
+                                        : null,
+                                    'package-children',
+                                  ),
+                                ],
+                              ),
+                              if (_priceBasis == 'per_person' &&
+                                  _childPrice == null)
+                                const Padding(
+                                  padding:
+                                      EdgeInsets.only(top: AppSpacing.xxs),
+                                  child: Text(
+                                    'Child rate unavailable — children cannot be added to this booking.',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textSecondary),
+                                  ),
+                                ),
+                              if (!meetsMin) ...[
+                                const SizedBox(height: AppSpacing.sm),
+                                Container(
+                                  padding:
+                                      const EdgeInsets.all(AppSpacing.sm),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.warningSoft,
+                                    borderRadius: BorderRadius.circular(
+                                        AppRadii.small),
+                                    border:
+                                        Border.all(color: AppColors.warning),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.info_outline,
+                                          size: 18, color: AppColors.warning),
+                                      const SizedBox(width: AppSpacing.xs),
+                                      Expanded(
+                                        child: Text(
+                                          'Minimum group size: $_minimumTravellers travellers required (currently $totalTravellers).',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: InkWashColors.ink,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              if (_departureDates.isNotEmpty) ...[
+                                const SizedBox(height: AppSpacing.sm),
+                                DropdownButtonFormField<String>(
+                                  key: const ValueKey('package-departure-date'),
+                                  initialValue: selectedDepartureDate,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Departure date',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  items: _departureDates
+                                      .map((value) => DropdownMenuItem(
+                                          value: value,
+                                          child: Text(value)))
+                                      .toList(),
+                                  onChanged: (value) {
+                                    setState(
+                                        () => selectedDepartureDate = value);
+                                    setModalState(() {});
+                                  },
+                                ),
+                              ],
+                              const Divider(height: AppSpacing.lg),
+                              if (_hasVerifiedPriceBasis &&
+                                  _groupTotal != null) ...[
+                                if (_priceBasis == 'per_person')
+                                  Text(
+                                    '$adults Adult${adults > 1 ? 's' : ''} × $_currency ${_money(_effectiveAdultPrice!)}'
+                                    '${children > 0 && _childPrice != null ? ' + $children Child${children > 1 ? 'ren' : ''} × $_currency ${_money(_childPrice!)}' : ''}',
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        color: AppColors.textSecondary),
+                                  ),
+                                if (_calculatedSavings != null) ...[
+                                  const SizedBox(height: AppSpacing.xxs),
+                                  Text(
+                                    'Promotional savings: $_currency ${_money(_calculatedSavings!)}',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.success,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: AppSpacing.xs),
+                              ],
+                              Text(
+                                _groupTotal == null
+                                    ? 'Group total unavailable'
+                                    : 'Group total: $_currency ${_money(_groupTotal!)}',
+                                key: const ValueKey('package-group-total'),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                              ),
+                              const SizedBox(height: AppSpacing.xs),
+                              const Text(
+                                'One signed-in traveller pays for the complete group. Stripe Checkout remains in Test Mode.',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary),
+                              ),
+                              const SizedBox(height: AppSpacing.xxs),
+                              const Text(
+                                'Verified payment creates a new independent Package Trip; existing personal Trips are not changed.',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary),
+                              ),
+                              const SizedBox(height: AppSpacing.md),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  key: const ValueKey('package-checkout-btn'),
+                                  onPressed: (submitting ||
+                                          !_hasVerifiedPriceBasis ||
+                                          !meetsMin ||
+                                          (_departureDates.isNotEmpty &&
+                                              selectedDepartureDate == null))
+                                      ? null
+                                      : () async {
+                                          Navigator.pop(modalContext);
+                                          await _startCheckout();
+                                        },
+                                  icon: const Icon(Icons.payment_outlined),
+                                  label: Text(
+                                    submitting
+                                        ? 'Preparing checkout...'
+                                        : !_hasVerifiedPriceBasis
+                                            ? 'Price basis unverified'
+                                            : 'Checkout package',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _heading(String title) => Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-        child: Text(title,
-            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+        child: Text(
+          title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        ),
       );
 
-  Widget _bullets(String title, dynamic value, IconData icon) {
+  Widget _bullets(String title, dynamic value, IconData icon,
+      {Color? color}) {
     final values = _list(value);
     if (values.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: InkCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _heading(title),
-            ...values.map((entry) => Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(icon, size: 18, color: InkWashColors.blueGrey),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(child: Text(entry)),
-                    ],
-                  ),
-                )),
+            ...values.map(
+              (entry) => Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(icon, size: 18, color: color ?? AppColors.primary),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        entry,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -175,17 +754,467 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
   Widget _textSection(String title, String value, IconData icon) {
     if (value.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: InkCard(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(icon, color: InkWashColors.blueGrey),
-            const SizedBox(width: AppSpacing.xs),
-            Expanded(child: _heading(title)),
-          ]),
-          Text(value),
-        ]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 18, color: AppColors.primary),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(child: _heading(title)),
+              ],
+            ),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    height: 1.45,
+                  ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildSectionTabs() {
+    final tabs = [
+      (0, 'Overview', Icons.info_outline),
+      (1, 'Itinerary', Icons.calendar_month_outlined),
+      (2, "What's Included", Icons.checklist_outlined),
+      (3, 'Policies', Icons.policy_outlined),
+    ];
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.xxs),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: AppRadii.control,
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: tabs.map((tab) {
+            final isSelected = _selectedTab == tab.$1;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: InkWell(
+                onTap: () => setState(() => _selectedTab = tab.$1),
+                borderRadius: BorderRadius.circular(AppRadii.small),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppColors.primary : Colors.transparent,
+                    borderRadius: BorderRadius.circular(AppRadii.small),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        tab.$3,
+                        size: 16,
+                        color:
+                            isSelected ? Colors.white : AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: AppSpacing.xxs),
+                      Text(
+                        tab.$2,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight:
+                              isSelected ? FontWeight.w700 : FontWeight.w500,
+                          color:
+                              isSelected ? Colors.white : AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOverviewTab(String description) {
+    final cleanIntro = _cleanOverviewText(description);
+    final campaigns = (widget.item['activeCampaigns'] as List? ?? const [])
+        .whereType<Map>()
+        .map((entry) => Map<String, dynamic>.from(entry))
+        .toList();
+    final departureDates = _list(widget.item['departureDates']);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (cleanIntro.isNotEmpty)
+          InkCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _heading('Package overview'),
+                Text(
+                  _fullDescriptionExpanded || cleanIntro.length <= 260
+                      ? cleanIntro
+                      : '${cleanIntro.substring(0, math.min(cleanIntro.length, 260)).trim()}…',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        height: 1.45,
+                      ),
+                ),
+                if (cleanIntro.length > 260) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  GestureDetector(
+                    onTap: () => setState(() =>
+                        _fullDescriptionExpanded = !_fullDescriptionExpanded),
+                    child: Text(
+                      _fullDescriptionExpanded
+                          ? 'Show less'
+                          : 'Read full description',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        const SizedBox(height: AppSpacing.sm),
+        _bullets('Highlights', widget.item['highlights'], Icons.place_outlined),
+        if (campaigns.isNotEmpty) ...[
+          _heading('Current promotion'),
+          ...campaigns.map((campaign) => Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: InkCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        (campaign['campaignTitle'] ?? 'Promotion').toString(),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      if ((campaign['description'] ?? '')
+                          .toString()
+                          .trim()
+                          .isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(campaign['description'].toString()),
+                      ],
+                      if ((campaign['promoCode'] ?? '')
+                          .toString()
+                          .trim()
+                          .isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        TravelStatusPill(
+                          text: 'Code ${campaign['promoCode']}',
+                          icon: Icons.local_offer_outlined,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              )),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        if (departureDates.isNotEmpty ||
+            _text('departureLocation').isNotEmpty ||
+            _text('meetingPoint').isNotEmpty)
+          _textSection(
+            'Departure details',
+            [
+              if (departureDates.isNotEmpty)
+                'Dates: ${departureDates.join(', ')}',
+              if (_text('departureLocation').isNotEmpty)
+                'Location: ${_text('departureLocation')}',
+              if (_text('meetingPoint').isNotEmpty)
+                'Meeting point: ${_text('meetingPoint')}',
+              if (_text('departureNotes').isNotEmpty) _text('departureNotes'),
+            ].join('\n'),
+            Icons.event_available_outlined,
+          ),
+        if (_text('operatorName').isNotEmpty)
+          _textSection(
+            'Tourism Operator',
+            [
+              _text('operatorName'),
+              _text('operatorPhone'),
+              _text('operatorEmail'),
+            ].where((value) => value.isNotEmpty).join('\n'),
+            Icons.storefront_outlined,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildItineraryTab() {
+    if (_days.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(AppSpacing.lg),
+        child: Center(
+          child: Text(
+            'No itinerary details available for this package.',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _heading('Day-by-day itinerary'),
+        ..._days.map((day) {
+          final dayNumber = day['dayNumber'] ?? _days.indexOf(day) + 1;
+          final activities = _extractActivities(day['activities']);
+          final meals = _list(day['meals']);
+          final title = (day['title'] ?? '').toString().trim();
+          final description = (day['description'] ?? '').toString().trim();
+          final stay = (day['accommodation'] ?? '').toString().trim();
+          final transport = (day['transportNotes'] ?? '').toString().trim();
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: InkCard(
+              child: ExpansionTile(
+                initiallyExpanded: true,
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: Text(
+                  'Day $dayNumber · $title',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                children: [
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.xxs),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        description,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                      ),
+                    ),
+                  ],
+                  if (activities.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Scheduled activities',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    ...activities.map(
+                      (act) => Padding(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: AppSpacing.xxs),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: act['time'] != null
+                                    ? AppColors.primarySoft
+                                    : AppColors.surface,
+                                borderRadius:
+                                    BorderRadius.circular(AppRadii.small),
+                                border: Border.all(
+                                  color: act['time'] != null
+                                      ? AppColors.primary
+                                      : AppColors.divider,
+                                ),
+                              ),
+                              child: Text(
+                                act['time'] ?? 'Time not specified',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: act['time'] != null
+                                      ? AppColors.primaryStrong
+                                      : AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    act['name'] ?? 'Activity',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  if (act['description'] != null &&
+                                      act['description']!.isNotEmpty)
+                                    Text(
+                                      act['description']!,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (meals.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.restaurant_outlined,
+                            size: 16, color: AppColors.textSecondary),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: Text(
+                            'Meals: ${meals.join(', ')}',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (stay.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.hotel_outlined,
+                            size: 16, color: AppColors.textSecondary),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: Text(
+                            'Stay: $stay',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (transport.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.directions_bus_outlined,
+                            size: 16, color: AppColors.textSecondary),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: Text(
+                            'Transport: $transport',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildIncludedTab() {
+    final transport = _list(widget.item['transportTypes']);
+    final meals =
+        _days.expand((day) => _list(day['meals'])).toSet().toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _bullets('What is included', widget.item['inclusions'],
+            Icons.check_circle_outline,
+            color: AppColors.success),
+        _bullets('Not included', widget.item['exclusions'],
+            Icons.remove_circle_outline,
+            color: AppColors.textSecondary),
+        _bullets('Meals', meals, Icons.restaurant_outlined),
+        _bullets('Transport', transport, Icons.directions_bus_outlined),
+        _bullets('What to bring', widget.item['whatToBring'],
+            Icons.backpack_outlined),
+        _textSection(
+          'Accommodation',
+          [
+            _text('accommodationName'),
+            _text('accommodationCategory'),
+            _text('roomType'),
+            _text('accommodationNotes'),
+          ].where((value) => value.isNotEmpty).join('\n'),
+          Icons.hotel_outlined,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPoliciesTab() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _textSection('Cancellation policy', _text('cancellationPolicy'),
+            Icons.event_busy_outlined),
+        _textSection('Refund policy', _text('refundPolicy'),
+            Icons.currency_exchange_outlined),
+        _textSection('Booking terms', _text('bookingTerms'),
+            Icons.description_outlined),
+        _textSection(
+            'Important notes', _text('importantNotes'), Icons.info_outline),
+        InkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.shield_outlined,
+                      size: 18, color: AppColors.primary),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(child: _heading('TravelMate Test Disclosures')),
+                ],
+              ),
+              const Text(
+                'Test payment recorded. Your Package Trip is available in TravelMate. No external supplier reservation has been created.',
+                style: TextStyle(fontSize: 13, height: 1.45),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              const Text(
+                'Stripe checkout runs in Test Mode. Verified payment creates a dedicated, read-only Package Trip under Trips.',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                    height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -195,28 +1224,105 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
     final destination = _text('destination', 'destinationName');
     final hero = _text('heroImage', 'imageUrl');
     final description = _text('fullDescription', 'description');
-    final campaigns = (widget.item['activeCampaigns'] as List? ?? const [])
-        .whereType<Map>()
-        .map((entry) => Map<String, dynamic>.from(entry))
-        .toList();
-    final capacity =
-        _number(widget.item['maximumTravellers'] ?? widget.item['maxTravellers']);
-    final departureDates = _list(widget.item['departureDates']);
-    final transport = _list(widget.item['transportTypes']);
-    final meals = _days.expand((day) => _list(day['meals'])).toSet().toList();
-    final original = _number(widget.item['originalPrice']);
-    final promo = _number(widget.item['promotionalPrice']);
+    final capacity = _number(
+        widget.item['maximumTravellers'] ?? widget.item['maxTravellers']);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Tourism package')),
+      appBar: AppBar(
+        title: const Text('Tourism package'),
+      ),
       bottomNavigationBar: SafeArea(
-              minimum: const EdgeInsets.all(AppSpacing.md),
-              child: FilledButton.icon(
-                onPressed: submitting ? null : _startCheckout,
-                icon: const Icon(Icons.payment_outlined),
-                label: Text(submitting ? 'Preparing checkout...' : 'Checkout package'),
+        minimum: const EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.xs,
+          AppSpacing.md,
+          AppSpacing.sm,
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: AppRadii.card,
+            border: Border.all(color: AppColors.divider),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
               ),
-            ),
+            ],
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 360 ||
+                  MediaQuery.textScalerOf(context).scale(14) > 16;
+              final priceColumn = Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _priceBasis == 'per_group'
+                        ? '$_currency ${_money(_groupTotal ?? _regularAdultPrice ?? 0)}'
+                        : '$_currency ${_money(_effectiveAdultPrice ?? 0)}',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                  ),
+                  Text(
+                    _priceBasis == 'per_group'
+                        ? 'total group rate'
+                        : (_groupTotal != null &&
+                                (adults > 1 || children > 0))
+                            ? 'Total: $_currency ${_money(_groupTotal!)} ($adults adult${adults > 1 ? 's' : ''}${children > 0 ? ', $children child${children > 1 ? 'ren' : ''}' : ''})'
+                            : '/ adult',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 11,
+                        ),
+                  ),
+                ],
+              );
+
+              final actionButton = FilledButton(
+                key: const ValueKey('package-book-now-cta'),
+                onPressed:
+                    !_hasVerifiedPriceBasis ? null : _openBookingModal,
+                child: Text(
+                  !_hasVerifiedPriceBasis
+                      ? 'Price basis unverified'
+                      : 'Select travellers & date',
+                ),
+              );
+
+              if (isNarrow) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    priceColumn,
+                    const SizedBox(height: AppSpacing.xs),
+                    actionButton,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: priceColumn),
+                  const SizedBox(width: AppSpacing.xs),
+                  actionButton,
+                ],
+              );
+            },
+          ),
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg,
@@ -231,7 +1337,7 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
               'imageUrl': hero,
               'category': 'Travel package',
             },
-            height: 230,
+            height: 220,
             width: double.infinity,
             borderRadius: BorderRadius.circular(AppRadii.large),
           ),
@@ -240,184 +1346,94 @@ class _TourismPackageDetailsScreenState extends State<TourismPackageDetailsScree
             text: 'VERIFIED OPERATOR PACKAGE',
             icon: Icons.verified_outlined,
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.xs),
           Text(
             title.isEmpty ? 'Tourism package' : title,
-            style: Theme.of(context).textTheme.headlineMedium,
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
           ),
           if (destination.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xxs),
-            Text(destination,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: AppColors.textSecondary,
-                    )),
-          ],
-          const SizedBox(height: AppSpacing.sm),
-          Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: [
-            if (_price.isNotEmpty)
-              TravelStatusPill(text: _price, icon: Icons.payments_outlined),
-            if (_duration.isNotEmpty)
-              TravelStatusPill(
-                  text: _duration, icon: Icons.calendar_today_outlined),
-            if (capacity != null)
-              TravelStatusPill(
-                  text: 'Up to ${capacity.toInt()} travellers',
-                  icon: Icons.group_outlined),
-          ]),
-          if (original != null && promo != null && original > promo) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Text('Usual price $_currency ${_money(original)}',
-                style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    decoration: TextDecoration.lineThrough)),
-          ],
-          if (description.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.lg),
-            InkCard(
-              color: InkWashColors.cream,
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _heading('Package overview'),
-                    Text(description),
-                  ]),
-            ),
-          ],
-          if (campaigns.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.lg),
-            _heading('Current promotion'),
-            ...campaigns.map((campaign) => Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: InkCard(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                              (campaign['campaignTitle'] ?? 'Promotion')
-                                  .toString(),
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w900)),
-                          if ((campaign['description'] ?? '')
-                              .toString()
-                              .trim()
-                              .isNotEmpty)
-                            Text(campaign['description'].toString()),
-                          if ((campaign['promoCode'] ?? '')
-                              .toString()
-                              .trim()
-                              .isNotEmpty)
-                            TravelStatusPill(
-                                text: 'Code ${campaign['promoCode']}',
-                                icon: Icons.local_offer_outlined),
-                        ]),
-                  ),
-                )),
-          ],
-          const SizedBox(height: AppSpacing.lg),
-          _bullets('Highlights', widget.item['highlights'], Icons.place_outlined),
-          if (_days.isNotEmpty) ...[
-            _heading('Day-by-day itinerary'),
-            ..._days.map((day) {
-              final dayNumber = day['dayNumber'] ?? _days.indexOf(day) + 1;
-              final activities = _list(day['activities']);
-              return Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                child: InkCard(
-                  child: ExpansionTile(
-                    tilePadding: EdgeInsets.zero,
-                    childrenPadding: EdgeInsets.zero,
-                    title: Text('Day $dayNumber · ${day['title'] ?? ''}',
-                        style: const TextStyle(fontWeight: FontWeight.w900)),
-                    children: [
-                      if ((day['description'] ?? '')
-                          .toString()
-                          .trim()
-                          .isNotEmpty)
-                        Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(day['description'].toString())),
-                      if (activities.isNotEmpty)
-                        Padding(
-                            padding: const EdgeInsets.only(top: AppSpacing.sm),
-                            child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                    'Activities: ${activities.join(', ')}'))),
-                      if (_list(day['meals']).isNotEmpty)
-                        Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                                'Meals: ${_list(day['meals']).join(', ')}')),
-                      if ((day['accommodation'] ?? '')
-                          .toString()
-                          .trim()
-                          .isNotEmpty)
-                        Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text('Stay: ${day['accommodation']}')),
-                      if ((day['transportNotes'] ?? '')
-                          .toString()
-                          .trim()
-                          .isNotEmpty)
-                        Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text('Transport: ${day['transportNotes']}')),
-                    ],
+            Row(
+              children: [
+                const Icon(Icons.location_on_outlined,
+                    size: 16, color: AppColors.textSecondary),
+                const SizedBox(width: AppSpacing.xxs),
+                Expanded(
+                  child: Text(
+                    destination,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
                   ),
                 ),
-              );
-            }),
+              ],
+            ),
           ],
-          _bullets('What is included', widget.item['inclusions'],
-              Icons.check_circle_outline),
-          _bullets(
-              'Not included', widget.item['exclusions'], Icons.remove_circle_outline),
-          _bullets('Meals', meals, Icons.restaurant_outlined),
-          _bullets('Transport', transport, Icons.directions_bus_outlined),
-          _bullets(
-              'What to bring', widget.item['whatToBring'], Icons.backpack_outlined),
-          _textSection(
-              'Accommodation',
-              [
-                _text('accommodationName'),
-                _text('accommodationCategory'),
-                _text('roomType'),
-                _text('accommodationNotes'),
-              ].where((value) => value.isNotEmpty).join('\n'),
-              Icons.hotel_outlined),
-          if (departureDates.isNotEmpty ||
-              _text('departureLocation').isNotEmpty ||
-              _text('meetingPoint').isNotEmpty)
-            _textSection(
-                'Departure details',
-                [
-                  if (departureDates.isNotEmpty)
-                    'Dates: ${departureDates.join(', ')}',
-                  if (_text('departureLocation').isNotEmpty)
-                    'Location: ${_text('departureLocation')}',
-                  if (_text('meetingPoint').isNotEmpty)
-                    'Meeting point: ${_text('meetingPoint')}',
-                  if (_text('departureNotes').isNotEmpty)
-                    _text('departureNotes'),
-                ].join('\n'),
-                Icons.event_available_outlined),
-          _textSection('Cancellation policy', _text('cancellationPolicy'),
-              Icons.event_busy_outlined),
-          _textSection('Refund policy', _text('refundPolicy'),
-              Icons.currency_exchange_outlined),
-          _textSection('Booking terms', _text('bookingTerms'),
-              Icons.description_outlined),
-          _textSection(
-              'Important notes', _text('importantNotes'), Icons.info_outline),
-          if (_text('operatorName').isNotEmpty)
-            _textSection(
-                'Tourism Operator',
-                [
-                  _text('operatorName'),
-                  _text('operatorPhone'),
-                  _text('operatorEmail'),
-                ].where((value) => value.isNotEmpty).join('\n'),
-                Icons.storefront_outlined),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: [
+              if (_price.isNotEmpty)
+                TravelStatusPill(
+                    text: _price, icon: Icons.payments_outlined),
+              if (_priceBasis == 'per_person' && _childPrice != null)
+                TravelStatusPill(
+                  text: '$_currency ${_money(_childPrice!)} / child',
+                  icon: Icons.child_care_outlined,
+                ),
+              if (_priceBasis == 'per_person' &&
+                  _childPrice == null &&
+                  _regularAdultPrice != null)
+                const TravelStatusPill(
+                  text: 'Child rate unavailable',
+                  icon: Icons.info_outline,
+                ),
+              if (_hasVerifiedPriceBasis)
+                TravelStatusPill(
+                  text: _priceBasis == 'per_group'
+                      ? 'Fixed group pricing'
+                      : 'Per person pricing',
+                  icon: Icons.sell_outlined,
+                ),
+              if (!_hasVerifiedPriceBasis)
+                const TravelStatusPill(
+                  text: 'Unverified price basis',
+                  icon: Icons.warning_amber_outlined,
+                ),
+              if (_isPromotionEligible)
+                const TravelStatusPill(
+                  text: 'Special promo rate',
+                  icon: Icons.local_offer_outlined,
+                ),
+              if (_originalPrice != null &&
+                  _originalPrice! > (_effectiveAdultPrice ?? 0))
+                TravelStatusPill(
+                  text: 'Orig. $_currency ${_money(_originalPrice!)}',
+                  icon: Icons.history_outlined,
+                ),
+              if (_duration.isNotEmpty)
+                TravelStatusPill(
+                  text: _duration,
+                  icon: Icons.calendar_today_outlined,
+                ),
+              if (capacity != null)
+                TravelStatusPill(
+                  text: 'Up to ${capacity.toInt()} travellers',
+                  icon: Icons.group_outlined,
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _buildSectionTabs(),
+          const SizedBox(height: AppSpacing.xs),
+          if (_selectedTab == 0) _buildOverviewTab(description),
+          if (_selectedTab == 1) _buildItineraryTab(),
+          if (_selectedTab == 2) _buildIncludedTab(),
+          if (_selectedTab == 3) _buildPoliciesTab(),
+          const SizedBox(height: AppSpacing.xxl),
         ],
       ),
     );

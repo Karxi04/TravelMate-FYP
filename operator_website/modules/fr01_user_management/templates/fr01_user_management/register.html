@@ -1,1 +1,101 @@
-{% extends 'base.html' %}{% block title %}Create operator account | TravelMate{% endblock %}{% block body %}<div class="auth"><section class="auth-art"><div><div class="mark">TM</div><span class="eyebrow">JOIN TRAVELMATE</span><h1>Bring your trips to life.</h1><p>Create a Tourism Operator account. An Administrator will verify your business before publishing is enabled.</p></div><div class="swatches"><span></span><span></span><span></span><span></span></div></section><section class="auth-panel"><form class="auth-card" method="post"><span class="eyebrow">NEW OPERATOR</span><h2>Create your account</h2>{% for c,m in get_flashed_messages(with_categories=true) %}<div class="msg {{c}}" role="alert">{{m}}</div>{% endfor %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="grid g2">{% for n,l,t in [('name','Contact name','text'),('companyName','Organization name','text'),('registrationNo','Registration number','text'),('businessContact','Business phone','tel')] %}<div class="field"><label for="{{n}}">{{l}}</label><input id="{{n}}" class="input" name="{{n}}" type="{{t}}" value="{{ request.form.get(n,'') }}" required></div>{% endfor %}</div><div class="field"><label for="email">Business email</label><input id="email" class="input" name="email" type="email" autocomplete="email" value="{{ request.form.get('email','') }}" required></div><div class="field"><label for="password">Password</label><input id="password" class="input" name="password" type="password" autocomplete="new-password" minlength="8" required><small class="field-help">Use at least 8 characters.</small></div><button class="btn primary full" type="submit">Create account</button><p class="auth-links"><a href="{{ url_for('operator_fr01.login') }}">Back to sign in</a></p></form></section></div>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Register Operator Account — TravelMate{% endblock %}
+
+{% block body %}
+<div class="auth">
+  <section class="auth-art">
+    <div>
+      <div class="mark" aria-hidden="true">TM</div>
+      <div class="auth-brand-tag">Join TravelMate Partner Network</div>
+      <h1>Bring your trips to life.</h1>
+      <p>Partner with Penang's premier tourism platform. Showcase heritage trails, eco-tours, and curated experiences to thousands of visitors.</p>
+
+      <div class="auth-features">
+        <div class="auth-feature-item">
+          <div class="auth-feature-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <div>
+            <strong>Direct Traveller Exposure</strong>
+            <span>Publish approved packages directly to the TravelMate mobile app</span>
+          </div>
+        </div>
+
+        <div class="auth-feature-item">
+          <div class="auth-feature-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          </div>
+          <div>
+            <strong>Promotional Campaigns</strong>
+            <span>Create targeted promo codes and discount vouchers for peak travel seasons</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-art-footer">
+      <span>Tourism Operator Registration • Port 5001</span>
+      <span>TravelMate FYP</span>
+    </div>
+  </section>
+
+  <section class="auth-panel">
+    <form class="auth-card" method="post" style="width: min(540px, 100%);">
+      <div class="auth-card-header">
+        <span class="auth-badge">New Partner Registration</span>
+        <h2>Create operator account</h2>
+        <p class="muted">Enter your business details. An Administrator will review and verify your account.</p>
+      </div>
+
+      {% for c, m in get_flashed_messages(with_categories=true) %}
+        <div class="msg {{ c }}" role="alert">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>{{ m }}</span>
+        </div>
+      {% endfor %}
+
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="grid g2" style="gap: 0 16px;">
+        <div class="field">
+          <label for="name">Contact Person *</label>
+          <input id="name" class="input" name="name" type="text" value="{{ request.form.get('name', '') }}" placeholder="e.g. Sarah Tan" required>
+        </div>
+        <div class="field">
+          <label for="companyName">Organization Name *</label>
+          <input id="companyName" class="input" name="companyName" type="text" value="{{ request.form.get('companyName', '') }}" placeholder="e.g. Penang Heritage Tours" required>
+        </div>
+        <div class="field">
+          <label for="registrationNo">Registration Number (SSM) *</label>
+          <input id="registrationNo" class="input" name="registrationNo" type="text" value="{{ request.form.get('registrationNo', '') }}" placeholder="e.g. 202401012345" required>
+        </div>
+        <div class="field">
+          <label for="businessContact">Business Phone *</label>
+          <input id="businessContact" class="input" name="businessContact" type="tel" value="{{ request.form.get('businessContact', '') }}" placeholder="+60 12-345 6789" required>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="email">Business Email *</label>
+        <input id="email" class="input" name="email" type="email" autocomplete="email" value="{{ request.form.get('email', '') }}" placeholder="operator@company.com" required>
+      </div>
+
+      <div class="field">
+        <label for="password">Password *</label>
+        <input id="password" class="input" name="password" type="password" autocomplete="new-password" minlength="8" placeholder="At least 8 characters" required>
+        <span class="field-help">Use at least 8 characters with a mix of letters and numbers.</span>
+      </div>
+
+      <button class="btn primary full" type="submit" style="margin-top: 12px;">
+        <span>Register Tourism Operator</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </button>
+
+      <div class="auth-links" style="justify-content: center;">
+        <span class="muted">Already registered?</span>
+        <a href="{{ url_for('operator_fr01.login') }}">Back to sign in</a>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

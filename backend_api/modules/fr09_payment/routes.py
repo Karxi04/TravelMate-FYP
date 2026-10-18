@@ -1,6 +1,9 @@
 import math
 import os
+import re
 import uuid
+from copy import deepcopy
+from datetime import date, timedelta
 from html import escape
 from urllib.parse import urlparse
 
@@ -161,6 +164,68 @@ def _safe_order(record):
     }
 
 
+def _payment_history_title(record):
+    package = record.get('packageSnapshot')
+    if isinstance(package, dict):
+        return package.get('title') or package.get('name')
+    quote = record.get('quoteSnapshot')
+    if isinstance(quote, dict):
+        return quote.get('name') or quote.get('roomName') or quote.get('title')
+    return record.get('productTitle')
+
+
+def _payment_history_provider(record):
+    provider = str(record.get('provider') or '').strip().lower()
+    reference = str(record.get('transactionReference') or '').strip().lower()
+    if provider == 'stripe_checkout_test':
+        return 'stripe', True
+    if reference.startswith('pi_sim_'):
+        return 'travelmate_simulation', True
+    if reference.startswith('pi_'):
+        return 'stripe', None
+    return None, None
+
+
+def _payment_history_item(record, source):
+    provider, test_mode = _payment_history_provider(record)
+    timestamp = (
+        record.get('paidAt') or record.get('updatedAt') or record.get('createdAt')
+    )
+    if source == 'checkout_order':
+        booking_type = str(record.get('quoteType') or 'unknown').strip().lower()
+        order_status = str(record.get('status') or 'unknown').strip().lower()
+        raw_payment_status = record.get('paymentStatus')
+        payment_status = str(
+            raw_payment_status or ('paid' if order_status == 'paid' else 'unknown')
+        ).strip().lower()
+    else:
+        booking_type = str(record.get('bookingType') or 'legacy_payment').strip().lower()
+        payment_status = normalizePaymentStatus(record.get('paymentStatus'))
+        order_status = None
+    item = {
+        'id': record.get('id'),
+        'orderReference': record.get('id'),
+        'bookingType': booking_type,
+        'timestamp': timestamp,
+        'amount': record.get('amount'),
+        'currency': str(record.get('currency') or '').upper() or None,
+        'paymentStatus': payment_status,
+        'orderStatus': order_status,
+        'testMode': test_mode,
+        'paymentProvider': provider,
+        'relatedTripId': record.get('fulfilledTripId') or record.get('tripId'),
+        'relatedBookingId': record.get('bookingId'),
+        'productTitle': _payment_history_title(record),
+        'source': source,
+    }
+    if source == 'legacy_payment':
+        if record.get('cardBrand'):
+            item['cardBrand'] = record.get('cardBrand')
+        if record.get('cardLast4'):
+            item['cardLast4'] = record.get('cardLast4')
+    return item
+
+
 def _configured_checkout_url(name, fallback):
     value = os.getenv(name, fallback).strip()
     parsed = urlparse(value)
@@ -232,13 +297,9 @@ def _package_order_document_id(attempt_id):
     return operation_document_id('package_checkout_order', g.uid, attempt_id)
 
 
-def _fulfill_package_order(order):
-    """Attach one immutable package snapshot once; payment is never rolled back here."""
+def _legacy_package_fulfillment(order, attempt):
+    """Keep already-created quantity-one attempts on their original path."""
     attempt_id = str(order.get('packageAttemptId') or '')
-    attempt = retrieveRecord(PACKAGE_ATTEMPT_COLLECTION, attempt_id)
-    if not attempt or attempt.get('travellerId') != order.get('travellerId'):
-        return {'fulfillmentStatus': 'fulfillment_failed', 'fulfillmentRetryRequired': True,
-                'fulfillmentError': 'The package purchase intent is unavailable.'}
     trip_id = str(attempt.get('intendedTripId') or '')
     trip = retrieveRecord('itineraries', trip_id) if trip_id else None
     if not trip:
@@ -273,6 +334,135 @@ def _fulfill_package_order(order):
             'fulfilledTripId': trip_id}
 
 
+def _package_trip_schedule(snapshot):
+    start_text = str(snapshot.get('selectedDepartureDate') or '')
+    start = date.fromisoformat(start_text) if start_text else None
+    schedule, activities = [], []
+    for index, raw_day in enumerate(snapshot.get('itineraryDays') or []):
+        if not isinstance(raw_day, dict):
+            continue
+        day_number = index + 1
+        day_items = []
+        raw_acts = raw_day.get('activities') or []
+        if isinstance(raw_acts, str):
+            raw_acts = [x.strip() for x in raw_acts.replace('\r', '').split('\n') if x.strip()]
+        for item_index, raw_activity in enumerate(raw_acts):
+            if isinstance(raw_activity, dict):
+                activity = deepcopy(raw_activity)
+                name = activity.get('title') or activity.get('name') or activity.get('activityName') or 'Package activity'
+                time_slot = activity.get('scheduledStartTime') or activity.get('timeSlot') or activity.get('time')
+                time_match = re.match(r'^(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\s*[-:–—]\s*(.+)$', str(name))
+                if time_match:
+                    if not time_slot:
+                        time_slot = time_match.group(1).strip()
+                    name = time_match.group(2).strip()
+                activity['activityName'] = name
+                if time_slot:
+                    activity['timeSlot'] = str(time_slot).strip()
+                    activity['scheduledStartTime'] = str(time_slot).strip()
+            else:
+                act_text = str(raw_activity).strip()
+                time_match = re.match(r'^(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\s*[-:–—]\s*(.+)$', act_text)
+                if time_match:
+                    activity = {
+                        'activityName': time_match.group(2).strip(),
+                        'timeSlot': time_match.group(1).strip(),
+                        'scheduledStartTime': time_match.group(1).strip(),
+                        'category': 'Package itinerary',
+                    }
+                else:
+                    activity = {
+                        'activityName': act_text,
+                        'category': 'Package itinerary',
+                    }
+            activity.setdefault('activityId', f'package_{day_number}_{item_index + 1}')
+            activity.update({'dayNo': day_number, 'source': 'purchased_package_snapshot'})
+            day_items.append(activity)
+            activities.append(activity)
+        raw_meals = raw_day.get('meals') or []
+        if isinstance(raw_meals, str):
+            raw_meals = [x.strip() for x in raw_meals.replace('\r', '').split('\n') if x.strip()]
+        schedule.append({
+            'dayNo': day_number,
+            'dayDate': (start + timedelta(days=index)).isoformat() if start else '',
+            'title': raw_day.get('title'), 'description': raw_day.get('description'),
+            'activities': day_items, 'meals': deepcopy(raw_meals),
+            'accommodation': raw_day.get('accommodation'),
+            'transportNotes': raw_day.get('transportNotes'),
+            'planningBlocks': [], 'estimatedCost': 0,
+            'weather': {'source': 'unavailable'},
+        })
+    return schedule, activities
+
+
+def _independent_package_fulfillment(order, attempt):
+    attempt_id = str(order.get('packageAttemptId') or '')
+    snapshot = attempt.get('packageSnapshot') or {}
+    traveller_id = str(order.get('travellerId') or '')
+    fulfillment_id = operation_document_id('package_fulfillment', traveller_id, attempt_id)
+    trip_id = operation_document_id('package_trip', traveller_id, attempt_id)
+    now = utc_now_iso()
+    claimed, _created = claimRecord(PACKAGE_FULFILLMENT_COLLECTION, fulfillment_id, {
+        'id': fulfillment_id, 'travellerId': traveller_id, 'checkoutOrderId': order['id'],
+        'packageAttemptId': attempt_id, 'tripId': trip_id, 'status': 'fulfillment_pending',
+        'createdAt': now, 'updatedAt': now,
+    })
+    if (claimed.get('checkoutOrderId') != order.get('id') or claimed.get('tripId') != trip_id):
+        return {'fulfillmentStatus': 'fulfillment_failed', 'fulfillmentRetryRequired': True,
+                'fulfillmentError': 'The package fulfillment claim is inconsistent.'}
+    schedule, activities = _package_trip_schedule(snapshot)
+    start_text = str(snapshot.get('selectedDepartureDate') or '')
+    duration = int(snapshot.get('durationDays') or len(schedule) or 1)
+    start = date.fromisoformat(start_text) if start_text else None
+    end_text = (start + timedelta(days=duration - 1)).isoformat() if start else ''
+    trip_record = {
+        'id': trip_id, 'travellerId': traveller_id,
+        'title': snapshot.get('title') or 'Purchased travel package',
+        'destinationArea': snapshot.get('destination') or '',
+        'startDate': start_text, 'endDate': end_text, 'tripDays': max(1, duration),
+        'travellerCount': snapshot.get('groupSize') or 1,
+        'participants': deepcopy(snapshot.get('participants') or {'adults': 1, 'children': 0, 'total': 1}),
+        'tripType': 'package', 'packageTrip': True, 'status': 'planned',
+        'activities': activities, 'dailySchedule': schedule,
+        'packageSnapshot': deepcopy(snapshot), 'packageId': snapshot.get('packageId'),
+        'operatorId': snapshot.get('operatorId'), 'packageAttemptId': attempt_id,
+        'checkoutOrderId': order.get('id'), 'paidTotal': order.get('amount'),
+        'paidTotalMinor': order.get('amountMinor'), 'currency': order.get('currency'),
+        'supplierReservationStatus': 'not_created',
+        'budgetLimit': order.get('amount'),
+        'budgetEstimate': {
+            'total': order.get('amount'), 'currency': order.get('currency'),
+            'source': 'verified_package_payment',
+        },
+        'createdAt': now, 'updatedAt': now,
+    }
+    trip, _trip_created = claimRecord('itineraries', trip_id, trip_record)
+    if (trip.get('travellerId') != traveller_id or trip.get('checkoutOrderId') != order.get('id')):
+        return {'fulfillmentStatus': 'fulfillment_failed', 'fulfillmentRetryRequired': True,
+                'fulfillmentError': 'The package Trip claim is inconsistent.'}
+    updateRecord(PACKAGE_FULFILLMENT_COLLECTION, fulfillment_id, {
+        'status': 'fulfilled', 'updatedAt': utc_now_iso(),
+    })
+    return {'fulfillmentStatus': 'fulfilled', 'fulfillmentRetryRequired': False,
+            'fulfilledTripId': trip_id}
+
+
+def _fulfill_package_order(order):
+    """Fulfill verified payment idempotently; never roll payment back here."""
+    attempt_id = str(order.get('packageAttemptId') or '')
+    attempt = retrieveRecord(PACKAGE_ATTEMPT_COLLECTION, attempt_id)
+    if not attempt or attempt.get('travellerId') != order.get('travellerId'):
+        return {'fulfillmentStatus': 'fulfillment_failed', 'fulfillmentRetryRequired': True,
+                'fulfillmentError': 'The package purchase intent is unavailable.'}
+    if attempt.get('fulfillmentMode') == 'independent_package_trip':
+        try:
+            return _independent_package_fulfillment(order, attempt)
+        except Exception:
+            return {'fulfillmentStatus': 'fulfillment_pending', 'fulfillmentRetryRequired': True,
+                    'fulfillmentError': 'The paid Package Trip is awaiting recovery.'}
+    return _legacy_package_fulfillment(order, attempt)
+
+
 def _apply_package_payment(order, session):
     patch = _apply_checkout_session(order, session)
     if patch['status'] != 'paid':
@@ -304,6 +494,9 @@ def create_package_checkout_session(attempt_id):
         'packageSnapshot': snapshot, 'amount': minor_units / 100,
         'amountMinor': minor_units, 'currency': 'MYR', 'taxIncluded': snapshot.get('taxIncluded'),
         'taxNotes': snapshot.get('taxNotes'), 'status': 'checkout_pending',
+        'participants': snapshot.get('participants'), 'groupSize': snapshot.get('groupSize'),
+        'departureDate': snapshot.get('selectedDepartureDate'),
+        'fulfillmentMode': attempt.get('fulfillmentMode'),
         'paymentStatus': 'unpaid', 'fulfillmentStatus': 'fulfillment_pending',
         'provider': 'stripe_checkout_test',
         'providerIdempotencyKey': provider_idempotency_key('package_checkout', g.uid, attempt_id, 'session'),
@@ -942,16 +1135,22 @@ def cancel_payment(payment_id):
 @bp.get('/payments')
 @auth_required(['traveller'])
 def list_payments():
-    items = retrieveRecord('payment_records', filters=[('travellerId', '==', g.uid)]) or []
-    normalized = [
-        {
-            **{
-                key: value for key, value in item.items()
-                if key != 'providerIdempotencyKey'
-            },
-            'paymentStatus': normalizePaymentStatus(item.get('paymentStatus')),
-        }
-        for item in items
-        if isinstance(item, dict)
-    ]
+    ownership_filter = [('travellerId', '==', g.uid)]
+    sources = (
+        ('checkout_order', retrieveRecord(ORDER_COLLECTION, filters=ownership_filter) or []),
+        ('legacy_payment', retrieveRecord('payment_records', filters=ownership_filter) or []),
+    )
+    normalized = []
+    seen = set()
+    for source, records in sources:
+        for record in records:
+            if not isinstance(record, dict) or record.get('travellerId') != g.uid:
+                continue
+            record_id = record.get('id')
+            key = str(record_id)
+            if not record_id or key in seen:
+                continue
+            seen.add(key)
+            normalized.append(_payment_history_item(record, source))
+    normalized.sort(key=lambda item: str(item.get('timestamp') or ''), reverse=True)
     return jsonify({'ok': True, 'items': normalized})

@@ -11,7 +11,7 @@ void main() {
   });
 
   test('canonical payment success and legacy aliases disable retry', () {
-    for (final status in ['succeeded', 'successful', 'success', 'completed']) {
+    for (final status in ['succeeded', 'successful', 'success', 'completed', 'paid']) {
       expect(canonicalPaymentStatus(status), 'succeeded');
       expect(isSuccessfulPayment(status), isTrue);
       expect(canRetryPayment(status), isFalse);

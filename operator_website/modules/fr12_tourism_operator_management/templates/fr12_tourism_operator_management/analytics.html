@@ -1,177 +1,172 @@
 {% extends 'portal_base.html' %}
+{% block title %}Business Analytics | TravelMate{% endblock %}
 
 {% block content %}
-
-<div class="page-title">
-
-    <div>
-        <h1>Business Analytics</h1>
-
-        <p>
-            Business performance based on your
-            TravelMate records.
-        </p>
-
-    </div>
-
-
-    <div class="actions">
-
-        <a class="btn primary"
-           href="{{ url_for('operator_fr12.export_report') }}">
-
-            Export Business Report PDF
-
-        </a>
-
-    </div>
-
-</div>
-
 {% set summary = analytics.get('summary', {}) %}
+<div class="page-title">
+  <div>
+    <span class="eyebrow">Executive Intelligence</span>
+    <h1>Business Analytics</h1>
+    <p>Operational performance, catalog moderation metrics, and platform records.</p>
+  </div>
+  <div class="actions">
+    <a class="btn primary" href="{{ url_for('operator_fr12.export_report') }}">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span>Export Business Report PDF</span>
+    </a>
+  </div>
+</div>
 
+<!-- Primary KPIs -->
 <div class="grid g4">
-
-    <div class="card cream">
-        <div class="metric">
-            {{ summary.get('totalPackages', 0) }}
-        </div>
-
-        <div class="metric-label">
-            Total Packages
-        </div>
+  <div class="metric-card accent-blue">
+    <div class="metric-card-top">
+      <span class="metric-label">Total Packages</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+      </div>
     </div>
+    <div class="metric">{{ summary.get('totalPackages', 0) }}</div>
+    <div class="metric-help">All created itineraries</div>
+  </div>
 
-    <div class="card">
-        <div class="metric">
-            {{ summary.get('approvedPackages', 0) }}
-        </div>
-
-        <div class="metric-label">
-            Approved Packages
-        </div>
+  <div class="metric-card accent-green">
+    <div class="metric-card-top">
+      <span class="metric-label">Approved & Published</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
     </div>
+    <div class="metric">{{ summary.get('approvedPackages', 0) }}</div>
+    <div class="metric-help">Live in Traveller Mobile app</div>
+  </div>
 
-    <div class="card">
-        <div class="metric">
-            {{ summary.get('totalCampaigns', 0) }}
-        </div>
-
-        <div class="metric-label">
-            Campaigns
-        </div>
+  <div class="metric-card accent-amber">
+    <div class="metric-card-top">
+      <span class="metric-label">Total Campaigns</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      </div>
     </div>
+    <div class="metric">{{ summary.get('totalCampaigns', 0) }}</div>
+    <div class="metric-help">Promotions & seasonal offers</div>
+  </div>
 
-    <div class="card">
-        <div class="metric">
-            {{ summary.get('bookingRecords', 0) }}
-        </div>
-
-        <div class="metric-label">
-            Booking Records
-        </div>
+  <div class="metric-card">
+    <div class="metric-card-top">
+      <span class="metric-label">Booking Records</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      </div>
     </div>
-
+    <div class="metric">{{ summary.get('bookingRecords', 0) }}</div>
+    <div class="metric-help">Authoritative booking records</div>
+  </div>
 </div>
 
-
-<div class="grid g2" style="margin-top:16px">
-
-    <div class="card">
-
-        <h3>Package Performance</h3>
-
-        <p class="muted">
-            Current tourism package approval status.
-        </p>
-
-        <p>
-            Approved:
-            <strong>
-                {{ summary.get('approvedPackages', 0) }}
-            </strong>
-        </p>
-
-        <p>
-            Pending:
-            <strong>
-                {{ summary.get('pendingPackages', 0) }}
-            </strong>
-        </p>
-
-        <p>
-            Rejected:
-            <strong>
-                {{ summary.get('rejectedPackages', 0) }}
-            </strong>
-        </p>
-
-        <p>
-            Draft:
-            <strong>
-                {{ summary.get('draftPackages', 0) }}
-            </strong>
-        </p>
-
+<!-- Detailed Performance Breakdown -->
+<div class="grid g2" style="margin-top: 24px;">
+  <!-- Package Pipeline Details -->
+  <section class="card">
+    <div class="card-heading">
+      <div>
+        <span class="eyebrow">Catalog Status</span>
+        <h3>Package Moderation Pipeline</h3>
+      </div>
     </div>
 
+    <div style="display: grid; gap: 14px; margin-top: 14px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="status approved">Approved</span>
+          <span style="font-size: 13px; color: var(--ink-secondary);">Live in mobile app</span>
+        </div>
+        <strong style="font-size: 16px; color: var(--success);">{{ summary.get('approvedPackages', 0) }}</strong>
+      </div>
 
-    <div class="card">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="status pending">Under Review</span>
+          <span style="font-size: 13px; color: var(--ink-secondary);">Awaiting Administrator review</span>
+        </div>
+        <strong style="font-size: 16px; color: var(--warning);">{{ summary.get('pendingPackages', 0) }}</strong>
+      </div>
 
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="status rejected">Needs Changes</span>
+          <span style="font-size: 13px; color: var(--ink-secondary);">Returned with moderator notes</span>
+        </div>
+        <strong style="font-size: 16px; color: var(--danger);">{{ summary.get('rejectedPackages', 0) }}</strong>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="status draft">Draft</span>
+          <span style="font-size: 13px; color: var(--ink-secondary);">Unsubmitted drafts</span>
+        </div>
+        <strong style="font-size: 16px; color: var(--ink);">{{ summary.get('draftPackages', 0) }}</strong>
+      </div>
+    </div>
+  </section>
+
+  <!-- Campaign Performance Details -->
+  <section class="card">
+    <div class="card-heading">
+      <div>
+        <span class="eyebrow">Marketing Status</span>
         <h3>Campaign Performance</h3>
-
-        <p class="muted">
-            Current promotional campaign status.
-        </p>
-
-        <p>
-            Total:
-            <strong>
-                {{ summary.get('totalCampaigns', 0) }}
-            </strong>
-        </p>
-
-        <p>
-            Approved:
-            <strong>
-                {{ summary.get('approvedCampaigns', 0) }}
-            </strong>
-        </p>
-
-        <p>
-            Pending:
-            <strong>
-                {{ summary.get('pendingCampaigns', 0) }}
-            </strong>
-        </p>
-
-        <p>
-            Active:
-            <strong>
-                {{ summary.get('activeCampaigns', 0) }}
-            </strong>
-        </p>
-
-        <p>
-            Rejected:
-            <strong>
-                {{ summary.get('rejectedCampaigns', 0) }}
-            </strong>
-        </p>
-
+      </div>
     </div>
 
+    <div style="display: grid; gap: 14px; margin-top: 14px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="status active">Active</span>
+          <span style="font-size: 13px; color: var(--ink-secondary);">Currently running</span>
+        </div>
+        <strong style="font-size: 16px; color: var(--success);">{{ summary.get('activeCampaigns', 0) }}</strong>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="status approved">Approved</span>
+          <span style="font-size: 13px; color: var(--ink-secondary);">Published promotions</span>
+        </div>
+        <strong style="font-size: 16px; color: var(--bluegrey);">{{ summary.get('approvedCampaigns', 0) }}</strong>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="status pending">Under Review</span>
+          <span style="font-size: 13px; color: var(--ink-secondary);">Awaiting promotion approval</span>
+        </div>
+        <strong style="font-size: 16px; color: var(--warning);">{{ summary.get('pendingCampaigns', 0) }}</strong>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="status rejected">Needs Changes</span>
+          <span style="font-size: 13px; color: var(--ink-secondary);">Requires revision</span>
+        </div>
+        <strong style="font-size: 16px; color: var(--danger);">{{ summary.get('rejectedCampaigns', 0) }}</strong>
+      </div>
+    </div>
+  </section>
 </div>
 
-
-<div class="card cream" style="margin-top:16px">
-
-    <strong>Combined Package Value:</strong>
-
-    RM {{ '%.2f'|format(
-    summary.get('totalPackageValue', 0)
-    ) }}
-
+<!-- Combined Package Inventory Value -->
+<div class="card cream" style="margin-top: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
+  <div>
+    <span class="eyebrow">Financial Valuation</span>
+    <h3 style="margin: 4px 0 2px;">Combined Active Package Inventory Value</h3>
+    <p class="muted" style="margin: 0; font-size: 13px;">Aggregate value of all active tourism packages based on base catalog pricing.</p>
+  </div>
+  <div style="text-align: right;">
+    <div style="font-size: 32px; font-weight: 800; color: var(--ink);">
+      MYR {{ '%.2f'|format(summary.get('totalPackageValue', 0)) }}
+    </div>
+    <span class="muted" style="font-size: 11px;">Calculated from published unit rates</span>
+  </div>
 </div>
-
 {% endblock %}

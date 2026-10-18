@@ -14,10 +14,17 @@ def create_attempt():
     trip = retrieveRecord('itineraries', trip_id) if trip_id else None
     if trip_id and not trip:
         return jsonify({'ok': False, 'error': 'The intended trip was not found.'}), 404
+    participants = payload.get('participants')
+    if participants is None and ('adults' in payload or 'children' in payload):
+        participants = {
+            'adults': payload.get('adults', 0),
+            'children': payload.get('children', 0),
+        }
     try:
         attempt, created = create_package_attempt(claimRecord, g.uid, package or {},
             retrieveRecord('users', (package or {}).get('operatorId')) or {},
-            str(payload.get('idempotencyKey') or ''), trip, payload.get('quantity', 1))
+            str(payload.get('idempotencyKey') or ''), trip, payload.get('quantity', 1),
+            participants=participants, departure_date=payload.get('departureDate'))
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 409
     except Exception:

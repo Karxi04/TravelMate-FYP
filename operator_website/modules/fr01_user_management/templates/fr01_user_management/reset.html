@@ -1,1 +1,53 @@
-{% extends 'base.html' %}{% block title %}Reset password | TravelMate{% endblock %}{% block body %}<div class="auth"><section class="auth-art"><div><div class="mark">TM</div><span class="eyebrow">ACCOUNT RECOVERY</span><h1>Back on track.</h1><p>We will send a password reset link to the email registered with your operator account.</p></div><div class="swatches"><span></span><span></span><span></span><span></span></div></section><section class="auth-panel"><form class="auth-card" method="post"><span class="eyebrow">RESET PASSWORD</span><h2>Get a reset link</h2>{% for c,m in get_flashed_messages(with_categories=true) %}<div class="msg {{c}}" role="alert">{{m}}</div>{% endfor %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="field"><label for="email">Business email</label><input id="email" class="input" name="email" type="email" autocomplete="email" value="{{ request.form.get('email','') }}" required></div><button class="btn primary full" type="submit">Send reset email</button><p class="auth-links"><a href="{{ url_for('operator_fr01.login') }}">Back to sign in</a></p></form></section></div>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Reset Password — TravelMate Tourism Operator Portal{% endblock %}
+
+{% block body %}
+<div class="auth">
+  <section class="auth-art">
+    <div>
+      <div class="mark" aria-hidden="true">TM</div>
+      <div class="auth-brand-tag">Account Security & Access</div>
+      <h1>Back on track.</h1>
+      <p>Secure password recovery for registered Tourism Operators. We will send a verified password reset link directly to your business email.</p>
+    </div>
+
+    <div class="auth-art-footer">
+      <span>Tourism Operator Portal • Port 5001</span>
+      <span>TravelMate FYP</span>
+    </div>
+  </section>
+
+  <section class="auth-panel">
+    <form class="auth-card" method="post">
+      <div class="auth-card-header">
+        <span class="auth-badge">Account Recovery</span>
+        <h2>Reset your password</h2>
+        <p class="muted">Enter the business email registered to your Tourism Operator account.</p>
+      </div>
+
+      {% for c, m in get_flashed_messages(with_categories=true) %}
+        <div class="msg {{ c }}" role="alert">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>{{ m }}</span>
+        </div>
+      {% endfor %}
+
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="field">
+        <label for="email">Business Email</label>
+        <input id="email" class="input" name="email" type="email" autocomplete="email" value="{{ request.form.get('email', '') }}" placeholder="operator@travelmate.com" required>
+      </div>
+
+      <button class="btn primary full" type="submit" style="margin-top: 8px;">
+        <span>Send Reset Link</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+
+      <div class="auth-links" style="justify-content: center;">
+        <a href="{{ url_for('operator_fr01.login') }}">Back to sign in</a>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

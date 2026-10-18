@@ -4,6 +4,7 @@ import '../../services/api_service.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../../theme/app_theme.dart';
+import 'package_trip_details_screen.dart';
 import 'personalized_planning_screen.dart';
 import 'trip_details_screen.dart';
 
@@ -22,6 +23,7 @@ class _TripsTabState extends State<TripsTab> {
   bool busy = false;
   bool loading = true;
   String? loadError;
+  int selectedSegment = 0; // 0: My Plans, 1: Package Trips
 
   static const _months = [
     'Jan',
@@ -299,16 +301,46 @@ class _TripsTabState extends State<TripsTab> {
     }
   }
 
+  bool _isPackage(Map<String, dynamic> trip) =>
+      trip['tripType'] == 'package' || trip['packageTrip'] == true;
+
+  List<Map<String, dynamic>> get _plans => items
+      .whereType<Map>()
+      .map((e) => Map<String, dynamic>.from(e))
+      .where((t) => !_isPackage(t))
+      .toList();
+
+  List<Map<String, dynamic>> get _packages => items
+      .whereType<Map>()
+      .map((e) => Map<String, dynamic>.from(e))
+      .where(_isPackage)
+      .toList();
+
   Future<void> openTrip(Map<String, dynamic> trip) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
+    if (_isPackage(trip)) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PackageTripDetailsScreen(
+            key: ValueKey('package-trip-${trip['id']}'),
+            tripId: trip['id'].toString(),
+            api: api,
+            initialTrip: trip,
+          ),
+        ),
+      );
+    } else {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
           builder: (_) => TripDetailsScreen(
-                key: ValueKey('trip-details-${trip['id']}'),
-                tripId: trip['id'].toString(),
-                api: api,
-              )),
-    );
+            key: ValueKey('trip-details-${trip['id']}'),
+            tripId: trip['id'].toString(),
+            api: api,
+          ),
+        ),
+      );
+    }
     await load();
   }
 
@@ -321,6 +353,9 @@ class _TripsTabState extends State<TripsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final plans = _plans;
+    final packages = _packages;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Trips'),
@@ -341,133 +376,283 @@ class _TripsTabState extends State<TripsTab> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: busy ? null : planTrip,
-        icon: const Icon(Icons.route_rounded),
-        label: const Text('Plan a trip'),
-      ),
+      floatingActionButton: selectedSegment == 0
+          ? FloatingActionButton.extended(
+              onPressed: busy ? null : planTrip,
+              icon: const Icon(Icons.route_rounded),
+              label: const Text('Plan a trip'),
+            )
+          : null,
       body: RefreshIndicator(
         onRefresh: load,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 6, 18, 92),
           children: [
-            const TravelSectionHeader(
-              title: 'Your travel plans',
-              subtitle:
-                  'Open a trip when you want to add places, change the sequence or edit details.',
+            // Segmented Control: My Plans vs Package Trips
+            SegmentedButton<int>(
+              segments: [
+                ButtonSegment<int>(
+                  value: 0,
+                  label: Text('My Plans (${plans.length})'),
+                  icon: const Icon(Icons.edit_note_rounded),
+                ),
+                ButtonSegment<int>(
+                  value: 1,
+                  label: Text('Package Trips (${packages.length})'),
+                  icon: const Icon(Icons.verified_rounded),
+                ),
+              ],
+              selected: {selectedSegment},
+              onSelectionChanged: (val) {
+                setState(() => selectedSegment = val.first);
+              },
             ),
-            const SizedBox(height: 14),
-            if (loading)
-              const AppLoadingState(message: 'Loading your trips…')
-            else if (loadError != null)
-              AppErrorState(message: loadError!, onRetry: load)
-            else if (items.isEmpty)
-              TravelEmptyState(
-                icon: Icons.luggage_outlined,
-                title: 'No trips yet',
-                message: 'Start planning your first personalised trip.',
-                actionLabel: 'Plan a trip',
-                onAction: planTrip,
-              )
-            else
-              ...items.map((raw) {
-                final trip = Map<String, dynamic>.from(raw as Map);
-                final activities = (trip['activities'] as List? ?? []);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () => openTrip(trip),
-                    child: InkCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text((trip['title'] ?? 'Trip').toString(),
+            const SizedBox(height: 16),
+
+            if (selectedSegment == 0) ...[
+              const TravelSectionHeader(
+                title: 'Your travel plans',
+                subtitle:
+                    'Open a trip when you want to add places, change the sequence or edit details.',
+              ),
+              const SizedBox(height: 14),
+              if (loading)
+                const AppLoadingState(message: 'Loading your trips…')
+              else if (loadError != null)
+                AppErrorState(message: loadError!, onRetry: load)
+              else if (plans.isEmpty)
+                TravelEmptyState(
+                  icon: Icons.luggage_outlined,
+                  title: 'No travel plans yet',
+                  message: 'Start planning your first personalised trip with custom activities and budget.',
+                  actionLabel: 'Plan a trip',
+                  onAction: planTrip,
+                )
+              else
+                ...plans.map((trip) {
+                  final activities = (trip['activities'] as List? ?? []);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => openTrip(trip),
+                      child: InkCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text((trip['title'] ?? 'Trip').toString(),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleLarge),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                          (trip['destinationArea'] ?? '')
+                                              .toString(),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.copyWith(
+                                                color: AppColors.textSecondary,
+                                              )),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuButton<String>(
+                                  tooltip: 'Trip actions',
+                                  onSelected: (value) {
+                                    if (value == 'delete') {
+                                      deleteTrip(trip['id'].toString());
+                                    }
+                                  },
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(
+                                      value: 'delete',
+                                      child: Text('Delete trip'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                StatusChip(
+                                  text: _statusText(trip),
+                                  icon: Icons.flag_outlined,
+                                  tone: _statusTone(trip),
+                                ),
+                                TravelStatusPill(
+                                  text:
+                                      '${_dateRange(trip)} · ${_tripDays(trip)} ${_tripDays(trip) == 1 ? 'day' : 'days'}',
+                                  icon: Icons.calendar_month_outlined,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '${activities.length} ${activities.length == 1 ? 'activity' : 'activities'} · ${_budgetText(trip)}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                    color: AppColors.textSecondary,
+                                  ),
+                            ),
+                            const SizedBox(height: 10),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                onPressed: () => openTrip(trip),
+                                icon: const Icon(Icons.arrow_forward_rounded),
+                                label: const Text('Continue'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+            ] else ...[
+              const TravelSectionHeader(
+                title: 'Purchased Tourism Packages',
+                subtitle:
+                    'Official read-only itineraries provided by verified tourism operators.',
+              ),
+              const SizedBox(height: 14),
+              if (loading)
+                const AppLoadingState(message: 'Loading purchased packages…')
+              else if (loadError != null)
+                AppErrorState(message: loadError!, onRetry: load)
+              else if (packages.isEmpty)
+                const TravelEmptyState(
+                  icon: Icons.verified_outlined,
+                  title: 'No purchased package trips',
+                  message: 'When you purchase a tourism package, your confirmed operator itinerary will appear here.',
+                )
+              else
+                ...packages.map((trip) {
+                  final snap = trip['packageSnapshot'] is Map
+                      ? Map<String, dynamic>.from(trip['packageSnapshot'] as Map)
+                      : <String, dynamic>{};
+                  final operatorName = (snap['operatorName'] ?? snap['operator'] ?? 'Tourism Operator').toString();
+                  final paid = trip['paidTotal'] ?? snap['price'] ?? 0;
+                  final currency = (trip['currency'] ?? snap['currency'] ?? 'MYR').toString().toUpperCase();
+                  final duration = _tripDays(trip);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => openTrip(trip),
+                      child: InkCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        (snap['title'] ?? trip['title'] ?? 'Tourism Package').toString(),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                         style: Theme.of(context)
                                             .textTheme
-                                            .titleLarge),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                        (trip['destinationArea'] ?? '')
-                                            .toString(),
-                                        maxLines: 2,
+                                            .titleLarge
+                                            ?.copyWith(fontWeight: FontWeight.w800),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        (snap['destination'] ?? trip['destinationArea'] ?? '').toString(),
+                                        maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: Theme.of(context)
                                             .textTheme
                                             .bodyMedium
-                                            ?.copyWith(
-                                              color: AppColors.textSecondary,
-                                            )),
-                                  ],
-                                ),
-                              ),
-                              PopupMenuButton<String>(
-                                tooltip: 'Trip actions',
-                                onSelected: (value) {
-                                  if (value == 'delete') {
-                                    deleteTrip(trip['id'].toString());
-                                  }
-                                },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(
-                                    value: 'delete',
-                                    child: Text('Delete trip'),
+                                            ?.copyWith(color: AppColors.textSecondary),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              StatusChip(
-                                text: _statusText(trip),
-                                icon: Icons.flag_outlined,
-                                tone: _statusTone(trip),
-                              ),
-                              TravelStatusPill(
-                                text:
-                                    '${_dateRange(trip)} · ${_tripDays(trip)} ${_tripDays(trip) == 1 ? 'day' : 'days'}',
-                                icon: Icons.calendar_month_outlined,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            '${activities.length} ${activities.length == 1 ? 'activity' : 'activities'} · ${_budgetText(trip)}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(
-                                  color: AppColors.textSecondary,
                                 ),
-                          ),
-                          const SizedBox(height: 10),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton.icon(
-                              onPressed: () => openTrip(trip),
-                              icon: const Icon(Icons.arrow_forward_rounded),
-                              label: const Text('Continue'),
+                              ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.successSoft,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.verified_rounded, size: 14, color: AppColors.success),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Purchased Package',
+                                        style: TextStyle(
+                                          color: AppColors.success,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                TravelStatusPill(
+                                  text: '${_dateRange(trip)} · $duration ${duration == 1 ? 'day' : 'days'}',
+                                  icon: Icons.calendar_month_outlined,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Operator: $operatorName · $currency $paid paid',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                    color: AppColors.textSecondary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                            const SizedBox(height: 10),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                onPressed: () => openTrip(trip),
+                                icon: const Icon(Icons.arrow_forward_rounded),
+                                label: const Text('View Itinerary'),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                }),
+            ],
           ],
         ),
       ),
