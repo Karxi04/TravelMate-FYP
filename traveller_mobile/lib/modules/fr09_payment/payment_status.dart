@@ -1,7 +1,7 @@
 String canonicalPaymentStatus(Object? raw) {
   final value = (raw ?? 'unknown').toString().trim().toLowerCase();
   return switch (value) {
-    'successful' || 'success' || 'completed' => 'succeeded',
+    'successful' || 'success' || 'completed' || 'paid' => 'succeeded',
     'canceled' => 'cancelled',
     _ => value,
   };
