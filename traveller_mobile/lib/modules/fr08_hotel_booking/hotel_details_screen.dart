@@ -62,11 +62,15 @@ class HotelDetailsScreen extends StatelessWidget {
     final cancellation = hotel['cancellation'] is Map
         ? Map<String, dynamic>.from(hotel['cancellation'] as Map)
         : <String, dynamic>{};
-    final images = (hotel['imageUrls'] as List? ?? [])
-        .map((e) => e.toString())
-        .where((e) => e.isNotEmpty)
-        .take(6)
-        .toList();
+    final cancellationDeadline = cancellation['deadline']?.toString().trim() ?? '';
+    final cancellationPenalties = (cancellation['penalties'] as List? ?? [])
+        .map((value) => value.toString())
+        .where((value) => value.isNotEmpty)
+        .join(' • ');
+    final images = <String>{
+      (hotel['mainPhoto'] ?? '').toString(),
+      ...(hotel['imageUrls'] as List? ?? []).map((e) => e.toString()),
+    }.where((e) => e.isNotEmpty).take(6).toList();
     final roomImages = (hotel['roomImageUrls'] as List? ?? [])
         .map((e) => e.toString())
         .where((e) => e.isNotEmpty)
@@ -168,7 +172,9 @@ class HotelDetailsScreen extends StatelessWidget {
                     TravelStatusPill(
                         text: hotel['refundable'] == true
                             ? 'Refundable'
-                            : 'Non-refundable',
+                            : hotel['refundable'] == false
+                                ? 'Non-refundable'
+                                : 'Refund terms unavailable',
                         icon: Icons.policy_outlined),
                   ],
                 ),
@@ -283,6 +289,14 @@ class HotelDetailsScreen extends StatelessWidget {
                             : 'Cancellation terms are not confirmed for this offer.')
                         .toString(),
                     style: const TextStyle(fontWeight: FontWeight.w700)),
+                if (cancellationDeadline.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text('Free-cancellation deadline: $cancellationDeadline'),
+                ],
+                if (cancellationPenalties.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text('Penalty details: $cancellationPenalties'),
+                ],
                 if (rules.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   ...rules.map((r) => Padding(
