@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'budget_comparison_screen.dart';
 import 'models/budget_model.dart';
+import 'package_trip_details_screen.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
@@ -788,8 +789,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                       destination.text.trim().isEmpty) return;
                   final startDate = DateTime.tryParse(start.text.trim());
                   final endDate = DateTime.tryParse(end.text.trim());
-                  if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
-                    showError(sheetContext, 'End date must be on or after the start date.');
+                  if (startDate == null ||
+                      endDate == null ||
+                      endDate.isBefore(startDate)) {
+                    showError(sheetContext,
+                        'End date must be on or after the start date.');
                     return;
                   }
                   Navigator.pop(sheetContext, {
@@ -1725,16 +1729,20 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                     : selectedFlight['price'] is num
                         ? (selectedFlight['price'] as num).toDouble()
                         : null,
-                quoteType: (selectedHotel['quoteId'] ?? '').toString().isNotEmpty
-                    ? 'hotel'
-                    : (selectedFlight['flightSearchId'] ?? '').toString().isNotEmpty
-                        ? 'flight'
-                        : '',
+                quoteType:
+                    (selectedHotel['quoteId'] ?? '').toString().isNotEmpty
+                        ? 'hotel'
+                        : (selectedFlight['flightSearchId'] ?? '')
+                                .toString()
+                                .isNotEmpty
+                            ? 'flight'
+                            : '',
                 quoteId: (selectedHotel['quoteId'] ?? '').toString(),
                 offerId: (selectedHotel['offerId'] ?? '').toString(),
                 searchId: (selectedFlight['flightSearchId'] ?? '').toString(),
                 optionId: (selectedFlight['flightOptionId'] ??
-                        selectedFlight['optionId'] ?? '')
+                        selectedFlight['optionId'] ??
+                        '')
                     .toString(),
               ),
             ),
@@ -1761,6 +1769,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           message: loadError ?? 'This trip could not be found.',
           onRetry: load,
         ),
+      );
+    }
+    if (t['tripType'] == 'package' || t['packageTrip'] == true) {
+      return PackageTripDetailsScreen(
+        tripId: widget.tripId,
+        api: api,
+        initialTrip: t,
       );
     }
     final unscheduled = (t['unscheduledSuggestions'] as List? ?? const [])
