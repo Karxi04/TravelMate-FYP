@@ -1,5 +1,6 @@
 import math
 import os
+import re
 import uuid
 from copy import deepcopy
 from datetime import date, timedelta
@@ -280,24 +281,50 @@ def _package_trip_schedule(snapshot):
             continue
         day_number = index + 1
         day_items = []
-        for item_index, raw_activity in enumerate(raw_day.get('activities') or []):
+        raw_acts = raw_day.get('activities') or []
+        if isinstance(raw_acts, str):
+            raw_acts = [x.strip() for x in raw_acts.replace('\r', '').split('\n') if x.strip()]
+        for item_index, raw_activity in enumerate(raw_acts):
             if isinstance(raw_activity, dict):
                 activity = deepcopy(raw_activity)
-                activity.setdefault('activityName', activity.get('title') or activity.get('name') or 'Package activity')
+                name = activity.get('title') or activity.get('name') or activity.get('activityName') or 'Package activity'
+                time_slot = activity.get('scheduledStartTime') or activity.get('timeSlot') or activity.get('time')
+                time_match = re.match(r'^(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\s*[-:–—]\s*(.+)$', str(name))
+                if time_match:
+                    if not time_slot:
+                        time_slot = time_match.group(1).strip()
+                    name = time_match.group(2).strip()
+                activity['activityName'] = name
+                if time_slot:
+                    activity['timeSlot'] = str(time_slot).strip()
+                    activity['scheduledStartTime'] = str(time_slot).strip()
             else:
-                activity = {
-                    'activityName': str(raw_activity),
-                    'category': 'Package itinerary',
-                }
+                act_text = str(raw_activity).strip()
+                time_match = re.match(r'^(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\s*[-:–—]\s*(.+)$', act_text)
+                if time_match:
+                    activity = {
+                        'activityName': time_match.group(2).strip(),
+                        'timeSlot': time_match.group(1).strip(),
+                        'scheduledStartTime': time_match.group(1).strip(),
+                        'category': 'Package itinerary',
+                    }
+                else:
+                    activity = {
+                        'activityName': act_text,
+                        'category': 'Package itinerary',
+                    }
             activity.setdefault('activityId', f'package_{day_number}_{item_index + 1}')
             activity.update({'dayNo': day_number, 'source': 'purchased_package_snapshot'})
             day_items.append(activity)
             activities.append(activity)
+        raw_meals = raw_day.get('meals') or []
+        if isinstance(raw_meals, str):
+            raw_meals = [x.strip() for x in raw_meals.replace('\r', '').split('\n') if x.strip()]
         schedule.append({
             'dayNo': day_number,
             'dayDate': (start + timedelta(days=index)).isoformat() if start else '',
             'title': raw_day.get('title'), 'description': raw_day.get('description'),
-            'activities': day_items, 'meals': deepcopy(raw_day.get('meals') or []),
+            'activities': day_items, 'meals': deepcopy(raw_meals),
             'accommodation': raw_day.get('accommodation'),
             'transportNotes': raw_day.get('transportNotes'),
             'planningBlocks': [], 'estimatedCost': 0,
