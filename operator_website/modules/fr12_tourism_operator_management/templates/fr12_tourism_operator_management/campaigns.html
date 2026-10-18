@@ -1,6 +1,230 @@
-{% extends 'portal_base.html' %}{% block title %}Campaigns | TravelMate{% endblock %}{% block content %}
-{% set p=form or {} %}<div class="page-title"><div><span class="eyebrow">PROMOTIONS</span><h1>Campaigns</h1><p>Promote one of your approved travel packages.</p></div><a class="btn primary" href="#campaign-editor">Create campaign</a></div>
-<section class="card cream campaign-editor" id="campaign-editor"><div class="section-heading"><span>+</span><div><h3>Create a campaign</h3><p>Changed approved campaigns return to Administrator review.</p></div></div><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="campaign-form-grid"><div class="field"><label for="campaignTitle">Campaign title *</label><input id="campaignTitle" class="input" name="campaignTitle" value="{{ p.get('campaignTitle','') }}" required></div><div class="field"><label for="packageId">Approved package *</label><select id="packageId" class="input" name="packageId" required><option value="">Select a package</option>{% for package in approved_packages %}<option value="{{ package.id }}" {% if package.id|string == p.get('packageId','')|string %}selected{% endif %}>{{ package.get('title',package.get('packageTitle','Package')) }}</option>{% endfor %}</select>{% if not approved_packages %}<small class="field-help">Create and approve a package before creating a campaign.</small>{% endif %}</div><div class="field"><label for="startDate">Starts</label><input id="startDate" class="input" type="date" name="startDate" value="{{ p.get('startDate','') }}"></div><div class="field"><label for="endDate">Ends</label><input id="endDate" class="input" type="date" name="endDate" value="{{ p.get('endDate','') }}"></div><div class="field"><label for="discountType">Promotion type</label><select id="discountType" class="input" name="discountType"><option value="percentage" {% if p.get('discountType','percentage')=='percentage' %}selected{% endif %}>Percentage</option><option value="fixed" {% if p.get('discountType')=='fixed' %}selected{% endif %}>Fixed amount</option></select></div><div class="field"><label for="discountValue">Promotion value</label><input id="discountValue" class="input" name="discountValue" type="number" min="0" step="0.01" value="{{ p.get('discountValue','') }}"></div><div class="field"><label for="promoCode">Promo code</label><input id="promoCode" class="input" name="promoCode" value="{{ p.get('promoCode','') }}"></div><div class="field"><label for="bannerImageUrl">Banner image URL</label><input id="bannerImageUrl" class="input" name="bannerImageUrl" type="url" value="{{ p.get('bannerImageUrl','') }}"></div><div class="field full-span"><label for="description">Description</label><textarea id="description" class="input" name="description">{{ p.get('description','') }}</textarea></div><div class="field full-span"><label for="termsConditions">Terms and notes</label><textarea id="termsConditions" class="input" name="termsConditions">{{ p.get('termsConditions','') }}</textarea></div></div><button class="btn primary" type="submit">Save campaign draft</button></form></section>
-<div class="toolbar"><form class="actions" method="get"><input class="input search-input" name="q" value="{{ query|default('') }}" placeholder="Search campaigns"><select class="input filter-input" name="status"><option value="all">All statuses</option>{% for value,label in [('draft','Draft'),('pending','Under review'),('approved','Approved'),('rejected','Needs changes'),('expired','Expired')] %}<option value="{{value}}" {% if status|default('all')==value %}selected{% endif %}>{{label}}</option>{% endfor %}</select><button class="btn outline">Filter</button></form></div>
-<section class="table-wrap"><table><thead><tr><th>Campaign</th><th>Related package</th><th>Promotion</th><th>Start / end</th><th>Status</th><th>Actions</th></tr></thead><tbody>{% for item in items %}{% set state=item.get('displayStatus',item.get('reviewStatus','draft')) %}<tr><td><strong>{{ item.get('campaignTitle','Campaign') }}</strong><br><small>{{ item.get('description','') }}</small></td><td>{{ item.get('packageTitle','Package') }}</td><td>{% if item.get('discountValue') is not none and item.get('discountValue') != 0 %}{{ item.get('discountValue') }}{% if item.get('discountType')=='percentage' %}%{% else %} fixed{% endif %}{% else %}Promotion{% endif %}{% if item.get('promoCode') %}<br><small>{{ item.get('promoCode') }}</small>{% endif %}</td><td>{{ item.get('startDate','—') or '—' }}<br>{{ item.get('endDate','—') or '—' }}</td><td><span class="status {{state}}">{{ {'pending':'Under review','rejected':'Needs changes'}.get(state,state|title) }}</span>{% if item.get('reviewComment') %}<p class="table-feedback">{{ item.get('reviewComment') }}</p>{% endif %}</td><td><div class="actions">{% if state not in ['pending','expired'] %}<a class="btn outline" href="{{ url_for('operator_fr12.edit_campaign_page', campaign_id=item.id) }}">Edit</a>{% endif %}{% if state in ['draft','rejected'] %}<form method="post" action="/campaigns/{{item.id}}/submit"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn primary">Submit</button></form><form method="post" action="/campaigns/{{item.id}}/delete" onsubmit="return confirm('Delete this campaign draft?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn danger">Delete</button></form>{% elif state=='approved' %}<span class="muted">Published</span>{% elif state=='pending' %}<span class="muted">Awaiting review</span>{% endif %}</div></td></tr>{% else %}<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">◇</div><strong>No campaigns yet</strong><p>Campaigns can promote one of your approved travel packages.</p><a class="btn primary" href="#campaign-editor">Create campaign</a></div></td></tr>{% endfor %}</tbody></table></section>
+{% extends 'portal_base.html' %}
+{% block title %}Promotional Campaigns | TravelMate{% endblock %}
+
+{% block content %}
+{% set p = form or {} %}
+<div class="page-title">
+  <div>
+    <span class="eyebrow">Marketing & Promotions</span>
+    <h1>Promotional Campaigns</h1>
+    <p>Create special offers and promotional discount codes for your approved Penang packages.</p>
+  </div>
+  <a class="btn primary" href="#campaign-editor">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    <span>Create Campaign</span>
+  </a>
+</div>
+
+<!-- Campaign Creation Form Card -->
+<section class="card campaign-editor" id="campaign-editor" style="margin-bottom: 28px;">
+  <div class="form-section">
+    <div class="section-heading">
+      <span>+</span>
+      <div>
+        <h3>Create Promotional Campaign</h3>
+        <p>Promotions apply to verified packages. New campaigns require Administrator approval before going live.</p>
+      </div>
+    </div>
+
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="campaign-form-grid">
+        <div class="field">
+          <label for="campaignTitle">Campaign Title *</label>
+          <input id="campaignTitle" class="input" name="campaignTitle" value="{{ p.get('campaignTitle', '') }}" placeholder="e.g. Year-End Heritage Discovery 15% Off" required>
+        </div>
+
+        <div class="field">
+          <label for="packageId">Linked Approved Package *</label>
+          <select id="packageId" class="input" name="packageId" required>
+            <option value="">Select an approved package</option>
+            {% for package in approved_packages %}
+              <option value="{{ package.id }}" {% if package.id|string == p.get('packageId', '')|string %}selected{% endif %}>
+                {{ package.get('title', package.get('packageTitle', 'Package')) }}
+              </option>
+            {% endfor %}
+          </select>
+          {% if not approved_packages %}
+            <small class="field-help" style="color: var(--warning);">
+              Note: You need at least one approved package before launching a campaign.
+            </small>
+          {% endif %}
+        </div>
+
+        <div class="field">
+          <label for="startDate">Campaign Start Date</label>
+          <input id="startDate" class="input" type="date" name="startDate" value="{{ p.get('startDate', '') }}">
+        </div>
+
+        <div class="field">
+          <label for="endDate">Campaign End Date</label>
+          <input id="endDate" class="input" type="date" name="endDate" value="{{ p.get('endDate', '') }}">
+        </div>
+
+        <div class="field">
+          <label for="discountType">Discount Type</label>
+          <select id="discountType" class="input" name="discountType">
+            <option value="percentage" {% if p.get('discountType', 'percentage') == 'percentage' %}selected{% endif %}>Percentage (%)</option>
+            <option value="fixed" {% if p.get('discountType') == 'fixed' %}selected{% endif %}>Fixed Amount (MYR)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="discountValue">Discount Value</label>
+          <input id="discountValue" class="input" name="discountValue" type="number" min="0" step="0.01" value="{{ p.get('discountValue', '') }}" placeholder="e.g. 15 for 15% or 30.00 for RM30">
+        </div>
+
+        <div class="field">
+          <label for="promoCode">Promo Code (Optional)</label>
+          <input id="promoCode" class="input" name="promoCode" value="{{ p.get('promoCode', '') }}" placeholder="e.g. PENANG15">
+        </div>
+
+        <div class="field">
+          <label for="bannerImageUrl">Banner Image URL</label>
+          <input id="bannerImageUrl" class="input" name="bannerImageUrl" type="url" value="{{ p.get('bannerImageUrl', '') }}" placeholder="https://...">
+        </div>
+
+        <div class="field full-span">
+          <label for="description">Campaign Description & Value Proposition</label>
+          <textarea id="description" class="input" name="description" placeholder="Explain the special offer or promotion details for travellers...">{{ p.get('description', '') }}</textarea>
+        </div>
+
+        <div class="field full-span">
+          <label for="termsConditions">Terms, Conditions & Redemptions</label>
+          <textarea id="termsConditions" class="input" name="termsConditions" placeholder="Eligibility, booking dates, redemption limits, or exclusions...">{{ p.get('termsConditions', '') }}</textarea>
+        </div>
+      </div>
+
+      <div style="margin-top: 18px; display: flex; justify-content: flex-end;">
+        <button class="btn primary" type="submit">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          <span>Save Campaign Draft</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <form class="actions" method="get">
+    <input class="input search-input" name="q" value="{{ query|default('') }}" placeholder="Search campaigns...">
+    <select class="input filter-input" name="status" aria-label="Filter by campaign status">
+      <option value="all">All statuses</option>
+      {% for value, label in [('draft', 'Drafts'), ('pending', 'Under Review'), ('approved', 'Approved'), ('rejected', 'Needs Changes'), ('expired', 'Expired')] %}
+        <option value="{{ value }}" {% if status|default('all') == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn outline" type="submit">Filter</button>
+    {% if query or (status and status != 'all') %}
+      <a class="btn outline" href="{{ url_for('operator_fr12.campaigns') }}" style="color: var(--ink-muted);">Clear</a>
+    {% endif %}
+  </form>
+
+  <span class="muted" style="font-size: 13px; font-weight: 600;">
+    {{ items|length }} campaign{% if items|length != 1 %}s{% endif %}
+  </span>
+</div>
+
+<!-- Campaigns Table -->
+<section class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="min-width: 240px;">Campaign</th>
+        <th style="min-width: 200px;">Related Package</th>
+        <th style="min-width: 140px;">Promotion</th>
+        <th style="min-width: 140px;">Schedule</th>
+        <th style="min-width: 120px;">Status</th>
+        <th style="min-width: 180px; text-align: right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+        {% set state = item.get('displayStatus', item.get('reviewStatus', 'draft'))|lower %}
+        <tr>
+          <td>
+            <strong style="color: var(--ink); font-size: 14px;">{{ item.get('campaignTitle', 'Campaign') }}</strong>
+            {% if item.get('description') %}
+              <div style="font-size: 12px; color: var(--ink-secondary); margin-top: 3px; line-height: 1.4; max-width: 320px;">
+                {{ item.get('description', '') }}
+              </div>
+            {% endif %}
+          </td>
+
+          <td>
+            <span style="font-weight: 600; color: var(--ink);">{{ item.get('packageTitle', 'Package') }}</span>
+          </td>
+
+          <td>
+            <div style="font-weight: 700; color: var(--bluegrey);">
+              {% if item.get('discountValue') is not none and item.get('discountValue') != 0 %}
+                {{ item.get('discountValue') }}{% if item.get('discountType') == 'percentage' %}% OFF{% else %} MYR OFF{% endif %}
+              {% else %}
+                Promotion
+              {% endif %}
+            </div>
+            {% if item.get('promoCode') %}
+              <div style="font-size: 11px; color: var(--ink-muted); margin-top: 2px;">
+                Code: <code>{{ item.get('promoCode') }}</code>
+              </div>
+            {% endif %}
+          </td>
+
+          <td style="font-size: 12px; color: var(--ink-secondary);">
+            <div>Start: {{ item.get('startDate', '—') or '—' }}</div>
+            <div>End: {{ item.get('endDate', '—') or '—' }}</div>
+          </td>
+
+          <td>
+            <span class="status {{ state }}">
+              {{ {'pending': 'Under Review', 'rejected': 'Needs Changes', 'approved': 'Approved', 'expired': 'Expired', 'draft': 'Draft'}.get(state, state|title) }}
+            </span>
+            {% if item.get('reviewComment') %}
+              <div class="table-feedback">
+                {{ item.get('reviewComment') }}
+              </div>
+            {% endif %}
+          </td>
+
+          <td style="text-align: right;">
+            <div class="actions" style="justify-content: flex-end;">
+              {% if state not in ['pending', 'expired'] %}
+                <a class="btn outline" href="{{ url_for('operator_fr12.edit_campaign_page', campaign_id=item.id) }}">Edit</a>
+              {% endif %}
+
+              {% if state in ['draft', 'rejected'] %}
+                <form method="post" action="/campaigns/{{ item.id }}/submit" style="display: inline-block; margin: 0;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn primary" type="submit">Submit</button>
+                </form>
+                <form method="post" action="/campaigns/{{ item.id }}/delete" onsubmit="return confirm('Delete this campaign draft?')" style="display: inline-block; margin: 0;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn danger" type="submit">Delete</button>
+                </form>
+              {% elif state == 'approved' %}
+                <span class="muted" style="font-size: 12px; font-weight: 600; color: var(--success);">Published</span>
+              {% elif state == 'pending' %}
+                <span class="muted" style="font-size: 12px; font-weight: 500;">Awaiting Review</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="6">
+            <div class="empty-state">
+              <div class="empty-icon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+              </div>
+              <strong>No campaigns yet</strong>
+              <p>Create a promotional discount code or seasonal campaign for your approved packages.</p>
+              <a class="btn primary" href="#campaign-editor">Create Campaign</a>
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
 {% endblock %}

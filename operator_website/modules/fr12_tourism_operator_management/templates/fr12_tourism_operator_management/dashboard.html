@@ -1,6 +1,264 @@
-{% extends 'portal_base.html' %}{% block title %}Operator Dashboard | TravelMate{% endblock %}{% block content %}
-<div class="page-title"><div><span class="eyebrow">TOURISM OPERATOR</span><h1>Welcome back, {{ profile.get('name','Operator') }}</h1><p>{% if profile.get('companyName') %}{{ profile.get('companyName') }} · {% endif %}Here is what needs your attention today.</p></div><div class="actions"><a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">View packages</a><a class="btn primary" href="{{ url_for('operator_fr12.new_package') }}">Create package</a></div></div>
-<div class="grid g4 operator-stats"><div class="card cream"><div class="metric">{{ summary.get('totalPackages',0) }}</div><div class="metric-label">Total packages</div></div><div class="card"><div class="metric">{{ summary.get('draftPackages',0) }}</div><div class="metric-label">Draft packages</div></div><div class="card"><div class="metric">{{ summary.get('pendingPackages',0) }}</div><div class="metric-label">Under review</div></div><div class="card"><div class="metric">{{ summary.get('approvedPackages',0) }}</div><div class="metric-label">Approved packages</div></div><div class="card"><div class="metric">{{ summary.get('rejectedPackages',0) }}</div><div class="metric-label">Needs changes</div></div><div class="card"><div class="metric">{{ summary.get('activeCampaigns',0) }}</div><div class="metric-label">Active campaigns</div></div><div class="card"><div class="metric">{{ summary.get('pendingCampaigns',0) }}</div><div class="metric-label">Campaigns awaiting review</div></div></div>
-<div class="grid g2 dashboard-panels"><section class="card"><div class="card-heading"><div><span class="eyebrow">NEEDS YOUR ATTENTION</span><h3>Keep work moving</h3></div></div>{% if attention %}<div class="attention-list">{% for item in attention %}<article class="attention-item"><span class="status rejected">{{ item.kind }}</span><strong>{{ item.title }}</strong><p>{{ item.reason }}</p><a class="btn outline" href="{{ item.url }}">Review</a></article>{% endfor %}</div>{% else %}<div class="empty-state compact"><div class="empty-icon">✓</div><strong>Nothing needs your attention</strong><p>Your packages and campaigns are up to date.</p></div>{% endif %}</section><section class="card"><div class="card-heading"><div><span class="eyebrow">QUICK ACTIONS</span><h3>Continue your work</h3></div></div><div class="quick-list"><a href="{{ url_for('operator_fr12.new_package') }}"><span class="quick-icon">□</span><span><strong>Create a package</strong><small>Build a complete itinerary and save it as a draft.</small></span><b>›</b></a><a href="{{ url_for('operator_fr12.packages', status='rejected') }}"><span class="quick-icon">!</span><span><strong>Review changes</strong><small>Address Administrator feedback before resubmitting.</small></span><b>›</b></a><a href="{{ url_for('operator_fr12.campaigns') }}"><span class="quick-icon">◇</span><span><strong>Manage campaigns</strong><small>Promote one of your approved packages.</small></span><b>›</b></a></div></section></div>
-<section class="card dashboard-profile"><div class="card-heading"><div><span class="eyebrow">ACCOUNT</span><h3>Business profile</h3></div><a class="btn outline" href="{{ url_for('operator_fr01.profile') }}">Edit profile</a></div><div class="grid g3"><div class="detail-row"><span>Company</span><strong>{{ profile.get('companyName','Not provided') }}</strong></div><div class="detail-row"><span>Email</span><strong>{{ profile.get('email','Not provided') }}</strong></div><div class="detail-row"><span>Verification</span><span class="status {{ profile.get('verificationStatus','pending') }}">{{ {'pending':'Pending verification','approved':'Verified','verified':'Verified','rejected':'Needs attention'}.get(profile.get('verificationStatus','pending'),'Needs attention') }}</span></div></div></section>
+{% extends 'portal_base.html' %}
+{% block title %}Operator Dashboard | TravelMate{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <span class="eyebrow">Tourism Operator Workspace</span>
+    <h1>Welcome back, {{ profile.get('name', 'Operator') }}</h1>
+    <p>
+      {% if profile.get('companyName') %}
+        <strong>{{ profile.get('companyName') }}</strong> •
+      {% endif %}
+      Manage your Penang tourism packages, monitor moderation reviews, and launch promotional campaigns.
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      <span>View Packages</span>
+    </a>
+    <a class="btn primary" href="{{ url_for('operator_fr12.new_package') }}">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <span>Create Package</span>
+    </a>
+  </div>
+</div>
+
+<!-- Package Catalog Metrics Pipeline -->
+<div class="card-heading" style="margin-top: 8px;">
+  <div>
+    <span class="eyebrow">Catalog Overview</span>
+    <h3>Package Performance Pipeline</h3>
+  </div>
+  <span class="muted" style="font-size: 12px;">Authoritative Firestore Records</span>
+</div>
+
+<div class="grid g4 operator-stats">
+  <div class="metric-card accent-blue">
+    <div class="metric-card-top">
+      <span class="metric-label">Total Packages</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.get('totalPackages', 0) }}</div>
+    <div class="metric-help">All created itineraries</div>
+  </div>
+
+  <div class="metric-card accent-green">
+    <div class="metric-card-top">
+      <span class="metric-label">Approved & Published</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.get('approvedPackages', 0) }}</div>
+    <div class="metric-help">Live in Traveller Mobile App</div>
+  </div>
+
+  <div class="metric-card accent-amber">
+    <div class="metric-card-top">
+      <span class="metric-label">Under Review</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.get('pendingPackages', 0) }}</div>
+    <div class="metric-help">Awaiting Administrator review</div>
+  </div>
+
+  <div class="metric-card accent-rose">
+    <div class="metric-card-top">
+      <span class="metric-label">Needs Changes</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.get('rejectedPackages', 0) }}</div>
+    <div class="metric-help">Requires operator edits</div>
+  </div>
+</div>
+
+<!-- Secondary Marketing & Pipeline Stats -->
+<div class="grid g4" style="margin-top: 20px;">
+  <div class="metric-card">
+    <div class="metric-card-top">
+      <span class="metric-label">Draft Packages</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.get('draftPackages', 0) }}</div>
+    <div class="metric-help">In-progress, unsubmitted drafts</div>
+  </div>
+
+  <div class="metric-card accent-blue">
+    <div class="metric-card-top">
+      <span class="metric-label">Active Campaigns</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.get('activeCampaigns', 0) }}</div>
+    <div class="metric-help">Currently running promotions</div>
+  </div>
+
+  <div class="metric-card accent-amber">
+    <div class="metric-card-top">
+      <span class="metric-label">Campaigns Under Review</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.get('pendingCampaigns', 0) }}</div>
+    <div class="metric-help">Awaiting promotion approval</div>
+  </div>
+
+  <div class="metric-card accent-green">
+    <div class="metric-card-top">
+      <span class="metric-label">Package Bookings</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.get('totalBookings', 0) }}</div>
+    <div class="metric-help">{{ summary.get('paidBookings', 0) }} paid Stripe test orders</div>
+  </div>
+</div>
+
+<!-- Main Split: Attention vs Quick Actions -->
+<div class="grid g2 dashboard-panels" style="margin-top: 24px;">
+  <section class="card">
+    <div class="card-heading">
+      <div>
+        <span class="eyebrow">Action Required</span>
+        <h3>Moderation Attention</h3>
+      </div>
+    </div>
+    {% if attention %}
+      <div class="attention-list">
+        {% for item in attention %}
+          <article class="attention-item">
+            <div class="attention-content">
+              <span class="status rejected">{{ item.kind }}</span>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.reason }}</p>
+            </div>
+            <a class="btn outline" href="{{ item.url }}">
+              <span>Review</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </a>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state" style="padding: 32px 16px;">
+        <div class="empty-icon" style="background: var(--success-bg); color: var(--success);" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <strong>All Clear</strong>
+        <p>None of your packages or campaigns currently require revisions.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-heading">
+      <div>
+        <span class="eyebrow">Operator Tools</span>
+        <h3>Quick Actions</h3>
+      </div>
+    </div>
+    <div class="quick-list">
+      <a href="{{ url_for('operator_fr12.new_package') }}">
+        <div class="quick-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </div>
+        <div>
+          <strong>Create New Package</strong>
+          <small>Build a complete itinerary and submit it for review.</small>
+        </div>
+        <span class="quick-arrow" aria-hidden="true">›</span>
+      </a>
+
+      <a href="{{ url_for('operator_fr12.packages', status='rejected') }}">
+        <div class="quick-icon" style="background: var(--danger-bg); color: var(--danger);" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div>
+          <strong>Review Moderation Feedback</strong>
+          <small>Address Administrator review comments before resubmitting.</small>
+        </div>
+        <span class="quick-arrow" aria-hidden="true">›</span>
+      </a>
+
+      <a href="{{ url_for('operator_fr12.campaigns') }}">
+        <div class="quick-icon" style="background: var(--warning-bg); color: var(--warning);" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        </div>
+        <div>
+          <strong>Manage Promotional Campaigns</strong>
+          <small>Create promotional discounts on approved packages.</small>
+        </div>
+        <span class="quick-arrow" aria-hidden="true">›</span>
+      </a>
+
+      <a href="{{ url_for('operator_fr12.analytics') }}">
+        <div class="quick-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        </div>
+        <div>
+          <strong>View Business Analytics</strong>
+          <small>Inspect performance records and download PDF reports.</small>
+        </div>
+        <span class="quick-arrow" aria-hidden="true">›</span>
+      </a>
+
+      <a href="{{ url_for('operator_fr12.bookings') }}">
+        <div class="quick-icon" style="background: rgba(43, 108, 176, 0.15); color: #2B6CB0;" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </div>
+        <div>
+          <strong>Manage Package Bookings</strong>
+          <small>Track traveller orders, group party sizes, and Stripe payments.</small>
+        </div>
+        <span class="quick-arrow" aria-hidden="true">›</span>
+      </a>
+    </div>
+  </section>
+</div>
+
+<!-- Business Profile Summary Section -->
+<section class="card dashboard-profile" style="margin-top: 24px;">
+  <div class="card-heading">
+    <div>
+      <span class="eyebrow">Organization Identity</span>
+      <h3>Registered Tourism Business</h3>
+    </div>
+    <a class="btn outline" href="{{ url_for('operator_fr01.profile') }}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      <span>Edit Business Profile</span>
+    </a>
+  </div>
+  <div class="grid g3">
+    <div class="detail-row">
+      <span>Company / Operating Name</span>
+      <strong>{{ profile.get('companyName', profile.get('businessName', 'Not provided')) }}</strong>
+    </div>
+    <div class="detail-row">
+      <span>Official Contact Email</span>
+      <strong>{{ profile.get('email', 'Not provided') }}</strong>
+    </div>
+    <div class="detail-row">
+      <span>Verification Status</span>
+      <div>
+        {% set v_status = profile.get('verificationStatus', 'pending')|lower %}
+        <span class="status {{ v_status }}">
+          {{ {'pending': 'Pending Verification', 'approved': 'Verified Partner', 'verified': 'Verified Partner', 'rejected': 'Needs Attention', 'disabled': 'Disabled'}.get(v_status, v_status|title) }}
+        </span>
+      </div>
+    </div>
+  </div>
+</section>
 {% endblock %}

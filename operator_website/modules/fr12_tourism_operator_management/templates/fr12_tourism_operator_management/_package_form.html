@@ -1,43 +1,1544 @@
-{% set p = form or {} %}
+{% set p = form or item or {} %}
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<section class="form-section"><div class="section-heading"><span>1</span><div><h3>Package basics</h3><p>Give travellers a clear overview.</p></div></div>
-  <div class="package-form-grid">
-    <div class="field"><label>Package title *</label><input class="input" name="title" value="{{ p.get('title', p.get('packageTitle','')) }}" required></div>
-    <div class="field"><label>Destination *</label><input class="input" name="destination" value="{{ p.get('destination', p.get('destinationName','')) }}" required></div>
-    <div class="field"><label>Destination area</label><input class="input" name="destinationArea" value="{{ p.get('destinationArea','') }}" placeholder="George Town, Penang"></div>
-    <div class="field"><label>Category</label><input class="input" name="category" value="{{ p.get('category','') }}" placeholder="Culture, family, nature"></div>
-    <div class="field full-span"><label>Short description</label><input class="input" name="shortDescription" maxlength="180" value="{{ p.get('shortDescription','') }}"></div>
-    <div class="field full-span"><label>Full description</label><textarea class="input" name="fullDescription">{{ p.get('fullDescription', p.get('description','')) }}</textarea></div>
+
+<!-- =========================================================================
+     HUMAN-DESIGNED 6-STEP PROGRESSIVE STEPPER
+     ========================================================================= -->
+<nav class="builder-stepper" aria-label="Package creation progress">
+  <button type="button" class="stepper-step active" data-step="1">
+    <span class="stepper-num">1</span>
+    <span class="stepper-text">
+      <strong>Basic Info</strong>
+      <small>Title & Cover Photo</small>
+    </span>
+  </button>
+  <div class="stepper-divider"></div>
+  <button type="button" class="stepper-step" data-step="2">
+    <span class="stepper-num">2</span>
+    <span class="stepper-text">
+      <strong>Pricing & Dates</strong>
+      <small>MYR Rates & Schedule</small>
+    </span>
+  </button>
+  <div class="stepper-divider"></div>
+  <button type="button" class="stepper-step" data-step="3">
+    <span class="stepper-num">3</span>
+    <span class="stepper-text">
+      <strong>Inclusions</strong>
+      <small>Covered Services & Stay</small>
+    </span>
+  </button>
+  <div class="stepper-divider"></div>
+  <button type="button" class="stepper-step" data-step="4">
+    <span class="stepper-num">4</span>
+    <span class="stepper-text">
+      <strong>Policies & Terms</strong>
+      <small>Exclusions & Rules</small>
+    </span>
+  </button>
+  <div class="stepper-divider"></div>
+  <button type="button" class="stepper-step" data-step="5">
+    <span class="stepper-num">5</span>
+    <span class="stepper-text">
+      <strong>Daily Itinerary</strong>
+      <small>Schedule & Activities</small>
+    </span>
+  </button>
+  <div class="stepper-divider"></div>
+  <button type="button" class="stepper-step" data-step="6">
+    <span class="stepper-num">6</span>
+    <span class="stepper-text">
+      <strong>Brochure & Submit</strong>
+      <small>Live Preview & Save</small>
+    </span>
+  </button>
+</nav>
+
+<!-- =========================================================================
+     STEP 1: BASIC INFORMATION & COVER IMAGE
+     ========================================================================= -->
+<div class="builder-step-panel active" id="step-panel-1">
+  <div class="step-header-box">
+    <div>
+      <span class="eyebrow">STEP 1 OF 6 • BASIC INFORMATION</span>
+      <h2>Package Identity & Penang Destination</h2>
+      <p>Define the core title, destination area, duration, and cover image presented in the traveller catalog.</p>
+    </div>
+    <span class="step-badge">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <span>Required fields marked with *</span>
+    </span>
   </div>
-</section>
-<section class="form-section"><div class="section-heading"><span>2</span><div><h3>Duration, pricing and capacity</h3><p>All prices are shown in the selected currency.</p></div></div>
+
   <div class="package-form-grid">
-    <div class="field"><label>Days *</label><input class="input" name="durationDays" type="number" min="1" value="{{ p.get('durationDays',1) }}" required></div>
-    <div class="field"><label>Nights</label><input class="input" name="durationNights" type="number" min="0" value="{{ p.get('durationNights','') }}"></div>
-    <div class="field"><label>Currency</label><input class="input" name="currency" maxlength="3" value="{{ p.get('currency','MYR') }}"></div>
-    <div class="field"><label>Price basis</label><select class="input" name="priceBasis"><option value="per_person" {% if p.get('priceBasis','per_person')=='per_person' %}selected{% endif %}>Per person</option><option value="per_group" {% if p.get('priceBasis')=='per_group' %}selected{% endif %}>Per group</option></select></div>
-    <div class="field"><label>Adult price *</label><input class="input" name="adultPrice" type="number" min="0" step="0.01" value="{{ p.get('adultPrice', p.get('price','')) }}" required></div>
-    <div class="field"><label>Child price</label><input class="input" name="childPrice" type="number" min="0" step="0.01" value="{{ p.get('childPrice','') }}"></div>
-    <div class="field"><label>Original price</label><input class="input" name="originalPrice" type="number" min="0" step="0.01" value="{{ p.get('originalPrice','') }}"></div>
-    <div class="field"><label>Promotional price</label><input class="input" name="promotionalPrice" type="number" min="0" step="0.01" value="{{ p.get('promotionalPrice','') }}"></div>
-    <div class="field"><label>Promotion starts</label><input class="input" name="promotionStart" type="date" value="{{ p.get('promotionStart','') }}"></div>
-    <div class="field"><label>Promotion ends</label><input class="input" name="promotionEnd" type="date" value="{{ p.get('promotionEnd','') }}"></div>
-    <div class="field"><label>Minimum travellers</label><input class="input" name="minimumTravellers" type="number" min="1" value="{{ p.get('minimumTravellers','') }}"></div>
-    <div class="field"><label>Maximum travellers</label><input class="input" name="maximumTravellers" type="number" min="1" value="{{ p.get('maximumTravellers', p.get('maxTravellers','')) }}"></div>
-    <div class="field full-span"><label><input type="checkbox" name="taxIncluded" {% if p.get('taxIncluded') %}checked{% endif %}> Tax included</label><input class="input" name="taxNotes" value="{{ p.get('taxNotes','') }}" placeholder="Optional tax notes"></div>
+    <div class="field full-span">
+      <label for="title">
+        <span>Package Title *</span>
+        <span class="field-destination-badge brochure">Appears on Mobile Catalog & Brochure Cover</span>
+      </label>
+      <input id="title" class="input" name="title" value="{{ p.get('title', p.get('packageTitle', '')) }}" placeholder="e.g. George Town UNESCO Heritage & Michelin Hawker Food Walk" required>
+      <span class="field-help">Use a clear, evocative title highlighting the signature Penang experience.</span>
+    </div>
+
+    <div class="field">
+      <label for="destination">
+        <span>Destination City / Island *</span>
+        <span class="field-destination-badge brochure">Brochure Header</span>
+      </label>
+      <input id="destination" class="input" name="destination" value="{{ p.get('destination', p.get('destinationName', 'George Town, Penang')) }}" placeholder="e.g. George Town, Penang" required>
+      <span class="field-help">Primary Penang destination city, town or island locality.</span>
+    </div>
+
+    <div class="field">
+      <label for="destinationArea">
+        <span>Destination Precinct / Sub-Locality</span>
+        <span class="field-destination-badge internal">Penang Precinct</span>
+      </label>
+      <input id="destinationArea" class="input" name="destinationArea" value="{{ p.get('destinationArea', '') }}" placeholder="e.g. UNESCO Heritage Core / Clan Jetties / Batu Ferringhi">
+      <span class="field-help">Helpful neighborhood context for travellers exploring Penang.</span>
+    </div>
+
+    <div class="field">
+      <label for="category">
+        <span>Experience Theme / Category</span>
+        <span class="field-destination-badge brochure">Catalog Filter</span>
+      </label>
+      <select id="category" class="input" name="category">
+        {% set cur_cat = p.get('category', '') %}
+        <option value="" {% if not cur_cat %}selected{% endif %}>Select primary theme...</option>
+        <option value="Culture & Heritage" {% if cur_cat == 'Culture & Heritage' or 'Heritage' in cur_cat %}selected{% endif %}>Culture & Heritage (Historical & Shophouse trails)</option>
+        <option value="Gastronomy & Street Food" {% if 'Gastronomy' in cur_cat or 'Food' in cur_cat %}selected{% endif %}>Gastronomy & Street Food (Hawker & Michelin culinary)</option>
+        <option value="Eco & Nature" {% if 'Nature' in cur_cat or 'Eco' in cur_cat %}selected{% endif %}>Eco & Nature (Penang Hill & National Park)</option>
+        <option value="Coastal & Island" {% if 'Coastal' in cur_cat or 'Beach' in cur_cat or 'Island' in cur_cat %}selected{% endif %}>Coastal & Island (Batu Ferringhi & Strait cruises)</option>
+        <option value="Family & Leisure" {% if 'Family' in cur_cat or 'Leisure' in cur_cat %}selected{% endif %}>Family & Leisure (Interactive sights & parks)</option>
+      </select>
+      <span class="field-help">Guides traveller discovery in the TravelMate mobile app.</span>
+    </div>
+
+    <div class="field">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label for="durationDays">
+            <span>Duration (Days) *</span>
+          </label>
+          <input id="durationDays" class="input" name="durationDays" type="number" min="1" value="{{ p.get('durationDays', 1) }}" required>
+          <span class="field-help">Calendar days of activities.</span>
+        </div>
+        <div>
+          <label for="durationNights">
+            <span>Night Stays</span>
+          </label>
+          <input id="durationNights" class="input" name="durationNights" type="number" min="0" value="{{ p.get('durationNights', 0) }}" placeholder="0 for single day">
+          <span class="field-help">0 for day trips without hotel.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="field full-span">
+      <label for="shortDescription">
+        <span>Catchy Lead-in Summary (max 180 chars)</span>
+        <span class="field-destination-badge brochure">Brochure Hero Subtitle</span>
+      </label>
+      <input id="shortDescription" class="input" name="shortDescription" maxlength="180" value="{{ p.get('shortDescription', '') }}" placeholder="e.g. Savor century-old street dishes and uncover secret clan temples with licensed local Penang historians.">
+      <span class="field-help">Appears directly beneath the title on mobile cards and the brochure cover banner.</span>
+    </div>
+
+    <div class="field full-span">
+      <label for="fullDescription">
+        <span>Full Package Narrative Overview</span>
+        <span class="field-destination-badge brochure">Experience Storytelling</span>
+      </label>
+      <textarea id="fullDescription" class="input" style="min-height: 110px;" name="fullDescription" placeholder="Provide evocative storytelling explaining what makes this Penang journey unforgettable — historical context, secret spots, scenic outlooks, and local cultural interactions...">{{ p.get('fullDescription', p.get('description', '')) }}</textarea>
+      <span class="field-help">Helps travellers understand the atmosphere, pace, and unique charm of your tour.</span>
+    </div>
   </div>
-</section>
-<section class="form-section"><div class="section-heading"><span>3</span><div><h3>Departure and itinerary</h3><p>Add one departure date per line and build the trip day by day.</p></div></div>
-  <div class="package-form-grid"><div class="field"><label>Departure dates</label><textarea class="input" name="departureDates" placeholder="2026-12-10&#10;2026-12-17">{{ p.get('departureDates',[])|join('\n') }}</textarea></div><div class="field"><label>Departure location</label><input class="input" name="departureLocation" value="{{ p.get('departureLocation','') }}"><label>Meeting point</label><input class="input" name="meetingPoint" value="{{ p.get('meetingPoint','') }}"></div><div class="field full-span"><label>Departure notes</label><textarea class="input" name="departureNotes">{{ p.get('departureNotes','') }}</textarea></div></div>
+
+  <!-- Dedicated Package Cover Image Area (Requirement 5) -->
+  <div class="cover-image-section">
+    <div class="cover-section-header">
+      <div>
+        <h3 class="cover-section-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span>Package Cover Image & Visual Presentation</span>
+        </h3>
+        <p class="cover-section-subtitle">A high-quality cover photo is the single most important factor for traveller interest. Upload or specify a verified Penang image URL.</p>
+      </div>
+      <span class="cover-badge">16:9 Landscape Recommended</span>
+    </div>
+
+    <div class="cover-builder-grid">
+      <!-- Left: Interactive Dropzone Shell & URL Input -->
+      <div class="cover-inputs-col">
+        <!-- Interactive Dropzone Shell -->
+        <div class="cover-dropzone" id="cover-dropzone">
+          <input type="file" id="cover-file-input" class="visually-hidden" accept="image/png,image/jpeg,image/webp">
+          <div class="dropzone-content">
+            <div class="dropzone-icon-circle">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </div>
+            <strong class="dropzone-title">Drag & drop cover photo here</strong>
+            <span class="dropzone-sub">or <button type="button" class="btn-browse-trigger" id="btn-browse-trigger">Browse Files from device</button></span>
+            <small class="dropzone-meta">Supports PNG, JPG, WebP up to 10MB</small>
+          </div>
+        </div>
+
+        <!-- Primary Cover Image URL Input (Direct Flask Form Binding) -->
+        <div class="field" style="margin-top: 16px;">
+          <label for="heroImage">
+            <span>Primary Cover Image URL *</span>
+            <span class="field-destination-badge brochure">Brochure & Catalog Image</span>
+          </label>
+          <input id="heroImage" class="input image-url" name="heroImage" type="url" value="{{ p.get('heroImage', p.get('imageUrl', '')) }}" placeholder="https://images.unsplash.com/photo-...">
+          <span class="field-help">Public CDN or image URL. This URL is authoritative and stored by the backend.</span>
+        </div>
+
+        <!-- Storage Persistence Status Disclosure Notice -->
+        <div class="cover-persistence-notice">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <div>
+            <strong>Image Upload Persistence Notice (Backend Cloud Storage Planned):</strong>
+            <span>The file drag-and-drop selector generates a temporary client-side browser preview. Direct file upload persistence to cloud object storage is a planned backend feature. To ensure your cover photo is saved permanently to the catalog, provide a valid, publicly accessible Image URL in the field above.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Live Cover Image Preview Card -->
+      <div class="cover-preview-col">
+        <label class="cover-preview-label">
+          <span>Live Cover Photo Preview</span>
+          <span id="cover-preview-status" class="preview-status-pill">No file chosen</span>
+        </label>
+        <div class="cover-preview-card" id="cover-preview-card">
+          <img id="cover-preview-img" class="cover-preview-img" alt="Cover photo preview" {% if p.get('heroImage', p.get('imageUrl')) %}src="{{ p.get('heroImage', p.get('imageUrl')) }}" style="display: block;"{% else %}style="display: none;"{% endif %}>
+          <div class="cover-preview-empty" id="cover-preview-empty" {% if p.get('heroImage', p.get('imageUrl')) %}style="display: none;"{% endif %}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            <p>No cover image loaded</p>
+            <small>Drop an image file or enter an Image URL to preview how it looks on the brochure cover</small>
+          </div>
+          <div class="cover-preview-overlay-info" id="cover-preview-overlay-info">
+            <span class="preview-tag" id="preview-dest-tag">{{ p.get('destination', 'George Town, Penang') }}</span>
+            <span class="preview-title" id="preview-title-tag">{{ p.get('title', 'Penang Tourism Package') }}</span>
+          </div>
+        </div>
+        <div class="cover-preview-note warning" id="cover-local-warning" style="display: none;">
+          ⚠️ <strong>Local device preview only:</strong> Direct cloud upload is not configured. This preview will NOT be saved to the database. Provide a public Image URL to persist your cover photo.
+        </div>
+        <div class="cover-preview-note success" id="cover-url-success" style="display: none;">
+          ✓ Public image URL detected and will be persisted upon saving.
+        </div>
+
+        <!-- Secondary Gallery Images -->
+        <div class="field" style="margin-top: 16px;">
+          <label for="galleryImages">
+            <span>Additional Gallery Image URLs (one per line)</span>
+            <span class="field-destination-badge brochure">Brochure Gallery</span>
+          </label>
+          <textarea id="galleryImages" class="input" style="min-height: 80px;" name="galleryImages" placeholder="https://images.unsplash.com/...&#10;https://images.unsplash.com/...">{{ p.get('galleryImages', [])|join('\n') }}</textarea>
+          <span class="field-help">Optional photos showing attractions, meals, and accommodations visited.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step-nav-bar">
+    <div class="step-nav-left">
+      <a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">Cancel & Return</a>
+    </div>
+    <div class="step-nav-right">
+      <button class="btn primary" type="button" data-next-step="2">
+        <span>Continue to Step 2: Pricing & Dates</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     STEP 2: PRICING & TRAVEL DATES
+     ========================================================================= -->
+<div class="builder-step-panel" id="step-panel-2">
+  <div class="step-header-box">
+    <div>
+      <span class="eyebrow">STEP 2 OF 6 • PRICING & DATES</span>
+      <h2>Pricing Model, Group Capacity & Departures</h2>
+      <p>Configure official MYR rates, choose between Per Person or Per Group billing, and schedule departure dates.</p>
+    </div>
+    <span class="step-badge" style="color: var(--operator-teal);">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+      <span>Authoritative Currency: MYR</span>
+    </span>
+  </div>
+
+  <!-- Contextual Guidance Card for Pricing Models -->
+  <div class="context-help-card">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <div>
+      <strong>How Pricing Models Work in TravelMate:</strong>
+      <div style="margin-top: 4px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div style="background: rgba(255,255,255,0.7); padding: 8px 12px; border-radius: 6px; border: 1px solid #BAE6FD;">
+          <strong style="color: #0369A1; font-size: 12.5px;">👤 Per Person (per_person):</strong>
+          <span style="font-size: 12px; color: #0C4A6E;">Each traveller is charged individually: (Adult Price × adults) + (Child Price × children). Recommended for open walking tours and group excursions.</span>
+        </div>
+        <div style="background: rgba(255,255,255,0.7); padding: 8px 12px; border-radius: 6px; border: 1px solid #BAE6FD;">
+          <strong style="color: #0369A1; font-size: 12.5px;">👥 Per Group (per_group):</strong>
+          <span style="font-size: 12px; color: #0C4A6E;">One flat fixed fee charged for the entire private party, regardless of size up to your maximum capacity. Recommended for private charters and private docent tours.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="package-form-grid">
+    <div class="field">
+      <label for="priceBasis">
+        <span>Pricing Model *</span>
+        <span class="field-destination-badge brochure">Checkout Calculation</span>
+      </label>
+      <select id="priceBasis" class="input" name="priceBasis">
+        <option value="per_person" {% if p.get('priceBasis', 'per_person') == 'per_person' %}selected{% endif %}>Per Person (Charge each participant individually)</option>
+        <option value="per_group" {% if p.get('priceBasis') == 'per_group' %}selected{% endif %}>Per Group (Flat rate for entire private party)</option>
+      </select>
+      <span class="field-help">Determines whether the checkout cart multiplies by pax or charges a flat rate.</span>
+    </div>
+
+    <div class="field">
+      <label for="currency">
+        <span>Billing Currency</span>
+        <span class="field-destination-badge internal">Malaysian Compliance</span>
+      </label>
+      <input id="currency" class="input" name="currency" maxlength="3" value="{{ p.get('currency', 'MYR') }}" readonly style="background: #F1F5F9; cursor: not-allowed; font-weight: 700;">
+      <span class="field-help">Fixed to Malaysian Ringgit (MYR) in compliance with Penang tourism regulations.</span>
+    </div>
+
+    <div class="field">
+      <label for="adultPrice">
+        <span>Adult / Base Rate (MYR) *</span>
+        <span class="field-destination-badge brochure">Brochure Primary Price</span>
+      </label>
+      <input id="adultPrice" class="input" name="adultPrice" type="number" min="0" step="0.01" value="{{ p.get('adultPrice', p.get('price', '')) }}" placeholder="e.g. 150.00" required>
+      <span class="field-help">Standard rate per adult (or flat group fee if Per Group model selected).</span>
+    </div>
+
+    <div class="field">
+      <label for="childPrice">
+        <span>Child Rate (MYR, Optional)</span>
+        <span class="field-destination-badge brochure">Ages 3–11</span>
+      </label>
+      <input id="childPrice" class="input" name="childPrice" type="number" min="0" step="0.01" value="{{ p.get('childPrice', '') }}" placeholder="e.g. 80.00">
+      <span class="field-help">Discounted rate for children. Leave blank if not applicable.</span>
+    </div>
+
+    <div class="field">
+      <label for="originalPrice">
+        <span>Reference / Strikethrough Price (MYR)</span>
+        <span class="field-destination-badge brochure">Optional Savings Display</span>
+      </label>
+      <input id="originalPrice" class="input" name="originalPrice" type="number" min="0" step="0.01" value="{{ p.get('originalPrice', '') }}" placeholder="e.g. 199.00">
+      <span class="field-help">Displays a strikethrough price on brochure cards to showcase discounts.</span>
+    </div>
+
+    <div class="field">
+      <label for="promotionalPrice">
+        <span>Promotional Discount Rate (MYR)</span>
+        <span class="field-destination-badge brochure">Active Promo Rate</span>
+      </label>
+      <input id="promotionalPrice" class="input" name="promotionalPrice" type="number" min="0" step="0.01" value="{{ p.get('promotionalPrice', '') }}" placeholder="e.g. 129.00">
+      <span class="field-help">Special rate applied when booking falls within promotional dates below.</span>
+    </div>
+
+    <div class="field">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label for="promotionStart"><span>Promo Valid From</span></label>
+          <input id="promotionStart" class="input" type="date" name="promotionStart" value="{{ p.get('promotionStart', '') }}">
+        </div>
+        <div>
+          <label for="promotionEnd"><span>Promo Valid Until</span></label>
+          <input id="promotionEnd" class="input" type="date" name="promotionEnd" value="{{ p.get('promotionEnd', '') }}">
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label for="minimumTravellers"><span>Min Group (Pax)</span></label>
+          <input id="minimumTravellers" class="input" name="minimumTravellers" type="number" min="1" value="{{ p.get('minimumTravellers', 1) }}" placeholder="1">
+          <span class="field-help">Minimum travellers needed.</span>
+        </div>
+        <div>
+          <label for="maximumTravellers"><span>Max Capacity (Pax)</span></label>
+          <input id="maximumTravellers" class="input" name="maximumTravellers" type="number" min="1" value="{{ p.get('maximumTravellers', p.get('maxTravellers', 15)) }}" placeholder="15">
+          <span class="field-help">Vehicle or docent limit.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="field full-span">
+      <div class="tax-card">
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+          <input type="checkbox" name="taxIncluded" {% if p.get('taxIncluded', true) %}checked{% endif %} style="width: 18px; height: 18px;">
+          <span style="font-weight: 700; font-size: 14px; color: var(--ink);">All Malaysian Service Taxes (SST 6%) & local council tourism fees included in listed price</span>
+        </label>
+        <input class="input" name="taxNotes" value="{{ p.get('taxNotes', '') }}" placeholder="Optional tax explanation (e.g. 6% SST, Penang Local Council Heritage Fee and toll surcharges included)" style="margin-top: 10px;">
+      </div>
+    </div>
+  </div>
+
+  <!-- Departures & Assembly Locations -->
+  <div class="form-subheading">
+    <h3>Departure Schedule & Meeting Locations</h3>
+    <p>Clarify where and when travellers meet your tour escorts.</p>
+  </div>
+
+  <div class="package-form-grid">
+    <div class="field">
+      <label for="departureDates">
+        <span>Available Departure Dates (YYYY-MM-DD, one per line)</span>
+        <span class="field-destination-badge brochure">Brochure Date Chips</span>
+      </label>
+      <textarea id="departureDates" class="input" style="min-height: 100px;" name="departureDates" placeholder="2026-12-10&#10;2026-12-17&#10;2026-12-24">{{ p.get('departureDates', [])|join('\n') }}</textarea>
+      <span class="field-help">Dates offered for booking. Leave blank if offered daily on demand.</span>
+    </div>
+
+    <div class="field">
+      <label for="departureLocation">
+        <span>Assembly Hub / General Location</span>
+        <span class="field-destination-badge brochure">Brochure Specs</span>
+      </label>
+      <input id="departureLocation" class="input" name="departureLocation" value="{{ p.get('departureLocation', '') }}" placeholder="e.g. Swettenham Pier Cruise Terminal / George Town Core">
+      
+      <label for="meetingPoint" style="margin-top: 14px;">
+        <span>Precise Landmark Meeting Point *</span>
+        <span class="field-destination-badge brochure">Traveller Voucher</span>
+      </label>
+      <input id="meetingPoint" class="input" name="meetingPoint" value="{{ p.get('meetingPoint', '') }}" placeholder="e.g. Main entrance lobby beside historic clock tower">
+      <span class="field-help">Exact spot where the guide will meet guests.</span>
+    </div>
+
+    <div class="field">
+      <label for="departureNotes">
+        <span>Departure Notes & Check-in Guidelines</span>
+        <span class="field-destination-badge brochure">Logistics</span>
+      </label>
+      <textarea id="departureNotes" class="input" style="min-height: 80px;" name="departureNotes" placeholder="Arrive 15 minutes prior to departure. Tour docent will hold a TravelMate welcome sign.">{{ p.get('departureNotes', '') }}</textarea>
+      <span class="field-help">Punctuality and contact instructions for travellers.</span>
+    </div>
+
+    <div class="field">
+      <label for="availabilityStatus">
+        <span>Package Listing Status</span>
+        <span class="field-destination-badge internal">Catalog Visibility</span>
+      </label>
+      <select id="availabilityStatus" class="input" name="availabilityStatus">
+        <option value="available" {% if p.get('availabilityStatus', 'available') == 'available' %}selected{% endif %}>Active & Available for Booking</option>
+        <option value="unavailable" {% if p.get('availabilityStatus') == 'unavailable' %}selected{% endif %}>Temporarily Paused (Hidden from Search)</option>
+      </select>
+      <span class="field-help">Controls whether this approved package is open for traveller bookings.</span>
+    </div>
+  </div>
+
+  <div class="step-nav-bar">
+    <div class="step-nav-left">
+      <button class="btn outline" type="button" data-prev-step="1">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        <span>Back to Step 1: Basics</span>
+      </button>
+    </div>
+    <div class="step-nav-right">
+      <button class="btn primary" type="button" data-next-step="3">
+        <span>Continue to Step 3: Inclusions</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     STEP 3: INCLUSIONS & ACCOMMODATION
+     ========================================================================= -->
+<div class="builder-step-panel" id="step-panel-3">
+  <div class="step-header-box">
+    <div>
+      <span class="eyebrow">STEP 3 OF 6 • INCLUSIONS & LOGISTICS</span>
+      <h2>Package Inclusions, Highlights & Stay Details</h2>
+      <p>Specify what is provided to travellers without additional expense, signature highlights, and lodging.</p>
+    </div>
+    <span class="step-badge">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span>Value Transparency</span>
+    </span>
+  </div>
+
+  <div class="package-form-grid">
+    <div class="field">
+      <label for="highlights">
+        <span>Tour Signature Highlights (one per line)</span>
+        <span class="field-destination-badge brochure">Brochure Showcase</span>
+      </label>
+      <textarea id="highlights" class="input" style="min-height: 110px;" name="highlights" placeholder="UNESCO World Heritage shophouses walking trail&#10;Private authentic Michelin-selected hawker tasting&#10;Panoramic sunset funicular ride up Penang Hill">{{ p.get('highlights', [])|join('\n') if p.get('highlights') is not string else p.get('highlights') }}</textarea>
+      <span class="field-help">Top 3 to 5 memorable experiences included in the excursion.</span>
+    </div>
+
+    <div class="field">
+      <label for="inclusions">
+        <span>Inclusions (What's Covered) *</span>
+        <span class="field-destination-badge brochure">Green Checkmarks in Brochure</span>
+      </label>
+      <textarea id="inclusions" class="input" style="min-height: 110px;" name="inclusions" placeholder="Licensed English/Malay speaking professional guide&#10;All attraction entrance fees & funicular tickets&#10;Mineral water & traditional cooling herbal tea&#10;Peranakan sampling portions at selected stops">{{ p.get('inclusions', [])|join('\n') if p.get('inclusions') is not string else p.get('inclusions') }}</textarea>
+      <span class="field-help">Items provided without out-of-pocket costs for guests. One item per line.</span>
+    </div>
+  </div>
+
+  <!-- Accommodation & Transport Details -->
+  <div class="form-subheading">
+    <h3>Accommodation & Ground Logistics</h3>
+    <p>Specify hotel standards and transport vehicles for multi-day and full-day itineraries.</p>
+  </div>
+
+  <div class="package-form-grid">
+    <div class="field">
+      <label for="accommodationName">
+        <span>Partner Hotel / Resort Name</span>
+        <span class="field-destination-badge brochure">Stay Details</span>
+      </label>
+      <input id="accommodationName" class="input" name="accommodationName" value="{{ p.get('accommodationName', '') }}" placeholder="e.g. Eastern & Oriental Hotel / Shangri-La Rasa Sayang">
+      <span class="field-help">Leave blank or enter 'None' for single-day tours without overnight stay.</span>
+    </div>
+
+    <div class="field">
+      <label for="accommodationCategory">
+        <span>Hotel Category / Star Rating</span>
+        <span class="field-destination-badge brochure">Stay Details</span>
+      </label>
+      <input id="accommodationCategory" class="input" name="accommodationCategory" value="{{ p.get('accommodationCategory', '') }}" placeholder="e.g. 5-Star Colonial Heritage Luxury">
+      <span class="field-help">Classification of the hotel property.</span>
+    </div>
+
+    <div class="field">
+      <label for="roomType">
+        <span>Room Configuration</span>
+        <span class="field-destination-badge brochure">Stay Details</span>
+      </label>
+      <input id="roomType" class="input" name="roomType" value="{{ p.get('roomType', '') }}" placeholder="e.g. Heritage Suite / Deluxe Twin Sharing">
+      <span class="field-help">Bedding and room layout offered in this package.</span>
+    </div>
+
+    <div class="field">
+      <label for="transportTypes">
+        <span>Transport Modes (one per line)</span>
+        <span class="field-destination-badge brochure">Transport Badges</span>
+      </label>
+      <textarea id="transportTypes" class="input" style="min-height: 52px;" name="transportTypes" placeholder="Air-conditioned executive van&#10;Traditional heritage trishaw ride&#10;Penang Hill Funicular railway">{{ p.get('transportTypes', [])|join('\n') }}</textarea>
+      <span class="field-help">Vehicles and transit methods used during the package.</span>
+    </div>
+
+    <div class="field full-span">
+      <label for="accommodationNotes">
+        <span>Accommodation Notes & Check-in / Check-out Guidelines</span>
+      </label>
+      <textarea id="accommodationNotes" class="input" style="min-height: 60px;" name="accommodationNotes" placeholder="Check-in 3:00 PM / Check-out 12:00 PM. Heritage preservation council fee included.">{{ p.get('accommodationNotes', '') }}</textarea>
+    </div>
+  </div>
+
+  <div class="step-nav-bar">
+    <div class="step-nav-left">
+      <button class="btn outline" type="button" data-prev-step="2">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        <span>Back to Step 2: Pricing</span>
+      </button>
+    </div>
+    <div class="step-nav-right">
+      <button class="btn primary" type="button" data-next-step="4">
+        <span>Continue to Step 4: Policies & Terms</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     STEP 4: EXCLUSIONS, PACKING & POLICIES
+     ========================================================================= -->
+<div class="builder-step-panel" id="step-panel-4">
+  <div class="step-header-box">
+    <div>
+      <span class="eyebrow">STEP 4 OF 6 • POLICIES & EXCLUSIONS</span>
+      <h2>Exclusions, Packing Guidelines & Tour Policies</h2>
+      <p>Set clear traveller expectations regarding what is not included, cancellation terms, and health precautions.</p>
+    </div>
+    <span class="step-badge">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+      <span>Dispute Prevention</span>
+    </span>
+  </div>
+
+  <div class="package-form-grid">
+    <div class="field">
+      <label for="exclusions">
+        <span>Exclusions (What's Not Covered)</span>
+        <span class="field-destination-badge brochure">Red Crossmarks in Brochure</span>
+      </label>
+      <textarea id="exclusions" class="input" style="min-height: 100px;" name="exclusions" placeholder="Personal shopping & souvenirs&#10;Alcoholic beverages & personal snacks&#10;Comprehensive travel insurance&#10;Discretionary guide & driver gratuities">{{ p.get('exclusions', [])|join('\n') if p.get('exclusions') is not string else p.get('exclusions') }}</textarea>
+      <span class="field-help">Prevents misunderstandings regarding traveller out-of-pocket costs.</span>
+    </div>
+
+    <div class="field">
+      <label for="whatToBring">
+        <span>What Travellers Should Bring (Packing List)</span>
+        <span class="field-destination-badge brochure">Brochure Packing Chips</span>
+      </label>
+      <textarea id="whatToBring" class="input" style="min-height: 100px;" name="whatToBring" placeholder="Comfortable walking shoes or sandals&#10;Sun protection (sunglasses, hat, sunscreen)&#10;Modest attire covering shoulders & knees for temple visits&#10;Compact umbrella or light poncho">{{ p.get('whatToBring', [])|join('\n') if p.get('whatToBring') is not string else p.get('whatToBring') }}</textarea>
+      <span class="field-help">Practical recommendations tailored to Penang's tropical climate.</span>
+    </div>
+
+    <div class="field">
+      <label for="cancellationPolicy">
+        <span>Cancellation Policy</span>
+        <span class="field-destination-badge brochure">Terms Summary</span>
+      </label>
+      <textarea id="cancellationPolicy" class="input" style="min-height: 80px;" name="cancellationPolicy" placeholder="e.g. Free cancellation up to 48 hours before scheduled departure. Cancellations within 48 hours are non-refundable.">{{ p.get('cancellationPolicy', '') }}</textarea>
+      <span class="field-help">Rules governing traveller cancellations.</span>
+    </div>
+
+    <div class="field">
+      <label for="refundPolicy">
+        <span>Refund Terms & Processing</span>
+        <span class="field-destination-badge internal">Operator Terms</span>
+      </label>
+      <textarea id="refundPolicy" class="input" style="min-height: 80px;" name="refundPolicy" placeholder="e.g. 100% refund processed within 5-7 business days for eligible timely cancellations.">{{ p.get('refundPolicy', '') }}</textarea>
+      <span class="field-help">How refunds are handled in the event of operator cancellation or severe weather.</span>
+    </div>
+
+    <div class="field">
+      <label for="bookingTerms">
+        <span>Booking Voucher & Confirmation Terms</span>
+        <span class="field-destination-badge internal">Booking Slip</span>
+      </label>
+      <textarea id="bookingTerms" class="input" style="min-height: 80px;" name="bookingTerms" placeholder="Instant digital voucher. Present mobile QR code or voucher confirmation to guide at assembly point.">{{ p.get('bookingTerms', '') }}</textarea>
+    </div>
+
+    <div class="field">
+      <label for="importantNotes">
+        <span>Health, Physical & Accessibility Notes</span>
+        <span class="field-destination-badge brochure">Safety Disclosure</span>
+      </label>
+      <textarea id="importantNotes" class="input" style="min-height: 80px;" name="importantNotes" placeholder="Moderate walking involved (approx 2.5 km on paved streets and historic sidewalks). Wheelchair accessibility available upon advance notice.">{{ p.get('importantNotes', '') }}</textarea>
+    </div>
+
+    <div class="field full-span">
+      <label for="transportNotes">
+        <span>Luggage & Transport Guidelines</span>
+      </label>
+      <textarea id="transportNotes" class="input" style="min-height: 60px;" name="transportNotes" placeholder="Maximum 1 standard luggage (20kg) and 1 personal hand carry per passenger for comfortable transit.">{{ p.get('transportNotes', '') }}</textarea>
+    </div>
+  </div>
+
+  <div class="step-nav-bar">
+    <div class="step-nav-left">
+      <button class="btn outline" type="button" data-prev-step="3">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        <span>Back to Step 3: Inclusions</span>
+      </button>
+    </div>
+    <div class="step-nav-right">
+      <button class="btn primary" type="button" data-next-step="5">
+        <span>Continue to Step 5: Day-by-Day Itinerary</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     STEP 5: DAY-BY-DAY ITINERARY SCHEDULE
+     ========================================================================= -->
+<div class="builder-step-panel" id="step-panel-5">
+  <div class="step-header-box">
+    <div>
+      <span class="eyebrow">STEP 5 OF 6 • ITINERARY SCHEDULE</span>
+      <h2>Day-by-Day Journey Schedule</h2>
+      <p>Build the daily flow of activities, dining, accommodation, and transit. Each day renders as a timeline card on the brochure.</p>
+    </div>
+    <button class="btn primary" id="add-day" type="button" style="background: var(--bluegrey);">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <span>+ Add Itinerary Day</span>
+    </button>
+  </div>
+
   <div id="itinerary-list">
-    {% set days = p.get('itineraryDays',[]) %}{% if not days %}{% set days = [{}] %}{% endif %}
-    {% for day in days %}<article class="itinerary-editor"><div class="itinerary-toolbar"><strong>Day <span class="day-number">{{ loop.index }}</span></strong><div class="actions"><button class="btn outline move-up" type="button">Up</button><button class="btn outline move-down" type="button">Down</button><button class="btn danger remove-day" type="button">Remove</button></div></div><div class="package-form-grid"><div class="field"><label>Day title</label><input class="input" name="itineraryTitle" value="{{ day.get('title','') }}"></div><div class="field"><label>Accommodation</label><input class="input" name="itineraryAccommodation" value="{{ day.get('accommodation','') }}"></div><div class="field full-span"><label>Description</label><textarea class="input" name="itineraryDescription">{{ day.get('description','') }}</textarea></div><div class="field"><label>Activities (one per line)</label><textarea class="input" name="itineraryActivities">{{ day.get('activities',[])|join('\n') }}</textarea></div><div class="field"><label>Meals (one per line)</label><textarea class="input" name="itineraryMeals">{{ day.get('meals',[])|join('\n') }}</textarea></div><div class="field full-span"><label>Transport notes</label><input class="input" name="itineraryTransportNotes" value="{{ day.get('transportNotes','') }}"></div></div></article>{% endfor %}
-  </div><button class="btn outline" id="add-day" type="button">+ Add day</button>
-</section>
-<section class="form-section"><div class="section-heading"><span>4</span><div><h3>What travellers receive</h3><p>Enter one item per line.</p></div></div><div class="package-form-grid"><div class="field"><label>Highlights</label><textarea class="input" name="highlights">{{ p.get('highlights',[])|join('\n') if p.get('highlights') is not string else p.get('highlights') }}</textarea></div><div class="field"><label>Inclusions</label><textarea class="input" name="inclusions">{{ p.get('inclusions',[])|join('\n') if p.get('inclusions') is not string else p.get('inclusions') }}</textarea></div><div class="field"><label>Exclusions</label><textarea class="input" name="exclusions">{{ p.get('exclusions',[])|join('\n') if p.get('exclusions') is not string else p.get('exclusions') }}</textarea></div><div class="field"><label>What to bring</label><textarea class="input" name="whatToBring">{{ p.get('whatToBring',[])|join('\n') if p.get('whatToBring') is not string else p.get('whatToBring') }}</textarea></div></div></section>
-<section class="form-section"><div class="section-heading"><span>5</span><div><h3>Stay and transport</h3><p>Meals are captured within each itinerary day.</p></div></div><div class="package-form-grid"><div class="field"><label>Accommodation name</label><input class="input" name="accommodationName" value="{{ p.get('accommodationName','') }}"></div><div class="field"><label>Category</label><input class="input" name="accommodationCategory" value="{{ p.get('accommodationCategory','') }}"></div><div class="field"><label>Room type</label><input class="input" name="roomType" value="{{ p.get('roomType','') }}"></div><div class="field"><label>Transport types (one per line)</label><textarea class="input" name="transportTypes">{{ p.get('transportTypes',[])|join('\n') }}</textarea></div><div class="field full-span"><label>Accommodation notes</label><textarea class="input" name="accommodationNotes">{{ p.get('accommodationNotes','') }}</textarea></div><div class="field full-span"><label>Transport notes</label><textarea class="input" name="transportNotes">{{ p.get('transportNotes','') }}</textarea></div></div></section>
-<section class="form-section"><div class="section-heading"><span>6</span><div><h3>Terms and traveller notes</h3></div></div><div class="package-form-grid"><div class="field"><label>Cancellation policy</label><textarea class="input" name="cancellationPolicy">{{ p.get('cancellationPolicy','') }}</textarea></div><div class="field"><label>Refund policy</label><textarea class="input" name="refundPolicy">{{ p.get('refundPolicy','') }}</textarea></div><div class="field"><label>Booking terms</label><textarea class="input" name="bookingTerms">{{ p.get('bookingTerms','') }}</textarea></div><div class="field"><label>Important notes</label><textarea class="input" name="importantNotes">{{ p.get('importantNotes','') }}</textarea></div></div></section>
-<section class="form-section"><div class="section-heading"><span>7</span><div><h3>Images and availability</h3><p>Use hosted image URLs for this demo release.</p></div></div><div class="package-form-grid"><div class="field"><label>Hero image URL</label><input class="input image-url" name="heroImage" type="url" value="{{ p.get('heroImage', p.get('imageUrl','')) }}" placeholder="https://..."><img class="image-preview" alt="Hero image preview" {% if p.get('heroImage', p.get('imageUrl')) %}src="{{ p.get('heroImage', p.get('imageUrl')) }}"{% endif %}></div><div class="field"><label>Gallery image URLs (one per line)</label><textarea class="input" name="galleryImages">{{ p.get('galleryImages',[])|join('\n') }}</textarea><label>Availability</label><select class="input" name="availabilityStatus"><option value="available" {% if p.get('availabilityStatus','available')=='available' %}selected{% endif %}>Available</option><option value="unavailable" {% if p.get('availabilityStatus')=='unavailable' %}selected{% endif %}>Unavailable</option></select></div></div></section>
+    {% set days = p.get('itineraryDays', []) %}
+    {% if not days %}{% set days = [{}] %}{% endif %}
+    {% for day in days %}
+      <article class="itinerary-editor">
+        <div class="itinerary-toolbar">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="day-badge-chip">
+              Day <span class="day-number">{{ loop.index }}</span>
+            </span>
+            <strong class="day-toolbar-title" style="font-size: 15px; color: var(--ink);">
+              {{ day.get('title') or 'Daily Excursion Flow' }}
+            </strong>
+          </div>
+          <div class="actions">
+            <button class="btn outline move-up" type="button" title="Move earlier in schedule">↑ Up</button>
+            <button class="btn outline move-down" type="button" title="Move later in schedule">↓ Down</button>
+            <button class="btn danger remove-day" type="button" title="Remove day">Remove</button>
+          </div>
+        </div>
+
+        <div class="package-form-grid">
+          <div class="field">
+            <label>Day Focus / Heading</label>
+            <input class="input" name="itineraryTitle" value="{{ day.get('title', '') }}" placeholder="e.g. Arrival & Heritage Shophouse Exploration">
+            <span class="field-help">Theme or main highlight of this calendar day.</span>
+          </div>
+
+          <div class="field">
+            <label>Night Accommodation</label>
+            <input class="input" name="itineraryAccommodation" value="{{ day.get('accommodation', '') }}" placeholder="e.g. Eastern & Oriental Hotel / None for day return">
+            <span class="field-help">Hotel or lodging for this evening.</span>
+          </div>
+
+          <div class="field full-span">
+            <label>Step-by-Step Day Narrative</label>
+            <textarea class="input" name="itineraryDescription" style="min-height: 80px;" placeholder="Morning walk through Armenian Street, clan jetties visit, and afternoon Trishaw ride...">{{ day.get('description', '') }}</textarea>
+          </div>
+
+          <div class="field">
+            <label>Key Activities & Sights (one per line)</label>
+            <textarea class="input" name="itineraryActivities" style="min-height: 85px;" placeholder="Cheong Fatt Tze Blue Mansion&#10;Pinang Peranakan Mansion&#10;Street Art Murals Walk">{{ day.get('activities', [])|join('\n') }}</textarea>
+            <span class="field-help">Displayed with 📍 activity pills in the brochure.</span>
+          </div>
+
+          <div class="field">
+            <label>Meals Included for the Day (one per line)</label>
+            <textarea class="input" name="itineraryMeals" style="min-height: 85px;" placeholder="Buffet Breakfast at hotel&#10;Nyonya Peranakan lunch tasting&#10;Dinner at Gurney Drive Food Court">{{ day.get('meals', [])|join('\n') }}</textarea>
+            <span class="field-help">Displayed with 🍽️ meal pills in the brochure.</span>
+          </div>
+
+          <div class="field full-span">
+            <label>Daily Ground Transportation Notes</label>
+            <input class="input" name="itineraryTransportNotes" value="{{ day.get('transportNotes', '') }}" placeholder="e.g. Air-conditioned executive van transfer & heritage trishaw tour">
+            <span class="field-help">Displayed with 🚐 transport badge in the brochure.</span>
+          </div>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+
+  <div class="step-nav-bar">
+    <div class="step-nav-left">
+      <button class="btn outline" type="button" data-prev-step="4">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        <span>Back to Step 4: Policies</span>
+      </button>
+    </div>
+    <div class="step-nav-right">
+      <button class="btn primary" type="button" data-next-step="6">
+        <span>Continue to Step 6: Brochure Preview</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     STEP 6: BROCHURE PREVIEW & FINAL SUBMISSION
+     ========================================================================= -->
+<div class="builder-step-panel" id="step-panel-6">
+  <div class="step-header-box">
+    <div>
+      <span class="eyebrow">STEP 6 OF 6 • BROCHURE PREVIEW & SUBMIT</span>
+      <h2>Penang Tourism Brochure Preview & Final Review</h2>
+      <p>Inspect how your package renders in traveller brochure format before saving. Check the summary below to ensure all details are complete.</p>
+    </div>
+    <span class="step-badge" style="background: var(--bluegrey-subtle); color: var(--bluegrey); border-color: #BAE6FD;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span>Live Brochure Render</span>
+    </span>
+  </div>
+
+  <!-- Incomplete field validation warning banner (shown when required fields are missing) -->
+  <div class="builder-validation-alert" id="validation-alert-banner">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span id="validation-alert-msg" style="font-weight: 600;">Required information is missing. Please complete all required fields.</span>
+    </div>
+    <button class="btn outline" type="button" id="validation-fix-btn" style="border-color: #FCA5A5; color: #991B1B; padding: 4px 12px; font-size: 12px; font-weight: 700;">Fix Field</button>
+  </div>
+
+  <!-- Section Completion Checklist Cards -->
+  <div class="review-checklist-bar">
+    <div class="checklist-item" id="check-step-1">
+      <span class="check-icon">✓</span>
+      <span class="check-text">1. Basic Info & Cover</span>
+    </div>
+    <div class="checklist-item" id="check-step-2">
+      <span class="check-icon">✓</span>
+      <span class="check-text">2. Pricing & Dates</span>
+    </div>
+    <div class="checklist-item" id="check-step-3">
+      <span class="check-icon">✓</span>
+      <span class="check-text">3. Inclusions & Stay</span>
+    </div>
+    <div class="checklist-item" id="check-step-4">
+      <span class="check-icon">✓</span>
+      <span class="check-text">4. Policies & Rules</span>
+    </div>
+    <div class="checklist-item" id="check-step-5">
+      <span class="check-icon">✓</span>
+      <span class="check-text">5. Daily Itinerary</span>
+    </div>
+  </div>
+
+  <!-- Modern Penang Tourism Brochure Presentation Card -->
+  <div class="brochure-container">
+    <article class="brochure-card" id="live-brochure-card">
+      <!-- 1. Hero Cover Banner -->
+      <div class="brochure-hero" id="brochure-hero-banner" {% if p.get('heroImage', p.get('imageUrl')) %}style="background-image: url('{{ p.get('heroImage', p.get('imageUrl')) }}');"{% endif %}>
+        <div class="brochure-hero-overlay"></div>
+        <div class="brochure-hero-placeholder" id="brochure-hero-placeholder" {% if p.get('heroImage', p.get('imageUrl')) %}style="display: none;"{% endif %}>
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span>Penang Tourism Excursion • Cover Photo Not Configured</span>
+        </div>
+        <div class="brochure-hero-content">
+          <div class="brochure-tag-row">
+            <span class="brochure-tag gold" id="brochure-dest-pill">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              <span id="brochure-destination-text">{{ p.get('destination', 'George Town, Penang') }}</span>
+            </span>
+            <span class="brochure-tag" id="brochure-cat-pill">
+              <span id="brochure-category-text">{{ p.get('category', 'Culture & Heritage') }}</span>
+            </span>
+            <span class="brochure-tag" id="brochure-duration-pill">
+              <span id="brochure-duration-text">{{ p.get('durationDays', 1) }} Days{% if p.get('durationNights') %} / {{ p.get('durationNights') }} Nights{% endif %}</span>
+            </span>
+            <span class="brochure-unpersisted-tag" id="brochure-unpersisted-tag" style="display: none;">
+              ⚠️ Local Preview • Not Persisted in Database
+            </span>
+          </div>
+          <h1 class="brochure-title" id="brochure-title-text">{{ p.get('title', p.get('packageTitle', 'Untitled Penang Excursion')) }}</h1>
+          <p class="brochure-summary" id="brochure-summary-text">{{ p.get('shortDescription', 'No summary description entered.') }}</p>
+        </div>
+      </div>
+
+      <!-- 2. Quick Specs Ribbon -->
+      <div class="brochure-specs-bar">
+        <div class="brochure-spec-item">
+          <span class="brochure-spec-label">Listed Package Rate</span>
+          <div class="brochure-price-highlight" id="brochure-price-text">
+            MYR {{ "%.2f"|format(p.get('adultPrice', p.get('price', 0))|float) if p.get('adultPrice') or p.get('price') else '0.00' }}
+          </div>
+          <small id="brochure-basis-text" style="color: var(--ink-muted); font-size: 11px;">
+            {{ 'per group (flat rate)' if p.get('priceBasis') == 'per_group' else 'per person' }}
+          </small>
+        </div>
+
+        <div class="brochure-spec-item">
+          <span class="brochure-spec-label">Group Capacity</span>
+          <div class="brochure-spec-val" id="brochure-capacity-text">
+            Min {{ p.get('minimumTravellers', 1) }} - Max {{ p.get('maximumTravellers', p.get('maxTravellers', 15)) or 15 }} pax
+          </div>
+          <small style="color: var(--ink-muted); font-size: 11px;">Escorted Group</small>
+        </div>
+
+        <div class="brochure-spec-item">
+          <span class="brochure-spec-label">Assembly & Meeting Point</span>
+          <div class="brochure-spec-val" id="brochure-meeting-text" style="font-size: 13px; line-height: 1.3;">
+            {{ p.get('meetingPoint', p.get('departureLocation', 'George Town Heritage Core')) }}
+          </div>
+        </div>
+
+        <div class="brochure-spec-item">
+          <span class="brochure-spec-label">Listing Status</span>
+          <div>
+            <span class="status approved" id="brochure-status-pill">
+              {{ 'Active in Catalog' if p.get('availabilityStatus', 'available') == 'available' else 'Temporarily Paused' }}
+            </span>
+          </div>
+          <small style="color: var(--ink-muted); font-size: 11px;">Catalog Visibility</small>
+        </div>
+      </div>
+
+      <!-- 3. Brochure Body -->
+      <div class="brochure-body">
+        <!-- Overview Narrative -->
+        <div>
+          <h3 class="brochure-section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <span>Experience Narrative Overview</span>
+          </h3>
+          <p id="brochure-fulldesc-text" style="color: var(--ink-secondary); line-height: 1.7; font-size: 14.5px; margin: 0;">
+            {{ p.get('fullDescription', p.get('description', 'No detailed package description provided yet.')) }}
+          </p>
+        </div>
+
+        <!-- Inclusions vs Exclusions Grid -->
+        <div>
+          <h3 class="brochure-section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span>Package Inclusions & Exclusions</span>
+          </h3>
+          <div class="brochure-compare-grid">
+            <div class="brochure-box inclusions">
+              <h4>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>What's Included</span>
+              </h4>
+              <ul class="brochure-bullet-list" id="brochure-inclusions-list">
+                <!-- Dynamically populated -->
+              </ul>
+            </div>
+
+            <div class="brochure-box exclusions">
+              <h4>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <span>What's Excluded</span>
+              </h4>
+              <ul class="brochure-bullet-list" id="brochure-exclusions-list">
+                <!-- Dynamically populated -->
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Day-by-Day Visual Itinerary Timeline -->
+        <div>
+          <h3 class="brochure-section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span>Day-by-Day Itinerary Schedule</span>
+          </h3>
+          <div class="brochure-timeline" id="brochure-itinerary-render">
+            <!-- Dynamically populated by JS from Step 5 -->
+          </div>
+        </div>
+
+        <!-- Accommodation & What to Bring Row -->
+        <div class="package-form-grid">
+          <div class="card cream" style="padding: 22px; border-radius: 10px;">
+            <h4 style="margin: 0 0 10px; font-size: 14px; font-weight: 700; color: var(--charcoal); display: flex; align-items: center; gap: 8px;">
+              <span>🏨</span>
+              <span>Stay & Hotel Specifications</span>
+            </h4>
+            {% set nights = p.get('durationNights', 0)|int %}
+            <div style="font-size: 13.5px; color: var(--ink-secondary); line-height: 1.6;" id="brochure-hotel-logistics">
+              {% if nights == 0 %}
+                <span class="brochure-empty-text">Single-Day Excursion (No hotel stay required)</span>
+              {% else %}
+                <strong>Lodging:</strong> <span id="brochure-hotel-text">{{ p.get('accommodationName') or 'To be specified by operator' }}</span><br>
+                <strong>Category:</strong> <span id="brochure-hotel-cat-text">{{ p.get('accommodationCategory') or 'Standard' }}</span><br>
+                <strong>Room Type:</strong> <span id="brochure-hotel-room-text">{{ p.get('roomType') or 'To be specified' }}</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="card" style="padding: 22px; background: var(--canvas); border-radius: 10px;">
+            <h4 style="margin: 0 0 10px; font-size: 14px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 8px;">
+              <span>🎒</span>
+              <span>Recommended Packing Essentials</span>
+            </h4>
+            <div class="brochure-day-pills" id="brochure-bring-pills">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Available Departures Calendar Chips -->
+        <div>
+          <h3 class="brochure-section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span>Scheduled Departure Dates</span>
+          </h3>
+          <div class="brochure-chips-wrap" id="brochure-dates-wrap">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Cancellation & Terms Summary -->
+        <div style="border-top: 1px solid var(--border-subtle); padding-top: 20px; font-size: 13px; color: var(--ink-muted); line-height: 1.6;">
+          <strong>Cancellation Policy & Health Precautions:</strong>
+          <span id="brochure-policy-text">
+            {{ p.get('cancellationPolicy') or p.get('importantNotes') or 'No operator cancellation terms specified yet.' }}
+          </span>
+        </div>
+      </div>
+
+      <!-- 4. Watermark Footer -->
+      <div class="brochure-watermark-footer">
+        <div>
+          <strong>TravelMate Penang Tourism Platform</strong> • Tourism Operator Portal Catalog Presentation
+        </div>
+        <div>
+          Official Currency: <strong>MYR (Malaysian Ringgit)</strong>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <!-- Submit Warning Alert Banner (Shown if local file is chosen without public URL) -->
+  <div class="submit-image-warning" id="submit-image-warning" style="display: none;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <div>
+      <strong>Notice Before Saving:</strong> A local device file is selected for browser preview only. Because cloud object storage is not configured, this preview image will NOT be saved to the database. Enter a public Image URL in Step 1 if you wish to persist a cover photo.
+    </div>
+  </div>
+
+  <!-- Step 6 Navigation & Primary Submission Action -->
+  <div class="step-nav-bar" style="background: var(--white); border-color: var(--bluegrey-subtle); box-shadow: var(--shadow-sm);">
+    <div class="step-nav-left">
+      <button class="btn outline" type="button" data-prev-step="5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        <span>Back to Step 5: Itinerary</span>
+      </button>
+      <span class="muted" style="font-size: 13px;">Review package brochure details carefully before submitting.</span>
+    </div>
+    <div class="step-nav-right">
+      <button class="btn primary" type="submit" id="btn-final-submit" style="padding: 12px 28px; font-weight: 700; font-size: 14.5px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        <span>{% if p.get('id') %}Save Package Changes{% else %}Save Package Draft{% endif %}</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     PROGRESSIVE ENHANCEMENT JAVASCRIPT
+     ========================================================================= -->
 <script>
-document.addEventListener('DOMContentLoaded',()=>{const list=document.querySelector('#itinerary-list');if(!list)return;const renumber=()=>[...list.children].forEach((x,i)=>x.querySelector('.day-number').textContent=i+1);list.addEventListener('click',e=>{const card=e.target.closest('.itinerary-editor');if(!card)return;if(e.target.classList.contains('remove-day')){if(list.children.length>1)card.remove();else card.querySelectorAll('input,textarea').forEach(x=>x.value='');}if(e.target.classList.contains('move-up')&&card.previousElementSibling)list.insertBefore(card,card.previousElementSibling);if(e.target.classList.contains('move-down')&&card.nextElementSibling)list.insertBefore(card.nextElementSibling,card);renumber();});document.querySelector('#add-day')?.addEventListener('click',()=>{const card=list.firstElementChild.cloneNode(true);card.querySelectorAll('input,textarea').forEach(x=>x.value='');list.append(card);renumber();});document.querySelector('.image-url')?.addEventListener('input',e=>{document.querySelector('.image-preview').src=e.target.value;});});
+document.addEventListener('DOMContentLoaded', () => {
+  // 1. Wizard Stepper Navigation (6 Steps)
+  const steps = [...document.querySelectorAll('.stepper-step')];
+  const panels = [...document.querySelectorAll('.builder-step-panel')];
+  let currentStep = 1;
+
+  function goToStep(target) {
+    if (target < 1 || target > 6) return;
+    currentStep = target;
+
+    // Update panels
+    panels.forEach((p, idx) => {
+      p.classList.toggle('active', idx + 1 === target);
+    });
+
+    // Update stepper tabs
+    steps.forEach((s, idx) => {
+      const stepNum = idx + 1;
+      s.classList.toggle('active', stepNum === target);
+      s.classList.toggle('completed', stepNum < target);
+    });
+
+    // If entering Step 6, compile brochure preview
+    if (target === 6) {
+      updateBrochurePreview();
+      validateRequiredFields();
+    }
+
+    // Scroll smoothly to top of package editor
+    const editor = document.querySelector('.package-editor') || document.querySelector('.builder-stepper');
+    if (editor) {
+      editor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  // Stepper tab click handlers
+  steps.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = parseInt(btn.dataset.step, 10);
+      goToStep(target);
+    });
+  });
+
+  // Next / Prev button handlers
+  document.querySelectorAll('[data-next-step]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = parseInt(btn.dataset.nextStep, 10);
+      goToStep(target);
+    });
+  });
+
+  document.querySelectorAll('[data-prev-step]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = parseInt(btn.dataset.prevStep, 10);
+      goToStep(target);
+    });
+  });
+
+  // 2. Dedicated Package Cover Image Area (Requirement 5)
+  const dropzone = document.getElementById('cover-dropzone');
+  const fileInput = document.getElementById('cover-file-input');
+  const browseTrigger = document.getElementById('btn-browse-trigger');
+  const heroInput = document.getElementById('heroImage');
+  const previewImg = document.getElementById('cover-preview-img');
+  const previewEmpty = document.getElementById('cover-preview-empty');
+  const previewStatus = document.getElementById('cover-preview-status');
+  const previewDestTag = document.getElementById('preview-dest-tag');
+  const previewTitleTag = document.getElementById('preview-title-tag');
+  const coverLocalWarning = document.getElementById('cover-local-warning');
+  const coverUrlSuccess = document.getElementById('cover-url-success');
+  const brochureUnpersistedTag = document.getElementById('brochure-unpersisted-tag');
+  const submitImageWarning = document.getElementById('submit-image-warning');
+  const brochureHeroPlaceholder = document.getElementById('brochure-hero-placeholder');
+  const brochureHeroBanner = document.getElementById('brochure-hero-banner');
+
+  let isLocalFilePreview = false;
+  let localFileDataUrl = null;
+  let localFileName = null;
+
+  function updateCoverPreviewState() {
+    const typedUrl = heroInput ? heroInput.value.trim() : '';
+
+    if (typedUrl && (typedUrl.startsWith('http://') || typedUrl.startsWith('https://'))) {
+      // Authoritative public URL is configured!
+      isLocalFilePreview = false;
+      if (previewImg) {
+        previewImg.src = typedUrl;
+        previewImg.style.display = 'block';
+      }
+      if (previewEmpty) previewEmpty.style.display = 'none';
+      if (previewStatus) {
+        previewStatus.textContent = '✓ Saved Image URL';
+        previewStatus.className = 'preview-status-pill active';
+      }
+      if (coverLocalWarning) coverLocalWarning.style.display = 'none';
+      if (coverUrlSuccess) coverUrlSuccess.style.display = 'block';
+      if (brochureUnpersistedTag) brochureUnpersistedTag.style.display = 'none';
+      if (submitImageWarning) submitImageWarning.style.display = 'none';
+      if (brochureHeroPlaceholder) brochureHeroPlaceholder.style.display = 'none';
+      if (brochureHeroBanner) brochureHeroBanner.style.backgroundImage = `url('${typedUrl}')`;
+    } else if (isLocalFilePreview && localFileDataUrl) {
+      // Local device file selected for browser preview only
+      if (previewImg) {
+        previewImg.src = localFileDataUrl;
+        previewImg.style.display = 'block';
+      }
+      if (previewEmpty) previewEmpty.style.display = 'none';
+      if (previewStatus) {
+        previewStatus.textContent = '⚠️ Local Device Preview • Unsaved';
+        previewStatus.className = 'preview-status-pill warning';
+      }
+      if (coverLocalWarning) coverLocalWarning.style.display = 'block';
+      if (coverUrlSuccess) coverUrlSuccess.style.display = 'none';
+      if (brochureUnpersistedTag) brochureUnpersistedTag.style.display = 'inline-flex';
+      if (submitImageWarning) submitImageWarning.style.display = 'flex';
+      if (brochureHeroPlaceholder) brochureHeroPlaceholder.style.display = 'none';
+      if (brochureHeroBanner) brochureHeroBanner.style.backgroundImage = `url('${localFileDataUrl}')`;
+    } else {
+      // No cover image configured
+      if (previewImg) {
+        previewImg.src = '';
+        previewImg.style.display = 'none';
+      }
+      if (previewEmpty) previewEmpty.style.display = 'flex';
+      if (previewStatus) {
+        previewStatus.textContent = 'No image chosen';
+        previewStatus.className = 'preview-status-pill';
+      }
+      if (coverLocalWarning) coverLocalWarning.style.display = 'none';
+      if (coverUrlSuccess) coverUrlSuccess.style.display = 'none';
+      if (brochureUnpersistedTag) brochureUnpersistedTag.style.display = 'none';
+      if (submitImageWarning) submitImageWarning.style.display = 'none';
+      if (brochureHeroPlaceholder) brochureHeroPlaceholder.style.display = 'flex';
+      if (brochureHeroBanner) brochureHeroBanner.style.backgroundImage = 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)';
+    }
+    updateBrochurePreview();
+  }
+
+  // Browse button trigger
+  if (browseTrigger && fileInput) {
+    browseTrigger.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      fileInput.click();
+    });
+  }
+
+  if (dropzone && fileInput) {
+    dropzone.addEventListener('click', (e) => {
+      if (e.target !== browseTrigger) {
+        fileInput.click();
+      }
+    });
+
+    ['dragenter', 'dragover'].forEach(name => {
+      dropzone.addEventListener(name, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.add('dragover');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(name => {
+      dropzone.addEventListener(name, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove('dragover');
+      });
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) {
+        handleImageFile(files[0]);
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleImageFile(e.target.files[0]);
+      }
+    });
+  }
+
+  function handleImageFile(file) {
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file (PNG, JPG, WebP).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      isLocalFilePreview = true;
+      localFileDataUrl = ev.target.result;
+      localFileName = file.name;
+      // CRITICAL: NEVER assign dataUrl to heroInput.value
+      updateCoverPreviewState();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Hero Image URL manual input
+  if (heroInput) {
+    heroInput.addEventListener('input', (e) => {
+      const val = e.target.value.trim();
+      if (val.startsWith('data:') || val.startsWith('blob:')) {
+        alert('Direct data: or blob: URIs cannot be saved to the database. Please provide a public HTTP/HTTPS URL.');
+        e.target.value = '';
+      }
+      if (e.target.value.trim()) {
+        isLocalFilePreview = false;
+      }
+      updateCoverPreviewState();
+    });
+  }
+
+  // 3. Day-by-Day Itinerary Management
+  const list = document.querySelector('#itinerary-list');
+  const renumber = () => {
+    if (!list) return;
+    [...list.children].forEach((card, i) => {
+      const numSpan = card.querySelector('.day-number');
+      if (numSpan) numSpan.textContent = i + 1;
+      const titleSpan = card.querySelector('.day-toolbar-title');
+      const inputTitle = card.querySelector('input[name="itineraryTitle"]');
+      if (titleSpan && inputTitle) {
+        titleSpan.textContent = inputTitle.value.trim() || `Day ${i + 1} Excursion Flow`;
+      }
+    });
+    updateBrochurePreview();
+  };
+
+  if (list) {
+    list.addEventListener('click', (e) => {
+      const card = e.target.closest('.itinerary-editor');
+      if (!card) return;
+
+      if (e.target.classList.contains('remove-day')) {
+        if (list.children.length > 1) {
+          card.remove();
+        } else {
+          card.querySelectorAll('input, textarea').forEach(x => x.value = '');
+        }
+        renumber();
+      }
+
+      if (e.target.classList.contains('move-up') && card.previousElementSibling) {
+        list.insertBefore(card, card.previousElementSibling);
+        renumber();
+      }
+
+      if (e.target.classList.contains('move-down') && card.nextElementSibling) {
+        list.insertBefore(card.nextElementSibling, card);
+        renumber();
+      }
+    });
+
+    list.addEventListener('input', (e) => {
+      if (e.target.name === 'itineraryTitle') {
+        const card = e.target.closest('.itinerary-editor');
+        const titleSpan = card?.querySelector('.day-toolbar-title');
+        if (titleSpan) titleSpan.textContent = e.target.value.trim() || 'Daily Excursion Flow';
+      }
+      updateBrochurePreview();
+    });
+
+    document.querySelector('#add-day')?.addEventListener('click', () => {
+      const first = list.firstElementChild;
+      if (!first) return;
+      const card = first.cloneNode(true);
+      card.querySelectorAll('input, textarea').forEach(x => x.value = '');
+      const titleSpan = card.querySelector('.day-toolbar-title');
+      if (titleSpan) titleSpan.textContent = 'New Itinerary Day';
+      list.append(card);
+      renumber();
+    });
+  }
+
+  // 4. Live Penang Tourism Brochure Synchronizer
+  function updateBrochurePreview() {
+    const titleVal = document.querySelector('#title')?.value.trim() || 'Untitled Penang Excursion';
+    const destVal = document.querySelector('#destination')?.value.trim() || 'George Town, Penang';
+    const catVal = document.querySelector('#category')?.value.trim() || 'Culture & Heritage';
+    const daysVal = document.querySelector('#durationDays')?.value || '1';
+    const nightsVal = document.querySelector('#durationNights')?.value;
+    const summaryVal = document.querySelector('#shortDescription')?.value.trim() ||
+                       document.querySelector('#fullDescription')?.value.trim().slice(0, 150) ||
+                       'No summary description entered.';
+    const fulldescVal = document.querySelector('#fullDescription')?.value.trim() ||
+                        'No detailed package description provided yet.';
+    const adultPriceVal = parseFloat(document.querySelector('#adultPrice')?.value || '0');
+    const priceBasisVal = document.querySelector('#priceBasis')?.value || 'per_person';
+    const minTrav = document.querySelector('#minimumTravellers')?.value || '1';
+    const maxTrav = document.querySelector('#maximumTravellers')?.value || '15';
+    const meetPointVal = document.querySelector('#meetingPoint')?.value.trim() ||
+                         document.querySelector('#departureLocation')?.value.trim() ||
+                         'George Town Heritage Core';
+    const availVal = document.querySelector('#availabilityStatus')?.value || 'available';
+
+    // Synchronize preview tags
+    if (previewDestTag) previewDestTag.textContent = destVal;
+    if (previewTitleTag) previewTitleTag.textContent = titleVal;
+
+    const tEl = document.querySelector('#brochure-title-text');
+    if (tEl) tEl.textContent = titleVal;
+    const dEl = document.querySelector('#brochure-destination-text');
+    if (dEl) dEl.textContent = destVal;
+    const cEl = document.querySelector('#brochure-category-text');
+    if (cEl) cEl.textContent = catVal;
+    const durEl = document.querySelector('#brochure-duration-text');
+    if (durEl) {
+      durEl.textContent = `${daysVal} Day${parseInt(daysVal, 10) > 1 ? 's' : ''}` +
+                          (nightsVal && parseInt(nightsVal, 10) > 0 ? ` / ${nightsVal} Night${parseInt(nightsVal, 10) > 1 ? 's' : ''}` : '');
+    }
+    const sEl = document.querySelector('#brochure-summary-text');
+    if (sEl) sEl.textContent = summaryVal;
+    const fdEl = document.querySelector('#brochure-fulldesc-text');
+    if (fdEl) fdEl.textContent = fulldescVal;
+
+    // Specs Ribbon
+    const pEl = document.querySelector('#brochure-price-text');
+    if (pEl) pEl.textContent = `MYR ${adultPriceVal.toFixed(2)}`;
+    const bEl = document.querySelector('#brochure-basis-text');
+    if (bEl) bEl.textContent = priceBasisVal === 'per_group' ? 'per group (flat rate)' : 'per person';
+    const capEl = document.querySelector('#brochure-capacity-text');
+    if (capEl) capEl.textContent = `Min ${minTrav} - Max ${maxTrav} pax`;
+    const mEl = document.querySelector('#brochure-meeting-text');
+    if (mEl) mEl.textContent = meetPointVal;
+    const stEl = document.querySelector('#brochure-status-pill');
+    if (stEl) {
+      stEl.textContent = availVal === 'available' ? 'Active in Catalog' : 'Temporarily Paused';
+      stEl.className = availVal === 'available' ? 'status approved' : 'status rejected';
+    }
+
+    // Itinerary Timeline Rendering
+    const itinContainer = document.querySelector('#brochure-itinerary-render');
+    if (itinContainer && list) {
+      itinContainer.innerHTML = '';
+      const dayCards = [...list.querySelectorAll('.itinerary-editor')];
+      dayCards.forEach((dc, i) => {
+        const dNum = i + 1;
+        const dTitle = dc.querySelector('input[name="itineraryTitle"]')?.value.trim() || `Day ${dNum} Excursion`;
+        const dHotel = dc.querySelector('input[name="itineraryAccommodation"]')?.value.trim();
+        const dDesc = dc.querySelector('textarea[name="itineraryDescription"]')?.value.trim();
+        const dActs = (dc.querySelector('textarea[name="itineraryActivities"]')?.value || '')
+                        .split('\n').map(x => x.trim()).filter(Boolean);
+        const dMeals = (dc.querySelector('textarea[name="itineraryMeals"]')?.value || '')
+                        .split('\n').map(x => x.trim()).filter(Boolean);
+        const dTrans = dc.querySelector('input[name="itineraryTransportNotes"]')?.value.trim();
+
+        const cardEl = document.createElement('div');
+        cardEl.className = 'brochure-day-card';
+        cardEl.innerHTML = `
+          <div class="brochure-day-header">
+            <span class="brochure-day-badge">Day ${dNum}</span>
+            <span class="brochure-day-title">${escapeHtml(dTitle)}</span>
+            ${dHotel ? `<span class="brochure-day-hotel">🏨 ${escapeHtml(dHotel)}</span>` : ''}
+          </div>
+          ${dDesc ? `<p class="brochure-day-desc">${escapeHtml(dDesc)}</p>` : ''}
+          <div class="brochure-day-pills">
+            ${dMeals.map(m => `<span class="brochure-pill meal">🍽️ ${escapeHtml(m)}</span>`).join('')}
+            ${dActs.map(a => `<span class="brochure-pill activity">📍 ${escapeHtml(a)}</span>`).join('')}
+            ${dTrans ? `<span class="brochure-pill transport">🚐 ${escapeHtml(dTrans)}</span>` : ''}
+          </div>
+        `;
+        itinContainer.appendChild(cardEl);
+      });
+    }
+
+    // Inclusions & Exclusions
+    const incList = document.querySelector('#brochure-inclusions-list');
+    if (incList) {
+      const lines = (document.querySelector('#inclusions')?.value || '')
+                      .split('\n').map(x => x.trim()).filter(Boolean);
+      incList.innerHTML = lines.length ? lines.map(x => `
+        <li>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0; margin-top:2px;"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>${escapeHtml(x)}</span>
+        </li>
+      `).join('') : '<li class="brochure-empty-text">No inclusions specified yet</li>';
+    }
+
+    const excList = document.querySelector('#brochure-exclusions-list');
+    if (excList) {
+      const lines = (document.querySelector('#exclusions')?.value || '')
+                      .split('\n').map(x => x.trim()).filter(Boolean);
+      excList.innerHTML = lines.length ? lines.map(x => `
+        <li>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0; margin-top:2px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <span>${escapeHtml(x)}</span>
+        </li>
+      `).join('') : '<li class="brochure-empty-text">No exclusions specified yet</li>';
+    }
+
+    // What to Bring Pills
+    const bringWrap = document.querySelector('#brochure-bring-pills');
+    if (bringWrap) {
+      const lines = (document.querySelector('#whatToBring')?.value || '')
+                      .split('\n').map(x => x.trim()).filter(Boolean);
+      bringWrap.innerHTML = lines.length ? lines.map(x => `
+        <span class="brochure-pill">🎒 ${escapeHtml(x)}</span>
+      `).join('') : '<span class="brochure-empty-text">No packing items specified</span>';
+    }
+
+    // Accommodation Box
+    const nightsNum = parseInt(nightsVal || '0', 10);
+    const hName = document.querySelector('#accommodationName')?.value.trim();
+    const hCat = document.querySelector('#accommodationCategory')?.value.trim();
+    const hRoom = document.querySelector('#roomType')?.value.trim();
+    const hotelBox = document.querySelector('#brochure-hotel-logistics');
+    if (hotelBox) {
+      if (nightsNum === 0) {
+        hotelBox.innerHTML = '<span class="brochure-empty-text">Single-Day Excursion (No hotel stay required)</span>';
+      } else {
+        hotelBox.innerHTML = `
+          <strong>Lodging:</strong> <span id="brochure-hotel-text">${escapeHtml(hName || 'To be specified by operator')}</span><br>
+          <strong>Category:</strong> <span id="brochure-hotel-cat-text">${escapeHtml(hCat || 'Standard')}</span><br>
+          <strong>Room Type:</strong> <span id="brochure-hotel-room-text">${escapeHtml(hRoom || 'To be specified')}</span>
+        `;
+      }
+    }
+
+    // Departure Calendar Chips
+    const datesWrap = document.querySelector('#brochure-dates-wrap');
+    if (datesWrap) {
+      const lines = (document.querySelector('#departureDates')?.value || '')
+                      .split('\n').map(x => x.trim()).filter(Boolean);
+      datesWrap.innerHTML = lines.length ? lines.map(d => `
+        <span class="brochure-date-chip">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <span>${escapeHtml(d)}</span>
+        </span>
+      `).join('') : '<span class="brochure-empty-text">No fixed calendar dates scheduled (Excursions on demand)</span>';
+    }
+
+    // Cancellation Policy Text
+    const polEl = document.querySelector('#brochure-policy-text');
+    const polInput = document.querySelector('#cancellationPolicy')?.value.trim() ||
+                     document.querySelector('#importantNotes')?.value.trim();
+    if (polEl) {
+      polEl.textContent = polInput || 'No operator cancellation terms specified yet.';
+    }
+
+    // Update Step Checklist indicators
+    updateChecklist();
+  }
+
+  function updateChecklist() {
+    const tVal = document.querySelector('#title')?.value.trim();
+    const dVal = document.querySelector('#destination')?.value.trim();
+    const pVal = document.querySelector('#adultPrice')?.value.trim();
+    const incVal = document.querySelector('#inclusions')?.value.trim();
+    const polVal = document.querySelector('#cancellationPolicy')?.value.trim();
+
+    setCheck('check-step-1', Boolean(tVal && dVal));
+    setCheck('check-step-2', Boolean(pVal && parseFloat(pVal) > 0));
+    setCheck('check-step-3', Boolean(incVal));
+    setCheck('check-step-4', Boolean(polVal));
+    setCheck('check-step-5', Boolean(list && list.children.length > 0));
+  }
+
+  function setCheck(id, completed) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('completed', completed);
+    el.classList.toggle('pending', !completed);
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // 5. Validation Check
+  function validateRequiredFields() {
+    const titleVal = document.querySelector('#title')?.value.trim();
+    const destVal = document.querySelector('#destination')?.value.trim();
+    const daysVal = document.querySelector('#durationDays')?.value;
+    const priceVal = document.querySelector('#adultPrice')?.value;
+
+    const banner = document.querySelector('#validation-alert-banner');
+    const msg = document.querySelector('#validation-alert-msg');
+    const fixBtn = document.querySelector('#validation-fix-btn');
+
+    if (!titleVal || !destVal || !daysVal) {
+      if (banner && msg && fixBtn) {
+        banner.classList.add('active');
+        msg.textContent = 'Basic Info is incomplete. Package Title, Destination City, and Duration Days are required.';
+        fixBtn.onclick = () => goToStep(1);
+      }
+      return false;
+    } else if (!priceVal || parseFloat(priceVal) <= 0) {
+      if (banner && msg && fixBtn) {
+        banner.classList.add('active');
+        msg.textContent = 'Pricing is incomplete. Adult / Base Rate in MYR is required.';
+        fixBtn.onclick = () => goToStep(2);
+      }
+      return false;
+    } else {
+      if (banner) banner.classList.remove('active');
+      return true;
+    }
+  }
+
+  // Form submission validation interceptor
+  const form = document.querySelector('form.package-editor');
+  if (form) {
+    form.addEventListener('submit', (e) => {
+      // Security & data integrity: NEVER submit data: or blob: URIs
+      if (heroInput && (heroInput.value.startsWith('data:') || heroInput.value.startsWith('blob:'))) {
+        heroInput.value = '';
+      }
+
+      const titleVal = document.querySelector('#title')?.value.trim();
+      const destVal = document.querySelector('#destination')?.value.trim();
+      const daysVal = document.querySelector('#durationDays')?.value;
+      const priceVal = document.querySelector('#adultPrice')?.value;
+
+      if (!titleVal || !destVal || !daysVal) {
+        e.preventDefault();
+        goToStep(1);
+        document.querySelector('#title')?.focus();
+        return;
+      }
+      if (!priceVal || parseFloat(priceVal) <= 0) {
+        e.preventDefault();
+        goToStep(2);
+        document.querySelector('#adultPrice')?.focus();
+        return;
+      }
+    });
+  }
+
+  // Initial compilation on load
+  updateCoverPreviewState();
+});
 </script>

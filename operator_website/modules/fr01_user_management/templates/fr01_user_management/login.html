@@ -1,1 +1,91 @@
-{% extends 'base.html' %}{% block title %}Operator sign in | TravelMate{% endblock %}{% block body %}<div class="auth"><section class="auth-art"><div><div class="mark">TM</div><span class="eyebrow">TRAVELMATE OPERATOR</span><h1>Run better trips.</h1><p>Build complete packages, respond to review feedback, and promote approved experiences from one calm workspace.</p></div><div class="swatches"><span></span><span></span><span></span><span></span></div></section><section class="auth-panel"><form class="auth-card" method="post"><span class="eyebrow">WELCOME BACK</span><h2>Sign in to your portal</h2><p class="muted">Use the business email for your Tourism Operator account.</p>{% for c,m in get_flashed_messages(with_categories=true) %}<div class="msg {{c}}" role="alert">{{m}}</div>{% endfor %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="field"><label for="email">Business email</label><input id="email" class="input" name="email" type="email" autocomplete="email" value="{{ request.form.get('email','') }}" required></div><div class="field"><label for="password">Password</label><input id="password" class="input" name="password" type="password" autocomplete="current-password" required></div><button class="btn primary full" type="submit">Sign in</button><p class="auth-links"><a href="{{ url_for('operator_fr01.register') }}">Create operator account</a><a href="{{ url_for('operator_fr01.reset') }}">Forgot password?</a></p></form></section></div>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Sign In — TravelMate Tourism Operator Portal{% endblock %}
+
+{% block body %}
+<div class="auth">
+  <section class="auth-art">
+    <div>
+      <div class="mark" aria-hidden="true">TM</div>
+      <div class="auth-brand-tag">TravelMate Penang Platform</div>
+      <h1>Run better trips.</h1>
+      <p>Build complete itineraries, collaborate with destination administrators, and reach Penang travellers from one professional console.</p>
+
+      <div class="auth-features">
+        <div class="auth-feature-item">
+          <div class="auth-feature-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          </div>
+          <div>
+            <strong>Complete Package Builder</strong>
+            <span>Multi-day schedules, daily activities, transport logistics & pricing</span>
+          </div>
+        </div>
+
+        <div class="auth-feature-item">
+          <div class="auth-feature-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div>
+            <strong>Quality Moderation & Review</strong>
+            <span>Fast turnaround review comments from Penang Tourism Administrators</span>
+          </div>
+        </div>
+
+        <div class="auth-feature-item">
+          <div class="auth-feature-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          </div>
+          <div>
+            <strong>Promotions & Campaign Engine</strong>
+            <span>Targeted discount codes and seasonal offers published to mobile travellers</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-art-footer">
+      <span>Tourism Operator Portal • Port 5001</span>
+      <span>TravelMate FYP</span>
+    </div>
+  </section>
+
+  <section class="auth-panel">
+    <form class="auth-card" method="post">
+      <div class="auth-card-header">
+        <span class="auth-badge">Tourism Operator</span>
+        <h2>Sign in to your portal</h2>
+        <p class="muted">Enter your verified business credentials to access your operator workspace.</p>
+      </div>
+
+      {% for c, m in get_flashed_messages(with_categories=true) %}
+        <div class="msg {{ c }}" role="alert">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>{{ m }}</span>
+        </div>
+      {% endfor %}
+
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="field">
+        <label for="email">Business Email</label>
+        <input id="email" class="input" name="email" type="email" autocomplete="email" value="{{ request.form.get('email', '') }}" placeholder="operator@travelmate.com" required>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" class="input" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+      </div>
+
+      <button class="btn primary full" type="submit" style="margin-top: 8px;">
+        <span>Sign In to Operator Portal</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </button>
+
+      <div class="auth-links">
+        <a href="{{ url_for('operator_fr01.register') }}">Register operator account</a>
+        <a href="{{ url_for('operator_fr01.reset') }}">Forgot password?</a>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

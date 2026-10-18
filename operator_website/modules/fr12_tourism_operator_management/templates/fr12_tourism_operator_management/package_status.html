@@ -1,1 +1,71 @@
-{% extends 'portal_base.html' %}{% block title %}Package status | TravelMate{% endblock %}{% block content %}<div class="page-title"><div><span class="eyebrow">PACKAGE WORKFLOW</span><h1>Package status</h1><p>Track drafts and Administrator review decisions.</p></div><a class="btn primary" href="{{ url_for('operator_fr12.new_package') }}">Create package</a></div><section class="grid g2">{% for item in items %}{% set state=item.get('approvalStatus','draft') %}<article class="card"><div class="actions" style="justify-content:space-between"><strong>{{ item.get('title',item.get('packageTitle','Package')) }}</strong><span class="status {{state}}">{{ {'pending':'Under review','submitted':'Under review','rejected':'Needs changes','approved':'Approved','archived':'Archived'}.get(state,state|title) }}</span></div><p class="muted">{{ item.get('destination',item.get('destinationName','')) }}</p>{% if item.get('reviewReason',item.get('reviewComment')) %}<div class="review-feedback"><strong>Administrator feedback</strong><p>{{ item.get('reviewReason',item.get('reviewComment')) }}</p></div>{% endif %}{% if state in ['draft','rejected'] %}<a class="btn outline" href="{{ url_for('operator_fr12.edit_package_page',package_id=item.id) }}">Review and edit</a>{% endif %}</article>{% else %}<div class="card empty-state"><strong>No packages yet</strong><p>Create a package to start the review workflow.</p><a class="btn primary" href="{{ url_for('operator_fr12.new_package') }}">Create package</a></div>{% endfor %}</section>{% endblock %}
+{% extends 'portal_base.html' %}
+{% block title %}Package Status & Approval | TravelMate{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <span class="eyebrow">Moderation Workflow</span>
+    <h1>Package Approval Status</h1>
+    <p>Track all draft itineraries, pending Administrator reviews, and publishing decisions.</p>
+  </div>
+  <a class="btn primary" href="{{ url_for('operator_fr12.new_package') }}">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    <span>Create Package</span>
+  </a>
+</div>
+
+<section class="grid g2">
+  {% for item in items %}
+    {% set state = item.get('approvalStatus', 'draft')|lower %}
+    <article class="card">
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px;">
+        <strong style="font-size: 16px; color: var(--ink);">{{ item.get('title', item.get('packageTitle', 'Package')) }}</strong>
+        <span class="status {{ state }}">
+          {{ {'pending': 'Under Review', 'submitted': 'Under Review', 'rejected': 'Needs Changes', 'approved': 'Approved', 'archived': 'Archived', 'draft': 'Draft'}.get(state, state|title) }}
+        </span>
+      </div>
+
+      <p class="muted" style="font-size: 13px; margin: 0 0 14px;">
+        {{ item.get('destination', item.get('destinationName', 'Penang, Malaysia')) }}
+        {% if item.get('durationDays') %} • {{ item.get('durationDays') }} Days{% endif %}
+      </p>
+
+      {% if item.get('reviewReason', item.get('reviewComment')) %}
+        <div class="review-feedback" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <strong>Administrator Review Feedback:</strong>
+          </div>
+          <p>{{ item.get('reviewReason', item.get('reviewComment')) }}</p>
+        </div>
+      {% endif %}
+
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-subtle);">
+        <span class="muted" style="font-size: 11px;">
+          Updated: {{ (item.get('updatedAt') or item.get('createdAt') or '—')[:10] }}
+        </span>
+
+        {% if state in ['draft', 'rejected'] %}
+          <a class="btn outline" href="{{ url_for('operator_fr12.edit_package_page', package_id=item.id) }}">
+            <span>Review & Edit</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </a>
+        {% elif state in ['pending', 'submitted'] %}
+          <span class="muted" style="font-size: 12px; font-weight: 600;">Pending Admin Review</span>
+        {% elif state == 'approved' %}
+          <span style="font-size: 12px; font-weight: 600; color: var(--success);">Live on Platform</span>
+        {% endif %}
+      </div>
+    </article>
+  {% else %}
+    <div class="card empty-state full-span" style="grid-column: 1 / -1;">
+      <div class="empty-icon" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+      </div>
+      <strong>No Packages Found</strong>
+      <p>Create a package to initiate the Administrator moderation workflow.</p>
+      <a class="btn primary" href="{{ url_for('operator_fr12.new_package') }}">Create Package</a>
+    </div>
+  {% endfor %}
+</section>
+{% endblock %}

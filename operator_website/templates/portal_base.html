@@ -1,23 +1,133 @@
 {% extends 'base.html' %}
 {% block body %}
 <div class="layout">
+
   <aside class="sidebar">
-    <div class="brand"><div class="logo">TM</div><div><strong>TravelMate</strong><br><small>Operator Portal</small></div></div>
-    <nav>
-      <a class="{% if request.endpoint == 'operator_fr12.dashboard' %}active{% endif %}" href="{{ url_for('operator_fr12.dashboard') }}">▦ <span>Dashboard</span></a>
-      <a class="{% if request.endpoint in ['operator_fr12.packages','operator_fr12.new_package','operator_fr12.edit_package_page'] %}active{% endif %}" href="{{ url_for('operator_fr12.packages') }}">□ <span>Packages</span></a>
-      <a class="{% if request.endpoint in ['operator_fr12.campaigns','operator_fr12.edit_campaign_page'] %}active{% endif %}" href="{{ url_for('operator_fr12.campaigns') }}">◇ <span>Campaigns</span></a>
-      <a class="{% if request.endpoint == 'operator_fr01.profile' %}active{% endif %}" href="{{ url_for('operator_fr01.profile') }}">○ <span>Profile</span></a>
-    </nav>
-    <div class="footer"><form method="post" action="{{ url_for('operator_fr01.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn outline" type="submit">↪ <span>Sign out</span></button></form></div>
+    <div>
+      <div class="brand">
+        <div class="logo">TM</div>
+        <div>
+          <strong>TravelMate</strong>
+          <small>Tourism Operator</small>
+        </div>
+        <button class="mobile-sidebar-close" type="button" aria-label="Close navigation" onclick="document.querySelector('.layout').classList.remove('sidebar-open')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <nav aria-label="Tourism Operator navigation">
+        <div class="sidebar-nav-section">
+          <span class="sidebar-nav-title">Overview</span>
+        </div>
+        <a href="{{ url_for('operator_fr12.dashboard') }}" class="{% if request.endpoint == 'operator_fr12.dashboard' %}active{% endif %}">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span class="nav-label">Dashboard</span>
+        </a>
+
+        <div class="sidebar-nav-section">
+          <span class="sidebar-nav-title">Catalog & Itineraries</span>
+        </div>
+        <a href="{{ url_for('operator_fr12.packages') }}" class="{% if request.endpoint in ['operator_fr12.packages', 'operator_fr12.new_package', 'operator_fr12.edit_package_page'] %}active{% endif %}">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          <span class="nav-label">Package Catalog</span>
+        </a>
+        <a href="{{ url_for('operator_fr12.package_status') }}" class="{% if request.endpoint == 'operator_fr12.package_status' %}active{% endif %}">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          <span class="nav-label">Package Status</span>
+        </a>
+        <a href="{{ url_for('operator_fr12.bookings') }}" class="{% if request.endpoint in ['operator_fr12.bookings', 'operator_fr12.booking_detail'] %}active{% endif %}">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/></svg>
+          <span class="nav-label">Bookings</span>
+        </a>
+
+        <div class="sidebar-nav-section">
+          <span class="sidebar-nav-title">Marketing & Reach</span>
+        </div>
+        <a href="{{ url_for('operator_fr12.campaigns') }}" class="{% if request.endpoint in ['operator_fr12.campaigns', 'operator_fr12.edit_campaign_page'] %}active{% endif %}">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          <span class="nav-label">Promotions & Campaigns</span>
+        </a>
+
+        <div class="sidebar-nav-section">
+          <span class="sidebar-nav-title">Business Insights</span>
+        </div>
+        <a href="{{ url_for('operator_fr12.analytics') }}" class="{% if request.endpoint in ['operator_fr12.analytics', 'operator_fr12.export_report'] %}active{% endif %}">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          <span class="nav-label">Business Analytics</span>
+        </a>
+
+        <div class="sidebar-nav-section">
+          <span class="sidebar-nav-title">Organization</span>
+        </div>
+        <a href="{{ url_for('operator_fr01.profile') }}" class="{% if request.endpoint == 'operator_fr01.profile' %}active{% endif %}">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span class="nav-label">Business Profile</span>
+        </a>
+      </nav>
+    </div>
+
+    <div class="footer">
+      <div class="sidebar-user-indicator">
+        <span class="status-pulse" aria-hidden="true"></span>
+        <span>Operator Session Active</span>
+      </div>
+      <form method="post" action="{{ url_for('operator_fr01.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn" type="submit" aria-label="Sign out of Tourism Operator Portal">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span>Sign Out</span>
+        </button>
+      </form>
+    </div>
   </aside>
+
   <section class="content">
-    <header class="topbar"><button class="mobile-menu" type="button" aria-label="Open navigation" aria-expanded="false">☰</button><div><strong>Tourism Operator Portal</strong><div class="muted" style="font-size:12px">Packages and campaigns workspace</div></div><div class="avatar" aria-label="Operator account">OP</div></header>
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="mobile-menu-btn" type="button" aria-label="Toggle navigation menu" onclick="document.querySelector('.layout').classList.toggle('sidebar-open')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div>
+          <h2 class="topbar-title">Tourism Operator Portal</h2>
+          <div class="topbar-subtitle">TravelMate Penang Tourism Platform • Operator Workspace</div>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <div class="system-badge">
+          <span class="system-badge-dot" aria-hidden="true"></span>
+          <span>Port 5001 • Online</span>
+        </div>
+        <div class="user-profile-badge">
+          <div class="avatar" aria-hidden="true">OP</div>
+          <div class="user-meta">
+            <span class="user-meta-name">Tourism Operator</span>
+            <span class="user-meta-role">Verified Partner</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
     <main class="main">
-      {% for c,m in get_flashed_messages(with_categories=true) %}<div class="msg {{c}}">{{m}}</div>{% endfor %}
+      {% for c,m in get_flashed_messages(with_categories=true) %}
+      <div class="msg {{c}}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>{{m}}</span>
+      </div>
+      {% endfor %}
+
       {% block content %}{% endblock %}
     </main>
   </section>
 </div>
-<script>document.querySelector('.mobile-menu')?.addEventListener('click',e=>{const open=document.body.classList.toggle('nav-open');e.currentTarget.setAttribute('aria-expanded',open);});</script>
+<div class="sidebar-backdrop" onclick="document.querySelector('.layout').classList.remove('sidebar-open')" aria-hidden="true"></div>
+
+<script>
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      var layout = document.querySelector('.layout');
+      if (layout) layout.classList.remove('sidebar-open');
+    }
+  });
+</script>
 {% endblock %}

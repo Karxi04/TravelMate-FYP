@@ -1,3 +1,50 @@
-{% extends 'portal_base.html' %}{% block title %}Account Verification | TravelMate{% endblock %}{% block content %}
-<div class="state-page"><div class="state-icon">✓</div><span class="eyebrow">ACCOUNT STATUS</span><h1>{% if verification_status in ['rejected','disabled','deactivated'] %}Account needs attention{% else %}Account verification pending{% endif %}</h1><p class="lead">{% if verification_status in ['rejected','disabled','deactivated'] %}Your Tourism Operator account needs administrator attention before publishing can begin. Update your business profile or contact TravelMate support.{% else %}Your Tourism Operator account is awaiting TravelMate administrator approval.{% endif %}</p><div class="state-actions"><a class="btn primary" href="{{ url_for('operator_fr01.profile') }}">Update business profile</a><form method="post" action="{{ url_for('operator_fr01.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn outline">Sign out</button></form></div><div class="state-note"><strong>While you wait</strong><p>You can update your business details while verification is pending. Package and campaign publishing will become available after approval.</p></div></div>
+{% extends 'portal_base.html' %}
+{% block title %}Account Verification | TravelMate{% endblock %}
+
+{% block content %}
+<div class="state-page">
+  <div class="state-icon" aria-hidden="true">
+    {% if verification_status in ['rejected', 'disabled', 'deactivated'] %}
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--danger);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    {% else %}
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--bluegrey);"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    {% endif %}
+  </div>
+
+  <span class="eyebrow">Account Moderation</span>
+  <h1>
+    {% if verification_status in ['rejected', 'disabled', 'deactivated'] %}
+      Account Needs Attention
+    {% else %}
+      Account Verification Pending
+    {% endif %}
+  </h1>
+
+  <p class="lead">
+    {% if verification_status in ['rejected', 'disabled', 'deactivated'] %}
+      Your Tourism Operator accreditation requires review or additional information before publishing privileges can be granted. Please update your business profile or contact TravelMate administrator support.
+    {% else %}
+      Your Tourism Operator account is currently undergoing administrator accreditation. Our team is verifying your registered business credentials.
+    {% endif %}
+  </p>
+
+  <div class="state-actions">
+    <a class="btn primary" href="{{ url_for('operator_fr01.profile') }}">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      <span>Update Business Profile</span>
+    </a>
+    <form method="post" action="{{ url_for('operator_fr01.logout') }}" style="display: inline-block; margin: 0;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn outline" type="submit">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span>Sign Out</span>
+      </button>
+    </form>
+  </div>
+
+  <div class="state-note">
+    <strong>While you wait for accreditation:</strong>
+    <p>You can keep your business registration and contact details updated. Package publishing and promotional campaign creation will activate automatically upon administrator approval.</p>
+  </div>
+</div>
 {% endblock %}
