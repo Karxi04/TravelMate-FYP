@@ -164,6 +164,68 @@ def _safe_order(record):
     }
 
 
+def _payment_history_title(record):
+    package = record.get('packageSnapshot')
+    if isinstance(package, dict):
+        return package.get('title') or package.get('name')
+    quote = record.get('quoteSnapshot')
+    if isinstance(quote, dict):
+        return quote.get('name') or quote.get('roomName') or quote.get('title')
+    return record.get('productTitle')
+
+
+def _payment_history_provider(record):
+    provider = str(record.get('provider') or '').strip().lower()
+    reference = str(record.get('transactionReference') or '').strip().lower()
+    if provider == 'stripe_checkout_test':
+        return 'stripe', True
+    if reference.startswith('pi_sim_'):
+        return 'travelmate_simulation', True
+    if reference.startswith('pi_'):
+        return 'stripe', None
+    return None, None
+
+
+def _payment_history_item(record, source):
+    provider, test_mode = _payment_history_provider(record)
+    timestamp = (
+        record.get('paidAt') or record.get('updatedAt') or record.get('createdAt')
+    )
+    if source == 'checkout_order':
+        booking_type = str(record.get('quoteType') or 'unknown').strip().lower()
+        order_status = str(record.get('status') or 'unknown').strip().lower()
+        raw_payment_status = record.get('paymentStatus')
+        payment_status = str(
+            raw_payment_status or ('paid' if order_status == 'paid' else 'unknown')
+        ).strip().lower()
+    else:
+        booking_type = str(record.get('bookingType') or 'legacy_payment').strip().lower()
+        payment_status = normalizePaymentStatus(record.get('paymentStatus'))
+        order_status = None
+    item = {
+        'id': record.get('id'),
+        'orderReference': record.get('id'),
+        'bookingType': booking_type,
+        'timestamp': timestamp,
+        'amount': record.get('amount'),
+        'currency': str(record.get('currency') or '').upper() or None,
+        'paymentStatus': payment_status,
+        'orderStatus': order_status,
+        'testMode': test_mode,
+        'paymentProvider': provider,
+        'relatedTripId': record.get('fulfilledTripId') or record.get('tripId'),
+        'relatedBookingId': record.get('bookingId'),
+        'productTitle': _payment_history_title(record),
+        'source': source,
+    }
+    if source == 'legacy_payment':
+        if record.get('cardBrand'):
+            item['cardBrand'] = record.get('cardBrand')
+        if record.get('cardLast4'):
+            item['cardLast4'] = record.get('cardLast4')
+    return item
+
+
 def _configured_checkout_url(name, fallback):
     value = os.getenv(name, fallback).strip()
     parsed = urlparse(value)
@@ -289,7 +351,7 @@ def _package_trip_schedule(snapshot):
                 activity = deepcopy(raw_activity)
                 name = activity.get('title') or activity.get('name') or activity.get('activityName') or 'Package activity'
                 time_slot = activity.get('scheduledStartTime') or activity.get('timeSlot') or activity.get('time')
-                time_match = re.match(r'^(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\s*[-:–—]\s*(.+)$', str(name))
+                time_match = re.match(r'^(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\s*[-:â€“â€”]\s*(.+)$', str(name))
                 if time_match:
                     if not time_slot:
                         time_slot = time_match.group(1).strip()
@@ -300,7 +362,7 @@ def _package_trip_schedule(snapshot):
                     activity['scheduledStartTime'] = str(time_slot).strip()
             else:
                 act_text = str(raw_activity).strip()
-                time_match = re.match(r'^(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\s*[-:–—]\s*(.+)$', act_text)
+                time_match = re.match(r'^(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\s*[-:â€“â€”]\s*(.+)$', act_text)
                 if time_match:
                     activity = {
                         'activityName': time_match.group(2).strip(),
@@ -1073,16 +1135,22 @@ def cancel_payment(payment_id):
 @bp.get('/payments')
 @auth_required(['traveller'])
 def list_payments():
-    items = retrieveRecord('payment_records', filters=[('travellerId', '==', g.uid)]) or []
-    normalized = [
-        {
-            **{
-                key: value for key, value in item.items()
-                if key != 'providerIdempotencyKey'
-            },
-            'paymentStatus': normalizePaymentStatus(item.get('paymentStatus')),
-        }
-        for item in items
-        if isinstance(item, dict)
-    ]
+    ownership_filter = [('travellerId', '==', g.uid)]
+    sources = (
+        ('checkout_order', retrieveRecord(ORDER_COLLECTION, filters=ownership_filter) or []),
+        ('legacy_payment', retrieveRecord('payment_records', filters=ownership_filter) or []),
+    )
+    normalized = []
+    seen = set()
+    for source, records in sources:
+        for record in records:
+            if not isinstance(record, dict) or record.get('travellerId') != g.uid:
+                continue
+            record_id = record.get('id')
+            key = str(record_id)
+            if not record_id or key in seen:
+                continue
+            seen.add(key)
+            normalized.append(_payment_history_item(record, source))
+    normalized.sort(key=lambda item: str(item.get('timestamp') or ''), reverse=True)
     return jsonify({'ok': True, 'items': normalized})

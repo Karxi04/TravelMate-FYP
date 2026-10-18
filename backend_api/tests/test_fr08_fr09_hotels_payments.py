@@ -222,13 +222,19 @@ def test_payment_process_rejects_unauthorized_booking(client, mock_traveller_aut
 
 def test_payment_list_normalizes_legacy_success(client, mock_traveller_auth):
     records = [
-        {'id': 'legacy', 'paymentStatus': 'successful'},
-        {'id': 'current', 'paymentStatus': 'succeeded'},
+        {
+            'id': 'legacy', 'travellerId': 'test_traveller_uid',
+            'paymentStatus': 'successful',
+        },
+        {
+            'id': 'current', 'travellerId': 'test_traveller_uid',
+            'paymentStatus': 'succeeded',
+        },
     ]
-    with patch(
-        'modules.fr09_payment.routes.retrieveRecord',
-        return_value=records,
-    ):
+    def retrieve(collection, document_id=None, filters=None):
+        return records if collection == 'payment_records' else []
+
+    with patch('modules.fr09_payment.routes.retrieveRecord', side_effect=retrieve):
         response = client.get(
             '/api/fr9/payments',
             headers={'Authorization': 'Bearer valid_test_token'},
