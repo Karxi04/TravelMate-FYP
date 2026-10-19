@@ -31,6 +31,7 @@ from services.package_service import (
     normalise_package,
     package_for_read,
     package_submission_error,
+    package_update_changes_reviewed_content,
     package_validation_error,
 )
 from services.image_storage_service import (
@@ -108,7 +109,7 @@ def update_package(pid):
     merged={**current, **payload}; error=package_validation_error(merged)
     if error:return jsonify({'ok':False,'error':error}),400
     updates=normalise_package(payload,current)
-    if current.get('approvalStatus')=='approved':
+    if current.get('approvalStatus')=='approved' and package_update_changes_reviewed_content(current,payload):
         updates.update({'approvalStatus':'draft','reviewReason':'','reviewComment':'','reviewedAt':'','reviewedBy':'','reviewedByName':'','submittedAt':''})
     updates['updatedAt']=utc_now_iso(); return jsonify({'ok':True,'package':package_for_read(updateRecord('tourism_packages',pid,updates))})
 @bp.delete('/packages/<pid>')
@@ -116,14 +117,14 @@ def update_package(pid):
 def delete_package(pid):
     current=_own('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
-    if current.get('approvalStatus') in {'pending','submitted','approved'}:return jsonify({'ok':False,'error':'Submitted or approved packages must be archived instead'}),409
+    if current.get('approvalStatus') in {'pending','submitted','approved','suspended'}:return jsonify({'ok':False,'error':'Submitted, approved or suspended packages cannot be deleted'}),409
     deleteRecord('tourism_packages',pid); return jsonify({'ok':True})
 @bp.post('/packages/<pid>/submit')
 @auth_required(['operator'])
 def submit_package(pid):
     current=_own('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
-    if current.get('approvalStatus') not in {'draft','rejected'}:return jsonify({'ok':False,'error':'Only draft or rejected packages can be submitted'}),409
+    if current.get('approvalStatus') not in {'draft','rejected','suspended'}:return jsonify({'ok':False,'error':'Only draft, rejected or suspended packages can be submitted'}),409
     error=package_submission_error(current)
     if error:return jsonify({'ok':False,'error':error}),400
     return jsonify({'ok':True,'package':updateRecord('tourism_packages',pid,submitForApproval(current)),'status':'pending'})
@@ -133,7 +134,7 @@ def submit_package(pid):
 def archive_package(pid):
     current=_own('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
-    if current.get('approvalStatus') in {'pending','submitted'}:return jsonify({'ok':False,'error':'A package under review cannot be archived'}),409
+    if current.get('approvalStatus') in {'pending','submitted','suspended'}:return jsonify({'ok':False,'error':'A package under review or suspension cannot be archived'}),409
     return jsonify({'ok':True,'package':updateRecord('tourism_packages',pid,{'approvalStatus':'archived','updatedAt':utc_now_iso()})})
 @bp.get('/campaigns')
 @auth_required(['operator'])
