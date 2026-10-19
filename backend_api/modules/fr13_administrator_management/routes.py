@@ -174,7 +174,39 @@ def review_package(pid):
     comment=str(payload.get('comment','')).strip()
     if decision=='rejected' and not comment:return jsonify({'ok':False,'error':'A rejection reason is required'}),400
     review=approve(current,comment) if decision=='approved' else reject(current,comment)
-    updates={'approvalStatus':review['decision'],'reviewReason':review['reviewComment'],'reviewComment':review['reviewComment'],'reviewedBy':g.uid,'reviewedByName':(g.profile or {}).get('name','Administrator'),'reviewedAt':review['reviewedAt'],'updatedAt':utc_now_iso()}; return jsonify({'ok':True,'package':updateRecord('tourism_packages',pid,updates)})
+    updates={'approvalStatus':review['decision'],'reviewReason':review['reviewComment'],'reviewComment':review['reviewComment'],'reviewedBy':g.uid,'reviewedByName':(g.profile or {}).get('name','Administrator'),'reviewedAt':review['reviewedAt'],'updatedAt':utc_now_iso()}
+    if decision == 'approved' and current.get('suspendedAt'):
+        updates.update({'suspensionResolvedAt':updates['updatedAt'],'suspensionResolvedBy':g.uid,'suspensionResolvedByName':updates['reviewedByName']})
+    return jsonify({'ok':True,'package':updateRecord('tourism_packages',pid,updates)})
+
+
+@bp.post('/packages/<pid>/suspend')
+@auth_required(['admin'])
+def suspend_package(pid):
+    current=retrieveRecord('tourism_packages',pid)
+    if not current:return jsonify({'ok':False,'error':'Package not found'}),404
+    payload=request.get_json(silent=True) or {}
+    reason=str(payload.get('reason') or '').strip()
+    if len(reason) < 10:return jsonify({'ok':False,'error':'A meaningful suspension reason of at least 10 characters is required'}),400
+    if len(reason) > 500:return jsonify({'ok':False,'error':'Suspension reason cannot exceed 500 characters'}),400
+    status=str(current.get('approvalStatus') or 'draft').lower()
+    if status == 'suspended':
+        if reason != str(current.get('suspensionReason') or '').strip():
+            return jsonify({'ok':False,'error':'Package is already suspended with a different reason'}),409
+        return jsonify({'ok':True,'package':package_for_read(current),'status':'suspended','idempotent':True})
+    if status != 'approved':
+        return jsonify({'ok':False,'error':'Only approved packages can be suspended'}),409
+    now=utc_now_iso()
+    updates={
+        'approvalStatus':'suspended',
+        'suspensionReason':reason,
+        'suspendedBy':g.uid,
+        'suspendedByName':(g.profile or {}).get('name','Administrator'),
+        'suspendedAt':now,
+        'updatedAt':now,
+    }
+    saved=updateRecord('tourism_packages',pid,updates)
+    return jsonify({'ok':True,'package':package_for_read(saved),'status':'suspended','idempotent':False})
 @bp.get('/campaigns/pending')
 @auth_required(['admin'])
 def pending_campaigns():

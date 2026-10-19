@@ -1,4 +1,5 @@
 {% set p = form or item or {} %}
+{% set resolved_availability = 'unavailable' if p.get('availabilityStatus') == 'unavailable' else 'available' %}
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
 <!-- =========================================================================
@@ -478,10 +479,18 @@
         <span class="field-destination-badge internal">Catalog Visibility</span>
       </label>
       <select id="availabilityStatus" class="input" name="availabilityStatus">
-        <option value="available" {% if p.get('availabilityStatus', 'available') == 'available' %}selected{% endif %}>Active & Available for Booking</option>
-        <option value="unavailable" {% if p.get('availabilityStatus') == 'unavailable' %}selected{% endif %}>Temporarily Paused (Hidden from Search)</option>
+        <option value="available" {% if resolved_availability == 'available' %}selected{% endif %}>Available — Eligible for Traveller discovery after Admin approval</option>
+        <option value="unavailable" {% if resolved_availability == 'unavailable' %}selected{% endif %}>Unavailable — Remains hidden and unbookable until activated</option>
       </select>
-      <span class="field-help">Controls whether this approved package is open for traveller bookings.</span>
+      <span class="field-help">Controls whether this package will be discoverable and bookable by travellers once approved.</span>
+
+      <div class="card cream" style="margin-top: 10px; border-left: 3px solid var(--bluegrey-light); padding: 12px 14px; font-size: 12.5px; line-height: 1.5; color: var(--ink-secondary);">
+        <strong style="display: block; margin-bottom: 4px; color: var(--ink);">Catalog Availability vs Administrator Moderation</strong>
+        <ul style="margin: 0; padding-left: 18px;">
+          <li><strong>Available:</strong> Eligible for Traveller discovery after Admin approval. Once approved, the package is immediately active and open for bookings in the mobile app.</li>
+          <li><strong>Unavailable:</strong> Can still be submitted for Admin approval, but remains hidden and unbookable until the Operator activates it. Existing confirmed trips remain valid.</li>
+        </ul>
+      </div>
     </div>
   </div>
 
@@ -900,8 +909,8 @@
         <div class="brochure-spec-item">
           <span class="brochure-spec-label">Listing Status</span>
           <div>
-            <span class="status approved" id="brochure-status-pill">
-              {{ 'Active in Catalog' if p.get('availabilityStatus', 'available') == 'available' else 'Temporarily Paused' }}
+            <span class="status {{ 'approved' if resolved_availability == 'available' else 'rejected' }}" id="brochure-status-pill">
+              {{ 'Active in Catalog' if resolved_availability == 'available' else 'Temporarily Paused' }}
             </span>
           </div>
           <small style="color: var(--ink-muted); font-size: 11px;">Catalog Visibility</small>

@@ -18,6 +18,8 @@ PACKAGE_FIELDS = {
     'validFrom', 'validUntil',
 }
 
+PACKAGE_AVAILABILITY_STATUSES = {'available', 'unavailable'}
+
 
 def _text(value):
     return str(value or '').strip()
@@ -99,7 +101,9 @@ def normalise_package(payload, existing=None):
         'currency': _text(raw.get('currency') or 'MYR').upper(),
         'priceBasis': _text(raw.get('priceBasis') or 'per_person'),
         'taxIncluded': _boolean(raw.get('taxIncluded')),
-        'availabilityStatus': _text(raw.get('availabilityStatus') or 'available'),
+        # New packages intentionally start available; approval remains a
+        # separate administrator-controlled publication decision.
+        'availabilityStatus': _text(raw.get('availabilityStatus') or 'available').lower(),
     })
     if adult_price is not None:
         package['adultPrice'] = adult_price
@@ -134,6 +138,18 @@ def package_for_read(item):
     return {**item, **normalise_package(item)}
 
 
+def package_update_changes_reviewed_content(existing, payload):
+    """Return whether an operator update changes admin-reviewed content.
+
+    Availability is an operator-controlled runtime switch. Changing only that
+    switch must not force an otherwise approved package through review again.
+    """
+    before = normalise_package(existing)
+    after = normalise_package(payload, existing)
+    reviewed_fields = PACKAGE_FIELDS - {'availabilityStatus'}
+    return any(before.get(field) != after.get(field) for field in reviewed_fields)
+
+
 def _valid_date(value):
     try:
         date.fromisoformat(_text(value))
@@ -158,6 +174,8 @@ def package_validation_error(data):
                 return 'Itinerary meals must be a list.'
 
     package = normalise_package(raw)
+    if 'availabilityStatus' in raw and package.get('availabilityStatus') not in PACKAGE_AVAILABILITY_STATUSES:
+        return 'Availability status must be available or unavailable.'
     if not package.get('title'):
         return 'Package title is required.'
     if not package.get('destination'):

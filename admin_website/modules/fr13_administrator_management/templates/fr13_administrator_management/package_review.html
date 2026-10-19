@@ -16,16 +16,181 @@
 </section>
 {% endif %}
 <div class="grid g2 review-layout"><div>
-<section class="card"><div class="actions" style="justify-content:space-between"><span class="status {{state}}">{{ {'pending':'Under review','submitted':'Under review','rejected':'Needs changes'}.get(state,state) }}</span><strong>{{item.get('currency','MYR')}} {{'%.2f'|format(item.get('promotionalPrice') or item.get('adultPrice') or item.get('price') or 0)}} / {{'group' if item.get('priceBasis')=='per_group' else 'person'}}</strong></div><h3>Package summary</h3>{% if item.get('shortDescription') %}<p><strong>{{item.get('shortDescription')}}</strong></p>{% endif %}<p>{{item.get('fullDescription',item.get('description',''))}}</p><div class="grid g2"><p><strong>Duration</strong><br>{{item.get('durationDays',1)}} day(s){% if item.get('durationNights') is not none %}, {{item.get('durationNights')}} night(s){% endif %}</p><p><strong>Capacity</strong><br>{{item.get('minimumTravellers','—')}}–{{item.get('maximumTravellers',item.get('maxTravellers','—'))}} travellers</p></div></section>
+<section class="card"><div class="actions" style="justify-content:space-between">{% if state == 'approved' %}{% if item.get('availabilityStatus') == 'unavailable' %}<span class="status approved-unavailable">Approved (Unavailable)</span>{% else %}<span class="status approved">Published</span>{% endif %}{% elif state == 'suspended' %}<span class="status suspended">Suspended</span>{% elif state in ['pending', 'submitted'] %}<span class="status pending">Under review</span>{% elif state == 'rejected' %}<span class="status rejected">Needs changes</span>{% elif state == 'draft' %}<span class="status draft">Draft</span>{% elif state == 'archived' %}<span class="status archived">Archived</span>{% else %}<span class="status {{ state }}">{{ state|title }}</span>{% endif %}<strong>{{item.get('currency','MYR')}} {{'%.2f'|format(item.get('promotionalPrice') or item.get('adultPrice') or item.get('price') or 0)}} / {{'group' if item.get('priceBasis')=='per_group' else 'person'}}</strong></div><h3>Package summary</h3>{% if item.get('shortDescription') %}<p><strong>{{item.get('shortDescription')}}</strong></p>{% endif %}<p>{{item.get('fullDescription',item.get('description',''))}}</p><div class="grid g2"><p><strong>Duration</strong><br>{{item.get('durationDays',1)}} day(s){% if item.get('durationNights') is not none %}, {{item.get('durationNights')}} night(s){% endif %}</p><p><strong>Capacity</strong><br>{{item.get('minimumTravellers','—')}}–{{item.get('maximumTravellers',item.get('maxTravellers','—'))}} travellers</p></div></section>
 {% if days %}<section class="card"><h3>Day-by-day itinerary</h3>{% for day in days %}<article class="review-day"><strong>Day {{day.get('dayNumber',loop.index)}} · {{day.get('title','')}}</strong><p>{{day.get('description','')}}</p>{% if day.get('activities') %}<p><b>Activities:</b> {{day.get('activities')|join(', ')}}</p>{% endif %}{% if day.get('meals') %}<p><b>Meals:</b> {{day.get('meals')|join(', ')}}</p>{% endif %}{% if day.get('accommodation') %}<p><b>Stay:</b> {{day.get('accommodation')}}</p>{% endif %}{% if day.get('transportNotes') %}<p><b>Transport:</b> {{day.get('transportNotes')}}</p>{% endif %}</article>{% endfor %}</section>{% endif %}
 {% for field,label in [('highlights','Highlights'),('inclusions','Included'),('exclusions','Not included'),('whatToBring','What to bring')] %}{% if item.get(field) %}<section class="card"><h3>{{label}}</h3><ul>{% for value in item.get(field) %}<li>{{value}}</li>{% endfor %}</ul></section>{% endif %}{% endfor %}
 </div><div>
 <section class="card cream"><h3>Operator</h3><p><strong>{{item.get('operatorName','Tourism Operator')}}</strong></p>{% if item.get('operatorEmail') %}<p>{{item.get('operatorEmail')}}</p>{% endif %}</section>
-{% if item.get('reviewedAt') %}<section class="card"><h3>Review record</h3><p>{{item.get('reviewedByName','Administrator')}} · {{item.get('reviewedAt')[:10]}}</p></section>{% endif %}
+{% if state == 'suspended' %}
+<section class="card" style="border-left: 4px solid var(--danger); background: var(--danger-bg); margin-bottom: 16px;">
+  <div style="display: flex; align-items: center; gap: 8px; color: var(--danger); margin-bottom: 6px;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <strong style="font-size: 15px;">Package Suspended &amp; Unpublished</strong>
+  </div>
+  <p style="margin: 6px 0; color: var(--ink);"><strong>Suspension Reason:</strong> {{ item.get('suspensionReason', 'Compliance or policy violation') }}</p>
+  <div style="font-size: 12px; color: var(--ink-secondary);">
+    Suspended by {{ item.get('suspendedByName', 'Administrator') }}{% if item.get('suspendedAt') %} on {{ item.get('suspendedAt')[:10] }}{% endif %}.
+    This package is currently blocked from search, mobile listings, and new bookings until the operator resolves these issues and resubmits for review.
+  </div>
+</section>
+{% endif %}
+{% if item.get('reviewedAt') %}
+<section class="card">
+  <h3>Review record</h3>
+  <p>{{item.get('reviewedByName','Administrator')}} · {{item.get('reviewedAt')[:10]}}</p>
+  {% if item.get('suspensionResolvedAt') %}
+    <p style="font-size: 12px; color: var(--success); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border);">
+      <strong>Suspension Resolved:</strong> Re-approved on {{ item.get('suspensionResolvedAt')[:10] }}{% if item.get('suspensionResolvedByName') %} by {{ item.get('suspensionResolvedByName') }}{% endif %}
+    </p>
+  {% endif %}
+</section>
+{% endif %}
 {% if item.get('departureDates') or item.get('departureLocation') or item.get('meetingPoint') %}<section class="card"><h3>Departure</h3>{% if item.get('departureDates') %}<p><strong>Dates</strong><br>{{item.get('departureDates')|join(', ')}}</p>{% endif %}{% if item.get('departureLocation') %}<p><strong>Location</strong><br>{{item.get('departureLocation')}}</p>{% endif %}{% if item.get('meetingPoint') %}<p><strong>Meeting point</strong><br>{{item.get('meetingPoint')}}</p>{% endif %}{% if item.get('departureNotes') %}<p>{{item.get('departureNotes')}}</p>{% endif %}</section>{% endif %}
 {% if item.get('accommodationName') or item.get('transportTypes') %}<section class="card"><h3>Stay and transport</h3>{% if item.get('accommodationName') %}<p><strong>{{item.get('accommodationName')}}</strong>{% if item.get('accommodationCategory') %} · {{item.get('accommodationCategory')}}{% endif %}{% if item.get('roomType') %}<br>{{item.get('roomType')}}{% endif %}</p>{% endif %}{% if item.get('transportTypes') %}<p><strong>Transport</strong><br>{{item.get('transportTypes')|join(', ')}}</p>{% endif %}{% if item.get('accommodationNotes') %}<p>{{item.get('accommodationNotes')}}</p>{% endif %}{% if item.get('transportNotes') %}<p>{{item.get('transportNotes')}}</p>{% endif %}</section>{% endif %}
 {% for field,label in [('cancellationPolicy','Cancellation policy'),('refundPolicy','Refund policy'),('bookingTerms','Booking terms'),('importantNotes','Important notes')] %}{% if item.get(field) %}<section class="card"><h3>{{label}}</h3><p>{{item.get(field)}}</p></section>{% endif %}{% endfor %}
-{% if state in ['pending','submitted'] %}<form class="card review-decision" method="post" action="{{url_for('admin_fr13.review_package',package_id=item.id)}}"><input type="hidden" name="csrf_token" value="{{csrf_token()}}"><h3>Review decision</h3><div class="field"><label>Reason for changes</label><textarea class="input" name="comment" placeholder="Required when requesting changes"></textarea></div><div class="actions"><button class="btn primary" name="decision" value="approved">Approve and publish</button><button class="btn danger" name="decision" value="rejected">Request changes</button></div></form>{% elif item.get('reviewReason',item.get('reviewComment')) %}<section class="review-feedback"><strong>Review feedback</strong><p>{{item.get('reviewReason',item.get('reviewComment'))}}</p></section>{% endif %}
+{% if state in ['pending','submitted'] %}<form class="card review-decision" method="post" action="{{url_for('admin_fr13.review_package',package_id=item.id)}}"><input type="hidden" name="csrf_token" value="{{csrf_token()}}"><h3>Review decision</h3>{% if item.get('availabilityStatus') == 'unavailable' %}<div class="warning-callout" style="background: var(--warning-bg); border-left: 4px solid var(--warning); padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 14px; font-size: 13px; color: #78350F; line-height: 1.5;"><strong>Notice:</strong> This package will be approved but will remain hidden from travellers because its availability is currently set to Unavailable. The operator must activate availability before it can appear in public discovery.</div>{% endif %}<div class="field"><label>Reason for changes</label><textarea class="input" name="comment" placeholder="Required when requesting changes"></textarea></div><div class="actions"><button class="btn primary" name="decision" value="approved">{{ 'Approve package' if item.get('availabilityStatus') == 'unavailable' else 'Approve and publish' }}</button><button class="btn danger" name="decision" value="rejected">Request changes</button></div></form>{% elif item.get('reviewReason',item.get('reviewComment')) and state != 'suspended' %}<section class="review-feedback"><strong>Review feedback</strong><p>{{item.get('reviewReason',item.get('reviewComment'))}}</p></section>{% endif %}
+{% if state == 'approved' %}
+<section class="card" style="border-left: 4px solid var(--danger);">
+  <h3>Administrative Actions</h3>
+  <p style="font-size: 13px; color: var(--ink-secondary); margin-bottom: 12px;">
+    Need to unpublish this package due to safety concerns, regulatory compliance, or operator policy violations?
+  </p>
+  <button class="btn danger" type="button" id="openSuspendModalBtn" aria-haspopup="dialog" aria-controls="suspendModal">
+    Suspend / Unpublish Package
+  </button>
+</section>
+{% endif %}
 </div></div>
+
+{% if state == 'approved' %}
+<!-- Suspend Modal Dialog -->
+<div id="suspendModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="suspendModalTitle" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); z-index: 1000; align-items: center; justify-content: center; padding: 20px;">
+  <div class="modal-dialog card" style="max-width: 560px; width: 100%; max-height: 90vh; overflow-y: auto; background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 24px; position: relative;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+      <div>
+        <span class="eyebrow" style="color: var(--danger);">ADMINISTRATIVE OVERRIDE</span>
+        <h2 id="suspendModalTitle" style="margin: 4px 0 0; font-size: 18px; color: var(--ink);">Suspend &amp; Unpublish Package</h2>
+      </div>
+      <button type="button" id="closeSuspendModalBtn" class="btn outline" style="padding: 4px 8px; font-size: 14px;" aria-label="Close modal">&times;</button>
+    </div>
+
+    <div style="padding: 12px; background: var(--canvas); border-radius: var(--radius-sm); margin-bottom: 16px; border: 1px solid var(--border);">
+      <strong style="color: var(--ink); font-size: 14px;">{{ item.get('title', item.get('packageTitle', 'Package')) }}</strong>
+      <div style="font-size: 11px; color: var(--ink-muted); margin-top: 2px;">Package ID: <code>{{ item.id }}</code> · Operator: {{ item.get('operatorName', 'Tourism Operator') }}</div>
+    </div>
+
+    <div style="background: var(--warning-bg); border-left: 4px solid var(--warning); padding: 12px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 12.5px; line-height: 1.5; color: #78350F;">
+      <strong>Impact Notice:</strong>
+      <ul style="margin: 4px 0 0; padding-left: 18px;">
+        <li>Package will immediately be unpublished and removed from public traveller search/discovery.</li>
+        <li>New bookings and checkout sessions will be blocked immediately.</li>
+        <li>Existing paid bookings, confirmed itineraries, and traveller trips will <strong>NOT</strong> be cancelled or refunded automatically.</li>
+        <li>Operator can view the suspension notice, modify package details, and resubmit for Administrator review.</li>
+      </ul>
+    </div>
+
+    <form method="post" action="{{ url_for('admin_fr13.suspend_package', package_id=item.id) }}" id="suspendPackageForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="field" style="margin-bottom: 16px;">
+        <label for="suspensionReasonInput" style="display: flex; justify-content: space-between; font-weight: 600;">
+          <span>Reason for Suspension (required)</span>
+          <span id="suspendCharCounter" style="font-weight: 400; font-size: 12px; color: var(--ink-muted);">0 / 500 characters (min 10)</span>
+        </label>
+        <textarea id="suspensionReasonInput" name="reason" class="input" style="min-height: 100px; width: 100%; resize: vertical;" minlength="10" maxlength="500" required placeholder="Detail the safety, regulatory, policy violation, or misleading content issue that requires suspension..."></textarea>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
+          <input type="checkbox" id="suspendConfirmCheckbox" style="margin-top: 3px;">
+          <span>I confirm this action will immediately unpublish this package from TravelMate and make the suspension notice visible in the Operator Portal.</span>
+        </label>
+      </div>
+
+      <div class="actions" style="justify-content: flex-end; gap: 10px;">
+        <button type="button" id="cancelSuspendModalBtn" class="btn outline">Cancel</button>
+        <button type="submit" id="confirmSuspendSubmitBtn" class="btn danger" disabled>
+          <span>Confirm Suspension</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function() {
+  const modal = document.getElementById('suspendModal');
+  const openBtn = document.getElementById('openSuspendModalBtn');
+  const closeBtn = document.getElementById('closeSuspendModalBtn');
+  const cancelBtn = document.getElementById('cancelSuspendModalBtn');
+  const form = document.getElementById('suspendPackageForm');
+  const reasonInput = document.getElementById('suspensionReasonInput');
+  const counter = document.getElementById('suspendCharCounter');
+  const checkbox = document.getElementById('suspendConfirmCheckbox');
+  const submitBtn = document.getElementById('confirmSuspendSubmitBtn');
+
+  function openModal() {
+    if (modal) {
+      modal.style.display = 'flex';
+      if (reasonInput) reasonInput.focus();
+    }
+  }
+
+  function closeModal() {
+    if (modal) {
+      modal.style.display = 'none';
+      if (openBtn) openBtn.focus();
+    }
+  }
+
+  function validate() {
+    const len = reasonInput ? reasonInput.value.trim().length : 0;
+    if (counter) {
+      counter.textContent = `${len} / 500 characters (min 10)`;
+      counter.style.color = (len >= 10 && len <= 500) ? 'var(--success)' : 'var(--danger)';
+    }
+    const isValid = len >= 10 && len <= 500 && checkbox && checkbox.checked;
+    if (submitBtn) {
+      submitBtn.disabled = !isValid;
+    }
+  }
+
+  if (openBtn) openBtn.addEventListener('click', openModal);
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+  if (modal) {
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && modal.style.display === 'flex') closeModal();
+    });
+  }
+
+  if (reasonInput) {
+    reasonInput.addEventListener('input', validate);
+  }
+  if (checkbox) {
+    checkbox.addEventListener('change', validate);
+  }
+
+  if (form) {
+    form.addEventListener('submit', function(e) {
+      const len = reasonInput ? reasonInput.value.trim().length : 0;
+      if (len < 10 || len > 500 || !checkbox || !checkbox.checked) {
+        e.preventDefault();
+        return;
+      }
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Suspending...';
+      }
+    });
+  }
+})();
+</script>
+{% endif %}
+
 <script>document.querySelector('.review-decision')?.addEventListener('submit',e=>{const reason=e.currentTarget.querySelector('[name=comment]');reason.required=e.submitter?.value==='rejected';if(reason.required&&!reason.value.trim()){e.preventDefault();reason.reportValidity();}});</script>
 {% endblock %}

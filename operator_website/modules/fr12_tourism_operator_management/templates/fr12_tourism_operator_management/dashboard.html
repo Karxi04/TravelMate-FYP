@@ -141,7 +141,7 @@
         {% for item in attention %}
           <article class="attention-item">
             <div class="attention-content">
-              <span class="status rejected">{{ item.kind }}</span>
+              <span class="status {{ 'suspended' if 'suspended' in item.kind|lower else 'rejected' }}">{{ item.kind }}</span>
               <strong>{{ item.title }}</strong>
               <p>{{ item.reason }}</p>
             </div>

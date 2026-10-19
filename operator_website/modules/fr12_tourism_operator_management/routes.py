@@ -190,6 +190,7 @@ def dashboard():
         "pendingPackages": sum(1 for item in packages if str(item.get("approvalStatus", "")).lower() in {"pending", "submitted"}),
         "approvedPackages": sum(1 for item in packages if str(item.get("approvalStatus", "")).lower() == "approved"),
         "rejectedPackages": sum(1 for item in packages if str(item.get("approvalStatus", "")).lower() == "rejected"),
+        "suspendedPackages": sum(1 for item in packages if str(item.get("approvalStatus", "")).lower() == "suspended"),
         "totalCampaigns": len(campaigns),
         "pendingCampaigns": sum(1 for item in campaigns if str(item.get("reviewStatus", "")).lower() in {"pending", "submitted"}),
         "activeCampaigns": sum(1 for item in campaigns if str(item.get("campaignStatus", "")).lower() in {"active", "approved"}),
@@ -203,6 +204,13 @@ def dashboard():
                 "kind": "Package needs changes",
                 "title": package.get("title") or package.get("packageTitle", "Package"),
                 "reason": package.get("reviewReason") or package.get("reviewComment") or "Please review the Administrator feedback.",
+                "url": url_for("operator_fr12.edit_package_page", package_id=package.get("id")),
+            })
+        elif str(package.get("approvalStatus", "")).lower() == "suspended":
+            attention.append({
+                "kind": "Package suspended by Admin",
+                "title": package.get("title") or package.get("packageTitle", "Package"),
+                "reason": package.get("suspensionReason") or "This package was suspended by an administrator. Please update and resubmit.",
                 "url": url_for("operator_fr12.edit_package_page", package_id=package.get("id")),
             })
     for campaign in campaigns:
@@ -462,7 +470,7 @@ def submit_package_page():
                 return redirect(url_for("operator_fr12.package_status"))
     response = call_api("GET", "/api/fr12/packages")
     items = response.json().get("items", []) if response.ok else []
-    editable = [p for p in items if str(p.get("approvalStatus", "draft")).lower() in {"draft", "rejected"}]
+    editable = [p for p in items if str(p.get("approvalStatus", "draft")).lower() in {"draft", "rejected", "suspended"}]
     return render_template("fr12_tourism_operator_management/submit_package.html", items=editable)
 
 

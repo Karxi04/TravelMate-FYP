@@ -14,7 +14,19 @@
   </a>
 </div>
 
-{% if item.get('reviewReason', item.get('reviewComment')) %}
+{% if item.get('approvalStatus') == 'suspended' %}
+  <div class="review-feedback" style="border-left: 4px solid var(--danger); background: var(--danger-bg); margin-bottom: 20px;">
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: var(--danger);">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <strong style="font-size: 15px;">Package Suspended by Administrator</strong>
+    </div>
+    <p style="color: var(--ink); margin: 4px 0 8px;"><strong>Reason:</strong> {{ item.get('suspensionReason', 'Compliance review required.') }}</p>
+    <div style="font-size: 12px; color: var(--ink-secondary);">
+      Suspended on {{ (item.get('suspendedAt') or '')[:10] }}{% if item.get('suspendedByName') %} by {{ item.get('suspendedByName') }}{% endif %}.
+      This package is currently unpublished and inaccessible to travellers. Please review the feedback, update the package details below, and resubmit for Administrator review.
+    </div>
+  </div>
+{% elif item.get('reviewReason', item.get('reviewComment')) %}
   <div class="review-feedback">
     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
