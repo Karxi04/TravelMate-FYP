@@ -1,4 +1,5 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, send_from_directory
+from services.image_storage_service import is_safe_filename, get_upload_dir
 
 from auth_utils import auth_required
 from sequence_contract.firebase_firestore import retrieveRecord
@@ -60,3 +61,16 @@ def promotional_campaigns():
         visible.append(item)
     visible.sort(key=lambda x: str(x.get('startDate') or ''))
     return jsonify({'ok': True, 'items': visible, 'source': 'firestore'})
+
+
+@bp.get('/package-images/<filename>')
+def serve_package_image(filename):
+    if not is_safe_filename(filename):
+        return jsonify({'ok': False, 'error': 'Invalid image filename'}), 400
+    upload_dir = get_upload_dir()
+    if not (upload_dir / filename).is_file():
+        return jsonify({'ok': False, 'error': 'Image not found'}), 404
+    response = send_from_directory(str(upload_dir), filename)
+    response.headers['Cache-Control'] = 'public, max-age=86400'
+    return response
+
