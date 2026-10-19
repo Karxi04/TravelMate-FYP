@@ -2,6 +2,19 @@
 {% set state=item.get('approvalStatus','draft') %}{% set days=item.get('itineraryDays',[]) %}
 <div class="page-title"><div><span class="eyebrow">PACKAGE REVIEW</span><h1>{{item.get('title',item.get('packageTitle','Package'))}}</h1><p>{{item.get('destination',item.get('destinationName',''))}}{% if item.get('destinationArea') %} · {{item.get('destinationArea')}}{% endif %}</p></div><a class="btn outline" href="{{url_for('admin_fr13.packages')}}">Back to queue</a></div>
 {% if item.get('heroImage',item.get('imageUrl')) %}<img class="review-hero" src="{{item.get('heroImage',item.get('imageUrl'))}}" alt="Package hero image">{% endif %}
+{% if item.get('galleryImages') %}
+<section class="card" style="margin-bottom:16px;">
+  <span class="eyebrow">TOUR GALLERY</span>
+  <h3 style="margin:4px 0 10px;">Gallery Showcase ({{ item.get('galleryImages')|length }} photos)</h3>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;">
+    {% for g_img in item.get('galleryImages') %}
+      <a href="{{ g_img }}" target="_blank" rel="noopener" style="display:block;border-radius:6px;overflow:hidden;border:1px solid var(--border);aspect-ratio:4/3;">
+        <img src="{{ g_img }}" alt="Gallery photo {{ loop.index }}" style="width:100%;height:100%;object-fit:cover;">
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 <div class="grid g2 review-layout"><div>
 <section class="card"><div class="actions" style="justify-content:space-between"><span class="status {{state}}">{{ {'pending':'Under review','submitted':'Under review','rejected':'Needs changes'}.get(state,state) }}</span><strong>{{item.get('currency','MYR')}} {{'%.2f'|format(item.get('promotionalPrice') or item.get('adultPrice') or item.get('price') or 0)}} / {{'group' if item.get('priceBasis')=='per_group' else 'person'}}</strong></div><h3>Package summary</h3>{% if item.get('shortDescription') %}<p><strong>{{item.get('shortDescription')}}</strong></p>{% endif %}<p>{{item.get('fullDescription',item.get('description',''))}}</p><div class="grid g2"><p><strong>Duration</strong><br>{{item.get('durationDays',1)}} day(s){% if item.get('durationNights') is not none %}, {{item.get('durationNights')}} night(s){% endif %}</p><p><strong>Capacity</strong><br>{{item.get('minimumTravellers','—')}}–{{item.get('maximumTravellers',item.get('maxTravellers','—'))}} travellers</p></div></section>
 {% if days %}<section class="card"><h3>Day-by-day itinerary</h3>{% for day in days %}<article class="review-day"><strong>Day {{day.get('dayNumber',loop.index)}} · {{day.get('title','')}}</strong><p>{{day.get('description','')}}</p>{% if day.get('activities') %}<p><b>Activities:</b> {{day.get('activities')|join(', ')}}</p>{% endif %}{% if day.get('meals') %}<p><b>Meals:</b> {{day.get('meals')|join(', ')}}</p>{% endif %}{% if day.get('accommodation') %}<p><b>Stay:</b> {{day.get('accommodation')}}</p>{% endif %}{% if day.get('transportNotes') %}<p><b>Transport:</b> {{day.get('transportNotes')}}</p>{% endif %}</article>{% endfor %}</section>{% endif %}

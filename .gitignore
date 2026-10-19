@@ -37,3 +37,6 @@ android/.gradle/
 # OS
 .DS_Store
 Thumbs.db
+
+# Uploaded media
+/backend_api/static/uploads/
