@@ -130,6 +130,48 @@ def test_attempt_idempotency_rejects_changed_group_inputs():
         )
 
 
+def test_attempt_idempotency_rejects_changed_departure_date():
+    records = {}
+    def claim(_, key, value):
+        if key in records: return records[key], False
+        records[key] = value; return value, True
+
+    raw = package(departureDates=['2027-01-10', '2027-02-10'])
+    create_package_attempt(
+        claim, 'u1', raw, {'id': 'op1'}, 'departure-key',
+        departure_date='2027-01-10',
+    )
+    with pytest.raises(ValueError, match='another package checkout'):
+        create_package_attempt(
+            claim, 'u1', raw, {'id': 'op1'}, 'departure-key',
+            departure_date='2027-02-10',
+        )
+
+
+def test_explicit_repeat_purchase_uses_distinct_attempt_without_mutating_first():
+    records = {}
+    def claim(_, key, value):
+        if key in records: return records[key], False
+        records[key] = value; return value, True
+
+    first, first_created = create_package_attempt(
+        claim, 'u1', package(departureDates=['2027-01-10']), {'id': 'op1'},
+        'purchase-one', participants={'adults': 2, 'children': 0},
+        departure_date='2027-01-10',
+    )
+    second, second_created = create_package_attempt(
+        claim, 'u1', package(departureDates=['2027-01-10']), {'id': 'op1'},
+        'purchase-two', participants={'adults': 2, 'children': 0},
+        departure_date='2027-01-10',
+    )
+
+    assert first_created and second_created
+    assert first['id'] != second['id']
+    assert first['paymentStatus'] == second['paymentStatus'] == 'payment_pending'
+    assert records[first['id']]['idempotencyKey'] == 'purchase-one'
+    assert records[second['id']]['idempotencyKey'] == 'purchase-two'
+
+
 def test_default_participants_is_one_adult_zero_children():
     snapshot = prepare_package_snapshot(package(), {'id': 'op1'})
     assert snapshot['participants'] == {'adults': 1, 'children': 0, 'total': 1}

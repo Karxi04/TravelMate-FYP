@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/api_service.dart';
+import '../../services/transaction_request.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
+import 'payment_screen.dart';
 import 'payment_status.dart';
 
 class PaymentHistoryScreen extends StatefulWidget {
@@ -23,6 +26,9 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   bool loading = true;
   String? errorMessage;
   bool isSessionExpired = false;
+  bool actionBusy = false;
+  final TransactionAttemptLifecycle _restartIntent =
+      TransactionAttemptLifecycle('package_checkout_restart');
 
   @override
   void initState() {
@@ -85,6 +91,81 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
           loading = false;
         });
       }
+    }
+  }
+
+  Future<void> _handleCheckoutAction(Map<String, dynamic> item) async {
+    if (actionBusy) return;
+    final orderId = (item['orderReference'] ?? item['id'] ?? '').toString();
+    if (orderId.isEmpty) return;
+    setState(() => actionBusy = true);
+    try {
+      var action = (item['checkoutAction'] ?? 'check_status').toString();
+      if (action == 'restart_payment') {
+        if ((item['bookingType'] ?? '').toString() != 'package') {
+          throw Exception('Restart this payment from its original booking screen.');
+        }
+        final participants = item['participants'] is Map
+            ? Map<String, dynamic>.from(item['participants'] as Map)
+            : <String, dynamic>{};
+        final response = await api.post('/api/fr15/package-checkout-attempts', {
+          'packageId': item['packageId'],
+          'departureDate': item['departureDate'],
+          'participants': {
+            'adults': participants['adults'],
+            'children': participants['children'],
+          },
+          'idempotencyKey': _restartIntent.currentOrCreate,
+        });
+        final attempt = response['attempt'] is Map
+            ? Map<String, dynamic>.from(response['attempt'] as Map)
+            : <String, dynamic>{};
+        final attemptId = (attempt['id'] ?? '').toString();
+        final amount = num.tryParse((attempt['amount'] ?? '').toString());
+        if (attemptId.isEmpty || amount == null) {
+          throw Exception('A new package payment could not be prepared.');
+        }
+        _restartIntent.startNewAttempt();
+        if (!mounted) return;
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PaymentScreen(
+              packageAttemptId: attemptId,
+              initialAmount: amount.toDouble(),
+              api: api,
+            ),
+          ),
+        );
+        await loadPayments();
+        return;
+      }
+
+      final response = await api.get('/api/fr9/orders/$orderId/reconcile');
+      final order = response['order'] is Map
+          ? Map<String, dynamic>.from(response['order'] as Map)
+          : <String, dynamic>{};
+      action = (order['checkoutAction'] ?? 'check_status').toString();
+      if (action == 'continue_payment') {
+        final url = Uri.tryParse((order['checkoutUrl'] ?? '').toString());
+        if (url == null || !await launchUrl(url, mode: LaunchMode.externalApplication)) {
+          throw Exception('Secure Checkout could not be opened.');
+        }
+      } else if (mounted) {
+        final message = switch (action) {
+          'view_booking' => 'Payment is verified. Your existing booking is available.',
+          'restart_payment' =>
+            'The previous Checkout Session has ended. Restart Payment is now available.',
+          _ => 'Payment is still being verified. Please check again later.',
+        };
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+      await loadPayments();
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => actionBusy = false);
     }
   }
 
@@ -228,6 +309,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
     final relatedTripId = (item['relatedTripId'] ?? '').toString();
     final relatedBookingId = (item['relatedBookingId'] ?? item['bookingId'] ?? '').toString();
     final orderStatus = (item['orderStatus'] ?? '').toString();
+    final checkoutAction = (item['checkoutAction'] ?? '').toString();
 
     showModalBottomSheet(
       context: context,
@@ -404,6 +486,31 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                             ),
                           );
                         },
+                      ),
+                    ),
+                  ],
+                  if (item['source'] == 'checkout_order' &&
+                      checkoutAction != 'view_booking') ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        icon: Icon(checkoutAction == 'restart_payment'
+                            ? Icons.restart_alt_rounded
+                            : checkoutAction == 'continue_payment'
+                                ? Icons.open_in_new_rounded
+                                : Icons.refresh_rounded),
+                        label: Text(switch (checkoutAction) {
+                          'restart_payment' => 'Restart Payment',
+                          'continue_payment' => 'Continue Payment',
+                          _ => 'Check Payment Status',
+                        }),
+                        onPressed: actionBusy
+                            ? null
+                            : () {
+                                Navigator.pop(sheetContext);
+                                _handleCheckoutAction(item);
+                              },
                       ),
                     ),
                   ],

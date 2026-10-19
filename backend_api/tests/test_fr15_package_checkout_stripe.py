@@ -80,7 +80,11 @@ def seed_group_attempt(memory, **extra):
 
 
 def session_response():
-    return SimpleNamespace(id='cs_package_1', url='https://checkout.stripe.test/cs_package_1')
+    return SimpleNamespace(
+        id='cs_package_1', url='https://checkout.stripe.test/cs_package_1',
+        status='open', payment_status='unpaid', amount_total=45025,
+        currency='myr', payment_intent=None,
+    )
 
 
 def start_checkout(client, headers):
@@ -90,7 +94,13 @@ def start_checkout(client, headers):
 def test_package_checkout_session_is_owned_immutable_and_idempotent(client, package_payment):
     memory, headers = package_payment
     snapshot = seed_attempt(memory)
-    with patch('modules.fr09_payment.routes.createCheckoutSession', return_value=session_response()) as create:
+    with patch.dict('os.environ', {
+             'APP_ENV': 'development',
+             'LOCAL_LAN_DEMO': 'true',
+             'TRUSTED_LAN_CIDR': '172.20.10.0/24',
+             'STRIPE_CHECKOUT_RETURN_ORIGIN': 'http://172.20.10.5:5000',
+         }), patch('modules.fr09_payment.routes.createCheckoutSession', return_value=session_response()) as create, \
+            patch('modules.fr09_payment.routes.retrieveCheckoutSession', return_value=session_response()):
         first = start_checkout(client, headers)
         repeat = start_checkout(client, headers)
     assert first.status_code == repeat.status_code == 200
@@ -99,6 +109,56 @@ def test_package_checkout_session_is_owned_immutable_and_idempotent(client, pack
     assert order['packageSnapshot'] == snapshot and repeat.get_json()['reused'] is True
     assert create.call_count == 1
     assert create.call_args.kwargs['idempotency_key']
+    assert create.call_args.args[4].startswith(
+        'http://172.20.10.5:5000/api/fr9/checkout/return/success?')
+    assert create.call_args.args[5].startswith(
+        'http://172.20.10.5:5000/api/fr9/checkout/return/cancel?')
+    assert first.get_json()['order']['checkoutAction'] == 'continue_payment'
+    assert repeat.get_json()['order']['checkoutUrl'].endswith('/cs_package_1')
+    listed = client.get('/api/fr9/orders', headers=headers).get_json()['items'][0]
+    assert listed['checkoutAction'] == 'continue_payment'
+    assert 'checkoutUrl' not in listed
+
+
+@pytest.mark.parametrize(('session_status', 'payment_status', 'expected_action', 'expected_code'), [
+    ('complete', 'paid', 'view_booking', 200),
+    ('complete', 'unpaid', 'check_status', 202),
+    ('expired', 'unpaid', 'restart_payment', 200),
+])
+def test_stored_package_session_is_reconciled_before_url_reuse(
+        client, package_payment, session_status, payment_status, expected_action, expected_code):
+    memory, headers = package_payment
+    seed_attempt(memory)
+    with patch('modules.fr09_payment.routes.createCheckoutSession', return_value=session_response()):
+        first = start_checkout(client, headers)
+    assert first.status_code == 200
+    provider = SimpleNamespace(
+        id='cs_package_1', url='https://checkout.stripe.test/cs_package_1',
+        status=session_status, payment_status=payment_status,
+        amount_total=45025, currency='myr', payment_intent='pi_package_1',
+    )
+    with patch('modules.fr09_payment.routes.retrieveCheckoutSession', return_value=provider):
+        retry = start_checkout(client, headers)
+    body = retry.get_json()
+    assert retry.status_code == expected_code
+    assert body['order']['checkoutAction'] == expected_action
+    assert 'checkoutUrl' not in body['order']
+    saved = next(iter(memory.collections['checkout_orders'].values()))
+    assert saved['checkoutSessionStatus'] == session_status
+    assert memory.retrieve('package_checkout_attempts', 'attempt-1')['checkoutStatus'] == saved['status']
+
+
+def test_stored_package_session_verification_failure_never_returns_stale_url(
+        client, package_payment):
+    memory, headers = package_payment
+    seed_attempt(memory)
+    with patch('modules.fr09_payment.routes.createCheckoutSession', return_value=session_response()):
+        assert start_checkout(client, headers).status_code == 200
+    with patch('modules.fr09_payment.routes.retrieveCheckoutSession', side_effect=TimeoutError()):
+        retry = start_checkout(client, headers)
+    assert retry.status_code == 202
+    assert retry.get_json()['order']['checkoutAction'] == 'check_status'
+    assert 'checkoutUrl' not in retry.get_json()['order']
 
 
 def test_package_checkout_rejects_unowned_or_invalid_attempt(client, package_payment):

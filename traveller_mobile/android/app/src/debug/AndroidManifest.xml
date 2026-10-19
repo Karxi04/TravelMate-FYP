@@ -1,8 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- The INTERNET permission is required for development. Specifically,
-         the Flutter tool needs it to communicate with the running application
-         to allow setting breakpoints, to provide hot reload, etc.
-    -->
+    <!-- The INTERNET permission and cleartext opt-in are development-only. -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <application android:usesCleartextTraffic="true" />
+    <application android:usesCleartextTraffic="true">
+        <!-- LOCAL_DEMO uses debug APKs; release builds must not claim this custom scheme. -->
+        <activity android:name=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:scheme="travelmate"
+                    android:host="checkout"
+                    android:path="/return"/>
+            </intent-filter>
+        </activity>
+    </application>
 </manifest>

@@ -2,10 +2,11 @@ import math
 import os
 import re
 import uuid
+from ipaddress import ip_address, ip_network
 from copy import deepcopy
 from datetime import date, timedelta
 from html import escape
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from flask import Blueprint, request, jsonify, g, current_app, Response
 
@@ -157,11 +158,30 @@ def _resolve_checkout_quote(payload):
     raise ValueError('quoteType must be hotel or flight.')
 
 
-def _safe_order(record):
-    return {
+def _checkout_action(record, session_verified=False):
+    status = str(record.get('status') or '').strip().lower()
+    payment_status = str(record.get('paymentStatus') or '').strip().lower()
+    if status == 'paid' or payment_status in {'paid', 'succeeded'}:
+        return 'view_booking'
+    if status in {'expired', 'checkout_failed', 'payment_failed', 'cancelled', 'canceled'}:
+        return 'restart_payment'
+    verified_open = session_verified or record.get('checkoutSessionStatus') == 'open'
+    if (verified_open and status == 'checkout_open' and
+            record.get('checkoutSessionId') and record.get('checkoutUrl')):
+        return 'continue_payment'
+    return 'check_status'
+
+
+def _safe_order(record, session_verified=False):
+    safe = {
         key: value for key, value in record.items()
-        if key not in {'providerIdempotencyKey'}
+        if key not in {'providerIdempotencyKey', 'checkoutUrl'}
     }
+    action = _checkout_action(record, session_verified=session_verified)
+    safe['checkoutAction'] = action
+    if session_verified and action == 'continue_payment':
+        safe['checkoutUrl'] = record.get('checkoutUrl')
+    return safe
 
 
 def _payment_history_title(record):
@@ -218,6 +238,17 @@ def _payment_history_item(record, source):
         'productTitle': _payment_history_title(record),
         'source': source,
     }
+    if source == 'checkout_order':
+        item['checkoutAction'] = _checkout_action(record)
+        if booking_type == 'package' and item['checkoutAction'] == 'restart_payment':
+            snapshot = record.get('packageSnapshot') or {}
+            participants = record.get('participants') or snapshot.get('participants') or {}
+            item['packageId'] = record.get('packageId') or snapshot.get('packageId')
+            item['departureDate'] = record.get('departureDate') or snapshot.get('selectedDepartureDate')
+            item['participants'] = {
+                'adults': participants.get('adults'),
+                'children': participants.get('children'),
+            }
     if source == 'legacy_payment':
         if record.get('cardBrand'):
             item['cardBrand'] = record.get('cardBrand')
@@ -233,7 +264,61 @@ def _configured_checkout_url(name, fallback):
         raise RuntimeError(f'{name} is not configured with an absolute URL.')
     if parsed.hostname and parsed.hostname.lower() in {'example.com', 'www.example.com'}:
         raise RuntimeError(f'{name} must be an explicit TravelMate return URL.')
+    if os.getenv('APP_ENV', 'development').strip().lower() == 'production' and parsed.scheme != 'https':
+        raise RuntimeError(f'{name} must use HTTPS in production.')
     return value
+
+
+def _checkout_return_url(outcome):
+    if outcome not in {'success', 'cancel'}:
+        raise RuntimeError('Unsupported Checkout return outcome.')
+    local_demo = os.getenv('LOCAL_LAN_DEMO', '').strip().lower() in {'1', 'true', 'yes'}
+    origin = os.getenv('STRIPE_CHECKOUT_RETURN_ORIGIN', '').strip().rstrip('/')
+    if origin:
+        parsed = urlparse(origin)
+        if (parsed.scheme not in {'https', 'http'} or not parsed.hostname or
+                parsed.username or parsed.password or parsed.query or parsed.fragment or
+                parsed.path not in {'', '/'}):
+            raise RuntimeError('STRIPE_CHECKOUT_RETURN_ORIGIN must be an origin without a path or credentials.')
+        if local_demo:
+            try:
+                address = ip_address(parsed.hostname)
+                trusted = ip_network(os.environ['TRUSTED_LAN_CIDR'], strict=False)
+            except (KeyError, ValueError) as exc:
+                raise RuntimeError('LOCAL_LAN_DEMO Checkout origin requires a trusted private IPv4 address.') from exc
+            if (parsed.scheme != 'http' or address.version != 4 or not address.is_private or
+                    address not in trusted or str(address) in {'127.0.0.1', '10.0.2.2', '10.0.3.2'}):
+                raise RuntimeError('LOCAL_LAN_DEMO Checkout origin must be reachable inside TRUSTED_LAN_CIDR.')
+        elif os.getenv('APP_ENV', 'development').strip().lower() == 'production' and parsed.scheme != 'https':
+            raise RuntimeError('STRIPE_CHECKOUT_RETURN_ORIGIN must use HTTPS in production.')
+        return f'{origin}/api/fr9/checkout/return/{outcome}?session_id={{CHECKOUT_SESSION_ID}}'
+    if local_demo:
+        raise RuntimeError('LOCAL_LAN_DEMO requires STRIPE_CHECKOUT_RETURN_ORIGIN.')
+    name = 'STRIPE_CHECKOUT_SUCCESS_URL' if outcome == 'success' else 'STRIPE_CHECKOUT_CANCEL_URL'
+    fallback = f'http://127.0.0.1:5000/api/fr9/checkout/return/{outcome}?session_id={{CHECKOUT_SESSION_ID}}'
+    return _configured_checkout_url(name, fallback)
+
+
+def _checkout_return_html(heading, message, order_id, state):
+    app_url = 'travelmate://checkout/return?' + urlencode({
+        'order_id': str(order_id),
+        'state': str(state),
+    })
+    return (
+        '<!doctype html><html><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta http-equiv="Content-Security-Policy" '
+        'content="default-src \'none\'; style-src \'unsafe-inline\'; base-uri \'none\'; form-action \'none\'">'
+        '<title>TravelMate Checkout</title>'
+        '<style>body{font-family:sans-serif;max-width:38rem;margin:4rem auto;padding:0 1.25rem;line-height:1.5}'
+        'a{display:inline-block;margin:1rem 0;padding:.8rem 1rem;border-radius:.5rem;'
+        'background:#155eef;color:white;text-decoration:none;font-weight:700}</style></head><body>'
+        f'<h1>{escape(heading)}</h1><p>{escape(message)}</p>'
+        f'<p><a href="{escape(app_url, quote=True)}">Return to TravelMate</a></p>'
+        '<p>If TravelMate does not open, close this browser tab, open the app manually, '
+        'and check Payment History or Orders. Do not pay again.</p>'
+        '</body></html>'
+    )
 
 
 def _stripe_value(obj, key, default=None):
@@ -279,6 +364,33 @@ def _apply_checkout_session(record, session):
         'reconciliationRequired': status in {'checkout_open', 'payment_pending', 'payment_mismatch'},
         'updatedAt': utc_now_iso(),
     }
+
+
+def _sync_package_attempt_status(order):
+    attempt_id = str(order.get('packageAttemptId') or '')
+    if not attempt_id:
+        return
+    updateRecord(PACKAGE_ATTEMPT_COLLECTION, attempt_id, {
+        'checkoutStatus': str(order.get('status') or '').lower(),
+        'paymentStatus': str(order.get('paymentStatus') or '').lower(),
+        'checkoutOrderId': order.get('id'),
+        'updatedAt': utc_now_iso(),
+    })
+
+
+def _reconcile_checkout_order(record):
+    session_id = str(record.get('checkoutSessionId') or '').strip()
+    if not session_id:
+        return record, False
+    session = retrieveCheckoutSession(session_id)
+    patch = (_apply_package_payment(record, session)
+             if record.get('quoteType') == 'package'
+             else _apply_checkout_session(record, session))
+    patch['checkoutSessionStatus'] = str(_stripe_value(session, 'status', '') or '').lower()
+    updated = updateRecord(ORDER_COLLECTION, record['id'], patch) or {**record, **patch}
+    if updated.get('quoteType') == 'package':
+        _sync_package_attempt_status(updated)
+    return updated, True
 
 
 def _package_attempt_for_checkout(attempt_id):
@@ -513,14 +625,21 @@ def create_package_checkout_session(attempt_id):
     if str(claimed.get('status') or '').lower() == 'paid':
         return jsonify({'ok': False, 'error': 'This package Checkout order has already been paid.'}), 409
     if claimed.get('checkoutSessionId') and claimed.get('checkoutUrl'):
-        return jsonify({'ok': True, 'order': _safe_order(claimed), 'reused': True})
+        try:
+            reconciled, verified = _reconcile_checkout_order(claimed)
+            action = _checkout_action(reconciled, verified)
+            return jsonify({'ok': True,
+                            'order': _safe_order(reconciled, session_verified=verified),
+                            'reused': True}), (202 if action == 'check_status' else 200)
+        except Exception:
+            uncertain = {**claimed, 'checkoutSessionStatus': None}
+            return jsonify({'ok': True, 'order': _safe_order(uncertain), 'reused': True,
+                            'reconciliationRequired': True}), 202
     try:
         session = createCheckoutSession(
             snapshot['price'], 'MYR', g.uid, order_id,
-            _configured_checkout_url('STRIPE_CHECKOUT_SUCCESS_URL',
-                'http://127.0.0.1:5000/api/fr9/checkout/return/success?session_id={CHECKOUT_SESSION_ID}'),
-            _configured_checkout_url('STRIPE_CHECKOUT_CANCEL_URL',
-                'http://127.0.0.1:5000/api/fr9/checkout/return/cancel?session_id={CHECKOUT_SESSION_ID}'),
+            _checkout_return_url('success'),
+            _checkout_return_url('cancel'),
             metadata={'packageAttemptId': attempt_id, 'quoteType': 'package'},
             idempotency_key=claimed['providerIdempotencyKey'],
             product_name=f"TravelMate package test order: {snapshot.get('title') or snapshot.get('packageId')}",
@@ -529,13 +648,15 @@ def create_package_checkout_session(attempt_id):
         if not session_id or not checkout_url:
             raise RuntimeError('Stripe did not return a Checkout URL.')
         patch = {'checkoutSessionId': session_id, 'checkoutUrl': checkout_url,
+                 'checkoutSessionStatus': 'open',
                  'status': 'checkout_open', 'updatedAt': utc_now_iso()}
         updated = updateRecord(ORDER_COLLECTION, order_id, patch) or {**claimed, **patch}
         updateRecord(PACKAGE_ATTEMPT_COLLECTION, attempt_id, {
             'checkoutStatus': 'checkout_open', 'checkoutOrderId': order_id,
             'updatedAt': utc_now_iso(),
         })
-        return jsonify({'ok': True, 'order': _safe_order(updated), 'reused': not created})
+        return jsonify({'ok': True, 'order': _safe_order(updated, session_verified=True),
+                        'reused': not created})
     except Exception as exc:
         if is_ambiguous_provider_error(exc):
             updateRecord(ORDER_COLLECTION, order_id, {'reconciliationRequired': True, 'updatedAt': utc_now_iso()})
@@ -585,18 +706,21 @@ def create_checkout_session():
         if key in record and str(claimed.get(key)) != str(record.get(key)):
             return jsonify({'ok': False, 'error': 'Order attempt is already bound to another quote.'}), 409
     if claimed.get('checkoutSessionId') and claimed.get('checkoutUrl'):
-        return jsonify({'ok': True, 'order': _safe_order(claimed), 'reused': True})
+        try:
+            reconciled, verified = _reconcile_checkout_order(claimed)
+            action = _checkout_action(reconciled, verified)
+            return jsonify({'ok': True,
+                            'order': _safe_order(reconciled, session_verified=verified),
+                            'reused': True}), (202 if action == 'check_status' else 200)
+        except Exception:
+            uncertain = {**claimed, 'checkoutSessionStatus': None}
+            return jsonify({'ok': True, 'order': _safe_order(uncertain), 'reused': True,
+                            'reconciliationRequired': True}), 202
     try:
         session = createCheckoutSession(
             quote['amount'], quote['currency'], g.uid, order_id,
-            _configured_checkout_url(
-                'STRIPE_CHECKOUT_SUCCESS_URL',
-                'http://127.0.0.1:5000/api/fr9/checkout/return/success?session_id={CHECKOUT_SESSION_ID}',
-            ),
-            _configured_checkout_url(
-                'STRIPE_CHECKOUT_CANCEL_URL',
-                'http://127.0.0.1:5000/api/fr9/checkout/return/cancel?session_id={CHECKOUT_SESSION_ID}',
-            ),
+            _checkout_return_url('success'),
+            _checkout_return_url('cancel'),
             metadata={
                 'orderAttemptId': attempt_id,
                 'quoteType': quote['quoteType'],
@@ -612,10 +736,13 @@ def create_checkout_session():
         updated = updateRecord(ORDER_COLLECTION, order_id, {
             'checkoutSessionId': session_id,
             'checkoutUrl': checkout_url,
+            'checkoutSessionStatus': 'open',
             'status': 'checkout_open',
             'updatedAt': utc_now_iso(),
-        }) or {**claimed, 'checkoutSessionId': session_id, 'checkoutUrl': checkout_url, 'status': 'checkout_open'}
-        return jsonify({'ok': True, 'order': _safe_order(updated), 'reused': not created})
+        }) or {**claimed, 'checkoutSessionId': session_id, 'checkoutUrl': checkout_url,
+               'checkoutSessionStatus': 'open', 'status': 'checkout_open'}
+        return jsonify({'ok': True, 'order': _safe_order(updated, session_verified=True),
+                        'reused': not created})
     except Exception as exc:
         if is_ambiguous_provider_error(exc):
             pending = updateRecord(ORDER_COLLECTION, order_id, {
@@ -656,19 +783,18 @@ def checkout_return(outcome):
         updated = updateRecord(ORDER_COLLECTION, order_id, patch) or {**record, **patch}
         status = str(updated.get('status') or '').lower()
         if status == 'paid':
-            heading = 'Payment verified'
-            message = 'Stripe confirmed this test payment. Open TravelMate Orders to view it.'
-        elif status in {'checkout_open', 'payment_pending'}:
-            heading = 'Payment pending verification'
-            message = 'TravelMate has not received a final payment confirmation yet. Open Orders to retry verification.'
+            heading = 'Payment Successful'
+            message = 'Your TravelMate test payment has been verified.'
+            state = 'paid'
+        elif outcome == 'success' and status in {'checkout_open', 'checkout_pending', 'payment_pending'}:
+            heading = 'Payment Processing'
+            message = 'Your payment is being verified. You may return to TravelMate to check the status.'
+            state = 'processing'
         else:
-            heading = 'Payment not completed'
+            heading = 'Payment Not Completed'
             message = 'No successful payment was confirmed. Open TravelMate Orders to review the order.'
-        html = (
-            '<!doctype html><meta charset="utf-8"><title>TravelMate Checkout</title>'
-            f'<h1>{escape(heading)}</h1><p>{escape(message)}</p>'
-            '<p>You can close this page and return to the TravelMate app.</p>'
-        )
+            state = 'not_completed'
+        html = _checkout_return_html(heading, message, order_id, state)
         return Response(html, status=200, mimetype='text/html')
     except Exception:
         return Response(
@@ -703,13 +829,12 @@ def reconcile_order(order_id):
     if not session_id:
         return jsonify({'ok': True, 'order': _safe_order(record), 'reconciliationRequired': True}), 202
     try:
-        session = retrieveCheckoutSession(session_id)
-        patch = (_apply_package_payment(record, session)
-                 if record.get('quoteType') == 'package'
-                 else _apply_checkout_session(record, session))
-        updated = updateRecord(ORDER_COLLECTION, order_id, patch) or {**record, **patch}
-        status_code = 202 if patch['reconciliationRequired'] else 200
-        return jsonify({'ok': True, 'order': _safe_order(updated), 'reused': True}), status_code
+        updated, verified = _reconcile_checkout_order(record)
+        action = _checkout_action(updated, session_verified=verified)
+        status_code = 202 if action == 'check_status' else 200
+        return jsonify({'ok': True,
+                        'order': _safe_order(updated, session_verified=verified),
+                        'reused': True}), status_code
     except Exception:
         return jsonify({'ok': True, 'order': _safe_order(record), 'reconciliationRequired': True}), 202
 

@@ -10,6 +10,8 @@ import '../../services/transaction_request.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
+import '../fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
+import 'payment_history_screen.dart';
 import 'payment_status.dart';
 
 class PaymentScreen extends StatefulWidget {
@@ -58,6 +60,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
   final paymentAttempt = TransactionAttemptLifecycle('payment');
   final checkoutAttempts = CheckoutAttemptStore();
 
+  String currentAttemptId = '';
+  Map<String, dynamic>? activeOrder;
+  String checkoutAction = 'open_checkout';
+  String? checkoutUrl;
+  final TransactionAttemptLifecycle _packageRestartIntent =
+      TransactionAttemptLifecycle('package_checkout_restart');
+
   bool get hostedCheckout =>
       (widget.quoteType.isNotEmpty || widget.packageAttemptId.isNotEmpty) && !api.isStandalone;
 
@@ -65,6 +74,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   void initState() {
     super.initState();
     api = widget.api ?? ApiService();
+    currentAttemptId = widget.packageAttemptId;
     bookingId = TextEditingController(text: widget.initialBookingReference);
     amount = TextEditingController(
         text: widget.initialAmount?.toStringAsFixed(2) ?? '100.00');
@@ -84,87 +94,202 @@ class _PaymentScreenState extends State<PaymentScreen> {
     } catch (_) {}
   }
 
+  void _syncActiveOrderFromList(List<Map<String, dynamic>> list) {
+    final isPackage = (currentAttemptId.isNotEmpty || widget.packageAttemptId.isNotEmpty);
+    final targetAttempt = currentAttemptId.isNotEmpty ? currentAttemptId : widget.packageAttemptId;
+
+    Map<String, dynamic>? match;
+    if (activeOrder?['id'] != null) {
+      match = list.cast<Map<String, dynamic>?>().firstWhere(
+        (item) => item?['id'] == activeOrder!['id'],
+        orElse: () => null,
+      );
+    }
+    if (match == null && isPackage && targetAttempt.isNotEmpty) {
+      match = list.cast<Map<String, dynamic>?>().firstWhere(
+        (item) => item?['packageAttemptId'] == targetAttempt || item?['orderAttemptId'] == targetAttempt,
+        orElse: () => null,
+      );
+    }
+    if (match == null && !isPackage && widget.quoteType.isNotEmpty) {
+      match = list.cast<Map<String, dynamic>?>().firstWhere(
+        (item) => item?['quoteType'] == widget.quoteType &&
+            item?['quoteId'] == (widget.quoteType == 'hotel' ? widget.quoteId : widget.searchId),
+        orElse: () => null,
+      );
+    }
+
+    if (match != null) {
+      activeOrder = match;
+      final action = (match['checkoutAction'] ?? _deriveAction(match)).toString();
+      checkoutAction = action;
+      final url = (match['checkoutUrl'] ?? '').toString();
+      if (url.isNotEmpty) checkoutUrl = url;
+      result = {
+        'paymentStatus': match['paymentStatus'] ?? 'unpaid',
+        'orderStatus': match['status'],
+        'orderId': match['id'],
+        if (match['fulfilledTripId'] != null)
+          'fulfilledTripId': match['fulfilledTripId'],
+      };
+    }
+  }
+
   Future<void> loadOrders() async {
     try {
       final data = await api.get('/api/fr9/orders');
       if (!mounted) return;
-      setState(() => orders = data['items'] ?? []);
-      for (final raw in orders.take(5)) {
-        final item = Map<String, dynamic>.from(raw as Map);
-        final status = (item['status'] ?? '').toString();
-        if (item['id'] != null &&
-            {'checkout_open', 'payment_pending', 'checkout_pending'}
-                .contains(status)) {
-          try {
-            await api.get('/api/fr9/orders/${item['id']}/reconcile');
-          } catch (_) {}
-        }
+      final rawList = data['items'] as List? ?? [];
+      final parsed = rawList
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      if (mounted) {
+        setState(() {
+          orders = parsed;
+          _syncActiveOrderFromList(parsed);
+        });
       }
-      final refreshed = await api.get('/api/fr9/orders');
-      if (mounted) setState(() => orders = refreshed['items'] ?? []);
     } catch (_) {}
+  }
+
+  String _deriveAction(Map<String, dynamic> order) {
+    final status = (order['status'] ?? '').toString().toLowerCase();
+    final paymentStatus = (order['paymentStatus'] ?? '').toString().toLowerCase();
+    if (status == 'paid' || paymentStatus == 'paid' || paymentStatus == 'succeeded') {
+      return 'view_booking';
+    }
+    if ({'expired', 'payment_failed', 'cancelled', 'canceled', 'checkout_failed'}.contains(status)) {
+      return 'restart_payment';
+    }
+    if (status == 'checkout_open' && (order['checkoutUrl'] ?? '').toString().isNotEmpty) {
+      return 'continue_payment';
+    }
+    return 'check_status';
   }
 
   Future<void> launchCheckout() async {
     if (busy) return;
+
+    if (checkoutAction == 'view_booking' || isSuccessfulPayment(result?['paymentStatus']) || activeOrder?['status'] == 'paid') {
+      _navigateToBooking();
+      return;
+    }
+
+    if (checkoutAction == 'continue_payment' && checkoutUrl != null && checkoutUrl!.isNotEmpty) {
+      final uri = Uri.tryParse(checkoutUrl!);
+      if (uri != null && await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Secure Checkout opened. Return here to check the order status.'),
+          ));
+        }
+        return;
+      }
+    }
+
+    if (checkoutAction == 'check_status' && activeOrder?['id'] != null) {
+      await reconcileOrder((activeOrder!['id']).toString());
+      return;
+    }
+
+    if (checkoutAction == 'restart_payment') {
+      await _handleRestartPayment();
+      return;
+    }
+
     setState(() => busy = true);
     try {
-      final scope = widget.packageAttemptId.isNotEmpty ? widget.packageAttemptId : [
+      final isPackage = currentAttemptId.isNotEmpty || widget.packageAttemptId.isNotEmpty;
+      final scope = isPackage ? (currentAttemptId.isNotEmpty ? currentAttemptId : widget.packageAttemptId) : [
         widget.quoteType,
         widget.quoteId,
         widget.offerId,
         widget.searchId,
         widget.optionId,
       ].join('_');
+
       final terminalOrder = orders.any((raw) {
         final item = Map<String, dynamic>.from(raw as Map);
-        final sameQuote = item['quoteType'] == widget.quoteType &&
-            item['quoteId'] ==
-                (widget.quoteType == 'hotel' ? widget.quoteId : widget.searchId);
+        final sameQuote = isPackage
+            ? (item['packageAttemptId'] == scope || item['orderAttemptId'] == scope)
+            : (item['quoteType'] == widget.quoteType &&
+                item['quoteId'] == (widget.quoteType == 'hotel' ? widget.quoteId : widget.searchId));
         return sameQuote &&
-            {'expired', 'payment_failed', 'payment_mismatch'}
-                .contains(item['status']);
+            {'expired', 'payment_failed', 'payment_mismatch', 'cancelled'}.contains(item['status']);
       });
-      if (terminalOrder) await checkoutAttempts.clear(scope);
-      final attemptId = await checkoutAttempts.loadOrCreate(scope);
-      final data = await api.post(widget.packageAttemptId.isNotEmpty
-          ? '/api/fr9/package-checkout-attempts/${widget.packageAttemptId}/checkout/session'
-          : '/api/fr9/checkout/session', {
-        if (widget.packageAttemptId.isEmpty)
-        'orderAttemptId': attemptId,
-        'quoteType': widget.quoteType,
-        if (widget.quoteType == 'hotel') ...{
-          'quoteId': widget.quoteId,
-          'offerId': widget.offerId,
-        },
-        if (widget.quoteType == 'flight') ...{
-          'searchId': widget.searchId,
-          'optionId': widget.optionId,
+      String attemptId = scope;
+      if (!isPackage) {
+        if (terminalOrder) await checkoutAttempts.clear(scope);
+        attemptId = await checkoutAttempts.loadOrCreate(scope);
+      }
+
+      final endpoint = isPackage
+          ? '/api/fr9/package-checkout-attempts/$scope/checkout/session'
+          : '/api/fr9/checkout/session';
+
+      final data = await api.post(endpoint, {
+        if (!isPackage) ...{
+          'orderAttemptId': attemptId,
+          'quoteType': widget.quoteType,
+          if (widget.quoteType == 'hotel') ...{
+            'quoteId': widget.quoteId,
+            'offerId': widget.offerId,
+          },
+          if (widget.quoteType == 'flight') ...{
+            'searchId': widget.searchId,
+            'optionId': widget.optionId,
+          },
         },
       });
+
       final order = data['order'] is Map
           ? Map<String, dynamic>.from(data['order'] as Map)
           : <String, dynamic>{};
-      final checkoutUrl = (order['checkoutUrl'] ?? '').toString();
-      if (checkoutUrl.isEmpty || !await launchUrl(Uri.parse(checkoutUrl),
-          mode: LaunchMode.externalApplication)) {
-        throw Exception('Stripe Checkout could not be opened.');
-      }
+      final action = (order['checkoutAction'] ?? _deriveAction(order)).toString();
+      final url = (order['checkoutUrl'] ?? '').toString();
+
+      activeOrder = order;
+      checkoutAction = action;
+      if (url.isNotEmpty) checkoutUrl = url;
+
       if (mounted) {
         setState(() => result = {
               'paymentStatus': order['paymentStatus'] ?? 'unpaid',
               'orderStatus': order['status'],
               'orderId': order['id'],
+              if (order['fulfilledTripId'] != null)
+                'fulfilledTripId': order['fulfilledTripId'],
             });
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Stripe test Checkout opened. Return here to check the order status.'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(switch (action) {
+            'continue_payment' => 'Secure Checkout opened. Return here to check the order status.',
+            'view_booking' => 'Payment is already verified. No additional payment was opened.',
+            'restart_payment' => 'This Checkout Session has ended. You can restart payment.',
+            _ => 'Payment status is still being verified. No additional payment was opened.',
+          }),
         ));
       }
-      await loadOrders();
+
+      if (action == 'continue_payment') {
+        if (url.isEmpty || !await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
+          throw Exception('Stripe Checkout could not be opened.');
+        }
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => busy = false);
+      unawaited(loadOrders());
+    }
+  }
+
+  Future<void> reconcileActiveOrder() async {
+    final orderId = (activeOrder?['id'] ?? result?['orderId'] ?? '').toString();
+    if (orderId.isNotEmpty) {
+      await reconcileOrder(orderId);
+    } else {
+      await loadOrders();
     }
   }
 
@@ -172,12 +297,183 @@ class _PaymentScreenState extends State<PaymentScreen> {
     if (orderId.isEmpty || busy) return;
     setState(() => busy = true);
     try {
-      await api.get('/api/fr9/orders/$orderId/reconcile');
-      await loadOrders();
+      final response = await api.get('/api/fr9/orders/$orderId/reconcile');
+      final order = response['order'] is Map
+          ? Map<String, dynamic>.from(response['order'] as Map)
+          : <String, dynamic>{};
+      final action = (order['checkoutAction'] ?? _deriveAction(order)).toString();
+      final url = (order['checkoutUrl'] ?? '').toString();
+
+      activeOrder = order;
+      checkoutAction = action;
+      if (url.isNotEmpty) checkoutUrl = url;
+
+      if (mounted) {
+        setState(() {
+          result = {
+            'paymentStatus': order['paymentStatus'] ?? 'unpaid',
+            'orderStatus': order['status'],
+            'orderId': order['id'],
+            if (order['fulfilledTripId'] != null)
+              'fulfilledTripId': order['fulfilledTripId'],
+          };
+        });
+
+        final msg = switch (action) {
+          'view_booking' => 'Payment verified! Your booking is confirmed.',
+          'continue_payment' => 'Checkout is open. Tap Continue Payment on Stripe to complete.',
+          'restart_payment' => 'Previous session has expired. You may restart payment.',
+          _ => 'Payment status is still being verified. No additional payment was opened.',
+        };
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => busy = false);
+      unawaited(loadOrders());
+    }
+  }
+
+  Future<void> _handleRestartPayment() async {
+    setState(() => busy = true);
+    try {
+      final isPackage = currentAttemptId.isNotEmpty || widget.packageAttemptId.isNotEmpty || (activeOrder?['quoteType'] == 'package');
+      if (!isPackage) {
+        final scope = [
+          widget.quoteType,
+          widget.quoteId,
+          widget.offerId,
+          widget.searchId,
+          widget.optionId,
+        ].join('_');
+        await checkoutAttempts.clear(scope);
+        activeOrder = null;
+        checkoutAction = 'open_checkout';
+        checkoutUrl = null;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Previous session cleared. Tap to open fresh Checkout.'),
+          ));
+        }
+        return;
+      }
+
+      final snapshot = activeOrder?['packageSnapshot'] is Map
+          ? Map<String, dynamic>.from(activeOrder!['packageSnapshot'] as Map)
+          : <String, dynamic>{};
+      final packageId = (activeOrder?['packageId'] ?? snapshot['packageId'] ?? '').toString();
+      final departureDate = (activeOrder?['departureDate'] ?? snapshot['selectedDepartureDate'])?.toString();
+      final participants = (activeOrder?['participants'] ?? snapshot['participants']) is Map
+          ? Map<String, dynamic>.from((activeOrder?['participants'] ?? snapshot['participants']) as Map)
+          : <String, dynamic>{'adults': 1, 'children': 0};
+
+      if (packageId.isEmpty) {
+        throw Exception('Package details are unavailable to restart payment. Please return to the package page.');
+      }
+
+      _packageRestartIntent.startNewAttempt();
+      final restartResponse = await api.post('/api/fr15/package-checkout-attempts', {
+        'packageId': packageId,
+        if (departureDate != null && departureDate.isNotEmpty)
+          'departureDate': departureDate,
+        'participants': {
+          'adults': participants['adults'] ?? 1,
+          'children': participants['children'] ?? 0,
+        },
+        'idempotencyKey': _packageRestartIntent.currentOrCreate,
+      });
+
+      final newAttempt = restartResponse['attempt'] is Map
+          ? Map<String, dynamic>.from(restartResponse['attempt'] as Map)
+          : <String, dynamic>{};
+      final newAttemptId = (newAttempt['id'] ?? '').toString();
+      if (newAttemptId.isEmpty) {
+        throw Exception('A new package checkout attempt could not be prepared.');
+      }
+
+      currentAttemptId = newAttemptId;
+      activeOrder = null;
+      checkoutAction = 'open_checkout';
+      checkoutUrl = null;
+
+      final sessionResponse = await api.post(
+        '/api/fr9/package-checkout-attempts/$newAttemptId/checkout/session',
+        {},
+      );
+
+      final order = sessionResponse['order'] is Map
+          ? Map<String, dynamic>.from(sessionResponse['order'] as Map)
+          : <String, dynamic>{};
+      final action = (order['checkoutAction'] ?? _deriveAction(order)).toString();
+      final url = (order['checkoutUrl'] ?? '').toString();
+
+      activeOrder = order;
+      checkoutAction = action;
+      if (url.isNotEmpty) checkoutUrl = url;
+
+      if (mounted) {
+        setState(() {
+          result = {
+            'paymentStatus': order['paymentStatus'] ?? 'unpaid',
+            'orderStatus': order['status'],
+            'orderId': order['id'],
+            if (order['fulfilledTripId'] != null)
+              'fulfilledTripId': order['fulfilledTripId'],
+          };
+        });
+      }
+
+      if (action == 'continue_payment' && url.isNotEmpty) {
+        if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
+          throw Exception('Stripe Checkout could not be opened.');
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Fresh Stripe Checkout opened.'),
+          ));
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(action == 'view_booking'
+                ? 'Payment is verified.'
+                : 'New payment session created. Return here to check status.'),
+          ));
+        }
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = false);
+      unawaited(loadOrders());
+    }
+  }
+
+  void _navigateToBooking() {
+    final tripId = (activeOrder?['fulfilledTripId'] ?? activeOrder?['tripId'] ?? result?['fulfilledTripId'] ?? '').toString();
+    if (tripId.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PackageTripDetailsScreen(tripId: tripId, api: api),
+        ),
+      );
+    } else {
+      Navigator.pop(context, true);
+    }
+  }
+
+  Future<void> _reopenStripe() async {
+    if (checkoutUrl != null && checkoutUrl!.isNotEmpty) {
+      final uri = Uri.tryParse(checkoutUrl!);
+      if (uri != null && await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Secure Checkout opened. Return here to check the order status.'),
+          ));
+        }
+      }
     }
   }
 
@@ -340,7 +636,115 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
+  Widget _buildDisclaimer() {
+    final isPackage = widget.packageAttemptId.isNotEmpty ||
+        widget.quoteType == 'package' ||
+        activeOrder?['quoteType'] == 'package';
+    final isHotel = widget.quoteType == 'hotel';
+
+    final String text;
+    if (isPackage) {
+      text =
+          'This is a Stripe test-mode order for an operator tourism package. Payment confirms your booking and fulfills a dedicated Package Trip in TravelMate. Supplier reservations remain managed by the licensed operator. TravelMate does not receive or store card numbers or security codes.';
+    } else if (isHotel) {
+      text =
+          'This is a Stripe test-mode order. The selected hotel quote is a provider sandbox quote and is not live inventory. The provider offer total covers the requested stay and occupancy; any excluded property fees remain due at the property. TravelMate does not receive or store card numbers or security codes.';
+    } else {
+      text =
+          'This is a Stripe test-mode order. Payment confirms your verified fare quote. TravelMate does not receive or store card numbers or security codes.';
+    }
+
+    return InkCard(
+      color: InkWashColors.cream,
+      child: Text(
+        text,
+        style: const TextStyle(color: InkWashColors.ink, height: 1.35),
+      ),
+    );
+  }
+
   Widget _buildHostedCheckout() {
+    final isPackage = widget.packageAttemptId.isNotEmpty ||
+        widget.quoteType == 'package' ||
+        activeOrder?['quoteType'] == 'package';
+    final snapshot = activeOrder?['packageSnapshot'] is Map
+        ? Map<String, dynamic>.from(activeOrder!['packageSnapshot'] as Map)
+        : (activeOrder?['quoteSnapshot'] is Map
+            ? Map<String, dynamic>.from(activeOrder!['quoteSnapshot'] as Map)
+            : null);
+    final productTitle = (snapshot?['title'] ??
+            snapshot?['name'] ??
+            snapshot?['roomName'] ??
+            widget.initialBookingReference)
+        .toString()
+        .trim();
+
+    final departure =
+        (activeOrder?['departureDate'] ?? snapshot?['selectedDepartureDate'])
+            ?.toString();
+    final rawParticipants =
+        activeOrder?['participants'] ?? snapshot?['participants'];
+    String? participantsDesc;
+    if (rawParticipants is Map) {
+      final a = rawParticipants['adults'] ?? 0;
+      final c = rawParticipants['children'] ?? 0;
+      participantsDesc =
+          '$a Adult${a != 1 ? 's' : ''}${c > 0 ? ', $c Child${c != 1 ? 'ren' : ''}' : ''}';
+    }
+
+    final displayAmount = activeOrder?['amount'] != null
+        ? num.tryParse(activeOrder!['amount'].toString())?.toDouble()
+        : widget.initialAmount;
+
+    final currentAction = checkoutAction;
+    final (statusLabel, statusTone, statusIcon) = switch (currentAction) {
+      'view_booking' => (
+          'Payment Verified · Booking Confirmed',
+          AppStatusTone.success,
+          Icons.check_circle_rounded
+        ),
+      'continue_payment' => (
+          'Stripe Checkout Open',
+          AppStatusTone.warning,
+          Icons.open_in_new_rounded
+        ),
+      'check_status' => (
+          'Payment Status Verifying',
+          AppStatusTone.warning,
+          Icons.hourglass_top_rounded
+        ),
+      'restart_payment' => (
+          'Session Expired · Restart Required',
+          AppStatusTone.neutral,
+          Icons.replay_rounded
+        ),
+      _ => (
+          'Ready for Checkout',
+          AppStatusTone.neutral,
+          Icons.shopping_bag_outlined
+        ),
+    };
+
+    final buttonLabel = busy
+        ? 'Preparing Checkout…'
+        : switch (currentAction) {
+            'continue_payment' => 'Continue Payment on Stripe',
+            'check_status' => 'Check Payment Status',
+            'restart_payment' => 'Restart Payment',
+            'view_booking' => 'View Confirmed Booking',
+            _ => 'Open Stripe test Checkout',
+          };
+
+    final buttonIcon = busy
+        ? null
+        : switch (currentAction) {
+            'continue_payment' => Icons.open_in_new_rounded,
+            'check_status' => Icons.refresh_rounded,
+            'restart_payment' => Icons.replay_rounded,
+            'view_booking' => Icons.check_circle_outline_rounded,
+            _ => Icons.open_in_new_rounded,
+          };
+
     return Scaffold(
       appBar: AppBar(title: const Text('TravelMate Checkout')),
       body: ListView(
@@ -351,25 +755,133 @@ class _PaymentScreenState extends State<PaymentScreen> {
             subtitle: 'Card details are entered only on Stripe-hosted Checkout.',
           ),
           const SizedBox(height: 12),
+          _buildDisclaimer(),
+          const SizedBox(height: 14),
           InkCard(
-            color: InkWashColors.cream,
-            child: const Text(
-              'This is a Stripe test-mode order. The selected hotel quote is a provider sandbox quote and is not live inventory. The provider offer total covers the requested stay and occupancy; any excluded property fees remain due at the property. TravelMate does not receive or store card numbers or security codes.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        productTitle.isNotEmpty
+                            ? (isPackage
+                                ? 'Tourism Package'
+                                : (widget.quoteType == 'hotel'
+                                    ? 'Hotel Booking'
+                                    : 'Booking Checkout'))
+                            : 'Order Checkout',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: InkWashColors.blueGrey,
+                        ),
+                      ),
+                    ),
+                    StatusChip(
+                      text: statusLabel,
+                      tone: statusTone,
+                      icon: statusIcon,
+                    ),
+                  ],
+                ),
+                if (productTitle.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    productTitle,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+                if ((departure != null && departure.isNotEmpty) ||
+                    participantsDesc != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    [
+                      if (departure != null && departure.isNotEmpty)
+                        'Date: $departure',
+                      if (participantsDesc != null) participantsDesc,
+                    ].join(' · '),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: InkWashColors.mutedInk,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                const Divider(height: 1),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Payable total:',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: InkWashColors.mutedInk,
+                      ),
+                    ),
+                    Text(
+                      displayAmount != null
+                          ? 'Authoritative quote: MYR ${displayAmount.toStringAsFixed(2)}'
+                          : 'MYR 0.00',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: InkWashColors.ink,
+                      ),
+                    ),
+                  ],
+                ),
+                if (widget.initialBookingReference.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Booking reference: ${widget.initialBookingReference}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: InkWashColors.mutedInk,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          const SizedBox(height: 14),
-          if (widget.initialBookingReference.isNotEmpty)
-            Text('Booking reference: ${widget.initialBookingReference}'),
-          if (widget.initialAmount != null)
-            Text('Authoritative quote: MYR ${widget.initialAmount!.toStringAsFixed(2)}'),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: busy ? null : launchCheckout,
             icon: busy
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.open_in_new_rounded),
-            label: Text(busy ? 'Preparing Checkout…' : 'Open Stripe test Checkout'),
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Icon(buttonIcon),
+            label: Text(buttonLabel),
           ),
+          if (currentAction == 'continue_payment') ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: busy ? null : reconcileActiveOrder,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Check Payment Status'),
+            ),
+          ],
+          if (currentAction == 'check_status' &&
+              checkoutUrl != null &&
+              checkoutUrl!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: busy ? null : _reopenStripe,
+              icon: const Icon(Icons.open_in_new_rounded),
+              label: const Text('Re-open Stripe Checkout'),
+            ),
+          ],
           const SizedBox(height: 24),
           const TravelSectionHeader(
             title: 'Order history',
@@ -382,7 +894,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
               title: 'No Checkout orders yet',
               message: 'Your Stripe test orders will appear here.',
             ),
-          ...orders.take(10).map((raw) {
+          ...orders.take(3).map((raw) {
             final item = Map<String, dynamic>.from(raw as Map);
             final orderId = (item['id'] ?? '').toString();
             final status = (item['status'] ?? 'unknown').toString();
@@ -393,19 +905,27 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   children: [
                     const CircleAvatar(
                       backgroundColor: InkWashColors.paleBlue,
-                      child: Icon(Icons.receipt_long_outlined, color: InkWashColors.blueGrey),
+                      child: Icon(Icons.receipt_long_outlined,
+                          color: InkWashColors.blueGrey),
                     ),
                     const SizedBox(width: 11),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${item['quoteType'] ?? 'Order'} · ${item['currency'] ?? 'MYR'} ${item['amount'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                          Text(status, style: const TextStyle(color: InkWashColors.mutedInk, fontSize: 12)),
+                          Text(
+                            '${item['quoteType'] ?? 'Order'} · ${item['currency'] ?? 'MYR'} ${item['amount'] ?? ''}',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          Text(status,
+                              style: const TextStyle(
+                                  color: InkWashColors.mutedInk, fontSize: 12)),
                         ],
                       ),
                     ),
-                    if ({'checkout_open', 'payment_pending', 'checkout_pending'}.contains(status))
+                    if ({'checkout_open', 'payment_pending', 'checkout_pending'}
+                        .contains(status))
                       IconButton(
                         tooltip: 'Check status',
                         onPressed: busy ? null : () => reconcileOrder(orderId),
@@ -416,6 +936,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
             );
           }),
+          if (orders.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => PaymentHistoryScreen(api: api)),
+                  );
+                },
+                icon: const Icon(Icons.history_rounded, size: 16),
+                label: const Text('View full payment history'),
+              ),
+            ),
+          ],
         ],
       ),
     );

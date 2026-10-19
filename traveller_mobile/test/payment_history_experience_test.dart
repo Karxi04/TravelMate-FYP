@@ -11,6 +11,9 @@ class _MockPaymentApi extends ApiService {
   bool shouldThrowAuthError = false;
   int getPaymentsCount = 0;
   int postCount = 0;
+  String? postedPath;
+  Map<String, dynamic>? postedBody;
+  Map<String, dynamic>? reconciledOrder;
 
   _MockPaymentApi({List<dynamic>? items}) : paymentItems = items ?? [];
 
@@ -41,12 +44,23 @@ class _MockPaymentApi extends ApiService {
     if (path == '/api/fr9/orders') {
       return {'ok': true, 'items': []};
     }
+    if (path.contains('/api/fr9/orders/') && path.endsWith('/reconcile')) {
+      return {'ok': true, 'order': reconciledOrder ?? {}};
+    }
     return {'ok': true};
   }
 
   @override
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
     postCount++;
+    postedPath = path;
+    postedBody = body;
+    if (path == '/api/fr15/package-checkout-attempts') {
+      return {
+        'ok': true,
+        'attempt': {'id': 'restart-attempt-1', 'amount': 599.0},
+      };
+    }
     return {'ok': true};
   }
 }
@@ -90,6 +104,25 @@ void main() {
     'paymentProvider': 'stripe',
     'timestamp': '2026-10-17T14:30:00+00:00',
     'source': 'checkout_order',
+    'checkoutAction': 'check_status',
+  };
+
+  final sampleExpiredPackagePayment = {
+    'id': 'order-expired-707',
+    'orderReference': 'order-expired-707',
+    'bookingType': 'package',
+    'productTitle': 'Penang Street Food Adventure',
+    'amount': 599.00,
+    'currency': 'MYR',
+    'paymentStatus': 'unpaid',
+    'orderStatus': 'expired',
+    'testMode': true,
+    'timestamp': '2026-10-18T12:00:00+00:00',
+    'source': 'checkout_order',
+    'checkoutAction': 'restart_payment',
+    'packageId': 'package-food-1',
+    'departureDate': '2027-02-10',
+    'participants': {'adults': 2, 'children': 1},
   };
 
   final sampleFlightPayment = {
@@ -376,5 +409,47 @@ void main() {
 
     expect(find.byKey(const ValueKey('payment-history-screen')), findsOneWidget);
     expect(find.text('Package — Penang Heritage & Hills Escape'), findsOneWidget);
+  });
+
+  testWidgets('16. Pending Checkout offers status verification, not a blind payment link',
+      (tester) async {
+    final api = _MockPaymentApi(items: [samplePendingPayment]);
+    api.reconciledOrder = {
+      'id': 'order-pending-505',
+      'checkoutAction': 'check_status',
+      'status': 'payment_pending',
+    };
+    await tester.pumpWidget(buildTestWidget(PaymentHistoryScreen(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('payment-item-order-pending-505')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Check Payment Status'), findsOneWidget);
+    expect(find.text('Continue Payment'), findsNothing);
+    await tester.ensureVisible(find.text('Check Payment Status'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Check Payment Status'));
+    await tester.pumpAndSettle();
+    expect(api.postCount, 0);
+  });
+
+  testWidgets('17. Expired Package Checkout creates a fresh attempt before PaymentScreen',
+      (tester) async {
+    final api = _MockPaymentApi(items: [sampleExpiredPackagePayment]);
+    await tester.pumpWidget(buildTestWidget(PaymentHistoryScreen(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('payment-item-order-expired-707')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Restart Payment'), findsOneWidget);
+    await tester.ensureVisible(find.text('Restart Payment'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Restart Payment'));
+    await tester.pumpAndSettle();
+
+    expect(api.postedPath, '/api/fr15/package-checkout-attempts');
+    expect(api.postedBody?['packageId'], 'package-food-1');
+    expect(api.postedBody?['participants'], {'adults': 2, 'children': 1});
+    expect(find.text('TravelMate Checkout'), findsOneWidget);
   });
 }

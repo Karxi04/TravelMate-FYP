@@ -105,6 +105,7 @@ def test_history_merges_paid_checkout_types_and_legacy_records(
         'relatedBookingId': None,
         'productTitle': 'Penang Weekend',
         'source': 'checkout_order',
+            'checkoutAction': 'view_booking',
     }
     assert flight['bookingType'] == 'flight'
     assert flight['productTitle'] is None
