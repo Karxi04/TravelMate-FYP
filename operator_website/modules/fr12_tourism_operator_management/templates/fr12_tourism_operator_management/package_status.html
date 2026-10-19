@@ -20,9 +20,23 @@
     <article class="card">
       <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px;">
         <strong style="font-size: 16px; color: var(--ink);">{{ item.get('title', item.get('packageTitle', 'Package')) }}</strong>
-        <span class="status {{ state }}">
-          {{ {'pending': 'Under Review', 'submitted': 'Under Review', 'rejected': 'Needs Changes', 'approved': 'Approved', 'archived': 'Archived', 'draft': 'Draft'}.get(state, state|title) }}
-        </span>
+        {% if state == 'approved' %}
+          {% if item.get('availabilityStatus') == 'unavailable' %}
+            <span class="status approved-unavailable">Approved (Paused)</span>
+          {% else %}
+            <span class="status approved">Active</span>
+          {% endif %}
+        {% elif state == 'suspended' %}
+          <span class="status suspended">Suspended</span>
+        {% elif state in ['pending', 'submitted'] %}
+          <span class="status pending">Under Review</span>
+        {% elif state == 'rejected' %}
+          <span class="status rejected">Needs Changes</span>
+        {% elif state == 'archived' %}
+          <span class="status archived">Archived</span>
+        {% else %}
+          <span class="status draft">Draft</span>
+        {% endif %}
       </div>
 
       <p class="muted" style="font-size: 13px; margin: 0 0 14px;">
@@ -30,7 +44,18 @@
         {% if item.get('durationDays') %} • {{ item.get('durationDays') }} Days{% endif %}
       </p>
 
-      {% if item.get('reviewReason', item.get('reviewComment')) %}
+      {% if state == 'suspended' %}
+        <div class="review-feedback" style="margin-bottom: 14px; border-left: 3px solid var(--danger); background: var(--danger-bg);">
+          <div style="display: flex; align-items: center; gap: 6px; color: var(--danger);">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <strong>Administrator Suspension Notice:</strong>
+          </div>
+          <p style="color: var(--danger); font-weight: 500; margin: 4px 0 6px;">{{ item.get('suspensionReason', 'Policy or compliance review required.') }}</p>
+          {% if item.get('suspendedAt') %}
+            <span class="muted" style="font-size: 11px;">Suspended on {{ item.get('suspendedAt')[:10] }}{% if item.get('suspendedByName') %} by {{ item.get('suspendedByName') }}{% endif %}</span>
+          {% endif %}
+        </div>
+      {% elif item.get('reviewReason', item.get('reviewComment')) %}
         <div class="review-feedback" style="margin-bottom: 14px;">
           <div style="display: flex; align-items: center; gap: 6px;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -45,15 +70,19 @@
           Updated: {{ (item.get('updatedAt') or item.get('createdAt') or '—')[:10] }}
         </span>
 
-        {% if state in ['draft', 'rejected'] %}
+        {% if state in ['draft', 'rejected', 'suspended'] %}
           <a class="btn outline" href="{{ url_for('operator_fr12.edit_package_page', package_id=item.id) }}">
-            <span>Review & Edit</span>
+            <span>Review &amp; Edit</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
           </a>
         {% elif state in ['pending', 'submitted'] %}
           <span class="muted" style="font-size: 12px; font-weight: 600;">Pending Admin Review</span>
         {% elif state == 'approved' %}
-          <span style="font-size: 12px; font-weight: 600; color: var(--success);">Live on Platform</span>
+          {% if item.get('availabilityStatus') == 'unavailable' %}
+            <span style="font-size: 12px; font-weight: 600; color: var(--warning);">Approved (Temporarily Paused)</span>
+          {% else %}
+            <span style="font-size: 12px; font-weight: 600; color: var(--success);">Live on Platform</span>
+          {% endif %}
         {% endif %}
       </div>
     </article>

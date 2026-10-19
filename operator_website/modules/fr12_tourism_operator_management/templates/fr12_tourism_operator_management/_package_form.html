@@ -482,6 +482,16 @@
         <option value="unavailable" {% if p.get('availabilityStatus') == 'unavailable' %}selected{% endif %}>Temporarily Paused (Hidden from Search)</option>
       </select>
       <span class="field-help">Controls whether this approved package is open for traveller bookings.</span>
+
+      <div class="card cream" style="margin-top: 10px; border-left: 3px solid var(--bluegrey-light); padding: 12px 14px; font-size: 12.5px; line-height: 1.5; color: var(--ink-secondary);">
+        <strong style="display: block; margin-bottom: 4px; color: var(--ink);">Catalog Availability vs Administrator Moderation</strong>
+        <ul style="margin: 0; padding-left: 18px;">
+          <li><strong>Administrator Moderation:</strong> Moderates marketing content, itineraries, and safety compliance.</li>
+          <li><strong>Catalog Visibility:</strong> Operator-controlled runtime switch. Approved + Active is visible and bookable in the mobile app.</li>
+          <li><strong>Paused Packages:</strong> Temporarily hidden from public search and new bookings. Existing booked and paid traveller trips remain intact and valid.</li>
+          <li><strong>Zero Review Disruption:</strong> Toggling availability alone preserves approved status. Material edits to itineraries, pricing, or media will revert the package to Draft for re-moderation.</li>
+        </ul>
+      </div>
     </div>
   </div>
 

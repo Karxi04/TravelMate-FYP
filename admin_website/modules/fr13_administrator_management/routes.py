@@ -77,6 +77,28 @@ def review_package(package_id):
     flash("Package review saved." if response.ok else _error(response), "success" if response.ok else "error")
     return redirect(url_for("admin_fr13.package_details", package_id=package_id) if not response.ok else url_for("admin_fr13.packages"))
 
+@bp.post("/packages/<package_id>/suspend")
+def suspend_package(package_id):
+    if not guard():
+        return redirect(url_for("admin_fr01.login"))
+    reason = request.form.get("reason", "").strip()
+    if len(reason) < 10:
+        flash("A meaningful suspension reason of at least 10 characters is required.", "error")
+        return redirect(url_for("admin_fr13.package_details", package_id=package_id))
+    if len(reason) > 500:
+        flash("Suspension reason cannot exceed 500 characters.", "error")
+        return redirect(url_for("admin_fr13.package_details", package_id=package_id))
+    response = call_api("POST", f"/api/fr13/packages/{package_id}/suspend", json={"reason": reason})
+    if response.ok:
+        data = response.json() if hasattr(response, "json") else {}
+        if data.get("idempotent"):
+            flash("Package is already suspended with this reason.", "info")
+        else:
+            flash("Package suspended and unpublished successfully.", "success")
+    else:
+        flash(_error(response, "Failed to suspend package."), "error")
+    return redirect(url_for("admin_fr13.package_details", package_id=package_id))
+
 @bp.route("/campaigns")
 def campaigns():
     if not guard():

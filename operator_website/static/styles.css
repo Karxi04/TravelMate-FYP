@@ -1227,6 +1227,18 @@ tr:hover td {
   border: 1px solid #CBD5E1;
 }
 
+.status.suspended {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+}
+
+.status.approved-unavailable {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
+}
+
 /* Empty States */
 .empty-state {
   text-align: center;
