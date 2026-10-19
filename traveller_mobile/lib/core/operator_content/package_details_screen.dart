@@ -10,6 +10,7 @@ import '../../services/transaction_request.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
+import 'package_gallery_viewer.dart';
 
 class TourismPackageDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -1558,15 +1559,11 @@ class _TourismPackageDetailsScreenState
           AppSpacing.xxl,
         ),
         children: [
-          TravelPlaceImage(
-            place: {
-              'title': title.isEmpty ? destination : title,
-              'imageUrl': hero,
-              'category': 'Travel package',
-            },
-            height: 220,
-            width: double.infinity,
-            borderRadius: BorderRadius.circular(AppRadii.large),
+          PackageGalleryCarousel(
+            photos: PackageGalleryCarousel.extractPhotos(widget.item),
+            title: title.isEmpty ? destination : title,
+            destination: destination,
+            fallbackHeroUrl: hero,
           ),
           const SizedBox(height: AppSpacing.md),
           const TravelStatusPill(
