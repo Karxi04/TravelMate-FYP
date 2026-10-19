@@ -33,6 +33,12 @@ from services.package_service import (
     package_submission_error,
     package_validation_error,
 )
+from services.image_storage_service import (
+    validate_image_file,
+    save_image_file,
+    is_safe_filename,
+    delete_image_file,
+)
 
 bp=Blueprint('fr12_operator',__name__,url_prefix='/api/fr12')
 
@@ -244,3 +250,34 @@ def export_report():
         as_attachment=True,
         download_name="Tourism_Operator_Business_Report.pdf"
     )
+
+
+# ==========================================================
+# PACKAGE IMAGE UPLOADS
+# ==========================================================
+
+@bp.post('/package-images/upload')
+@auth_required(['operator'])
+def upload_package_image():
+    if 'file' not in request.files and 'image' not in request.files:
+        return jsonify({'ok': False, 'error': 'No image file provided'}), 400
+    file = request.files.get('file') or request.files.get('image')
+    ok, error_msg, ext = validate_image_file(file)
+    if not ok:
+        return jsonify({'ok': False, 'error': error_msg}), 400
+    filename, url = save_image_file(file, ext, host_url=request.host_url)
+    return jsonify({
+        'ok': True,
+        'filename': filename,
+        'url': url,
+    }), 201
+
+
+@bp.delete('/package-images/<filename>')
+@auth_required(['operator'])
+def delete_package_image(filename):
+    if not is_safe_filename(filename):
+        return jsonify({'ok': False, 'error': 'Invalid image filename'}), 400
+    deleted = delete_image_file(filename)
+    return jsonify({'ok': True, 'deleted': deleted})
+

@@ -3,7 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../modules/fr09_payment/payment_screen.dart';
+import '../../modules/fr09_payment/checkout_return_screen.dart';
+import '../../modules/fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
 import '../../services/api_service.dart';
+import '../../services/transaction_request.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
@@ -36,6 +39,8 @@ class _TourismPackageDetailsScreenState
   String? selectedDepartureDate;
   int _selectedTab = 0;
   bool _fullDescriptionExpanded = false;
+  final TransactionAttemptLifecycle _checkoutIntent =
+      TransactionAttemptLifecycle('package_checkout');
 
   @override
   void initState() {
@@ -45,6 +50,212 @@ class _TourismPackageDetailsScreenState
     children = 0;
     final dates = _list(widget.item['departureDates']);
     if (dates.length == 1) selectedDepartureDate = dates.first;
+  }
+
+  Map<String, dynamic> _map(dynamic value) =>
+      value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+
+  String _dateKey(dynamic value) {
+    final raw = (value ?? '').toString().trim();
+    final isoDate = RegExp(r'^\d{4}-\d{2}-\d{2}').firstMatch(raw)?.group(0);
+    return isoDate ?? raw;
+  }
+
+  bool _matchesCurrentPackageDate(Map<String, dynamic> order) {
+    if ((order['quoteType'] ?? '').toString() != 'package') return false;
+    final snapshot = _map(order['packageSnapshot']);
+    final packageId =
+        (order['packageId'] ?? snapshot['packageId'] ?? order['quoteId'] ?? '')
+            .toString();
+    final departure = order['departureDate'] ??
+        order['selectedDepartureDate'] ??
+        snapshot['selectedDepartureDate'];
+    return packageId == (widget.item['id'] ?? '').toString() &&
+        _dateKey(departure) == _dateKey(selectedDepartureDate);
+  }
+
+  bool _matchesCurrentPurchase(Map<String, dynamic> order) {
+    if (!_matchesCurrentPackageDate(order)) return false;
+    final snapshot = _map(order['packageSnapshot']);
+    final participants = _map(
+      order['participants'] is Map
+          ? order['participants']
+          : snapshot['participants'],
+    );
+    final previousAdults =
+        participants['adults'] ?? order['adultCount'] ?? snapshot['adultCount'];
+    final previousChildren = participants['children'] ??
+        order['childCount'] ??
+        snapshot['childCount'];
+    return _number(previousAdults) == adults &&
+        _number(previousChildren) == children;
+  }
+
+  bool _isPaid(Map<String, dynamic> order) {
+    const paidStates = {'paid', 'succeeded', 'completed', 'payment_succeeded'};
+    return paidStates.contains((order['status'] ?? '').toString().toLowerCase()) ||
+        paidStates.contains(
+            (order['paymentStatus'] ?? '').toString().toLowerCase());
+  }
+
+  bool _isTerminal(Map<String, dynamic> order) => {
+        'expired',
+        'checkout_failed',
+        'payment_failed',
+        'payment_mismatch',
+        'cancelled',
+        'canceled',
+      }.contains((order['status'] ?? '').toString().toLowerCase());
+
+  Future<void> _openExistingBooking(Map<String, dynamic> order) async {
+    final tripId = (order['fulfilledTripId'] ?? '').toString();
+    if (tripId.isNotEmpty) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PackageTripDetailsScreen(tripId: tripId, api: api),
+        ),
+      );
+      return;
+    }
+    final orderId = (order['id'] ?? '').toString();
+    if (orderId.isNotEmpty) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CheckoutReturnScreen(
+            link: CheckoutReturnLink(orderId, 'paid'),
+            api: api,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<bool> _resolveExistingPurchase() async {
+    final response = await api.get('/api/fr9/orders');
+    final orders = (response is Map ? response['items'] : null) as List? ?? const [];
+    final matches = orders
+        .whereType<Map>()
+        .map((raw) => Map<String, dynamic>.from(raw))
+        .where(_matchesCurrentPurchase)
+        .toList();
+
+    final pending = matches.cast<Map<String, dynamic>?>().firstWhere(
+          (order) => order != null && !_isPaid(order) && !_isTerminal(order),
+          orElse: () => null,
+        );
+    if (pending != null) {
+      final continueCheckout = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('Checkout already in progress'),
+              content: const Text(
+                'A matching package checkout is still open or being verified. Continue it instead of starting another payment.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Continue Existing Checkout'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (continueCheckout && mounted) {
+        final attemptId = (pending['packageAttemptId'] ?? '').toString();
+        final amount = _number(pending['amount'])?.toDouble();
+        if (attemptId.isNotEmpty && amount != null) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PaymentScreen(
+                packageAttemptId: attemptId,
+                initialAmount: amount,
+                api: api,
+              ),
+            ),
+          );
+        }
+      }
+      return false;
+    }
+
+    final paid = matches.cast<Map<String, dynamic>?>().firstWhere(
+          (order) => order != null && _isPaid(order),
+          orElse: () => null,
+        );
+    if (paid != null) {
+      final action = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text("You've booked this package before"),
+          content: const Text(
+            'We found a previous paid booking for this package, departure date and participant selection. Would you like to view your existing booking or make another purchase?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'cancel'),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'view'),
+              child: const Text('View Existing Booking'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, 'buy'),
+              child: const Text('Buy Again Anyway'),
+            ),
+          ],
+        ),
+      );
+      if (action == 'view' && mounted) await _openExistingBooking(paid);
+      if (action != 'buy') return false;
+      _checkoutIntent.startNewAttempt();
+      return true;
+    }
+
+    final similarPaid = orders
+        .whereType<Map>()
+        .map((raw) => Map<String, dynamic>.from(raw))
+        .where((order) => _isPaid(order) && _matchesCurrentPackageDate(order))
+        .cast<Map<String, dynamic>?>()
+        .firstWhere((order) => order != null, orElse: () => null);
+    if (similarPaid != null) {
+      final action = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Similar booking exists'),
+          content: const Text(
+            'A previous paid booking has the same package and departure date, but different adult or child counts.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'cancel'),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'view'),
+              child: const Text('View Existing Booking'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, 'continue'),
+              child: const Text('Continue New Purchase'),
+            ),
+          ],
+        ),
+      );
+      if (action == 'view' && mounted) await _openExistingBooking(similarPaid);
+      if (action != 'continue') return false;
+      _checkoutIntent.startNewAttempt();
+    }
+
+    if (matches.any(_isTerminal)) _checkoutIntent.startNewAttempt();
+    return true;
   }
 
   Future<void> _startCheckout() async {
@@ -80,14 +291,13 @@ class _TourismPackageDetailsScreenState
       if (clientTotal == null || clientTotal <= 0) {
         throw Exception('This package has no supported checkout price.');
       }
-      final scopeDate = selectedDepartureDate ?? 'open';
+      if (!await _resolveExistingPurchase()) return;
       final response = await api.post('/api/fr15/package-checkout-attempts', {
         'packageId': packageId,
         'participants': {'adults': adults, 'children': children},
         if (selectedDepartureDate != null)
           'departureDate': selectedDepartureDate,
-        'idempotencyKey':
-            'package_${packageId}_${adults}_${children}_$scopeDate',
+        'idempotencyKey': _checkoutIntent.currentOrCreate,
       });
       final attempt = response is Map && response['attempt'] is Map
           ? Map<String, dynamic>.from(response['attempt'] as Map)
@@ -128,7 +338,19 @@ class _TourismPackageDetailsScreenState
         ));
       }
     } catch (error) {
-      if (mounted) showError(context, error);
+      if (error is ApiException &&
+          error.statusCode == 409 &&
+          error.message.toLowerCase().contains('idempotency')) {
+        _checkoutIntent.startNewAttempt();
+        if (mounted) {
+          showError(
+            context,
+            'This checkout request conflicts with an earlier attempt. No payment was created. Tap Checkout again to start a fresh purchase.',
+          );
+        }
+      } else if (mounted) {
+        showError(context, error);
+      }
     } finally {
       if (mounted) setState(() => submitting = false);
     }
@@ -520,12 +742,14 @@ class _TourismPackageDetailsScreenState
                                     adults > 1
                                         ? () {
                                             setState(() => adults -= 1);
+                                            _checkoutIntent.startNewAttempt();
                                             setModalState(() {});
                                           }
                                         : null,
                                     canAddParticipant
                                         ? () {
                                             setState(() => adults += 1);
+                                            _checkoutIntent.startNewAttempt();
                                             setModalState(() {});
                                           }
                                         : null,
@@ -542,12 +766,14 @@ class _TourismPackageDetailsScreenState
                                     children > 0
                                         ? () {
                                             setState(() => children -= 1);
+                                            _checkoutIntent.startNewAttempt();
                                             setModalState(() {});
                                           }
                                         : null,
                                     canAddChild
                                         ? () {
                                             setState(() => children += 1);
+                                            _checkoutIntent.startNewAttempt();
                                             setModalState(() {});
                                           }
                                         : null,
@@ -614,6 +840,7 @@ class _TourismPackageDetailsScreenState
                                   onChanged: (value) {
                                     setState(
                                         () => selectedDepartureDate = value);
+                                    _checkoutIntent.startNewAttempt();
                                     setModalState(() {});
                                   },
                                 ),

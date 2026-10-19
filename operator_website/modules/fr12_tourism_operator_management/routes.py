@@ -1,5 +1,5 @@
 from datetime import date
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response
+from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response, jsonify
 from api_client import call_api
 
 bp = Blueprint("operator_fr12", __name__, template_folder="templates")
@@ -533,3 +533,26 @@ def export_report():
         mimetype="application/pdf",
         headers={"Content-Disposition": "attachment; filename=Tourism_Operator_Business_Report.pdf"},
     )
+
+
+@bp.post("/packages/upload-image")
+def upload_package_image_proxy():
+    if not guard():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    file = request.files.get("file") or request.files.get("image")
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "No image file provided"}), 400
+
+    response = call_api(
+        "POST",
+        "/api/fr12/package-images/upload",
+        files={"file": (file.filename, file.stream, file.mimetype)},
+    )
+    if not response.ok:
+        try:
+            err = response.json().get("error", "Failed to upload image")
+        except Exception:
+            err = "Failed to upload image"
+        return jsonify({"ok": False, "error": err}), response.status_code
+    return jsonify(response.json()), response.status_code
+

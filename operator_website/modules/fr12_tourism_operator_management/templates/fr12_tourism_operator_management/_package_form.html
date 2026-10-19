@@ -161,7 +161,7 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
           <span>Package Cover Image & Visual Presentation</span>
         </h3>
-        <p class="cover-section-subtitle">A high-quality cover photo is the single most important factor for traveller interest. Upload or specify a verified Penang image URL.</p>
+        <p class="cover-section-subtitle">A high-quality cover photo is the single most important factor for traveller interest. Upload from device or specify a verified Penang image URL.</p>
       </div>
       <span class="cover-badge">16:9 Landscape Recommended</span>
     </div>
@@ -178,7 +178,7 @@
             </div>
             <strong class="dropzone-title">Drag & drop cover photo here</strong>
             <span class="dropzone-sub">or <button type="button" class="btn-browse-trigger" id="btn-browse-trigger">Browse Files from device</button></span>
-            <small class="dropzone-meta">Supports PNG, JPG, WebP up to 10MB</small>
+            <small class="dropzone-meta">Supports PNG, JPG, WebP up to 8MB</small>
           </div>
         </div>
 
@@ -194,10 +194,10 @@
 
         <!-- Storage Persistence Status Disclosure Notice -->
         <div class="cover-persistence-notice">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
           <div>
-            <strong>Image Upload Persistence Notice (Backend Cloud Storage Planned):</strong>
-            <span>The file drag-and-drop selector generates a temporary client-side browser preview. Direct file upload persistence to cloud object storage is a planned backend feature. To ensure your cover photo is saved permanently to the catalog, provide a valid, publicly accessible Image URL in the field above.</span>
+            <strong>Persistent Image Storage Active:</strong>
+            <span>Photos uploaded from your computer are securely validated, stored permanently on the server, and automatically served to mobile travellers and the web portal. You may also enter external image URLs in the field above.</span>
           </div>
         </div>
       </div>
@@ -220,25 +220,73 @@
             <span class="preview-title" id="preview-title-tag">{{ p.get('title', 'Penang Tourism Package') }}</span>
           </div>
         </div>
-        <div class="cover-preview-note warning" id="cover-local-warning" style="display: none;">
-          ⚠️ <strong>Local device preview only:</strong> Direct cloud upload is not configured. This preview will NOT be saved to the database. Provide a public Image URL to persist your cover photo.
-        </div>
-        <div class="cover-preview-note success" id="cover-url-success" style="display: none;">
-          ✓ Public image URL detected and will be persisted upon saving.
+
+        <div class="cover-controls-bar" id="cover-controls-bar" style="{% if not p.get('heroImage', p.get('imageUrl')) %}display: none;{% endif %}">
+          <button type="button" class="btn outline btn-sm" id="btn-replace-cover">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Change Photo</span>
+          </button>
+          <button type="button" class="btn danger btn-sm" id="btn-remove-cover">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <span>Remove</span>
+          </button>
         </div>
 
-        <!-- Secondary Gallery Images -->
-        <div class="field" style="margin-top: 16px;">
+        <div class="cover-preview-note warning" id="cover-local-warning" style="display: none;">
+          ⚠️ <strong>Local device preview only:</strong> Upload in progress or not yet saved.
+        </div>
+        <div class="cover-preview-note success" id="cover-url-success" style="display: none;">
+          ✓ Cover photo saved permanently and ready for catalog display.
+        </div>
+      </div>
+    </div>
+
+    <!-- Gallery Image Management Box (Full Width) -->
+    <div class="gallery-management-box">
+      <div class="gallery-header-row">
+        <div class="gallery-title-wrap">
+          <h4>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            <span>Tour Gallery Showcase</span>
+            <span id="gallery-counter" class="gallery-counter-pill">0 photos</span>
+          </h4>
+          <p>Upload photos of attractions, activities, and meals to showcase the Penang experience. Reorder or remove photos anytime.</p>
+        </div>
+        <div class="gallery-actions-wrap">
+          <input type="file" id="gallery-file-input" class="visually-hidden" multiple accept="image/png,image/jpeg,image/webp">
+          <button type="button" class="btn secondary btn-sm" id="btn-gallery-browse-trigger">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Upload Photos</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Gallery Grid Container -->
+      <div class="gallery-grid" id="gallery-cards-grid">
+        <!-- Dynamically rendered by JS -->
+      </div>
+
+      <div class="gallery-empty-state" id="gallery-empty-state">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        <strong>No gallery photos added yet</strong>
+        <small>Upload photos from your computer or expand below to enter URLs manually.</small>
+      </div>
+
+      <!-- Backward-compatible Raw URLs input (needed for test contract & manual overrides) -->
+      <details class="gallery-urls-toggle">
+        <summary>Advanced: View or edit image URLs manually</summary>
+        <div class="field" style="margin-top: 10px;">
           <label for="galleryImages">
             <span>Additional Gallery Image URLs (one per line)</span>
             <span class="field-destination-badge brochure">Brochure Gallery</span>
           </label>
-          <textarea id="galleryImages" class="input" style="min-height: 80px;" name="galleryImages" placeholder="https://images.unsplash.com/...&#10;https://images.unsplash.com/...">{{ p.get('galleryImages', [])|join('\n') }}</textarea>
-          <span class="field-help">Optional photos showing attractions, meals, and accommodations visited.</span>
+          <textarea id="galleryImages" class="input" style="min-height: 80px;" name="galleryImages" placeholder="https://images.unsplash.com/...&#10;https://images.unsplash.com/...">{{ p.get('galleryImages', [])|join('\n') if p.get('galleryImages') is not string else p.get('galleryImages') }}</textarea>
+          <span class="field-help">Synced automatically with the gallery photos above.</span>
         </div>
-      </div>
+      </details>
     </div>
   </div>
+
 
   <div class="step-nav-bar">
     <div class="step-nav-left">
@@ -873,6 +921,18 @@
           </p>
         </div>
 
+        <!-- Tour Gallery Showcase Strip -->
+        <div id="brochure-gallery-section" style="margin-top: 18px; {% if not p.get('galleryImages') %}display: none;{% endif %}">
+          <h3 class="brochure-section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            <span>Photo Highlights Gallery</span>
+          </h3>
+          <div class="brochure-gallery-strip" id="brochure-gallery-render">
+            <!-- Dynamically populated by JS -->
+          </div>
+        </div>
+
+
         <!-- Inclusions vs Exclusions Grid -->
         <div>
           <h3 class="brochure-section-title">
@@ -1063,7 +1123,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // 2. Dedicated Package Cover Image Area (Requirement 5)
+  // 2. Dedicated Package Cover Image Area & Interactive Gallery Manager
+  const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
   const dropzone = document.getElementById('cover-dropzone');
   const fileInput = document.getElementById('cover-file-input');
   const browseTrigger = document.getElementById('btn-browse-trigger');
@@ -1075,20 +1136,71 @@ document.addEventListener('DOMContentLoaded', () => {
   const previewTitleTag = document.getElementById('preview-title-tag');
   const coverLocalWarning = document.getElementById('cover-local-warning');
   const coverUrlSuccess = document.getElementById('cover-url-success');
+  const coverControlsBar = document.getElementById('cover-controls-bar');
+  const replaceCoverBtn = document.getElementById('btn-replace-cover');
+  const removeCoverBtn = document.getElementById('btn-remove-cover');
   const brochureUnpersistedTag = document.getElementById('brochure-unpersisted-tag');
   const submitImageWarning = document.getElementById('submit-image-warning');
   const brochureHeroPlaceholder = document.getElementById('brochure-hero-placeholder');
   const brochureHeroBanner = document.getElementById('brochure-hero-banner');
 
+  // Gallery Elements
+  const galleryFileInput = document.getElementById('gallery-file-input');
+  const galleryBrowseTrigger = document.getElementById('btn-gallery-browse-trigger');
+  const galleryGrid = document.getElementById('gallery-cards-grid');
+  const galleryEmptyState = document.getElementById('gallery-empty-state');
+  const galleryCounter = document.getElementById('gallery-counter');
+  const galleryImagesInput = document.getElementById('galleryImages');
+
   let isLocalFilePreview = false;
-  let localFileDataUrl = null;
-  let localFileName = null;
+  let galleryImagesList = [];
+
+  // Reusable API upload helper
+  async function uploadImageToServer(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (csrfToken) {
+      formData.append('csrf_token', csrfToken);
+    }
+    const headers = {};
+    if (csrfToken) {
+      headers['X-CSRFToken'] = csrfToken;
+    }
+    const resp = await fetch('/packages/upload-image', {
+      method: 'POST',
+      headers: headers,
+      body: formData,
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to upload image.');
+    }
+    return data.url;
+  }
+
+  function showCoverLoading(message) {
+    let overlay = document.getElementById('cover-loading-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'cover-loading-overlay';
+      overlay.className = 'image-upload-loading-overlay';
+      overlay.innerHTML = '<div class="upload-spinner-icon"></div><span class="loading-text"></span>';
+      const card = document.getElementById('cover-preview-card');
+      if (card) card.appendChild(overlay);
+    }
+    overlay.querySelector('.loading-text').textContent = message || 'Uploading cover photo...';
+    overlay.style.display = 'flex';
+  }
+
+  function hideCoverLoading() {
+    const overlay = document.getElementById('cover-loading-overlay');
+    if (overlay) overlay.style.display = 'none';
+  }
 
   function updateCoverPreviewState() {
     const typedUrl = heroInput ? heroInput.value.trim() : '';
 
     if (typedUrl && (typedUrl.startsWith('http://') || typedUrl.startsWith('https://'))) {
-      // Authoritative public URL is configured!
       isLocalFilePreview = false;
       if (previewImg) {
         previewImg.src = typedUrl;
@@ -1101,29 +1213,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (coverLocalWarning) coverLocalWarning.style.display = 'none';
       if (coverUrlSuccess) coverUrlSuccess.style.display = 'block';
+      if (coverControlsBar) coverControlsBar.style.display = 'flex';
       if (brochureUnpersistedTag) brochureUnpersistedTag.style.display = 'none';
       if (submitImageWarning) submitImageWarning.style.display = 'none';
       if (brochureHeroPlaceholder) brochureHeroPlaceholder.style.display = 'none';
       if (brochureHeroBanner) brochureHeroBanner.style.backgroundImage = `url('${typedUrl}')`;
-    } else if (isLocalFilePreview && localFileDataUrl) {
-      // Local device file selected for browser preview only
-      if (previewImg) {
-        previewImg.src = localFileDataUrl;
-        previewImg.style.display = 'block';
-      }
-      if (previewEmpty) previewEmpty.style.display = 'none';
-      if (previewStatus) {
-        previewStatus.textContent = '⚠️ Local Device Preview • Unsaved';
-        previewStatus.className = 'preview-status-pill warning';
-      }
-      if (coverLocalWarning) coverLocalWarning.style.display = 'block';
-      if (coverUrlSuccess) coverUrlSuccess.style.display = 'none';
-      if (brochureUnpersistedTag) brochureUnpersistedTag.style.display = 'inline-flex';
-      if (submitImageWarning) submitImageWarning.style.display = 'flex';
-      if (brochureHeroPlaceholder) brochureHeroPlaceholder.style.display = 'none';
-      if (brochureHeroBanner) brochureHeroBanner.style.backgroundImage = `url('${localFileDataUrl}')`;
     } else {
-      // No cover image configured
       if (previewImg) {
         previewImg.src = '';
         previewImg.style.display = 'none';
@@ -1135,6 +1230,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (coverLocalWarning) coverLocalWarning.style.display = 'none';
       if (coverUrlSuccess) coverUrlSuccess.style.display = 'none';
+      if (coverControlsBar) coverControlsBar.style.display = 'none';
       if (brochureUnpersistedTag) brochureUnpersistedTag.style.display = 'none';
       if (submitImageWarning) submitImageWarning.style.display = 'none';
       if (brochureHeroPlaceholder) brochureHeroPlaceholder.style.display = 'flex';
@@ -1143,7 +1239,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateBrochurePreview();
   }
 
-  // Browse button trigger
+  // Cover image browse button trigger
   if (browseTrigger && fileInput) {
     browseTrigger.addEventListener('click', (e) => {
       e.preventDefault();
@@ -1178,31 +1274,60 @@ document.addEventListener('DOMContentLoaded', () => {
     dropzone.addEventListener('drop', (e) => {
       const files = e.dataTransfer.files;
       if (files && files.length > 0) {
-        handleImageFile(files[0]);
+        handleCoverImageFile(files[0]);
       }
     });
 
     fileInput.addEventListener('change', (e) => {
       if (e.target.files && e.target.files.length > 0) {
-        handleImageFile(e.target.files[0]);
+        handleCoverImageFile(e.target.files[0]);
       }
     });
   }
 
-  function handleImageFile(file) {
+  async function handleCoverImageFile(file) {
     if (!file.type.startsWith('image/')) {
       alert('Please select an image file (PNG, JPG, WebP).');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      isLocalFilePreview = true;
-      localFileDataUrl = ev.target.result;
-      localFileName = file.name;
-      // CRITICAL: NEVER assign dataUrl to heroInput.value
+    if (file.size > 8 * 1024 * 1024) {
+      alert('File size exceeds 8MB limit. Please choose a smaller image.');
+      return;
+    }
+    showCoverLoading('Uploading cover image to server...');
+    if (previewStatus) {
+      previewStatus.textContent = 'Uploading...';
+      previewStatus.className = 'preview-status-pill';
+    }
+    try {
+      const publicUrl = await uploadImageToServer(file);
+      if (heroInput) {
+        heroInput.value = publicUrl;
+      }
+      isLocalFilePreview = false;
       updateCoverPreviewState();
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      alert('Cover upload failed: ' + err.message);
+      updateCoverPreviewState();
+    } finally {
+      hideCoverLoading();
+      if (fileInput) fileInput.value = '';
+    }
+  }
+
+  // Replace & Remove Cover buttons
+  if (replaceCoverBtn && fileInput) {
+    replaceCoverBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+  }
+
+  if (removeCoverBtn && heroInput) {
+    removeCoverBtn.addEventListener('click', () => {
+      heroInput.value = '';
+      isLocalFilePreview = false;
+      updateCoverPreviewState();
+    });
   }
 
   // Hero Image URL manual input
@@ -1219,6 +1344,154 @@ document.addEventListener('DOMContentLoaded', () => {
       updateCoverPreviewState();
     });
   }
+
+  // --- GALLERY MANAGEMENT LOGIC ---
+  function initGallery() {
+    const rawVal = galleryImagesInput ? galleryImagesInput.value : '';
+    galleryImagesList = rawVal
+      .split('\n')
+      .map(x => x.trim())
+      .filter(x => x && (x.startsWith('http://') || x.startsWith('https://')));
+    renderGalleryGrid(false);
+  }
+
+  function renderGalleryGrid(syncTextarea = true) {
+    if (syncTextarea && galleryImagesInput) {
+      galleryImagesInput.value = galleryImagesList.join('\n');
+    }
+    if (galleryCounter) {
+      galleryCounter.textContent = `${galleryImagesList.length} photo${galleryImagesList.length === 1 ? '' : 's'}`;
+    }
+    if (!galleryGrid || !galleryEmptyState) return;
+
+    if (galleryImagesList.length === 0) {
+      galleryEmptyState.style.display = 'flex';
+      galleryGrid.innerHTML = '';
+    } else {
+      galleryEmptyState.style.display = 'none';
+      galleryGrid.innerHTML = galleryImagesList.map((url, idx) => `
+        <div class="gallery-card" data-index="${idx}">
+          <img src="${escapeHtml(url)}" alt="Gallery photo ${idx + 1}" class="gallery-card-thumb">
+          <span class="gallery-card-badge">#${idx + 1}</span>
+          <div class="gallery-card-actions">
+            <button type="button" class="gallery-btn-action move-earlier" ${idx === 0 ? 'disabled' : ''} title="Move earlier">←</button>
+            <button type="button" class="gallery-btn-action move-later" ${idx === galleryImagesList.length - 1 ? 'disabled' : ''} title="Move later">→</button>
+            <button type="button" class="gallery-btn-action delete" title="Remove photo">✕</button>
+          </div>
+        </div>
+      `).join('');
+    }
+    updateBrochureGallery();
+  }
+
+  function updateBrochureGallery() {
+    const strip = document.getElementById('brochure-gallery-render');
+    const section = document.getElementById('brochure-gallery-section');
+    if (!strip) return;
+    if (galleryImagesList.length > 0) {
+      strip.innerHTML = galleryImagesList.map(u => `
+        <img src="${escapeHtml(u)}" class="brochure-gallery-thumb" alt="Gallery preview">
+      `).join('');
+      if (section) section.style.display = 'block';
+    } else {
+      strip.innerHTML = '';
+      if (section) section.style.display = 'none';
+    }
+  }
+
+  // Gallery file browsing trigger
+  if (galleryBrowseTrigger && galleryFileInput) {
+    galleryBrowseTrigger.addEventListener('click', () => {
+      galleryFileInput.click();
+    });
+  }
+
+  if (galleryFileInput) {
+    galleryFileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleGalleryFiles(e.target.files);
+      }
+    });
+  }
+
+  async function handleGalleryFiles(files) {
+    if (!files || files.length === 0) return;
+    const validFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (!validFiles.length) {
+      alert('Please select valid image files (PNG, JPG, WebP).');
+      return;
+    }
+    if (galleryImagesList.length + validFiles.length > 15) {
+      alert('Maximum 15 gallery photos per package.');
+      return;
+    }
+    const btn = document.getElementById('btn-gallery-browse-trigger');
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>Uploading...</span>';
+    }
+    try {
+      for (const file of validFiles) {
+        if (file.size > 8 * 1024 * 1024) {
+          alert(`Skipping "${file.name}": exceeds 8MB limit.`);
+          continue;
+        }
+        const url = await uploadImageToServer(file);
+        galleryImagesList.push(url);
+      }
+      renderGalleryGrid(true);
+    } catch (err) {
+      alert('Gallery upload failed: ' + err.message);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+      if (galleryFileInput) galleryFileInput.value = '';
+    }
+  }
+
+  // Gallery Reordering & Deletion click handler
+  if (galleryGrid) {
+    galleryGrid.addEventListener('click', (e) => {
+      const btn = e.target.closest('.gallery-btn-action');
+      if (!btn) return;
+      const card = btn.closest('.gallery-card');
+      const idx = parseInt(card.dataset.index, 10);
+      if (isNaN(idx)) return;
+
+      if (btn.classList.contains('move-earlier') && idx > 0) {
+        const temp = galleryImagesList[idx - 1];
+        galleryImagesList[idx - 1] = galleryImagesList[idx];
+        galleryImagesList[idx] = temp;
+        renderGalleryGrid(true);
+      } else if (btn.classList.contains('move-later') && idx < galleryImagesList.length - 1) {
+        const temp = galleryImagesList[idx + 1];
+        galleryImagesList[idx + 1] = galleryImagesList[idx];
+        galleryImagesList[idx] = temp;
+        renderGalleryGrid(true);
+      } else if (btn.classList.contains('delete')) {
+        galleryImagesList.splice(idx, 1);
+        renderGalleryGrid(true);
+      }
+    });
+  }
+
+  // Manual URLs textarea input handler
+  if (galleryImagesInput) {
+    galleryImagesInput.addEventListener('input', () => {
+      galleryImagesList = galleryImagesInput.value
+        .split('\n')
+        .map(x => x.trim())
+        .filter(x => x && (x.startsWith('http://') || x.startsWith('https://')));
+      renderGalleryGrid(false);
+    });
+  }
+
+  // Initialize gallery on load
+  initGallery();
+
 
   // 3. Day-by-Day Itinerary Management
   const list = document.querySelector('#itinerary-list');

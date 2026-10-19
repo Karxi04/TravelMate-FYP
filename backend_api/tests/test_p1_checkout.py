@@ -83,9 +83,18 @@ def test_checkout_claims_owned_hotel_quote_and_reuses_session(client, mock_trave
     memory = MemoryPersistence()
     memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_hotel_p1', _hotel_quote())
     session = SimpleNamespace(id='cs_test_p1', url='https://checkout.stripe.test/cs_test_p1')
-    with patch.dict('os.environ', {'STRIPE_SECRET_KEY': 'sk_test_fixture'}), \
+    with patch.dict('os.environ', {
+             'STRIPE_SECRET_KEY': 'sk_test_fixture',
+             'APP_ENV': 'development',
+             'LOCAL_LAN_DEMO': 'true',
+             'TRUSTED_LAN_CIDR': '172.20.10.0/24',
+             'STRIPE_CHECKOUT_RETURN_ORIGIN': 'http://172.20.10.5:5000',
+         }), \
          _patch_persistence(memory)[0], _patch_persistence(memory)[1], _patch_persistence(memory)[2], \
-         patch('modules.fr09_payment.routes.createCheckoutSession', return_value=session) as create:
+         patch('modules.fr09_payment.routes.createCheckoutSession', return_value=session) as create, \
+         patch('modules.fr09_payment.routes.retrieveCheckoutSession', return_value=SimpleNamespace(
+             status='open', payment_status='unpaid', amount_total=22000,
+             currency='myr', payment_intent=None)):
         payload = {
             'orderAttemptId': 'order_attempt_p1',
             'quoteType': 'hotel',
@@ -93,7 +102,7 @@ def test_checkout_claims_owned_hotel_quote_and_reuses_session(client, mock_trave
             'offerId': 'offer_hotel_p1',
         }
         first = client.post('/api/fr9/checkout/session', headers={
-            'Authorization': 'Bearer valid_test_token'}, json=payload)
+            'Authorization': 'Bearer valid_test_token', 'Host': 'attacker.example'}, json=payload)
         duplicate = client.post('/api/fr9/checkout/session', headers={
             'Authorization': 'Bearer valid_test_token'}, json=payload)
     assert first.status_code == duplicate.status_code == 200
@@ -101,8 +110,14 @@ def test_checkout_claims_owned_hotel_quote_and_reuses_session(client, mock_trave
     assert first.get_json()['order']['checkoutUrl'].startswith('https://checkout')
     assert duplicate.get_json()['reused'] is True
     assert create.call_count == 1
-    assert '/api/fr9/checkout/return/success' in create.call_args.args[4]
-    assert 'example.com' not in create.call_args.args[4]
+    assert create.call_args.args[4] == (
+        'http://172.20.10.5:5000/api/fr9/checkout/return/success'
+        '?session_id={CHECKOUT_SESSION_ID}'
+    )
+    assert create.call_args.args[5] == (
+        'http://172.20.10.5:5000/api/fr9/checkout/return/cancel'
+        '?session_id={CHECKOUT_SESSION_ID}'
+    )
 
 
 def test_checkout_rejects_missing_hotel_currency_and_ambiguous_basis(client, mock_traveller_auth):
@@ -309,10 +324,87 @@ def test_checkout_return_reconciles_and_keeps_order_details_private(client):
          _patch_persistence(memory)[1], _patch_persistence(memory)[2]:
         response = client.get('/api/fr9/checkout/return/success?session_id=cs_return_p1')
     assert response.status_code == 200
-    assert 'Payment verified' in response.get_data(as_text=True)
-    assert 'order_return_p1' not in response.get_data(as_text=True)
+    html = response.get_data(as_text=True)
+    assert 'Payment Successful' in html
+    assert 'travelmate://checkout/return?order_id=order_return_p1&amp;state=paid' in html
+    assert 'If TravelMate does not open' in html
+    assert 'cs_return_p1' not in html and 'pi_return_p1' not in html
     assert memory.retrieve('checkout_orders', 'order_return_p1')['status'] == 'paid'
     assert memory.retrieve('checkout_orders', 'order_return_p1')['stripePaymentIntentId'] == 'pi_return_p1'
+
+
+@pytest.mark.parametrize(('outcome', 'session_status', 'payment_status', 'heading', 'state'), [
+    ('success', 'open', 'unpaid', 'Payment Processing', 'processing'),
+    ('cancel', 'open', 'unpaid', 'Payment Not Completed', 'not_completed'),
+    ('success', 'expired', 'unpaid', 'Payment Not Completed', 'not_completed'),
+])
+def test_checkout_return_uses_provider_state_not_the_url_outcome(
+    client, outcome, session_status, payment_status, heading, state
+):
+    memory = MemoryPersistence()
+    memory.seed('checkout_orders', 'order_return_state', {
+        'id': 'order_return_state', 'travellerId': 'test_traveller_uid',
+        'amount': 220.0, 'currency': 'MYR', 'status': 'checkout_open',
+        'paymentStatus': 'unpaid', 'checkoutSessionId': 'cs_return_state',
+    })
+    session = SimpleNamespace(
+        id='cs_return_state', metadata={'orderId': 'order_return_state'},
+        status=session_status, payment_status=payment_status, amount_total=22000,
+        currency='myr', payment_intent=None,
+    )
+    with patch('modules.fr09_payment.routes.retrieveCheckoutSession', return_value=session), \
+         _patch_persistence(memory)[1], _patch_persistence(memory)[2]:
+        response = client.get(
+            f'/api/fr9/checkout/return/{outcome}?session_id=cs_return_state'
+        )
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert heading in html
+    assert f'state={state}' in html
+    assert 'Payment Successful' not in html
+
+
+def test_checkout_return_rejects_tampered_order_binding_without_app_link(client):
+    memory = MemoryPersistence()
+    memory.seed('checkout_orders', 'owned_order', {
+        'id': 'owned_order', 'travellerId': 'test_traveller_uid',
+        'checkoutSessionId': 'cs_owned', 'status': 'checkout_open',
+    })
+    session = SimpleNamespace(
+        id='cs_owned', metadata={'orderId': 'different_order'},
+        status='complete', payment_status='paid', amount_total=22000,
+        currency='myr', payment_intent='pi_private',
+    )
+    with patch('modules.fr09_payment.routes.retrieveCheckoutSession', return_value=session), \
+         _patch_persistence(memory)[1], _patch_persistence(memory)[2]:
+        response = client.get('/api/fr9/checkout/return/success?session_id=cs_owned')
+    assert response.status_code == 502
+    assert 'travelmate://checkout' not in response.get_data(as_text=True)
+
+
+def test_order_return_recovery_rejects_cross_account_access(
+    client, mock_traveller_auth
+):
+    foreign = {
+        'id': 'foreign_order', 'travellerId': 'different_traveller',
+        'status': 'checkout_open', 'checkoutSessionId': 'cs_foreign',
+    }
+    with patch(
+        'modules.fr09_payment.routes.retrieveRecord', return_value=foreign
+    ), patch(
+        'modules.fr09_payment.routes.retrieveCheckoutSession'
+    ) as provider:
+        details = client.get(
+            '/api/fr9/orders/foreign_order',
+            headers={'Authorization': 'Bearer valid_test_token'},
+        )
+        recovery = client.get(
+            '/api/fr9/orders/foreign_order/reconcile',
+            headers={'Authorization': 'Bearer valid_test_token'},
+        )
+    assert details.status_code == recovery.status_code == 404
+    assert details.get_json()['error'] == recovery.get_json()['error'] == 'Order not found'
+    provider.assert_not_called()
 
 
 def test_placeholder_checkout_return_url_is_rejected():
@@ -321,3 +413,40 @@ def test_placeholder_checkout_return_url_is_rejected():
     with patch.dict('os.environ', {'STRIPE_CHECKOUT_SUCCESS_URL': 'https://example.com/travelmate/success'}):
         with pytest.raises(RuntimeError, match='explicit TravelMate return URL'):
             _configured_checkout_url('STRIPE_CHECKOUT_SUCCESS_URL', 'http://127.0.0.1:5000/return')
+
+
+@pytest.mark.parametrize('origin', [
+    'http://10.0.2.2:5000',
+    'http://127.0.0.1:5000',
+    'http://192.168.50.5:5000',
+])
+def test_local_demo_checkout_origin_rejects_emulator_loopback_and_untrusted_lan(origin):
+    from modules.fr09_payment.routes import _checkout_return_url
+
+    with patch.dict('os.environ', {
+        'APP_ENV': 'development',
+        'LOCAL_LAN_DEMO': 'true',
+        'TRUSTED_LAN_CIDR': '172.20.10.0/24',
+        'STRIPE_CHECKOUT_RETURN_ORIGIN': origin,
+    }, clear=True):
+        with pytest.raises(RuntimeError, match='TRUSTED_LAN_CIDR'):
+            _checkout_return_url('success')
+
+
+def test_local_demo_checkout_origin_is_required_and_production_requires_https():
+    from modules.fr09_payment.routes import _checkout_return_url
+
+    with patch.dict('os.environ', {
+        'APP_ENV': 'development',
+        'LOCAL_LAN_DEMO': 'true',
+        'TRUSTED_LAN_CIDR': '172.20.10.0/24',
+    }, clear=True):
+        with pytest.raises(RuntimeError, match='requires STRIPE_CHECKOUT_RETURN_ORIGIN'):
+            _checkout_return_url('cancel')
+    with patch.dict('os.environ', {
+        'APP_ENV': 'production',
+        'LOCAL_LAN_DEMO': 'false',
+        'STRIPE_CHECKOUT_RETURN_ORIGIN': 'http://api.travelmate.invalid',
+    }, clear=True):
+        with pytest.raises(RuntimeError, match='HTTPS'):
+            _checkout_return_url('success')

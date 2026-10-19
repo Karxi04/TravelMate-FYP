@@ -2986,3 +2986,240 @@ tr:hover td {
   font-size: 11px;
   color: var(--ink-muted);
 }
+
+/* ==========================================================================
+   PACKAGE BUILDER: COVER & GALLERY IMAGE MANAGEMENT
+   ========================================================================== */
+.cover-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.cover-controls-bar .btn-sm {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+}
+
+.gallery-management-box {
+  margin-top: 20px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.gallery-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.gallery-title-wrap h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gallery-title-wrap p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.gallery-counter-pill {
+  display: inline-flex;
+  align-items: center;
+  background: #E2E8F0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.gallery-actions-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.gallery-card {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0F172A;
+  border: 1px solid #CBD5E1;
+  box-shadow: var(--shadow-sm);
+  aspect-ratio: 4 / 3;
+  display: flex;
+  flex-direction: column;
+}
+
+.gallery-card-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.gallery-card-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(15, 23, 42, 0.75);
+  color: #FFFFFF;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.gallery-card-actions {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  background: linear-gradient(180deg, transparent 0%, rgba(15, 23, 42, 0.85) 100%);
+  gap: 4px;
+}
+
+.gallery-btn-action {
+  background: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s ease;
+}
+
+.gallery-btn-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.gallery-btn-action:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.gallery-btn-action.delete:hover {
+  background: #EF4444;
+}
+
+.gallery-empty-state {
+  border: 2px dashed #CBD5E1;
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+  color: #64748B;
+  background: #FFFFFF;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.gallery-empty-state svg {
+  color: #94A3B8;
+}
+
+.gallery-empty-state strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.gallery-empty-state small {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}
+
+.gallery-urls-toggle {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+}
+
+.gallery-urls-toggle summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--operator-teal, #0284C7);
+  user-select: none;
+}
+
+.gallery-urls-toggle summary:hover {
+  text-decoration: underline;
+}
+
+.image-upload-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 8px;
+  z-index: 10;
+  backdrop-filter: blur(2px);
+}
+
+.upload-spinner-icon {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #FFFFFF;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.brochure-gallery-strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 8px 0;
+  margin-top: 10px;
+  scrollbar-width: thin;
+}
+
+.brochure-gallery-thumb {
+  width: 110px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  flex-shrink: 0;
+}
+
