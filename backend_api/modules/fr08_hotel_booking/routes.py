@@ -2,7 +2,8 @@ import os
 import hashlib
 import json
 import uuid
-from datetime import datetime
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from flask import Blueprint, request, jsonify, g
 from auth_utils import auth_required
 from utils import utc_now_iso
@@ -19,11 +20,15 @@ from services.transaction_reliability import (
 )
 from services.local_catalog import LOCAL_HOTEL_ITEMS, CAR_RENTALS
 from services.malaysian_locality import filter_candidates, normalize_destination_scope
-from sequence_contract.validators import validateHotelSearchCriteria, validateBookingDetails, validateCarRentalSearchCriteria
+from sequence_contract.validators import validateBookingDetails, validateCarRentalSearchCriteria
 from sequence_contract.domain_functions import applyHotelFilter, compareSelectedHotels, calculateBudget
 from sequence_contract.firebase_firestore import claimRecord, retrieveRecord, updateRecord
 
 bp = Blueprint('fr08_hotels', __name__, url_prefix='/api/fr8')
+
+_DEFAULT_QUOTE_TTL_SECONDS = 900
+_MIN_QUOTE_TTL_SECONDS = 60
+_MAX_QUOTE_TTL_SECONDS = 3600
 
 
 def _fallback_mode():
@@ -69,6 +74,171 @@ def _simulated_reference(provider_key, prefix, length):
 
 def _testing_mode():
     return os.getenv('TRAVELMATE_TESTING', '').lower() in {'1', 'true', 'yes'}
+
+
+def _quote_ttl_seconds(name='HOTEL_QUOTE_TTL_SECONDS'):
+    try:
+        value = int(os.getenv(name, _DEFAULT_QUOTE_TTL_SECONDS))
+    except (TypeError, ValueError):
+        value = _DEFAULT_QUOTE_TTL_SECONDS
+    return min(_MAX_QUOTE_TTL_SECONDS, max(_MIN_QUOTE_TTL_SECONDS, value))
+
+
+def _expiry(now=None, name='HOTEL_QUOTE_TTL_SECONDS'):
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    return (current + timedelta(seconds=_quote_ttl_seconds(name))).isoformat()
+
+
+def _parse_iso(value):
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
+
+
+def _is_expired(record, now=None):
+    expires = _parse_iso((record or {}).get('expiresAt'))
+    if expires is None:
+        return True
+    return expires <= (now or datetime.now(timezone.utc))
+
+
+def _positive_int(value, label):
+    if isinstance(value, bool):
+        raise ValueError(f'{label} must be a whole number.')
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f'{label} must be a whole number.')
+    if number < 1 or str(value).strip() not in {str(number), f'{number}.0'}:
+        raise ValueError(f'{label} must be at least 1.')
+    return number
+
+
+def _child_ages(value, label):
+    if value in (None, '', []):
+        return []
+    if not isinstance(value, list):
+        try:
+            count = int(value)
+        except (TypeError, ValueError):
+            count = -1
+        if count == 0:
+            return []
+        raise ValueError(f'{label} requires one age for every child.')
+    ages = []
+    for raw in value:
+        if isinstance(raw, bool):
+            raise ValueError(f'{label} must contain whole-number ages.')
+        try:
+            age = int(raw)
+        except (TypeError, ValueError):
+            raise ValueError(f'{label} must contain whole-number ages.')
+        if age < 0 or str(raw).strip() not in {str(age), f'{age}.0'}:
+            raise ValueError(f'{label} must contain non-negative whole-number ages.')
+        ages.append(age)
+    return ages
+
+
+def _normalise_occupancies(payload, room_quantity):
+    raw = payload.get('occupancies')
+    if not raw:
+        if room_quantity != 1:
+            raise ValueError(
+                'Room-by-room occupancy is required for multi-room searches.'
+            )
+        adults = _positive_int(payload.get('adults', 2), 'Adults')
+        children = payload.get('childAges')
+        if children is None:
+            children = payload.get('children')
+        ages = _child_ages(
+            children,
+            'Children',
+        )
+        return [{'adults': adults, **({'children': ages} if ages else {})}]
+    if not isinstance(raw, list) or len(raw) != room_quantity:
+        raise ValueError('Provide exactly one occupancy entry for each room.')
+
+    occupancies = []
+    for index, item in enumerate(raw, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f'Room {index} occupancy must be an object.')
+        adults = _positive_int(item.get('adults'), f'Room {index} adults')
+        children = item.get('children')
+        if children is None:
+            children = item.get('childAges')
+        ages = _child_ages(
+            children,
+            f'Room {index} children',
+        )
+        occupancies.append({
+            'adults': adults,
+            **({'children': ages} if ages else {}),
+        })
+
+    expected_adults = payload.get('adults')
+    if expected_adults not in (None, ''):
+        if _positive_int(expected_adults, 'Total adults') != sum(
+                room['adults'] for room in occupancies):
+            raise ValueError('Total adults do not match the room-by-room occupancy.')
+    expected_children = payload.get('children')
+    if expected_children not in (None, '', []):
+        if isinstance(expected_children, list):
+            expected_count = len(_child_ages(expected_children, 'Total children'))
+        else:
+            try:
+                expected_count = int(expected_children)
+            except (TypeError, ValueError):
+                raise ValueError('Total children must be a whole number.')
+            if expected_count < 0:
+                raise ValueError('Total children cannot be negative.')
+        actual_count = sum(len(room.get('children', [])) for room in occupancies)
+        if expected_count != actual_count:
+            raise ValueError('Total children do not match the room-by-room occupancy.')
+    return occupancies
+
+
+def _validate_stay_dates(checkin, checkout):
+    try:
+        start = datetime.strptime(str(checkin), '%Y-%m-%d').date()
+        end = datetime.strptime(str(checkout), '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        raise ValueError('Check-in and check-out must use YYYY-MM-DD.')
+    if end <= start:
+        raise ValueError('Check-out must be after check-in.')
+
+
+def _offer_matches_occupancies(offer, expected):
+    actual = offer.get('occupancyBreakdown')
+    if not actual:
+        offer['occupancyValidationStatus'] = 'provider_not_reported'
+        return True
+    if len(actual) != len(expected):
+        return False
+    ordered = sorted(actual, key=lambda item: int(item.get('occupancyNumber') or 0))
+    for requested, provided in zip(expected, ordered):
+        adults = provided.get('adultCount')
+        child_ages = provided.get('childrenAges')
+        if adults is not None and int(adults) != requested['adults']:
+            return False
+        if child_ages is not None and list(child_ages) != requested.get('children', []):
+            return False
+        if child_ages is None and provided.get('childCount') is not None:
+            if int(provided['childCount']) != len(requested.get('children', [])):
+                return False
+        maximum = provided.get('maxOccupancy')
+        if maximum is not None and requested['adults'] + len(
+                requested.get('children', [])) > int(maximum):
+            return False
+    offer['occupancyValidationStatus'] = 'verified'
+    return True
 
 
 def _provider_sandbox(result):
@@ -148,15 +318,21 @@ def _quote_version(offer):
 
 
 def _search_criteria(payload, req, room_quantity):
+    occupancies = deepcopy(req.get('occupancies') or [])
     return {
         'destination': payload.get('destination') or payload.get('aiSearch') or '',
         'placeId': payload.get('placeId'),
         'hotelIds': payload.get('hotelIds'),
         'checkin': payload.get('checkin'),
         'checkout': payload.get('checkout'),
-        'adults': int(payload.get('adults', 1) or 1),
+        'adults': sum(room['adults'] for room in occupancies),
+        'children': sum(len(room.get('children', [])) for room in occupancies),
+        'guestCount': sum(
+            room['adults'] + len(room.get('children', []))
+            for room in occupancies
+        ),
         'roomQuantity': room_quantity,
-        'occupancies': req.get('occupancies') or [],
+        'occupancies': occupancies,
         'currency': req.get('currency'),
         'guestNationality': req.get('guestNationality'),
     }
@@ -164,6 +340,9 @@ def _search_criteria(payload, req, room_quantity):
 
 def _persist_quotes(items, criteria, source):
     output = []
+    created_at = datetime.now(timezone.utc)
+    created_text = created_at.isoformat()
+    expires_at = _expiry(created_at)
     for item in items:
         item = dict(item)
         item['checkin'] = criteria.get('checkin')
@@ -171,16 +350,19 @@ def _persist_quotes(items, criteria, source):
         item['quoteVersion'] = _quote_version(item)
         quote_id = hashlib.sha256(json.dumps({
             'uid': g.uid, 'criteria': criteria, 'offer': item,
+            'createdAt': created_text,
         }, sort_keys=True, default=str).encode()).hexdigest()[:32]
         item['quoteId'] = quote_id
+        item['quoteExpiresAt'] = expires_at
         record = {
             'quoteId': quote_id,
             'travellerId': g.uid,
             'offer': item,
-            'criteria': criteria,
+            'criteria': deepcopy(criteria),
             'source': source,
-            'createdAt': utc_now_iso(),
-            'updatedAt': utc_now_iso(),
+            'createdAt': created_text,
+            'updatedAt': created_text,
+            'expiresAt': expires_at,
         }
         claimRecord('hotel_offer_quotes', _quote_document_id(quote_id), record)
         output.append(item)
@@ -192,11 +374,13 @@ def _resolve_quote(payload, offer):
     if quote_id:
         record = retrieveRecord('hotel_offer_quotes', _quote_document_id(quote_id))
         if not record or record.get('travellerId') != g.uid:
-            return None, 'The hotel quote was not found or is not owned by this traveller.'
+            return None, 'The hotel quote was not found or is not owned by this traveller.', 400
+        if _is_expired(record):
+            return None, 'This hotel quote has expired. Search again to refresh availability and pricing.', 409
         trusted = dict(record.get('offer') or {})
         if trusted.get('offerId') != offer:
-            return None, 'This quote is bound to a different hotel offer.'
-        return record, None
+            return None, 'This quote is bound to a different hotel offer.', 409
+        return record, None, None
     if _testing_mode() and offer.startswith('local_offer_'):
         item = next((dict(x) for x in LOCAL_HOTEL_ITEMS if x.get('offerId') == offer), None)
         if item is None:
@@ -221,8 +405,78 @@ def _resolve_quote(payload, offer):
             item.setdefault('currencyStatus', 'known')
             item.setdefault('taxesAndFeesStatus', 'unknown')
             item.setdefault('cancellation', {'tag': 'RFN' if item.get('refundable') else 'NRFN', 'status': 'known'})
-            return {'quoteId': 'test-local-quote', 'travellerId': g.uid, 'offer': item, 'criteria': {}}, None
-    return None, 'quoteId is required; search again before validating this hotel offer.'
+            now = datetime.now(timezone.utc)
+            return {
+                'quoteId': 'test-local-quote', 'travellerId': g.uid,
+                'offer': item, 'criteria': {}, 'createdAt': now.isoformat(),
+                'expiresAt': _expiry(now),
+            }, None, None
+    return None, 'quoteId is required; search again before validating this hotel offer.', 400
+
+
+def _accepted_prebook_snapshot(record, validated, source, now=None):
+    current = now
+    if current is None:
+        current = _parse_iso(record.get('acceptedAt') or record.get('updatedAt') or record.get('createdAt'))
+    if current is None:
+        current = datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    criteria = deepcopy(record.get('criteria') or {})
+    return {
+        'id': record['id'],
+        'status': 'accepted',
+        'travellerId': record['travellerId'],
+        'provider': 'liteapi' if source == 'liteapi' else 'local_demo',
+        'transactionMode': 'provider_sandbox' if source == 'liteapi' else 'local_demo',
+        'supplierBookingStatus': 'not_created',
+        'hotelBookingAttemptId': record['hotelBookingAttemptId'],
+        'quoteId': record.get('quoteId'),
+        'hotelId': validated.get('hotelId'),
+        'name': validated.get('name'),
+        'hotelName': validated.get('name'),
+        'offerId': validated.get('offerId'),
+        'roomName': validated.get('roomName'),
+        'boardName': validated.get('boardName'),
+        'prebookId': validated.get('prebookId'),
+        'validationId': validated.get('validationId'),
+        'checkin': criteria.get('checkin'),
+        'checkout': criteria.get('checkout'),
+        'roomQuantity': criteria.get('roomQuantity'),
+        'occupancies': deepcopy(criteria.get('occupancies') or []),
+        'guestCount': criteria.get('guestCount'),
+        'amount': validated.get('price'),
+        'currency': str(validated.get('currency') or '').upper(),
+        'priceBasis': validated.get('priceBasis'),
+        'taxesAndFeesStatus': validated.get('taxesAndFeesStatus'),
+        'taxesAndFees': deepcopy(validated.get('taxesAndFees') or []),
+        'cancellation': deepcopy(validated.get('cancellation') or {}),
+        'acceptedQuoteVersion': _quote_version(validated),
+        'originalQuoteExpiresAt': record.get('quoteExpiresAt'),
+        'acceptedAt': current.isoformat(),
+        'expiresAt': _expiry(current, 'HOTEL_PREBOOK_TTL_SECONDS'),
+    }
+
+
+def _public_accepted_snapshot(snapshot):
+    if not snapshot:
+        return None
+    expired = _is_expired(snapshot)
+    return {
+        'id': snapshot.get('id'),
+        'status': 'expired' if (expired and snapshot.get('status') == 'accepted') else snapshot.get('status'),
+        'expiresAt': snapshot.get('expiresAt'),
+        'amount': snapshot.get('amount'),
+        'currency': snapshot.get('currency'),
+        'transactionMode': snapshot.get('transactionMode'),
+        'supplierBookingStatus': snapshot.get('supplierBookingStatus'),
+        'checkoutEligible': bool(
+            not expired and
+            snapshot.get('checkin') and snapshot.get('checkout') and
+            snapshot.get('occupancies') and snapshot.get('amount') is not None and
+            snapshot.get('currency') == 'MYR'
+        ),
+    }
 
 
 def _material_quote_changes(original, validated):
@@ -233,6 +487,11 @@ def _material_quote_changes(original, validated):
     }
     old_policy = original.get('cancellation') or {}
     new_policy = validated.get('cancellation') or {}
+    if (original.get('taxesAndFees') or []) != (validated.get('taxesAndFees') or []):
+        changes['taxesAndFees'] = {
+            'before': original.get('taxesAndFees') or [],
+            'after': validated.get('taxesAndFees') or [],
+        }
     if old_policy != new_policy:
         changes['cancellation'] = {'before': old_policy, 'after': new_policy}
     return changes
@@ -293,15 +552,25 @@ def places():
 @auth_required(['traveller'])
 def hotels_search():
     payload = request.get_json(silent=True) or {}
-    if not validateHotelSearchCriteria(payload):
+    if not (
+        (payload.get('destination') or payload.get('aiSearch') or
+         payload.get('placeId') or payload.get('hotelIds')) and
+        payload.get('checkin') and payload.get('checkout')
+    ):
         return jsonify({'ok': False, 'error': 'Destination, checkin and checkout are required'}), 400
     try:
-        room_quantity = max(1, int(payload.get('roomQuantity', 1) or 1))
-    except Exception:
-        room_quantity = 1
+        room_quantity = _positive_int(payload.get('roomQuantity', 1), 'Rooms')
+        _validate_stay_dates(payload.get('checkin'), payload.get('checkout'))
+        occupancies = _normalise_occupancies(payload, room_quantity)
+    except ValueError as exc:
+        return jsonify({
+            'ok': False,
+            'error': str(exc),
+            'status': 'invalid_occupancy',
+        }), 400
 
     req = {
-        'occupancies': payload.get('occupancies') or [{'adults': int(payload.get('adults', 2) or 2)} for _ in range(room_quantity)],
+        'occupancies': occupancies,
         'currency': payload.get('currency') or 'MYR',
         'guestNationality': payload.get('guestNationality', 'MY'),
         'checkin': payload['checkin'],
@@ -321,6 +590,10 @@ def hotels_search():
     try:
         result = retrieveHotelOffers(req)
         items = normalizeHotelOffers(result)
+        items = [
+            item for item in items
+            if _offer_matches_occupancies(item, occupancies)
+        ]
         source = 'liteapi'
         provenance = _provenance(source, provider_sandbox=_provider_sandbox(result))
         # LiteAPI rate responses may omit property content. Enrich only those
@@ -405,9 +678,13 @@ def hotel_prebook():
         attempt_id = _booking_attempt_id(payload)
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 400
-    quote, quote_error = _resolve_quote(payload, offer)
+    quote, quote_error, quote_status = _resolve_quote(payload, offer)
     if quote_error:
-        return jsonify({'ok': False, 'error': quote_error}), 400
+        return jsonify({
+            'ok': False,
+            'error': quote_error,
+            'status': 'quote_expired' if quote_status == 409 and 'expired' in quote_error else 'quote_invalid',
+        }), quote_status
     document_id = _hotel_operation_id(attempt_id, 'prebook')
     provider_key = provider_idempotency_key(
         'hotel', g.uid, attempt_id, 'prebook'
@@ -420,6 +697,7 @@ def hotel_prebook():
         'stage': 'prebook',
         'status': 'pending',
         'quoteId': quote.get('quoteId'),
+        'quoteExpiresAt': quote.get('expiresAt'),
         'offer': quote.get('offer') or {},
         'criteria': quote.get('criteria') or {},
         'providerRequestKey': provider_key,
@@ -430,6 +708,9 @@ def hotel_prebook():
         return jsonify({'ok': False, 'error': 'Prebook attempt not found'}), 404
     if str(claimed.get('offerId') or '') != offer:
         return jsonify({'ok': False, 'error': 'hotelBookingAttemptId is already bound to another offer'}), 409
+    if (claimed.get('quoteId') and quote.get('quoteId') and
+            str(claimed.get('quoteId')) != str(quote.get('quoteId'))):
+        return jsonify({'ok': False, 'error': 'hotelBookingAttemptId is already bound to another quote'}), 409
     if not created:
         if claimed.get('status') == 'succeeded':
             reused_result = claimed.get('providerResult') or {
@@ -440,19 +721,41 @@ def hotel_prebook():
             }
             if claimed.get('prebookId') and not reused_result.get('prebookId'):
                 reused_result['prebookId'] = claimed.get('prebookId')
+            snapshot = claimed.get('acceptedPrebookSnapshot')
+            if not snapshot:
+                historical_now = _parse_iso(
+                    claimed.get('acceptedAt') or claimed.get('updatedAt') or claimed.get('createdAt')
+                )
+                snapshot = _accepted_prebook_snapshot(
+                    claimed, claimed.get('validatedOffer') or reused_result,
+                    claimed.get('source', 'local'),
+                    now=historical_now,
+                )
+                updateRecord('hotel_prebook_attempts', document_id, {
+                    'acceptedPrebookSnapshot': snapshot,
+                    'updatedAt': utc_now_iso(),
+                })
             return jsonify({
                 'ok': True,
                 'result': reused_result,
                 'hotelBookingAttemptId': attempt_id,
                 'source': claimed.get('source', 'local'),
+                'acceptedPrebook': _public_accepted_snapshot(snapshot),
                 'reused': True,
             })
         if claimed.get('status') == 'reprice_required':
             accepted = str(payload.get('acceptedQuoteVersion') or '')
             if accepted and accepted == claimed.get('validatedQuoteVersion'):
+                snapshot = claimed.get('acceptedPrebookSnapshot') or _accepted_prebook_snapshot(
+                    claimed, claimed.get('validatedOffer') or {},
+                    claimed.get('source', 'liteapi'),
+                    now=datetime.now(timezone.utc),
+                )
                 promoted = updateRecord('hotel_prebook_attempts', document_id, {
                     'status': 'succeeded', 'stage': 'prebooked',
                     'acceptedQuoteVersion': accepted, 'updatedAt': utc_now_iso(),
+                    'acceptedAt': snapshot['acceptedAt'],
+                    'acceptedPrebookSnapshot': snapshot,
                 }) or claimed
                 return jsonify({
                     'ok': True,
@@ -460,6 +763,7 @@ def hotel_prebook():
                     'hotelBookingAttemptId': attempt_id,
                     'source': promoted.get('source', 'liteapi'),
                     'acceptedQuoteVersion': accepted,
+                    'acceptedPrebook': _public_accepted_snapshot(snapshot),
                 })
             return jsonify({
                 'ok': False,
@@ -532,6 +836,7 @@ def hotel_prebook():
                 'validatedOffer': validated, 'updatedAt': utc_now_iso(),
             })
             return jsonify({'ok': False, 'error': 'The hotel price or currency is unavailable; search again.'}), 422
+        snapshot = _accepted_prebook_snapshot(claimed, validated, source, now=datetime.now(timezone.utc))
         patch = {
             'status': 'succeeded', 'stage': 'validated_local_demo',
             'validationId': validated['validationId'],
@@ -543,12 +848,15 @@ def hotel_prebook():
             'isSimulated': True,
             'providerMutationCalled': False,
             'demoDisclosure': 'Demo reservation — no room will be reserved.',
+            'acceptedAt': snapshot['acceptedAt'],
+            'acceptedPrebookSnapshot': snapshot,
             'updatedAt': utc_now_iso(),
         }
         updateRecord('hotel_prebook_attempts', document_id, patch)
         return jsonify({
             'ok': True, 'result': validated,
             'hotelBookingAttemptId': attempt_id, 'source': source,
+            'acceptedPrebook': _public_accepted_snapshot(snapshot),
         })
 
     validated = normalizePrebookResult(result, offer)
@@ -556,7 +864,8 @@ def hotel_prebook():
     # allowing only normalized provider values to replace price/terms.
     if source != 'local':
         authority = {'price', 'priceStatus', 'priceBasis', 'currency',
-                     'currencyStatus', 'cancellation', 'taxesAndFeesStatus'}
+                     'currencyStatus', 'cancellation', 'taxesAndFeesStatus',
+                     'taxesAndFees'}
         presentation = {
             key: value for key, value in (quote.get('offer') or {}).items()
             if key not in authority
@@ -604,6 +913,7 @@ def hotel_prebook():
             'validatedOffer': validated,
             'quoteVersion': version,
         }), 409
+    snapshot = _accepted_prebook_snapshot(claimed, validated, source, now=datetime.now(timezone.utc))
     patch = {
         'status': 'succeeded',
         'stage': 'prebooked',
@@ -614,6 +924,8 @@ def hotel_prebook():
         'quoteChanges': changes,
         'source': source,
         'isSimulated': source == 'local',
+        'acceptedAt': snapshot['acceptedAt'],
+        'acceptedPrebookSnapshot': snapshot,
         'updatedAt': utc_now_iso(),
     }
     updateRecord('hotel_prebook_attempts', document_id, patch)
@@ -622,6 +934,7 @@ def hotel_prebook():
         'result': validated,
         'hotelBookingAttemptId': attempt_id,
         'source': source,
+        'acceptedPrebook': _public_accepted_snapshot(snapshot),
     })
 
 
@@ -763,10 +1076,42 @@ def hotel_book():
     stored_id = str(prebook_record.get('validationId') or prebook_record.get('prebookId') or '')
     if prebook_record.get('status') != 'succeeded' or stored_id != expected_id:
         return jsonify({'ok': False, 'error': 'This hotel validation is stale or incomplete; validate the offer again.'}), 409
+    accepted_snapshot = prebook_record.get('acceptedPrebookSnapshot')
+    if not isinstance(accepted_snapshot, dict) or accepted_snapshot.get('id') != prebook_document_id:
+        return jsonify({
+            'ok': False,
+            'error': 'This hotel validation predates the secure Checkout contract. Search and validate the offer again.',
+            'status': 'accepted_prebook_required',
+        }), 409
+    if _is_expired(accepted_snapshot):
+        return jsonify({
+            'ok': False,
+            'error': 'This accepted hotel price has expired. Search and validate the offer again.',
+            'status': 'accepted_prebook_expired',
+        }), 409
     selected_hotel, authority_error = _authoritative_offer(prebook_record)
     if authority_error:
         return jsonify({'ok': False, 'error': authority_error}), 409
-    hotel_cost = float(selected_hotel['price'])
+    try:
+        hotel_cost = float(accepted_snapshot.get('amount'))
+        selected_cost = float(selected_hotel['price'])
+    except (TypeError, ValueError):
+        return jsonify({
+            'ok': False,
+            'error': 'The accepted hotel price is invalid. Search and validate the offer again.',
+            'status': 'accepted_prebook_mismatch',
+        }), 409
+    if (
+        hotel_cost != selected_cost or
+        str(accepted_snapshot.get('currency') or '').upper() !=
+        str(selected_hotel.get('currency') or '').upper() or
+        accepted_snapshot.get('offerId') != selected_hotel.get('offerId')
+    ):
+        return jsonify({
+            'ok': False,
+            'error': 'The accepted hotel price no longer matches the validated offer. Search again.',
+            'status': 'accepted_prebook_mismatch',
+        }), 409
     document_id = _hotel_operation_id(attempt_id, 'book')
     provider_key = provider_idempotency_key('hotel', g.uid, attempt_id, 'book')
     now = utc_now_iso()
@@ -778,6 +1123,8 @@ def hotel_book():
         'quoteId': prebook_record.get('quoteId'),
         'validatedQuoteVersion': prebook_record.get('validatedQuoteVersion'),
         'validatedOffer': selected_hotel,
+        'acceptedPrebookSnapshotId': prebook_document_id,
+        'acceptedPrebookSnapshot': deepcopy(accepted_snapshot),
         'bookingStatus': 'pending',
         'stage': 'booking_pending',
         'providerRequestKey': provider_key,

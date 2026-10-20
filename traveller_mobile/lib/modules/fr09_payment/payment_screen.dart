@@ -23,6 +23,9 @@ class PaymentScreen extends StatefulWidget {
   final String searchId;
   final String optionId;
   final String packageAttemptId;
+  final String acceptedPrebookSnapshotId;
+  final Map<String, dynamic>? acceptedPrebook;
+  final String? hotelBookingAttemptId;
   final ApiService? api;
 
   const PaymentScreen({
@@ -35,6 +38,9 @@ class PaymentScreen extends StatefulWidget {
     this.searchId = '',
     this.optionId = '',
     this.packageAttemptId = '',
+    this.acceptedPrebookSnapshotId = '',
+    this.acceptedPrebook,
+    this.hotelBookingAttemptId,
     this.api,
   });
 
@@ -198,6 +204,24 @@ class _PaymentScreenState extends State<PaymentScreen> {
       return;
     }
 
+    if (widget.quoteType == 'hotel') {
+      if (widget.acceptedPrebookSnapshotId.isEmpty) {
+        showError(context,
+            'An accepted hotel prebook snapshot is required before Checkout.');
+        return;
+      }
+      if (widget.acceptedPrebook != null &&
+          widget.acceptedPrebook!['expiresAt'] != null) {
+        final exp = DateTime.tryParse(
+            widget.acceptedPrebook!['expiresAt'].toString());
+        if (exp != null && DateTime.now().toUtc().isAfter(exp.toUtc())) {
+          showError(context,
+              'This accepted hotel price has expired. Search and validate the offer again.');
+          return;
+        }
+      }
+    }
+
     setState(() => busy = true);
     try {
       final isPackage = currentAttemptId.isNotEmpty || widget.packageAttemptId.isNotEmpty;
@@ -205,6 +229,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
         widget.quoteType,
         widget.quoteId,
         widget.offerId,
+        if (widget.quoteType == 'hotel' && widget.acceptedPrebookSnapshotId.isNotEmpty)
+          widget.acceptedPrebookSnapshotId,
         widget.searchId,
         widget.optionId,
       ].join('_');
@@ -235,6 +261,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           if (widget.quoteType == 'hotel') ...{
             'quoteId': widget.quoteId,
             'offerId': widget.offerId,
+            'acceptedPrebookSnapshotId': widget.acceptedPrebookSnapshotId,
           },
           if (widget.quoteType == 'flight') ...{
             'searchId': widget.searchId,
@@ -320,7 +347,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
         });
 
         final msg = switch (action) {
-          'view_booking' => 'Payment verified! Your booking is confirmed.',
+          'view_booking' => widget.quoteType == 'hotel'
+              ? 'Payment verified (Stripe test)! In this demo phase, hotel reservations are not submitted to suppliers.'
+              : 'Payment verified! Your booking is confirmed.',
           'continue_payment' => 'Checkout is open. Tap Continue Payment on Stripe to complete.',
           'restart_payment' => 'Previous session has expired. You may restart payment.',
           _ => 'Payment status is still being verified. No additional payment was opened.',
@@ -648,7 +677,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           'This is a Stripe test-mode order for an operator tourism package. Payment confirms your booking and fulfills a dedicated Package Trip in TravelMate. Supplier reservations remain managed by the licensed operator. TravelMate does not receive or store card numbers or security codes.';
     } else if (isHotel) {
       text =
-          'This is a Stripe test-mode order. The selected hotel quote is a provider sandbox quote and is not live inventory. The provider offer total covers the requested stay and occupancy; any excluded property fees remain due at the property. TravelMate does not receive or store card numbers or security codes.';
+          'Stripe Test Mode — No real payment will be charged. This checkout does not confirm a reservation with the hotel. The selected hotel quote is a provider sandbox quote and is not live inventory. The provider offer total covers the requested stay and occupancy; any excluded property fees remain due at the property. TravelMate does not receive or store card numbers or security codes.';
     } else {
       text =
           'This is a Stripe test-mode order. Payment confirms your verified fare quote. TravelMate does not receive or store card numbers or security codes.';
@@ -667,6 +696,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final isPackage = widget.packageAttemptId.isNotEmpty ||
         widget.quoteType == 'package' ||
         activeOrder?['quoteType'] == 'package';
+    final isHotel = widget.quoteType == 'hotel';
     final snapshot = activeOrder?['packageSnapshot'] is Map
         ? Map<String, dynamic>.from(activeOrder!['packageSnapshot'] as Map)
         : (activeOrder?['quoteSnapshot'] is Map
@@ -697,9 +727,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
         : widget.initialAmount;
 
     final currentAction = checkoutAction;
+    final bool isHotelMissingSnapshot =
+        isHotel && widget.acceptedPrebookSnapshotId.isEmpty && activeOrder == null;
     final (statusLabel, statusTone, statusIcon) = switch (currentAction) {
       'view_booking' => (
-          'Payment Verified · Booking Confirmed',
+          isHotel
+              ? 'Payment Verified (Stripe Test)'
+              : 'Payment Verified · Booking Confirmed',
           AppStatusTone.success,
           Icons.check_circle_rounded
         ),
@@ -718,11 +752,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
           AppStatusTone.neutral,
           Icons.replay_rounded
         ),
-      _ => (
-          'Ready for Checkout',
-          AppStatusTone.neutral,
-          Icons.shopping_bag_outlined
-        ),
+      _ => isHotelMissingSnapshot
+          ? (
+              'Validation Required',
+              AppStatusTone.warning,
+              Icons.warning_amber_rounded,
+            )
+          : (
+              'Ready for Checkout',
+              AppStatusTone.neutral,
+              Icons.shopping_bag_outlined,
+            ),
     };
 
     final buttonLabel = busy
@@ -731,7 +771,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
             'continue_payment' => 'Continue Payment on Stripe',
             'check_status' => 'Check Payment Status',
             'restart_payment' => 'Restart Payment',
-            'view_booking' => 'View Confirmed Booking',
+            'view_booking' =>
+                isHotel ? 'View Paid Order' : 'View Confirmed Booking',
             _ => 'Open Stripe test Checkout',
           };
 
@@ -808,6 +849,30 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     style: const TextStyle(
                       fontSize: 13,
                       color: InkWashColors.mutedInk,
+                    ),
+                  ),
+                ],
+                if (isHotelMissingSnapshot) ...[
+                  const SizedBox(height: 10),
+                  InkCard(
+                    color: const Color(0xFFFEF3C7),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.warning_amber_rounded,
+                            size: 18, color: Color(0xFFD97706)),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'An accepted hotel prebook snapshot is required before Checkout. Return to Hotel search and validate the quote to proceed.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF92400E),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

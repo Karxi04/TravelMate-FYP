@@ -1,0 +1,908 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:travelmate_traveller/modules/fr08_hotel_booking/hotel_screen.dart';
+import 'package:travelmate_traveller/modules/fr09_payment/payment_screen.dart';
+import 'package:travelmate_traveller/services/api_service.dart';
+
+class _Batch18bMockApi extends ApiService {
+  final List<String> postedPaths = [];
+  final List<Map<String, dynamic>?> postedBodies = [];
+  Future<dynamic> Function(String path, Map<String, dynamic>? body)? postHandler;
+  Future<dynamic> Function(String path, Map<String, String>? query)? getHandler;
+
+  @override
+  bool get isStandalone => false;
+
+  @override
+  Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (getHandler != null) {
+      return getHandler!(path, query);
+    }
+    if (path == '/api/fr9/payments' || path == '/api/fr9/orders') {
+      return {'ok': true, 'items': []};
+    }
+    return {'ok': true};
+  }
+
+  @override
+  Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
+    postedPaths.add(path);
+    postedBodies.add(body);
+    if (postHandler != null) {
+      return postHandler!(path, body);
+    }
+    if (path == '/api/fr8/hotels/search') {
+      return {
+        'ok': true,
+        'source': 'liteapi',
+        'items': [
+          {
+            'hotelId': 'hotel-penang-1',
+            'offerId': 'offer-b18-001',
+            'quoteId': 'quote-b18-001',
+            'name': 'Penang Heritage Resort',
+            'roomName': 'Deluxe Sea View',
+            'price': 420.0,
+            'currency': 'MYR',
+            'checkin': '2026-11-10',
+            'checkout': '2026-11-12',
+            'roomQuantity': 1,
+          }
+        ]
+      };
+    }
+    if (path == '/api/fr8/hotels/prebook') {
+      return {
+        'ok': true,
+        'source': 'liteapi',
+        'acceptedPrebook': {
+          'id': 'snap-authoritative-99',
+          'amount': 420.0,
+          'currency': 'MYR',
+          'expiresAt': '2030-01-01T12:00:00Z',
+          'checkoutEligible': true,
+        },
+        'result': {
+          'validationId': 'val-b18-001',
+        }
+      };
+    }
+    if (path.contains('/checkout/session')) {
+      return {
+        'ok': true,
+        'order': {
+          'id': 'order-b18-001',
+          'quoteType': body?['quoteType'] ?? 'hotel',
+          'status': 'checkout_open',
+          'checkoutAction': 'check_status',
+          'checkoutUrl': '',
+          'amount': 420.0,
+        }
+      };
+    }
+    return {'ok': true};
+  }
+}
+
+void _setViewport(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1200, 3000);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+}
+
+Widget _wrap(Widget child) {
+  return MaterialApp(
+    home: Scaffold(body: child),
+  );
+}
+
+void main() {
+  setUp(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  // 1. Single-room adult search
+  testWidgets('1. Single-room adult search serializes valid single occupancy', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+      initialAdults: 2,
+      initialChildren: 0,
+    )));
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    expect(searchBtn, findsOneWidget);
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    expect(api.postedPaths, contains('/api/fr8/hotels/search'));
+    final body = api.postedBodies.last!;
+    expect(body['roomQuantity'], 1);
+    expect(body['adults'], 2);
+    expect(body['children'], 0);
+    expect(body['occupancies'], [
+      {'adults': 2}
+    ]);
+  });
+
+  // 2. Two-room adult distribution
+  testWidgets('2. Two-room adult distribution distributes adults across rooms', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+      initialAdults: 2,
+      initialChildren: 0,
+    )));
+    await tester.pumpAndSettle();
+
+    final addRoomBtn = find.text('Add Room');
+    expect(addRoomBtn, findsOneWidget);
+    await tester.ensureVisible(addRoomBtn);
+    await tester.tap(addRoomBtn);
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    final body = api.postedBodies.last!;
+    expect(body['roomQuantity'], 2);
+    expect(body['adults'], 4);
+    expect(body['children'], 0);
+    expect(body['occupancies'], [
+      {'adults': 2},
+      {'adults': 2},
+    ]);
+  });
+
+  // 3. Per-room children and ages
+  testWidgets('3. Per-room children and ages are included in room occupancy', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+    )));
+    await tester.pumpAndSettle();
+
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    state.setRoomChildren(0, 1);
+    state.rooms[0].childAges[0] = 8;
+    state.addRoom();
+    state.setRoomChildren(1, 1);
+    state.rooms[1].childAges[0] = 12;
+    state.syncTotals();
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    final body = api.postedBodies.last!;
+    expect(body['roomQuantity'], 2);
+    expect(body['adults'], 4);
+    expect(body['children'], 2);
+    expect(body['occupancies'], [
+      {
+        'adults': 2,
+        'children': [8]
+      },
+      {
+        'adults': 2,
+        'children': [12]
+      },
+    ]);
+  });
+
+  // 4. Missing child-age validation
+  testWidgets('4. Missing child-age validation blocks search and alerts traveller', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+    )));
+    await tester.pumpAndSettle();
+
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    state.setRoomChildren(0, 1);
+    state.syncTotals();
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Please specify an age for Child 1 in Room 1'), findsOneWidget);
+    expect(api.postedPaths, isEmpty);
+  });
+
+  // 5. Inconsistent guest totals
+  testWidgets('5. Inconsistent guest totals blocks search if totals mismatch room sums', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+    )));
+    await tester.pumpAndSettle();
+
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    state.adults.text = '6';
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Total guests must match room allocations.'), findsOneWidget);
+    expect(api.postedPaths, isEmpty);
+  });
+
+  // 6. Add/remove room interactions
+  testWidgets('6. Add/remove room interactions update room count and UI dynamically', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialAdults: 2,
+      initialChildren: 0,
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 Room · 2 Adults'), findsOneWidget);
+
+    final addBtn = find.text('Add Room');
+    await tester.ensureVisible(addBtn);
+    await tester.tap(addBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 Rooms · 4 Adults'), findsOneWidget);
+
+    final removeButtons = find.text('Remove Room');
+    expect(removeButtons, findsWidgets);
+    await tester.ensureVisible(removeButtons.last);
+    await tester.tap(removeButtons.last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 Room · 2 Adults'), findsOneWidget);
+  });
+
+  // 7. Provider-safe occupancy JSON serialization
+  test('7. RoomOccupancyConfig serializes correctly and safely', () {
+    final singleAdult = RoomOccupancyConfig(adults: 1);
+    expect(singleAdult.toJson(), {'adults': 1});
+
+    final withChildren = RoomOccupancyConfig(adults: 2, childAges: [5, 11]);
+    expect(withChildren.toJson(), {
+      'adults': 2,
+      'children': [5, 11],
+    });
+
+    final withNullFiltered = RoomOccupancyConfig(adults: 2, childAges: [null, 7]);
+    expect(withNullFiltered.toJson(), {
+      'adults': 2,
+      'children': [7],
+    });
+
+    final cloned = withChildren.clone();
+    expect(cloned.adults, 2);
+    expect(cloned.childAges, [5, 11]);
+  });
+
+  // 8. HTTP 400 invalid occupancy error
+  testWidgets('8. HTTP 400 invalid occupancy error handled gracefully', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    api.postHandler = (path, body) async {
+      if (path == '/api/fr8/hotels/search') {
+        throw const ApiException('Invalid occupancy', 400, {'status': 'invalid_occupancy'});
+      }
+      return {'ok': true};
+    };
+
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+    )));
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Invalid occupancy'), findsOneWidget);
+    expect(find.text('Search hotels'), findsOneWidget);
+  });
+
+  // 9. Quote expiration handling
+  testWidgets('9. Quote expiration handling prompts refresh on HTTP 409 quote_expired', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+    )));
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    api.postHandler = (path, body) async {
+      if (path == '/api/fr8/hotels/prebook') {
+        throw const ApiException('Quote expired', 409, {'status': 'quote_expired'});
+      }
+      return {'ok': true, 'items': []};
+    };
+
+    final validateBtn = find.text('Validate quote');
+    expect(validateBtn, findsOneWidget);
+    await tester.ensureVisible(validateBtn);
+    await tester.tap(validateBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Quote Expired'), findsOneWidget);
+    expect(find.textContaining('This hotel quote has expired'), findsOneWidget);
+    expect(find.text('Refresh Search'), findsOneWidget);
+
+    await tester.tap(find.text('Refresh Search'));
+    await tester.pumpAndSettle();
+    expect(find.text('Quote Expired'), findsNothing);
+  });
+
+  // 10. Successful accepted-prebook parsing
+  testWidgets('10. Successful accepted-prebook displays authoritative sheet with accepted amount', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+    )));
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    final validateBtn = find.text('Validate quote');
+    await tester.ensureVisible(validateBtn);
+    await tester.tap(validateBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hotel Offer Validated'), findsOneWidget);
+    expect(find.text('Authoritative total'), findsOneWidget);
+    expect(find.text('MYR 420.0'), findsWidgets);
+  });
+
+  // 11. Prebook ID propagation
+  testWidgets('11. Prebook ID propagation passes snapshot ID to PaymentScreen', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+    )));
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    final validateBtn = find.text('Validate quote');
+    await tester.ensureVisible(validateBtn);
+    await tester.tap(validateBtn);
+    await tester.pumpAndSettle();
+
+    final payBtn = find.text('Pay with Card (Stripe Test)');
+    expect(payBtn, findsOneWidget);
+    await tester.ensureVisible(payBtn);
+    await tester.tap(payBtn);
+    await tester.pumpAndSettle();
+
+    final paymentScreenFinder = find.byType(PaymentScreen);
+    expect(paymentScreenFinder, findsOneWidget);
+
+    final paymentScreen = tester.widget<PaymentScreen>(paymentScreenFinder);
+    expect(paymentScreen.acceptedPrebookSnapshotId, 'snap-authoritative-99');
+    expect(paymentScreen.quoteType, 'hotel');
+  });
+
+  // 12. Price-change confirmation
+  testWidgets('12. Price-change confirmation displays dialog and accepts quoteVersion on user consent', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    int prebookAttempts = 0;
+    api.postHandler = (path, body) async {
+      if (path == '/api/fr8/hotels/search') {
+        return {
+          'ok': true,
+          'items': [
+            {
+              'hotelId': 'h1',
+              'offerId': 'offer-reprice-1',
+              'quoteId': 'quote-1',
+              'name': 'Penang Beach Hotel',
+              'price': 400.0,
+              'currency': 'MYR',
+            }
+          ]
+        };
+      }
+      if (path == '/api/fr8/hotels/prebook') {
+        prebookAttempts++;
+        if (prebookAttempts == 1) {
+          throw const ApiException('Price changed', 409, {
+            'status': 'reprice_required',
+            'quoteVersion': 'v2_repriced',
+            'validatedOffer': {
+              'price': 450.0,
+              'currency': 'MYR',
+            }
+          });
+        }
+        return {
+          'ok': true,
+          'acceptedPrebook': {
+            'id': 'snap-repriced-1',
+            'amount': 450.0,
+            'currency': 'MYR',
+            'expiresAt': '2030-01-01T12:00:00Z',
+            'checkoutEligible': true,
+          },
+          'result': {'validationId': 'val-repriced-1'}
+        };
+      }
+      return {'ok': true};
+    };
+
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+    )));
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    final validateBtn = find.text('Validate quote');
+    await tester.ensureVisible(validateBtn);
+    await tester.tap(validateBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Price or terms updated'), findsOneWidget);
+    expect(find.textContaining('Previous rate: MYR 400.0'), findsOneWidget);
+    expect(find.textContaining('Updated rate: MYR 450.0'), findsOneWidget);
+
+    await tester.tap(find.text('Accept updated price'));
+    await tester.pumpAndSettle();
+
+    expect(prebookAttempts, 2);
+    final lastBody = api.postedBodies.last!;
+    expect(lastBody['acceptedQuoteVersion'], 'v2_repriced');
+    expect(find.text('Hotel Offer Validated'), findsOneWidget);
+  });
+
+  // 13. Repricing rejection/cancellation
+  testWidgets('13. Repricing cancellation does not re-submit prebook with quoteVersion', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    int prebookAttempts = 0;
+    api.postHandler = (path, body) async {
+      if (path == '/api/fr8/hotels/search') {
+        return {
+          'ok': true,
+          'items': [
+            {
+              'hotelId': 'h1',
+              'offerId': 'offer-reprice-2',
+              'quoteId': 'quote-2',
+              'name': 'Penang Grand',
+              'price': 300.0,
+              'currency': 'MYR',
+            }
+          ]
+        };
+      }
+      if (path == '/api/fr8/hotels/prebook') {
+        prebookAttempts++;
+        throw const ApiException('Price changed', 409, {
+          'status': 'reprice_required',
+          'quoteVersion': 'v2_repriced',
+          'validatedOffer': {
+            'price': 380.0,
+            'currency': 'MYR',
+          }
+        });
+      }
+      return {'ok': true};
+    };
+
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+    )));
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    final validateBtn = find.text('Validate quote');
+    await tester.ensureVisible(validateBtn);
+    await tester.tap(validateBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Price or terms updated'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(prebookAttempts, 1);
+    expect(find.text('Price or terms updated'), findsNothing);
+    expect(find.text('Hotel Offer Validated'), findsNothing);
+  });
+
+  // 14. Reused stable attempt IDs
+  testWidgets('14. Stable attempt ID reused across prebook calls for the same offer', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+    )));
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    final validateBtn = find.text('Validate quote');
+    await tester.ensureVisible(validateBtn);
+    await tester.tap(validateBtn);
+    await tester.pumpAndSettle();
+
+    final prebookBodies = api.postedBodies
+        .where((b) => b != null && b.containsKey('hotelBookingAttemptId'))
+        .toList();
+    expect(prebookBodies.length, 1);
+    final firstAttemptId = prebookBodies[0]!['hotelBookingAttemptId'];
+    expect(firstAttemptId, isNotEmpty);
+
+    // Dismiss first outcome sheet
+    Navigator.of(tester.element(find.byType(HotelScreen))).pop();
+    await tester.pumpAndSettle();
+
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    final hotelItem = state.items[0] as Map<String, dynamic>;
+    // Trigger prebook again for the same hotel offer
+    state.prebook(hotelItem);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final secondPrebookBodies = api.postedBodies
+        .where((b) => b != null && b.containsKey('hotelBookingAttemptId'))
+        .toList();
+    expect(secondPrebookBodies.length, 2);
+    expect(secondPrebookBodies[1]!['hotelBookingAttemptId'], firstAttemptId);
+
+    // Dismiss second outcome sheet
+    if (find.byType(BottomSheet).evaluate().isNotEmpty) {
+      Navigator.of(tester.element(find.byType(HotelScreen))).pop();
+      await tester.pumpAndSettle();
+    }
+  });
+
+  // 15. Correct Hotel Checkout payload
+  testWidgets('15. Hotel checkout payload includes acceptedPrebookSnapshotId', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(PaymentScreen(
+      api: api,
+      quoteType: 'hotel',
+      quoteId: 'quote-hotel-15',
+      offerId: 'offer-hotel-15',
+      acceptedPrebookSnapshotId: 'snap-authoritative-15',
+      initialAmount: 420.0,
+    )));
+    await tester.pumpAndSettle();
+
+    final checkoutBtn = find.text('Open Stripe test Checkout');
+    expect(checkoutBtn, findsOneWidget);
+    await tester.ensureVisible(checkoutBtn);
+    await tester.tap(checkoutBtn);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(api.postedPaths, contains('/api/fr9/checkout/session'));
+    final sessionBody = api.postedBodies.firstWhere(
+        (b) => b != null && b['quoteType'] == 'hotel')!;
+    expect(sessionBody['quoteType'], 'hotel');
+    expect(sessionBody['quoteId'], 'quote-hotel-15');
+    expect(sessionBody['offerId'], 'offer-hotel-15');
+    expect(sessionBody['acceptedPrebookSnapshotId'], 'snap-authoritative-15');
+    expect(sessionBody['orderAttemptId'], isNotEmpty);
+  });
+
+  // 16. Checkout blocked without snapshot
+  testWidgets('16. Checkout blocked without acceptedPrebookSnapshotId', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(PaymentScreen(
+      api: api,
+      quoteType: 'hotel',
+      quoteId: 'quote-hotel-16',
+      offerId: 'offer-hotel-16',
+      acceptedPrebookSnapshotId: '',
+      initialAmount: 420.0,
+    )));
+    await tester.pumpAndSettle();
+
+    final checkoutBtn = find.text('Open Stripe test Checkout');
+    await tester.ensureVisible(checkoutBtn);
+    await tester.tap(checkoutBtn);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('An accepted hotel prebook snapshot is required before Checkout.'),
+      findsOneWidget,
+    );
+    expect(api.postedPaths, isNot(contains('/api/fr9/checkout/session')));
+  });
+
+  // 17. Checkout blocked for expired snapshot
+  testWidgets('17. Checkout blocked for expired prebook snapshot', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(PaymentScreen(
+      api: api,
+      quoteType: 'hotel',
+      quoteId: 'quote-hotel-17',
+      offerId: 'offer-hotel-17',
+      acceptedPrebookSnapshotId: 'snap-hotel-17',
+      acceptedPrebook: const {
+        'id': 'snap-hotel-17',
+        'expiresAt': '2020-01-01T00:00:00Z',
+      },
+      initialAmount: 420.0,
+    )));
+    await tester.pumpAndSettle();
+
+    final checkoutBtn = find.text('Open Stripe test Checkout');
+    await tester.ensureVisible(checkoutBtn);
+    await tester.tap(checkoutBtn);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('This accepted hotel price has expired. Search and validate the offer again.'),
+      findsOneWidget,
+    );
+    expect(api.postedPaths, isNot(contains('/api/fr9/checkout/session')));
+  });
+
+  // 18. Server HTTP 409 recovery in PaymentScreen
+  testWidgets('18. Server HTTP 409 recovery releases loading state without crashing', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    api.postHandler = (path, body) async {
+      if (path.contains('/checkout/session')) {
+        throw const ApiException('Hotel quote expired on server', 409, {
+          'status': 'quote_expired',
+          'message': 'Hotel quote expired on server',
+        });
+      }
+      return {'ok': true};
+    };
+
+    await tester.pumpWidget(_wrap(PaymentScreen(
+      api: api,
+      quoteType: 'hotel',
+      quoteId: 'quote-hotel-18',
+      offerId: 'offer-hotel-18',
+      acceptedPrebookSnapshotId: 'snap-hotel-18',
+      initialAmount: 420.0,
+    )));
+    await tester.pumpAndSettle();
+
+    final checkoutBtn = find.text('Open Stripe test Checkout');
+    await tester.ensureVisible(checkoutBtn);
+    await tester.tap(checkoutBtn);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.textContaining('Hotel quote expired on server'), findsOneWidget);
+    expect(find.text('Open Stripe test Checkout'), findsOneWidget);
+  });
+
+  // 19. No accidental supplier booking before Hotel Test Checkout
+  testWidgets('19. No supplier booking endpoint called before checkout', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Penang',
+      initialCheckin: '2026-11-10',
+      initialCheckout: '2026-11-12',
+    )));
+    await tester.pumpAndSettle();
+
+    final searchBtn = find.text('Search hotels');
+    await tester.ensureVisible(searchBtn);
+    await tester.tap(searchBtn);
+    await tester.pumpAndSettle();
+
+    final validateBtn = find.text('Validate quote');
+    await tester.ensureVisible(validateBtn);
+    await tester.tap(validateBtn);
+    await tester.pumpAndSettle();
+
+    final payBtn = find.text('Pay with Card (Stripe Test)');
+    await tester.ensureVisible(payBtn);
+    await tester.tap(payBtn);
+    await tester.pumpAndSettle();
+
+    expect(api.postedPaths, isNot(contains('/api/fr8/hotels/book')));
+  });
+
+  // 20. Demo and Stripe Test disclosures
+  testWidgets('20. Demo and Stripe Test disclosures displayed accurately', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    api.getHandler = (path, query) async {
+      if (path == '/api/fr9/orders') {
+        return {
+          'ok': true,
+          'items': [
+            {
+              'id': 'ord-hotel-20',
+              'quoteType': 'hotel',
+              'quoteId': 'quote-hotel-20',
+              'status': 'paid',
+              'paymentStatus': 'paid',
+              'checkoutAction': 'view_booking',
+              'amount': 420.0,
+            }
+          ]
+        };
+      }
+      return {'ok': true, 'items': []};
+    };
+
+    await tester.pumpWidget(_wrap(PaymentScreen(
+      api: api,
+      quoteType: 'hotel',
+      quoteId: 'quote-hotel-20',
+      offerId: 'offer-hotel-20',
+      acceptedPrebookSnapshotId: 'snap-hotel-20',
+      initialAmount: 420.0,
+    )));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Stripe Test Mode — No real payment will be charged. This checkout does not confirm a reservation with the hotel.'),
+      findsOneWidget,
+    );
+    expect(find.text('Payment Verified (Stripe Test)'), findsOneWidget);
+    expect(find.text('View Paid Order'), findsOneWidget);
+    expect(find.textContaining('Supplier Booking Reference'), findsNothing);
+  });
+
+  // 21. Navigation and state preservation
+  testWidgets('21. Initial values are preserved across navigation and render correctly', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(
+      api: api,
+      initialDestination: 'Batu Ferringhi, Penang',
+      initialCheckin: '2026-12-01',
+      initialCheckout: '2026-12-05',
+      initialAdults: 3,
+      initialChildren: 1,
+    )));
+    await tester.pumpAndSettle();
+
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    expect(state.destination.text, 'Batu Ferringhi, Penang');
+    expect(state.checkin.text, '2026-12-01');
+    expect(state.checkout.text, '2026-12-05');
+    expect(state.adults.text, '3');
+    expect(state.children.text, '1');
+    expect(state.rooms.length, 1);
+    expect(state.rooms[0].adults, 3);
+    expect(state.rooms[0].childAges.length, 1);
+  });
+
+  // 22. Package/Flight payment regression safety
+  testWidgets('22. Package and Flight checkout payloads remain unaffected and safe', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+
+    // Package checkout
+    await tester.pumpWidget(_wrap(PaymentScreen(
+      key: const ValueKey('package_checkout_screen'),
+      api: api,
+      packageAttemptId: 'attempt-pkg-22',
+      initialAmount: 1800.0,
+    )));
+    await tester.pumpAndSettle();
+
+    final packageCheckoutBtn = find.text('Open Stripe test Checkout');
+    await tester.ensureVisible(packageCheckoutBtn);
+    await tester.tap(packageCheckoutBtn);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(api.postedPaths, contains('/api/fr9/package-checkout-attempts/attempt-pkg-22/checkout/session'));
+    final packageSessionBody = api.postedBodies.last;
+    expect(packageSessionBody?['acceptedPrebookSnapshotId'], isNull);
+
+    // Flight checkout
+    await tester.pumpWidget(_wrap(PaymentScreen(
+      key: const ValueKey('flight_checkout_screen'),
+      api: api,
+      quoteType: 'flight',
+      searchId: 'search-flight-22',
+      optionId: 'opt-flight-22',
+      initialAmount: 650.0,
+    )));
+    await tester.pumpAndSettle();
+
+    final flightCheckoutBtn = find.text('Open Stripe test Checkout');
+    await tester.ensureVisible(flightCheckoutBtn);
+    await tester.tap(flightCheckoutBtn);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final flightBody = api.postedBodies.lastWhere(
+        (b) => b != null && b['quoteType'] == 'flight')!;
+    expect(flightBody['searchId'], 'search-flight-22');
+    expect(flightBody['optionId'], 'opt-flight-22');
+    expect(flightBody.containsKey('acceptedPrebookSnapshotId'), isFalse);
+  });
+}
