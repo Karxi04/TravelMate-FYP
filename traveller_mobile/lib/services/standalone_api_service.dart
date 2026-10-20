@@ -161,8 +161,22 @@ class StandaloneApiService {
       final id = path.split('/').last;
       return _chatSessionById(id);
     }
-    if (path == '/api/fr9/payments') {
-      return {'ok': true, 'items': await _readList('payments')};
+    if (path == '/api/fr9/payments' || path == '/api/fr9/orders') {
+      return {'ok': true, 'items': await _readList(path.split('/').last)};
+    }
+    if (path.startsWith('/api/fr9/orders/') && path.endsWith('/reconcile')) {
+      final orderId = path.split('/')[4];
+      return {
+        'ok': true,
+        'order': {
+          'id': orderId,
+          'status': 'paid',
+          'paymentStatus': 'paid',
+          'checkoutAction': 'view_booking',
+          'amount': 420.0,
+          'currency': 'MYR',
+        },
+      };
     }
     if (path.startsWith('/api/fr9/payments/attempts/')) {
       final attemptId = path.split('/').last;
@@ -309,6 +323,23 @@ class StandaloneApiService {
     }
     if (path.startsWith('/api/fr9/payments/') && path.endsWith('/cancel')) {
       return _cancelPayment(path.split('/')[4]);
+    }
+    if (path == '/api/fr9/checkout/session' ||
+        path.contains('/checkout/session')) {
+      final quoteType = (payload['quoteType'] ?? 'hotel').toString();
+      final orderId = 'order_demo_${DateTime.now().millisecondsSinceEpoch}';
+      return {
+        'ok': true,
+        'order': {
+          'id': orderId,
+          'quoteType': quoteType,
+          'status': 'checkout_open',
+          'checkoutAction': 'check_status',
+          'checkoutUrl': 'https://checkout.stripe.com/test_session_demo',
+          'amount': payload['amount'] ?? 420.0,
+          'currency': 'MYR',
+        },
+      };
     }
     if (path == '/api/fr10/feedback') return _createFeedback(payload);
     if (path == '/api/fr11/sessions') return _createChatSession(payload);
@@ -4848,17 +4879,41 @@ class StandaloneApiService {
       if (existing['offerId'].toString() != offer) {
         throw Exception('Booking attempt is already bound to another offer.');
       }
+      final existingSnapshot = existing['acceptedPrebook'] ?? {
+        'id': 'snap_demo_${attemptId.replaceAll(RegExp(r'[^A-Za-z0-9]'), '')}',
+        'status': 'accepted',
+        'amount': existing['validatedOffer']?['price'] ?? 0,
+        'currency': (existing['validatedOffer']?['currency'] ?? 'MYR').toString().toUpperCase(),
+        'expiresAt': DateTime.now().add(const Duration(minutes: 30)).toIso8601String(),
+        'transactionMode': 'local_demo',
+        'supplierBookingStatus': 'not_created',
+        'checkoutEligible': true,
+      };
       return {
         'ok': true,
         'source': 'sample_fixture',
         'result': existing,
         'hotelBookingAttemptId': attemptId,
+        'acceptedPrebook': existingSnapshot,
         'reused': true,
       };
     }
     final suffix = attemptId.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
     final validationId =
         'demo_validation_${suffix.substring(0, min(16, suffix.length))}';
+    final snapshotId =
+        'snap_demo_${suffix.substring(0, min(16, suffix.length))}';
+    final acceptedPrebook = {
+      'id': snapshotId,
+      'status': 'accepted',
+      'amount': trustedOffer['price'],
+      'currency': (trustedOffer['currency'] ?? 'MYR').toString().toUpperCase(),
+      'expiresAt':
+          DateTime.now().add(const Duration(minutes: 30)).toIso8601String(),
+      'transactionMode': 'local_demo',
+      'supplierBookingStatus': 'not_created',
+      'checkoutEligible': true,
+    };
     final result = {
       'validationId': validationId,
       'offerId': offer,
@@ -4871,6 +4926,7 @@ class StandaloneApiService {
       'validatedOffer': trustedOffer,
       'validatedQuoteVersion': quote['offer']['quoteVersion'] ??
           _standaloneQuoteVersion(trustedOffer),
+      'acceptedPrebook': acceptedPrebook,
     };
     attempts.insert(0, result);
     await _writeList('hotel_prebook_attempts', attempts);
@@ -4879,6 +4935,7 @@ class StandaloneApiService {
       'source': 'sample_fixture',
       'result': result,
       'hotelBookingAttemptId': attemptId,
+      'acceptedPrebook': acceptedPrebook,
     };
   }
 

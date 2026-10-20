@@ -727,6 +727,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
         : widget.initialAmount;
 
     final currentAction = checkoutAction;
+    final bool isHotelMissingSnapshot =
+        isHotel && widget.acceptedPrebookSnapshotId.isEmpty && activeOrder == null;
     final (statusLabel, statusTone, statusIcon) = switch (currentAction) {
       'view_booking' => (
           isHotel
@@ -750,11 +752,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
           AppStatusTone.neutral,
           Icons.replay_rounded
         ),
-      _ => (
-          'Ready for Checkout',
-          AppStatusTone.neutral,
-          Icons.shopping_bag_outlined
-        ),
+      _ => isHotelMissingSnapshot
+          ? (
+              'Validation Required',
+              AppStatusTone.warning,
+              Icons.warning_amber_rounded,
+            )
+          : (
+              'Ready for Checkout',
+              AppStatusTone.neutral,
+              Icons.shopping_bag_outlined,
+            ),
     };
 
     final buttonLabel = busy
@@ -841,6 +849,30 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     style: const TextStyle(
                       fontSize: 13,
                       color: InkWashColors.mutedInk,
+                    ),
+                  ),
+                ],
+                if (isHotelMissingSnapshot) ...[
+                  const SizedBox(height: 10),
+                  InkCard(
+                    color: const Color(0xFFFEF3C7),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.warning_amber_rounded,
+                            size: 18, color: Color(0xFFD97706)),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'An accepted hotel prebook snapshot is required before Checkout. Return to Hotel search and validate the quote to proceed.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF92400E),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

@@ -704,14 +704,22 @@ def hotel_prebook():
             }
             if claimed.get('prebookId') and not reused_result.get('prebookId'):
                 reused_result['prebookId'] = claimed.get('prebookId')
+            snapshot = claimed.get('acceptedPrebookSnapshot')
+            if not snapshot:
+                snapshot = _accepted_prebook_snapshot(
+                    claimed, claimed.get('validatedOffer') or reused_result,
+                    claimed.get('source', 'local'),
+                )
+                updateRecord('hotel_prebook_attempts', document_id, {
+                    'acceptedPrebookSnapshot': snapshot,
+                    'updatedAt': utc_now_iso(),
+                })
             return jsonify({
                 'ok': True,
                 'result': reused_result,
                 'hotelBookingAttemptId': attempt_id,
                 'source': claimed.get('source', 'local'),
-                'acceptedPrebook': _public_accepted_snapshot(
-                    claimed.get('acceptedPrebookSnapshot')
-                ),
+                'acceptedPrebook': _public_accepted_snapshot(snapshot),
                 'reused': True,
             })
         if claimed.get('status') == 'reprice_required':

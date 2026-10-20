@@ -1739,6 +1739,15 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                             : '',
                 quoteId: (selectedHotel['quoteId'] ?? '').toString(),
                 offerId: (selectedHotel['offerId'] ?? '').toString(),
+                acceptedPrebookSnapshotId:
+                    (selectedHotel['acceptedPrebookSnapshotId'] ??
+                            selectedHotel['snapshotId'] ??
+                            '')
+                        .toString(),
+                acceptedPrebook: selectedHotel['acceptedPrebook'] is Map
+                    ? Map<String, dynamic>.from(
+                        selectedHotel['acceptedPrebook'] as Map)
+                    : null,
                 searchId: (selectedFlight['flightSearchId'] ?? '').toString(),
                 optionId: (selectedFlight['flightOptionId'] ??
                         selectedFlight['optionId'] ??

@@ -468,8 +468,12 @@ class _HotelScreenState extends State<HotelScreen> {
       final acceptedPrebook = data['acceptedPrebook'] is Map
           ? Map<String, dynamic>.from(data['acceptedPrebook'] as Map)
           : null;
-      final acceptedPrebookSnapshotId =
-          (acceptedPrebook?['id'] ?? '').toString();
+      final acceptedPrebookSnapshotId = (acceptedPrebook?['id'] ??
+              data['acceptedPrebookSnapshotId'] ??
+              data['acceptedPrebookId'] ??
+              result['acceptedPrebookSnapshotId'] ??
+              '')
+          .toString();
       final validationId = (result['validationId'] ??
               result['prebookId'] ??
               acceptedPrebookSnapshotId)
@@ -610,11 +614,37 @@ class _HotelScreenState extends State<HotelScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+              if (acceptedPrebookSnapshotId.isEmpty) ...[
+                InkCard(
+                  color: const Color(0xFFFEF3C7),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded,
+                          size: 20, color: Color(0xFFD97706)),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'An accepted quote snapshot was not received. Please re-validate the quote before opening card checkout.',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF92400E),
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: () {
                     Navigator.pop(ctx);
+                    if (acceptedPrebookSnapshotId.isEmpty) {
+                      prebook(hotel);
+                      return;
+                    }
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -634,8 +664,12 @@ class _HotelScreenState extends State<HotelScreen> {
                       ),
                     );
                   },
-                  icon: const Icon(Icons.payment_rounded),
-                  label: const Text('Pay with Card (Stripe Test)'),
+                  icon: Icon(acceptedPrebookSnapshotId.isEmpty
+                      ? Icons.refresh_rounded
+                      : Icons.payment_rounded),
+                  label: Text(acceptedPrebookSnapshotId.isEmpty
+                      ? 'Re-validate Quote for Checkout'
+                      : 'Pay with Card (Stripe Test)'),
                 ),
               ),
               const SizedBox(height: 8),
@@ -1115,7 +1149,7 @@ class _HotelScreenState extends State<HotelScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '${rooms.length} Rooms · ${rooms.fold<int>(0, (sum, r) => sum + r.adults)} Adults${rooms.fold<int>(0, (sum, r) => sum + r.childAges.length) > 0 ? ' · ${rooms.fold<int>(0, (sum, r) => sum + r.childAges.length)} Children' : ''}',
+                    '${rooms.length} Rooms · ${rooms.fold<int>(0, (sum, r) => sum + r.adults)} Adults${rooms.fold<int>(0, (sum, r) => sum + r.childAges.length) > 0 ? ' · ${rooms.fold<int>(0, (sum, r) => sum + r.childAges.length)} Child${rooms.fold<int>(0, (sum, r) => sum + r.childAges.length) != 1 ? 'ren' : ''}' : ''}',
                     style: const TextStyle(
                         fontWeight: FontWeight.w800, fontSize: 14),
                   ),
@@ -1151,119 +1185,87 @@ class _HotelScreenState extends State<HotelScreen> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    if (i == 0) ...[
-                      Row(children: [
+                    Row(
+                      children: [
                         Expanded(
-                          child: TextField(
-                            controller: adults,
-                            keyboardType: TextInputType.number,
-                            decoration:
-                                const InputDecoration(labelText: 'Adults'),
-                            onChanged: (val) {
-                              final a = int.tryParse(val) ?? 1;
-                              rooms[0].adults = a > 0 ? a : 1;
-                              syncTotals(fromAdultsController: true);
-                            },
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Adults',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: InkWashColors.mutedInk)),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  IconButton.outlined(
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.remove, size: 16),
+                                    onPressed: rooms[i].adults > 1
+                                        ? () => setRoomAdults(
+                                            i, rooms[i].adults - 1)
+                                        : null,
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10),
+                                    child: Text('${rooms[i].adults}',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 16)),
+                                  ),
+                                  IconButton.outlined(
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.add, size: 16),
+                                    onPressed: () => setRoomAdults(
+                                        i, rooms[i].adults + 1),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 8),
                         Expanded(
-                          child: TextField(
-                            controller: children,
-                            keyboardType: TextInputType.number,
-                            decoration:
-                                const InputDecoration(labelText: 'Children'),
-                            onChanged: (val) {
-                              final c = int.tryParse(val) ?? 0;
-                              setRoomChildren(0, c >= 0 ? c : 0,
-                                  fromChildrenController: true);
-                            },
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Children',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: InkWashColors.mutedInk)),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  IconButton.outlined(
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.remove, size: 16),
+                                    onPressed: rooms[i].childAges.isNotEmpty
+                                        ? () => setRoomChildren(
+                                            i, rooms[i].childAges.length - 1)
+                                        : null,
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10),
+                                    child: Text(
+                                        '${rooms[i].childAges.length}',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 16)),
+                                  ),
+                                  IconButton.outlined(
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.add, size: 16),
+                                    onPressed: () => setRoomChildren(
+                                        i, rooms[i].childAges.length + 1),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
-                      ]),
-                    ] else ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Adults',
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color: InkWashColors.mutedInk)),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    IconButton.outlined(
-                                      visualDensity: VisualDensity.compact,
-                                      icon: const Icon(Icons.remove, size: 16),
-                                      onPressed: rooms[i].adults > 1
-                                          ? () => setRoomAdults(
-                                              i, rooms[i].adults - 1)
-                                          : null,
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10),
-                                      child: Text('${rooms[i].adults}',
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 16)),
-                                    ),
-                                    IconButton.outlined(
-                                      visualDensity: VisualDensity.compact,
-                                      icon: const Icon(Icons.add, size: 16),
-                                      onPressed: () => setRoomAdults(
-                                          i, rooms[i].adults + 1),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Children',
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color: InkWashColors.mutedInk)),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    IconButton.outlined(
-                                      visualDensity: VisualDensity.compact,
-                                      icon: const Icon(Icons.remove, size: 16),
-                                      onPressed: rooms[i].childAges.isNotEmpty
-                                          ? () => setRoomChildren(
-                                              i, rooms[i].childAges.length - 1)
-                                          : null,
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10),
-                                      child: Text(
-                                          '${rooms[i].childAges.length}',
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 16)),
-                                    ),
-                                    IconButton.outlined(
-                                      visualDensity: VisualDensity.compact,
-                                      icon: const Icon(Icons.add, size: 16),
-                                      onPressed: () => setRoomChildren(
-                                          i, rooms[i].childAges.length + 1),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                      ],
+                    ),
                     if (rooms[i].childAges.isNotEmpty) ...[
                       const SizedBox(height: 10),
                       const Text('Child ages (required for hotel rates):',
@@ -1280,10 +1282,11 @@ class _HotelScreenState extends State<HotelScreen> {
                           return SizedBox(
                             width: 160,
                             child: DropdownButtonFormField<int>(
+                              key: ValueKey('room_${i}_child_$childIdx'),
                               isExpanded: true,
                               initialValue: rooms[i].childAges[childIdx],
                               decoration: InputDecoration(
-                                labelText: 'Child ${childIdx + 1} age',
+                                labelText: 'Room ${i + 1} Child ${childIdx + 1} age',
                                 contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 8),
                               ),
