@@ -384,6 +384,7 @@ def test_hotel_prebook_and_book_have_distinct_stage_keys(
     memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_live_1', {
         'quoteId': 'quote_live_1',
         'travellerId': 'test_traveller_uid',
+        'expiresAt': '2099-01-01T00:00:00+00:00',
         'offer': {
             'offerId': 'offer_live_1', 'name': 'Hotel', 'price': 200,
             'priceStatus': 'available', 'priceBasis': 'stay_total',
@@ -474,6 +475,7 @@ def test_ambiguous_hotel_booking_is_not_resubmitted(
     }
     memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_live_timeout', {
         'quoteId': 'quote_live_timeout', 'travellerId': 'test_traveller_uid',
+        'expiresAt': '2099-01-01T00:00:00+00:00',
         'offer': {'offerId': 'offer_live_timeout', 'name': 'Hotel', 'price': 180,
                   'priceStatus': 'available', 'priceBasis': 'stay_total',
                   'currency': 'MYR', 'currencyStatus': 'known',
@@ -534,6 +536,7 @@ def test_itinerary_attachment_retry_does_not_rebook_provider(
 
     memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_live_attach', {
         'quoteId': 'quote_live_attach', 'travellerId': 'test_traveller_uid',
+        'expiresAt': '2099-01-01T00:00:00+00:00',
         'offer': {'offerId': 'offer_live_attach', 'name': 'Hotel', 'price': 220,
                   'priceStatus': 'available', 'priceBasis': 'stay_total',
                   'currency': 'MYR', 'currencyStatus': 'known',

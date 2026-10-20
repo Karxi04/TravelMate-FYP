@@ -145,6 +145,7 @@ def normalizePrebookResult(result, fallback_offer=None):
     if isinstance(data.get('cancellation'), dict):
         cancellation = data['cancellation']
     fees_status = data.get('taxesAndFeesStatus') or _fees(rate, group)
+    fees = _taxes_and_fees(data, group) or _taxes_and_fees(rate, group)
     return {
         'prebookId': str(prebook_id) if prebook_id else None,
         'offerId': str(offer_id) if offer_id else None,
@@ -156,6 +157,7 @@ def normalizePrebookResult(result, fallback_offer=None):
         'currencyStatus': 'known' if currency else 'unknown',
         'cancellation': cancellation,
         'taxesAndFeesStatus': fees_status,
+        'taxesAndFees': fees,
         'sandbox': bool(data.get('sandbox') or result.get('sandbox')),
     }
 
@@ -296,6 +298,31 @@ def _fees(rate, room):
     return 'unknown'
 
 
+def _taxes_and_fees(rate, room):
+    """Return only display-safe fee fields when the provider supplies them."""
+    for obj in (rate, room):
+        retail = obj.get('retailRate') if isinstance(obj, dict) else None
+        values = None
+        if isinstance(retail, dict):
+            values = retail.get('taxesAndFees') or retail.get('taxes_and_fees')
+        if values is None and isinstance(obj, dict):
+            values = obj.get('taxesAndFees') or obj.get('taxes_and_fees')
+        if not isinstance(values, list):
+            continue
+        output = []
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            output.append({
+                'name': item.get('name') or item.get('description') or item.get('type'),
+                'amount': _money(item.get('amount')),
+                'currency': item.get('currency'),
+                'included': item.get('included') if 'included' in item else None,
+            })
+        return output
+    return []
+
+
 def normalizeHotelOffers(result):
     """Normalize both current LiteAPI response variants into one Flutter-friendly list."""
     result = result or {}
@@ -340,6 +367,7 @@ def normalizeHotelOffers(result):
         for room in room_types:
             if not isinstance(room, dict):
                 continue
+            rates = room.get('rates') if isinstance(room.get('rates'), list) else []
             rate = _first_rate(room)
             offer_id = str(room.get('offerId') or room.get('offer_id') or rate.get('offerId') or rate.get('offer_id') or group.get('offerId') or '')
             if not offer_id:
@@ -370,6 +398,20 @@ def normalizeHotelOffers(result):
             room_images = room.get('imageUrls') or room.get('images') or room.get('photos') or []
             if not isinstance(room_images, list):
                 room_images = []
+            occupancy_breakdown = []
+            for occupancy_index, occupancy_rate in enumerate(rates or [], start=1):
+                if not isinstance(occupancy_rate, dict):
+                    continue
+                child_ages = occupancy_rate.get('childrenAges')
+                occupancy_breakdown.append({
+                    'occupancyNumber': occupancy_rate.get('occupancyNumber') or occupancy_index,
+                    'rateId': occupancy_rate.get('rateId'),
+                    'mappedRoomId': occupancy_rate.get('mappedRoomId'),
+                    'adultCount': occupancy_rate.get('adultCount'),
+                    'childCount': occupancy_rate.get('childCount'),
+                    'childrenAges': list(child_ages) if isinstance(child_ages, list) else None,
+                    'maxOccupancy': occupancy_rate.get('maxOccupancy'),
+                })
             items.append({
                 'hotelId': hotel_id,
                 'name': name,
@@ -388,6 +430,7 @@ def normalizeHotelOffers(result):
                 'refundable': _refundable(room, rate),
                 'cancellation': _cancellation(room, rate),
                 'taxesAndFeesStatus': _fees(rate, room),
+                'taxesAndFees': _taxes_and_fees(rate, room),
                 'offerId': offer_id,
                 'mainPhoto': photo,
                 # Optional provider fields remain absent when LiteAPI does not supply them.
@@ -397,6 +440,7 @@ def normalizeHotelOffers(result):
                 'roomSize': room.get('roomSize') or room.get('size'),
                 'maxOccupancy': room.get('maxOccupancy') or room.get('maxGuests'),
                 'roomAmenities': room.get('amenities') if isinstance(room.get('amenities'), list) else [],
+                'occupancyBreakdown': occupancy_breakdown,
             })
 
     # Some accounts/API response versions place an offer directly on the hotel record.

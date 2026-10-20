@@ -67,7 +67,63 @@ def _hotel_quote():
             'taxesAndFeesStatus': 'included',
             'rateProvenance': 'sandbox_provider_quote',
         },
-        'criteria': {'roomQuantity': 1, 'occupancies': [{'adults': 2}]},
+        'criteria': {
+            'checkin': '2026-11-10', 'checkout': '2026-11-12',
+            'roomQuantity': 1, 'occupancies': [{'adults': 2}], 'guestCount': 2,
+        },
+    }
+
+
+def _accepted_prebook(*, currency='MYR', amount=220.0):
+    return {
+        'travellerId': 'test_traveller_uid',
+        'status': 'succeeded',
+        'criteria': {
+            'checkin': '2026-11-10', 'checkout': '2026-11-12',
+            'roomQuantity': 1, 'occupancies': [{'adults': 2}],
+        },
+        'validatedOffer': {
+            'offerId': 'offer_hotel_p1', 'price': amount, 'currency': currency,
+        },
+        'acceptedPrebookSnapshot': {
+            'id': 'accepted_prebook_p1',
+            'status': 'accepted',
+            'travellerId': 'test_traveller_uid',
+            'hotelBookingAttemptId': 'hotel_attempt_p1',
+            'quoteId': 'quote_hotel_p1',
+            'hotelId': 'hotel_p1',
+            'offerId': 'offer_hotel_p1',
+            'checkin': '2026-11-10',
+            'checkout': '2026-11-12',
+            'roomQuantity': 1,
+            'occupancies': [{'adults': 2}],
+            'guestCount': 2,
+            'amount': amount,
+            'currency': currency,
+            'priceBasis': 'stay_total',
+            'taxesAndFeesStatus': 'included',
+            'transactionMode': 'provider_sandbox',
+            'supplierBookingStatus': 'not_created',
+            'expiresAt': '2099-01-01T00:00:00+00:00',
+        },
+    }
+
+
+def _seed_hotel_checkout(memory, **snapshot_overrides):
+    memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_hotel_p1', _hotel_quote())
+    memory.seed(
+        'hotel_prebook_attempts', 'accepted_prebook_p1',
+        _accepted_prebook(**snapshot_overrides),
+    )
+
+
+def _hotel_checkout_payload(attempt_id='order_attempt_p1'):
+    return {
+        'orderAttemptId': attempt_id,
+        'quoteType': 'hotel',
+        'quoteId': 'quote_hotel_p1',
+        'offerId': 'offer_hotel_p1',
+        'acceptedPrebookSnapshotId': 'accepted_prebook_p1',
     }
 
 
@@ -81,7 +137,7 @@ def _patch_persistence(memory):
 
 def test_checkout_claims_owned_hotel_quote_and_reuses_session(client, mock_traveller_auth):
     memory = MemoryPersistence()
-    memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_hotel_p1', _hotel_quote())
+    _seed_hotel_checkout(memory)
     session = SimpleNamespace(id='cs_test_p1', url='https://checkout.stripe.test/cs_test_p1')
     with patch.dict('os.environ', {
              'STRIPE_SECRET_KEY': 'sk_test_fixture',
@@ -95,12 +151,7 @@ def test_checkout_claims_owned_hotel_quote_and_reuses_session(client, mock_trave
          patch('modules.fr09_payment.routes.retrieveCheckoutSession', return_value=SimpleNamespace(
              status='open', payment_status='unpaid', amount_total=22000,
              currency='myr', payment_intent=None)):
-        payload = {
-            'orderAttemptId': 'order_attempt_p1',
-            'quoteType': 'hotel',
-            'quoteId': 'quote_hotel_p1',
-            'offerId': 'offer_hotel_p1',
-        }
+        payload = _hotel_checkout_payload()
         first = client.post('/api/fr9/checkout/session', headers={
             'Authorization': 'Bearer valid_test_token', 'Host': 'attacker.example'}, json=payload)
         duplicate = client.post('/api/fr9/checkout/session', headers={
@@ -122,16 +173,11 @@ def test_checkout_claims_owned_hotel_quote_and_reuses_session(client, mock_trave
 
 def test_checkout_rejects_missing_hotel_currency_and_ambiguous_basis(client, mock_traveller_auth):
     memory = MemoryPersistence()
-    quote = _hotel_quote()
-    quote['offer']['currency'] = ''
-    quote['offer']['currencyStatus'] = 'unknown'
-    memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_hotel_p1', quote)
+    _seed_hotel_checkout(memory, currency='')
     with _patch_persistence(memory)[0], _patch_persistence(memory)[1], _patch_persistence(memory)[2]:
         response = client.post('/api/fr9/checkout/session', headers={
-            'Authorization': 'Bearer valid_test_token'}, json={
-                'orderAttemptId': 'order_attempt_p1', 'quoteType': 'hotel',
-                'quoteId': 'quote_hotel_p1', 'offerId': 'offer_hotel_p1',
-            })
+            'Authorization': 'Bearer valid_test_token'},
+            json=_hotel_checkout_payload())
     assert response.status_code == 409
     assert 'validated MYR currency' in response.get_json()['error']
 
@@ -280,7 +326,7 @@ def test_paid_checkout_order_cannot_be_reused(client, mock_traveller_auth):
     from services.transaction_reliability import operation_document_id
 
     memory = MemoryPersistence()
-    memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_hotel_p1', _hotel_quote())
+    _seed_hotel_checkout(memory)
     order_id = operation_document_id('checkout_order', 'test_traveller_uid', 'paid_attempt')
     memory.seed('checkout_orders', order_id, {
         'id': order_id,
@@ -291,6 +337,7 @@ def test_paid_checkout_order_cannot_be_reused(client, mock_traveller_auth):
         'offerId': 'offer_hotel_p1',
         'amount': 220.0,
         'currency': 'MYR',
+        'acceptedPrebookSnapshotId': 'accepted_prebook_p1',
         'status': 'paid',
         'paymentStatus': 'paid',
         'checkoutSessionId': 'cs_paid_p1',
@@ -299,10 +346,8 @@ def test_paid_checkout_order_cannot_be_reused(client, mock_traveller_auth):
     with _patch_persistence(memory)[0], _patch_persistence(memory)[1], _patch_persistence(memory)[2], \
          patch('modules.fr09_payment.routes.createCheckoutSession') as create:
         response = client.post('/api/fr9/checkout/session', headers={
-            'Authorization': 'Bearer valid_test_token'}, json={
-                'orderAttemptId': 'paid_attempt', 'quoteType': 'hotel',
-                'quoteId': 'quote_hotel_p1', 'offerId': 'offer_hotel_p1',
-            })
+            'Authorization': 'Bearer valid_test_token'},
+            json=_hotel_checkout_payload('paid_attempt'))
     assert response.status_code == 409
     assert 'already been paid' in response.get_json()['error']
     create.assert_not_called()

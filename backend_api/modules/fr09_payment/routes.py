@@ -4,7 +4,7 @@ import re
 import uuid
 from ipaddress import ip_address, ip_network
 from copy import deepcopy
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from html import escape
 from urllib.parse import urlencode, urlparse
 
@@ -71,42 +71,84 @@ def _safe_quote_snapshot(quote):
     allowed = {
         'quoteId', 'offerId', 'hotelId', 'name', 'roomName', 'boardName',
         'price', 'currency', 'priceBasis', 'priceScope',
-        'priceSemanticsStatus', 'taxesAndFeesStatus', 'cancellation',
+        'priceSemanticsStatus', 'taxesAndFeesStatus', 'taxesAndFees', 'cancellation',
         'refundable', 'source', 'sourceLabel', 'quoteCompleteness',
         'roundTripComplete', 'travellerCount', 'passengerComposition',
         'passengerPriceBasis', 'outboundSegments', 'returnSegments',
-        'tripType', 'priceStatus', 'currencyStatus',
+        'tripType', 'priceStatus', 'currencyStatus', 'checkin', 'checkout',
+        'roomQuantity', 'occupancies', 'guestCount', 'transactionMode',
+        'supplierBookingStatus', 'acceptedAt', 'expiresAt',
     }
     return {key: quote.get(key) for key in allowed if key in quote}
 
 
 def _hotel_checkout_quote(payload):
+    accepted_id = str(
+        payload.get('acceptedPrebookSnapshotId') or
+        payload.get('acceptedPrebookId') or ''
+    ).strip()
     quote_id = str(payload.get('quoteId') or '').strip()
     offer_id = str(payload.get('offerId') or '').strip()
-    if not quote_id or not offer_id:
-        raise ValueError('A stored hotel quote and offer are required for Checkout.')
-    record = retrieveRecord('hotel_offer_quotes', f'{g.uid}_{quote_id}')
+    if not accepted_id or not quote_id or not offer_id:
+        raise ValueError('An accepted hotel prebook snapshot, quote, and offer are required for Checkout.')
+    record = retrieveRecord('hotel_prebook_attempts', accepted_id)
     if not record or record.get('travellerId') != g.uid:
-        raise ValueError('The hotel quote was not found or is not owned by this traveller.')
-    offer = dict(record.get('offer') or {})
-    if str(offer.get('offerId') or '') != offer_id:
-        raise ValueError('This hotel quote is bound to a different offer.')
-    amount = _finite_amount(offer.get('price'))
-    currency = str(offer.get('currency') or '').upper()
-    if offer.get('priceStatus') != 'available' or amount is None:
-        raise ValueError('This hotel quote has no authoritative payable amount.')
-    if currency != 'MYR' or offer.get('currencyStatus') != 'known':
-        raise ValueError('This hotel quote has no validated MYR currency.')
-    if offer.get('priceBasis') != 'stay_total':
-        raise ValueError('This hotel quote does not prove a total for the requested stay and rooms.')
-    if offer.get('taxesAndFeesStatus') not in {'included', 'excluded', 'mixed'}:
-        raise ValueError('This hotel quote does not disclose its taxes and fees.')
-    snapshot = _safe_quote_snapshot({**offer, 'quoteId': quote_id})
+        raise ValueError('The accepted hotel prebook was not found or is not owned by this traveller.')
+    accepted = record.get('acceptedPrebookSnapshot')
+    if not isinstance(accepted, dict) or accepted.get('id') != accepted_id:
+        raise ValueError('This hotel prebook predates the secure Checkout contract. Validate the offer again.')
+    if accepted.get('travellerId') != g.uid or record.get('status') != 'succeeded':
+        raise ValueError('This hotel prebook is not eligible for Checkout.')
+    try:
+        expires = datetime.fromisoformat(str(accepted.get('expiresAt') or '').replace('Z', '+00:00'))
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+    except ValueError:
+        expires = datetime.min.replace(tzinfo=timezone.utc)
+    if expires <= datetime.now(timezone.utc):
+        raise ValueError('This accepted hotel price has expired. Search and validate the offer again.')
+    if (str(accepted.get('quoteId') or '') != quote_id or
+            str(accepted.get('offerId') or '') != offer_id):
+        raise ValueError('This accepted hotel prebook is bound to a different quote or offer.')
+    amount = _finite_amount(accepted.get('amount'))
+    currency = str(accepted.get('currency') or '').upper()
+    if amount is None:
+        raise ValueError('This accepted hotel prebook has no authoritative payable amount.')
+    if currency != 'MYR':
+        raise ValueError('This accepted hotel prebook has no validated MYR currency.')
+    if accepted.get('priceBasis') != 'stay_total':
+        raise ValueError('This accepted hotel prebook does not prove a total for the requested stay and rooms.')
+    if accepted.get('taxesAndFeesStatus') not in {'included', 'excluded', 'mixed'}:
+        raise ValueError('This accepted hotel prebook does not disclose its taxes and fees.')
+    if (not accepted.get('checkin') or not accepted.get('checkout') or
+            not accepted.get('occupancies') or not accepted.get('roomQuantity')):
+        raise ValueError('This accepted hotel prebook has incomplete stay or occupancy details.')
+    if accepted.get('supplierBookingStatus') != 'not_created':
+        raise ValueError('This accepted hotel prebook has already entered supplier booking.')
+    validated = record.get('validatedOffer') or {}
+    if validated and (
+            _finite_amount(validated.get('price')) != amount or
+            str(validated.get('currency') or '').upper() != currency or
+            str(validated.get('offerId') or '') != offer_id):
+        raise ValueError('The accepted hotel price no longer matches the validated prebook.')
+    criteria = record.get('criteria') or {}
+    if criteria and any(
+            accepted.get(key) != criteria.get(key)
+            for key in ('checkin', 'checkout', 'roomQuantity', 'occupancies')
+    ):
+        raise ValueError('The accepted hotel stay no longer matches the validated occupancy.')
+    snapshot = _safe_quote_snapshot({
+        **accepted,
+        'quoteId': quote_id,
+        'offerId': offer_id,
+    })
     return {
         'quoteType': 'hotel', 'quoteId': quote_id, 'offerId': offer_id,
+        'acceptedPrebookSnapshotId': accepted_id,
+        'hotelBookingAttemptId': accepted.get('hotelBookingAttemptId'),
         'amount': amount, 'currency': currency, 'quoteSnapshot': snapshot,
         'amountBasis': 'provider_offer_total_includes_base_and_included_taxes_fees',
-        'sandbox': offer.get('rateProvenance') == 'sandbox_provider_quote',
+        'sandbox': accepted.get('transactionMode') == 'provider_sandbox',
     }
 
 
@@ -702,7 +744,9 @@ def create_checkout_session():
         return jsonify({'ok': False, 'error': 'This order is not owned by the current traveller.'}), 403
     if str(claimed.get('status') or '').lower() == 'paid':
         return jsonify({'ok': False, 'error': 'This Checkout order has already been paid.'}), 409
-    for key in ('quoteType', 'quoteId', 'offerId', 'optionId', 'amount', 'currency'):
+    for key in (
+            'quoteType', 'quoteId', 'offerId', 'optionId', 'amount', 'currency',
+            'acceptedPrebookSnapshotId'):
         if key in record and str(claimed.get(key)) != str(record.get(key)):
             return jsonify({'ok': False, 'error': 'Order attempt is already bound to another quote.'}), 409
     if claimed.get('checkoutSessionId') and claimed.get('checkoutUrl'):
