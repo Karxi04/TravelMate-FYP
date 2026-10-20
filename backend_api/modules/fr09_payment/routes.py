@@ -2,6 +2,7 @@ import math
 import os
 import re
 import uuid
+import stripe
 from ipaddress import ip_address, ip_network
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
@@ -223,6 +224,16 @@ def _safe_order(record, session_verified=False):
     safe['checkoutAction'] = action
     if session_verified and action == 'continue_payment':
         safe['checkoutUrl'] = record.get('checkoutUrl')
+    if safe.get('quoteType') == 'hotel':
+        status = str(safe.get('status') or '').lower()
+        payment_status = str(safe.get('paymentStatus') or '').lower()
+        is_paid = status == 'paid' or payment_status == 'paid'
+        safe.setdefault('fulfillmentStatus', 'demo_only' if is_paid else 'not_started')
+        safe.setdefault('supplierBookingStatus', 'not_created')
+        safe.setdefault('isSimulated', True)
+        safe.setdefault('fulfillmentMode', 'demo_only')
+        safe.setdefault('bookingReference', None)
+        safe.setdefault('demoDisclosure', 'Demo reservation — no supplier room has been reserved.')
     return safe
 
 
@@ -282,6 +293,25 @@ def _payment_history_item(record, source):
     }
     if source == 'checkout_order':
         item['checkoutAction'] = _checkout_action(record)
+        if booking_type == 'hotel':
+            item['fulfillmentStatus'] = record.get('fulfillmentStatus') or (
+                'demo_only' if payment_status == 'paid' else 'not_started'
+            )
+            item['supplierBookingStatus'] = record.get('supplierBookingStatus') or 'not_created'
+            item['isSimulated'] = record.get('isSimulated', True)
+            item['fulfillmentMode'] = record.get('fulfillmentMode', 'demo_only')
+            item['bookingReference'] = record.get('bookingReference')
+            item['demoDisclosure'] = record.get('demoDisclosure', 'Demo reservation — no supplier room has been reserved.')
+            item['hotelBookingAttemptId'] = record.get('hotelBookingAttemptId')
+            item['acceptedPrebookSnapshotId'] = record.get('acceptedPrebookSnapshotId')
+            quote_snapshot = record.get('quoteSnapshot')
+            if isinstance(quote_snapshot, dict):
+                item['hotelName'] = quote_snapshot.get('name') or quote_snapshot.get('hotelName')
+                item['roomName'] = quote_snapshot.get('roomName')
+                item['checkin'] = quote_snapshot.get('checkin')
+                item['checkout'] = quote_snapshot.get('checkout')
+                item['roomQuantity'] = quote_snapshot.get('roomQuantity')
+                item['occupancies'] = quote_snapshot.get('occupancies')
         if booking_type == 'package' and item['checkoutAction'] == 'restart_payment':
             snapshot = record.get('packageSnapshot') or {}
             participants = record.get('participants') or snapshot.get('participants') or {}
@@ -408,6 +438,41 @@ def _apply_checkout_session(record, session):
     }
 
 
+def _apply_hotel_payment(order, session):
+    patch = _apply_checkout_session(order, session)
+    now = utc_now_iso()
+    status = str(patch.get('status') or '').lower()
+    payment_status = str(patch.get('paymentStatus') or '').lower()
+    is_paid = status == 'paid' or payment_status == 'paid'
+    if is_paid:
+        patch.update({
+            'fulfillmentStatus': 'demo_only',
+            'supplierBookingStatus': 'not_created',
+            'isSimulated': True,
+            'fulfillmentMode': 'demo_only',
+            'bookingReference': None,
+            'demoDisclosure': 'Demo reservation — no supplier room has been reserved.',
+            'fulfillmentUpdatedAt': order.get('fulfillmentUpdatedAt') or now,
+        })
+        snapshot_id = order.get('acceptedPrebookSnapshotId')
+        if snapshot_id:
+            updateRecord('hotel_prebook_attempts', snapshot_id, {
+                'orderId': order.get('id'),
+                'paymentStatus': 'paid',
+                'fulfillmentStatus': 'demo_only',
+                'supplierBookingStatus': 'not_created',
+                'updatedAt': now,
+            })
+    else:
+        patch.setdefault('fulfillmentStatus', order.get('fulfillmentStatus') or 'not_started')
+        patch.setdefault('supplierBookingStatus', 'not_created')
+        patch.setdefault('isSimulated', True)
+        patch.setdefault('fulfillmentMode', 'demo_only')
+        patch.setdefault('bookingReference', None)
+        patch.setdefault('demoDisclosure', 'Demo reservation — no supplier room has been reserved.')
+    return patch
+
+
 def _sync_package_attempt_status(order):
     attempt_id = str(order.get('packageAttemptId') or '')
     if not attempt_id:
@@ -425,9 +490,12 @@ def _reconcile_checkout_order(record):
     if not session_id:
         return record, False
     session = retrieveCheckoutSession(session_id)
-    patch = (_apply_package_payment(record, session)
-             if record.get('quoteType') == 'package'
-             else _apply_checkout_session(record, session))
+    if record.get('quoteType') == 'package':
+        patch = _apply_package_payment(record, session)
+    elif record.get('quoteType') == 'hotel':
+        patch = _apply_hotel_payment(record, session)
+    else:
+        patch = _apply_checkout_session(record, session)
     patch['checkoutSessionStatus'] = str(_stripe_value(session, 'status', '') or '').lower()
     updated = updateRecord(ORDER_COLLECTION, record['id'], patch) or {**record, **patch}
     if updated.get('quoteType') == 'package':
@@ -736,6 +804,15 @@ def create_checkout_session():
         'createdAt': now,
         'updatedAt': now,
     }
+    if quote.get('quoteType') == 'hotel':
+        record.update({
+            'fulfillmentStatus': 'not_started',
+            'supplierBookingStatus': 'not_created',
+            'isSimulated': True,
+            'fulfillmentMode': 'demo_only',
+            'bookingReference': None,
+            'demoDisclosure': 'Demo reservation — no supplier room has been reserved.',
+        })
     try:
         claimed, created = claimRecord(ORDER_COLLECTION, order_id, record)
     except Exception:
@@ -785,6 +862,12 @@ def create_checkout_session():
             'updatedAt': utc_now_iso(),
         }) or {**claimed, 'checkoutSessionId': session_id, 'checkoutUrl': checkout_url,
                'checkoutSessionStatus': 'open', 'status': 'checkout_open'}
+        if record.get('quoteType') == 'hotel' and record.get('acceptedPrebookSnapshotId'):
+            updateRecord('hotel_prebook_attempts', record['acceptedPrebookSnapshotId'], {
+                'orderId': order_id,
+                'checkoutSessionId': session_id,
+                'updatedAt': utc_now_iso(),
+            })
         return jsonify({'ok': True, 'order': _safe_order(updated, session_verified=True),
                         'reused': not created})
     except Exception as exc:
@@ -821,9 +904,12 @@ def checkout_return(outcome):
         record = retrieveRecord(ORDER_COLLECTION, order_id)
         if not order_id or not record or record.get('checkoutSessionId') != session_id:
             raise ValueError('Checkout session is not bound to a TravelMate order.')
-        patch = (_apply_package_payment(record, session)
-                 if record.get('quoteType') == 'package'
-                 else _apply_checkout_session(record, session))
+        if record.get('quoteType') == 'package':
+            patch = _apply_package_payment(record, session)
+        elif record.get('quoteType') == 'hotel':
+            patch = _apply_hotel_payment(record, session)
+        else:
+            patch = _apply_checkout_session(record, session)
         updated = updateRecord(ORDER_COLLECTION, order_id, patch) or {**record, **patch}
         status = str(updated.get('status') or '').lower()
         if status == 'paid':
@@ -889,7 +975,7 @@ def stripe_webhook():
         event = constructStripeWebhookEvent(
             request.get_data(), request.headers.get('Stripe-Signature', '')
         )
-    except ValueError:
+    except (ValueError, stripe.error.SignatureVerificationError):
         return jsonify({'ok': False, 'error': 'Invalid Stripe webhook'}), 400
     except Exception:
         return jsonify({'ok': False, 'error': 'Stripe webhook verification is unavailable'}), 503
@@ -906,18 +992,27 @@ def stripe_webhook():
         if (str(metadata.get('packageAttemptId') or '') != str(record.get('packageAttemptId') or '') or
                 str(_stripe_value(data, 'id', '') or '') != str(record.get('checkoutSessionId') or '')):
             return jsonify({'ok': False, 'error': 'Stripe event does not match checkout order.'}), 400
-    if str(record.get('status') or '').lower() == 'paid' and record.get('quoteType') != 'package':
+    if (str(record.get('status') or '').lower() == 'paid' and
+            record.get('quoteType') != 'package' and
+            (record.get('quoteType') != 'hotel' or record.get('fulfillmentStatus') == 'demo_only')):
         return jsonify({'ok': True, 'received': True, 'ignored': True})
     if event_type in {'checkout.session.completed', 'checkout.session.async_payment_succeeded',
                       'checkout.session.async_payment_failed', 'checkout.session.expired'}:
         if event_type == 'checkout.session.async_payment_failed':
             patch = {'status': 'payment_failed', 'paymentStatus': 'failed', 'updatedAt': utc_now_iso()}
+            if record.get('quoteType') == 'hotel':
+                patch.update({'fulfillmentStatus': 'not_started', 'supplierBookingStatus': 'not_created'})
         elif event_type == 'checkout.session.expired':
             patch = {'status': 'expired', 'paymentStatus': 'unpaid', 'updatedAt': utc_now_iso()}
+            if record.get('quoteType') == 'hotel':
+                patch.update({'fulfillmentStatus': 'not_started', 'supplierBookingStatus': 'not_created'})
         else:
-            patch = (_apply_package_payment(record, data)
-                     if record.get('quoteType') == 'package'
-                     else _apply_checkout_session(record, data))
+            if record.get('quoteType') == 'package':
+                patch = _apply_package_payment(record, data)
+            elif record.get('quoteType') == 'hotel':
+                patch = _apply_hotel_payment(record, data)
+            else:
+                patch = _apply_checkout_session(record, data)
         updateRecord(ORDER_COLLECTION, order_id, patch)
         if record.get('quoteType') == 'package' and event_type in {
             'checkout.session.async_payment_failed', 'checkout.session.expired',
