@@ -400,7 +400,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Paid — Stripe Test Mode'), findsOneWidget);
-    expect(find.text('Demo Only — No Room Reserved'), findsOneWidget);
+    expect(find.text('Supplier reservation not verified'), findsOneWidget);
   });
 
   // 14. Legacy paid Hotel Orders do not falsely show confirmed reservations

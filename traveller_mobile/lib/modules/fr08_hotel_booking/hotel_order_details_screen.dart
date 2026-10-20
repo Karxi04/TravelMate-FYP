@@ -195,11 +195,14 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
     if (supplierStatus == 'confirmed' && bookingRef != null && bookingRef.isNotEmpty) {
       return ('Supplier Confirmed', AppStatusTone.success, Icons.hotel_rounded, 'Reservation confirmed with supplier');
     }
-    if (fulfillmentStatus == 'demo_only' || isPaid) {
+    if (fulfillmentStatus == 'demo_only') {
       return ('Demo Only — No Room Reserved', AppStatusTone.neutral, Icons.science_outlined, 'No supplier reservation created');
     }
-    if (fulfillmentStatus == 'not_started') {
+    if (fulfillmentStatus == 'not_started' || (!isPaid && (fulfillmentStatus == null || fulfillmentStatus.isEmpty))) {
       return ('Not Started', AppStatusTone.neutral, Icons.pause_circle_outline, 'No supplier reservation created');
+    }
+    if (isPaid && (fulfillmentStatus == null || fulfillmentStatus.isEmpty)) {
+      return ('Supplier reservation not verified', AppStatusTone.neutral, Icons.help_outline_rounded, 'No supplier reservation verified');
     }
     return ('Supplier reservation not verified', AppStatusTone.neutral, Icons.help_outline_rounded, 'No supplier reservation verified');
   }

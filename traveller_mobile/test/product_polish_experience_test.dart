@@ -157,8 +157,8 @@ void main() {
       (tester) async {
     await _pumpAtSize(tester, TripsTab(api: _TripsApi()));
 
-    expect(find.text('No trips yet'), findsOneWidget);
-    expect(find.text('Start planning your first personalised trip.'),
+    expect(find.text('No travel plans yet'), findsOneWidget);
+    expect(find.text('Start planning your first personalised trip with custom activities and budget.'),
         findsOneWidget);
     expect(find.text('Plan a trip'), findsWidgets);
     expect(find.textContaining('trip_'), findsNothing);

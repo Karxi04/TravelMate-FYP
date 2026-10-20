@@ -314,14 +314,14 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
     if (supplierStatus == 'confirmed' && bookingRef != null && bookingRef.isNotEmpty) {
       return ('Confirmed', AppStatusTone.success, Icons.hotel_rounded, 'Confirmed with supplier');
     }
-    if (fulfillmentStatus == 'demo_only' || (isPaid && item.containsKey('fulfillmentStatus'))) {
+    if (fulfillmentStatus == 'demo_only') {
       return ('Demo Only — No Room Reserved', AppStatusTone.neutral, Icons.science_outlined, 'No supplier reservation created');
     }
-    if (isPaid && !item.containsKey('fulfillmentStatus')) {
-      return ('Supplier reservation not verified', AppStatusTone.neutral, Icons.help_outline_rounded, 'Supplier reservation not verified');
-    }
-    if (fulfillmentStatus == 'not_started' || !isPaid) {
+    if (fulfillmentStatus == 'not_started' || (!isPaid && fulfillmentStatus == null)) {
       return ('Not Created', AppStatusTone.neutral, Icons.pause_circle_outline, 'No supplier reservation created');
+    }
+    if (isPaid && (fulfillmentStatus == null || fulfillmentStatus.isEmpty)) {
+      return ('Supplier reservation not verified', AppStatusTone.neutral, Icons.help_outline_rounded, 'Supplier reservation not verified');
     }
     return ('Supplier reservation not verified', AppStatusTone.neutral, Icons.help_outline_rounded, 'Supplier reservation not verified');
   }
