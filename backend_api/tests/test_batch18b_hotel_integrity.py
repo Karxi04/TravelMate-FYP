@@ -9,6 +9,7 @@ from services.liteapi_service import (
     createBookingReference,
     normalizeHotelOffers,
 )
+from services.transaction_reliability import operation_document_id
 from test_fr08_fr09_hotels_payments import MemoryPersistence
 
 
@@ -370,3 +371,135 @@ def test_real_supplier_booking_remains_disabled_outside_tests():
         with pytest.raises(ProviderMutationBlocked):
             createBookingReference({'prebookId': 'prebook_18b'})
     provider.assert_not_called()
+
+
+def test_historical_prebook_recovery_anchors_timestamp_and_marks_expired(
+        client, mock_traveller_auth):
+    memory = MemoryPersistence()
+    _seed_quote(memory)
+    historical_time = '2026-10-18T10:00:00+00:00'
+    op_id = operation_document_id('hotel_prebook', 'test_traveller_uid', 'historical_attempt_18b')
+    historical_doc = {
+        'id': op_id,
+        'travellerId': 'test_traveller_uid',
+        'hotelBookingAttemptId': 'historical_attempt_18b',
+        'offerId': 'offer_18b',
+        'quoteId': 'quote_18b',
+        'status': 'succeeded',
+        'stage': 'validated_local_demo',
+        'createdAt': historical_time,
+        'updatedAt': historical_time,
+        'criteria': {
+            'checkin': '2026-11-10',
+            'checkout': '2026-11-12',
+            'roomQuantity': 1,
+            'occupancies': [{'adults': 2}],
+            'guestCount': 2,
+        },
+        'validatedOffer': {
+            'offerId': 'offer_18b',
+            'hotelId': 'hotel_18b',
+            'name': 'Penang Test Hotel',
+            'price': 420.0,
+            'currency': 'MYR',
+            'priceBasis': 'stay_total',
+            'taxesAndFeesStatus': 'included',
+        },
+    }
+    memory.seed('hotel_prebook_attempts', op_id, historical_doc)
+
+    patches = _hotel_patches(memory)
+    with patches[0], patches[1], patches[2]:
+        response = client.post('/api/fr8/hotels/prebook', headers=AUTH, json={
+            'offerId': 'offer_18b',
+            'quoteId': 'quote_18b',
+            'hotelBookingAttemptId': 'historical_attempt_18b',
+        })
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['ok'] is True
+    assert data['reused'] is True
+    accepted = data['acceptedPrebook']
+    assert accepted is not None
+    assert accepted['status'] == 'expired'
+    assert accepted['checkoutEligible'] is False
+    assert accepted['expiresAt'] == '2026-10-18T10:15:00+00:00'
+
+    pay_patches = _payment_patches(memory)
+    with pay_patches[0], pay_patches[1], pay_patches[2]:
+        checkout_resp = client.post('/api/fr9/checkout/session', headers=AUTH, json={
+            'orderAttemptId': 'order_hist_18b',
+            'quoteType': 'hotel',
+            'quoteId': 'quote_18b',
+            'offerId': 'offer_18b',
+            'acceptedPrebookSnapshotId': op_id,
+            'amount': 420.0,
+        })
+    assert checkout_resp.status_code == 409
+    assert 'expired' in checkout_resp.get_json()['error']
+
+
+def test_prebook_attempt_reuse_rejects_different_quote_id(
+        client, mock_traveller_auth):
+    memory = MemoryPersistence()
+    _seed_quote(memory)
+    memory.seed('hotel_offer_quotes', 'test_traveller_uid_quote_second', {
+        'quoteId': 'quote_second',
+        'travellerId': 'test_traveller_uid',
+        'expiresAt': FUTURE,
+        'offer': _normalised_offer([{'adults': 2}]),
+        'criteria': {
+            'destination': 'Penang',
+            'checkin': '2026-11-10',
+            'checkout': '2026-11-12',
+            'roomQuantity': 1,
+            'occupancies': [{'adults': 2}],
+            'guestCount': 2,
+        },
+    })
+    op_id = operation_document_id('hotel_prebook', 'test_traveller_uid', 'attempt_bound')
+    memory.seed('hotel_prebook_attempts', op_id, {
+        'id': op_id,
+        'travellerId': 'test_traveller_uid',
+        'hotelBookingAttemptId': 'attempt_bound',
+        'offerId': 'offer_18b',
+        'quoteId': 'quote_18b',
+        'status': 'succeeded',
+    })
+
+    patches = _hotel_patches(memory)
+    with patches[0], patches[1], patches[2]:
+        response = client.post('/api/fr8/hotels/prebook', headers=AUTH, json={
+            'offerId': 'offer_18b',
+            'quoteId': 'quote_second',
+            'hotelBookingAttemptId': 'attempt_bound',
+        })
+    assert response.status_code == 409
+    assert 'already bound to another quote' in response.get_json()['error']
+
+
+def test_prebook_attempt_foreign_traveller_is_blocked(
+        client, mock_traveller_auth):
+    memory = MemoryPersistence()
+    _seed_quote(memory)
+    op_id = operation_document_id('hotel_prebook', 'test_traveller_uid', 'foreign_attempt')
+    memory.seed('hotel_prebook_attempts', op_id, {
+        'id': op_id,
+        'travellerId': 'different_traveller_uid',
+        'hotelBookingAttemptId': 'foreign_attempt',
+        'offerId': 'offer_18b',
+        'quoteId': 'quote_18b',
+        'status': 'succeeded',
+    })
+
+    patches = _hotel_patches(memory)
+    with patches[0], patches[1], patches[2]:
+        response = client.post('/api/fr8/hotels/prebook', headers=AUTH, json={
+            'offerId': 'offer_18b',
+            'quoteId': 'quote_18b',
+            'hotelBookingAttemptId': 'foreign_attempt',
+        })
+    assert response.status_code == 404
+    assert 'Prebook attempt not found' in response.get_json()['error']
+

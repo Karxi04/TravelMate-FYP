@@ -91,17 +91,23 @@ def _expiry(now=None, name='HOTEL_QUOTE_TTL_SECONDS'):
     return (current + timedelta(seconds=_quote_ttl_seconds(name))).isoformat()
 
 
-def _is_expired(record, now=None):
-    value = str((record or {}).get('expiresAt') or '').strip()
-    if not value:
-        return True
+def _parse_iso(value):
+    if not value or not isinstance(value, str):
+        return None
     try:
-        expires = datetime.fromisoformat(value.replace('Z', '+00:00'))
-        if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
-        return expires <= (now or datetime.now(timezone.utc))
+        dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
     except ValueError:
+        return None
+
+
+def _is_expired(record, now=None):
+    expires = _parse_iso((record or {}).get('expiresAt'))
+    if expires is None:
         return True
+    return expires <= (now or datetime.now(timezone.utc))
 
 
 def _positive_int(value, label):
@@ -409,7 +415,13 @@ def _resolve_quote(payload, offer):
 
 
 def _accepted_prebook_snapshot(record, validated, source, now=None):
-    current = now or datetime.now(timezone.utc)
+    current = now
+    if current is None:
+        current = _parse_iso(record.get('acceptedAt') or record.get('updatedAt') or record.get('createdAt'))
+    if current is None:
+        current = datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
     criteria = deepcopy(record.get('criteria') or {})
     return {
         'id': record['id'],
@@ -449,15 +461,17 @@ def _accepted_prebook_snapshot(record, validated, source, now=None):
 def _public_accepted_snapshot(snapshot):
     if not snapshot:
         return None
+    expired = _is_expired(snapshot)
     return {
         'id': snapshot.get('id'),
-        'status': snapshot.get('status'),
+        'status': 'expired' if (expired and snapshot.get('status') == 'accepted') else snapshot.get('status'),
         'expiresAt': snapshot.get('expiresAt'),
         'amount': snapshot.get('amount'),
         'currency': snapshot.get('currency'),
         'transactionMode': snapshot.get('transactionMode'),
         'supplierBookingStatus': snapshot.get('supplierBookingStatus'),
         'checkoutEligible': bool(
+            not expired and
             snapshot.get('checkin') and snapshot.get('checkout') and
             snapshot.get('occupancies') and snapshot.get('amount') is not None and
             snapshot.get('currency') == 'MYR'
@@ -694,6 +708,9 @@ def hotel_prebook():
         return jsonify({'ok': False, 'error': 'Prebook attempt not found'}), 404
     if str(claimed.get('offerId') or '') != offer:
         return jsonify({'ok': False, 'error': 'hotelBookingAttemptId is already bound to another offer'}), 409
+    if (claimed.get('quoteId') and quote.get('quoteId') and
+            str(claimed.get('quoteId')) != str(quote.get('quoteId'))):
+        return jsonify({'ok': False, 'error': 'hotelBookingAttemptId is already bound to another quote'}), 409
     if not created:
         if claimed.get('status') == 'succeeded':
             reused_result = claimed.get('providerResult') or {
@@ -706,9 +723,13 @@ def hotel_prebook():
                 reused_result['prebookId'] = claimed.get('prebookId')
             snapshot = claimed.get('acceptedPrebookSnapshot')
             if not snapshot:
+                historical_now = _parse_iso(
+                    claimed.get('acceptedAt') or claimed.get('updatedAt') or claimed.get('createdAt')
+                )
                 snapshot = _accepted_prebook_snapshot(
                     claimed, claimed.get('validatedOffer') or reused_result,
                     claimed.get('source', 'local'),
+                    now=historical_now,
                 )
                 updateRecord('hotel_prebook_attempts', document_id, {
                     'acceptedPrebookSnapshot': snapshot,
@@ -728,10 +749,12 @@ def hotel_prebook():
                 snapshot = claimed.get('acceptedPrebookSnapshot') or _accepted_prebook_snapshot(
                     claimed, claimed.get('validatedOffer') or {},
                     claimed.get('source', 'liteapi'),
+                    now=datetime.now(timezone.utc),
                 )
                 promoted = updateRecord('hotel_prebook_attempts', document_id, {
                     'status': 'succeeded', 'stage': 'prebooked',
                     'acceptedQuoteVersion': accepted, 'updatedAt': utc_now_iso(),
+                    'acceptedAt': snapshot['acceptedAt'],
                     'acceptedPrebookSnapshot': snapshot,
                 }) or claimed
                 return jsonify({
@@ -813,7 +836,7 @@ def hotel_prebook():
                 'validatedOffer': validated, 'updatedAt': utc_now_iso(),
             })
             return jsonify({'ok': False, 'error': 'The hotel price or currency is unavailable; search again.'}), 422
-        snapshot = _accepted_prebook_snapshot(claimed, validated, source)
+        snapshot = _accepted_prebook_snapshot(claimed, validated, source, now=datetime.now(timezone.utc))
         patch = {
             'status': 'succeeded', 'stage': 'validated_local_demo',
             'validationId': validated['validationId'],
@@ -825,6 +848,7 @@ def hotel_prebook():
             'isSimulated': True,
             'providerMutationCalled': False,
             'demoDisclosure': 'Demo reservation — no room will be reserved.',
+            'acceptedAt': snapshot['acceptedAt'],
             'acceptedPrebookSnapshot': snapshot,
             'updatedAt': utc_now_iso(),
         }
@@ -889,7 +913,7 @@ def hotel_prebook():
             'validatedOffer': validated,
             'quoteVersion': version,
         }), 409
-    snapshot = _accepted_prebook_snapshot(claimed, validated, source)
+    snapshot = _accepted_prebook_snapshot(claimed, validated, source, now=datetime.now(timezone.utc))
     patch = {
         'status': 'succeeded',
         'stage': 'prebooked',
@@ -900,6 +924,7 @@ def hotel_prebook():
         'quoteChanges': changes,
         'source': source,
         'isSimulated': source == 'local',
+        'acceptedAt': snapshot['acceptedAt'],
         'acceptedPrebookSnapshot': snapshot,
         'updatedAt': utc_now_iso(),
     }
