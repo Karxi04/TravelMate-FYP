@@ -11,6 +11,29 @@ import 'hotel_details_screen.dart';
 import 'hotel_trip_attachment.dart';
 import '../fr09_payment/payment_screen.dart';
 
+class RoomOccupancyConfig {
+  int adults;
+  List<int?> childAges;
+
+  RoomOccupancyConfig({
+    this.adults = 2,
+    List<int?>? childAges,
+  }) : childAges = childAges ?? [];
+
+  Map<String, dynamic> toJson() {
+    final ages = childAges.whereType<int>().toList();
+    return {
+      'adults': adults,
+      if (ages.isNotEmpty) 'children': ages,
+    };
+  }
+
+  RoomOccupancyConfig clone() => RoomOccupancyConfig(
+        adults: adults,
+        childAges: List<int?>.from(childAges),
+      );
+}
+
 class HotelScreen extends StatefulWidget {
   final String? initialDestination;
   final String? initialCheckin;
@@ -43,6 +66,7 @@ class _HotelScreenState extends State<HotelScreen> {
   late final TextEditingController children;
   final roomQuantity = TextEditingController(text: '1');
   late final ApiService api;
+  late final List<RoomOccupancyConfig> rooms;
 
   List<dynamic> items = [];
   final Set<String> compareIds = {};
@@ -76,6 +100,54 @@ class _HotelScreenState extends State<HotelScreen> {
     }
   }
 
+  void syncTotals({bool fromAdultsController = false, bool fromChildrenController = false}) {
+    int totalAdults = 0;
+    int totalChildren = 0;
+    for (final r in rooms) {
+      totalAdults += r.adults;
+      totalChildren += r.childAges.length;
+    }
+    if (!fromAdultsController) {
+      adults.text = '$totalAdults';
+    }
+    if (!fromChildrenController) {
+      children.text = '$totalChildren';
+    }
+    roomQuantity.text = '${rooms.length}';
+    setState(() {});
+  }
+
+  void addRoom() {
+    rooms.add(RoomOccupancyConfig(adults: 2, childAges: []));
+    syncTotals();
+  }
+
+  void removeRoom(int index) {
+    if (rooms.length > 1 && index < rooms.length) {
+      rooms.removeAt(index);
+      syncTotals();
+    }
+  }
+
+  void setRoomAdults(int roomIndex, int count) {
+    if (roomIndex < rooms.length && count >= 1) {
+      rooms[roomIndex].adults = count;
+      syncTotals();
+    }
+  }
+
+  void setRoomChildren(int roomIndex, int count, {bool fromChildrenController = false}) {
+    if (roomIndex < rooms.length && count >= 0) {
+      final currentList = rooms[roomIndex].childAges;
+      if (count > currentList.length) {
+        currentList.addAll(List.generate(count - currentList.length, (_) => null));
+      } else if (count < currentList.length) {
+        rooms[roomIndex].childAges = currentList.sublist(0, count);
+      }
+      syncTotals(fromChildrenController: fromChildrenController);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -98,6 +170,18 @@ class _HotelScreenState extends State<HotelScreen> {
             ? ''
             : '${widget.initialAdults ?? 2}');
     children = TextEditingController(text: '${widget.initialChildren ?? 0}');
+
+    final initialAdultCount =
+        widget.requiresGuestConfirmation && widget.initialAdults == null
+            ? 2
+            : (widget.initialAdults ?? 2);
+    final initialChildCount = widget.initialChildren ?? 0;
+    rooms = [
+      RoomOccupancyConfig(
+        adults: initialAdultCount,
+        childAges: List.generate(initialChildCount, (_) => null),
+      ),
+    ];
   }
 
   @override
@@ -136,7 +220,7 @@ class _HotelScreenState extends State<HotelScreen> {
     }
     final adultCount = int.tryParse(adults.text.trim()) ?? 0;
     final childCount = int.tryParse(children.text.trim()) ?? -1;
-    final roomCount = int.tryParse(roomQuantity.text.trim()) ?? 0;
+    final roomCount = rooms.length;
     if (adultCount <= 0) {
       showError(context, 'Adults must be at least 1.');
       return;
@@ -149,11 +233,31 @@ class _HotelScreenState extends State<HotelScreen> {
       showError(context, 'Rooms must be at least 1.');
       return;
     }
-    if (childCount > 0 && roomCount != 1) {
-      showError(context,
-          'Choose one room or confirm room-by-room guest ages before searching.');
+
+    int sumAdults = 0;
+    int sumChildren = 0;
+    for (int i = 0; i < rooms.length; i++) {
+      final r = rooms[i];
+      if (r.adults < 1) {
+        showError(context, 'Room ${i + 1} must have at least 1 adult.');
+        return;
+      }
+      sumAdults += r.adults;
+      sumChildren += r.childAges.length;
+      for (int k = 0; k < r.childAges.length; k++) {
+        final age = r.childAges[k];
+        if (age == null || age < 0 || age > 17) {
+          showError(context,
+              'Please specify an age for Child ${k + 1} in Room ${i + 1} (0–17 years).');
+          return;
+        }
+      }
+    }
+    if (sumAdults != adultCount || sumChildren != childCount) {
+      showError(context, 'Total guests must match room allocations.');
       return;
     }
+
     setState(() {
       busy = true;
       compareIds.clear();
@@ -167,10 +271,7 @@ class _HotelScreenState extends State<HotelScreen> {
         'adults': adultCount,
         'children': childCount,
         'roomQuantity': roomCount,
-        if (roomCount == 1)
-          'occupancies': [
-            {'adults': adultCount, if (childCount > 0) 'children': childCount}
-          ],
+        'occupancies': rooms.map((r) => r.toJson()).toList(),
         'currency': 'MYR',
         'guestNationality': 'MY',
         'refundable': refundableOnly,
@@ -270,28 +371,79 @@ class _HotelScreenState extends State<HotelScreen> {
         data = Map<String, dynamic>.from(
             await api.post('/api/fr8/hotels/prebook', request));
       } on ApiException catch (error) {
+        if (error.data['status'] == 'quote_expired') {
+          if (!mounted) return;
+          await showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Quote Expired'),
+              content: const Text(
+                  'This hotel quote has expired. Please refresh search results to view current rates and availability.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel')),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    search();
+                  },
+                  child: const Text('Refresh Search'),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
         if (error.data['status'] != 'reprice_required') rethrow;
         final latest = error.data['validatedOffer'] is Map
             ? Map<String, dynamic>.from(error.data['validatedOffer'] as Map)
             : <String, dynamic>{};
+        final oldPrice = hotel['price'] ?? '-';
+        final newPrice = latest['price'] ?? '-';
+        final curr = latest['currency'] ?? hotel['currency'] ?? 'MYR';
         if (!mounted) rethrow;
         final accepted = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Offer updated'),
-            content: Text(
-                'The validated price or cancellation terms changed to ${latest['currency'] ?? 'MYR'} ${latest['price'] ?? '-'} . Review the latest offer before continuing.'),
+            title: const Text('Price or terms updated'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                      'The provider updated the price or terms for this offer:'),
+                  const SizedBox(height: 8),
+                  Text('Previous rate: $curr $oldPrice',
+                      style: const TextStyle(
+                          decoration: TextDecoration.lineThrough,
+                          color: InkWashColors.mutedInk)),
+                  Text('Updated rate: $curr $newPrice',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                          color: InkWashColors.ink)),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Provider rates and terms may change prior to checkout. Review the updated terms before accepting.',
+                    style: TextStyle(
+                        fontSize: 12, color: InkWashColors.mutedInk),
+                  ),
+                ],
+              ),
+            ),
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(context, false),
                   child: const Text('Cancel')),
               FilledButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Accept latest offer')),
+                  child: const Text('Accept updated price')),
             ],
           ),
         );
-        if (accepted != true) rethrow;
+        if (accepted != true) return;
         request['acceptedQuoteVersion'] = error.data['quoteVersion'];
         data = Map<String, dynamic>.from(
             await api.post('/api/fr8/hotels/prebook', request));
@@ -310,10 +462,18 @@ class _HotelScreenState extends State<HotelScreen> {
         ));
         return;
       }
-      final result = Map<String, dynamic>.from(data['result'] as Map);
-      final validationId =
-          (result['validationId'] ?? result['prebookId'] ?? result['id'] ?? '')
-              .toString();
+      final result = data['result'] is Map
+          ? Map<String, dynamic>.from(data['result'] as Map)
+          : <String, dynamic>{};
+      final acceptedPrebook = data['acceptedPrebook'] is Map
+          ? Map<String, dynamic>.from(data['acceptedPrebook'] as Map)
+          : null;
+      final acceptedPrebookSnapshotId =
+          (acceptedPrebook?['id'] ?? '').toString();
+      final validationId = (result['validationId'] ??
+              result['prebookId'] ??
+              acceptedPrebookSnapshotId)
+          .toString();
       if (validationId.isEmpty) {
         throw Exception(
             'The hotel offer could not be validated. Search again.');
@@ -323,8 +483,21 @@ class _HotelScreenState extends State<HotelScreen> {
       final resultOffer = result['validatedOffer'] is Map
           ? Map<String, dynamic>.from(result['validatedOffer'] as Map)
           : result;
-      await completeBooking({...hotel, ...resultOffer}, validationId,
-          (data['source'] ?? source).toString(), attemptId);
+      final mergedHotel = {...hotel, ...resultOffer};
+      if (acceptedPrebook != null && acceptedPrebook['amount'] != null) {
+        mergedHotel['price'] = acceptedPrebook['amount'];
+        mergedHotel['currency'] =
+            acceptedPrebook['currency'] ?? mergedHotel['currency'];
+      }
+
+      await _showPrebookOutcomeSheet(
+        hotel: mergedHotel,
+        acceptedPrebook: acceptedPrebook,
+        acceptedPrebookSnapshotId: acceptedPrebookSnapshotId,
+        attemptId: attemptId,
+        source: (data['source'] ?? source).toString(),
+        validationId: validationId,
+      );
     } on TimeoutException {
       if (!mounted) return;
       setState(() => lastBooking = {
@@ -342,6 +515,159 @@ class _HotelScreenState extends State<HotelScreen> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  Future<void> _showPrebookOutcomeSheet({
+    required Map<String, dynamic> hotel,
+    required Map<String, dynamic>? acceptedPrebook,
+    required String acceptedPrebookSnapshotId,
+    required String attemptId,
+    required String source,
+    required String validationId,
+  }) async {
+    final cur = (acceptedPrebook?['currency'] ?? hotel['currency'] ?? 'MYR')
+        .toString();
+    final amt = acceptedPrebook?['amount'] ?? hotel['price'] ?? 0;
+    final expAt = acceptedPrebook?['expiresAt']?.toString();
+    String expNotice = '';
+    if (expAt != null && expAt.isNotEmpty) {
+      final dt = DateTime.tryParse(expAt);
+      if (dt != null) {
+        final local = dt.toLocal();
+        expNotice =
+            'Accepted price valid until ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+      }
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Hotel Offer Validated',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Text('${hotel['name']} • ${hotel['roomName']}'),
+              const SizedBox(height: 10),
+              InkCard(
+                color: InkWashColors.cream,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Authoritative total',
+                            style: TextStyle(
+                                color: InkWashColors.mutedInk, fontSize: 13)),
+                        Text('$cur $amt',
+                            style: const TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.w900)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Dates: ${checkin.text} → ${checkout.text} • ${rooms.length} room(s)',
+                      style: const TextStyle(
+                          fontSize: 12, color: InkWashColors.mutedInk),
+                    ),
+                    if (expNotice.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(expNotice,
+                          style: const TextStyle(
+                              fontSize: 11,
+                              color: InkWashColors.blueGrey,
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              InkCard(
+                color: const Color(0xFFEFF6FF),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.shield_outlined,
+                        size: 20, color: InkWashColors.blueGrey),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Stripe Test Mode — No real payment will be charged. This checkout does not confirm a reservation with the hotel.',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: InkWashColors.ink,
+                            height: 1.35),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PaymentScreen(
+                          quoteType: 'hotel',
+                          quoteId: (hotel['quoteId'] ?? '').toString(),
+                          offerId: (hotel['offerId'] ?? '').toString(),
+                          acceptedPrebookSnapshotId: acceptedPrebookSnapshotId,
+                          acceptedPrebook: acceptedPrebook,
+                          initialAmount: (amt is num)
+                              ? amt.toDouble()
+                              : double.tryParse('$amt'),
+                          initialBookingReference: acceptedPrebookSnapshotId,
+                          hotelBookingAttemptId: attemptId,
+                          api: api,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.payment_rounded),
+                  label: const Text('Pay with Card (Stripe Test)'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    completeBooking(hotel, validationId, source, attemptId);
+                  },
+                  icon: const Icon(Icons.science_outlined),
+                  label: const Text('Local Demo Reservation (Offline Sim)'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuoteFreshnessPill(String expiresAtStr) {
+    final dt = DateTime.tryParse(expiresAtStr);
+    if (dt == null) return const SizedBox.shrink();
+    final local = dt.toLocal();
+    final isExpired = DateTime.now().isAfter(local);
+    final timeStr =
+        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    return TravelStatusPill(
+      text: isExpired ? 'Quote expired' : 'Quote valid until $timeStr',
+      icon: isExpired ? Icons.timer_off_outlined : Icons.timer_outlined,
+    );
   }
 
   Future<void> completeBooking(Map<String, dynamic> hotel, String validationId,
@@ -548,36 +874,6 @@ class _HotelScreenState extends State<HotelScreen> {
           content: Text(simulated
               ? 'Demo booking created: $ref'
               : 'Provider booking created: $ref')));
-      final proceed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Proceed to card payment?'),
-          content: Text(
-              '${simulated ? 'Demo booking' : 'Booking'} $ref is ready. Continue to the card-payment process for ${hotel['currency'] ?? 'MYR'} ${hotel['price'] ?? 0}?'),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Later')),
-            FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Continue to payment')),
-          ],
-        ),
-      );
-      if (proceed == true && mounted) {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PaymentScreen(
-              initialBookingReference: ref.toString(),
-              initialAmount: double.tryParse('${hotel['price']}'),
-              quoteType: 'hotel',
-              quoteId: (hotel['quoteId'] ?? '').toString(),
-              offerId: (hotel['offerId'] ?? '').toString(),
-            ),
-          ),
-        );
-      }
     } on TimeoutException {
       try {
         final data = await api.get('/api/fr8/bookings/attempts/$attemptId');
@@ -721,29 +1017,301 @@ class _HotelScreenState extends State<HotelScreen> {
               ),
             ),
           ]),
-          const SizedBox(height: 9),
-          TextField(
-              controller: adults,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Adults')),
-          const SizedBox(height: 9),
-          TextField(
-              controller: children,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Children')),
-          const SizedBox(height: 6),
-          Text(
-              widget.requiresGuestConfirmation
-                  ? 'This Trip only stores a total traveller count. Confirm adults and children before searching.'
-                  : 'Guest ages are not inferred from a Trip total. Confirm adults and children before searching.',
-              style: const TextStyle(color: InkWashColors.mutedInk, fontSize: 12)),
-          const SizedBox(height: 9),
-          TextField(
-              controller: roomQuantity,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                  labelText: 'Rooms',
-                  prefixIcon: Icon(Icons.meeting_room_outlined))),
+          if (rooms.length == 1) ...[
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: adults,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Adults'),
+                  onChanged: (val) {
+                    final a = int.tryParse(val) ?? 1;
+                    rooms[0].adults = a > 0 ? a : 1;
+                    syncTotals(fromAdultsController: true);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: children,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Children'),
+                  onChanged: (val) {
+                    final c = int.tryParse(val) ?? 0;
+                    setRoomChildren(0, c >= 0 ? c : 0,
+                        fromChildrenController: true);
+                  },
+                ),
+              ),
+            ]),
+            const SizedBox(height: 6),
+            Text(
+                widget.requiresGuestConfirmation
+                    ? 'This Trip only stores a total traveller count. Confirm adults and children before searching.'
+                    : 'Guest ages are not inferred from a Trip total. Confirm adults and children before searching.',
+                style: const TextStyle(
+                    color: InkWashColors.mutedInk, fontSize: 12)),
+            if (rooms[0].childAges.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text('Child ages (required for hotel rates):',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: InkWashColors.blueGrey)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: List.generate(rooms[0].childAges.length, (childIdx) {
+                  return SizedBox(
+                    width: 160,
+                    child: DropdownButtonFormField<int>(
+                      isExpanded: true,
+                      initialValue: rooms[0].childAges[childIdx],
+                      decoration: InputDecoration(
+                        labelText: 'Child ${childIdx + 1} age',
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 8),
+                      ),
+                      hint: const Text('Select age *',
+                          overflow: TextOverflow.ellipsis),
+                      items: List.generate(
+                          18,
+                          (age) => DropdownMenuItem(
+                                value: age,
+                                child: Text(age == 0 ? '< 1 yr' : '$age yrs'),
+                              )),
+                      onChanged: (val) {
+                        setState(() {
+                          rooms[0].childAges[childIdx] = val;
+                        });
+                      },
+                    ),
+                  );
+                }),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '1 Room · ${rooms[0].adults} Adult${rooms[0].adults != 1 ? 's' : ''}${rooms[0].childAges.isNotEmpty ? ' · ${rooms[0].childAges.length} Child${rooms[0].childAges.length != 1 ? 'ren' : ''}' : ''}',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, color: InkWashColors.ink),
+                ),
+                TextButton.icon(
+                  onPressed: addRoom,
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Add Room'),
+                ),
+              ],
+            ),
+          ] else ...[
+            InkCard(
+              color: InkWashColors.cream,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${rooms.length} Rooms · ${rooms.fold<int>(0, (sum, r) => sum + r.adults)} Adults${rooms.fold<int>(0, (sum, r) => sum + r.childAges.length) > 0 ? ' · ${rooms.fold<int>(0, (sum, r) => sum + r.childAges.length)} Children' : ''}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 14),
+                  ),
+                  TextButton.icon(
+                    onPressed: addRoom,
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: const Text('Add Room'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (int i = 0; i < rooms.length; i++) ...[
+              InkCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Room ${i + 1}',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w900, fontSize: 16)),
+                        if (rooms.length > 1)
+                          TextButton.icon(
+                            onPressed: () => removeRoom(i),
+                            icon: const Icon(Icons.remove_circle_outline,
+                                size: 18, color: AppColors.error),
+                            label: const Text('Remove Room',
+                                style:
+                                    TextStyle(color: AppColors.error)),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (i == 0) ...[
+                      Row(children: [
+                        Expanded(
+                          child: TextField(
+                            controller: adults,
+                            keyboardType: TextInputType.number,
+                            decoration:
+                                const InputDecoration(labelText: 'Adults'),
+                            onChanged: (val) {
+                              final a = int.tryParse(val) ?? 1;
+                              rooms[0].adults = a > 0 ? a : 1;
+                              syncTotals(fromAdultsController: true);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: children,
+                            keyboardType: TextInputType.number,
+                            decoration:
+                                const InputDecoration(labelText: 'Children'),
+                            onChanged: (val) {
+                              final c = int.tryParse(val) ?? 0;
+                              setRoomChildren(0, c >= 0 ? c : 0,
+                                  fromChildrenController: true);
+                            },
+                          ),
+                        ),
+                      ]),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Adults',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: InkWashColors.mutedInk)),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    IconButton.outlined(
+                                      visualDensity: VisualDensity.compact,
+                                      icon: const Icon(Icons.remove, size: 16),
+                                      onPressed: rooms[i].adults > 1
+                                          ? () => setRoomAdults(
+                                              i, rooms[i].adults - 1)
+                                          : null,
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10),
+                                      child: Text('${rooms[i].adults}',
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 16)),
+                                    ),
+                                    IconButton.outlined(
+                                      visualDensity: VisualDensity.compact,
+                                      icon: const Icon(Icons.add, size: 16),
+                                      onPressed: () => setRoomAdults(
+                                          i, rooms[i].adults + 1),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Children',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: InkWashColors.mutedInk)),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    IconButton.outlined(
+                                      visualDensity: VisualDensity.compact,
+                                      icon: const Icon(Icons.remove, size: 16),
+                                      onPressed: rooms[i].childAges.isNotEmpty
+                                          ? () => setRoomChildren(
+                                              i, rooms[i].childAges.length - 1)
+                                          : null,
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10),
+                                      child: Text(
+                                          '${rooms[i].childAges.length}',
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 16)),
+                                    ),
+                                    IconButton.outlined(
+                                      visualDensity: VisualDensity.compact,
+                                      icon: const Icon(Icons.add, size: 16),
+                                      onPressed: () => setRoomChildren(
+                                          i, rooms[i].childAges.length + 1),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (rooms[i].childAges.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      const Text('Child ages (required for hotel rates):',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: InkWashColors.blueGrey)),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: List.generate(rooms[i].childAges.length,
+                            (childIdx) {
+                          return SizedBox(
+                            width: 160,
+                            child: DropdownButtonFormField<int>(
+                              isExpanded: true,
+                              initialValue: rooms[i].childAges[childIdx],
+                              decoration: InputDecoration(
+                                labelText: 'Child ${childIdx + 1} age',
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8),
+                              ),
+                              hint: const Text('Select age *',
+                                  overflow: TextOverflow.ellipsis),
+                              items: List.generate(
+                                  18,
+                                  (age) => DropdownMenuItem(
+                                        value: age,
+                                        child: Text(
+                                            age == 0 ? '< 1 yr' : '$age yrs'),
+                                      )),
+                              onChanged: (val) {
+                                setState(() {
+                                  rooms[i].childAges[childIdx] = val;
+                                });
+                              },
+                            ),
+                          );
+                        }),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ],
           const SizedBox(height: 9),
           Wrap(spacing: 8, runSpacing: 8, children: [
             FilterChip(
@@ -876,6 +1444,9 @@ class _HotelScreenState extends State<HotelScreen> {
                                   ? 'Refundable'
                                   : 'Non-refundable',
                               icon: Icons.policy_outlined),
+                          if (h['quoteExpiresAt'] != null)
+                            _buildQuoteFreshnessPill(
+                                h['quoteExpiresAt'].toString()),
                         ]),
                         const SizedBox(height: 8),
                         Text((h['roomName'] ?? 'Available room').toString(),
