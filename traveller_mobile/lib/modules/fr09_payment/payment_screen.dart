@@ -11,6 +11,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
+import '../fr08_hotel_booking/hotel_order_details_screen.dart';
 import 'payment_history_screen.dart';
 import 'payment_status.dart';
 
@@ -120,7 +121,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
     if (match == null && !isPackage && widget.quoteType.isNotEmpty) {
       match = list.cast<Map<String, dynamic>?>().firstWhere(
         (item) => item?['quoteType'] == widget.quoteType &&
-            item?['quoteId'] == (widget.quoteType == 'hotel' ? widget.quoteId : widget.searchId),
+            (item?['quoteId'] == (widget.quoteType == 'hotel' ? widget.quoteId : widget.searchId) ||
+             (widget.quoteType == 'hotel' && widget.acceptedPrebookSnapshotId.isNotEmpty &&
+              item?['acceptedPrebookSnapshotId'] == widget.acceptedPrebookSnapshotId)),
         orElse: () => null,
       );
     }
@@ -481,11 +484,25 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   void _navigateToBooking() {
     final tripId = (activeOrder?['fulfilledTripId'] ?? activeOrder?['tripId'] ?? result?['fulfilledTripId'] ?? '').toString();
+    final isHotel = widget.quoteType == 'hotel' || activeOrder?['quoteType'] == 'hotel';
+    final orderId = (activeOrder?['id'] ?? result?['orderId'] ?? '').toString();
+
     if (tripId.isNotEmpty) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => PackageTripDetailsScreen(tripId: tripId, api: api),
+        ),
+      );
+    } else if (isHotel && orderId.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HotelOrderDetailsScreen(
+            orderId: orderId,
+            initialOrder: activeOrder,
+            api: api,
+          ),
         ),
       );
     } else {
@@ -772,7 +789,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             'check_status' => 'Check Payment Status',
             'restart_payment' => 'Restart Payment',
             'view_booking' =>
-                isHotel ? 'View Paid Order' : 'View Confirmed Booking',
+                isHotel ? 'View Order Details' : 'View Confirmed Booking',
             _ => 'Open Stripe test Checkout',
           };
 
@@ -852,6 +869,49 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                   ),
                 ],
+                if (isHotel && (currentAction == 'view_booking' || activeOrder?['status'] == 'paid' || activeOrder?['paymentStatus'] == 'paid')) ...[
+                  const SizedBox(height: 10),
+                  InkCard(
+                    color: InkWashColors.cream,
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            StatusChip(
+                              text: 'Paid — Stripe Test Mode',
+                              tone: AppStatusTone.success,
+                              icon: Icons.check_circle_rounded,
+                            ),
+                            StatusChip(
+                              text: 'Demo Only',
+                              tone: AppStatusTone.neutral,
+                              icon: Icons.science_outlined,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Hotel Reservation Status: No supplier reservation created',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'This is a test payment for demonstration purposes. No real payment was charged, and no room has been reserved with the hotel.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (isHotelMissingSnapshot) ...[
                   const SizedBox(height: 10),
                   InkCard(
@@ -889,14 +949,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         color: InkWashColors.mutedInk,
                       ),
                     ),
-                    Text(
-                      displayAmount != null
-                          ? 'Authoritative quote: MYR ${displayAmount.toStringAsFixed(2)}'
-                          : 'MYR 0.00',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: InkWashColors.ink,
+                    Flexible(
+                      child: Text(
+                        displayAmount != null
+                            ? 'Authoritative quote: MYR ${displayAmount.toStringAsFixed(2)}'
+                            : 'MYR 0.00',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: InkWashColors.ink,
+                        ),
+                        textAlign: TextAlign.end,
                       ),
                     ),
                   ],
@@ -929,6 +992,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 : Icon(buttonIcon),
             label: Text(buttonLabel),
           ),
+          if (isHotel && (currentAction == 'view_booking' || activeOrder?['status'] == 'paid')) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: busy ? null : _navigateToBooking,
+              icon: const Icon(Icons.receipt_long_rounded),
+              label: const Text('View Paid Order'),
+            ),
+          ],
           if (currentAction == 'continue_payment') ...[
             const SizedBox(height: 8),
             OutlinedButton.icon(
