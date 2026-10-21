@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import uuid
@@ -135,16 +136,170 @@ def get_public_image_url(filename: str, host_url: str | None = None) -> str:
     return f"{base_url}/api/public/package-images/{filename}"
 
 
+def save_image_metadata(filename: str, owner_id: str, original_name: str = "") -> dict:
+    """Save trusted server-side metadata for an uploaded image file."""
+    if not is_safe_filename(filename):
+        raise ValueError(f"Invalid image filename: {filename}")
+    from utils import utc_now_iso
+    upload_dir = get_upload_dir()
+    meta_path = upload_dir / f"{filename}.meta.json"
+    meta = {
+        "filename": filename,
+        "ownerId": str(owner_id or "").strip(),
+        "uploadedAt": utc_now_iso(),
+        "originalName": str(original_name or "").strip(),
+    }
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f)
+    return meta
+
+
+def get_image_metadata(filename: str) -> dict | None:
+    """Retrieve trusted server-side metadata for an uploaded image file."""
+    if not is_safe_filename(filename):
+        return None
+    upload_dir = get_upload_dir()
+    meta_path = upload_dir / f"{filename}.meta.json"
+    if not meta_path.is_file():
+        return None
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
 def delete_image_file(filename: str) -> bool:
-    """Safely delete an uploaded image file if it exists."""
+    """Safely delete an uploaded image file and its metadata sidecar if they exist."""
     if not is_safe_filename(filename):
         return False
     upload_dir = get_upload_dir()
     target = upload_dir / filename
+    meta_target = upload_dir / f"{filename}.meta.json"
+    deleted = False
     if target.is_file():
         try:
             target.unlink()
-            return True
+            deleted = True
         except OSError:
+            pass
+    if meta_target.is_file():
+        try:
+            meta_target.unlink()
+        except OSError:
+            pass
+    return deleted
+
+
+def find_image_references(filename: str) -> tuple[list, list]:
+    """
+    Search tourism_packages and promotional_campaigns for references to this filename.
+    Returns (package_refs, campaign_refs).
+    """
+    from sequence_contract.firebase_firestore import retrieveRecord
+
+    def _contains_image(val):
+        if not val:
             return False
-    return False
+        if isinstance(val, str):
+            return filename in val
+        if isinstance(val, (list, tuple, set)):
+            return any(_contains_image(x) for x in val)
+        if isinstance(val, dict):
+            return any(_contains_image(v) for v in val.values())
+        return False
+
+    package_refs = []
+    try:
+        packages = retrieveRecord('tourism_packages') or []
+        for pkg in packages:
+            if not isinstance(pkg, dict):
+                continue
+            if (
+                _contains_image(pkg.get('heroImage'))
+                or _contains_image(pkg.get('imageUrl'))
+                or _contains_image(pkg.get('galleryImages'))
+                or _contains_image(pkg.get('itineraryDays'))
+            ):
+                package_refs.append(pkg)
+    except Exception:
+        pass
+
+    campaign_refs = []
+    try:
+        campaigns = retrieveRecord('promotional_campaigns') or []
+        for camp in campaigns:
+            if not isinstance(camp, dict):
+                continue
+            if (
+                _contains_image(camp.get('bannerImageUrl'))
+                or _contains_image(camp.get('packageImageUrl'))
+            ):
+                campaign_refs.append(camp)
+    except Exception:
+        pass
+
+    return package_refs, campaign_refs
+
+
+def verify_image_deletion_permission(filename: str, current_operator_id: str, is_admin: bool = False) -> tuple[bool, int, str]:
+    """
+    Verify whether the requesting operator or admin is authorized to delete the image.
+    Enforces:
+    - Valid filename (400)
+    - Image exists on disk (404)
+    - Not referenced by another operator's package (403)
+    - Not referenced by an approved/active package (409)
+    - Not referenced by any package of current operator (409)
+    - Not referenced by another operator's campaign (403)
+    - Not referenced by an approved/active campaign (409)
+    - Not referenced by any campaign of current operator (409)
+    - If metadata exists: owner must match requesting operator (403 if mismatch)
+    - If legacy image with no metadata: fails closed for operators (403), allowed for admins
+    Returns (allowed, status_code, error_message).
+    """
+    if not is_safe_filename(filename):
+        return False, 400, "Invalid image filename"
+
+    upload_dir = get_upload_dir()
+    target_path = upload_dir / filename
+    if not target_path.is_file():
+        return False, 404, "Image file not found"
+
+    package_refs, campaign_refs = find_image_references(filename)
+
+    for pkg in package_refs:
+        pkg_owner = pkg.get('operatorId')
+        if pkg_owner and pkg_owner != current_operator_id and not is_admin:
+            return False, 403, "Image is referenced by another operator's package"
+
+    for pkg in package_refs:
+        status = str(pkg.get('approvalStatus') or '').lower()
+        if status in {'approved', 'active'} and not is_admin:
+            return False, 409, "Image is referenced by an active or approved package and cannot be deleted"
+
+    if package_refs and not is_admin:
+        return False, 409, "Image is currently referenced by a tourism package and cannot be deleted"
+
+    for camp in campaign_refs:
+        camp_owner = camp.get('operatorId')
+        if camp_owner and camp_owner != current_operator_id and not is_admin:
+            return False, 403, "Image is referenced by another operator's campaign"
+        review_status = str(camp.get('reviewStatus') or '').lower()
+        camp_status = str(camp.get('campaignStatus') or '').lower()
+        if (review_status == 'approved' or camp_status in {'active', 'approved'}) and not is_admin:
+            return False, 409, "Image is referenced by an active or approved campaign and cannot be deleted"
+
+    if campaign_refs and not is_admin:
+        return False, 409, "Image is currently referenced by a promotional campaign and cannot be deleted"
+
+    meta = get_image_metadata(filename)
+    if not meta:
+        if not is_admin:
+            return False, 403, "Image ownership could not be verified"
+    else:
+        owner_id = meta.get('ownerId')
+        if owner_id and owner_id != current_operator_id and not is_admin:
+            return False, 403, "You do not have permission to delete this image"
+
+    return True, 200, ""
