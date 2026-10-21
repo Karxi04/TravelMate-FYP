@@ -97,6 +97,8 @@ class ApiException implements Exception {
 
   const ApiException(this.message, this.statusCode, this.data);
 
+  String? get code => data['code']?.toString();
+
   @override
   String toString() => message;
 }

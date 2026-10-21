@@ -297,6 +297,7 @@ class StandaloneApiService {
       });
       return {'ok': true, 'items': items};
     }
+    if (path == '/api/fr7/flights/returns') return _flightReturns(payload);
     if (path == '/api/fr7/flights/select') return _selectFlight(payload);
     if (path == '/api/fr8/hotels/search') return _hotelSearch(payload);
     if (path == '/api/fr8/hotels/prebook') return _prebook(payload);
@@ -4232,13 +4233,108 @@ class StandaloneApiService {
       items.sort((a, b) =>
           _num(a['durationMinutes']).compareTo(_num(b['durationMinutes'])));
     }
+    final searchId = 'flight_search_${DateTime.now().millisecondsSinceEpoch}';
+    final now = _now();
+    final expiresAt = DateTime.now().add(const Duration(seconds: 900)).toUtc().toIso8601String();
     return {
       'ok': true,
       'items': items,
       'source': 'sample_fixture',
       'sourceLabel': 'Explicit sample fixture (not a current schedule)',
       'cacheStatus': 'fixture',
+      'freshnessStatus': 'fixture',
+      'planningOnly': true,
+      'retrievedAt': now,
+      'expiresAt': expiresAt,
+      'searchId': searchId,
+      'tripType': query.containsKey('return_date') ? 'round_trip' : 'one_way',
+      'quoteCompleteness': query.containsKey('return_date') ? 'return_selection_pending' : 'complete',
+      'selectionStage': query.containsKey('return_date') ? 'outbound_candidate' : 'complete',
       'transactionMode': 'planning_reference',
+    };
+  }
+
+  Future<dynamic> _flightReturns(Map<String, dynamic> payload) async {
+    final searchId = (payload['searchId'] ?? '').toString();
+    final optionId = (payload['optionId'] ?? '').toString();
+    final now = _now();
+    final expiresAt = DateTime.now().add(const Duration(seconds: 900)).toUtc().toIso8601String();
+    final items = [
+      {
+        'id': 'return_${optionId}_0',
+        'optionId': 'return_${optionId}_0',
+        'airline': 'Malaysia Airlines',
+        'flightNumber': 'MH1145',
+        'departureAirport': 'PEN',
+        'arrivalAirport': 'KUL',
+        'departureTime': '14:20',
+        'arrivalTime': '15:25',
+        'durationMinutes': 65,
+        'stops': 0,
+        'stopText': 'Nonstop',
+        'price': 420.0,
+        'combinedPrice': 420.0,
+        'currency': 'MYR',
+        'currencyStatus': 'known',
+        'priceStatus': 'available',
+        'priceBasis': 'provider_round_trip_ticket_price_requested_adults',
+        'returnSegments': [
+          {
+            'departureAirportCode': 'PEN',
+            'arrivalAirportCode': 'KUL',
+            'departureDate': '2026-11-04',
+            'arrivalDate': '2026-11-04',
+            'departureTime': '14:20',
+            'arrivalTime': '15:25',
+            'airline': 'Malaysia Airlines',
+            'flightNumber': 'MH1145',
+            'durationMinutes': 65,
+          }
+        ],
+      },
+      {
+        'id': 'return_${optionId}_1',
+        'optionId': 'return_${optionId}_1',
+        'airline': 'AirAsia',
+        'flightNumber': 'AK6117',
+        'departureAirport': 'PEN',
+        'arrivalAirport': 'KUL',
+        'departureTime': '18:50',
+        'arrivalTime': '19:55',
+        'durationMinutes': 65,
+        'stops': 0,
+        'stopText': 'Nonstop',
+        'price': 550.0,
+        'combinedPrice': 550.0,
+        'currency': 'MYR',
+        'currencyStatus': 'known',
+        'priceStatus': 'available',
+        'priceBasis': 'provider_round_trip_ticket_price_requested_adults',
+        'returnSegments': [
+          {
+            'departureAirportCode': 'PEN',
+            'arrivalAirportCode': 'KUL',
+            'departureDate': '2026-11-04',
+            'arrivalDate': '2026-11-04',
+            'departureTime': '18:50',
+            'arrivalTime': '19:55',
+            'airline': 'AirAsia',
+            'flightNumber': 'AK6117',
+            'durationMinutes': 65,
+          }
+        ],
+      },
+    ];
+    return {
+      'ok': true,
+      'items': items,
+      'searchId': searchId,
+      'optionId': optionId,
+      'planningOnly': true,
+      'freshnessStatus': 'fixture',
+      'retrievedAt': now,
+      'expiresAt': expiresAt,
+      'quoteCompleteness': 'return_selection_pending',
     };
   }
 
@@ -4250,17 +4346,40 @@ class StandaloneApiService {
     if (_isPackageTrip(trip)) {
       throw Exception('Purchased package trips cannot be modified or recalculated.');
     }
-    trip['selectedFlight'] = flight;
-    trip['flightCost'] = _num(flight['price']);
+    final returnOptionId = payload['returnOptionId']?.toString();
+    final completedId = returnOptionId != null && returnOptionId.isNotEmpty
+        ? 'flight_completed_${payload['optionId']}_$returnOptionId'
+        : (payload['optionId'] ?? flight['optionId'] ?? flight['id'] ?? '').toString();
+
+    final completedFlight = Map<String, dynamic>.from(flight);
+    if (returnOptionId != null && returnOptionId.isNotEmpty) {
+      completedFlight['completedOptionId'] = completedId;
+      completedFlight['roundTripComplete'] = true;
+      completedFlight['tripType'] = 'round_trip';
+      if (returnOptionId.contains('_1')) {
+        completedFlight['price'] = 550.0;
+        completedFlight['combinedPrice'] = 550.0;
+      } else {
+        completedFlight['price'] = 420.0;
+        completedFlight['combinedPrice'] = 420.0;
+      }
+    }
+
+    final price = _num(completedFlight['price'] ?? flight['price']);
+    trip['selectedFlight'] = completedFlight;
+    trip['flightCost'] = price;
     trip['flightCurrency'] =
-        (flight['currency'] ?? 'MYR').toString().toUpperCase();
-    trip['flightPriceBasis'] = flight['priceBasis'] ?? 'sample_itinerary_total';
+        (completedFlight['currency'] ?? 'MYR').toString().toUpperCase();
+    trip['flightPriceBasis'] = completedFlight['priceBasis'] ?? 'sample_itinerary_total';
+    trip['flightSearchId'] = (payload['searchId'] ?? '').toString();
+    trip['flightOptionId'] = completedId;
     trip['flightSelectionStatus'] = 'selected';
     trip['flightSelectionSource'] = 'sample_fixture';
     trip['flightSelectedAt'] = _now();
+    trip['budgetEstimate'] = _calculateBudget(trip);
     trip['updatedAt'] = _now();
     await _replaceTrip(trip);
-    return {'ok': true, 'itinerary': trip, 'budget': _calculateBudget(trip)};
+    return {'ok': true, 'itinerary': trip, 'budget': trip['budgetEstimate'], 'selectedFlight': completedFlight};
   }
 
   Future<dynamic> _removeFlightSelection(String id) async {
@@ -4273,6 +4392,8 @@ class StandaloneApiService {
     trip['flightCost'] = 0;
     trip['flightCurrency'] = null;
     trip['flightPriceBasis'] = null;
+    trip['flightSearchId'] = null;
+    trip['flightOptionId'] = null;
     trip['flightSelectionStatus'] = 'removed';
     trip['flightSelectionRemovedAt'] = _now();
     trip['budgetEstimate'] = _calculateBudget(trip);

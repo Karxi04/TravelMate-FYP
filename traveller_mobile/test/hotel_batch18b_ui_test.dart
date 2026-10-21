@@ -882,7 +882,7 @@ void main() {
     final packageSessionBody = api.postedBodies.last;
     expect(packageSessionBody?['acceptedPrebookSnapshotId'], isNull);
 
-    // Flight checkout
+    // Flight checkout (Batch 18D safe planning: ticketing is unavailable)
     await tester.pumpWidget(_wrap(PaymentScreen(
       key: const ValueKey('flight_checkout_screen'),
       api: api,
@@ -893,16 +893,7 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    final flightCheckoutBtn = find.text('Open Stripe test Checkout');
-    await tester.ensureVisible(flightCheckoutBtn);
-    await tester.tap(flightCheckoutBtn);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    final flightBody = api.postedBodies.lastWhere(
-        (b) => b != null && b['quoteType'] == 'flight')!;
-    expect(flightBody['searchId'], 'search-flight-22');
-    expect(flightBody['optionId'], 'opt-flight-22');
-    expect(flightBody.containsKey('acceptedPrebookSnapshotId'), isFalse);
+    expect(find.text('Ticketing Unavailable'), findsOneWidget);
+    expect(find.text('Flight ticketing unavailable'), findsOneWidget);
   });
 }

@@ -394,6 +394,27 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     final cards = <Widget>[];
     if (t['selectedFlight'] is Map) {
       final flight = Map<String, dynamic>.from(t['selectedFlight'] as Map);
+      final returnSegments = (flight['returnSegments'] as List? ?? [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final bool isRoundTrip = flight['tripType'] == 'round_trip' ||
+          flight['roundTripComplete'] == true ||
+          returnSegments.isNotEmpty ||
+          (flight['returnDate'] ?? '').toString().isNotEmpty;
+
+      String? returnSummary;
+      if (returnSegments.isNotEmpty) {
+        final ret = returnSegments.first;
+        final retDept = ret['departureAirportCode'] ?? ret['departureAirport'] ?? '-';
+        final retArr = ret['arrivalAirportCode'] ?? ret['arrivalAirport'] ?? '-';
+        final retDeptTime = ret['departureTime'] ?? '';
+        final retArrTime = ret['arrivalTime'] ?? '';
+        returnSummary = '$retDept to $retArr • $retDeptTime to $retArrTime'.trim();
+      } else if ((flight['returnDate'] ?? '').toString().isNotEmpty) {
+        returnSummary = 'Return date: ${flight['returnDate']}';
+      }
+
       cards.add(InkCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -405,13 +426,28 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                 '${flight['airline'] ?? 'Flight'} ${flight['flightNumber'] ?? ''}',
                 style: const TextStyle(fontWeight: FontWeight.w700)),
             Text(
-              '${flight['departureAirport'] ?? '-'} to ${flight['arrivalAirport'] ?? '-'} - ${flight['departureTime'] ?? '-'} to ${flight['arrivalTime'] ?? '-'}',
+              'Outbound: ${flight['departureAirport'] ?? '-'} to ${flight['arrivalAirport'] ?? '-'} • ${flight['departureTime'] ?? '-'} to ${flight['arrivalTime'] ?? '-'}',
               style:
                   const TextStyle(fontSize: 12, color: InkWashColors.mutedInk),
             ),
-            if (t['flightCost'] != null)
-              Text('Flight cost: RM ${t['flightCost']}',
-                  style: const TextStyle(fontWeight: FontWeight.w800)),
+            if (isRoundTrip && returnSummary != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                'Return: $returnSummary',
+                style: const TextStyle(fontSize: 12, color: InkWashColors.mutedInk),
+              ),
+            ],
+            const SizedBox(height: 4),
+            Text('Flight cost: RM ${t['flightCost'] ?? flight['price'] ?? 0}',
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 2),
+            const Text(
+              'Planning estimate only • No airline ticket issued',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: InkWashColors.mutedInk,
+                  fontStyle: FontStyle.italic),
+            ),
             const SizedBox(height: 8),
             Wrap(spacing: 8, children: [
               OutlinedButton.icon(
@@ -1721,39 +1757,48 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           onPressed: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => PaymentScreen(
-                initialBookingReference:
-                    (selectedHotel['bookingReference'] ?? '').toString(),
-                initialAmount: selectedHotel['price'] is num
-                    ? (selectedHotel['price'] as num).toDouble()
-                    : selectedFlight['price'] is num
-                        ? (selectedFlight['price'] as num).toDouble()
-                        : null,
-                quoteType:
-                    (selectedHotel['quoteId'] ?? '').toString().isNotEmpty
-                        ? 'hotel'
-                        : (selectedFlight['flightSearchId'] ?? '')
-                                .toString()
-                                .isNotEmpty
-                            ? 'flight'
-                            : '',
-                quoteId: (selectedHotel['quoteId'] ?? '').toString(),
-                offerId: (selectedHotel['offerId'] ?? '').toString(),
-                acceptedPrebookSnapshotId:
-                    (selectedHotel['acceptedPrebookSnapshotId'] ??
-                            selectedHotel['snapshotId'] ??
-                            '')
-                        .toString(),
-                acceptedPrebook: selectedHotel['acceptedPrebook'] is Map
-                    ? Map<String, dynamic>.from(
-                        selectedHotel['acceptedPrebook'] as Map)
-                    : null,
-                searchId: (selectedFlight['flightSearchId'] ?? '').toString(),
-                optionId: (selectedFlight['flightOptionId'] ??
-                        selectedFlight['optionId'] ??
+              builder: (_) {
+                final flightSearchId = (t['flightSearchId'] ??
+                        selectedFlight['flightSearchId'] ??
                         '')
-                    .toString(),
-              ),
+                    .toString();
+                final flightOptionId = (t['flightOptionId'] ??
+                        selectedFlight['flightOptionId'] ??
+                        selectedFlight['optionId'] ??
+                        selectedFlight['id'] ??
+                        '')
+                    .toString();
+                return PaymentScreen(
+                  initialBookingReference:
+                      (selectedHotel['bookingReference'] ?? '').toString(),
+                  initialAmount: selectedHotel['price'] is num
+                      ? (selectedHotel['price'] as num).toDouble()
+                      : t['flightCost'] is num
+                          ? (t['flightCost'] as num).toDouble()
+                          : selectedFlight['price'] is num
+                              ? (selectedFlight['price'] as num).toDouble()
+                              : null,
+                  quoteType:
+                      (selectedHotel['quoteId'] ?? '').toString().isNotEmpty
+                          ? 'hotel'
+                          : flightSearchId.isNotEmpty
+                              ? 'flight'
+                              : '',
+                  quoteId: (selectedHotel['quoteId'] ?? '').toString(),
+                  offerId: (selectedHotel['offerId'] ?? '').toString(),
+                  acceptedPrebookSnapshotId:
+                      (selectedHotel['acceptedPrebookSnapshotId'] ??
+                              selectedHotel['snapshotId'] ??
+                              '')
+                          .toString(),
+                  acceptedPrebook: selectedHotel['acceptedPrebook'] is Map
+                      ? Map<String, dynamic>.from(
+                          selectedHotel['acceptedPrebook'] as Map)
+                      : null,
+                  searchId: flightSearchId,
+                  optionId: flightOptionId,
+                );
+              },
             ),
           ),
         ),

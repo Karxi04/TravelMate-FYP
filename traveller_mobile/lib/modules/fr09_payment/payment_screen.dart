@@ -207,6 +207,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
       return;
     }
 
+    if (widget.quoteType == 'flight') {
+      showError(context,
+          'TravelMate can save this fare as a planning estimate, but cannot issue or reserve an airline ticket.');
+      return;
+    }
+
     if (widget.quoteType == 'hotel') {
       if (widget.acceptedPrebookSnapshotId.isEmpty) {
         showError(context,
@@ -306,6 +312,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
           throw Exception('Stripe Checkout could not be opened.');
         }
       }
+    } on ApiException catch (e) {
+      if (mounted) {
+        if (e.code == 'flight_ticketing_unavailable') {
+          showError(context,
+              'TravelMate can save this fare as a planning estimate, but cannot issue or reserve an airline ticket.');
+        } else {
+          showError(context, e.message.isNotEmpty ? e.message : e.toString());
+        }
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -358,6 +373,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
           _ => 'Payment status is still being verified. No additional payment was opened.',
         };
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        if (e.code == 'flight_ticketing_unavailable') {
+          showError(context,
+              'TravelMate can save this fare as a planning estimate, but cannot issue or reserve an airline ticket.');
+        } else {
+          showError(context, e.message.isNotEmpty ? e.message : e.toString());
+        }
       }
     } catch (e) {
       if (mounted) showError(context, e);
@@ -472,6 +496,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ? 'Payment is verified.'
                 : 'New payment session created. Return here to check status.'),
           ));
+        }
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        if (e.code == 'flight_ticketing_unavailable') {
+          showError(context,
+              'TravelMate can save this fare as a planning estimate, but cannot issue or reserve an airline ticket.');
+        } else {
+          showError(context, e.message.isNotEmpty ? e.message : e.toString());
         }
       }
     } catch (e) {
@@ -675,6 +708,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
             : (data['message'] ?? 'Payment cancelled in TravelMate.')
                 .toString()),
       ));
+    } on ApiException catch (e) {
+      if (mounted) {
+        if (e.code == 'flight_ticketing_unavailable') {
+          showError(context,
+              'TravelMate can save this fare as a planning estimate, but cannot issue or reserve an airline ticket.');
+        } else {
+          showError(context, e.message.isNotEmpty ? e.message : e.toString());
+        }
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -744,13 +786,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
         : widget.initialAmount;
 
     final currentAction = checkoutAction;
+    final bool isFlight = widget.quoteType == 'flight';
+    final bool isPaid = activeOrder?['status'] == 'paid' ||
+        activeOrder?['paymentStatus'] == 'paid' ||
+        result?['paymentStatus'] == 'paid' ||
+        currentAction == 'view_booking';
     final bool isHotelMissingSnapshot =
         isHotel && widget.acceptedPrebookSnapshotId.isEmpty && activeOrder == null;
     final (statusLabel, statusTone, statusIcon) = switch (currentAction) {
       'view_booking' => (
           isHotel
               ? 'Payment Verified (Stripe Test)'
-              : 'Payment Verified · Booking Confirmed',
+              : isFlight
+                  ? 'Payment Verified (Historical)'
+                  : 'Payment Verified · Booking Confirmed',
           AppStatusTone.success,
           Icons.check_circle_rounded
         ),
@@ -775,11 +824,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
               AppStatusTone.warning,
               Icons.warning_amber_rounded,
             )
-          : (
-              'Ready for Checkout',
-              AppStatusTone.neutral,
-              Icons.shopping_bag_outlined,
-            ),
+          : (isFlight && !isPaid)
+              ? (
+                  'Ticketing Unavailable',
+                  AppStatusTone.neutral,
+                  Icons.info_outline_rounded,
+                )
+              : (
+                  'Ready for Checkout',
+                  AppStatusTone.neutral,
+                  Icons.shopping_bag_outlined,
+                ),
     };
 
     final buttonLabel = busy
@@ -790,7 +845,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
             'restart_payment' => 'Restart Payment',
             'view_booking' =>
                 isHotel ? 'View Order Details' : 'View Confirmed Booking',
-            _ => 'Open Stripe test Checkout',
+            _ => (isFlight && !isPaid)
+                ? 'Flight ticketing unavailable'
+                : 'Open Stripe test Checkout',
           };
 
     final buttonIcon = busy
@@ -800,7 +857,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
             'check_status' => Icons.refresh_rounded,
             'restart_payment' => Icons.replay_rounded,
             'view_booking' => Icons.check_circle_outline_rounded,
-            _ => Icons.open_in_new_rounded,
+            _ => (isFlight && !isPaid)
+                ? Icons.info_outline_rounded
+                : Icons.open_in_new_rounded,
           };
 
     return Scaffold(
@@ -823,13 +882,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        productTitle.isNotEmpty
-                            ? (isPackage
-                                ? 'Tourism Package'
-                                : (widget.quoteType == 'hotel'
-                                    ? 'Hotel Booking'
-                                    : 'Booking Checkout'))
-                            : 'Order Checkout',
+                        isPackage
+                            ? 'Tourism Package'
+                            : (widget.quoteType == 'hotel'
+                                ? 'Hotel Booking'
+                                : (widget.quoteType == 'flight'
+                                    ? 'Flight Planning'
+                                    : 'Order Checkout')),
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -936,6 +995,43 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                   ),
                 ],
+                if (isFlight && !isPaid) ...[
+                  const SizedBox(height: 10),
+                  InkCard(
+                    color: InkWashColors.cream,
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline_rounded,
+                            size: 18, color: InkWashColors.blueGrey),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Flight ticketing is unavailable.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: InkWashColors.ink,
+                                ),
+                              ),
+                              SizedBox(height: 3),
+                              Text(
+                                'TravelMate supports flight planning estimates, but airline ticketing and seat reservations cannot be purchased. You can save this flight to your travel plan.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: InkWashColors.mutedInk,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 const Divider(height: 1),
                 const SizedBox(height: 10),
@@ -979,7 +1075,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: busy ? null : launchCheckout,
+            onPressed: (busy || (isFlight && !isPaid)) ? null : launchCheckout,
             icon: busy
                 ? const SizedBox(
                     width: 18,
@@ -992,6 +1088,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 : Icon(buttonIcon),
             label: Text(buttonLabel),
           ),
+          if (isFlight && !isPaid) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.arrow_back_rounded),
+              label: const Text('Back to Trip Planning'),
+            ),
+          ],
           if (isHotel && (currentAction == 'view_booking' || activeOrder?['status'] == 'paid')) ...[
             const SizedBox(height: 8),
             OutlinedButton.icon(

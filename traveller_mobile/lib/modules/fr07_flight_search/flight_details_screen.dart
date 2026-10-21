@@ -14,8 +14,22 @@ class FlightDetailsScreen extends StatelessWidget {
     required this.onSelect,
   });
 
+  static String? formatCabinClass(dynamic val) {
+    if (val == null) return null;
+    if (val == 1 || val == '1' || val == 'Economy') return 'Economy';
+    if (val == 2 || val == '2' || val == 'Premium' || val == 'Premium Economy') {
+      return 'Premium Economy';
+    }
+    if (val == 3 || val == '3' || val == 'Business') return 'Business';
+    if (val == 4 || val == '4' || val == 'First' || val == 'First Class') {
+      return 'First Class';
+    }
+    if (val is String && val.trim().isNotEmpty) return val.trim();
+    return null;
+  }
+
   Widget detailRow(String label, dynamic value, {IconData? icon}) {
-    final text = (value ?? '').toString();
+    final text = (value ?? '').toString().trim();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -39,11 +53,13 @@ class FlightDetailsScreen extends StatelessWidget {
 
   Widget segmentCard(Map<String, dynamic> segment, int index) {
     final departure =
-        '${segment['departureAirportCode'] ?? '-'} ${segment['departureTime'] ?? ''}'
+        '${segment['departureAirportCode'] ?? segment['departureAirport'] ?? '-'} ${segment['departureTime'] ?? ''}'
             .trim();
     final arrival =
-        '${segment['arrivalAirportCode'] ?? '-'} ${segment['arrivalTime'] ?? ''}'
+        '${segment['arrivalAirportCode'] ?? segment['arrivalAirport'] ?? '-'} ${segment['arrivalTime'] ?? ''}'
             .trim();
+    final aircraft = segment['aircraft'] ?? segment['airplane'];
+    final cabin = formatCabinClass(segment['travelClass'] ?? segment['cabinClass']);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: InkCard(
@@ -58,6 +74,8 @@ class FlightDetailsScreen extends StatelessWidget {
           if ((segment['departureDate'] ?? '').toString().isNotEmpty)
             detailRow('Local dates',
                 '${segment['departureDate']} → ${segment['arrivalDate'] ?? ''}'),
+          if (aircraft != null) detailRow('Aircraft', aircraft),
+          if (cabin != null) detailRow('Cabin', cabin),
           detailRow(
               'Duration',
               segment['durationMinutes'] == null
@@ -71,6 +89,8 @@ class FlightDetailsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final duration = '${flight['durationMinutes'] ?? '-'} min';
+    final bool isPendingReturn =
+        flight['quoteCompleteness'] == 'return_selection_pending';
     return Scaffold(
       appBar: AppBar(title: const Text('Flight details')),
       bottomNavigationBar: SafeArea(
@@ -86,11 +106,13 @@ class FlightDetailsScreen extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Total fare',
-                        style: TextStyle(
-                            color: InkWashColors.mutedInk, fontSize: 12)),
                     Text(
-                        '${flight['currency'] ?? 'Unknown currency'} ${flight['price'] ?? '-'}',
+                      isPendingReturn ? 'Outbound fare estimate' : 'Total fare',
+                      style: const TextStyle(
+                          color: InkWashColors.mutedInk, fontSize: 12),
+                    ),
+                    Text(
+                        '${flight['currency'] ?? 'MYR'} ${flight['price'] ?? '-'}',
                         style: const TextStyle(
                             fontSize: 21, fontWeight: FontWeight.w900)),
                   ],
@@ -98,8 +120,12 @@ class FlightDetailsScreen extends StatelessWidget {
               ),
               FilledButton.icon(
                   onPressed: onSelect,
-                  icon: const Icon(Icons.add_road_rounded),
-                  label: const Text('Select flight')),
+                  icon: Icon(isPendingReturn
+                      ? Icons.sync_alt_rounded
+                      : Icons.add_road_rounded),
+                  label: Text(isPendingReturn
+                      ? 'Choose return flight'
+                      : 'Select flight')),
             ],
           ),
         ),
@@ -155,6 +181,36 @@ class FlightDetailsScreen extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 14),
+          InkCard(
+            color: InkWashColors.cream,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.info_outline_rounded,
+                    color: InkWashColors.blueGrey, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'Flight planning estimate — provider caching may apply.',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 13),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        'Price and availability are not guaranteed. TravelMate supports flight planning estimates, but cannot issue airline tickets or reserve seats.',
+                        style: TextStyle(
+                            fontSize: 12, color: InkWashColors.mutedInk),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 18),
           const TravelSectionHeader(title: 'Flight information'),
           const SizedBox(height: 8),
@@ -166,9 +222,13 @@ class FlightDetailsScreen extends StatelessWidget {
                 if ((flight['returnDate'] ?? '').toString().isNotEmpty)
                   detailRow('Return date', flight['returnDate'],
                       icon: Icons.event_repeat_outlined),
-                detailRow('Cabin class', flight['cabinClass'] ?? 'Economy',
+                detailRow(
+                    'Cabin class',
+                    formatCabinClass(flight['cabinClass'] ??
+                        flight['requestedTravelClass'] ??
+                        flight['travelClass']),
                     icon: Icons.airline_seat_recline_normal_rounded),
-                detailRow('Aircraft', flight['aircraft'],
+                detailRow('Aircraft', flight['aircraft'] ?? flight['airplane'],
                     icon: Icons.flight_rounded),
                 detailRow('Departure terminal', flight['departureTerminal'],
                     icon: Icons.airport_shuttle_outlined),
@@ -186,7 +246,7 @@ class FlightDetailsScreen extends StatelessWidget {
             ),
           detailRow('Travellers', flight['travellerCount'],
               icon: Icons.people_outline_rounded),
-          if (flight['quoteCompleteness'] == 'return_selection_pending')
+          if (isPendingReturn)
             const Padding(
               padding: EdgeInsets.only(top: 8),
               child: Text(
