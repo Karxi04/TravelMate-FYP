@@ -390,6 +390,53 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     return 'There wasn’t enough time to fit this place safely.';
   }
 
+  bool _hasFlightDateMismatch(
+      Map<String, dynamic> t, Map<String, dynamic> flight) {
+    final tripStartStr = (t['startDate'] ?? '').toString();
+    final tripEndStr = (t['endDate'] ?? '').toString();
+    if (tripStartStr.length < 10 || tripEndStr.length < 10) return false;
+    final tripStart = DateTime.tryParse(tripStartStr.substring(0, 10));
+    final tripEnd = DateTime.tryParse(tripEndStr.substring(0, 10));
+    if (tripStart == null || tripEnd == null || tripEnd.isBefore(tripStart)) {
+      return false;
+    }
+
+    final dates = <DateTime>[];
+    void addDate(dynamic raw) {
+      if (raw == null) return;
+      final str = raw.toString();
+      if (str.length >= 10) {
+        final d = DateTime.tryParse(str.substring(0, 10));
+        if (d != null) dates.add(d);
+      }
+    }
+
+    for (final segList in [
+      flight['outboundSegments'],
+      flight['returnSegments']
+    ]) {
+      if (segList is List) {
+        for (final seg in segList) {
+          if (seg is Map) {
+            addDate(seg['departureDate']);
+            addDate(seg['arrivalDate']);
+          }
+        }
+      }
+    }
+
+    if (dates.isEmpty) {
+      addDate(flight['outboundDate']);
+      addDate(flight['returnDate']);
+      addDate(flight['departureDate']);
+      addDate(flight['arrivalDate']);
+    }
+
+    if (dates.isEmpty) return false;
+
+    return dates.any((d) => d.isBefore(tripStart) || d.isAfter(tripEnd));
+  }
+
   List<Widget> _attachedTravelCards(Map<String, dynamic> t) {
     final cards = <Widget>[];
     if (t['selectedFlight'] is Map) {
@@ -415,6 +462,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         returnSummary = 'Return date: ${flight['returnDate']}';
       }
 
+      final bool hasDateMismatch = _hasFlightDateMismatch(t, flight);
+
       cards.add(InkCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -422,6 +471,37 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             const Text('Attached flight',
                 style: TextStyle(fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
+            if (hasDateMismatch) ...[
+              Container(
+                key: const ValueKey('flight-date-mismatch-warning'),
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.warningSoft,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.warning.withValues(alpha: 0.35)),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        size: 18, color: AppColors.warning),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "Flight dates do not match this Trip's dates. Review your travel plan before relying on this itinerary.",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.warning,
+                          fontWeight: FontWeight.w600,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             Text(
                 '${flight['airline'] ?? 'Flight'} ${flight['flightNumber'] ?? ''}',
                 style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -1548,6 +1628,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   String _costKind(Map<String, dynamic> provenance, String key) {
     final value = (provenance[key] ?? '').toString();
+    if (key == 'flight') {
+      return value.startsWith('confirmed') || value == 'provided'
+          ? 'planning estimate'
+          : 'estimated';
+    }
     return value.startsWith('confirmed') || value == 'provided'
         ? 'confirmed'
         : 'estimated';

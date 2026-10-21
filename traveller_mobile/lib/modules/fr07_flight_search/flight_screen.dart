@@ -476,6 +476,129 @@ class _FlightScreenState extends State<FlightScreen> {
     }
   }
 
+  Future<bool?> _showHardDateConflictDialog(
+    BuildContext context, {
+    required String code,
+    required String message,
+    Map<String, dynamic>? tripDates,
+    List<dynamic>? flightDates,
+    List<dynamic>? conflicts,
+  }) async {
+    String tripRangeText = '';
+    if (tripDates != null) {
+      final start = (tripDates['startDate'] ?? '').toString();
+      final end = (tripDates['endDate'] ?? '').toString();
+      if (start.isNotEmpty && end.isNotEmpty) {
+        tripRangeText = '$start to $end';
+      } else if (start.isNotEmpty) {
+        tripRangeText = start;
+      }
+    }
+
+    String flightDatesText = '';
+    if (flightDates != null && flightDates.isNotEmpty) {
+      flightDatesText = flightDates.map((d) => d.toString()).toSet().join(', ');
+    }
+
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const ValueKey('flight-date-conflict-dialog'),
+        title: const Row(
+          children: [
+            Icon(Icons.calendar_today_outlined, color: AppColors.error),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Flight Dates Mismatch',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'These flights fall outside your selected Trip dates. Choose a Trip with matching dates or update your Trip before adding the flights.',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            if (tripRangeText.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                margin: const EdgeInsets.only(bottom: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Trip Dates',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textSecondary)),
+                    Text(tripRangeText,
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ],
+            if (flightDatesText.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.warningSoft,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Flight Dates',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.warning)),
+                    Text(flightDatesText,
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary)),
+                  ],
+                ),
+              ),
+            ],
+            if (code == 'invalid_trip_dates' || code == 'invalid_flight_dates') ...[
+              const SizedBox(height: 8),
+              Text(
+                message,
+                style: const TextStyle(fontSize: 12, color: AppColors.error),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('back-to-flight-results-button'),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Back to Flight Results'),
+          ),
+          FilledButton(
+            key: const ValueKey('choose-another-trip-button'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Choose Another Trip'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> selectFlight(Map<String, dynamic> flight,
       {Map<String, dynamic>? returnOption}) async {
     if (isQuoteExpired()) {
@@ -524,13 +647,45 @@ class _FlightScreenState extends State<FlightScreen> {
             ? Map<String, dynamic>.from(newTrip['itinerary'] as Map)
             : <String, dynamic>{};
         if ((created['id'] ?? '').toString().isNotEmpty) {
-          await api.post('/api/fr7/flights/select', {
-            'itineraryId': created['id'],
-            'searchId': searchId,
-            'optionId': idOf(flight),
-            if (returnOption != null) 'returnOptionId': idOf(returnOption),
-            'flight': flight,
-          });
+          try {
+            await api.post('/api/fr7/flights/select', {
+              'itineraryId': created['id'],
+              'searchId': searchId,
+              'optionId': idOf(flight),
+              if (returnOption != null) 'returnOptionId': idOf(returnOption),
+              'flight': flight,
+            });
+          } on ApiException catch (error) {
+            if (error.code == 'flight_quote_expired') {
+              if (mounted) {
+                showError(context,
+                    'This flight quote has expired. Please search again.');
+              }
+              return;
+            }
+            if (error.data['status'] == 'hard_conflict' ||
+                error.code == 'flight_trip_date_mismatch' ||
+                error.code == 'invalid_trip_dates' ||
+                error.code == 'invalid_flight_dates') {
+              if (!mounted) return;
+              await _showHardDateConflictDialog(
+                context,
+                code: error.code ?? '',
+                message: error.message,
+                tripDates: error.data['tripDates'] is Map
+                    ? Map<String, dynamic>.from(error.data['tripDates'] as Map)
+                    : null,
+                flightDates: error.data['flightDates'] is List
+                    ? (error.data['flightDates'] as List)
+                    : null,
+                conflicts: error.data['conflicts'] is List
+                    ? (error.data['conflicts'] as List)
+                    : null,
+              );
+              return;
+            }
+            rethrow;
+          }
         }
         if (mounted) {
           final tripTitle = newTrip['itinerary']?['title'] ?? 'New trip';
@@ -542,94 +697,127 @@ class _FlightScreenState extends State<FlightScreen> {
         }
         return;
       }
-      final selected = await showModalBottomSheet<Map<String, dynamic>>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
-            children: [
-              const Text('Attach flight to itinerary',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 8),
-              ...trips.map((raw) {
-                final trip = Map<String, dynamic>.from(raw as Map);
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(
-                      backgroundColor: InkWashColors.cream,
-                      child: Icon(Icons.luggage_outlined,
-                          color: InkWashColors.blueGrey)),
-                  title: Text((trip['title'] ?? 'Trip').toString()),
-                  subtitle: Text('Budget RM ${trip['budgetLimit'] ?? 0}'),
-                  onTap: () => Navigator.pop(context, trip),
-                );
-              }),
-            ],
-          ),
-        ),
-      );
-      if (selected == null) return;
-      final request = <String, dynamic>{
-        'itineraryId': selected['id'],
-        'searchId': searchId,
-        'optionId': idOf(flight),
-        if (returnOption != null) 'returnOptionId': idOf(returnOption),
-        'flight': flight,
-      };
-      Map<String, dynamic> result;
-      try {
-        result = await api.post('/api/fr7/flights/select', request);
-      } on ApiException catch (error) {
-        if (error.code == 'flight_quote_expired') {
-          if (mounted) {
-            showError(
-                context, 'This flight quote has expired. Please search again.');
-          }
-          return;
-        }
-        if (error.data['status'] != 'conflicts_require_acknowledgement') {
-          rethrow;
-        }
-        final conflicts = (error.data['conflicts'] as List? ?? const [])
-            .whereType<Map>()
-            .map((item) => item['message']?.toString())
-            .whereType<String>()
-            .toList();
-        if (!mounted) return;
-        final acknowledge = await showDialog<bool>(
+      while (true) {
+        final selected = await showModalBottomSheet<Map<String, dynamic>>(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Review itinerary timing'),
-            content: Text(conflicts.isEmpty
-                ? 'This flight may overlap your saved itinerary activities.'
-                : '${conflicts.join('\n\n')}\n\nYou can keep the flight and review these activities afterwards.'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Choose another flight')),
-              FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Keep flight')),
-            ],
+          showDragHandle: true,
+          builder: (context) => SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+              children: [
+                const Text('Attach flight to itinerary',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                ...trips.map((raw) {
+                  final trip = Map<String, dynamic>.from(raw as Map);
+                  final dates = [trip['startDate'], trip['endDate']]
+                      .where((d) => d != null && d.toString().isNotEmpty)
+                      .join(' to ');
+                  final subtitleText = dates.isNotEmpty
+                      ? '$dates • Budget RM ${trip['budgetLimit'] ?? 0}'
+                      : 'Budget RM ${trip['budgetLimit'] ?? 0}';
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                        backgroundColor: InkWashColors.cream,
+                        child: Icon(Icons.luggage_outlined,
+                            color: InkWashColors.blueGrey)),
+                    title: Text((trip['title'] ?? 'Trip').toString()),
+                    subtitle: Text(subtitleText),
+                    onTap: () => Navigator.pop(context, trip),
+                  );
+                }),
+              ],
+            ),
           ),
         );
-        if (acknowledge != true) return;
-        result = await api.post('/api/fr7/flights/select', {
-          ...request,
-          'acknowledgeConflicts': true,
-        });
-      }
-      if (mounted) {
-        final budget = result['budget'] is Map
-            ? Map<String, dynamic>.from(result['budget'] as Map)
-            : <String, dynamic>{};
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  'Flight attached to trip plan! Estimated trip total: RM ${budget['total'] ?? '-'}')),
-        );
+        if (selected == null) return;
+        final request = <String, dynamic>{
+          'itineraryId': selected['id'],
+          'searchId': searchId,
+          'optionId': idOf(flight),
+          if (returnOption != null) 'returnOptionId': idOf(returnOption),
+          'flight': flight,
+        };
+        Map<String, dynamic> result;
+        try {
+          result = await api.post('/api/fr7/flights/select', request);
+        } on ApiException catch (error) {
+          if (error.code == 'flight_quote_expired') {
+            if (mounted) {
+              showError(
+                  context, 'This flight quote has expired. Please search again.');
+            }
+            return;
+          }
+          if (error.data['status'] == 'hard_conflict' ||
+              error.code == 'flight_trip_date_mismatch' ||
+              error.code == 'invalid_trip_dates' ||
+              error.code == 'invalid_flight_dates') {
+            if (!mounted) return;
+            final chooseAnother = await _showHardDateConflictDialog(
+              context,
+              code: error.code ?? '',
+              message: error.message,
+              tripDates: error.data['tripDates'] is Map
+                  ? Map<String, dynamic>.from(error.data['tripDates'] as Map)
+                  : null,
+              flightDates: error.data['flightDates'] is List
+                  ? (error.data['flightDates'] as List)
+                  : null,
+              conflicts: error.data['conflicts'] is List
+                  ? (error.data['conflicts'] as List)
+                  : null,
+            );
+            if (chooseAnother == true) {
+              continue;
+            }
+            return;
+          }
+          if (error.data['status'] != 'conflicts_require_acknowledgement') {
+            rethrow;
+          }
+          final conflicts = (error.data['conflicts'] as List? ?? const [])
+              .whereType<Map>()
+              .map((item) => item['message']?.toString())
+              .whereType<String>()
+              .toList();
+          if (!mounted) return;
+          final acknowledge = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Review itinerary timing'),
+              content: Text(conflicts.isEmpty
+                  ? 'This flight may overlap your saved itinerary activities.'
+                  : '${conflicts.join('\n\n')}\n\nYou can keep the flight and review these activities afterwards.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Choose another flight')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Keep flight')),
+              ],
+            ),
+          );
+          if (acknowledge != true) return;
+          result = await api.post('/api/fr7/flights/select', {
+            ...request,
+            'acknowledgeConflicts': true,
+          });
+        }
+        if (mounted) {
+          final budget = result['budget'] is Map
+              ? Map<String, dynamic>.from(result['budget'] as Map)
+              : <String, dynamic>{};
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(
+                    'Flight attached to trip plan! Estimated trip total: RM ${budget['total'] ?? '-'}')),
+          );
+        }
+        break;
       }
     } catch (e) {
       if (mounted) showError(context, e);

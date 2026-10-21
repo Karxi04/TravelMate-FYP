@@ -98,6 +98,14 @@ class ApiException implements Exception {
   const ApiException(this.message, this.statusCode, this.data);
 
   String? get code => data['code']?.toString();
+  String? get status => data['status']?.toString();
+  Map<String, dynamic>? get tripDates => data['tripDates'] is Map
+      ? Map<String, dynamic>.from(data['tripDates'] as Map)
+      : null;
+  List<dynamic>? get flightDates =>
+      data['flightDates'] is List ? (data['flightDates'] as List) : null;
+  List<dynamic>? get conflicts =>
+      data['conflicts'] is List ? (data['conflicts'] as List) : null;
 
   @override
   String toString() => message;

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'api_service.dart';
 import '../core/utils/malaysian_locality.dart';
 import '../core/utils/preference_learning.dart';
 import '../core/utils/recommendation_taxonomy.dart';
@@ -4346,10 +4347,39 @@ class StandaloneApiService {
     if (_isPackageTrip(trip)) {
       throw Exception('Purchased package trips cannot be modified or recalculated.');
     }
+
+    final tripStartStr = (trip['startDate'] ?? '').toString();
+    final tripEndStr = (trip['endDate'] ?? '').toString();
+    DateTime? tripStart;
+    DateTime? tripEnd;
+    if (tripStartStr.length >= 10 && tripEndStr.length >= 10) {
+      tripStart = DateTime.tryParse(tripStartStr.substring(0, 10));
+      tripEnd = DateTime.tryParse(tripEndStr.substring(0, 10));
+    }
+    if (tripStart == null || tripEnd == null || tripEnd.isBefore(tripStart)) {
+      throw ApiException(
+        'The target Trip must have a valid startDate and endDate before attaching a flight.',
+        409,
+        {
+          'ok': false,
+          'code': 'invalid_trip_dates',
+          'error': 'The target Trip must have a valid startDate and endDate before attaching a flight.',
+          'status': 'hard_conflict',
+          'tripDates': {
+            'startDate': trip['startDate'],
+            'endDate': trip['endDate'],
+          },
+        },
+      );
+    }
+
     final returnOptionId = payload['returnOptionId']?.toString();
-    final completedId = returnOptionId != null && returnOptionId.isNotEmpty
-        ? 'flight_completed_${payload['optionId']}_$returnOptionId'
-        : (payload['optionId'] ?? flight['optionId'] ?? flight['id'] ?? '').toString();
+    final optionId = (payload['optionId'] ?? flight['optionId'] ?? flight['id'] ?? '').toString();
+    final completedId = optionId.startsWith('flight_completed_')
+        ? optionId
+        : (returnOptionId != null && returnOptionId.isNotEmpty
+            ? 'flight_completed_${payload['optionId']}_$returnOptionId'
+            : optionId);
 
     final completedFlight = Map<String, dynamic>.from(flight);
     if (returnOptionId != null && returnOptionId.isNotEmpty) {
@@ -4363,6 +4393,84 @@ class StandaloneApiService {
         completedFlight['price'] = 420.0;
         completedFlight['combinedPrice'] = 420.0;
       }
+    }
+
+    final flightDates = <String>{};
+    final conflicts = <Map<String, dynamic>>[];
+
+    void checkDate(String type, int index, String field, dynamic val) {
+      if (val == null) return;
+      final s = val.toString();
+      if (s.length >= 10) {
+        final dStr = s.substring(0, 10);
+        flightDates.add(dStr);
+        final parsed = DateTime.tryParse(dStr);
+        if (parsed != null && (parsed.isBefore(tripStart!) || parsed.isAfter(tripEnd!))) {
+          conflicts.add({
+            'type': 'flight_dates',
+            'segmentType': type,
+            'segmentIndex': index,
+            'field': field,
+            'flightDate': dStr,
+            'tripStartDate': tripStartStr.substring(0, 10),
+            'tripEndDate': tripEndStr.substring(0, 10),
+            'message': 'Selected flight dates must fall within the Trip dates.',
+          });
+        }
+      }
+    }
+
+    final outboundSegs = completedFlight['outboundSegments'] as List? ?? [];
+    for (int i = 0; i < outboundSegs.length; i++) {
+      if (outboundSegs[i] is Map) {
+        checkDate('outbound', i, 'departureDate', outboundSegs[i]['departureDate']);
+        checkDate('outbound', i, 'arrivalDate', outboundSegs[i]['arrivalDate']);
+      }
+    }
+    final returnSegs = completedFlight['returnSegments'] as List? ?? [];
+    for (int i = 0; i < returnSegs.length; i++) {
+      if (returnSegs[i] is Map) {
+        checkDate('return', i, 'departureDate', returnSegs[i]['departureDate']);
+        checkDate('return', i, 'arrivalDate', returnSegs[i]['arrivalDate']);
+      }
+    }
+    if (flightDates.isEmpty) {
+      checkDate('outbound', 0, 'departureDate', completedFlight['outboundDate'] ?? completedFlight['departureDate']);
+      if (returnOptionId != null && returnOptionId.isNotEmpty) {
+        checkDate('return', 0, 'departureDate', completedFlight['returnDate']);
+      }
+    }
+
+    if (flightDates.isEmpty) {
+      throw ApiException(
+        'The selected flight has no verifiable segment dates.',
+        409,
+        {
+          'ok': false,
+          'code': 'invalid_flight_dates',
+          'error': 'The selected flight has no verifiable segment dates.',
+          'status': 'hard_conflict',
+        },
+      );
+    }
+
+    if (conflicts.isNotEmpty) {
+      throw ApiException(
+        'Selected flight dates must fall within the Trip dates.',
+        409,
+        {
+          'ok': false,
+          'code': 'flight_trip_date_mismatch',
+          'error': 'Selected flight dates must fall within the Trip dates.',
+          'status': 'hard_conflict',
+          'tripDates': {
+            'startDate': tripStartStr.substring(0, 10),
+            'endDate': tripEndStr.substring(0, 10),
+          },
+          'flightDates': flightDates.toList()..sort(),
+          'conflicts': conflicts,
+        },
+      );
     }
 
     final price = _num(completedFlight['price'] ?? flight['price']);
