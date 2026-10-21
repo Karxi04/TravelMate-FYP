@@ -41,6 +41,12 @@ PACKAGE_ATTEMPT_COLLECTION = 'package_checkout_attempts'
 PACKAGE_FULFILLMENT_COLLECTION = 'package_fulfillments'
 
 
+class CheckoutContractError(ValueError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
 def _legacy_payment_mutations_enabled():
     """Keep legacy mutations available only to the deterministic test harness."""
     return current_app.config.get('TESTING', False) and os.getenv(
@@ -157,33 +163,42 @@ def _flight_checkout_quote(payload):
     search_id = str(payload.get('searchId') or payload.get('quoteId') or '').strip()
     option_id = str(payload.get('optionId') or '').strip()
     if not search_id or not option_id:
-        raise ValueError('A completed flight quote and option are required for Checkout.')
+        raise CheckoutContractError('invalid_flight_quote', 'A completed flight quote and option are required for Checkout.')
     record = retrieveRecord('flight_quotes', f'{g.uid}_{search_id}')
     if not record or record.get('travellerId') != g.uid:
-        raise ValueError('The flight quote was not found or is not owned by this traveller.')
+        raise CheckoutContractError('invalid_flight_quote', 'The flight quote was not found or is not owned by this traveller.')
+    try:
+        expires_at = datetime.fromisoformat(str(record.get('expiresAt') or '').replace('Z', '+00:00'))
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        raise CheckoutContractError('invalid_flight_quote', 'The flight quote has invalid expiry metadata.')
+    if expires_at <= datetime.now(timezone.utc):
+        raise CheckoutContractError('flight_quote_expired', 'This flight quote has expired. Search again.')
     criteria = dict(record.get('criteria') or {})
-    option = next((dict(item) for item in record.get('items', [])
+    candidates = list(record.get('items') or []) + list((record.get('completedOptions') or {}).values())
+    option = next((dict(item) for item in candidates
                    if isinstance(item, dict) and str(item.get('optionId') or item.get('id') or '') == option_id), None)
     if not option:
-        raise ValueError('The selected flight option is not part of the owned quote.')
+        raise CheckoutContractError('invalid_flight_quote', 'The selected flight option is not part of the owned quote.')
     if record.get('source') == 'sample_fixture':
-        raise ValueError('Sample flight fixtures cannot enter Checkout.')
+        raise CheckoutContractError('invalid_flight_quote', 'Sample flight fixtures cannot enter Checkout.')
     amount = _finite_amount(option.get('price'))
     currency = str(option.get('currency') or '').upper()
     travellers = int(criteria.get('traveller_count') or 0)
     composition = option.get('passengerComposition') or {}
     if amount is None or currency != 'MYR' or option.get('currencyStatus') != 'known':
-        raise ValueError('This flight quote has no validated MYR payable amount.')
+        raise CheckoutContractError('flight_price_unavailable', 'This flight quote has no validated MYR payable amount.')
     if option.get('quoteCompleteness') != 'complete' or option.get('budgetEligible') is False:
-        raise ValueError('Complete flight quote selection is required before Checkout.')
+        raise CheckoutContractError('invalid_flight_quote', 'Complete flight quote selection is required before Checkout.')
     if criteria.get('return_date') and not option.get('roundTripComplete'):
-        raise ValueError('A complete round-trip quote is required before Checkout.')
+        raise CheckoutContractError('invalid_flight_quote', 'A complete round-trip quote is required before Checkout.')
     if option.get('priceScope') != 'provider_ticket_price' or option.get('priceSemanticsStatus') != 'provider_response_requested_adults':
-        raise ValueError('This flight quote does not prove an adult-party ticket total.')
+        raise CheckoutContractError('flight_price_unavailable', 'This flight quote does not prove an adult-party ticket total.')
     if not travellers or option.get('travellerCount') != travellers or composition.get('adults') != travellers:
-        raise ValueError('This flight quote does not match the requested adult party.')
+        raise CheckoutContractError('invalid_flight_quote', 'This flight quote does not match the requested adult party.')
     if criteria.get('return_date') and not str(option.get('priceBasis') or '').startswith('provider_round_trip_'):
-        raise ValueError('This round-trip quote has no verified combined ticket total.')
+        raise CheckoutContractError('flight_price_unavailable', 'This round-trip quote has no verified combined ticket total.')
     snapshot = _safe_quote_snapshot({**option, 'quoteId': search_id, 'offerId': option_id})
     return {
         'quoteType': 'flight', 'quoteId': search_id, 'optionId': option_id,
@@ -786,8 +801,16 @@ def create_checkout_session():
             'orderAttemptId',
         )
         quote = _resolve_checkout_quote(payload)
+    except CheckoutContractError as exc:
+        return jsonify({'ok': False, 'code': exc.code, 'error': str(exc)}), 409
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 409
+    if quote.get('quoteType') == 'flight':
+        return jsonify({
+            'ok': False,
+            'code': 'flight_ticketing_unavailable',
+            'error': 'TravelMate can save this fare as a planning estimate, but cannot issue or reserve an airline ticket.',
+        }), 409
     order_id = _order_document_id(attempt_id)
     now = utc_now_iso()
     record = {

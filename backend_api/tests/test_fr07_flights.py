@@ -4,7 +4,7 @@ from unittest.mock import patch
 def test_flight_search_with_iata_codes(client, mock_traveller_auth):
     with patch.dict('os.environ', {'FALLBACK_MODE': 'true'}):
         res = client.get(
-            '/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2026-10-01',
+            '/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2030-10-01',
             headers={'Authorization': 'Bearer valid_test_token'}
         )
         assert res.status_code == 200
@@ -17,7 +17,7 @@ def test_flight_search_with_iata_codes(client, mock_traveller_auth):
 def test_flight_search_resolves_city_names(client, mock_traveller_auth):
     with patch.dict('os.environ', {'FALLBACK_MODE': 'true'}):
         res = client.get(
-            '/api/fr7/flights/search?departure_id=Kuala Lumpur&arrival_id=Penang&outbound_date=2026-10-01',
+            '/api/fr7/flights/search?departure_id=Kuala Lumpur&arrival_id=Penang&outbound_date=2030-10-01',
             headers={'Authorization': 'Bearer valid_test_token'}
         )
         assert res.status_code == 200

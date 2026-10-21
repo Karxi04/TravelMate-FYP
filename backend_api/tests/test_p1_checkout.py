@@ -186,6 +186,7 @@ def test_checkout_requires_complete_adult_party_flight_quote(client, mock_travel
     memory = MemoryPersistence()
     memory.seed('flight_quotes', 'test_traveller_uid_search_p1', {
         'id': 'search_p1', 'travellerId': 'test_traveller_uid', 'source': 'serpapi',
+        'expiresAt': '2099-01-01T00:00:00+00:00',
         'criteria': {'currency': 'MYR', 'traveller_count': 2, 'return_date': None},
         'items': [{
             'optionId': 'flight_option_p1', 'price': 400.0, 'currency': 'MYR',
@@ -206,10 +207,11 @@ def test_checkout_requires_complete_adult_party_flight_quote(client, mock_travel
     assert 'adult party' in response.get_json()['error']
 
 
-def test_checkout_accepts_provider_flight_quote_for_requested_adults(client, mock_traveller_auth):
+def test_checkout_blocks_new_flight_payment_before_stripe_or_order_creation(client, mock_traveller_auth):
     memory = MemoryPersistence()
     memory.seed('flight_quotes', 'test_traveller_uid_search_p1', {
         'id': 'search_p1', 'travellerId': 'test_traveller_uid', 'source': 'serpapi',
+        'expiresAt': '2099-01-01T00:00:00+00:00',
         'criteria': {'currency': 'MYR', 'traveller_count': 2, 'return_date': None},
         'items': [{
             'optionId': 'flight_option_p1', 'price': 800.0, 'currency': 'MYR',
@@ -223,14 +225,40 @@ def test_checkout_accepts_provider_flight_quote_for_requested_adults(client, moc
     session = SimpleNamespace(id='cs_test_flight_p1', url='https://checkout.stripe.test/cs_test_flight_p1')
     with patch.dict('os.environ', {'STRIPE_SECRET_KEY': 'sk_test_fixture'}), \
          _patch_persistence(memory)[0], _patch_persistence(memory)[1], _patch_persistence(memory)[2], \
-         patch('modules.fr09_payment.routes.createCheckoutSession', return_value=session):
+         patch('modules.fr09_payment.routes.createCheckoutSession', return_value=session) as create:
         response = client.post('/api/fr9/checkout/session', headers={
             'Authorization': 'Bearer valid_test_token'}, json={
                 'orderAttemptId': 'order_attempt_flight', 'quoteType': 'flight',
                 'searchId': 'search_p1', 'optionId': 'flight_option_p1',
             })
-    assert response.status_code == 200
-    assert response.get_json()['order']['amount'] == 800.0
+    assert response.status_code == 409
+    assert response.get_json()['code'] == 'flight_ticketing_unavailable'
+    create.assert_not_called()
+    assert memory.retrieve('checkout_orders') == []
+
+
+def test_checkout_rejects_expired_flight_quote_before_stripe(client, mock_traveller_auth):
+    memory = MemoryPersistence()
+    memory.seed('flight_quotes', 'test_traveller_uid_search_expired', {
+        'id': 'search_expired', 'travellerId': 'test_traveller_uid', 'source': 'serpapi',
+        'expiresAt': '2020-01-01T00:00:00+00:00',
+        'criteria': {'currency': 'MYR', 'traveller_count': 1, 'return_date': None},
+        'items': [{'optionId': 'flight_expired', 'price': 100.0, 'currency': 'MYR',
+                   'currencyStatus': 'known', 'priceScope': 'provider_ticket_price',
+                   'priceSemanticsStatus': 'provider_response_requested_adults',
+                   'travellerCount': 1, 'passengerComposition': {'adults': 1},
+                   'quoteCompleteness': 'complete', 'budgetEligible': True}],
+    })
+    with _patch_persistence(memory)[0], _patch_persistence(memory)[1], _patch_persistence(memory)[2], \
+         patch('modules.fr09_payment.routes.createCheckoutSession') as create:
+        response = client.post('/api/fr9/checkout/session', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'orderAttemptId': 'expired-flight', 'quoteType': 'flight',
+                'searchId': 'search_expired', 'optionId': 'flight_expired',
+            })
+    assert response.status_code == 409
+    assert response.get_json()['code'] == 'flight_quote_expired'
+    create.assert_not_called()
 
 
 def test_signed_checkout_webhook_marks_owned_order_paid(client, mock_traveller_auth):

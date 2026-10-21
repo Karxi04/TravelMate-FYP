@@ -144,7 +144,7 @@ def _segment(leg):
         'operatingAirline': operating,
         'flightNumber': str(leg.get('flight_number') or '').strip() or None,
         'travelClass': leg.get('travel_class'),
-        'aircraft': leg.get('aircraft'),
+        'aircraft': leg.get('airplane') or leg.get('aircraft'),
         'departureTerminal': leg.get('departure_airport', {}).get('terminal') if isinstance(leg.get('departure_airport'), dict) else None,
         'arrivalTerminal': leg.get('arrival_airport', {}).get('terminal') if isinstance(leg.get('arrival_airport'), dict) else None,
         'extensions': leg.get('extensions') if isinstance(leg.get('extensions'), list) else [],
