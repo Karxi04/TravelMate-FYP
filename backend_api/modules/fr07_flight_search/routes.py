@@ -353,6 +353,81 @@ def _flight_conflicts(itinerary, flight):
     return warnings
 
 
+def _flight_trip_date_error(itinerary, flight):
+    try:
+        trip_start = datetime.fromisoformat(str(itinerary['startDate'])[:10]).date()
+        trip_end = datetime.fromisoformat(str(itinerary['endDate'])[:10]).date()
+        if trip_end < trip_start:
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        return {
+            'code': 'invalid_trip_dates',
+            'error': 'The target Trip must have a valid startDate and endDate before attaching a flight.',
+            'status': 'hard_conflict',
+            'tripDates': {
+                'startDate': itinerary.get('startDate'),
+                'endDate': itinerary.get('endDate'),
+            },
+        }
+
+    dated_segments = []
+    for segment_type, segments in (
+            ('outbound', flight.get('outboundSegments') or []),
+            ('return', flight.get('returnSegments') or [])):
+        for index, segment in enumerate(segments):
+            if not isinstance(segment, dict):
+                return {
+                    'code': 'invalid_flight_dates',
+                    'error': 'The selected flight has incomplete segment date information.',
+                    'status': 'hard_conflict',
+                }
+            for field in ('departureDate', 'arrivalDate'):
+                value = str(segment.get(field) or '')[:10]
+                try:
+                    parsed = datetime.fromisoformat(value).date()
+                except (TypeError, ValueError):
+                    return {
+                        'code': 'invalid_flight_dates',
+                        'error': 'The selected flight has incomplete segment date information.',
+                        'status': 'hard_conflict',
+                    }
+                dated_segments.append((segment_type, index, field, value, parsed))
+    if not dated_segments:
+        return {
+            'code': 'invalid_flight_dates',
+            'error': 'The selected flight has no verifiable segment dates.',
+            'status': 'hard_conflict',
+        }
+
+    conflicts = [
+        {
+            'type': 'flight_dates',
+            'segmentType': segment_type,
+            'segmentIndex': index,
+            'field': field,
+            'flightDate': value,
+            'tripStartDate': trip_start.isoformat(),
+            'tripEndDate': trip_end.isoformat(),
+            'message': 'Selected flight dates must fall within the Trip dates.',
+        }
+        for segment_type, index, field, value, parsed in dated_segments
+        if not (trip_start <= parsed <= trip_end)
+    ]
+    if not conflicts:
+        return None
+    return {
+        'code': 'flight_trip_date_mismatch',
+        'error': 'Selected flight dates must fall within the Trip dates.',
+        'status': 'hard_conflict',
+        'tripDates': {
+            'startDate': trip_start.isoformat(),
+            'endDate': trip_end.isoformat(),
+        },
+        'flightDates': sorted({value for _, _, _, value, _ in dated_segments}),
+        'conflicts': conflicts,
+    }
+
+
 def _fallback_mode():
     return os.getenv('FALLBACK_MODE', 'false').lower() in {'1', 'true', 'yes'}
 
@@ -623,21 +698,23 @@ def select_flight():
     quote, trusted, quote_error = _quote_item(payload)
     client_match_target = trusted
     return_option = None
-    if quote and trusted and quote.get('criteria', {}).get('return_date') and not trusted.get('roundTripComplete'):
-        return_option_id = str(payload.get('returnOptionId') or '').strip()
-        return_option = (quote.get('returnOptions') or {}).get(trusted.get('optionId'), [])
-        return_option = next((x for x in return_option if x.get('optionId') == return_option_id), None)
-        if not return_option:
-            return _flight_error('invalid_return_selection', 'Choose a compatible return flight before continuing')
-        if not list(return_option.get('returnSegments') or []):
-            return _flight_error('invalid_return_selection', 'The selected return flight is incomplete')
-        trusted = _completed_option(quote, trusted, return_option)
+    completed_selection_created = False
+    if quote and trusted and quote.get('criteria', {}).get('return_date') and not trusted.get('completedOptionId'):
+        if trusted.get('roundTripComplete') and trusted.get('returnSegments'):
+            trusted = _completed_option(quote, trusted, trusted)
+            completed_selection_created = True
+        else:
+            return_option_id = str(payload.get('returnOptionId') or '').strip()
+            return_option = (quote.get('returnOptions') or {}).get(trusted.get('optionId'), [])
+            return_option = next((x for x in return_option if x.get('optionId') == return_option_id), None)
+            if not return_option:
+                return _flight_error('invalid_return_selection', 'Choose a compatible return flight before continuing')
+            if not list(return_option.get('returnSegments') or []):
+                return _flight_error('invalid_return_selection', 'The selected return flight is incomplete')
+            trusted = _completed_option(quote, trusted, return_option)
+            completed_selection_created = True
         if not trusted:
             return _flight_error('flight_price_unavailable', 'The provider did not supply a trustworthy completed round-trip fare')
-        try:
-            _persist_quote(quote)
-        except Exception:
-            return _flight_error('invalid_flight_quote', 'The completed flight selection could not be stored safely', 503)
     if trusted is None:
         if not (_testing_mode() and isinstance(flight, dict) and flight):
             message = 'This flight quote has expired. Search again.' if quote_error == 'flight_quote_expired' else 'Select a flight from a valid completed search'
@@ -670,6 +747,15 @@ def select_flight():
             'flightOptionId': trusted.get('optionId') or trusted.get('id'),
         }
     trusted = _sanitize_flight_snapshot(trusted)
+    if quote:
+        date_error = _flight_trip_date_error(current, trusted)
+        if date_error:
+            return jsonify({'ok': False, **date_error}), 409
+    if completed_selection_created:
+        try:
+            _persist_quote(quote)
+        except Exception:
+            return _flight_error('invalid_flight_quote', 'The completed flight selection could not be stored safely', 503)
     conflicts = _flight_conflicts(current, trusted)
     if conflicts and not payload.get('acknowledgeConflicts'):
         return jsonify({'ok': False, 'error': 'Flight conflicts require acknowledgement', 'conflicts': conflicts, 'status': 'conflicts_require_acknowledgement'}), 409
