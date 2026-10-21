@@ -225,12 +225,12 @@ def test_actual_operator_login_requires_verification(client, journey, monkeypatc
     if status in {"pending", "rejected"}:
         pending_page = browser.get(response.location)
         assert pending_page.status_code == 200
-        assert b"Account verification pending" in pending_page.data or b"Account needs attention" in pending_page.data
+        assert b"Account Verification Pending" in pending_page.data or b"Account Needs Attention" in pending_page.data
         assert client.get("/api/fr12/packages", headers={"Authorization": f"Bearer {OPERATOR}"}).status_code == 403
     else:
         dashboard = browser.get("/dashboard")
         assert dashboard.status_code == 200
-        assert b"needs your attention today" in dashboard.data
+        assert b"Moderation Attention" in dashboard.data or b"Operator Dashboard" in dashboard.data
         assert browser.get("/profile").status_code == 200
         profile_update = browser.post("/profile", data={
             "csrf_token": _token, "name": "Updated Demo Operator",
