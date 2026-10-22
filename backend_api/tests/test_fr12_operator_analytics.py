@@ -288,6 +288,48 @@ def test_analytics_historical_baseline_fixture():
     assert len(report["bookings"]) == 8
 
 
+def test_analytics_package_valuation_only_counts_approved_packages():
+    """Only approved packages contribute to totalPackageValue; draft, pending and rejected are excluded."""
+    operator_id = "op_test_val"
+    packages = [
+        {"id": "pkg_app", "operatorId": operator_id, "packageTitle": "Approved Package", "price": 899.0, "approvalStatus": "approved"},
+        {"id": "pkg_draft", "operatorId": operator_id, "packageTitle": "Draft Package", "price": 500.0, "approvalStatus": "draft"},
+        {"id": "pkg_pend", "operatorId": operator_id, "packageTitle": "Pending Package", "price": 350.0, "approvalStatus": "pending"},
+        {"id": "pkg_rej", "operatorId": operator_id, "packageTitle": "Rejected Package", "price": 200.0, "approvalStatus": "rejected"},
+    ]
+    db = _build_mock_db(packages=packages, orders=[])
+    report = generate_business_analytics(db, operator_id=operator_id)
+
+    assert report["summary"]["totalPackages"] == 4
+    assert report["summary"]["approvedPackages"] == 1
+    assert report["summary"]["pendingPackages"] == 1
+    assert report["summary"]["rejectedPackages"] == 1
+    assert report["summary"]["draftPackages"] == 1
+    # Only the approved package (899.0) is included in inventory valuation
+    assert report["summary"]["totalPackageValue"] == 899.0
+
+
+def test_analytics_payment_status_edge_cases():
+    """Verifies payment classification edge cases (succeeded vs failed/payment_failed)."""
+    orders = [
+        # Succeeded status counts as paid
+        {"id": "ord_succ", "quoteType": "package", "operatorId": "op_edge", "amount": 250.0, "status": "paid", "paymentStatus": "succeeded"},
+        # Payment failed must not count as paid even if status is paid
+        {"id": "ord_pfail", "quoteType": "package", "operatorId": "op_edge", "amount": 300.0, "status": "paid", "paymentStatus": "payment_failed"},
+        # Status payment_failed must not count as paid
+        {"id": "ord_sfail", "quoteType": "package", "operatorId": "op_edge", "amount": 400.0, "status": "payment_failed", "paymentStatus": "paid"},
+        # Standard paid
+        {"id": "ord_paid", "quoteType": "package", "operatorId": "op_edge", "amount": 500.0, "status": "paid", "paymentStatus": "paid"},
+    ]
+    db = _build_mock_db(orders=orders)
+    report = generate_business_analytics(db, operator_id="op_edge")
+
+    assert report["summary"]["bookingRecords"] == 4
+    assert report["summary"]["paidBookings"] == 2
+    assert report["summary"]["totalPaidRevenue"] == 750.0
+    assert {b["id"] for b in report["bookings"]} == {"ord_succ", "ord_pfail", "ord_sfail", "ord_paid"}
+
+
 # ==============================================================================
 # INTEGRATION / ROUTE TESTS: /api/fr12/analytics
 # ==============================================================================

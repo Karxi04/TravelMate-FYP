@@ -464,6 +464,64 @@ void main() {
       expect(find.text('Package Trip Details'), findsOneWidget);
     });
 
+    testWidgets('TripsTab calculates activity count from dailySchedule when top-level activities list is empty', (tester) async {
+      final tripWithDaily = {
+        'id': 'MBdcQ3NF1onYkCXivEaJ',
+        'travellerId': 'traveller_test_uid',
+        'title': 'My Personalised Penang Trip',
+        'destinationArea': 'Penang',
+        'startDate': '2026-09-17',
+        'endDate': '2026-09-19',
+        'tripDays': 3,
+        'tripType': 'personalized',
+        'packageTrip': false,
+        'activities': <Map<String, dynamic>>[],
+        'scheduledActivityCount': 0,
+        'budgetEstimate': {'total': 1200.0},
+        'dailySchedule': [
+          {
+            'dayNo': 1,
+            'activities': [
+              {'activityName': 'Chew Jetty', 'timeSlot': '09:00', 'category': 'Heritage'},
+              {'activityName': 'George Town Heritage Core', 'timeSlot': '11:00', 'category': 'Heritage'},
+              {'activityName': 'Kek Lok Si Temple', 'timeSlot': '14:00', 'category': 'Sightseeing'},
+              {'activityName': 'Wonderfood Museum', 'timeSlot': '16:30', 'category': 'Museum'},
+            ],
+          },
+          {
+            'dayNo': 2,
+            'activities': [
+              {'activityName': 'Wonderfood Museum', 'timeSlot': '09:30', 'category': 'Museum'},
+              {'activityName': 'George Town Food Trail', 'timeSlot': '12:00', 'category': 'Food'},
+              {'activityName': 'Esplanade & Fort Cornwallis Area', 'timeSlot': '15:00', 'category': 'Sightseeing'},
+            ],
+          },
+          {
+            'dayNo': 3,
+            'activities': [
+              {'activityName': 'Pinang Peranakan Mansion', 'timeSlot': '10:00', 'category': 'Heritage'},
+              {'activityName': 'Penang Botanic Gardens', 'timeSlot': '13:00', 'category': 'Nature'},
+              {'activityName': 'Penang Hill', 'timeSlot': '16:00', 'category': 'Scenic'},
+            ],
+          },
+        ],
+      };
+
+      final api = _MockApi(packageTrip: _mockPackageTrip(), personalizedTrip: tripWithDaily);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TripsTab(api: api),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('My Personalised Penang Trip'), findsOneWidget);
+      // Confirms 10 activities are counted and displayed rather than '0 activities'
+      expect(find.text('10 activities · RM 1200.0 estimated'), findsOneWidget);
+      expect(find.text('0 activities · RM 1200.0 estimated'), findsNothing);
+    });
+
     testWidgets('renders Vivo Penang Heritage package with time-prefixed string activities and accurate day bounds', (tester) async {
       tester.view.physicalSize = const Size(800, 3000);
       tester.view.devicePixelRatio = 1.0;

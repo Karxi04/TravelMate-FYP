@@ -93,6 +93,55 @@ class _TripsTabState extends State<TripsTab> {
     };
   }
 
+  int _activityCount(Map<String, dynamic> trip) {
+    // 1. Inspect dailySchedule for genuine scheduled activities
+    final daily = trip['dailySchedule'];
+    if (daily is List && daily.isNotEmpty) {
+      int count = 0;
+      for (final day in daily) {
+        if (day is Map) {
+          final list = day['activities'];
+          if (list is List) {
+            for (final a in list) {
+              if (a is Map) {
+                final cat = (a['category'] ?? '').toString().toLowerCase();
+                final type = (a['type'] ?? '').toString().toLowerCase();
+                if (cat == 'transport' || type == 'placeholder') continue;
+                count++;
+              }
+            }
+          }
+        }
+      }
+      if (count > 0) return count;
+    }
+
+    // 2. Fall back to top-level activities list
+    final activities = trip['activities'];
+    if (activities is List && activities.isNotEmpty) {
+      int count = 0;
+      for (final a in activities) {
+        if (a is Map) {
+          final cat = (a['category'] ?? '').toString().toLowerCase();
+          final type = (a['type'] ?? '').toString().toLowerCase();
+          if (cat == 'transport' || type == 'placeholder') continue;
+          count++;
+        } else if (a != null) {
+          count++;
+        }
+      }
+      if (count > 0) return count;
+    }
+
+    // 3. Fall back to scheduledActivityCount if positive
+    final scheduled = int.tryParse('${trip['scheduledActivityCount'] ?? ''}');
+    if (scheduled != null && scheduled > 0) {
+      return scheduled;
+    }
+
+    return 0;
+  }
+
   Future<void> load() async {
     if (mounted) {
       setState(() {
@@ -430,7 +479,7 @@ class _TripsTabState extends State<TripsTab> {
                 )
               else
                 ...plans.map((trip) {
-                  final activities = (trip['activities'] as List? ?? []);
+                  final count = _activityCount(trip);
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: InkWell(
@@ -503,7 +552,7 @@ class _TripsTabState extends State<TripsTab> {
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              '${activities.length} ${activities.length == 1 ? 'activity' : 'activities'} · ${_budgetText(trip)}',
+                              '$count ${count == 1 ? 'activity' : 'activities'} · ${_budgetText(trip)}',
                               style: Theme.of(context)
                                   .textTheme
                                   .bodyMedium

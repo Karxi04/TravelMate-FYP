@@ -149,7 +149,11 @@ def generate_business_analytics(db, operator_id):
         if data.get("provider") == "stripe_checkout_test" or data.get("testMode"):
             test_mode_orders += 1
 
-        is_paid = (payment_status == "paid" or order_status == "paid") and order_status not in {"cancelled", "failed", "expired"}
+        is_paid = (
+            (payment_status in {"paid", "succeeded"} or order_status in {"paid", "succeeded"})
+            and order_status not in {"cancelled", "failed", "payment_failed", "expired"}
+            and payment_status not in {"cancelled", "failed", "payment_failed"}
+        )
 
         if is_paid:
             paid_bookings += 1
@@ -173,6 +177,9 @@ def generate_business_analytics(db, operator_id):
     total_package_value = 0.0
 
     for package in packages:
+        # Valuation is calculated from active approved catalog inventory
+        if _normalise(package.get("approvalStatus")) != "approved":
+            continue
         try:
             total_package_value += float(
                 package.get("price", 0) or 0
