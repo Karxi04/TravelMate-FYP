@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
@@ -7,23 +8,27 @@ import '../../theme/app_theme.dart';
 import 'package_trip_details_screen.dart';
 import 'personalized_planning_screen.dart';
 import 'trip_details_screen.dart';
+import 'trip_status_helper.dart';
 
 class TripsTab extends StatefulWidget {
   final ApiService? api;
+  final DateTime? referenceDate;
 
-  const TripsTab({super.key, this.api});
+  const TripsTab({super.key, this.api, this.referenceDate});
 
   @override
   State<TripsTab> createState() => _TripsTabState();
 }
 
-class _TripsTabState extends State<TripsTab> {
+class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
   late final ApiService api;
   List<dynamic> items = [];
   bool busy = false;
   bool loading = true;
   String? loadError;
   int selectedSegment = 0; // 0: My Plans, 1: Package Trips
+  TripFilter selectedFilter = TripFilter.all;
+  Timer? _midnightTimer;
 
   static const _months = [
     'Jan',
@@ -353,17 +358,29 @@ class _TripsTabState extends State<TripsTab> {
   bool _isPackage(Map<String, dynamic> trip) =>
       trip['tripType'] == 'package' || trip['packageTrip'] == true;
 
-  List<Map<String, dynamic>> get _plans => items
+  List<Map<String, dynamic>> get _allPlans => items
       .whereType<Map>()
       .map((e) => Map<String, dynamic>.from(e))
       .where((t) => !_isPackage(t))
       .toList();
 
-  List<Map<String, dynamic>> get _packages => items
+  List<Map<String, dynamic>> get _plans => TripStatusHelper.sortAndFilterTrips(
+        _allPlans,
+        filter: selectedFilter,
+        referenceDate: widget.referenceDate,
+      );
+
+  List<Map<String, dynamic>> get _allPackages => items
       .whereType<Map>()
       .map((e) => Map<String, dynamic>.from(e))
       .where(_isPackage)
       .toList();
+
+  List<Map<String, dynamic>> get _packages => TripStatusHelper.sortAndFilterTrips(
+        _allPackages,
+        filter: selectedFilter,
+        referenceDate: widget.referenceDate,
+      );
 
   Future<void> openTrip(Map<String, dynamic> trip) async {
     if (_isPackage(trip)) {
@@ -386,6 +403,7 @@ class _TripsTabState extends State<TripsTab> {
             key: ValueKey('trip-details-${trip['id']}'),
             tripId: trip['id'].toString(),
             api: api,
+            referenceDate: widget.referenceDate,
           ),
         ),
       );
@@ -396,13 +414,44 @@ class _TripsTabState extends State<TripsTab> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     api = widget.api ?? ApiService();
+    _scheduleMidnightTimer();
     Future.microtask(load);
   }
 
   @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _midnightTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      // Recalculate temporal classifications when resuming
+      setState(() {});
+      _scheduleMidnightTimer();
+    }
+  }
+
+  void _scheduleMidnightTimer() {
+    _midnightTimer?.cancel();
+    final delay = TripStatusHelper.durationUntilMidnight();
+    _midnightTimer = Timer(delay, () {
+      if (mounted) {
+        setState(() {});
+        _scheduleMidnightTimer();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final allPlans = _allPlans;
     final plans = _plans;
+    final allPackages = _allPackages;
     final packages = _packages;
 
     return Scaffold(
@@ -442,12 +491,12 @@ class _TripsTabState extends State<TripsTab> {
               segments: [
                 ButtonSegment<int>(
                   value: 0,
-                  label: Text('My Plans (${plans.length})'),
+                  label: Text('My Plans (${allPlans.length})'),
                   icon: const Icon(Icons.edit_note_rounded),
                 ),
                 ButtonSegment<int>(
                   value: 1,
-                  label: Text('Package Trips (${packages.length})'),
+                  label: Text('Package Trips (${allPackages.length})'),
                   icon: const Icon(Icons.verified_rounded),
                 ),
               ],
@@ -455,6 +504,38 @@ class _TripsTabState extends State<TripsTab> {
               onSelectionChanged: (val) {
                 setState(() => selectedSegment = val.first);
               },
+            ),
+            const SizedBox(height: 14),
+
+            // Temporal Filter Chips
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final filter in TripFilter.values) ...[
+                    ChoiceChip(
+                      key: ValueKey('filter-${filter.name}'),
+                      selected: selectedFilter == filter,
+                      avatar: Icon(
+                        switch (filter) {
+                          TripFilter.all => Icons.view_list_rounded,
+                          TripFilter.planned => Icons.schedule_rounded,
+                          TripFilter.ongoing => Icons.explore_rounded,
+                          TripFilter.expired => Icons.history_rounded,
+                        },
+                        size: 16,
+                      ),
+                      label: Text(filter.label),
+                      onSelected: (selected) {
+                        if (selected) {
+                          setState(() => selectedFilter = filter);
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -469,7 +550,7 @@ class _TripsTabState extends State<TripsTab> {
                 const AppLoadingState(message: 'Loading your trips…')
               else if (loadError != null)
                 AppErrorState(message: loadError!, onRetry: load)
-              else if (plans.isEmpty)
+              else if (allPlans.isEmpty)
                 TravelEmptyState(
                   icon: Icons.luggage_outlined,
                   title: 'No travel plans yet',
@@ -477,9 +558,44 @@ class _TripsTabState extends State<TripsTab> {
                   actionLabel: 'Plan a trip',
                   onAction: planTrip,
                 )
+              else if (plans.isEmpty)
+                switch (selectedFilter) {
+                  TripFilter.ongoing => const TravelEmptyState(
+                      icon: Icons.explore_off_outlined,
+                      title: 'No ongoing trips',
+                      message: 'You have no trips currently in progress. Trips taking place today will appear here automatically.',
+                    ),
+                  TripFilter.planned => TravelEmptyState(
+                      icon: Icons.event_available_outlined,
+                      title: 'No upcoming trips planned',
+                      message: 'You have no upcoming trips scheduled. Plan a new trip to explore Penang.',
+                      actionLabel: 'Plan a trip',
+                      onAction: planTrip,
+                    ),
+                  TripFilter.expired => const TravelEmptyState(
+                      icon: Icons.history_toggle_off_rounded,
+                      title: 'No expired trips',
+                      message: 'Completed trips whose travel dates have passed will appear here.',
+                    ),
+                  TripFilter.all => const TravelEmptyState(
+                      icon: Icons.luggage_outlined,
+                      title: 'No travel plans',
+                      message: 'No travel plans match the current view.',
+                    ),
+                }
               else
                 ...plans.map((trip) {
                   final count = _activityCount(trip);
+                  final temporal = TripStatusHelper.resolveStatus(
+                    trip,
+                    referenceDate: widget.referenceDate,
+                  );
+                  final lifecycleRaw =
+                      (trip['status'] ?? 'draft').toString().toLowerCase();
+                  final isDraft = lifecycleRaw == 'draft';
+                  final isGenerating = lifecycleRaw == 'generating';
+                  final isFailed = lifecycleRaw == 'generation_failed';
+
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: InkWell(
@@ -538,11 +654,40 @@ class _TripsTabState extends State<TripsTab> {
                               spacing: 8,
                               runSpacing: 8,
                               children: [
-                                StatusChip(
-                                  text: _statusText(trip),
-                                  icon: Icons.flag_outlined,
-                                  tone: _statusTone(trip),
-                                ),
+                                if (temporal != null)
+                                  StatusChip(
+                                    key: ValueKey('trip-status-${trip['id']}'),
+                                    text: temporal.label,
+                                    icon: temporal.icon,
+                                    tone: temporal.tone,
+                                  ),
+                                if (isDraft)
+                                  const StatusChip(
+                                    text: 'Draft',
+                                    icon: Icons.edit_note_rounded,
+                                    tone: AppStatusTone.neutral,
+                                  ),
+                                if (isGenerating)
+                                  const StatusChip(
+                                    text: 'Preparing',
+                                    icon: Icons.hourglass_top_rounded,
+                                    tone: AppStatusTone.info,
+                                  ),
+                                if (isFailed)
+                                  const StatusChip(
+                                    text: 'Needs attention',
+                                    icon: Icons.error_outline_rounded,
+                                    tone: AppStatusTone.warning,
+                                  ),
+                                if (temporal == null &&
+                                    !isDraft &&
+                                    !isGenerating &&
+                                    !isFailed)
+                                  StatusChip(
+                                    text: _statusText(trip),
+                                    icon: Icons.flag_outlined,
+                                    tone: _statusTone(trip),
+                                  ),
                                 TravelStatusPill(
                                   text:
                                       '${_dateRange(trip)} · ${_tripDays(trip)} ${_tripDays(trip) == 1 ? 'day' : 'days'}',
@@ -586,12 +731,35 @@ class _TripsTabState extends State<TripsTab> {
                 const AppLoadingState(message: 'Loading purchased packages…')
               else if (loadError != null)
                 AppErrorState(message: loadError!, onRetry: load)
-              else if (packages.isEmpty)
+              else if (allPackages.isEmpty)
                 const TravelEmptyState(
                   icon: Icons.verified_outlined,
                   title: 'No purchased package trips',
                   message: 'When you purchase a tourism package, your confirmed operator itinerary will appear here.',
                 )
+              else if (packages.isEmpty)
+                switch (selectedFilter) {
+                  TripFilter.ongoing => const TravelEmptyState(
+                      icon: Icons.explore_off_outlined,
+                      title: 'No ongoing package trips',
+                      message: 'You have no package trips taking place today.',
+                    ),
+                  TripFilter.planned => const TravelEmptyState(
+                      icon: Icons.event_available_outlined,
+                      title: 'No upcoming package trips',
+                      message: 'You have no upcoming package trips scheduled.',
+                    ),
+                  TripFilter.expired => const TravelEmptyState(
+                      icon: Icons.history_toggle_off_rounded,
+                      title: 'No expired package trips',
+                      message: 'Completed package trips whose travel dates have passed will appear here.',
+                    ),
+                  TripFilter.all => const TravelEmptyState(
+                      icon: Icons.verified_outlined,
+                      title: 'No purchased package trips',
+                      message: 'No package trips found.',
+                    ),
+                }
               else
                 ...packages.map((trip) {
                   final snap = trip['packageSnapshot'] is Map
@@ -601,6 +769,10 @@ class _TripsTabState extends State<TripsTab> {
                   final paid = trip['paidTotal'] ?? snap['price'] ?? 0;
                   final currency = (trip['currency'] ?? snap['currency'] ?? 'MYR').toString().toUpperCase();
                   final duration = _tripDays(trip);
+                  final pkgTemporal = TripStatusHelper.resolveStatus(
+                    trip,
+                    referenceDate: widget.referenceDate,
+                  );
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -669,6 +841,13 @@ class _TripsTabState extends State<TripsTab> {
                                     ],
                                   ),
                                 ),
+                                if (pkgTemporal != null)
+                                  StatusChip(
+                                    key: ValueKey('package-status-${trip['id']}'),
+                                    text: pkgTemporal.label,
+                                    icon: pkgTemporal.icon,
+                                    tone: pkgTemporal.tone,
+                                  ),
                                 TravelStatusPill(
                                   text: '${_dateRange(trip)} · $duration ${duration == 1 ? 'day' : 'days'}',
                                   icon: Icons.calendar_month_outlined,

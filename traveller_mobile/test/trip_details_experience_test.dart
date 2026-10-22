@@ -21,7 +21,7 @@ Map<String, dynamic> _activity({
       'destinationId': 'destination_$id',
       'activityName': name,
       'dayNo': day,
-      'dayDate': '2026-10-${11 + day}',
+      'dayDate': '2026-10-${24 + day}',
       'scheduledStartTime': start,
       'scheduledEndTime': end,
       'timeSlot': start,
@@ -76,8 +76,8 @@ Map<String, dynamic> _richTrip({String status = 'planned'}) {
     'id': 'trip_target',
     'title': 'Penang Getaway',
     'destinationArea': 'Penang, Malaysia',
-    'startDate': '2026-10-12',
-    'endDate': '2026-10-14',
+    'startDate': '2026-10-25',
+    'endDate': '2026-10-28',
     'tripDays': 3,
     'travellerCount': 2,
     'budgetLimit': 1000,
@@ -87,7 +87,7 @@ Map<String, dynamic> _richTrip({String status = 'planned'}) {
     'dailySchedule': [
       {
         'dayNo': 1,
-        'dayDate': '2026-10-12',
+        'dayDate': '2026-10-25',
         'activities': [first, second],
         'planningBlocks': [
           {
@@ -109,7 +109,7 @@ Map<String, dynamic> _richTrip({String status = 'planned'}) {
       },
       {
         'dayNo': 2,
-        'dayDate': '2026-10-13',
+        'dayDate': '2026-10-26',
         'activities': [third],
         'planningBlocks': const <Map<String, dynamic>>[],
         'weather': {
@@ -120,7 +120,7 @@ Map<String, dynamic> _richTrip({String status = 'planned'}) {
       },
       {
         'dayNo': 3,
-        'dayDate': '2026-10-14',
+        'dayDate': '2026-10-27',
         'activities': const <Map<String, dynamic>>[],
         'planningBlocks': const <Map<String, dynamic>>[],
         'weather': {'source': 'unavailable'},
@@ -341,7 +341,7 @@ void main() {
     expect(api.listReads, 1);
     expect(find.text('Penang Getaway'), findsOneWidget);
     expect(find.text('Penang, Malaysia'), findsWidgets);
-    expect(find.text('12–14 Oct 2026'), findsOneWidget);
+    expect(find.text('25–28 Oct 2026'), findsOneWidget);
     expect(find.text('2 travellers'), findsOneWidget);
     expect(find.text('Planned'), findsOneWidget);
     expect(find.text('Wrong trip'), findsNothing);

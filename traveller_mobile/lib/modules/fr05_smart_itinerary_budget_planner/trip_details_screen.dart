@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'budget_comparison_screen.dart';
 import 'models/budget_model.dart';
 import 'package_trip_details_screen.dart';
+import 'trip_status_helper.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
@@ -16,14 +18,21 @@ import '../fr09_payment/payment_screen.dart';
 class TripDetailsScreen extends StatefulWidget {
   final String tripId;
   final ApiService? api;
+  final DateTime? referenceDate;
 
-  const TripDetailsScreen({super.key, required this.tripId, this.api});
+  const TripDetailsScreen({
+    super.key,
+    required this.tripId,
+    this.api,
+    this.referenceDate,
+  });
 
   @override
   State<TripDetailsScreen> createState() => _TripDetailsScreenState();
 }
 
-class _TripDetailsScreenState extends State<TripDetailsScreen> {
+class _TripDetailsScreenState extends State<TripDetailsScreen>
+    with WidgetsBindingObserver {
   static const _placeImageFields = <String>[
     'thumbnail',
     'image',
@@ -1180,15 +1189,54 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                 DestinationDetailsScreen(initialDestination: initial)));
   }
 
+  Timer? _midnightTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     api = widget.api ?? ApiService();
+    _scheduleMidnightTimer();
     Future.microtask(load);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _midnightTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      setState(() {});
+      _scheduleMidnightTimer();
+    }
+  }
+
+  void _scheduleMidnightTimer() {
+    _midnightTimer?.cancel();
+    final delay = TripStatusHelper.durationUntilMidnight();
+    _midnightTimer = Timer(delay, () {
+      if (mounted) {
+        setState(() {});
+        _scheduleMidnightTimer();
+      }
+    });
   }
 
   Widget _tripHeader(Map<String, dynamic> t) {
     final travellerCount = int.tryParse('${t['travellerCount'] ?? 1}') ?? 1;
+    final temporal = TripStatusHelper.resolveStatus(
+      t,
+      referenceDate: widget.referenceDate,
+    );
+    final lifecycleRaw = (t['status'] ?? 'draft').toString().toLowerCase();
+    final isDraft = lifecycleRaw == 'draft';
+    final isGenerating = lifecycleRaw == 'generating';
+    final isFailed = lifecycleRaw == 'generation_failed';
+
     return InkCard(
       color: AppColors.surfaceElevated,
       child: Column(
@@ -1221,11 +1269,37 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
               icon: Icons.people_outline_rounded,
               tone: AppStatusTone.neutral,
             ),
-            StatusChip(
-              text: _lifecycleLabel(t['status']),
-              icon: _lifecycleIcon(t['status']),
-              tone: _lifecycleTone(t['status']),
-            ),
+            if (temporal != null)
+              StatusChip(
+                key: const ValueKey('trip-temporal-status-chip'),
+                text: temporal.label,
+                icon: temporal.icon,
+                tone: temporal.tone,
+              ),
+            if (isDraft)
+              StatusChip(
+                text: _lifecycleLabel(t['status']),
+                icon: _lifecycleIcon(t['status']),
+                tone: _lifecycleTone(t['status']),
+              ),
+            if (isGenerating)
+              StatusChip(
+                text: _lifecycleLabel(t['status']),
+                icon: _lifecycleIcon(t['status']),
+                tone: _lifecycleTone(t['status']),
+              ),
+            if (isFailed)
+              StatusChip(
+                text: _lifecycleLabel(t['status']),
+                icon: _lifecycleIcon(t['status']),
+                tone: _lifecycleTone(t['status']),
+              ),
+            if (temporal == null && !isDraft && !isGenerating && !isFailed)
+              StatusChip(
+                text: _lifecycleLabel(t['status']),
+                icon: _lifecycleIcon(t['status']),
+                tone: _lifecycleTone(t['status']),
+              ),
           ]),
         ],
       ),
