@@ -10,6 +10,7 @@ class FlightScreen extends StatefulWidget {
   final String? initialReturnDate;
   final String? initialDeparture;
   final String? initialArrival;
+  final ApiService? api;
 
   const FlightScreen({
     super.key,
@@ -17,6 +18,7 @@ class FlightScreen extends StatefulWidget {
     this.initialReturnDate,
     this.initialDeparture,
     this.initialArrival,
+    this.api,
   });
 
   @override
@@ -29,7 +31,7 @@ class _FlightScreenState extends State<FlightScreen> {
   final travellers = TextEditingController(text: '1');
   late final TextEditingController outbound;
   late final TextEditingController returnDate;
-  final api = ApiService();
+  late final ApiService api;
 
   List<dynamic> items = [];
   final Set<String> compareIds = {};
@@ -37,14 +39,30 @@ class _FlightScreenState extends State<FlightScreen> {
   bool roundTrip = false;
   bool nonstopOnly = false;
   String sort = 'top';
+  int travelClass = 1;
+
   String source = '';
+  String sourceLabel = '';
   String searchId = '';
+  String? retrievedAt;
+  String? expiresAt;
+  String freshnessStatus = '';
+  bool planningOnly = true;
+  String quoteCompleteness = '';
+  String selectionStage = '';
   bool returnLoading = false;
 
   String dateText(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   DateTime? parseDate(String value) => DateTime.tryParse(value.trim());
+
+  bool isQuoteExpired() {
+    if (expiresAt == null || expiresAt!.isEmpty) return false;
+    final exp = DateTime.tryParse(expiresAt!);
+    if (exp == null) return false;
+    return exp.toUtc().isBefore(DateTime.now().toUtc());
+  }
 
   Future<void> pickDate(TextEditingController controller,
       {DateTime? firstDate}) async {
@@ -67,10 +85,13 @@ class _FlightScreenState extends State<FlightScreen> {
   @override
   void initState() {
     super.initState();
-    if ((widget.initialDeparture ?? '').trim().isNotEmpty)
+    api = widget.api ?? ApiService();
+    if ((widget.initialDeparture ?? '').trim().isNotEmpty) {
       from.text = widget.initialDeparture!.trim();
-    if ((widget.initialArrival ?? '').trim().isNotEmpty)
+    }
+    if ((widget.initialArrival ?? '').trim().isNotEmpty) {
       to.text = widget.initialArrival!.trim();
+    }
     final start = DateTime.now().add(const Duration(days: 30));
     outbound = TextEditingController(
         text: widget.initialOutboundDate?.trim().isNotEmpty == true
@@ -149,31 +170,38 @@ class _FlightScreenState extends State<FlightScreen> {
     final arrival = resolveIata(to.text);
     if (departure.length == 3) from.text = departure;
     if (arrival.length == 3) to.text = arrival;
-    final travellerCount = int.tryParse(travellers.text.trim()) ?? 0;
+    final travellerCount = int.tryParse(travellers.text.trim());
     final outboundDate = parseDate(outbound.text);
     final inboundDate = roundTrip ? parseDate(returnDate.text) : null;
+    final today = DateTime.now();
+    final todayMidnight = DateTime(today.year, today.month, today.day);
+
     if (departure.length != 3 || arrival.length != 3 || departure == arrival) {
       showError(context,
-          'Enter 3-letter airport codes or supported city names (e.g. KUL, PEN, SIN).');
+          'Enter 3-letter airport codes or supported city names (e.g. KUL, PEN, SIN) and ensure departure and arrival airports differ.');
       return;
     }
-    if (outboundDate == null || (roundTrip && inboundDate == null)) {
-      showError(context, 'Choose valid flight dates.');
+    if (outboundDate == null || outboundDate.isBefore(todayMidnight)) {
+      showError(context, 'Choose a current or future outbound date.');
       return;
     }
-    if (inboundDate != null && inboundDate.isBefore(outboundDate)) {
-      showError(context, 'Return date must be after the outbound date.');
+    if (roundTrip &&
+        (inboundDate == null || inboundDate.isBefore(outboundDate))) {
+      showError(context, 'Return date must be on or after the outbound date.');
       return;
     }
-    if (travellerCount <= 0) {
-      showError(context, 'Travellers must be at least 1.');
+    if (travellerCount == null || travellerCount <= 0) {
+      showError(
+          context, 'Travellers must be a positive whole number (at least 1).');
       return;
     }
+
     setState(() {
       busy = true;
       compareIds.clear();
       returnLoading = false;
     });
+
     try {
       final query = <String, String>{
         'departure_id': departure,
@@ -181,6 +209,7 @@ class _FlightScreenState extends State<FlightScreen> {
         'outbound_date': outbound.text.trim(),
         'currency': 'MYR',
         'traveller_count': travellerCount.toString(),
+        'travel_class': travelClass.toString(),
         if (roundTrip) 'return_date': returnDate.text.trim(),
         if (nonstopOnly) 'nonstop': 'true',
         if (sort == 'price') 'sort': 'price_low',
@@ -191,8 +220,19 @@ class _FlightScreenState extends State<FlightScreen> {
       setState(() {
         items = data['items'] ?? data['best_flights'] ?? [];
         source = (data['source'] ?? '').toString();
+        sourceLabel = (data['sourceLabel'] ?? '').toString();
         searchId = (data['searchId'] ?? '').toString();
+        retrievedAt = data['retrievedAt']?.toString();
+        expiresAt = data['expiresAt']?.toString();
+        freshnessStatus = (data['freshnessStatus'] ?? '').toString();
+        planningOnly = data['planningOnly'] != false;
+        quoteCompleteness = (data['quoteCompleteness'] ?? '').toString();
+        selectionStage = (data['selectionStage'] ?? '').toString();
       });
+    } on ApiException catch (e) {
+      if (mounted) {
+        showError(context, e.message.isNotEmpty ? e.message : e.toString());
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -200,7 +240,8 @@ class _FlightScreenState extends State<FlightScreen> {
     }
   }
 
-  String idOf(Map<String, dynamic> item) => (item['id'] ??
+  String idOf(Map<String, dynamic> item) => (item['optionId'] ??
+          item['id'] ??
           '${item['airline']}_${item['flightNumber']}_${item['departureTime']}')
       .toString();
 
@@ -227,6 +268,15 @@ class _FlightScreenState extends State<FlightScreen> {
           ),
         ),
       );
+    } on ApiException catch (e) {
+      if (mounted) {
+        if (e.code == 'flight_quote_expired') {
+          showError(
+              context, 'This flight quote has expired. Please search again.');
+        } else {
+          showError(context, e.message.isNotEmpty ? e.message : e.toString());
+        }
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -234,6 +284,11 @@ class _FlightScreenState extends State<FlightScreen> {
 
   Future<void> chooseReturn(Map<String, dynamic> outboundFlight) async {
     if (!roundTrip || searchId.isEmpty) return;
+    if (isQuoteExpired()) {
+      showError(
+          context, 'This flight quote has expired. Please search again.');
+      return;
+    }
     setState(() => returnLoading = true);
     try {
       final data = await api.post('/api/fr7/flights/returns', {
@@ -252,33 +307,107 @@ class _FlightScreenState extends State<FlightScreen> {
       }
       final selected = await showModalBottomSheet<Map<String, dynamic>>(
         context: context,
+        isScrollControlled: true,
         showDragHandle: true,
         builder: (context) => SafeArea(
-          child: ListView(
-            shrinkWrap: true,
+          child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
-            children: [
-              const Text('Choose your return flight',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 6),
-              const Text(
-                  'The complete provider fare is shown after the return leg is selected.'),
-              const SizedBox(height: 10),
-              ...returns.map((item) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                        '${item['airline'] ?? 'Flight'} ${item['flightNumber'] ?? ''}'),
-                    subtitle: Text(
-                        '${item['departureAirport'] ?? ''} ${item['departureTime'] ?? ''} → ${item['arrivalAirport'] ?? ''} ${item['arrivalTime'] ?? ''}'),
-                    trailing: const Icon(Icons.arrow_forward_rounded),
-                    onTap: () => Navigator.pop(context, item),
-                  )),
-            ],
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                const Text('Choose your return flight',
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 4),
+                Text(
+                  'Outbound: ${outboundFlight['airline'] ?? 'Flight'} ${outboundFlight['flightNumber'] ?? ''} (${outboundFlight['departureAirport'] ?? ''} → ${outboundFlight['arrivalAirport'] ?? ''})',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: InkWashColors.blueGrey),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Each return option displays the complete provider round-trip fare.',
+                  style:
+                      TextStyle(fontSize: 13, color: InkWashColors.mutedInk),
+                ),
+                const SizedBox(height: 12),
+                ...returns.map((item) {
+                  final fare = item['price'] ?? item['combinedPrice'];
+                  final fareText =
+                      fare != null ? 'RM $fare' : 'Price unavailable';
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => Navigator.pop(context, item),
+                      child: InkCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${item['airline'] ?? 'Flight'} ${item['flightNumber'] ?? ''}',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 16),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: InkWashColors.cream,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    fareText,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 15,
+                                      color: InkWashColors.ink,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${item['departureAirport'] ?? ''} ${item['departureTime'] ?? ''} → ${item['arrivalAirport'] ?? ''} ${item['arrivalTime'] ?? ''}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${item['durationMinutes'] ?? '-'} min • ${item['stopText'] ?? (item['stops'] == 0 ? 'Nonstop' : '1 stop')} • Total round-trip fare: $fareText',
+                              style: const TextStyle(
+                                  fontSize: 12, color: InkWashColors.mutedInk),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
           ),
         ),
       );
-      if (selected != null)
-        await selectFlight(outboundFlight, returnOptionId: idOf(selected));
+      if (selected != null) {
+        await selectFlight(outboundFlight, returnOption: selected);
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        if (e.code == 'flight_quote_expired') {
+          showError(
+              context, 'This flight quote has expired. Please search again.');
+        } else {
+          showError(context, e.message.isNotEmpty ? e.message : e.toString());
+        }
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -347,8 +476,136 @@ class _FlightScreenState extends State<FlightScreen> {
     }
   }
 
+  Future<bool?> _showHardDateConflictDialog(
+    BuildContext context, {
+    required String code,
+    required String message,
+    Map<String, dynamic>? tripDates,
+    List<dynamic>? flightDates,
+    List<dynamic>? conflicts,
+  }) async {
+    String tripRangeText = '';
+    if (tripDates != null) {
+      final start = (tripDates['startDate'] ?? '').toString();
+      final end = (tripDates['endDate'] ?? '').toString();
+      if (start.isNotEmpty && end.isNotEmpty) {
+        tripRangeText = '$start to $end';
+      } else if (start.isNotEmpty) {
+        tripRangeText = start;
+      }
+    }
+
+    String flightDatesText = '';
+    if (flightDates != null && flightDates.isNotEmpty) {
+      flightDatesText = flightDates.map((d) => d.toString()).toSet().join(', ');
+    }
+
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const ValueKey('flight-date-conflict-dialog'),
+        title: const Row(
+          children: [
+            Icon(Icons.calendar_today_outlined, color: AppColors.error),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Flight Dates Mismatch',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'These flights fall outside your selected Trip dates. Choose a Trip with matching dates or update your Trip before adding the flights.',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            if (tripRangeText.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                margin: const EdgeInsets.only(bottom: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Trip Dates',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textSecondary)),
+                    Text(tripRangeText,
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ],
+            if (flightDatesText.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.warningSoft,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Flight Dates',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.warning)),
+                    Text(flightDatesText,
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary)),
+                  ],
+                ),
+              ),
+            ],
+            if (code == 'invalid_trip_dates' || code == 'invalid_flight_dates') ...[
+              const SizedBox(height: 8),
+              Text(
+                message,
+                style: const TextStyle(fontSize: 12, color: AppColors.error),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('back-to-flight-results-button'),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Back to Flight Results'),
+          ),
+          FilledButton(
+            key: const ValueKey('choose-another-trip-button'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Choose Another Trip'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> selectFlight(Map<String, dynamic> flight,
-      {String? returnOptionId}) async {
+      {Map<String, dynamic>? returnOption}) async {
+    if (isQuoteExpired()) {
+      showError(
+          context, 'This flight quote has expired. Please search again.');
+      return;
+    }
     try {
       final data = await api.get('/api/fr5/itineraries');
       final trips = data['items'] as List? ?? [];
@@ -374,26 +631,61 @@ class _FlightScreenState extends State<FlightScreen> {
         final start = flight['outboundDate'] ??
             dateText(DateTime.now().add(const Duration(days: 14)));
         final end = flight['returnDate'] ?? start;
-        final price = double.tryParse('${flight['price'] ?? 0}') ?? 0.0;
+        final double effectivePrice = returnOption != null &&
+                returnOption['price'] != null
+            ? (double.tryParse('${returnOption['price']}') ?? 0.0)
+            : (double.tryParse('${flight['price'] ?? 0}') ?? 0.0);
         final newTrip = await api.post('/api/fr5/itineraries', {
           'title': 'Trip to ${flight['arrivalAirport'] ?? 'Destination'}',
           'startDate': start,
           'endDate': end,
           'travellerCount': int.tryParse(travellers.text.trim()) ?? 1,
-          'budgetLimit': price > 0 ? price * 3 : 1500.0,
+          'budgetLimit': effectivePrice > 0 ? effectivePrice * 3 : 1500.0,
           'activities': [],
         });
         final created = newTrip['itinerary'] is Map
             ? Map<String, dynamic>.from(newTrip['itinerary'] as Map)
             : <String, dynamic>{};
         if ((created['id'] ?? '').toString().isNotEmpty) {
-          await api.post('/api/fr7/flights/select', {
-            'itineraryId': created['id'],
-            'searchId': searchId,
-            'optionId': idOf(flight),
-            if (returnOptionId != null) 'returnOptionId': returnOptionId,
-            'flight': flight,
-          });
+          try {
+            await api.post('/api/fr7/flights/select', {
+              'itineraryId': created['id'],
+              'searchId': searchId,
+              'optionId': idOf(flight),
+              if (returnOption != null) 'returnOptionId': idOf(returnOption),
+              'flight': flight,
+            });
+          } on ApiException catch (error) {
+            if (error.code == 'flight_quote_expired') {
+              if (mounted) {
+                showError(context,
+                    'This flight quote has expired. Please search again.');
+              }
+              return;
+            }
+            if (error.data['status'] == 'hard_conflict' ||
+                error.code == 'flight_trip_date_mismatch' ||
+                error.code == 'invalid_trip_dates' ||
+                error.code == 'invalid_flight_dates') {
+              if (!mounted) return;
+              await _showHardDateConflictDialog(
+                context,
+                code: error.code ?? '',
+                message: error.message,
+                tripDates: error.data['tripDates'] is Map
+                    ? Map<String, dynamic>.from(error.data['tripDates'] as Map)
+                    : null,
+                flightDates: error.data['flightDates'] is List
+                    ? (error.data['flightDates'] as List)
+                    : null,
+                conflicts: error.data['conflicts'] is List
+                    ? (error.data['conflicts'] as List)
+                    : null,
+              );
+              return;
+            }
+            rethrow;
+          }
         }
         if (mounted) {
           final tripTitle = newTrip['itinerary']?['title'] ?? 'New trip';
@@ -405,87 +697,127 @@ class _FlightScreenState extends State<FlightScreen> {
         }
         return;
       }
-      final selected = await showModalBottomSheet<Map<String, dynamic>>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
-            children: [
-              const Text('Attach flight to itinerary',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 8),
-              ...trips.map((raw) {
-                final trip = Map<String, dynamic>.from(raw as Map);
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(
-                      backgroundColor: InkWashColors.cream,
-                      child: Icon(Icons.luggage_outlined,
-                          color: InkWashColors.blueGrey)),
-                  title: Text((trip['title'] ?? 'Trip').toString()),
-                  subtitle: Text('Budget RM ${trip['budgetLimit'] ?? 0}'),
-                  onTap: () => Navigator.pop(context, trip),
-                );
-              }),
-            ],
-          ),
-        ),
-      );
-      if (selected == null) return;
-      final request = <String, dynamic>{
-        'itineraryId': selected['id'],
-        'searchId': searchId,
-        'optionId': idOf(flight),
-        if (returnOptionId != null) 'returnOptionId': returnOptionId,
-        'flight': flight,
-      };
-      Map<String, dynamic> result;
-      try {
-        result = await api.post('/api/fr7/flights/select', request);
-      } on ApiException catch (error) {
-        if (error.data['status'] != 'conflicts_require_acknowledgement') {
-          rethrow;
-        }
-        final conflicts = (error.data['conflicts'] as List? ?? const [])
-            .whereType<Map>()
-            .map((item) => item['message']?.toString())
-            .whereType<String>()
-            .toList();
-        if (!mounted) return;
-        final acknowledge = await showDialog<bool>(
+      while (true) {
+        final selected = await showModalBottomSheet<Map<String, dynamic>>(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Review itinerary timing'),
-            content: Text(conflicts.isEmpty
-                ? 'This flight may overlap your saved itinerary activities.'
-                : '${conflicts.join('\n\n')}\n\nYou can keep the flight and review these activities afterwards.'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Choose another flight')),
-              FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Keep flight')),
-            ],
+          showDragHandle: true,
+          builder: (context) => SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+              children: [
+                const Text('Attach flight to itinerary',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                ...trips.map((raw) {
+                  final trip = Map<String, dynamic>.from(raw as Map);
+                  final dates = [trip['startDate'], trip['endDate']]
+                      .where((d) => d != null && d.toString().isNotEmpty)
+                      .join(' to ');
+                  final subtitleText = dates.isNotEmpty
+                      ? '$dates • Budget RM ${trip['budgetLimit'] ?? 0}'
+                      : 'Budget RM ${trip['budgetLimit'] ?? 0}';
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                        backgroundColor: InkWashColors.cream,
+                        child: Icon(Icons.luggage_outlined,
+                            color: InkWashColors.blueGrey)),
+                    title: Text((trip['title'] ?? 'Trip').toString()),
+                    subtitle: Text(subtitleText),
+                    onTap: () => Navigator.pop(context, trip),
+                  );
+                }),
+              ],
+            ),
           ),
         );
-        if (acknowledge != true) return;
-        result = await api.post('/api/fr7/flights/select', {
-          ...request,
-          'acknowledgeConflicts': true,
-        });
-      }
-      if (mounted) {
-        final budget = result['budget'] is Map
-            ? Map<String, dynamic>.from(result['budget'] as Map)
-            : <String, dynamic>{};
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  'Flight selected. New estimated trip total: RM ${budget['total'] ?? '-'}')),
-        );
+        if (selected == null) return;
+        final request = <String, dynamic>{
+          'itineraryId': selected['id'],
+          'searchId': searchId,
+          'optionId': idOf(flight),
+          if (returnOption != null) 'returnOptionId': idOf(returnOption),
+          'flight': flight,
+        };
+        Map<String, dynamic> result;
+        try {
+          result = await api.post('/api/fr7/flights/select', request);
+        } on ApiException catch (error) {
+          if (error.code == 'flight_quote_expired') {
+            if (mounted) {
+              showError(
+                  context, 'This flight quote has expired. Please search again.');
+            }
+            return;
+          }
+          if (error.data['status'] == 'hard_conflict' ||
+              error.code == 'flight_trip_date_mismatch' ||
+              error.code == 'invalid_trip_dates' ||
+              error.code == 'invalid_flight_dates') {
+            if (!mounted) return;
+            final chooseAnother = await _showHardDateConflictDialog(
+              context,
+              code: error.code ?? '',
+              message: error.message,
+              tripDates: error.data['tripDates'] is Map
+                  ? Map<String, dynamic>.from(error.data['tripDates'] as Map)
+                  : null,
+              flightDates: error.data['flightDates'] is List
+                  ? (error.data['flightDates'] as List)
+                  : null,
+              conflicts: error.data['conflicts'] is List
+                  ? (error.data['conflicts'] as List)
+                  : null,
+            );
+            if (chooseAnother == true) {
+              continue;
+            }
+            return;
+          }
+          if (error.data['status'] != 'conflicts_require_acknowledgement') {
+            rethrow;
+          }
+          final conflicts = (error.data['conflicts'] as List? ?? const [])
+              .whereType<Map>()
+              .map((item) => item['message']?.toString())
+              .whereType<String>()
+              .toList();
+          if (!mounted) return;
+          final acknowledge = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Review itinerary timing'),
+              content: Text(conflicts.isEmpty
+                  ? 'This flight may overlap your saved itinerary activities.'
+                  : '${conflicts.join('\n\n')}\n\nYou can keep the flight and review these activities afterwards.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Choose another flight')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Keep flight')),
+              ],
+            ),
+          );
+          if (acknowledge != true) return;
+          result = await api.post('/api/fr7/flights/select', {
+            ...request,
+            'acknowledgeConflicts': true,
+          });
+        }
+        if (mounted) {
+          final budget = result['budget'] is Map
+              ? Map<String, dynamic>.from(result['budget'] as Map)
+              : <String, dynamic>{};
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(
+                    'Flight attached to trip plan! Estimated trip total: RM ${budget['total'] ?? '-'}')),
+          );
+        }
+        break;
       }
     } catch (e) {
       if (mounted) showError(context, e);
@@ -547,14 +879,37 @@ class _FlightScreenState extends State<FlightScreen> {
                         labelText: 'To', hintText: 'PEN'))),
           ]),
           const SizedBox(height: 9),
-          TextField(
-            controller: travellers,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Travellers',
-              prefixIcon: Icon(Icons.people_outline_rounded),
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: travellers,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Travellers',
+                  prefixIcon: Icon(Icons.people_outline_rounded),
+                ),
+              ),
             ),
-          ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: DropdownButtonFormField<int>(
+                initialValue: travelClass,
+                decoration: const InputDecoration(
+                  labelText: 'Cabin class',
+                  prefixIcon: Icon(Icons.airline_seat_recline_normal_rounded),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text('Economy')),
+                  DropdownMenuItem(value: 2, child: Text('Premium')),
+                  DropdownMenuItem(value: 3, child: Text('Business')),
+                  DropdownMenuItem(value: 4, child: Text('First')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setState(() => travelClass = val);
+                },
+              ),
+            ),
+          ]),
           const SizedBox(height: 9),
           Row(children: [
             Expanded(
@@ -607,15 +962,74 @@ class _FlightScreenState extends State<FlightScreen> {
               onPressed: busy ? null : search,
               icon: const Icon(Icons.search_rounded),
               label: Text(busy ? 'Searching...' : 'Search flights')),
-          if (source.isNotEmpty) ...[
+          if (searchId.isNotEmpty) ...[
             const SizedBox(height: 10),
-            TravelStatusPill(
-                text: source == 'serpapi'
-                    ? 'PROVIDER RESULTS • PLANNING REFERENCE'
-                    : 'EXPLICIT SAMPLE FIXTURE • NOT A CURRENT SCHEDULE',
-                icon: source == 'serpapi'
-                    ? Icons.cloud_done_outlined
-                    : Icons.science_outlined),
+            if (isQuoteExpired())
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3CD),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFFEEBA)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.timer_off_outlined,
+                        color: Color(0xFF856404), size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Flight quote expired. Please search again for current fares.',
+                        style: TextStyle(
+                            color: Color(0xFF856404),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: InkWashColors.cream,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE7E7E2)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          source == 'serpapi'
+                              ? Icons.cloud_done_outlined
+                              : Icons.science_outlined,
+                          size: 18,
+                          color: InkWashColors.blueGrey,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            source == 'serpapi'
+                                ? 'Provider search results • Planning estimate'
+                                : 'Explicit sample fixture • Not a current schedule',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Flight planning estimate — provider caching may apply. Price and availability are not guaranteed.',
+                      style: TextStyle(
+                          fontSize: 12, color: InkWashColors.mutedInk),
+                    ),
+                  ],
+                ),
+              ),
           ],
           const SizedBox(height: 18),
           if (items.isEmpty && !busy)
@@ -679,11 +1093,27 @@ class _FlightScreenState extends State<FlightScreen> {
                         const SizedBox(height: 10),
                         Row(children: [
                           Expanded(
-                              child: Text(
-                                  '${item['currency'] ?? 'MYR'} ${item['price'] ?? '-'}',
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  roundTrip
+                                      ? 'From ${item['currency'] ?? 'MYR'} ${item['price'] ?? '-'}'
+                                      : '${item['currency'] ?? 'MYR'} ${item['price'] ?? '-'}',
                                   style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w900))),
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.w900),
+                                ),
+                                if (roundTrip)
+                                  const Text(
+                                    'Round-trip estimate • Choose return for final fare',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: InkWashColors.mutedInk),
+                                  ),
+                              ],
+                            ),
+                          ),
                           OutlinedButton(
                               onPressed: () => showDetails(item),
                               child: const Text('Details')),

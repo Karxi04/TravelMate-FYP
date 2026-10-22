@@ -28,7 +28,11 @@ def test_provider_result_is_allowlisted_and_select_requires_owned_search(client,
     assert 'raw' not in data['items'][0]
     assert data['items'][0]['outboundSegments'][0]['departureDate'] == '2026-11-01'
 
-    itinerary = {'id': 'pu3a_trip', 'travellerId': 'test_traveller_uid', 'budgetLimit': 1000, 'travellerCount': 1, 'activities': []}
+    itinerary = {
+        'id': 'pu3a_trip', 'travellerId': 'test_traveller_uid',
+        'startDate': '2026-11-01', 'endDate': '2026-11-03',
+        'budgetLimit': 1000, 'travellerCount': 1, 'activities': [],
+    }
     with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary), patch('modules.fr07_flight_search.routes.updateRecord', side_effect=lambda c, i, p: {**itinerary, **p}):
         selected = client.post('/api/fr7/flights/select', headers={'Authorization': 'Bearer valid_test_token'}, json={'itineraryId': 'pu3a_trip', 'searchId': data['searchId'], 'optionId': data['items'][0]['id']})
     assert selected.status_code == 200

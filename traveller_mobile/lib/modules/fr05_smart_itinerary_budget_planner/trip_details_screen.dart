@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'budget_comparison_screen.dart';
 import 'models/budget_model.dart';
 import 'package_trip_details_screen.dart';
+import 'trip_status_helper.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
@@ -16,14 +18,21 @@ import '../fr09_payment/payment_screen.dart';
 class TripDetailsScreen extends StatefulWidget {
   final String tripId;
   final ApiService? api;
+  final DateTime? referenceDate;
 
-  const TripDetailsScreen({super.key, required this.tripId, this.api});
+  const TripDetailsScreen({
+    super.key,
+    required this.tripId,
+    this.api,
+    this.referenceDate,
+  });
 
   @override
   State<TripDetailsScreen> createState() => _TripDetailsScreenState();
 }
 
-class _TripDetailsScreenState extends State<TripDetailsScreen> {
+class _TripDetailsScreenState extends State<TripDetailsScreen>
+    with WidgetsBindingObserver {
   static const _placeImageFields = <String>[
     'thumbnail',
     'image',
@@ -390,10 +399,80 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     return 'There wasn’t enough time to fit this place safely.';
   }
 
+  bool _hasFlightDateMismatch(
+      Map<String, dynamic> t, Map<String, dynamic> flight) {
+    final tripStartStr = (t['startDate'] ?? '').toString();
+    final tripEndStr = (t['endDate'] ?? '').toString();
+    if (tripStartStr.length < 10 || tripEndStr.length < 10) return false;
+    final tripStart = DateTime.tryParse(tripStartStr.substring(0, 10));
+    final tripEnd = DateTime.tryParse(tripEndStr.substring(0, 10));
+    if (tripStart == null || tripEnd == null || tripEnd.isBefore(tripStart)) {
+      return false;
+    }
+
+    final dates = <DateTime>[];
+    void addDate(dynamic raw) {
+      if (raw == null) return;
+      final str = raw.toString();
+      if (str.length >= 10) {
+        final d = DateTime.tryParse(str.substring(0, 10));
+        if (d != null) dates.add(d);
+      }
+    }
+
+    for (final segList in [
+      flight['outboundSegments'],
+      flight['returnSegments']
+    ]) {
+      if (segList is List) {
+        for (final seg in segList) {
+          if (seg is Map) {
+            addDate(seg['departureDate']);
+            addDate(seg['arrivalDate']);
+          }
+        }
+      }
+    }
+
+    if (dates.isEmpty) {
+      addDate(flight['outboundDate']);
+      addDate(flight['returnDate']);
+      addDate(flight['departureDate']);
+      addDate(flight['arrivalDate']);
+    }
+
+    if (dates.isEmpty) return false;
+
+    return dates.any((d) => d.isBefore(tripStart) || d.isAfter(tripEnd));
+  }
+
   List<Widget> _attachedTravelCards(Map<String, dynamic> t) {
     final cards = <Widget>[];
     if (t['selectedFlight'] is Map) {
       final flight = Map<String, dynamic>.from(t['selectedFlight'] as Map);
+      final returnSegments = (flight['returnSegments'] as List? ?? [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final bool isRoundTrip = flight['tripType'] == 'round_trip' ||
+          flight['roundTripComplete'] == true ||
+          returnSegments.isNotEmpty ||
+          (flight['returnDate'] ?? '').toString().isNotEmpty;
+
+      String? returnSummary;
+      if (returnSegments.isNotEmpty) {
+        final ret = returnSegments.first;
+        final retDept = ret['departureAirportCode'] ?? ret['departureAirport'] ?? '-';
+        final retArr = ret['arrivalAirportCode'] ?? ret['arrivalAirport'] ?? '-';
+        final retDeptTime = ret['departureTime'] ?? '';
+        final retArrTime = ret['arrivalTime'] ?? '';
+        returnSummary = '$retDept to $retArr • $retDeptTime to $retArrTime'.trim();
+      } else if ((flight['returnDate'] ?? '').toString().isNotEmpty) {
+        returnSummary = 'Return date: ${flight['returnDate']}';
+      }
+
+      final bool hasDateMismatch = _hasFlightDateMismatch(t, flight);
+
       cards.add(InkCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -401,17 +480,63 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             const Text('Attached flight',
                 style: TextStyle(fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
+            if (hasDateMismatch) ...[
+              Container(
+                key: const ValueKey('flight-date-mismatch-warning'),
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.warningSoft,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.warning.withValues(alpha: 0.35)),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        size: 18, color: AppColors.warning),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "Flight dates do not match this Trip's dates. Review your travel plan before relying on this itinerary.",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.warning,
+                          fontWeight: FontWeight.w600,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             Text(
                 '${flight['airline'] ?? 'Flight'} ${flight['flightNumber'] ?? ''}',
                 style: const TextStyle(fontWeight: FontWeight.w700)),
             Text(
-              '${flight['departureAirport'] ?? '-'} to ${flight['arrivalAirport'] ?? '-'} - ${flight['departureTime'] ?? '-'} to ${flight['arrivalTime'] ?? '-'}',
+              'Outbound: ${flight['departureAirport'] ?? '-'} to ${flight['arrivalAirport'] ?? '-'} • ${flight['departureTime'] ?? '-'} to ${flight['arrivalTime'] ?? '-'}',
               style:
                   const TextStyle(fontSize: 12, color: InkWashColors.mutedInk),
             ),
-            if (t['flightCost'] != null)
-              Text('Flight cost: RM ${t['flightCost']}',
-                  style: const TextStyle(fontWeight: FontWeight.w800)),
+            if (isRoundTrip && returnSummary != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                'Return: $returnSummary',
+                style: const TextStyle(fontSize: 12, color: InkWashColors.mutedInk),
+              ),
+            ],
+            const SizedBox(height: 4),
+            Text('Flight cost: RM ${t['flightCost'] ?? flight['price'] ?? 0}',
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 2),
+            const Text(
+              'Planning estimate only • No airline ticket issued',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: InkWashColors.mutedInk,
+                  fontStyle: FontStyle.italic),
+            ),
             const SizedBox(height: 8),
             Wrap(spacing: 8, children: [
               OutlinedButton.icon(
@@ -1064,15 +1189,54 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                 DestinationDetailsScreen(initialDestination: initial)));
   }
 
+  Timer? _midnightTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     api = widget.api ?? ApiService();
+    _scheduleMidnightTimer();
     Future.microtask(load);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _midnightTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      setState(() {});
+      _scheduleMidnightTimer();
+    }
+  }
+
+  void _scheduleMidnightTimer() {
+    _midnightTimer?.cancel();
+    final delay = TripStatusHelper.durationUntilMidnight();
+    _midnightTimer = Timer(delay, () {
+      if (mounted) {
+        setState(() {});
+        _scheduleMidnightTimer();
+      }
+    });
   }
 
   Widget _tripHeader(Map<String, dynamic> t) {
     final travellerCount = int.tryParse('${t['travellerCount'] ?? 1}') ?? 1;
+    final temporal = TripStatusHelper.resolveStatus(
+      t,
+      referenceDate: widget.referenceDate,
+    );
+    final lifecycleRaw = (t['status'] ?? 'draft').toString().toLowerCase();
+    final isDraft = lifecycleRaw == 'draft';
+    final isGenerating = lifecycleRaw == 'generating';
+    final isFailed = lifecycleRaw == 'generation_failed';
+
     return InkCard(
       color: AppColors.surfaceElevated,
       child: Column(
@@ -1105,11 +1269,37 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
               icon: Icons.people_outline_rounded,
               tone: AppStatusTone.neutral,
             ),
-            StatusChip(
-              text: _lifecycleLabel(t['status']),
-              icon: _lifecycleIcon(t['status']),
-              tone: _lifecycleTone(t['status']),
-            ),
+            if (temporal != null)
+              StatusChip(
+                key: const ValueKey('trip-temporal-status-chip'),
+                text: temporal.label,
+                icon: temporal.icon,
+                tone: temporal.tone,
+              ),
+            if (isDraft)
+              StatusChip(
+                text: _lifecycleLabel(t['status']),
+                icon: _lifecycleIcon(t['status']),
+                tone: _lifecycleTone(t['status']),
+              ),
+            if (isGenerating)
+              StatusChip(
+                text: _lifecycleLabel(t['status']),
+                icon: _lifecycleIcon(t['status']),
+                tone: _lifecycleTone(t['status']),
+              ),
+            if (isFailed)
+              StatusChip(
+                text: _lifecycleLabel(t['status']),
+                icon: _lifecycleIcon(t['status']),
+                tone: _lifecycleTone(t['status']),
+              ),
+            if (temporal == null && !isDraft && !isGenerating && !isFailed)
+              StatusChip(
+                text: _lifecycleLabel(t['status']),
+                icon: _lifecycleIcon(t['status']),
+                tone: _lifecycleTone(t['status']),
+              ),
           ]),
         ],
       ),
@@ -1512,6 +1702,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   String _costKind(Map<String, dynamic> provenance, String key) {
     final value = (provenance[key] ?? '').toString();
+    if (key == 'flight') {
+      return value.startsWith('confirmed') || value == 'provided'
+          ? 'planning estimate'
+          : 'estimated';
+    }
     return value.startsWith('confirmed') || value == 'provided'
         ? 'confirmed'
         : 'estimated';
@@ -1721,39 +1916,48 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           onPressed: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => PaymentScreen(
-                initialBookingReference:
-                    (selectedHotel['bookingReference'] ?? '').toString(),
-                initialAmount: selectedHotel['price'] is num
-                    ? (selectedHotel['price'] as num).toDouble()
-                    : selectedFlight['price'] is num
-                        ? (selectedFlight['price'] as num).toDouble()
-                        : null,
-                quoteType:
-                    (selectedHotel['quoteId'] ?? '').toString().isNotEmpty
-                        ? 'hotel'
-                        : (selectedFlight['flightSearchId'] ?? '')
-                                .toString()
-                                .isNotEmpty
-                            ? 'flight'
-                            : '',
-                quoteId: (selectedHotel['quoteId'] ?? '').toString(),
-                offerId: (selectedHotel['offerId'] ?? '').toString(),
-                acceptedPrebookSnapshotId:
-                    (selectedHotel['acceptedPrebookSnapshotId'] ??
-                            selectedHotel['snapshotId'] ??
-                            '')
-                        .toString(),
-                acceptedPrebook: selectedHotel['acceptedPrebook'] is Map
-                    ? Map<String, dynamic>.from(
-                        selectedHotel['acceptedPrebook'] as Map)
-                    : null,
-                searchId: (selectedFlight['flightSearchId'] ?? '').toString(),
-                optionId: (selectedFlight['flightOptionId'] ??
-                        selectedFlight['optionId'] ??
+              builder: (_) {
+                final flightSearchId = (t['flightSearchId'] ??
+                        selectedFlight['flightSearchId'] ??
                         '')
-                    .toString(),
-              ),
+                    .toString();
+                final flightOptionId = (t['flightOptionId'] ??
+                        selectedFlight['flightOptionId'] ??
+                        selectedFlight['optionId'] ??
+                        selectedFlight['id'] ??
+                        '')
+                    .toString();
+                return PaymentScreen(
+                  initialBookingReference:
+                      (selectedHotel['bookingReference'] ?? '').toString(),
+                  initialAmount: selectedHotel['price'] is num
+                      ? (selectedHotel['price'] as num).toDouble()
+                      : t['flightCost'] is num
+                          ? (t['flightCost'] as num).toDouble()
+                          : selectedFlight['price'] is num
+                              ? (selectedFlight['price'] as num).toDouble()
+                              : null,
+                  quoteType:
+                      (selectedHotel['quoteId'] ?? '').toString().isNotEmpty
+                          ? 'hotel'
+                          : flightSearchId.isNotEmpty
+                              ? 'flight'
+                              : '',
+                  quoteId: (selectedHotel['quoteId'] ?? '').toString(),
+                  offerId: (selectedHotel['offerId'] ?? '').toString(),
+                  acceptedPrebookSnapshotId:
+                      (selectedHotel['acceptedPrebookSnapshotId'] ??
+                              selectedHotel['snapshotId'] ??
+                              '')
+                          .toString(),
+                  acceptedPrebook: selectedHotel['acceptedPrebook'] is Map
+                      ? Map<String, dynamic>.from(
+                          selectedHotel['acceptedPrebook'] as Map)
+                      : null,
+                  searchId: flightSearchId,
+                  optionId: flightOptionId,
+                );
+              },
             ),
           ),
         ),

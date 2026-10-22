@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
+import '../fr08_hotel_booking/hotel_order_details_screen.dart';
 import 'payment_screen.dart';
 import 'payment_status.dart';
 
@@ -251,13 +252,19 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   (String label, AppStatusTone tone, IconData icon) _resolveStatus(Map<String, dynamic> item) {
     final paymentStatus = (item['paymentStatus'] ?? '').toString().trim().toLowerCase();
     final orderStatus = (item['orderStatus'] ?? '').toString().trim().toLowerCase();
+    final bookingType = (item['bookingType'] ?? '').toString().trim().toLowerCase();
+    final isHotel = bookingType == 'hotel';
 
     // Paid / Succeeded
     if (paymentStatus == 'paid' ||
         paymentStatus == 'succeeded' ||
         paymentStatus == 'successful' ||
         paymentStatus == 'completed') {
-      return ('Paid', AppStatusTone.success, Icons.check_circle_rounded);
+      return (
+        isHotel ? 'Paid (Stripe Test)' : 'Paid',
+        AppStatusTone.success,
+        Icons.check_circle_rounded,
+      );
     }
 
     // Failed
@@ -267,7 +274,10 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
       return ('Failed', AppStatusTone.error, Icons.error_outline_rounded);
     }
 
-    // Cancelled
+    // Cancelled / Expired
+    if (orderStatus == 'expired') {
+      return ('Expired', AppStatusTone.neutral, Icons.timer_off_outlined);
+    }
     if (paymentStatus == 'cancelled' ||
         paymentStatus == 'canceled' ||
         orderStatus == 'cancelled' ||
@@ -293,9 +303,50 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
     );
   }
 
+  (String label, AppStatusTone tone, IconData icon, String subtitle) _resolveHotelReservationStatus(Map<String, dynamic> item) {
+    final supplierStatus = (item['supplierBookingStatus'] ?? '').toString().toLowerCase();
+    final bookingRef = item['bookingReference']?.toString();
+    final fulfillmentStatus = item['fulfillmentStatus']?.toString().toLowerCase();
+    final paymentStatus = (item['paymentStatus'] ?? '').toString().toLowerCase();
+    final orderStatus = (item['orderStatus'] ?? '').toString().toLowerCase();
+    final isPaid = paymentStatus == 'paid' || paymentStatus == 'succeeded' || orderStatus == 'paid';
+
+    if (supplierStatus == 'confirmed' && bookingRef != null && bookingRef.isNotEmpty) {
+      return ('Confirmed', AppStatusTone.success, Icons.hotel_rounded, 'Confirmed with supplier');
+    }
+    if (fulfillmentStatus == 'demo_only') {
+      return ('Demo Only — No Room Reserved', AppStatusTone.neutral, Icons.science_outlined, 'No supplier reservation created');
+    }
+    if (fulfillmentStatus == 'not_started' || (!isPaid && fulfillmentStatus == null)) {
+      return ('Not Created', AppStatusTone.neutral, Icons.pause_circle_outline, 'No supplier reservation created');
+    }
+    if (isPaid && (fulfillmentStatus == null || fulfillmentStatus.isEmpty)) {
+      return ('Supplier reservation not verified', AppStatusTone.neutral, Icons.help_outline_rounded, 'Supplier reservation not verified');
+    }
+    return ('Supplier reservation not verified', AppStatusTone.neutral, Icons.help_outline_rounded, 'Supplier reservation not verified');
+  }
+
+  String _formatOccupanciesSummary(dynamic raw) {
+    if (raw is List && raw.isNotEmpty) {
+      int totalAdults = 0;
+      int totalChildren = 0;
+      for (final occ in raw) {
+        if (occ is Map) {
+          totalAdults += (occ['adults'] as num?)?.toInt() ?? 1;
+          final ch = occ['children'];
+          if (ch is List) totalChildren += ch.length;
+        }
+      }
+      return '$totalAdults Adult${totalAdults != 1 ? 's' : ''}${totalChildren > 0 ? ', $totalChildren Child${totalChildren != 1 ? 'ren' : ''}' : ''}';
+    }
+    return '';
+  }
+
   void _showPaymentDetails(BuildContext context, Map<String, dynamic> item) {
     final title = _formatTitle(item);
     final bookingType = (item['bookingType'] ?? '').toString().trim();
+    final isHotel = bookingType.toLowerCase() == 'hotel';
+    final hotelReservation = isHotel ? _resolveHotelReservationStatus(item) : null;
     final orderRef = (item['orderReference'] ?? item['id'] ?? '').toString();
     final date = _formatDate((item['timestamp'] ?? item['createdAt'] ?? item['updatedAt'] ?? '').toString());
     final amount = _formatAmount(item['amount'], item['currency']);
@@ -362,15 +413,22 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                         ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
-                  Row(
+                  Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
                     children: [
                       StatusChip(
                         text: statusLabel,
                         tone: statusTone,
                         icon: statusIcon,
                       ),
-                      if (isTestMode) ...[
-                        const SizedBox(width: AppSpacing.xs),
+                      if (isHotel && hotelReservation != null) ...[
+                        StatusChip(
+                          text: hotelReservation.$1,
+                          tone: hotelReservation.$2,
+                          icon: hotelReservation.$3,
+                        ),
+                      ] else if (isTestMode) ...[
                         const StatusChip(
                           text: 'Stripe Test Mode',
                           tone: AppStatusTone.neutral,
@@ -442,12 +500,66 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                       '${cardBrand.isNotEmpty ? cardBrand : 'Card'} •••• $cardLast4',
                     ),
                   ],
-                  if (relatedBookingId.isNotEmpty) ...[
+                  if (isHotel) ...[
+                    if (item['hotelName'] != null) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      _detailRow(sheetContext, 'Hotel', item['hotelName'].toString()),
+                    ],
+                    if (item['roomName'] != null) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      _detailRow(sheetContext, 'Room Type', item['roomName'].toString()),
+                    ],
+                    if (item['checkin'] != null && item['checkout'] != null) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      _detailRow(sheetContext, 'Stay Dates',
+                          '${_formatShortDate(item['checkin']?.toString())} – ${_formatShortDate(item['checkout']?.toString())}'),
+                    ],
+                    if (item['roomQuantity'] != null) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      _detailRow(sheetContext, 'Number of Rooms', item['roomQuantity'].toString()),
+                    ],
+                    if (item['occupancies'] != null && _formatOccupanciesSummary(item['occupancies']).isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      _detailRow(sheetContext, 'Guests', _formatOccupanciesSummary(item['occupancies'])),
+                    ],
+                    const SizedBox(height: AppSpacing.sm),
+                    _detailRow(sheetContext, 'Reservation Status', hotelReservation!.$1),
+                    const SizedBox(height: AppSpacing.sm),
+                    _detailRow(
+                      sheetContext,
+                      'Supplier Confirmation',
+                      (item['bookingReference'] != null && item['bookingReference'].toString().isNotEmpty)
+                          ? item['bookingReference'].toString()
+                          : 'None (Demo mode — no supplier reservation)',
+                    ),
+                  ],
+                  if (relatedBookingId.isNotEmpty && !isHotel) ...[
                     const SizedBox(height: AppSpacing.sm),
                     _detailRow(sheetContext, 'Booking Reference', relatedBookingId),
                   ],
                   const SizedBox(height: AppSpacing.md),
-                  if (isTestMode)
+                  if (isHotel)
+                    InkCard(
+                      color: InkWashColors.cream,
+                      padding: const EdgeInsets.all(AppSpacing.sm),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.info_outline_rounded, size: 18, color: InkWashColors.blueGrey),
+                          const SizedBox(width: AppSpacing.xs),
+                          Expanded(
+                            child: Text(
+                              item['demoDisclosure']?.toString() ??
+                                  'This is a test payment for demonstration purposes. No real payment was charged, and no room has been reserved with the hotel.',
+                              style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
+                                    color: AppColors.textSecondary,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (isTestMode)
                     InkCard(
                       color: InkWashColors.cream,
                       padding: const EdgeInsets.all(AppSpacing.sm),
@@ -467,6 +579,29 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                         ],
                       ),
                     ),
+                  if (isHotel && orderRef.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        key: const ValueKey('view-hotel-order-details-button'),
+                        icon: const Icon(Icons.receipt_long_rounded),
+                        label: const Text('View Full Hotel Order Details'),
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => HotelOrderDetailsScreen(
+                                orderId: orderRef,
+                                api: api,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                   if (relatedTripId.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.md),
                     SizedBox(
@@ -651,6 +786,8 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
         final id = (item['id'] ?? item['orderReference'] ?? index).toString();
         final title = _formatTitle(item);
         final bookingType = (item['bookingType'] ?? '').toString();
+        final isHotel = bookingType.toLowerCase() == 'hotel';
+        final hotelReservation = isHotel ? _resolveHotelReservationStatus(item) : null;
         final date = _formatShortDate((item['timestamp'] ?? item['createdAt'] ?? item['updatedAt'] ?? '').toString());
         final amount = _formatAmount(item['amount'], item['currency']);
         final (statusLabel, statusTone, statusIcon) = _resolveStatus(item);
@@ -725,6 +862,18 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                         ),
                       ],
                     ),
+                    if (isHotel && hotelReservation != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Wrap(
+                        children: [
+                          StatusChip(
+                            text: hotelReservation.$1,
+                            tone: hotelReservation.$2,
+                            icon: hotelReservation.$3,
+                          ),
+                        ],
+                      ),
+                    ],
                     if (isTestMode || orderRef.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.xs),
                       Row(
@@ -767,6 +916,22 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                               ),
                             ),
                         ],
+                      ),
+                    ],
+                    if (isHotel && (item['checkin'] != null || item['hotelName'] != null)) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        [
+                          if (item['hotelName'] != null) item['hotelName'].toString(),
+                          if (item['checkin'] != null && item['checkout'] != null)
+                            '${_formatShortDate(item['checkin']?.toString())} – ${_formatShortDate(item['checkout']?.toString())}',
+                        ].join(' · '),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AppColors.textSecondary,
+                              fontSize: 11,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ],

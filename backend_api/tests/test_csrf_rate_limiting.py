@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -33,9 +34,12 @@ def load_portal(name, monkeypatch):
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("SECRET_KEY", "csrf-test-secret-with-no-production-use")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
-    api = Mock(return_value=Mock(ok=True, json=lambda: {
+    api = Mock(return_value=Mock(ok=True, status_code=200, json=lambda: {
+        "ok": True,
         "profile": {"role": "admin", "name": "Test"},
         "items": [{"id": "item", "approvalStatus": "approved", "reviewStatus": "draft"}],
+        "filename": "12345678901234567890123456789012.png",
+        "url": "http://127.0.0.1:5000/api/public/package-images/12345678901234567890123456789012.png",
     }))
     auth = ModuleType("firebase_auth_rest")
     auth.authenticateCredentials = Mock(return_value=({
@@ -160,11 +164,17 @@ def test_all_portal_mutations_accept_valid_csrf(portal):
         auth.sendPasswordResetEmail.reset_mock()
         auth.signOutUser.reset_mock()
         path = re.sub(r"<[^>]+>", "item", rule.rule)
-        response = client.post(path, data={
+        post_data = {
             "csrf_token": token, "email": "test@example.com", "password": "test",
             "decision": "approved", "packageId": "item", "name": "Test",
             "companyName": "Test", "registrationNo": "Test", "businessContact": "Test",
-        })
+            "reason": "Valid suspension reason for testing purposes.",
+        }
+        if "upload-image" in path:
+            post_data["file"] = (io.BytesIO(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"), "test.png", "image/png")
+            response = client.post(path, data=post_data, content_type="multipart/form-data")
+        else:
+            response = client.post(path, data=post_data)
         assert response.status_code in {200, 302}, path
         assert api.called or auth.authenticateCredentials.called or auth.createUserAccount.called or \
             auth.sendPasswordResetEmail.called or auth.signOutUser.called, path
@@ -253,9 +263,26 @@ def test_api_budgets_accept_normal_requests_and_stop_before_side_effects(
     for index in range(LIMITS[category]):
         attempt_id = f"hotel_attempt_{index}"
         if path.endswith('/hotels/book'):
-            memory.seed('hotel_prebook_attempts', operation_document_id(
+            doc_id = operation_document_id(
                 'hotel_prebook', 'test_traveller_uid', attempt_id
-            ), {
+            )
+            snapshot = {
+                'id': doc_id,
+                'status': 'accepted',
+                'travellerId': 'test_traveller_uid',
+                'provider': 'liteapi',
+                'transactionMode': 'provider_sandbox',
+                'hotelBookingAttemptId': attempt_id,
+                'offerId': 'local_offer_test',
+                'prebookId': 'local_prebook_test',
+                'amount': 120.0,
+                'currency': 'MYR',
+                'priceBasis': 'stay_total',
+                'taxesAndFeesStatus': 'included',
+                'cancellation': {'tag': 'RFN', 'status': 'known'},
+                'expiresAt': '2099-01-01T00:00:00Z',
+            }
+            memory.seed('hotel_prebook_attempts', doc_id, {
                 'travellerId': 'test_traveller_uid',
                 'hotelBookingAttemptId': attempt_id,
                 'offerId': 'local_offer_test',
@@ -269,6 +296,7 @@ def test_api_budgets_accept_normal_requests_and_stop_before_side_effects(
                     'cancellation': {'tag': 'RFN', 'status': 'known'},
                 },
                 'validatedQuoteVersion': 'test-version',
+                'acceptedPrebookSnapshot': snapshot,
             })
         response = client.post(path, headers=AUTH, json={
             **payload,
@@ -285,9 +313,26 @@ def test_api_budgets_accept_normal_requests_and_stop_before_side_effects(
     reset_payload = dict(payload)
     if path.endswith('/hotels/book'):
         reset_attempt = 'hotel_attempt_reset'
-        memory.seed('hotel_prebook_attempts', operation_document_id(
+        reset_doc_id = operation_document_id(
             'hotel_prebook', 'test_traveller_uid', reset_attempt
-        ), {
+        )
+        reset_snapshot = {
+            'id': reset_doc_id,
+            'status': 'accepted',
+            'travellerId': 'test_traveller_uid',
+            'provider': 'liteapi',
+            'transactionMode': 'provider_sandbox',
+            'hotelBookingAttemptId': reset_attempt,
+            'offerId': 'local_offer_test',
+            'prebookId': 'local_prebook_test',
+            'amount': 120.0,
+            'currency': 'MYR',
+            'priceBasis': 'stay_total',
+            'taxesAndFeesStatus': 'included',
+            'cancellation': {'tag': 'RFN', 'status': 'known'},
+            'expiresAt': '2099-01-01T00:00:00Z',
+        }
+        memory.seed('hotel_prebook_attempts', reset_doc_id, {
             'travellerId': 'test_traveller_uid',
             'hotelBookingAttemptId': reset_attempt,
             'offerId': 'local_offer_test',
@@ -300,6 +345,7 @@ def test_api_budgets_accept_normal_requests_and_stop_before_side_effects(
                 'taxesAndFeesStatus': 'included',
                 'cancellation': {'tag': 'RFN', 'status': 'known'},
             },
+            'acceptedPrebookSnapshot': reset_snapshot,
         })
         reset_payload['hotelBookingAttemptId'] = reset_attempt
     assert client.post(path, headers=AUTH, json=reset_payload).status_code == 200

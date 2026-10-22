@@ -160,22 +160,23 @@ def test_operator_analytics_data_isolation():
     }
     mock_db.collection.return_value.where.return_value.stream.return_value = [pkg_doc]
 
-    # Mock hotel_bookings: 1 belongs to op_alpha, 1 belongs to op_beta, 1 has no operatorId
+    # Mock checkout_orders: 1 belongs to op_alpha, 1 belongs to op_beta, 1 has no operatorId
     b1 = MagicMock()
     b1.id = 'b_alpha'
-    b1.to_dict.return_value = {'operatorId': 'op_alpha', 'totalAmount': 200.0}
+    b1.to_dict.return_value = {'operatorId': 'op_alpha', 'quoteType': 'package', 'totalAmount': 200.0, 'amount': 200.0, 'paymentStatus': 'paid'}
 
     b2 = MagicMock()
     b2.id = 'b_beta'
-    b2.to_dict.return_value = {'operatorId': 'op_beta', 'totalAmount': 300.0}
+    b2.to_dict.return_value = {'operatorId': 'op_beta', 'quoteType': 'package', 'totalAmount': 300.0, 'amount': 300.0, 'paymentStatus': 'paid'}
 
     b3 = MagicMock()
     b3.id = 'b_generic'
-    b3.to_dict.return_value = {'hotelName': 'General Hotel', 'totalAmount': 150.0} # No operatorId
+    b3.to_dict.return_value = {'hotelName': 'General Hotel', 'quoteType': 'hotel', 'totalAmount': 150.0} # No operatorId
 
     def mock_collection(name):
         coll_mock = MagicMock()
-        if name == 'hotel_bookings':
+        if name in ('checkout_orders', 'hotel_bookings'):
+            coll_mock.where.return_value.stream.return_value = [b1]
             coll_mock.stream.return_value = [b1, b2, b3]
         elif name in ('tourism_packages', 'promotional_campaigns'):
             coll_mock.where.return_value.stream.return_value = [pkg_doc] if name == 'tourism_packages' else []

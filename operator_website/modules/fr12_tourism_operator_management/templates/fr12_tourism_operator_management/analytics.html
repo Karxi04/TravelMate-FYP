@@ -155,18 +155,19 @@
   </section>
 </div>
 
-<!-- Combined Package Inventory Value -->
+<!-- Combined Approved Catalog Portfolio Value -->
 <div class="card cream" style="margin-top: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
   <div>
     <span class="eyebrow">Financial Valuation</span>
-    <h3 style="margin: 4px 0 2px;">Combined Active Package Inventory Value</h3>
-    <p class="muted" style="margin: 0; font-size: 13px;">Aggregate value of all active tourism packages based on base catalog pricing.</p>
+    <h3 style="margin: 4px 0 2px;">Combined Approved Catalog Portfolio Value</h3>
+    <p class="muted" style="margin: 0; font-size: 13px;">Sum of the listed unit prices of all administrator-approved packages in this operator's catalog, including packages not currently published.</p>
+    <p class="muted" style="margin: 4px 0 0; font-size: 11px;">Note: Represents catalog portfolio valuation, not booking sales, real revenue, or packages currently available to travellers.</p>
   </div>
   <div style="text-align: right;">
     <div style="font-size: 32px; font-weight: 800; color: var(--ink);">
       MYR {{ '%.2f'|format(summary.get('totalPackageValue', 0)) }}
     </div>
-    <span class="muted" style="font-size: 11px;">Calculated from published unit rates</span>
+    <span class="muted" style="font-size: 11px;">Calculated from approved catalog rates</span>
   </div>
 </div>
 {% endblock %}

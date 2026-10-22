@@ -13,8 +13,8 @@ Map<String, dynamic> _trip(String id, String title) => {
       'id': id,
       'title': title,
       'destinationArea': 'Penang, Malaysia',
-      'startDate': '2026-10-12',
-      'endDate': '2026-10-14',
+      'startDate': '2026-10-25',
+      'endDate': '2026-10-28',
       'status': 'planned',
       'budgetEstimate': {'total': 720, 'limit': 1200},
       'activities': [
@@ -157,8 +157,8 @@ void main() {
       (tester) async {
     await _pumpAtSize(tester, TripsTab(api: _TripsApi()));
 
-    expect(find.text('No trips yet'), findsOneWidget);
-    expect(find.text('Start planning your first personalised trip.'),
+    expect(find.text('No travel plans yet'), findsOneWidget);
+    expect(find.text('Start planning your first personalised trip with custom activities and budget.'),
         findsOneWidget);
     expect(find.text('Plan a trip'), findsWidgets);
     expect(find.textContaining('trip_'), findsNothing);
@@ -172,10 +172,12 @@ void main() {
     ]);
     await _pumpAtSize(tester, TripsTab(api: api));
 
-    expect(find.text('Planned'), findsNWidgets(2));
+    expect(find.text('Planned'), findsNWidgets(3));
     expect(find.text('1 activity · RM 720 estimated'), findsNWidgets(2));
     expect(find.textContaining('generation'), findsNothing);
 
+    await tester.drag(find.byType(ListView), const Offset(0, -200));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Continue').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));

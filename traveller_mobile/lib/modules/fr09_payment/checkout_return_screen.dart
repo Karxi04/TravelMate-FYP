@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
+import '../fr08_hotel_booking/hotel_order_details_screen.dart';
 import 'payment_history_screen.dart';
 
 class CheckoutReturnLink {
@@ -130,17 +132,23 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
   @override
   Widget build(BuildContext context) {
     final status = (order?['status'] ?? '').toString().toLowerCase();
-    final paid = status == 'paid';
+    final paymentStatus = (order?['paymentStatus'] ?? '').toString().toLowerCase();
+    final quoteType = (order?['quoteType'] ?? '').toString().toLowerCase();
+    final isHotel = quoteType == 'hotel';
+    final paid = status == 'paid' || paymentStatus == 'paid';
     final processing = _needsReconciliation(order ?? const {}) &&
         widget.link.stateHint != 'not_completed';
     final tripId = (order?['fulfilledTripId'] ?? '').toString();
+    final orderId = (order?['id'] ?? widget.link.orderId).toString();
     final title = paid
-        ? 'Payment Successful'
+        ? (isHotel ? 'Payment Verified (Stripe Test)' : 'Payment Successful')
         : processing
             ? 'Payment Processing'
             : 'Payment Not Completed';
     final message = paid
-        ? 'Your TravelMate test payment has been verified. Your Orders and Payment History are refreshed.'
+        ? (isHotel
+            ? 'Your Stripe Test Mode payment is verified. No room has been reserved with the hotel.'
+            : 'Your TravelMate test payment has been verified. Your Orders and Payment History are refreshed.')
         : processing
             ? 'Your payment is still being verified. You can safely check again without paying twice.'
             : 'No successful payment has been confirmed for this order.';
@@ -172,6 +180,48 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
                         style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
                     const SizedBox(height: 8),
                     Text(message, textAlign: TextAlign.center),
+                    if (paid && isHotel) ...[
+                      const SizedBox(height: 16),
+                      InkCard(
+                        color: InkWashColors.cream,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                StatusChip(
+                                  text: 'Paid — Stripe Test Mode',
+                                  tone: AppStatusTone.success,
+                                  icon: Icons.check_circle_rounded,
+                                ),
+                                StatusChip(
+                                  text: 'Demo Only',
+                                  tone: AppStatusTone.neutral,
+                                  icon: Icons.science_outlined,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Hotel Reservation Status: No supplier reservation created',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimary,
+                                  ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'This is a test payment for demonstration purposes. No real payment was charged, and no room has been reserved with the hotel.',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: AppColors.textSecondary,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 24),
                     if (processing)
                       FilledButton.icon(
@@ -179,7 +229,25 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
                         icon: const Icon(Icons.refresh_rounded),
                         label: const Text('Check payment status'),
                       ),
-                    if (paid && tripId.isNotEmpty)
+                    if (paid && isHotel) ...[
+                      FilledButton.icon(
+                        key: const ValueKey('view-hotel-order-button'),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => HotelOrderDetailsScreen(
+                              orderId: orderId,
+                              initialOrder: order,
+                              api: api,
+                            ),
+                          ),
+                        ),
+                        icon: const Icon(Icons.receipt_long_rounded),
+                        label: const Text('View Order Details'),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (paid && tripId.isNotEmpty) ...[
                       FilledButton.icon(
                         onPressed: () => Navigator.push(
                           context,
@@ -190,6 +258,8 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
                         icon: const Icon(Icons.luggage_rounded),
                         label: const Text('Open Package Trip'),
                       ),
+                      const SizedBox(height: 8),
+                    ],
                     OutlinedButton.icon(
                       onPressed: () => Navigator.push(
                         context,

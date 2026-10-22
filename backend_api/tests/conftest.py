@@ -8,6 +8,7 @@ from unittest.mock import patch, MagicMock
 # becoming active during the default test suite.
 os.environ["TRAVELMATE_TESTING"] = "true"
 os.environ["FALLBACK_MODE"] = "true"
+os.environ["LOCAL_LAN_DEMO"] = "false"
 for _provider_key in (
     "FIREBASE_SERVICE_ACCOUNT",
     "FIREBASE_SERVICE_ACCOUNT_JSON",

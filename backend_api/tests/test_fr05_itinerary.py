@@ -1,6 +1,28 @@
 import pytest
 from unittest.mock import patch
 
+
+def test_historical_round_trip_with_outbound_only_reference_remains_readable(
+        client, mock_traveller_auth):
+    historical = {
+        'id': 'historical-flight-trip',
+        'travellerId': 'test_traveller_uid',
+        'flightSearchId': 'historical-search',
+        'flightOptionId': 'AirAsia-AK_6114-2026-11-20_08_05-0',
+        'selectedFlight': {
+            'outboundSegments': [{'departureDate': '2026-11-20'}],
+            'returnSegments': [{'departureDate': '2026-11-23'}],
+        },
+    }
+    with patch(
+            'modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord',
+            return_value=historical):
+        response = client.get('/api/fr5/itineraries/historical-flight-trip', headers={
+            'Authorization': 'Bearer valid_test_token'})
+    assert response.status_code == 200
+    assert response.get_json()['itinerary'] == historical
+
+
 def test_apply_lower_cost_alternative_not_found(client, mock_traveller_auth):
     with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord') as mock_retrieve:
         mock_retrieve.return_value = None

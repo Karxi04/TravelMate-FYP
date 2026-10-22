@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from services.serpapi_service import normalizeFlightResult, retrieveFlightReturns
 from modules.fr07_flight_search.routes import reset_flight_quotes
 
@@ -14,17 +16,17 @@ def _leg(number, departure, arrival, departure_time, arrival_time):
     }
 
 
-def _outbound():
+def _outbound(number='DA101', token='private-departure-token', price=1139):
     return {
-        'flights': [_leg('DA101', 'KUL', 'PEN', '2027-02-10 10:40', '2027-02-10 11:40')],
-        'price': 1139,
+        'flights': [_leg(number, 'KUL', 'PEN', '2027-02-10 10:40', '2027-02-10 11:40')],
+        'price': price,
         'currency': 'MYR',
-        'departure_token': 'private-departure-token',
+        'departure_token': token,
     }
 
 
-def _return():
-    return {'flights': [_leg('DA102', 'PEN', 'KUL', '2027-02-12 18:00', '2027-02-12 19:00')], 'price': 1139, 'currency': 'MYR'}
+def _return(price=420, number='DA102'):
+    return {'flights': [_leg(number, 'PEN', 'KUL', '2027-02-12 18:00', '2027-02-12 19:00')], 'price': price, 'currency': 'MYR'}
 
 
 def test_provider_timestamps_become_explicit_local_dates_and_times():
@@ -59,14 +61,20 @@ def test_round_trip_requires_return_selection_and_selects_one_authoritative_tota
     assert outbound['roundTripComplete'] is False
     assert 'departureToken' not in outbound
 
-    with patch('modules.fr07_flight_search.routes.retrieveFlightReturns', return_value={'items': [_return()]}):
+    with patch('modules.fr07_flight_search.routes.retrieveFlightReturns', return_value={'items': [_return(420), _return(550, 'DA202')]}):
         returns = client.post('/api/fr7/flights/returns', headers={'Authorization': 'Bearer valid_test_token'}, json={'searchId': data['searchId'], 'optionId': outbound['id']})
     assert returns.status_code == 200
-    return_option = returns.get_json()['items'][0]
+    return_option = returns.get_json()['items'][1]
     assert return_option['returnSegments'][0]['departureDate'] == '2027-02-12'
-    assert return_option['price'] is None
+    assert return_option['price'] == 550
+    assert return_option['combinedPrice'] == 550
 
-    itinerary = {'id': 'f2_trip', 'travellerId': 'test_traveller_uid', 'budgetLimit': 5000, 'travellerCount': 2, 'activities': []}
+    itinerary = {
+        'id': 'f2_trip', 'travellerId': 'test_traveller_uid', 'budgetLimit': 5000,
+        'travellerCount': 2, 'startDate': '2027-02-10', 'endDate': '2027-02-12',
+        'activities': [], 'selectedHotel': {'name': 'Safe Hotel'},
+        'hotelCost': 300, 'purchasedPackages': [{'id': 'package-safe'}],
+    }
     with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary), patch('modules.fr07_flight_search.routes.updateRecord', side_effect=lambda c, i, p: {**itinerary, **p}):
         selected = client.post('/api/fr7/flights/select', headers={'Authorization': 'Bearer valid_test_token'}, json={
             'itineraryId': 'f2_trip', 'searchId': data['searchId'], 'optionId': outbound['id'],
@@ -77,8 +85,70 @@ def test_round_trip_requires_return_selection_and_selects_one_authoritative_tota
     assert result['selectedFlight']['roundTripComplete'] is True
     assert len(result['selectedFlight']['outboundSegments']) == 1
     assert len(result['selectedFlight']['returnSegments']) == 1
-    assert result['itinerary']['flightCost'] == 1139
+    assert result['itinerary']['flightCost'] == 550
+    assert result['itinerary']['budgetEstimate']['flight'] == 550
     assert result['itinerary']['flightPriceBasis'] == 'provider_round_trip_ticket_price_requested_adults'
+    assert result['itinerary']['flightOptionId'].startswith('flight_completed_')
+    assert result['selectedFlight']['completedOptionId'] == result['itinerary']['flightOptionId']
+    assert result['selectedFlight']['flightOptionId'] == result['itinerary']['flightOptionId']
+    assert result['itinerary']['flightOptionId'] != outbound['id']
+    assert result['selectedFlight']['flightSearchId'] == data['searchId']
+    assert 'departureToken' not in result['itinerary']['selectedFlight']
+    assert 'bookingToken' not in result['itinerary']['selectedFlight']
+    assert result['itinerary']['selectedHotel']['name'] == 'Safe Hotel'
+    assert result['itinerary']['purchasedPackages'] == [{'id': 'package-safe'}]
+
+    import modules.fr07_flight_search.routes as routes
+    stored = routes._FLIGHT_QUOTES[data['searchId']]
+    assert stored['items'][0]['departureToken'] == 'private-departure-token'
+    assert stored['completedOptions'][result['itinerary']['flightOptionId']]['price'] == 550
+
+    with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary), patch(
+            'modules.fr07_flight_search.routes.updateRecord', side_effect=lambda c, i, p: {**itinerary, **p}):
+        repeated = client.post('/api/fr7/flights/select', headers={'Authorization': 'Bearer valid_test_token'}, json={
+            'itineraryId': 'f2_trip', 'searchId': data['searchId'], 'optionId': outbound['id'],
+            'returnOptionId': return_option['id'], 'flight': outbound,
+        })
+    assert repeated.status_code == 200
+    assert repeated.get_json()['itinerary']['flightOptionId'] == result['itinerary']['flightOptionId']
+    assert len(stored['completedOptions']) == 1
+
+    routes._FLIGHT_QUOTES.clear()
+    with patch('modules.fr07_flight_search.routes.retrieveRecord', side_effect=lambda collection, key: stored if collection == 'flight_quotes' else itinerary):
+        reloaded = client.post('/api/fr7/flights/details', headers={'Authorization': 'Bearer valid_test_token'}, json={
+            'searchId': data['searchId'], 'optionId': result['itinerary']['flightOptionId'],
+        })
+    assert reloaded.status_code == 200
+    assert reloaded.get_json()['flight']['price'] == 550
+
+
+def test_provider_completed_round_trip_gets_server_completed_identifier(
+        client, mock_traveller_auth):
+    reset_flight_quotes()
+    provider_item = _outbound(price=550)
+    provider_item['return_flights'] = _return(price=550)['flights']
+    with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [provider_item]}):
+        searched = client.get(
+            '/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2027-02-10&return_date=2027-02-12',
+            headers={'Authorization': 'Bearer valid_test_token'},
+        ).get_json()
+    provider_option_id = searched['items'][0]['id']
+    itinerary = {
+        'id': 'provider-complete-trip', 'travellerId': 'test_traveller_uid',
+        'startDate': '2027-02-10', 'endDate': '2027-02-12', 'activities': [],
+    }
+    with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary), \
+         patch('modules.fr07_flight_search.routes.updateRecord', side_effect=lambda c, i, p: {**itinerary, **p}):
+        response = client.post('/api/fr7/flights/select', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'itineraryId': itinerary['id'], 'searchId': searched['searchId'],
+                'optionId': provider_option_id,
+            })
+    assert response.status_code == 200
+    saved = response.get_json()['itinerary']
+    assert saved['flightOptionId'].startswith('flight_completed_')
+    assert saved['flightOptionId'] != provider_option_id
+    assert saved['selectedFlight']['completedOptionId'] == saved['flightOptionId']
 
 
 def test_round_trip_conflict_refers_to_the_actual_segment_date(client, mock_traveller_auth):
@@ -119,6 +189,115 @@ def test_round_trip_conflict_requires_one_explicit_acknowledgement(client, mock_
     assert blocked.get_json()['status'] == 'conflicts_require_acknowledgement'
     assert accepted.status_code == 200
     assert accepted.get_json()['itinerary']['flightConflictStatus'] == 'acknowledged'
+
+
+@pytest.mark.parametrize(
+    ('start_date', 'end_date', 'expected_flight_date'),
+    [
+        ('2027-03-01', '2027-03-05', '2027-02-10'),
+        ('2027-02-01', '2027-02-09', '2027-02-10'),
+        ('2027-02-13', '2027-02-20', '2027-02-12'),
+    ],
+)
+def test_round_trip_outside_trip_dates_is_hard_rejected(
+        client, mock_traveller_auth, start_date, end_date, expected_flight_date):
+    reset_flight_quotes()
+    with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [_outbound()]}):
+        searched = client.get(
+            '/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2027-02-10&return_date=2027-02-12',
+            headers={'Authorization': 'Bearer valid_test_token'},
+        ).get_json()
+    outbound = searched['items'][0]
+    with patch('modules.fr07_flight_search.routes.retrieveFlightReturns', return_value={'items': [_return()]}):
+        returned = client.post('/api/fr7/flights/returns', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'searchId': searched['searchId'], 'optionId': outbound['id'],
+            }).get_json()['items'][0]
+    itinerary = {
+        'id': 'date-mismatch-trip', 'travellerId': 'test_traveller_uid',
+        'startDate': start_date, 'endDate': end_date, 'budgetLimit': 5000,
+        'selectedHotel': {'name': 'Preserved Hotel'},
+        'purchasedPackages': [{'id': 'preserved-package'}], 'activities': [],
+    }
+    request = {
+        'itineraryId': itinerary['id'], 'searchId': searched['searchId'],
+        'optionId': outbound['id'], 'returnOptionId': returned['id'],
+        'flight': outbound, 'acknowledgeConflicts': True,
+    }
+    with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary), \
+         patch('modules.fr07_flight_search.routes.updateRecord') as update:
+        response = client.post('/api/fr7/flights/select', headers={
+            'Authorization': 'Bearer valid_test_token'}, json=request)
+    assert response.status_code == 409
+    assert response.get_json()['code'] == 'flight_trip_date_mismatch'
+    assert response.get_json()['status'] == 'hard_conflict'
+    assert response.get_json()['tripDates'] == {
+        'startDate': start_date, 'endDate': end_date,
+    }
+    assert expected_flight_date in response.get_json()['flightDates']
+    update.assert_not_called()
+    assert itinerary['selectedHotel'] == {'name': 'Preserved Hotel'}
+    assert itinerary['purchasedPackages'] == [{'id': 'preserved-package'}]
+
+
+def test_outbound_arrival_after_trip_end_is_hard_rejected(client, mock_traveller_auth):
+    reset_flight_quotes()
+    outbound_result = _outbound()
+    outbound_result['flights'][0]['arrival_airport']['time'] = '2027-02-15 11:40'
+    with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [outbound_result]}):
+        searched = client.get(
+            '/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2027-02-10',
+            headers={'Authorization': 'Bearer valid_test_token'},
+        ).get_json()
+    itinerary = {
+        'id': 'late-arrival-trip', 'travellerId': 'test_traveller_uid',
+        'startDate': '2027-02-10', 'endDate': '2027-02-12', 'activities': [],
+    }
+    with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary), \
+         patch('modules.fr07_flight_search.routes.updateRecord') as update:
+        response = client.post('/api/fr7/flights/select', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'itineraryId': itinerary['id'], 'searchId': searched['searchId'],
+                'optionId': searched['items'][0]['id'], 'acknowledgeConflicts': True,
+            })
+    assert response.status_code == 409
+    assert response.get_json()['code'] == 'flight_trip_date_mismatch'
+    assert '2027-02-15' in response.get_json()['flightDates']
+    update.assert_not_called()
+
+
+def test_one_way_flight_uses_the_same_inclusive_trip_date_rule(client, mock_traveller_auth):
+    reset_flight_quotes()
+    with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [_outbound()]}):
+        searched = client.get(
+            '/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2027-02-10',
+            headers={'Authorization': 'Bearer valid_test_token'},
+        ).get_json()
+    option = searched['items'][0]
+    valid_trip = {
+        'id': 'one-way-valid', 'travellerId': 'test_traveller_uid',
+        'startDate': '2027-02-10', 'endDate': '2027-02-12', 'activities': [],
+    }
+    with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=valid_trip), \
+         patch('modules.fr07_flight_search.routes.updateRecord', side_effect=lambda c, i, p: {**valid_trip, **p}):
+        valid = client.post('/api/fr7/flights/select', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'itineraryId': valid_trip['id'], 'searchId': searched['searchId'],
+                'optionId': option['id'],
+            })
+    assert valid.status_code == 200
+
+    invalid_trip = {**valid_trip, 'id': 'one-way-invalid', 'startDate': '2027-02-11'}
+    with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=invalid_trip), \
+         patch('modules.fr07_flight_search.routes.updateRecord') as update:
+        invalid = client.post('/api/fr7/flights/select', headers={
+            'Authorization': 'Bearer valid_test_token'}, json={
+                'itineraryId': invalid_trip['id'], 'searchId': searched['searchId'],
+                'optionId': option['id'], 'acknowledgeConflicts': True,
+            })
+    assert invalid.status_code == 409
+    assert invalid.get_json()['code'] == 'flight_trip_date_mismatch'
+    update.assert_not_called()
 
 
 def test_round_trip_quote_survives_local_cache_reset(client, mock_traveller_auth):
@@ -177,4 +356,137 @@ def test_expired_quote_cannot_be_used(client, mock_traveller_auth, monkeypatch):
     monkeypatch.setenv('TRAVELMATE_TESTING', 'false')
     with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=None):
         response = client.post('/api/fr7/flights/details', headers={'Authorization': 'Bearer valid_test_token'}, json={'searchId': searched.get_json()['searchId'], 'optionId': searched.get_json()['items'][0]['id']})
-    assert response.status_code == 400
+    assert response.status_code == 409
+    assert response.get_json()['code'] == 'flight_quote_expired'
+    itinerary = {'id': 'expired-trip', 'travellerId': 'test_traveller_uid', 'activities': []}
+    with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary):
+        selected = client.post('/api/fr7/flights/select', headers={'Authorization': 'Bearer valid_test_token'}, json={
+            'itineraryId': 'expired-trip', 'searchId': searched.get_json()['searchId'],
+            'optionId': searched.get_json()['items'][0]['id'],
+        })
+    assert selected.status_code == 409
+    assert selected.get_json()['code'] == 'flight_quote_expired'
+
+
+def test_search_rejects_invalid_passengers_cabin_and_past_dates(client, mock_traveller_auth):
+    headers = {'Authorization': 'Bearer valid_test_token'}
+    base = '/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2030-02-10'
+    invalid_passengers = client.get(f'{base}&traveller_count=not-a-number', headers=headers)
+    invalid_cabin = client.get(f'{base}&travel_class=9', headers=headers)
+    past = client.get('/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2020-01-01', headers=headers)
+    assert invalid_passengers.status_code == 400
+    assert invalid_passengers.get_json()['code'] == 'invalid_passenger_count'
+    assert invalid_cabin.status_code == 400
+    assert invalid_cabin.get_json()['code'] == 'invalid_cabin_class'
+    assert past.status_code == 400
+    assert past.get_json()['code'] == 'invalid_flight_search'
+
+
+def test_missing_and_malformed_quote_expiry_fail_closed(client, mock_traveller_auth):
+    import modules.fr07_flight_search.routes as routes
+    itinerary = {'id': 'expiry-trip', 'travellerId': 'test_traveller_uid', 'activities': []}
+    headers = {'Authorization': 'Bearer valid_test_token'}
+    for expiry in (None, 'not-a-time'):
+        reset_flight_quotes()
+        routes._FLIGHT_QUOTES['bad-expiry'] = {
+            'id': 'bad-expiry', 'travellerId': 'test_traveller_uid',
+            'expiresAt': expiry, 'items': [{'id': 'option', 'optionId': 'option'}],
+        }
+        with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary):
+            response = client.post('/api/fr7/flights/select', headers=headers, json={
+                'itineraryId': 'expiry-trip', 'searchId': 'bad-expiry', 'optionId': 'option',
+            })
+        assert response.status_code == 409
+        assert response.get_json()['code'] == 'invalid_flight_quote'
+
+
+def test_provider_cache_is_reported_conservatively(client, mock_traveller_auth):
+    reset_flight_quotes()
+    with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [_outbound()]}):
+        response = client.get('/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2027-02-10', headers={
+            'Authorization': 'Bearer valid_test_token'})
+    data = response.get_json()
+    assert data['freshnessStatus'] == 'provider_cache_possible'
+    assert data['planningOnly'] is True
+    assert data['expiresAt'] > data['retrievedAt']
+    assert data['items'][0]['cacheStatus'] == 'provider_cache_possible'
+
+
+def test_round_trip_without_provider_completed_price_is_rejected(client, mock_traveller_auth):
+    reset_flight_quotes()
+    with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [_outbound()]}):
+        searched = client.get('/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2027-02-10&return_date=2027-02-12', headers={
+            'Authorization': 'Bearer valid_test_token'}).get_json()
+    with patch('modules.fr07_flight_search.routes.retrieveFlightReturns', return_value={'items': [_return(None)]}):
+        returned = client.post('/api/fr7/flights/returns', headers={'Authorization': 'Bearer valid_test_token'}, json={
+            'searchId': searched['searchId'], 'optionId': searched['items'][0]['id'],
+        }).get_json()
+    itinerary = {'id': 'no-price-trip', 'travellerId': 'test_traveller_uid', 'activities': []}
+    with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary):
+        response = client.post('/api/fr7/flights/select', headers={'Authorization': 'Bearer valid_test_token'}, json={
+            'itineraryId': 'no-price-trip', 'searchId': searched['searchId'],
+            'optionId': searched['items'][0]['id'], 'returnOptionId': returned['items'][0]['id'],
+        })
+    assert response.status_code == 409
+    assert response.get_json()['code'] == 'flight_price_unavailable'
+
+
+def test_unconfirmed_airport_code_is_not_marked_verified(client, mock_traveller_auth):
+    reset_flight_quotes()
+    with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [_outbound()]}):
+        response = client.get('/api/fr7/flights/search?departure_id=AAA&arrival_id=PEN&outbound_date=2027-02-10', headers={
+            'Authorization': 'Bearer valid_test_token'})
+    data = response.get_json()
+    assert response.status_code == 200
+    assert data['items'] == []
+    assert data['criteria']['airportValidationStatus'] == 'unverified_no_provider_result'
+
+
+def test_airplane_field_and_recursive_token_sanitization():
+    from modules.fr07_flight_search.routes import _sanitize_flight_snapshot
+    item = normalizeFlightResult({
+        'flights': [{**_leg('DA101', 'KUL', 'PEN', '2027-02-10 10:40', '2027-02-10 11:40'),
+                     'airplane': 'Airbus A320'}],
+        'price': 200, 'currency': 'MYR',
+    })
+    assert item['outboundSegments'][0]['aircraft'] == 'Airbus A320'
+    safe = _sanitize_flight_snapshot({'nested': {'bookingToken': 'private', 'departure_token': 'private'}, 'id': 'safe'})
+    assert safe == {'nested': {}, 'id': 'safe'}
+
+
+def test_return_choice_cannot_move_to_another_outbound(client, mock_traveller_auth):
+    reset_flight_quotes()
+    with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={
+            'items': [_outbound(), _outbound('DA201', 'other-private-token', 1200)]}):
+        searched = client.get('/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2027-02-10&return_date=2027-02-12', headers={
+            'Authorization': 'Bearer valid_test_token'}).get_json()
+    first, second = searched['items']
+    with patch('modules.fr07_flight_search.routes.retrieveFlightReturns', return_value={'items': [_return()]}):
+        returned = client.post('/api/fr7/flights/returns', headers={'Authorization': 'Bearer valid_test_token'}, json={
+            'searchId': searched['searchId'], 'optionId': first['id'],
+        }).get_json()
+    itinerary = {'id': 'stale-return-trip', 'travellerId': 'test_traveller_uid', 'activities': []}
+    with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary):
+        response = client.post('/api/fr7/flights/select', headers={'Authorization': 'Bearer valid_test_token'}, json={
+            'itineraryId': 'stale-return-trip', 'searchId': searched['searchId'],
+            'optionId': second['id'], 'returnOptionId': returned['items'][0]['id'],
+        })
+    assert response.status_code == 409
+    assert response.get_json()['code'] == 'invalid_return_selection'
+
+
+def test_quote_owned_by_another_traveller_is_not_selectable(client, mock_traveller_auth):
+    import modules.fr07_flight_search.routes as routes
+    reset_flight_quotes()
+    routes._FLIGHT_QUOTES['other-search'] = {
+        'id': 'other-search', 'travellerId': 'other-traveller',
+        'expiresAt': '2099-01-01T00:00:00+00:00',
+        'items': [{'id': 'other-option', 'optionId': 'other-option'}],
+    }
+    itinerary = {'id': 'owned-trip', 'travellerId': 'test_traveller_uid', 'activities': []}
+    with patch('modules.fr07_flight_search.routes.retrieveRecord', side_effect=lambda collection, key: itinerary if collection == 'itineraries' else None):
+        response = client.post('/api/fr7/flights/select', headers={'Authorization': 'Bearer valid_test_token'}, json={
+            'itineraryId': 'owned-trip', 'searchId': 'other-search', 'optionId': 'other-option',
+        })
+    assert response.status_code == 409
+    assert response.get_json()['code'] == 'invalid_flight_quote'

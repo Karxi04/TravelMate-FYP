@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 AIRPORT_RE = re.compile(r"^[A-Z]{3}$")
@@ -118,9 +118,9 @@ def validateFlightSearchCriteria(data):
     outbound = _parse_iso_date(data.get('outbound_date'))
     return_date = data.get('return_date')
     inbound = _parse_iso_date(return_date) if return_date else None
-    if not (AIRPORT_RE.match(departure) and AIRPORT_RE.match(arrival) and outbound):
+    if not (AIRPORT_RE.fullmatch(departure) and AIRPORT_RE.fullmatch(arrival) and outbound):
         return False
-    if departure == arrival:
+    if departure == arrival or outbound < date.today():
         return False
     return not inbound or inbound >= outbound
 

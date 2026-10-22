@@ -39,7 +39,42 @@ from services.image_storage_service import (
     save_image_file,
     is_safe_filename,
     delete_image_file,
+    save_image_metadata,
+    get_image_metadata,
+    verify_image_deletion_permission,
 )
+
+CAMPAIGN_EDITABLE_FIELDS = {
+    'campaignTitle',
+    'description',
+    'packageId',
+    'startDate',
+    'endDate',
+    'discountType',
+    'discountValue',
+    'promoCode',
+    'bannerImageUrl',
+    'termsConditions',
+}
+
+PROTECTED_CAMPAIGN_FIELDS = {
+    'operatorId',
+    'operatorName',
+    'reviewStatus',
+    'campaignStatus',
+    'reviewerId',
+    'reviewedBy',
+    'reviewedByName',
+    'reviewedAt',
+    'approvedAt',
+    'rejectedAt',
+    'reviewComment',
+    'reviewReason',
+    'submittedAt',
+    'createdAt',
+    'updatedAt',
+    'id',
+}
 
 bp=Blueprint('fr12_operator',__name__,url_prefix='/api/fr12')
 
@@ -143,6 +178,9 @@ def campaigns():return jsonify({'ok':True,'items':retrieveRecord('promotional_ca
 @auth_required(['operator'])
 def create_campaign_route():
     payload=request.get_json(silent=True) or {}
+    disallowed = [k for k in payload if k in PROTECTED_CAMPAIGN_FIELDS]
+    if disallowed:
+        return jsonify({'ok':False,'error':f'Field "{disallowed[0]}" is protected and cannot be supplied by operator'}),400
     if not validateCampaignDatesAndContent(payload):return jsonify({'ok':False,'error':'Invalid campaign dates or content'}),400
     pid=str(payload.get('packageId','')).strip()
     if pid:
@@ -150,8 +188,9 @@ def create_campaign_route():
         if not pkg:return jsonify({'ok':False,'error':'Related package not found'}),404
         if pkg.get('approvalStatus')!='approved':return jsonify({'ok':False,'error':'Promotional campaign requires an approved package'}),409
     profile=retrieveRecord('users',g.uid) or {}
-    payload['operatorName']=profile.get('companyName') or profile.get('businessName') or profile.get('name') or 'TravelMate Tourism Operator'
-    result=storeRecord('promotional_campaigns',createCampaign(payload,g.uid)); return jsonify({'ok':True,'id':result['id'],'campaign':result}),201
+    campaign_data = {k: payload[k] for k in payload if k in CAMPAIGN_EDITABLE_FIELDS}
+    campaign_data['operatorName']=profile.get('companyName') or profile.get('businessName') or profile.get('name') or 'TravelMate Tourism Operator'
+    result=storeRecord('promotional_campaigns',createCampaign(campaign_data,g.uid)); return jsonify({'ok':True,'id':result['id'],'campaign':result}),201
 @bp.put('/campaigns/<cid>')
 @auth_required(['operator'])
 def update_campaign(cid):
@@ -159,11 +198,37 @@ def update_campaign(cid):
     if not current:return jsonify({'ok':False,'error':'Campaign not found'}),404
     if current.get('reviewStatus')=='pending':return jsonify({'ok':False,'error':'Campaign under administrator review cannot be edited'}),409
     payload=request.get_json(silent=True) or {}
-    if not validateCampaignDatesAndContent({**current,**payload}):return jsonify({'ok':False,'error':'Invalid campaign dates or content'}),400
-    payload['updatedAt']=utc_now_iso()
+    if not payload:
+        return jsonify({'ok':False,'error':'No update data provided'}),400
+    disallowed = [k for k in payload if k in PROTECTED_CAMPAIGN_FIELDS]
+    if disallowed:
+        return jsonify({'ok':False,'error':f'Field "{disallowed[0]}" is protected and cannot be modified by operator'}),400
+    updates = {k: payload[k] for k in payload if k in CAMPAIGN_EDITABLE_FIELDS}
+    if not updates:
+        return jsonify({'ok':False,'error':'No editable content fields provided'}),400
+    merged = {**current, **updates}
+    if not validateCampaignDatesAndContent(merged):return jsonify({'ok':False,'error':'Invalid campaign dates or content'}),400
+    if 'packageId' in updates:
+        pid=str(updates.get('packageId','')).strip()
+        if pid:
+            pkg=_own('tourism_packages',pid)
+            if not pkg:return jsonify({'ok':False,'error':'Related package not found'}),404
+            if pkg.get('approvalStatus')!='approved':return jsonify({'ok':False,'error':'Promotional campaign requires an approved package'}),409
+    updates['updatedAt']=utc_now_iso()
     if current.get('reviewStatus') == 'approved':
-        payload.update({'reviewStatus': 'draft', 'campaignStatus': 'draft', 'reviewComment': ''})
-    return jsonify({'ok':True,'campaign':updateRecord('promotional_campaigns',cid,payload)})
+        updates.update({
+            'reviewStatus': 'draft',
+            'campaignStatus': 'draft',
+            'reviewComment': '',
+            'reviewReason': '',
+            'reviewedBy': '',
+            'reviewedByName': '',
+            'reviewedAt': '',
+            'approvedAt': '',
+            'rejectedAt': '',
+            'submittedAt': '',
+        })
+    return jsonify({'ok':True,'campaign':updateRecord('promotional_campaigns',cid,updates)})
 @bp.delete('/campaigns/<cid>')
 @auth_required(['operator'])
 def delete_campaign(cid):
@@ -267,6 +332,11 @@ def upload_package_image():
     if not ok:
         return jsonify({'ok': False, 'error': error_msg}), 400
     filename, url = save_image_file(file, ext, host_url=request.host_url)
+    save_image_metadata(
+        filename,
+        owner_id=g.uid,
+        original_name=getattr(file, 'filename', '')
+    )
     return jsonify({
         'ok': True,
         'filename': filename,
@@ -279,6 +349,16 @@ def upload_package_image():
 def delete_package_image(filename):
     if not is_safe_filename(filename):
         return jsonify({'ok': False, 'error': 'Invalid image filename'}), 400
+
+    is_admin = (getattr(g, 'role', '') == 'admin')
+    allowed, status_code, error_msg = verify_image_deletion_permission(
+        filename,
+        current_operator_id=g.uid,
+        is_admin=is_admin
+    )
+    if not allowed:
+        return jsonify({'ok': False, 'error': error_msg}), status_code
+
     deleted = delete_image_file(filename)
     return jsonify({'ok': True, 'deleted': deleted})
 
