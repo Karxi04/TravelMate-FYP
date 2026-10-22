@@ -1,5 +1,6 @@
 import os
 from google import genai
+from google.genai import types
 
 SYSTEM_PREFIX = (
     "You are TravelMate, a concise and practical Malaysia-wide travel-planning assistant. "
@@ -27,19 +28,14 @@ def _generate(message):
     if not key:
         raise RuntimeError('GEMINI_API_KEY is not configured')
     model = os.getenv('GEMINI_MODEL', 'gemini-3.7-flash').strip() or 'gemini-3.7-flash'
-    client = genai.Client(api_key=key)
-    interaction = client.interactions.create(
+    client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=90_000))
+    response = client.models.generate_content(
         model=model,
-        input=SYSTEM_PREFIX + '\n\n' + message,
+        contents=message,
+        config=types.GenerateContentConfig(system_instruction=SYSTEM_PREFIX),
     )
-    text = getattr(interaction, 'output_text', None)
-    if not text:
-        text = ''.join(
-            getattr(output, 'text', '') or ''
-            for output in (getattr(interaction, 'outputs', None) or [])
-            if getattr(output, 'type', '') == 'text'
-        )
-    if not text:
+    text = getattr(response, 'text', None)
+    if not isinstance(text, str) or not text.strip():
         raise RuntimeError('Gemini returned an empty response')
     return text.strip()
 
@@ -182,11 +178,11 @@ def generateChatbotResponse(question, context='', *, with_source=False):
             if _fallback_mode():
                 reply = _local_assistant(question, context)
             else:
-                raise
+                raise RuntimeError('Gemini service is unavailable') from None
     elif _fallback_mode():
         reply = _local_assistant(question, context)
     else:
-        raise RuntimeError('GEMINI_API_KEY is not configured')
+        raise RuntimeError('Gemini service is unavailable')
     return {'reply': reply, 'source': source} if with_source else reply
 
 

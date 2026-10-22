@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from requests import Timeout
+from google.genai import errors
 
 from services.malaysian_locality import normalize_destination_scope, validate_candidate
 from services import gemini_service
@@ -386,17 +387,171 @@ def test_hotel_fallback_never_returns_offers_for_another_locality(client, journe
     assert all(validate_candidate(row, normalize_destination_scope(destination))[0] for row in data["items"])
 
 
-@pytest.mark.parametrize("shape", ["output_text", "outputs"])
-def test_gemini_adapter_accepts_sdk_text_shapes_without_live_requests(monkeypatch, shape):
+def test_gemini_adapter_accepts_generate_content_text_without_live_requests(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
-    interaction = SimpleNamespace(**({"output_text": "Live test text"} if shape == "output_text" else {
-        "outputs": [SimpleNamespace(type="text", text="Live test text")],
-    }))
+    response = SimpleNamespace(text="Live test text")
     with patch.object(gemini_service.genai, "Client") as client:
-        client.return_value.interactions.create.return_value = interaction
+        client.return_value.models.generate_content.return_value = response
         result = gemini_service.generateChatbotResponse("Hello", with_source=True)
     assert result == {"reply": "Live test text", "source": "gemini"}
-    client.return_value.interactions.create.assert_called_once()
+    client.return_value.models.generate_content.assert_called_once()
+    client.return_value.interactions.create.assert_not_called()
+
+
+def test_gemini_generate_content_keeps_system_and_traveller_context_separate(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.8-flash")
+    with patch.object(gemini_service.genai, "Client") as sdk:
+        sdk.return_value.models.generate_content.return_value = SimpleNamespace(text=" Malaysia advice ")
+        result = gemini_service.generateChatbotResponse(
+            "Plan in Penang", "Traveller preferences: Food\nRecent conversation: KL",
+            with_source=True,
+        )
+    assert result == {"reply": "Malaysia advice", "source": "gemini"}
+    sdk.assert_called_once()
+    assert sdk.call_args.kwargs["http_options"].timeout == 90_000
+    kwargs = sdk.return_value.models.generate_content.call_args.kwargs
+    assert kwargs["model"] == "gemini-3.8-flash"
+    assert kwargs["contents"] == (
+        "Traveller preferences: Food\nRecent conversation: KL\n\nTraveller: Plan in Penang"
+    )
+    assert "Malaysia" in kwargs["config"].system_instruction
+    assert "Never claim a booking or payment is confirmed" in kwargs["config"].system_instruction
+    sdk.return_value.interactions.create.assert_not_called()
+
+
+@pytest.mark.parametrize("text", [None, "", "  ", 42])
+def test_gemini_rejects_empty_or_invalid_response(monkeypatch, text):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setenv("FALLBACK_MODE", "false")
+    with patch.object(gemini_service.genai, "Client") as sdk:
+        sdk.return_value.models.generate_content.return_value = SimpleNamespace(text=text)
+        with pytest.raises(RuntimeError, match="Gemini service is unavailable"):
+            gemini_service.generateChatbotResponse("Hello")
+
+
+@pytest.mark.parametrize("failure", [
+    errors.ClientError(code, {"error": {"message": "private-key-marker"}})
+    for code in (400, 401, 403, 429)
+] + [errors.ServerError(503, {"error": {"message": "private-key-marker"}}),
+     Timeout("private-key-marker"), ValueError("private-key-marker")])
+@pytest.mark.parametrize("fallback", [False, True])
+def test_gemini_provider_failures_are_safe_and_source_labelled(monkeypatch, failure, fallback):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setenv("FALLBACK_MODE", str(fallback).lower())
+    with patch.object(gemini_service.genai, "Client") as sdk:
+        sdk.return_value.models.generate_content.side_effect = failure
+        if fallback:
+            result = gemini_service.generateChatbotResponse("Budget advice", with_source=True)
+            assert result["source"] == "travelmate-assistant"
+            assert "private-key-marker" not in result["reply"]
+        else:
+            with pytest.raises(RuntimeError, match="^Gemini service is unavailable$") as exc:
+                gemini_service.generateChatbotResponse("Budget advice", with_source=True)
+            assert "private-key-marker" not in str(exc.value)
+        sdk.return_value.models.generate_content.assert_called_once()
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+def test_gemini_missing_key_is_safe_and_never_calls_sdk(monkeypatch, fallback):
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("FALLBACK_MODE", str(fallback).lower())
+    with patch.object(gemini_service.genai, "Client") as sdk:
+        if fallback:
+            result = gemini_service.generateChatbotResponse("Budget advice", with_source=True)
+            assert result["source"] == "travelmate-assistant"
+        else:
+            with pytest.raises(RuntimeError, match="^Gemini service is unavailable$"):
+                gemini_service.generateChatbotResponse("Budget advice")
+        sdk.assert_not_called()
+
+
+def test_gemini_flask_route_preserves_context_and_session(client, journey, monkeypatch):
+    register_profile(client)
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setenv("FALLBACK_MODE", "false")
+    with patch.object(gemini_service.genai, "Client") as sdk:
+        sdk.return_value.models.generate_content.side_effect = [
+            SimpleNamespace(text="First Gemini reply"),
+            SimpleNamespace(text="Second Gemini reply"),
+        ]
+        first = client.post("/api/fr11/chat", headers=AUTH, json={"message": "Plan four days in Kota Kinabalu"})
+        assert first.status_code == 200
+        session_id = first.get_json()["session"]["id"]
+        second = client.post("/api/fr11/chat", headers=AUTH, json={
+            "sessionId": session_id, "message": "Our budget is RM2000 for 3 people",
+        })
+    assert second.status_code == 200
+    data = second.get_json()
+    assert data["ok"] is True
+    assert data["reply"] == "Second Gemini reply"
+    assert data["source"] == data["item"]["source"] == "gemini"
+    assert data["session"]["planningState"]["destinationArea"] == "Kota Kinabalu"
+    assert data["session"]["planningState"]["tripDays"] == 4
+    assert data["session"]["planningState"]["budgetLimit"] == 2000
+    assert data["session"]["planningState"]["travellerCount"] == 3
+    contents = sdk.return_value.models.generate_content.call_args.kwargs["contents"]
+    assert "Traveller preferences:" in contents
+    assert "Active trip planning state:" in contents
+    assert "First Gemini reply" in contents
+    assert "Traveller: Our budget is RM2000 for 3 people" in contents
+    assert len(journey.retrieve("chat_messages")) == 2
+
+
+def test_gemini_flask_route_hides_provider_failure(client, journey, monkeypatch):
+    register_profile(client)
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setenv("FALLBACK_MODE", "false")
+    with patch.object(gemini_service.genai, "Client") as sdk:
+        sdk.return_value.models.generate_content.side_effect = errors.ClientError(
+            400, {"error": {"message": "private-key-marker unsupported legacy schema"}},
+        )
+        response = client.post("/api/fr11/chat", headers=AUTH, json={"message": "Budget advice"})
+    assert response.status_code == 502
+    assert response.get_json()["error"] == "Gemini service is unavailable"
+    assert journey.retrieve("chat_messages") == []
+
+
+def test_gemini_flask_route_does_not_reuse_another_travellers_session(client, journey, monkeypatch):
+    register_profile(client)
+    journey.store("users", {
+        "uid": "other-traveller", "email": "other@example.test", "name": "Other",
+        "role": "traveller", "status": "active",
+    }, "other-traveller")
+    monkeypatch.setattr("auth_utils.auth.verify_id_token", lambda token: {"uid": token})
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setenv("FALLBACK_MODE", "false")
+    with patch.object(gemini_service.genai, "Client") as sdk:
+        sdk.return_value.models.generate_content.side_effect = [
+            SimpleNamespace(text="Private first reply"),
+            SimpleNamespace(text="Independent second reply"),
+        ]
+        first = client.post("/api/fr11/chat", headers=AUTH, json={
+            "message": "Plan three days in Langkawi SECRET_CROSS_USER_NOTE",
+        })
+        assert first.status_code == 200
+        first_id = first.get_json()["session"]["id"]
+        second = client.post("/api/fr11/chat", headers={
+            "Authorization": "Bearer other-traveller",
+        }, json={"sessionId": first_id, "message": "What can I do in Penang?"})
+    assert second.status_code == 200
+    assert second.get_json()["session"]["id"] != first_id
+    assert second.get_json()["session"]["travellerId"] == "other-traveller"
+    contents = sdk.return_value.models.generate_content.call_args.kwargs["contents"]
+    assert "SECRET_CROSS_USER_NOTE" not in contents
+    assert "Private first reply" not in contents
+
+
+def test_gemini_flask_route_keeps_auth_and_validation(client, journey, monkeypatch):
+    register_profile(client)
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    with patch.object(gemini_service.genai, "Client") as sdk:
+        assert client.post("/api/fr11/chat", json={"message": "Hello"}).status_code == 401
+        assert client.post("/api/fr11/chat", headers=AUTH, json={}).status_code == 400
+        assert client.post("/api/fr11/chat", headers=AUTH, json={
+            "message": "x" * 2001,
+        }).status_code == 400
+        sdk.assert_not_called()
 
 
 def test_configured_gemini_outage_is_labelled_local_in_real_chat_route(client, journey, monkeypatch):
