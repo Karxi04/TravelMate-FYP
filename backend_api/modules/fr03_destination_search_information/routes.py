@@ -29,6 +29,7 @@ from services.malaysian_locality import (
     normalize_destination_scope,
     normalize_candidate_geography,
     filter_candidates,
+    FOREIGN_DESTINATIONS,
 )
 
 bp = Blueprint('fr03_destinations', __name__, url_prefix='/api/fr3')
@@ -83,11 +84,22 @@ def _search_text(value):
 
 
 def _search_scope(location):
-    requested = normalize_destination_scope(location or 'Penang')
-    if requested.get('state') != 'Penang':
+    raw_location = str(location or '').strip()
+    if not raw_location:
+        # Default policy: When no location is provided, default to Penang for backward compatibility and to avoid unbounded provider search.
         requested = normalize_destination_scope('Penang')
-    provider_location = requested.get('canonicalName') or 'Penang, Malaysia'
-    state_scope = normalize_destination_scope('Penang')
+        provider_location = requested.get('canonicalName') or 'Penang, Malaysia'
+        return requested, requested, provider_location
+
+    requested = normalize_destination_scope(raw_location)
+    if not requested.get('resolved') or requested.get('country') != 'Malaysia':
+        return requested, None, None
+
+    provider_location = requested.get('canonicalName') or (
+        f"{raw_location}, Malaysia" if 'malaysia' not in raw_location.lower() else raw_location
+    )
+    state = requested.get('state')
+    state_scope = normalize_destination_scope(state) if state else requested
     return requested, state_scope, provider_location
 
 
@@ -95,15 +107,32 @@ def _provider_query(query):
     normalized = _search_text(query)
     query_scope = normalize_destination_scope(normalized)
     city = query_scope.get('city')
+    state = query_scope.get('state')
     if city:
         exact_area_names = {
             _search_text(city),
+            _search_text(f'{city} {state}' if state else f'{city} Malaysia'),
+            _search_text(f'{city} {state} Malaysia' if state else f'{city} Malaysia'),
             _search_text(f'{city} Penang'),
             _search_text(f'{city} Penang Malaysia'),
         }
         if normalized in exact_area_names:
             return f'places to visit {city}'
-    if normalized in {'penang attraction', 'attraction penang'}:
+    elif state:
+        exact_area_names = {
+            _search_text(state),
+            _search_text(f'{state} Malaysia'),
+        }
+        if normalized in exact_area_names:
+            return f'places to visit {state}'
+    if normalized in {
+        'penang attraction', 'attraction penang',
+        'kuala lumpur attraction', 'attraction kuala lumpur',
+        'melaka attraction', 'attraction melaka',
+        'sabah attraction', 'attraction sabah',
+        'sarawak attraction', 'attraction sarawak',
+        'malaysia attraction', 'attraction malaysia',
+    }:
         return 'tourist attractions'
     return normalized
 
@@ -406,7 +435,8 @@ def _merge_destination(cached, provider):
 @auth_required(['traveller'])
 def search_destinations():
     q = request.args.get('q', '').strip()
-    location = request.args.get('location', 'Penang').strip() or 'Penang'
+    location_param = request.args.get('location')
+    location = (location_param or '').strip()
     filterOption = request.args.get('filter')
     sortOption = request.args.get('sort')
 
@@ -415,11 +445,26 @@ def search_destinations():
     if not validateFilterOption(filterOption) or not validateSortingOption(sortOption):
         return jsonify({'ok': False, 'error': 'Invalid filter or sort option'}), 400
 
-    requested_scope, penang_scope, provider_location = _search_scope(location)
+    requested_scope, target_scope, provider_location = _search_scope(location)
+
+    if location_param is not None and location != '':
+        if target_scope is None or not requested_scope.get('resolved') or requested_scope.get('country') != 'Malaysia':
+            text = _search_text(location)
+            is_foreign = any(re.search(rf'\b{re.escape(k)}\b', text) for k in FOREIGN_DESTINATIONS)
+            if is_foreign:
+                return jsonify({
+                    'ok': False,
+                    'error': f"TravelMate is dedicated exclusively to travel planning within Malaysia. '{location}' is outside our supported tourism destinations.",
+                }), 400
+            return jsonify({
+                'ok': False,
+                'error': f"Requested destination '{location}' could not be resolved as a Malaysian destination.",
+            }), 400
+
     interpreted_query = _provider_query(q)
     coordinates = {
-        'latitude': penang_scope.get('latitude'),
-        'longitude': penang_scope.get('longitude'),
+        'latitude': requested_scope.get('latitude'),
+        'longitude': requested_scope.get('longitude'),
     }
     provider_unavailable = False
     try:
@@ -476,7 +521,7 @@ def search_destinations():
         pass
 
     results = _deduplicate_results(_enrich_search_result(item) for item in results)
-    results, _rejected = filter_candidates(results, penang_scope)
+    results, _rejected = filter_candidates(results, requested_scope)
     results = _filter_by_category(results, filterOption)
     results = (
         applyDestinationSorting(results, sortOption)

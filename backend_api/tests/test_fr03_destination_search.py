@@ -628,13 +628,42 @@ def test_search_rejects_non_penang_and_preserves_same_name_elsewhere(
     ]}
 
     response = client.get(
-        '/api/fr3/destinations/search?q=heritage+cafe&location=Malaysia',
+        '/api/fr3/destinations/search?q=heritage+cafe&location=Penang',
         headers={'Authorization': 'Bearer valid_test_token'},
     )
 
     assert response.status_code == 200
     assert [item['place_id'] for item in response.get_json()['results']] == [
         'penang_cafe'
+    ]
+
+
+def test_search_malaysia_preserves_all_domestic_candidates(
+        client, mock_traveller_auth, isolated_destination_search):
+    provider, _cache_read, _cache_write = isolated_destination_search
+    provider.return_value = {'local_results': [
+        {
+            'place_id': 'penang_cafe', 'title': 'Heritage Cafe',
+            'type': 'Cafe', 'address': 'George Town, Penang, Malaysia',
+        },
+        {
+            'place_id': 'kl_cafe', 'title': 'Heritage Cafe',
+            'type': 'Cafe', 'address': 'Kuala Lumpur, Malaysia',
+        },
+        {
+            'place_id': 'singapore_cafe', 'title': 'Heritage Cafe Singapore',
+            'type': 'Cafe', 'address': 'Singapore',
+        },
+    ]}
+
+    response = client.get(
+        '/api/fr3/destinations/search?q=heritage+cafe&location=Malaysia',
+        headers={'Authorization': 'Bearer valid_test_token'},
+    )
+
+    assert response.status_code == 200
+    assert [item['place_id'] for item in response.get_json()['results']] == [
+        'penang_cafe', 'kl_cafe'
     ]
 
 
