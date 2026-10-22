@@ -149,11 +149,20 @@ def generate_business_analytics(db, operator_id):
         if data.get("provider") == "stripe_checkout_test" or data.get("testMode"):
             test_mode_orders += 1
 
-        is_paid = (
-            (payment_status in {"paid", "succeeded"} or order_status in {"paid", "succeeded"})
-            and order_status not in {"cancelled", "failed", "payment_failed", "expired"}
-            and payment_status not in {"cancelled", "failed", "payment_failed"}
+        # Determine settlement validity:
+        # 1. Confirmed payment provider settlement is primary authority
+        has_settled_payment = payment_status in {"paid", "succeeded"}
+
+        # 2. Legacy orders with absent/empty paymentStatus fall back to server order status
+        legacy_paid_fallback = (not payment_status) and order_status in {"paid", "succeeded"}
+
+        # 3. Explicit non-paid payment statuses, or cancelled/failed/expired order lifecycles, strictly disqualify
+        is_disqualified = (
+            order_status in {"cancelled", "failed", "payment_failed", "expired"}
+            or payment_status in {"cancelled", "failed", "payment_failed", "unpaid", "pending", "payment_pending"}
         )
+
+        is_paid = (has_settled_payment or legacy_paid_fallback) and not is_disqualified
 
         if is_paid:
             paid_bookings += 1

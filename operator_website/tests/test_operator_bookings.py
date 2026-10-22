@@ -288,3 +288,30 @@ def test_operator_dashboard_shows_bookings_kpi(auth_client):
         assert "Package Bookings" in html
         assert "Manage Package Bookings" in html
         assert 'href="/bookings"' in html
+
+
+def test_operator_analytics_portfolio_valuation_wording(auth_client):
+    mock_analytics = MagicMock(ok=True)
+    mock_analytics.json.return_value = {
+        "ok": True,
+        "analytics": {
+            "summary": {
+                "totalPackages": 4,
+                "approvedPackages": 4,
+                "totalPackageValue": 3216.98,
+                "bookingRecords": 8,
+                "paidBookings": 5,
+                "totalPaidRevenue": 15932.0,
+            }
+        }
+    }
+
+    with patch.dict(app.view_functions["operator_fr12.analytics"].__globals__, {"call_api": lambda m, p, **k: mock_analytics}):
+        res = auth_client.get("/analytics")
+        assert res.status_code == 200
+        html = res.get_data(as_text=True)
+        assert "Combined Approved Catalog Portfolio Value" in html
+        assert "Sum of the listed unit prices of all administrator-approved packages" in html
+        assert "Represents catalog portfolio valuation, not booking sales" in html
+        assert "MYR 3216.98" in html
+        assert "Calculated from approved catalog rates" in html

@@ -330,6 +330,56 @@ def test_analytics_payment_status_edge_cases():
     assert {b["id"] for b in report["bookings"]} == {"ord_succ", "ord_pfail", "ord_sfail", "ord_paid"}
 
 
+def test_analytics_authoritative_settlement_matrix():
+    """
+    Comprehensive verification of settlement semantics across conflict states:
+    1. Explicit unpaid paymentStatus never produces paid revenue (even if status=paid).
+    2. Explicit pending/payment_pending never produces paid revenue.
+    3. Failed and cancelled payments are excluded.
+    4. Legitimate settled orders are included once.
+    5. Expired attempts are excluded from revenue.
+    6. Missing legacy paymentStatus falls back to server order status.
+    11. Totals agree with Operator Bookings semantics under supported order states.
+    """
+    operator_id = "op_matrix"
+    orders = [
+        # 1. Paid / paid -> Settled
+        {"id": "o_paid", "quoteType": "package", "operatorId": operator_id, "amount": 1000.0, "status": "paid", "paymentStatus": "paid"},
+        # 2. Succeeded / succeeded -> Settled
+        {"id": "o_succ", "quoteType": "package", "operatorId": operator_id, "amount": 500.0, "status": "succeeded", "paymentStatus": "succeeded"},
+        # 3. Pending / paid -> Settled (payment arrived before order fulfillment complete)
+        {"id": "o_pend_paid", "quoteType": "package", "operatorId": operator_id, "amount": 300.0, "status": "pending", "paymentStatus": "paid"},
+        # 4. Paid / unpaid -> Disqualified (unpaid settlement is authoritative over general status)
+        {"id": "o_paid_unpaid", "quoteType": "package", "operatorId": operator_id, "amount": 700.0, "status": "paid", "paymentStatus": "unpaid"},
+        # 5. Paid / pending -> Disqualified (pending settlement is uncollected)
+        {"id": "o_paid_pend", "quoteType": "package", "operatorId": operator_id, "amount": 400.0, "status": "paid", "paymentStatus": "pending"},
+        # 6. Paid / payment_pending -> Disqualified
+        {"id": "o_paid_ppend", "quoteType": "package", "operatorId": operator_id, "amount": 450.0, "status": "paid", "paymentStatus": "payment_pending"},
+        # 7. Expired / paid -> Disqualified (expired session cannot be fulfilled)
+        {"id": "o_exp_paid", "quoteType": "package", "operatorId": operator_id, "amount": 800.0, "status": "expired", "paymentStatus": "paid"},
+        # 8. Cancelled / paid -> Disqualified
+        {"id": "o_canc_paid", "quoteType": "package", "operatorId": operator_id, "amount": 900.0, "status": "cancelled", "paymentStatus": "paid"},
+        # 9. Paid / failed -> Disqualified
+        {"id": "o_paid_fail", "quoteType": "package", "operatorId": operator_id, "amount": 600.0, "status": "paid", "paymentStatus": "failed"},
+        # 10. Legacy paid with None/missing paymentStatus -> Settled (server fallback)
+        {"id": "o_legacy_none", "quoteType": "package", "operatorId": operator_id, "amount": 200.0, "status": "paid", "paymentStatus": None},
+        # 11. Legacy succeeded with empty string paymentStatus -> Settled (server fallback)
+        {"id": "o_legacy_empty", "quoteType": "package", "operatorId": operator_id, "amount": 150.0, "status": "succeeded", "paymentStatus": ""},
+        # 12. Checkout open / unpaid -> Disqualified (standard unpaid attempt)
+        {"id": "o_open_unpaid", "quoteType": "package", "operatorId": operator_id, "amount": 350.0, "status": "checkout_open", "paymentStatus": "unpaid"},
+    ]
+    db = _build_mock_db(orders=orders)
+    report = generate_business_analytics(db, operator_id=operator_id)
+
+    # Total recorded orders = 12
+    assert report["summary"]["bookingRecords"] == 12
+
+    # Settled orders = 5:
+    # o_paid (1000) + o_succ (500) + o_pend_paid (300) + o_legacy_none (200) + o_legacy_empty (150) = 2150.0
+    assert report["summary"]["paidBookings"] == 5
+    assert report["summary"]["totalPaidRevenue"] == 2150.0
+
+
 # ==============================================================================
 # INTEGRATION / ROUTE TESTS: /api/fr12/analytics
 # ==============================================================================
