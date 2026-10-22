@@ -164,19 +164,74 @@ def extract_budget(text, default=None):
     return default
 
 
+def _parse_safe_count(val):
+    if not val:
+        return None
+    val_str = str(val).strip().lower()
+    if val_str in NUMBER_WORDS:
+        return NUMBER_WORDS[val_str]
+    try:
+        n = int(val_str)
+        return n if n > 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
 def extract_travellers(text, default=None):
     q = text.lower()
-    if any(k in q for k in ['solo', 'by myself', 'alone', 'for 1 person', 'for one person']):
+
+    # 1. Composite passenger expressions (e.g. "two adults and one child", "2 adults + 2 kids")
+    num_pat = r'(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)'
+    m_comp = re.search(
+        rf'\b({num_pat})\s*(?:adults?|persons?|people|pax)\s*(?:and|&|\+|,)?\s*({num_pat})\s*(?:child(?:ren)?|kids?)\b',
+        q
+    )
+    if m_comp:
+        a = _parse_safe_count(m_comp.group(1))
+        c = _parse_safe_count(m_comp.group(2))
+        if a is not None and c is not None:
+            return max(1, min(20, a + c))
+
+    m_comp_rev = re.search(
+        rf'\b({num_pat})\s*(?:child(?:ren)?|kids?)\s*(?:and|&|\+|,)?\s*({num_pat})\s*(?:adults?|persons?|people|pax)\b',
+        q
+    )
+    if m_comp_rev:
+        c = _parse_safe_count(m_comp_rev.group(1))
+        a = _parse_safe_count(m_comp_rev.group(2))
+        if a is not None and c is not None:
+            return max(1, min(20, a + c))
+
+    # 2. Solo / couple phrases
+    if any(k in q for k in ['solo', 'by myself', 'alone', 'for 1 person', 'for one person', '1 person']):
         return 1
-    if any(k in q for k in ['couple', 'two people', 'for 2 people', 'for two', 'for 2', 'two of us', '2 travellers', '2 pax']):
+    if any(k in q for k in ['couple', 'for two', 'for 2', 'two of us', '2 of us']):
         return 2
-    if 'family of four' in q or 'four travellers' in q or '4 pax' in q or '4 people' in q:
-        return 4
-    if 'three travellers' in q or '3 pax' in q or '3 people' in q or 'three of us' in q:
-        return 3
-    m = re.search(r'\b(\d+)\s*(?:people|pax|travellers|persons|adults)\b', q)
-    if m:
-        return max(1, min(20, int(m.group(1))))
+
+    # 3. Family of X
+    m_fam = re.search(rf'\bfamily\s+of\s+({num_pat})\b', q)
+    if m_fam:
+        val = _parse_safe_count(m_fam.group(1))
+        if val is not None:
+            return max(1, min(20, val))
+
+    # 4. X of us
+    m_of_us = re.search(rf'\b({num_pat})\s+of\s+us\b', q)
+    if m_of_us:
+        val = _parse_safe_count(m_of_us.group(1))
+        if val is not None:
+            return max(1, min(20, val))
+
+    # 5. Standard count with passenger/traveller noun (written number word or digits)
+    m_count = re.search(
+        rf'\b({num_pat})\s*(?:people|pax|travellers?|travelers?|persons?|adults?|passengers?)\b',
+        q
+    )
+    if m_count:
+        val = _parse_safe_count(m_count.group(1))
+        if val is not None:
+            return max(1, min(20, val))
+
     return default
 
 
@@ -228,12 +283,12 @@ def extract_interests(text, existing=None):
     interests = list(existing or [])
     mapping = {
         'Food': ['food', 'culinary', 'eat', 'hawker', 'dining', 'cuisine'],
-        'Culture': ['culture', 'heritage', 'history', 'historical', 'museum', 'temple', 'colonial'],
+        'Culture': ['culture', 'cultural', 'heritage', 'history', 'historical', 'museum', 'temple', 'colonial'],
         'Nature': ['nature', 'adventure', 'hiking', 'mountain', 'wildlife', 'jungle', 'park'],
         'Beach': ['beach', 'island', 'coastal', 'snorkeling', 'sea', 'diving'],
         'Relaxation': ['relax', 'relaxing', 'relaxation', 'chill', 'peaceful', 'spa', 'calm'],
         'Shopping': ['shopping', 'mall', 'market', 'bazaar'],
-        'Family': ['family', 'kids', 'children'],
+        'Family': ['family', 'kids', 'children', 'child'],
         'Photography': ['photo', 'photography', 'viewpoint'],
     }
     for cat, keywords in mapping.items():

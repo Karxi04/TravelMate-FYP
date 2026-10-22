@@ -555,8 +555,14 @@ class _ChatTabState extends State<ChatTab> {
 
   bool usesSavedGuidance(Map<String, dynamic> item) {
     final source = (item['source'] ?? '').toString().toLowerCase();
-    return {'fallback', 'cache', 'cached', 'local', 'standalone'}
-        .contains(source);
+    return {
+      'fallback',
+      'cache',
+      'cached',
+      'local',
+      'standalone',
+      'travelmate-assistant',
+    }.contains(source);
   }
 
   @override

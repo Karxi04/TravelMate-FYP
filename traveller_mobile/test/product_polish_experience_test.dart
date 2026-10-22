@@ -50,22 +50,24 @@ class _ChatApi extends ApiService {
     this.existingFallback = false,
     this.failSessions = false,
     this.chatCompleter,
+    this.customSource,
   });
 
   final bool existingFallback;
   final bool failSessions;
   final Completer<dynamic>? chatCompleter;
+  final String? customSource;
 
   Map<String, dynamic> get _session => {
         'id': 'chat-session-1',
         'title': 'Penang ideas',
         'updatedAt': '2026-10-05T10:00:00Z',
-        'messages': existingFallback
+        'messages': (existingFallback || customSource != null)
             ? [
                 {
                   'message': 'What can I do?',
                   'reply': 'Here are a few saved ideas for your trip.',
-                  'source': 'fallback',
+                  'source': customSource ?? 'fallback',
                 }
               ]
             : <dynamic>[],
@@ -77,7 +79,9 @@ class _ChatApi extends ApiService {
       if (failSessions) throw Exception('HTTP 500 internal stack trace');
       return {
         'ok': true,
-        'items': existingFallback ? [_session] : <dynamic>[],
+        'items': (existingFallback || customSource != null)
+            ? [_session]
+            : <dynamic>[],
       };
     }
     if (path == '/api/fr11/sessions/chat-session-1') {
@@ -238,6 +242,30 @@ void main() {
     expect(find.text('Check live details before making bookings.'),
         findsOneWidget);
     expect(find.textContaining('Gemini'), findsNothing);
+  });
+
+  testWidgets(
+      'Assistant clearly identifies backend travelmate-assistant fallback guidance',
+      (tester) async {
+    await _pumpAtSize(
+      tester,
+      ChatTab(api: _ChatApi(customSource: 'travelmate-assistant')),
+    );
+
+    expect(find.text('Using saved travel guidance'), findsOneWidget);
+    expect(find.text('Check live details before making bookings.'),
+        findsOneWidget);
+  });
+
+  testWidgets(
+      'Assistant does not show saved guidance chip for live gemini responses',
+      (tester) async {
+    await _pumpAtSize(
+      tester,
+      ChatTab(api: _ChatApi(customSource: 'gemini')),
+    );
+
+    expect(find.text('Using saved travel guidance'), findsNothing);
   });
 
   testWidgets('Assistant session failure uses a persistent retry state',
