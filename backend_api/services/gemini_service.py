@@ -173,6 +173,17 @@ def _local_assistant(question, context='', planning_state=None):
     q = str(question or '').strip().lower()
     context_lower = str(context or '').lower()
     ps = dict(planning_state or {})
+    excluded_labels = list(ps.get('excludedInterests') or []) + list(ps.get('excludedActivityTypes') or [])
+
+    def constrained_indoor_reply(destination):
+        exclusion_note = ''
+        if excluded_labels:
+            exclusion_note = f" I will keep {', '.join(excluded_labels)} out of every suggestion."
+        return (
+            f"Indoor-only planning is active for {destination}.{exclusion_note} TravelMate will use only "
+            "verified rain-safe catalog activities that satisfy all active constraints. If none remain, "
+            "I will report a constraint conflict instead of inserting prohibited or outdoor substitutes."
+        )
 
     # 1. Foreign destinations boundary check
     foreign_keywords = ['singapore', 'tokyo', 'japan', 'bangkok', 'thailand', 'bali', 'indonesia', 'seoul', 'london', 'paris', 'phuket']
@@ -193,6 +204,8 @@ def _local_assistant(question, context='', planning_state=None):
     # 2. Weather inquiry (bounded regex to prevent 'hotel' matching 'hot')
     is_weather = bool(re.search(r'\b(?:rain|rains|rainy|raining|downpour|thunderstorm|weather|forecast|hot|temperature)\b', q))
     if is_weather and not is_explicit_planning:
+        if ps.get('preferIndoor') or excluded_labels:
+            return constrained_indoor_reply(ps.get('destinationArea') or 'your destination')
         return (
             "Check the Weather tool for the live Open-Meteo forecast. TravelMate's smart itinerary generator treats museums, malls and indoor food experiences "
             "as safer wet-weather choices, while beaches, gardens, hill viewpoints and outdoor adventure stops stay flexible when rain probability is high."
@@ -223,11 +236,7 @@ def _local_assistant(question, context='', planning_state=None):
     # 4c. Indoor alternative request
     if re.search(r'\b(?:replace\s+outdoor|indoor\s+only|indoor\s+activities|indoor\s+attractions|sheltered|rain\s+safe|wet\s+weather|indoor\s+alternatives)\b', q):
         dest_name = ps.get('destinationArea') or 'your destination'
-        return (
-            f"When wet weather is expected in {dest_name}, TravelMate's smart itinerary prioritizes indoor cultural and entertainment destinations "
-            f"such as museums, aquariums, art galleries, and covered heritage sites (like Pinang Peranakan Mansion, Islamic Arts Museum, or Wonderfood Museum), "
-            f"while outdoor hills, beaches and parks stay flexible. Your travel plan has been updated with indoor alternatives."
-        )
+        return constrained_indoor_reply(dest_name)
 
     # 5. General feature explanation inquiry
     if any(f in q for f in ['what can you do', 'what can travelmate do', 'how does travelmate work', 'explain features', 'explain travelmate', 'what functions']):

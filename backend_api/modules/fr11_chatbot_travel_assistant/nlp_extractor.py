@@ -298,6 +298,39 @@ INTEREST_MAPPING = {
     'Photography': ['photo', 'photography', 'viewpoint'],
 }
 
+SPECIFIC_ACTIVITY_TYPES = {
+    'Museum': [r'museums?'],
+    'Shopping Mall': [r'shopping\s+malls?', r'malls?'],
+}
+
+BROAD_EXCLUSION_TERMS = {
+    'Food': [r'food', r'culinary', r'dining', r'cuisine'],
+    'Culture': [r'culture', r'cultural\s+attractions?', r'heritage\s+attractions?'],
+    'Nature': [r'nature', r'outdoor\s+nature'],
+    'Beach': [r'beaches?', r'coastal\s+activities'],
+    'Relaxation': [r'relaxation', r'relaxing\s+activities'],
+    'Shopping': [r'shopping(?!\s+malls?)'],
+    'Family': [r'family\s+activities'],
+    'Photography': [r'photography'],
+}
+
+BROAD_ACTIVITY_TERMS = {
+    'Food': {'food', 'culinary', 'dining', 'cuisine', 'restaurant', 'hawker'},
+    'Culture': {'culture', 'cultural', 'heritage', 'history', 'historical', 'museum', 'temple', 'colonial', 'mosque', 'gallery'},
+    'Nature': {'nature', 'adventure', 'hiking', 'mountain', 'wildlife', 'jungle', 'park', 'garden'},
+    'Beach': {'beach', 'island', 'coastal', 'snorkeling', 'sea', 'diving'},
+    'Relaxation': {'relax', 'relaxing', 'relaxation', 'spa', 'wellness'},
+    'Shopping': {'shopping', 'mall', 'market', 'bazaar'},
+    'Family': {'family', 'kids', 'children', 'child'},
+    'Photography': {'photo', 'photography', 'viewpoint'},
+}
+
+
+def _is_negated_match(text, match_start):
+    preceding = text[max(0, match_start - 60):match_start]
+    clause = re.split(r'[,.!?;]|\bbut\b', preceding)[-1]
+    return bool(re.search(rf'{NEGATION_CUES}[\w\s]{{0,45}}$', clause))
+
 
 def extract_interests(text, existing=None):
     q = text.lower()
@@ -311,9 +344,9 @@ def extract_interests(text, existing=None):
             if not matches:
                 continue
             for m in matches:
-                start_idx = max(0, m.start() - 35)
-                preceding = q[start_idx:m.start()]
-                if re.search(rf'{NEGATION_CUES}\s*[\w\s]{{0,25}}$', preceding):
+                if _is_negated_match(q, m.start()):
+                    if kw in {'museum', 'mall'}:
+                        continue
                     cat_negatives += 1
                 else:
                     cat_positives += 1
@@ -331,26 +364,92 @@ def extract_excluded_interests(text, existing=None):
     q = text.lower()
     excluded = list(existing or [])
 
-    for cat, keywords in INTEREST_MAPPING.items():
-        for kw in keywords:
-            matches = list(re.finditer(rf'\b{re.escape(kw)}s?\b', q))
+    for cat, patterns in BROAD_EXCLUSION_TERMS.items():
+        for pattern in patterns:
+            matches = list(re.finditer(rf'\b(?:{pattern})\b', q))
             for m in matches:
-                start_idx = max(0, m.start() - 35)
-                preceding = q[start_idx:m.start()]
-                if re.search(rf'{NEGATION_CUES}\s*[\w\s]{{0,25}}$', preceding):
+                if _is_negated_match(q, m.start()):
                     if cat not in excluded:
                         excluded.append(cat)
                     break
     return excluded
 
 
+def extract_excluded_activity_types(text, existing=None):
+    """Track narrow attraction exclusions without erasing broader interests."""
+    q = text.lower()
+    excluded = list(existing or [])
+
+    for activity_type, patterns in SPECIFIC_ACTIVITY_TYPES.items():
+        singular = 'museum' if activity_type == 'Museum' else 'shopping mall'
+        plural = 'museums' if activity_type == 'Museum' else 'shopping malls'
+        recovery_patterns = [
+            rf'\b(?:{singular}|{plural})\s+(?:are\s+|is\s+)?(?:okay|ok|fine|allowed)(?:\s+now)?\b',
+            rf'\b(?:include|allow|restore|add)\s+(?:the\s+)?(?:{singular}|{plural})\b',
+        ]
+        if any(re.search(pattern, q) for pattern in recovery_patterns):
+            excluded = [value for value in excluded if value != activity_type]
+
+        for pattern in patterns:
+            if any(_is_negated_match(q, match.start()) for match in re.finditer(rf'\b(?:{pattern})\b', q)):
+                if activity_type not in excluded:
+                    excluded.append(activity_type)
+                break
+    return excluded
+
+
 def extract_indoor_preference(text, existing=None):
     q = text.lower()
-    if re.search(r'\b(?:replace\s+outdoor|indoor\s+only|indoor\s+activities|indoor\s+attractions|sheltered|rain\s+safe|wet\s+weather|avoid\s+outdoor|no\s+outdoor)\b', q):
+    if re.search(r'\b(?:replace\s+outdoor|indoor\s+only|indoor\s+activities|indoor\s+attractions|indoor\s+alternatives|indoor\s+places|find\s+indoor|sheltered|rain\s+safe|wet\s+weather|avoid\s+outdoor|no\s+outdoor)\b', q):
         return True
     if re.search(r'\b(?:prefer\s+outdoor|outdoor\s+only|sunny|outdoor\s+activities|outdoor\s+adventure)\b', q):
         return False
     return existing
+
+
+def activity_satisfies_constraints(activity, excluded_interests=None,
+                                   excluded_activity_types=None, prefer_indoor=False):
+    """Return whether one catalog activity satisfies every active hard constraint."""
+    if prefer_indoor and activity.get('indoor') is not True:
+        return False
+
+    searchable = clean_text(' '.join(str(activity.get(field, '') or '') for field in (
+        'title', 'name', 'category', 'type', 'description'
+    )))
+
+    for activity_type in excluded_activity_types or []:
+        normalized = clean_text(activity_type)
+        if normalized == 'museum' and re.search(r'\bmuseums?\b', searchable):
+            return False
+        if normalized == 'shopping mall' and (
+            re.search(r'\bmalls?\b', searchable)
+            or 'shopping centre' in searchable
+            or 'shopping center' in searchable
+        ):
+            return False
+
+    metadata = clean_text(f"{activity.get('category', '')} {activity.get('type', '')}")
+    metadata_words = set(metadata.split())
+    for category in excluded_interests or []:
+        terms = BROAD_ACTIVITY_TERMS.get(str(category), {clean_text(category)})
+        if metadata_words.intersection(terms) or any(
+            re.search(rf'\b{re.escape(term)}s?\b', metadata) for term in terms
+        ):
+            return False
+    return True
+
+
+def filter_constraint_candidates(candidates, excluded_interests=None,
+                                 excluded_activity_types=None, prefer_indoor=False):
+    return [
+        item for item in candidates
+        if activity_satisfies_constraints(
+            item,
+            excluded_interests=excluded_interests,
+            excluded_activity_types=excluded_activity_types,
+            prefer_indoor=prefer_indoor,
+        )
+    ]
 
 
 def extract_day_specific(text):
@@ -551,39 +650,36 @@ def find_matching_catalog_destinations(destination_area, destination_state=None,
 
 def build_structured_trip_plan(destination_area, destination_state=None, days=3, budget_limit=1200.0,
                                traveller_count=1, start_date=None, end_date=None, interests=None,
-                               excluded_interests=None, prefer_indoor=False, catalog=None):
+                               excluded_interests=None, excluded_activity_types=None,
+                               prefer_indoor=False, catalog=None):
     """Build a structured trip plan from authentic catalog activities, or report coverage gap."""
     matching = find_matching_catalog_destinations(destination_area, destination_state, catalog)
     if not matching:
         return None, 'coverage_gap'
 
-    # Filter out excluded categories/types if specified
-    if excluded_interests:
-        ex_low = {clean_text(x) for x in excluded_interests}
-        filtered = [
-            d for d in matching
-            if not any(ex in clean_text(d.get('category', '') + ' ' + d.get('type', '')) for ex in ex_low)
-        ]
-        if filtered:
-            matching = filtered
-
-    # Prioritize indoor attractions if requested
-    if prefer_indoor:
-        indoor_items = [d for d in matching if bool(d.get('indoor', False))]
-        outdoor_items = [d for d in matching if not bool(d.get('indoor', False))]
-        if indoor_items:
-            matching = indoor_items + outdoor_items
+    matching = filter_constraint_candidates(
+        matching,
+        excluded_interests=excluded_interests,
+        excluded_activity_types=excluded_activity_types,
+        prefer_indoor=prefer_indoor,
+    )
+    if not matching:
+        return None, 'constraint_conflict'
 
     days = max(1, min(7, int(days or 3)))
     time_slots = ['Morning (09:00 - 12:00)', 'Afternoon (13:30 - 16:30)', 'Evening (18:00 - 20:30)']
     activities = []
-    idx = 0
-
-    for day_no in range(1, days + 1):
-        for slot in time_slots:
-            d = matching[idx % len(matching)]
-            idx += 1
-            activities.append({
+    activity_count = days * len(time_slots)
+    has_hard_constraints = bool(excluded_interests or excluded_activity_types or prefer_indoor)
+    scheduled = (
+        matching[:activity_count]
+        if has_hard_constraints
+        else [matching[idx % len(matching)] for idx in range(activity_count)]
+    )
+    for idx, d in enumerate(scheduled):
+        day_no = (idx // len(time_slots)) + 1
+        slot = time_slots[idx % len(time_slots)]
+        activities.append({
                 'activityId': f'A{len(activities) + 1}',
                 'activityName': d.get('title') or d.get('name') or f'Stop {len(activities) + 1}',
                 'destinationId': d.get('destinationId') or d.get('place_id') or f'dest_{len(activities) + 1}',
@@ -606,7 +702,7 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
                 'recommendedDurationMinutes': int(d.get('recommendedDurationMinutes', 90) or 90),
                 'travelBufferMinutes': 15,
                 'scheduleNotes': [f"Recommended stop for Day {day_no}"],
-            })
+        })
 
     s_date = start_date or date.today().isoformat()
     if not end_date:
@@ -628,6 +724,9 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
         'budgetLimit': float(budget_limit or 1200.0),
         'numberOfTravellers': int(traveller_count or 1),
         'interests': list(interests or []),
+        'excludedInterests': list(excluded_interests or []),
+        'excludedActivityTypes': list(excluded_activity_types or []),
+        'preferIndoor': bool(prefer_indoor),
         'activities': activities,
     }, 'ready'
 

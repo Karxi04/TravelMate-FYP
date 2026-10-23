@@ -14,6 +14,7 @@ from .nlp_extractor import (
     extract_dates,
     extract_interests,
     extract_excluded_interests,
+    extract_excluded_activity_types,
     extract_indoor_preference,
     extract_day_specific,
     classify_user_intent,
@@ -22,6 +23,7 @@ from .nlp_extractor import (
     build_structured_trip_plan,
     validate_save_plan_payload,
     find_matching_catalog_destinations,
+    filter_constraint_candidates,
 )
 import re
 from datetime import date, timedelta
@@ -32,6 +34,19 @@ bp = Blueprint('fr11_chatbot', __name__, url_prefix='/api/fr11')
 def _session_title(message):
     title = ' '.join(str(message or '').strip().split())
     return title[:42] if title else 'New travel chat'
+
+
+def _constraint_acknowledgement(planning_state):
+    labels = list(planning_state.get('excludedInterests') or [])
+    labels += list(planning_state.get('excludedActivityTypes') or [])
+    if planning_state.get('preferIndoor'):
+        labels.append('indoor-only')
+    destination = planning_state.get('destinationArea') or 'the selected destination'
+    return (
+        f"I have applied these hard constraints for {destination}: {', '.join(labels)}. "
+        "Every structured plan and place suggestion will enforce them. If no verified activity satisfies "
+        "all constraints, I will report a conflict instead of inserting a prohibited substitute."
+    )
 
 
 def _session_ref(session_id=None):
@@ -89,6 +104,8 @@ def _context(session=None):
             parts.append(f"Interests: {', '.join(planning.get('interests'))}")
         if planning.get('excludedInterests'):
             parts.append(f"Excluded/Disliked: {', '.join(planning.get('excludedInterests'))}")
+        if planning.get('excludedActivityTypes'):
+            parts.append(f"Excluded activity types: {', '.join(planning.get('excludedActivityTypes'))}")
         if planning.get('preferIndoor'):
             parts.append("Weather preference: Prefers indoor / rain-safe activities")
         if planning.get('daySpecificPreferences'):
@@ -127,6 +144,7 @@ def _extract_plan_from_message(message, planning_state=None):
     s_date, e_date = extract_dates(message, dur or 3, state.get('startDate'), state.get('endDate'))
     ints = extract_interests(message, state.get('interests', []))
     ex_ints = extract_excluded_interests(message, state.get('excludedInterests', []))
+    ex_types = extract_excluded_activity_types(message, state.get('excludedActivityTypes', []))
     indoor = extract_indoor_preference(message, state.get('preferIndoor', False))
 
     plan, status = build_structured_trip_plan(
@@ -139,12 +157,14 @@ def _extract_plan_from_message(message, planning_state=None):
         end_date=e_date,
         interests=ints,
         excluded_interests=ex_ints,
+        excluded_activity_types=ex_types,
         prefer_indoor=indoor,
     )
     return plan if status == 'ready' else None
 
 
-def _extract_place_suggestions(message, destination_area=None, prefer_indoor=False, excluded_interests=None):
+def _extract_place_suggestions(message, destination_area=None, prefer_indoor=False,
+                               excluded_interests=None, excluded_activity_types=None):
     q = str(message or '').lower()
     triggers = ['food', 'eat', 'restaurant', 'place', 'attraction', 'visit', 'recommend', 'where', 'suggest', 'sight', 'see', 'things to do', 'activities']
     if not any(t in q for t in triggers):
@@ -159,28 +179,20 @@ def _extract_place_suggestions(message, destination_area=None, prefer_indoor=Fal
     if not candidates:
         return []
 
-    # Apply excluded interests filter
-    if excluded_interests:
-        ex_low = {str(x).lower().strip() for x in excluded_interests}
-        candidates = [
-            d for d in candidates
-            if not any(ex in str(d.get('category', '') + ' ' + d.get('type', '')).lower() for ex in ex_low)
-        ]
-        if not candidates:
-            return []
-
     # Recognize active rain / wet weather / indoor request using bounded word matching or passed preference
     is_rain_indoor = prefer_indoor or bool(re.search(
         r'\b(?:rain|rains|rainy|raining|downpour|thunderstorm|wet\s+weather|indoor|sheltered)\b',
         q
     ))
 
-    if is_rain_indoor:
-        indoor_candidates = [d for d in candidates if bool(d.get('indoor', False))]
-        if indoor_candidates:
-            candidates = indoor_candidates
-        elif not candidates:
-            return []
+    candidates = filter_constraint_candidates(
+        candidates,
+        excluded_interests=excluded_interests,
+        excluded_activity_types=excluded_activity_types,
+        prefer_indoor=is_rain_indoor,
+    )
+    if not candidates:
+        return []
 
     matches = []
     ignore_terms = {
@@ -233,6 +245,7 @@ def chat():
     s_date, e_date = extract_dates(message, dur or 3, planning_state.get('startDate'), planning_state.get('endDate'))
     ints = extract_interests(message, planning_state.get('interests'))
     ex_ints = extract_excluded_interests(message, planning_state.get('excludedInterests'))
+    ex_types = extract_excluded_activity_types(message, planning_state.get('excludedActivityTypes'))
     indoor_pref = extract_indoor_preference(message, planning_state.get('preferIndoor'))
     day_pref = extract_day_specific(message)
     detailed_intent = classify_detailed_intent(message, planning_state)
@@ -258,6 +271,8 @@ def chat():
         # Purge excluded interests from positive interests if present
         if planning_state.get('interests'):
             planning_state['interests'] = [i for i in planning_state['interests'] if i not in ex_ints]
+    if ex_types or 'excludedActivityTypes' in planning_state:
+        planning_state['excludedActivityTypes'] = ex_types
     if indoor_pref is not None:
         planning_state['preferIndoor'] = indoor_pref
     if day_pref:
@@ -335,6 +350,13 @@ def chat():
         return jsonify({'ok': False, 'error': str(exc)}), 502
 
     reply, source = response['reply'], response['source']
+    if detailed_intent in {'INTEREST_MODIFICATION', 'INDOOR_ALTERNATIVE'} and (
+        planning_state.get('excludedInterests')
+        or planning_state.get('excludedActivityTypes')
+        or planning_state.get('preferIndoor')
+    ):
+        reply = _constraint_acknowledgement(planning_state)
+        source = 'travelmate-assistant'
     item = {
         'id': 'chat_' + utc_now_iso().replace(':', '').replace('-', '').replace('.', ''),
         'travellerId': g.uid,
@@ -356,6 +378,7 @@ def chat():
         e_date_val = planning_state.get('endDate')
         ints_val = planning_state.get('interests')
         ex_ints_val = planning_state.get('excludedInterests')
+        ex_types_val = planning_state.get('excludedActivityTypes')
         indoor_val = planning_state.get('preferIndoor', False)
 
         plan, plan_status = build_structured_trip_plan(
@@ -368,6 +391,7 @@ def chat():
             end_date=e_date_val,
             interests=ints_val,
             excluded_interests=ex_ints_val,
+            excluded_activity_types=ex_types_val,
             prefer_indoor=indoor_val,
         )
         if plan and plan_status == 'ready':
@@ -380,12 +404,33 @@ def chat():
                 'destinationCountry': 'Malaysia',
                 'message': f"Structured activity data for {dest_for_planning} is currently undergoing verified catalog ingestion. General travel advice has been provided."
             }
+        elif plan_status == 'constraint_conflict':
+            active_constraints = list(ex_ints_val or []) + list(ex_types_val or [])
+            if indoor_val:
+                active_constraints.append('indoor-only')
+            constraint_text = ', '.join(active_constraints) or 'the requested restrictions'
+            reply = (
+                f"I could not find enough verified activities in {dest_for_planning} that satisfy all active "
+                f"constraints ({constraint_text}). I have not inserted prohibited or outdoor substitutes. "
+                "Please relax one constraint or choose another destination."
+            )
+            source = 'travelmate-assistant'
+            item['reply'] = reply
+            item['source'] = source
+            item['constraintConflict'] = {
+                'status': 'constraint_conflict',
+                'message': reply,
+                'excludedInterests': list(ex_ints_val or []),
+                'excludedActivityTypes': list(ex_types_val or []),
+                'preferIndoor': bool(indoor_val),
+            }
 
     suggestions = _extract_place_suggestions(
         message,
         destination_area=dest_for_planning,
         prefer_indoor=planning_state.get('preferIndoor', False),
         excluded_interests=planning_state.get('excludedInterests'),
+        excluded_activity_types=planning_state.get('excludedActivityTypes'),
     )
     if suggestions and not plan:
         item['placeSuggestions'] = suggestions
