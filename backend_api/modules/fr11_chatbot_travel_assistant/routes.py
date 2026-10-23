@@ -13,8 +13,11 @@ from .nlp_extractor import (
     extract_travellers,
     extract_dates,
     extract_interests,
+    extract_excluded_interests,
+    extract_indoor_preference,
     extract_day_specific,
     classify_user_intent,
+    classify_detailed_intent,
     check_requirement_completeness,
     build_structured_trip_plan,
     validate_save_plan_payload,
@@ -84,6 +87,10 @@ def _context(session=None):
             parts.append(f"Dates: {planning.get('startDate')} to {planning.get('endDate')}")
         if planning.get('interests'):
             parts.append(f"Interests: {', '.join(planning.get('interests'))}")
+        if planning.get('excludedInterests'):
+            parts.append(f"Excluded/Disliked: {', '.join(planning.get('excludedInterests'))}")
+        if planning.get('preferIndoor'):
+            parts.append("Weather preference: Prefers indoor / rain-safe activities")
         if planning.get('daySpecificPreferences'):
             parts.append(f"Day preferences: {planning.get('daySpecificPreferences')}")
         base_context += f"\nActive trip planning state: {'; '.join(parts)}."
@@ -119,6 +126,8 @@ def _extract_plan_from_message(message, planning_state=None):
     trav = extract_travellers(message, state.get('travellerCount', 1))
     s_date, e_date = extract_dates(message, dur or 3, state.get('startDate'), state.get('endDate'))
     ints = extract_interests(message, state.get('interests', []))
+    ex_ints = extract_excluded_interests(message, state.get('excludedInterests', []))
+    indoor = extract_indoor_preference(message, state.get('preferIndoor', False))
 
     plan, status = build_structured_trip_plan(
         destination_area=dest,
@@ -129,13 +138,15 @@ def _extract_plan_from_message(message, planning_state=None):
         start_date=s_date,
         end_date=e_date,
         interests=ints,
+        excluded_interests=ex_ints,
+        prefer_indoor=indoor,
     )
     return plan if status == 'ready' else None
 
 
-def _extract_place_suggestions(message, destination_area=None):
+def _extract_place_suggestions(message, destination_area=None, prefer_indoor=False, excluded_interests=None):
     q = str(message or '').lower()
-    triggers = ['food', 'eat', 'restaurant', 'place', 'attraction', 'visit', 'recommend', 'where', 'suggest', 'sight', 'see']
+    triggers = ['food', 'eat', 'restaurant', 'place', 'attraction', 'visit', 'recommend', 'where', 'suggest', 'sight', 'see', 'things to do', 'activities']
     if not any(t in q for t in triggers):
         return []
 
@@ -148,15 +159,27 @@ def _extract_place_suggestions(message, destination_area=None):
     if not candidates:
         return []
 
-    # Recognize active rain / wet weather / indoor request using bounded word matching
-    is_rain_indoor = bool(re.search(
+    # Apply excluded interests filter
+    if excluded_interests:
+        ex_low = {str(x).lower().strip() for x in excluded_interests}
+        candidates = [
+            d for d in candidates
+            if not any(ex in str(d.get('category', '') + ' ' + d.get('type', '')).lower() for ex in ex_low)
+        ]
+        if not candidates:
+            return []
+
+    # Recognize active rain / wet weather / indoor request using bounded word matching or passed preference
+    is_rain_indoor = prefer_indoor or bool(re.search(
         r'\b(?:rain|rains|rainy|raining|downpour|thunderstorm|wet\s+weather|indoor|sheltered)\b',
         q
     ))
 
     if is_rain_indoor:
-        candidates = [d for d in candidates if bool(d.get('indoor', False))]
-        if not candidates:
+        indoor_candidates = [d for d in candidates if bool(d.get('indoor', False))]
+        if indoor_candidates:
+            candidates = indoor_candidates
+        elif not candidates:
             return []
 
     matches = []
@@ -209,7 +232,10 @@ def chat():
     trav = extract_travellers(message, planning_state.get('travellerCount'))
     s_date, e_date = extract_dates(message, dur or 3, planning_state.get('startDate'), planning_state.get('endDate'))
     ints = extract_interests(message, planning_state.get('interests'))
+    ex_ints = extract_excluded_interests(message, planning_state.get('excludedInterests'))
+    indoor_pref = extract_indoor_preference(message, planning_state.get('preferIndoor'))
     day_pref = extract_day_specific(message)
+    detailed_intent = classify_detailed_intent(message, planning_state)
 
     # Update accumulated planning state
     if geo.get('destination_area'):
@@ -227,10 +253,19 @@ def chat():
         planning_state['endDate'] = e_date
     if ints:
         planning_state['interests'] = ints
+    if ex_ints:
+        planning_state['excludedInterests'] = ex_ints
+        # Purge excluded interests from positive interests if present
+        if planning_state.get('interests'):
+            planning_state['interests'] = [i for i in planning_state['interests'] if i not in ex_ints]
+    if indoor_pref is not None:
+        planning_state['preferIndoor'] = indoor_pref
     if day_pref:
         cur_day = dict(planning_state.get('daySpecificPreferences') or {})
         cur_day.update(day_pref)
         planning_state['daySpecificPreferences'] = cur_day
+    if detailed_intent:
+        planning_state['lastIntent'] = detailed_intent
 
     session['planningState'] = planning_state
 
@@ -320,6 +355,8 @@ def chat():
         s_date_val = planning_state.get('startDate')
         e_date_val = planning_state.get('endDate')
         ints_val = planning_state.get('interests')
+        ex_ints_val = planning_state.get('excludedInterests')
+        indoor_val = planning_state.get('preferIndoor', False)
 
         plan, plan_status = build_structured_trip_plan(
             destination_area=dest_for_planning,
@@ -330,6 +367,8 @@ def chat():
             start_date=s_date_val,
             end_date=e_date_val,
             interests=ints_val,
+            excluded_interests=ex_ints_val,
+            prefer_indoor=indoor_val,
         )
         if plan and plan_status == 'ready':
             item['tripPlan'] = plan
@@ -342,7 +381,12 @@ def chat():
                 'message': f"Structured activity data for {dest_for_planning} is currently undergoing verified catalog ingestion. General travel advice has been provided."
             }
 
-    suggestions = _extract_place_suggestions(message, destination_area=dest_for_planning)
+    suggestions = _extract_place_suggestions(
+        message,
+        destination_area=dest_for_planning,
+        prefer_indoor=planning_state.get('preferIndoor', False),
+        excluded_interests=planning_state.get('excludedInterests'),
+    )
     if suggestions and not plan:
         item['placeSuggestions'] = suggestions
 

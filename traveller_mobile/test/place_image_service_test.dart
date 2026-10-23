@@ -123,6 +123,27 @@ void main() {
     );
     expect(
       PlaceImageService.searchIdentityMatchesForTesting(
+        'Petronas Twin Towers & KLCC',
+        'Petronas Towers',
+      ),
+      isTrue,
+    );
+    expect(
+      PlaceImageService.searchIdentityMatchesForTesting(
+        'Batu Caves Temple',
+        'Batu Caves',
+      ),
+      isTrue,
+    );
+    expect(
+      PlaceImageService.searchIdentityMatchesForTesting(
+        'Merdeka Square & Sultan Abdul Samad Building',
+        'Merdeka Square, Kuala Lumpur',
+      ),
+      isTrue,
+    );
+    expect(
+      PlaceImageService.searchIdentityMatchesForTesting(
         'Kek Lok Si',
         'File:Unrelated Malaysian beach.jpg',
       ),

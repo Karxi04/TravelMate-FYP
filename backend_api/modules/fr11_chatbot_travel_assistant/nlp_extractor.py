@@ -39,6 +39,11 @@ def extract_geographic_entities(text):
     origin_part = None
     dest_part = None
 
+    is_dest_change = bool(re.search(
+        r'\b(?:change|switch|update|modify|replace|move|instead\s+of)\b.*?\bfrom\b',
+        t_clean
+    )) or bool(re.search(r'\bfrom\s+[a-z\s]+?\s+to\s+[a-z\s]+?\s+instead\b', t_clean))
+
     if from_to:
         origin_candidate = from_to.group(1).strip()
         dest_part = from_to.group(2).strip()
@@ -50,7 +55,9 @@ def extract_geographic_entities(text):
 
     # Determine text to scan for destination
     text_to_scan = t_clean
-    if origin_part and foreign_origin:
+    if is_dest_change and dest_part:
+        text_to_scan = dest_part
+    elif origin_part and foreign_origin:
         text_to_scan = re.sub(rf'\bfrom\s+{re.escape(origin_part)}\b', '', t_clean)
 
     # Detect foreign destinations in destination part/text
@@ -85,7 +92,7 @@ def extract_geographic_entities(text):
             all_malaysian.append(st)
 
     # Also check if origin was a Malaysian city in a domestic road trip: e.g. "from Kuala Lumpur to Ipoh and Penang"
-    if from_to and not foreign_origin:
+    if from_to and not foreign_origin and not is_dest_change:
         origin_clean = clean_text(from_to.group(1))
         for loc_name, (state, aliases) in LOCALITIES.items():
             for alias in aliases:
@@ -93,7 +100,7 @@ def extract_geographic_entities(text):
                     all_malaysian.insert(0, loc_name)
                     break
 
-    is_multi = len(all_malaysian) > 1
+    is_multi = len(all_malaysian) > 1 and not is_dest_change
 
     # Foreign destination check: true only if foreign destination found without valid Malaysian sightseeing destination
     is_foreign = bool(foreign_dests and not malaysian_locs and not malaysian_states)
@@ -278,23 +285,72 @@ def extract_dates(text, duration_days=3, default_start=None, default_end=None):
     return default_start, default_end
 
 
+NEGATION_CUES = r'\b(?:not|no|never|don\'?t|dont|do\s+not|exclude|excluding|excluded|avoid|avoiding|without|skip|skipping|remove|drop|dislike|hate)\b'
+
+INTEREST_MAPPING = {
+    'Food': ['food', 'culinary', 'eat', 'hawker', 'dining', 'cuisine', 'seafood'],
+    'Culture': ['culture', 'cultural', 'heritage', 'history', 'historical', 'museum', 'temple', 'colonial', 'mosque'],
+    'Nature': ['nature', 'adventure', 'hiking', 'mountain', 'wildlife', 'jungle', 'park'],
+    'Beach': ['beach', 'island', 'coastal', 'snorkeling', 'sea', 'diving'],
+    'Relaxation': ['relax', 'relaxing', 'relaxation', 'chill', 'peaceful', 'spa', 'calm'],
+    'Shopping': ['shopping', 'mall', 'market', 'bazaar'],
+    'Family': ['family', 'kids', 'children', 'child'],
+    'Photography': ['photo', 'photography', 'viewpoint'],
+}
+
+
 def extract_interests(text, existing=None):
     q = text.lower()
     interests = list(existing or [])
-    mapping = {
-        'Food': ['food', 'culinary', 'eat', 'hawker', 'dining', 'cuisine'],
-        'Culture': ['culture', 'cultural', 'heritage', 'history', 'historical', 'museum', 'temple', 'colonial'],
-        'Nature': ['nature', 'adventure', 'hiking', 'mountain', 'wildlife', 'jungle', 'park'],
-        'Beach': ['beach', 'island', 'coastal', 'snorkeling', 'sea', 'diving'],
-        'Relaxation': ['relax', 'relaxing', 'relaxation', 'chill', 'peaceful', 'spa', 'calm'],
-        'Shopping': ['shopping', 'mall', 'market', 'bazaar'],
-        'Family': ['family', 'kids', 'children', 'child'],
-        'Photography': ['photo', 'photography', 'viewpoint'],
-    }
-    for cat, keywords in mapping.items():
-        if any(k in q for k in keywords) and cat not in interests:
-            interests.append(cat)
+
+    for cat, keywords in INTEREST_MAPPING.items():
+        cat_positives = 0
+        cat_negatives = 0
+        for kw in keywords:
+            matches = list(re.finditer(rf'\b{re.escape(kw)}s?\b', q))
+            if not matches:
+                continue
+            for m in matches:
+                start_idx = max(0, m.start() - 35)
+                preceding = q[start_idx:m.start()]
+                if re.search(rf'{NEGATION_CUES}\s*[\w\s]{{0,25}}$', preceding):
+                    cat_negatives += 1
+                else:
+                    cat_positives += 1
+
+        if cat_negatives > 0 and cat_positives == 0:
+            if cat in interests:
+                interests.remove(cat)
+        elif cat_positives > 0:
+            if cat not in interests:
+                interests.append(cat)
     return interests
+
+
+def extract_excluded_interests(text, existing=None):
+    q = text.lower()
+    excluded = list(existing or [])
+
+    for cat, keywords in INTEREST_MAPPING.items():
+        for kw in keywords:
+            matches = list(re.finditer(rf'\b{re.escape(kw)}s?\b', q))
+            for m in matches:
+                start_idx = max(0, m.start() - 35)
+                preceding = q[start_idx:m.start()]
+                if re.search(rf'{NEGATION_CUES}\s*[\w\s]{{0,25}}$', preceding):
+                    if cat not in excluded:
+                        excluded.append(cat)
+                    break
+    return excluded
+
+
+def extract_indoor_preference(text, existing=None):
+    q = text.lower()
+    if re.search(r'\b(?:replace\s+outdoor|indoor\s+only|indoor\s+activities|indoor\s+attractions|sheltered|rain\s+safe|wet\s+weather|avoid\s+outdoor|no\s+outdoor)\b', q):
+        return True
+    if re.search(r'\b(?:prefer\s+outdoor|outdoor\s+only|sunny|outdoor\s+activities|outdoor\s+adventure)\b', q):
+        return False
+    return existing
 
 
 def extract_day_specific(text):
@@ -310,24 +366,118 @@ def extract_day_specific(text):
     return {}
 
 
+def classify_detailed_intent(text, planning_state=None):
+    q = text.lower().strip()
+    ps = dict(planning_state or {})
+
+    # 1. Foreign / unsupported boundary check
+    geo = extract_geographic_entities(text)
+    if geo.get('is_foreign'):
+        return 'FOREIGN_UNSUPPORTED'
+
+    # Check for explicit itinerary planning phrases
+    is_explicit_planning = (
+        any(p in q for p in [
+            'plan a ', 'plan my', 'plan 1', 'plan 2', 'plan 3', 'plan 4', 'plan 5', 'plan 6', 'plan 7',
+            'plan one', 'plan two', 'plan three', 'plan four', 'plan five',
+            'create an itinerary', 'create a ', 'build an itinerary', 'build a ', 'build an ',
+            'trip to', 'holiday in', 'vacation in', 'getaway to', 'tour in', 'days in', 'day trip to',
+            'schedule in', 'culinary trip to'
+        ]) or (
+            any(t in q for t in ['plan', 'itinerary']) and any(d in q for d in ['day', 'trip', 'weekend', 'week', 'holiday', 'vacation', 'pax', 'adults', 'travellers'])
+        )
+    ) and not any(k in q for k in ['change our destination', 'switch destination', 'update the plan', 'change our budget', 'reduce our budget'])
+
+    # 2. Car rental inquiry
+    if re.search(r'\b(?:car\s+rental|rent\s+a\s+car|car\s+hire|rental\s+car|vehicle\s+rental|rent\s+a\s+sedan|hire\s+an\s+suv)\b', q) or ('rent a car' in q or 'hire a car' in q or 'car rentals' in q):
+        return 'CAR_RENTAL_ENQUIRY'
+
+    # 3. Flight search inquiry
+    if re.search(r'\b(?:flights?|airfare|airline|airport|airports|fly\s+to|kul|pen|bki|kch)\b', q) and not is_explicit_planning:
+        return 'FLIGHT_ENQUIRY'
+
+    # 4. Hotel booking inquiry
+    if re.search(r'\b(?:hotels?|resorts?|rooms?|accommodation|prebook|lodging|hostel)\b', q) and not is_explicit_planning:
+        return 'HOTEL_ENQUIRY'
+
+    # 5. Feature explanation
+    if any(f in q for f in ['what can you do', 'what can travelmate do', 'how does travelmate work', 'explain features', 'explain travelmate', 'what functions', 'what are your capabilities', 'what features', 'how travelmate balances']):
+        return 'FEATURE_EXPLANATION'
+
+    # 6. Indoor alternative request vs Weather inquiry
+    if re.search(r'\b(?:replace\s+outdoor|indoor\s+activities|indoor\s+attractions|sheltered\s+places|indoor\s+sheltered|wet\s+weather|indoor\s+alternatives|indoor\s+rain|indoor\s+places|indoor\s+museums)\b', q) or ('indoor' in q and any(w in q for w in ['rain', 'raining', 'wet', 'pours', 'thunderstorm'])):
+        return 'INDOOR_ALTERNATIVE'
+    if re.search(r'\b(?:rain|rains|rainy|raining|downpour|thunderstorm|weather|forecast|temperature|hot|cold)\b', q) and not is_explicit_planning:
+        return 'WEATHER_ENQUIRY'
+
+    # 7. Conversational modifications & adjustments
+    if re.search(r'\b(?:change\s+(?:our\s+|the\s+)?destination|switch\s+destination|change\s+from\s+\w+\s+to\s+\w+|update\s+(?:the\s+)?plan|modify\s+(?:the\s+)?schedule)\b', q):
+        return 'ITINERARY_MODIFICATION'
+
+    if re.search(r'\b(?:change\s+(?:the\s+|our\s+)?budget|reduce\s+(?:the\s+|our\s+)?budget|increase\s+(?:the\s+|our\s+)?budget|set\s+budget|budget\s+to\s+rm|make\s+it\s+cheaper|cheaper\s+budget)\b', q) or (
+        extract_budget(text) is not None and any(w in q for w in ['change', 'reduce', 'make', 'update', 'actually', 'instead', 'increase']) and not is_explicit_planning
+    ):
+        return 'BUDGET_ADJUSTMENT'
+
+    if re.search(r'\b(?:there\s+will\s+be|add\s+one\s+more\s+person|now\s+there\s+are|change\s+(?:the\s+)?(?:travellers?|people|pax))\b', q) or (
+        extract_travellers(text) is not None and any(w in q for w in ['people', 'adults', 'kids', 'children', 'of us', 'pax', 'travellers']) and not is_explicit_planning and not any(de in q for de in ['tell me', 'what is', 'what to', 'attractions', 'places'])
+    ):
+        return 'TRAVELLER_COUNT_ADJUSTMENT'
+
+    if re.search(r'\b(?:actually\s+make\s+it\s+\w+\s+days?|make\s+it\s+\d+\s+days?|change\s+(?:the\s+)?duration|change\s+to\s+\d+\s+days?|extend\s+(?:the\s+|our\s+)?trip|extend\s+to|shorten\s+(?:the\s+|our\s+)?holiday|shorten\s+to)\b', q):
+        return 'DURATION_ADJUSTMENT'
+
+    if re.search(r'\b(?:change\s+(?:travel\s+|our\s+|the\s+)?dates?|move\s+(?:the\s+)?dates?|travel\s+dates\s+to|starting\s+tomorrow|start\s+date|reschedule|different\s+date)\b', q):
+        return 'DATE_ADJUSTMENT'
+
+    # 8. Budget advice enquiry
+    if re.search(r'\b(?:how\s+should\s+i\s+budget|how\s+to\s+budget|save\s+money|budget\s+tips|affordable\s+tips|is\s+rm\s*\d+\s+enough|how\s+much\s+money|how\s+much\s+budget|how\s+much\s+should\s+i\s+budget)\b', q) and not is_explicit_planning:
+        return 'BUDGET_ENQUIRY'
+
+    # 9. Interest modification
+    if re.search(r'\b(?:do\s+not\s+include|exclude|no\s+museums|no\s+shopping|no\s+extreme\s+sports|enjoy\s+food|focus\s+on|prefer\s+nature|avoid|skip)\b', q) and not is_explicit_planning:
+        return 'INTEREST_MODIFICATION'
+
+    # 10. Destination recommendation vs Explicit Planning
+    if any(e in q for e in ['somewhere relaxing', 'where should i go', 'recommend somewhere', 'suggest a destination', 'any nice place', 'recommend a place', 'best destination', 'best malaysian destination', 'where should i visit']):
+        return 'DESTINATION_RECOMMENDATION'
+
+    # 11. Explicit planning
+    if is_explicit_planning:
+        return 'ITINERARY_PLANNING'
+
+    # 12. Destination enquiry
+    if any(de in q for de in ['tell me about', 'what is', 'what to see in', 'attractions in', 'places to visit in', 'what can i see in', 'highlights of', 'good places', 'must-see', 'tourist spots', 'hawker stalls', 'places to eat', 'is bako', 'can i visit', 'what attractions', 'recommend the best', 'what can tourists']):
+        return 'DESTINATION_ENQUIRY'
+
+    # 13. Social / general conversation
+    if any(gc in q for gc in ['hello', 'hi', 'good morning', 'good evening', 'thank you', 'thanks', 'goodbye', 'bye', 'nice to meet you', 'who created you']):
+        return 'GENERAL_CONVERSATION'
+
+    # 14. Fallbacks
+    if any(t in q for t in ['recommend', 'food', 'eat', 'restaurant', 'attraction']):
+        return 'DESTINATION_ENQUIRY'
+    if any(t in q for t in ['plan', 'itinerary', 'trip']):
+        return 'ITINERARY_PLANNING'
+
+    return 'GENERAL_CONVERSATION'
+
+
 def classify_user_intent(text, planning_state=None):
-    q = text.lower()
-    planning_triggers = ['plan', 'itinerary', 'trip', 'schedule', 'arrange', 'holiday', 'vacation']
-    info_triggers = ['recommend', 'food', 'eat', 'restaurant', 'attraction', 'weather', 'rain', 'flight', 'hotel', 'where should', 'what are the best', 'how to']
+    detailed = classify_detailed_intent(text, planning_state)
+    ps = dict(planning_state or {})
+    dest = ps.get('destinationArea') or extract_geographic_entities(text).get('destination_area')
 
-    # Explicit itinerary request
-    is_planning = any(p in q for p in ['plan a', 'plan my', 'create an itinerary', 'build an itinerary', 'trip to', 'holiday in', 'vacation in', 'days in', '-day']) or (any(t in q for t in ['plan', 'itinerary']) and any(d in q for d in ['day', 'trip', 'weekend', 'week', 'holiday', 'vacation']))
-    is_exploration = any(e in q for e in ['somewhere relaxing', 'where should i go', 'recommend somewhere', 'suggest a destination', 'any nice place'])
-    is_food_query = any(f in q for f in ['recommend food', 'food in', 'where to eat', 'good food', 'hawker food'])
-
-    if is_planning and not is_food_query:
+    if detailed in {'ITINERARY_PLANNING', 'ITINERARY_MODIFICATION'}:
         return 'PLANNING_REQUEST'
-    if is_exploration:
-        return 'PROVISIONAL_EXPLORATION'
-    if is_food_query or any(t in q for t in info_triggers):
+    if detailed in {'DURATION_ADJUSTMENT', 'BUDGET_ADJUSTMENT', 'TRAVELLER_COUNT_ADJUSTMENT', 'DATE_ADJUSTMENT', 'INTEREST_MODIFICATION', 'INDOOR_ALTERNATIVE'}:
+        if dest:
+            return 'PLANNING_REQUEST'
         return 'GENERAL_QUESTION'
-    if any(t in q for t in planning_triggers):
-        return 'PLANNING_REQUEST'
+    if detailed == 'DESTINATION_RECOMMENDATION':
+        return 'PROVISIONAL_EXPLORATION'
+    if detailed in {'DESTINATION_ENQUIRY', 'BUDGET_ENQUIRY', 'WEATHER_ENQUIRY', 'HOTEL_ENQUIRY', 'FLIGHT_ENQUIRY', 'CAR_RENTAL_ENQUIRY', 'FEATURE_EXPLANATION', 'FOREIGN_UNSUPPORTED'}:
+        return 'GENERAL_QUESTION'
     return 'GENERAL_CONVERSATION'
 
 
@@ -400,11 +550,29 @@ def find_matching_catalog_destinations(destination_area, destination_state=None,
 
 
 def build_structured_trip_plan(destination_area, destination_state=None, days=3, budget_limit=1200.0,
-                               traveller_count=1, start_date=None, end_date=None, interests=None, catalog=None):
+                               traveller_count=1, start_date=None, end_date=None, interests=None,
+                               excluded_interests=None, prefer_indoor=False, catalog=None):
     """Build a structured trip plan from authentic catalog activities, or report coverage gap."""
     matching = find_matching_catalog_destinations(destination_area, destination_state, catalog)
     if not matching:
         return None, 'coverage_gap'
+
+    # Filter out excluded categories/types if specified
+    if excluded_interests:
+        ex_low = {clean_text(x) for x in excluded_interests}
+        filtered = [
+            d for d in matching
+            if not any(ex in clean_text(d.get('category', '') + ' ' + d.get('type', '')) for ex in ex_low)
+        ]
+        if filtered:
+            matching = filtered
+
+    # Prioritize indoor attractions if requested
+    if prefer_indoor:
+        indoor_items = [d for d in matching if bool(d.get('indoor', False))]
+        outdoor_items = [d for d in matching if not bool(d.get('indoor', False))]
+        if indoor_items:
+            matching = indoor_items + outdoor_items
 
     days = max(1, min(7, int(days or 3)))
     time_slots = ['Morning (09:00 - 12:00)', 'Afternoon (13:30 - 16:30)', 'Evening (18:00 - 20:30)']
@@ -419,6 +587,10 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
                 'activityId': f'A{len(activities) + 1}',
                 'activityName': d.get('title') or d.get('name') or f'Stop {len(activities) + 1}',
                 'destinationId': d.get('destinationId') or d.get('place_id') or f'dest_{len(activities) + 1}',
+                'imageUrl': d.get('imageUrl') or d.get('thumbnail') or '',
+                'thumbnail': d.get('thumbnail') or d.get('imageUrl') or '',
+                'photoAttribution': d.get('photoAttribution') or 'Wikimedia Commons',
+                'imageSource': d.get('imageSource') or 'local_catalog',
                 'address': d.get('address', ''),
                 'state': d.get('state') or destination_state or '',
                 'city': d.get('city') or destination_area or '',

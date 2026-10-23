@@ -35,11 +35,68 @@ class PlaceImageService {
     'gurney drive hawker & seafront': 'Gurney Drive',
     'petronas twin towers / klcc': 'Petronas Towers',
     'petronas twin towers': 'Petronas Towers',
+    'petronas twin towers & klcc': 'Petronas Towers',
+    'klcc': 'Petronas Towers',
     'river of life / masjid jamek': 'Jamek Mosque',
     'kuala lumpur tower': 'Kuala Lumpur Tower',
     'kl tower': 'Kuala Lumpur Tower',
     'penang botanic gardens': 'Penang Botanic Gardens',
+    'penang hill': 'Penang Hill',
     'kek lok si temple': 'Kek Lok Si',
+    'kek lok si': 'Kek Lok Si',
+    'pinang peranakan mansion': 'Pinang Peranakan Mansion',
+    'wonderfood museum': 'Wonderfood Museum Penang',
+    'batu ferringhi beach': 'Batu Ferringhi',
+    'batu ferringhi': 'Batu Ferringhi',
+    'esplanade & fort cornwallis area': 'Fort Cornwallis',
+    'fort cornwallis': 'Fort Cornwallis',
+    'chew jetty': 'Clan Jetties',
+    'gurney plaza': 'Gurney Plaza',
+    'escape penang': 'Escape (theme park)',
+    'batu caves temple': 'Batu Caves',
+    'batu caves': 'Batu Caves',
+    'merdeka square & sultan abdul samad building':
+        'Merdeka Square, Kuala Lumpur',
+    'merdeka square': 'Merdeka Square, Kuala Lumpur',
+    'sultan abdul samad building': 'Sultan Abdul Samad Building',
+    'bukit bintang & jalan alor food street': 'Bukit Bintang',
+    'bukit bintang': 'Bukit Bintang',
+    'jalan alor': 'Jalan Alor',
+    'thean hou temple': 'Thean Hou Temple',
+    'perdana botanical garden & national museum': 'Perdana Botanical Gardens',
+    'perdana botanical gardens': 'Perdana Botanical Gardens',
+    'national museum': 'National Museum (Malaysia)',
+    "a famosa & st. paul's hill": 'A Famosa',
+    'a famosa': 'A Famosa',
+    "st. paul's church": "St. Paul's Church, Malacca",
+    'jonker street heritage walk': 'Jonker Walk',
+    'jonker street': 'Jonker Walk',
+    'the stadthuys & red square': 'Stadthuys',
+    'stadthuys': 'Stadthuys',
+    'melaka river cruise': 'Malacca River',
+    'melaka river': 'Malacca River',
+    'baba & nyonya heritage museum': 'Baba Nyonya Heritage Museum',
+    'langkawi skycab & sky bridge': 'Langkawi Cable Car',
+    'langkawi skycab': 'Langkawi Cable Car',
+    'langkawi sky bridge': 'Langkawi Sky Bridge',
+    'kilim karst geoforest park': 'Kilim Karst Geoforest Park',
+    'pantai cenang beach': 'Pantai Cenang',
+    'pantai cenang': 'Pantai Cenang',
+    'underwater world langkawi': 'Underwater World Langkawi',
+    'kinabalu national park': 'Kinabalu Park',
+    'kinabalu park': 'Kinabalu Park',
+    'sepilok orangutan rehabilitation centre':
+        'Sepilok Orangutan Rehabilitation Centre',
+    'tunku abdul rahman marine park': 'Tunku Abdul Rahman National Park',
+    'tunku abdul rahman park': 'Tunku Abdul Rahman National Park',
+    'kota kinabalu city mosque & waterfront': 'Kota Kinabalu City Mosque',
+    'kota kinabalu city mosque': 'Kota Kinabalu City Mosque',
+    'sarawak cultural village': 'Sarawak Cultural Village',
+    'bako national park': 'Bako National Park',
+    'kuching waterfront & borneo cultures museum': 'Borneo Cultures Museum',
+    'kuching waterfront': 'Kuching Waterfront',
+    'borneo cultures museum': 'Borneo Cultures Museum',
+    'semenggoh wildlife centre': 'Semenggoh Nature Reserve',
   };
 
   static String _placeKey(Map<String, dynamic> place) {
@@ -435,6 +492,10 @@ class PlaceImageService {
       'place',
       'restaurant',
       'tourist',
+      'file',
+      'jpg',
+      'jpeg',
+      'png',
     };
     Set<String> tokens(String value) => RegExp(r'[a-z0-9]+')
         .allMatches(value.toLowerCase())
@@ -442,9 +503,32 @@ class PlaceImageService {
         .where((token) => token.length > 2 && !ignored.contains(token))
         .toSet();
 
-    final expected = tokens(query);
     final actual = tokens(candidateTitle.replaceFirst('file:', ''));
-    if (expected.isEmpty || actual.isEmpty) return false;
-    return expected.every(actual.contains);
+    if (actual.isEmpty) return false;
+
+    // Check full query
+    final expectedFull = tokens(query);
+    if (expectedFull.isNotEmpty) {
+      if (expectedFull.every(actual.contains)) return true;
+      if (actual.length >= 2 && actual.every(expectedFull.contains)) return true;
+      if (expectedFull.intersection(actual).length >= 2) return true;
+    }
+
+    // Support composite queries separated by '&', 'and', '/', or '+'
+    final parts =
+        query.split(RegExp(r'\s*(?:&|and|\/|\+)\s*', caseSensitive: false));
+    if (parts.length > 1) {
+      for (final part in parts) {
+        final expectedPart = tokens(part);
+        if (expectedPart.isEmpty) continue;
+        if (expectedPart.every(actual.contains)) return true;
+        if (actual.length >= 2 && actual.every(expectedPart.contains)) {
+          return true;
+        }
+        if (expectedPart.intersection(actual).length >= 2) return true;
+      }
+    }
+
+    return false;
   }
 }

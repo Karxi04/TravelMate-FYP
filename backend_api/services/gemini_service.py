@@ -213,6 +213,22 @@ def _local_assistant(question, context='', planning_state=None):
             "The selected hotel cost can then be included in the itinerary budget."
         )
 
+    # 4b. Car rental inquiry
+    if re.search(r'\b(?:car\s+rental|rent\s+a\s+car|car\s+hire|rental\s+car|vehicle\s+rental)\b', q) and not is_explicit_planning:
+        return (
+            "Use Home → Car Rental to compare vehicle categories (Economy, Compact, Sedan, SUV, Van) across Malaysian hubs like Kuala Lumpur, Penang, Kota Kinabalu, and Kuching. "
+            "You can choose pickup dates, check simulated rates, and attach a car rental to your trip itinerary."
+        )
+
+    # 4c. Indoor alternative request
+    if re.search(r'\b(?:replace\s+outdoor|indoor\s+only|indoor\s+activities|indoor\s+attractions|sheltered|rain\s+safe|wet\s+weather|indoor\s+alternatives)\b', q):
+        dest_name = ps.get('destinationArea') or 'your destination'
+        return (
+            f"When wet weather is expected in {dest_name}, TravelMate's smart itinerary prioritizes indoor cultural and entertainment destinations "
+            f"such as museums, aquariums, art galleries, and covered heritage sites (like Pinang Peranakan Mansion, Islamic Arts Museum, or Wonderfood Museum), "
+            f"while outdoor hills, beaches and parks stay flexible. Your travel plan has been updated with indoor alternatives."
+        )
+
     # 5. General feature explanation inquiry
     if any(f in q for f in ['what can you do', 'what can travelmate do', 'how does travelmate work', 'explain features', 'explain travelmate', 'what functions']):
         return (
@@ -222,7 +238,7 @@ def _local_assistant(question, context='', planning_state=None):
 
     # 6. Pure standalone budget advice inquiry
     is_pure_budget = any(p in q for p in ['how to budget', 'how should i budget', 'save money', 'budget tips', 'affordable tips', 'how much should i budget']) or (
-        any(word in q for word in ['budget', 'cheap', 'cost', 'save money', 'affordable']) and not is_explicit_planning and not any(k in q for k in ['change our budget', 'budget to', 'set budget', 'limit of rm', 'budget of rm', 'rm '])
+        any(word in q for word in ['budget', 'cheap', 'cost', 'save money', 'affordable']) and not is_explicit_planning and not any(k in q for k in ['change our budget', 'change the budget', 'budget to', 'set budget', 'limit of rm', 'budget of rm', 'reduce our budget', 'reduce the budget', 'make it cheaper', 'rm '])
     )
     if is_pure_budget and not is_explicit_planning:
         return (
@@ -232,16 +248,15 @@ def _local_assistant(question, context='', planning_state=None):
             "Open Trips → Budget to see the system's calculated total and alternatives."
         )
 
-    # 7. Structured Planning Request / Conversational State with Destination
+    # 6b. Conversational Adjustments when planningState has active destination
     dest = ps.get('destinationArea') or ps.get('destinationState')
     if not dest:
-        # Check if query itself names a known hub
         for candidate, canon in [('kuala lumpur', 'Kuala Lumpur'), ('kl', 'Kuala Lumpur'), ('melaka', 'Melaka'), ('malacca', 'Melaka'), ('penang', 'Penang'), ('george town', 'Penang'), ('langkawi', 'Langkawi'), ('sabah', 'Sabah'), ('kota kinabalu', 'Kota Kinabalu'), ('sarawak', 'Sarawak'), ('kuching', 'Kuching'), ('ipoh', 'Ipoh')]:
             if re.search(r'\b' + re.escape(candidate) + r'\b', q):
                 dest = canon
                 break
 
-    has_planning_intent = is_explicit_planning or ('plan' in q or 'itinerary' in q or 'trip' in q or 'change our budget' in q or 'budget to' in q)
+    has_planning_intent = is_explicit_planning or any(k in q for k in ['plan', 'itinerary', 'trip', 'change our budget', 'budget to', 'make it cheaper', 'days', 'travellers', 'people'])
     if dest and (has_planning_intent or ps.get('tripDays') or ps.get('budgetLimit')):
         dest_state = ps.get('destinationState') or dest
         days = ps.get('tripDays') or 3
