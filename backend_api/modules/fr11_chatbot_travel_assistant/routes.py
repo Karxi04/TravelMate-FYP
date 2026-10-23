@@ -293,8 +293,8 @@ def chat():
 
     try:
         response = (
-            generateFollowUpResponse(message, context, with_source=True)
-            if history else generateChatbotResponse(message, context, with_source=True)
+            generateFollowUpResponse(message, context, with_source=True, planning_state=planning_state)
+            if history else generateChatbotResponse(message, context, with_source=True, planning_state=planning_state)
         )
     except Exception as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 502
