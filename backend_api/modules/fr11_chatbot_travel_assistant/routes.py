@@ -135,22 +135,52 @@ def _extract_plan_from_message(message, planning_state=None):
 
 def _extract_place_suggestions(message, destination_area=None):
     q = str(message or '').lower()
-    triggers = ['food', 'eat', 'restaurant', 'place', 'attraction', 'visit', 'recommend', 'where', 'suggest']
+    triggers = ['food', 'eat', 'restaurant', 'place', 'attraction', 'visit', 'recommend', 'where', 'suggest', 'sight', 'see']
     if not any(t in q for t in triggers):
         return []
 
-    # If destination is known, filter suggestions to that destination
-    candidates = DESTINATIONS
+    # If destination is known, isolate suggestions strictly to that destination
     if destination_area:
-        matched = find_matching_catalog_destinations(destination_area)
-        if matched:
-            candidates = matched
+        candidates = find_matching_catalog_destinations(destination_area)
+    else:
+        candidates = DESTINATIONS
+
+    if not candidates:
+        return []
+
+    # Recognize active rain / wet weather / indoor request using bounded word matching
+    is_rain_indoor = bool(re.search(
+        r'\b(?:rain|rains|rainy|raining|downpour|thunderstorm|wet\s+weather|indoor|sheltered)\b',
+        q
+    ))
+
+    if is_rain_indoor:
+        candidates = [d for d in candidates if bool(d.get('indoor', False))]
+        if not candidates:
+            return []
 
     matches = []
+    ignore_terms = {
+        'what', 'where', 'when', 'which', 'there', 'some', 'good', 'best',
+        'visit', 'places', 'place', 'attraction', 'attractions', 'recommend',
+        'suggest', 'rain', 'rains', 'rainy', 'raining', 'weather', 'indoor'
+    }
+    substantive_terms = [
+        term.strip('?,.!') for term in q.split()
+        if len(term.strip('?,.!')) > 3 and term.strip('?,.!') not in ignore_terms
+    ]
+
     for d in candidates:
         combined = f"{d.get('title', '')} {d.get('address', '')} {d.get('category', '')} {d.get('description', '')}".lower()
-        if any(term in combined for term in q.split() if len(term) > 3):
+        if substantive_terms:
+            if any(term in combined for term in substantive_terms):
+                matches.append(d)
+        else:
             matches.append(d)
+
+    if not matches and is_rain_indoor:
+        matches = candidates
+
     return matches[:4]
 
 
@@ -263,8 +293,8 @@ def chat():
 
     try:
         response = (
-            generateFollowUpResponse(message, context, with_source=True)
-            if history else generateChatbotResponse(message, context, with_source=True)
+            generateFollowUpResponse(message, context, with_source=True, planning_state=planning_state)
+            if history else generateChatbotResponse(message, context, with_source=True, planning_state=planning_state)
         )
     except Exception as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 502

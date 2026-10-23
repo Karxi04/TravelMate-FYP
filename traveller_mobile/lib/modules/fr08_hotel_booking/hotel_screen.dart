@@ -74,6 +74,9 @@ class _HotelScreenState extends State<HotelScreen> {
   bool refundableOnly = false;
   String sort = 'top';
   String source = '';
+  bool hasSearched = false;
+  String lastSearchedDestination = '';
+  bool sampleContentLimited = false;
   Map<String, dynamic>? lastBooking;
   final Map<String, String> bookingAttemptIds = {};
 
@@ -153,10 +156,11 @@ class _HotelScreenState extends State<HotelScreen> {
     super.initState();
     api = widget.api ?? ApiService();
     final start = DateTime.now().add(const Duration(days: 30));
+    final initialDest = widget.initialDestination?.trim();
     destination = TextEditingController(
-        text: widget.initialDestination?.trim().isNotEmpty == true
-            ? widget.initialDestination!.trim()
-            : 'George Town, Penang');
+        text: initialDest != null && initialDest.isNotEmpty
+            ? initialDest
+            : '');
     checkin = TextEditingController(
         text: widget.initialCheckin?.trim().isNotEmpty == true
             ? widget.initialCheckin!.trim()
@@ -261,6 +265,8 @@ class _HotelScreenState extends State<HotelScreen> {
     setState(() {
       busy = true;
       compareIds.clear();
+      hasSearched = true;
+      lastSearchedDestination = destination.text.trim();
     });
     try {
       final data = await api.post('/api/fr8/hotels/search', {
@@ -283,6 +289,7 @@ class _HotelScreenState extends State<HotelScreen> {
         items = data['items'] ??
             (data['result'] is Map ? data['result']['items'] ?? [] : []);
         source = (data['source'] ?? '').toString();
+        sampleContentLimited = data['sampleContentLimited'] == true;
       });
     } catch (e) {
       if (mounted) showError(context, e);
@@ -1024,7 +1031,41 @@ class _HotelScreenState extends State<HotelScreen> {
               controller: destination,
               decoration: const InputDecoration(
                   labelText: 'Destination',
+                  hintText: 'City or destination in Malaysia',
                   prefixIcon: Icon(Icons.location_on_outlined))),
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                'Penang',
+                'Kuala Lumpur',
+                'Melaka',
+                'Kota Kinabalu',
+                'Kuching',
+                'Langkawi',
+              ].map((city) {
+                final isSelected =
+                    destination.text.trim().toLowerCase() == city.toLowerCase();
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ActionChip(
+                    label: Text(city,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.normal,
+                        )),
+                    onPressed: () {
+                      setState(() {
+                        destination.text = city;
+                      });
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
           const SizedBox(height: 9),
           Row(children: [
             Expanded(
@@ -1371,11 +1412,17 @@ class _HotelScreenState extends State<HotelScreen> {
           ],
           const SizedBox(height: 18),
           if (items.isEmpty && !busy)
-            const TravelEmptyState(
-                icon: Icons.hotel_outlined,
-                title: 'Search for a hotel',
-                message:
-                    'Hotel offers can be compared, prebooked and confirmed through the available booking flow.'),
+            TravelEmptyState(
+              icon: hasSearched ? Icons.location_city_outlined : Icons.hotel_outlined,
+              title: hasSearched
+                  ? 'No hotel offers in ${lastSearchedDestination.isNotEmpty ? lastSearchedDestination : "this destination"}'
+                  : 'Search for a hotel',
+              message: hasSearched
+                  ? (sampleContentLimited
+                      ? 'No sample hotel offers match "$lastSearchedDestination". Local demo content is limited for this location. For offline evaluation, sample properties are available in Penang.'
+                      : 'No hotel offers match "$lastSearchedDestination" for the selected dates and guest count. Try adjusting your dates or destination.')
+                  : 'Hotel offers can be compared, prebooked and confirmed through the available booking flow.',
+            ),
           ...items.map((raw) {
             final h = Map<String, dynamic>.from(raw as Map);
             final id = idOf(h);

@@ -545,7 +545,21 @@ def places():
     except Exception as exc:
         if not _fallback_mode():
             return jsonify({'ok': False, 'error': 'Hotel provider is unavailable right now.'}), 502
-        return jsonify({'ok': True, 'result': {'data': [{'placeId': 'local_penang', 'displayName': q, 'formattedAddress': 'Malaysia'}]}, 'source': 'local'})
+        scope = normalize_destination_scope(q)
+        state = scope.get('state') or ''
+        state_slug = state.lower().replace(' ', '_') if state else 'malaysia'
+        place_id = f'local_{state_slug}'
+        return jsonify({
+            'ok': True,
+            'result': {
+                'data': [{
+                    'placeId': place_id,
+                    'displayName': q,
+                    'formattedAddress': scope.get('canonicalName') or 'Malaysia',
+                }]
+            },
+            'source': 'local',
+        })
 
 
 @bp.post('/hotels/search')
@@ -579,6 +593,19 @@ def hotels_search():
         'maxRatesPerHotel': int(payload.get('maxRatesPerHotel', 3) or 3),
         'includeHotelData': True,
     }
+    local_place_id = str(payload.get('placeId') or '').strip()
+    resolved_place_scope = ''
+    if local_place_id.startswith('local_'):
+        slug = local_place_id[6:]
+        if slug and slug != 'malaysia':
+            resolved_place_scope = slug.replace('_', ' ').title()
+    destination = (
+        payload.get('destination')
+        or payload.get('aiSearch')
+        or resolved_place_scope
+        or ''
+    )
+
     if payload.get('placeId'):
         req['placeId'] = payload['placeId']
     elif payload.get('hotelIds'):
@@ -619,11 +646,9 @@ def hotels_search():
             return jsonify({'ok': False, 'error': _safe_provider_error(
                 exc, 'The hotel offer could not be validated right now.'
             )}), 502
-        destination = payload.get('destination') or payload.get('aiSearch') or (
-            'Penang' if payload.get('placeId') == 'local_penang' else ''
-        )
+        norm_scope = normalize_destination_scope(destination)
         items, _rejected = filter_candidates(
-            LOCAL_HOTEL_ITEMS, normalize_destination_scope(destination)
+            LOCAL_HOTEL_ITEMS, norm_scope
         )
         result = {'items': items, 'sandbox': True}
         source = 'local'
@@ -648,6 +673,7 @@ def hotels_search():
             item['priceStatus'] = 'unknown'
             item['price'] = None
     items = _persist_quotes(items, _search_criteria(payload, req, room_quantity), source)
+    norm_scope = normalize_destination_scope(destination) if source == 'local' else None
     return jsonify({
         'ok': True,
         'items': items,
@@ -658,6 +684,9 @@ def hotels_search():
         'quoteRetrievedAt': provenance['quoteRetrievedAt'],
         'transactionMode': provenance['transactionMode'],
         'noResults': not items,
+        'destination': destination if destination else (payload.get('destination') or payload.get('aiSearch') or ''),
+        'destinationScope': norm_scope,
+        'sampleContentLimited': source == 'local' and not items,
     })
 
 

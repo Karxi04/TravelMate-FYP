@@ -32,6 +32,8 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
   bool busy = false;
   String vehicleType = 'All';
   String source = '';
+  bool hasSearched = false;
+  String lastSearchedLocation = '';
 
   String dateText(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -58,10 +60,11 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
   void initState() {
     super.initState();
     final start = DateTime.now().add(const Duration(days: 30));
+    final initialLoc = widget.initialPickupLocation?.trim();
     pickupLocation = TextEditingController(
-        text: widget.initialPickupLocation?.trim().isNotEmpty == true
-            ? widget.initialPickupLocation!.trim()
-            : 'George Town, Penang');
+        text: initialLoc != null && initialLoc.isNotEmpty
+            ? initialLoc
+            : '');
     pickupDate = TextEditingController(
         text: widget.initialPickupDate?.trim().isNotEmpty == true
             ? widget.initialPickupDate!.trim()
@@ -86,7 +89,7 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
     final dropoff = parseDate(dropoffDate.text);
     final drivers = int.tryParse(driverCount.text.trim()) ?? 0;
     if (pickupLocation.text.trim().isEmpty) {
-      showError(context, 'Enter a pickup location.');
+      showError(context, 'Enter a pickup location in Malaysia.');
       return;
     }
     if (pickup == null || dropoff == null || !dropoff.isAfter(pickup)) {
@@ -97,7 +100,11 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
       showError(context, 'Drivers must be at least 1.');
       return;
     }
-    setState(() => busy = true);
+    setState(() {
+      busy = true;
+      hasSearched = true;
+      lastSearchedLocation = pickupLocation.text.trim();
+    });
     try {
       final data = await api.post('/api/fr8/car-rentals/search', {
         'pickupLocation': pickupLocation.text.trim(),
@@ -195,7 +202,42 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
             controller: pickupLocation,
             decoration: const InputDecoration(
                 labelText: 'Pickup location',
+                hintText: 'City, airport, or destination in Malaysia',
                 prefixIcon: Icon(Icons.location_on_outlined)),
+          ),
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                'Kuala Lumpur',
+                'George Town',
+                'Kota Kinabalu',
+                'Kuching',
+                'Melaka',
+                'Johor Bahru',
+                'Langkawi',
+              ].map((city) {
+                final isSelected =
+                    pickupLocation.text.trim().toLowerCase() == city.toLowerCase();
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ActionChip(
+                    label: Text(city,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.normal,
+                        )),
+                    onPressed: () {
+                      setState(() {
+                        pickupLocation.text = city;
+                      });
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
           ),
           const SizedBox(height: 9),
           Row(children: [
@@ -255,11 +297,14 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
           ],
           const SizedBox(height: 18),
           if (items.isEmpty && !busy)
-            const TravelEmptyState(
+            TravelEmptyState(
               icon: Icons.directions_car_outlined,
-              title: 'Search for a rental car',
-              message:
-                  'Vehicle options can be selected and added into your itinerary budget.',
+              title: hasSearched
+                  ? 'No rental options in $lastSearchedLocation'
+                  : 'Search for a rental car',
+              message: hasSearched
+                  ? 'No simulated rental vehicles match "$lastSearchedLocation" for the selected category. Try selecting "All" vehicle types or choose another Malaysian location.'
+                  : 'Vehicle options can be selected and added into your itinerary budget.',
             ),
           ...items.map((raw) {
             final item = Map<String, dynamic>.from(raw as Map);

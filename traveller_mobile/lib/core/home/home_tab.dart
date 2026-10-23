@@ -1024,10 +1024,21 @@ class _HomeTabState extends State<HomeTab> {
 }
 
   Widget _toolsSection() {
+    final activeDestination = (continuationTrip?['destinationArea'] ?? '').toString().trim();
+    final activeStartDate = (continuationTrip?['startDate'] ?? '').toString().trim();
+    final activeEndDate = (continuationTrip?['endDate'] ?? '').toString().trim();
     final tools = <(IconData, String, Widget)>[
       (Icons.flight_takeoff_rounded, 'Flights', const FlightScreen()),
-      (Icons.hotel_rounded, 'Hotels', const HotelScreen()),
-      (Icons.directions_car_outlined, 'Car rentals', const CarRentalScreen()),
+      (Icons.hotel_rounded, 'Hotels', HotelScreen(
+        initialDestination: activeDestination.isNotEmpty ? activeDestination : null,
+        initialCheckin: activeStartDate.isNotEmpty ? activeStartDate : null,
+        initialCheckout: activeEndDate.isNotEmpty ? activeEndDate : null,
+      )),
+      (Icons.directions_car_outlined, 'Car rentals', CarRentalScreen(
+        initialPickupLocation: activeDestination.isNotEmpty ? activeDestination : null,
+        initialPickupDate: activeStartDate.isNotEmpty ? activeStartDate : null,
+        initialDropoffDate: activeEndDate.isNotEmpty ? activeEndDate : null,
+      )),
       (Icons.cloud_outlined, 'Weather', const WeatherScreen()),
     ];
     return Column(
