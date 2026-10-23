@@ -220,7 +220,19 @@ def _local_assistant(question, context='', planning_state=None):
             "build customized daily itineraries, balance your budget, check live weather, search flights, and simulate hotel bookings across all 13 states and 3 Federal Territories."
         )
 
-    # 6. Structured Planning Request / Conversational State with Destination
+    # 6. Pure standalone budget advice inquiry
+    is_pure_budget = any(p in q for p in ['how to budget', 'how should i budget', 'save money', 'budget tips', 'affordable tips', 'how much should i budget']) or (
+        any(word in q for word in ['budget', 'cheap', 'cost', 'save money', 'affordable']) and not is_explicit_planning and not any(k in q for k in ['change our budget', 'budget to', 'set budget', 'limit of rm', 'budget of rm', 'rm '])
+    )
+    if is_pure_budget and not is_explicit_planning:
+        return (
+            "For a practical TravelMate budget, split the limit into transport, hotel, food and activities. "
+            "Keep a 10–15% buffer. If the itinerary is over budget, compare a lower hotel tier, a cheaper flight time, "
+            "group nearby attractions to reduce transport, and replace one premium activity with a free heritage, garden or beach stop. "
+            "Open Trips → Budget to see the system's calculated total and alternatives."
+        )
+
+    # 7. Structured Planning Request / Conversational State with Destination
     dest = ps.get('destinationArea') or ps.get('destinationState')
     if not dest:
         # Check if query itself names a known hub
@@ -239,18 +251,6 @@ def _local_assistant(question, context='', planning_state=None):
         e_date = ps.get('endDate')
         interests = ps.get('interests') or []
         return _format_tailored_planning_fallback(dest, dest_state, days, budget, travellers, s_date, e_date, interests)
-
-    # 7. Pure standalone budget advice inquiry
-    is_pure_budget = any(p in q for p in ['how to budget', 'how should i budget', 'save money', 'budget tips', 'affordable tips', 'how much should i budget']) or (
-        any(word in q for word in ['budget', 'cheap', 'cost', 'rm ', 'save money', 'affordable']) and not dest and not is_explicit_planning
-    )
-    if is_pure_budget:
-        return (
-            "For a practical TravelMate budget, split the limit into transport, hotel, food and activities. "
-            "Keep a 10–15% buffer. If the itinerary is over budget, compare a lower hotel tier, a cheaper flight time, "
-            "group nearby attractions to reduce transport, and replace one premium activity with a free heritage, garden or beach stop. "
-            "Open Trips → Budget to see the system's calculated total and alternatives."
-        )
 
     # 8. Destination-specific food advice
     if any(word in q for word in ['kuala lumpur', ' kl ']) or q.endswith(' kl') or q.startswith('kl '):
