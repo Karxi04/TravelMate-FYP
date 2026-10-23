@@ -218,9 +218,12 @@ class _ExploreTabState extends State<ExploreTab> {
 
   void _selectCategory(String value) {
     if (value == 'Hotels') {
+      final queryText = query.text.trim();
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const HotelScreen()),
+        MaterialPageRoute(builder: (_) => HotelScreen(
+          initialDestination: queryText.isNotEmpty ? queryText : null,
+        )),
       );
       return;
     }
