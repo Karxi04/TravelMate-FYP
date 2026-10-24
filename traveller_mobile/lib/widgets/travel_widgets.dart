@@ -556,6 +556,7 @@ class TravelPlaceImage extends StatefulWidget {
   final double? width;
   final double? aspectRatio;
   final BorderRadius borderRadius;
+  final bool showTitleInFallback;
 
   const TravelPlaceImage({
     super.key,
@@ -564,6 +565,7 @@ class TravelPlaceImage extends StatefulWidget {
     this.width,
     this.aspectRatio,
     this.borderRadius = const BorderRadius.all(Radius.circular(18)),
+    this.showTitleInFallback = false,
   });
 
   @override
@@ -571,8 +573,13 @@ class TravelPlaceImage extends StatefulWidget {
 }
 
 class _TravelPlaceImageState extends State<TravelPlaceImage> {
+  static const int _maxAutoRetries = 3;
+
   late Future<String?> _imageFuture;
   int _imageRevision = 0;
+  int _autoRecoveryAttempts = 0;
+  String? _failedUrlBeingHandled;
+  bool _isExhausted = false;
 
   Map<String, dynamic> get place => widget.place;
   double? get height => widget.height;
@@ -589,7 +596,20 @@ class _TravelPlaceImageState extends State<TravelPlaceImage> {
   @override
   void didUpdateWidget(covariant TravelPlaceImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.place, widget.place)) {
+    final oldKey = PlaceImageService.placeKeyFor(oldWidget.place);
+    final newKey = PlaceImageService.placeKeyFor(widget.place);
+    final oldUrls =
+        PlaceImageService.explicitImageUrlsForTesting(oldWidget.place);
+    final newUrls =
+        PlaceImageService.explicitImageUrlsForTesting(widget.place);
+    final urlsChanged = oldUrls.length != newUrls.length ||
+        !oldUrls.every(newUrls.contains);
+
+    if (oldKey != newKey || urlsChanged) {
+      _autoRecoveryAttempts = 0;
+      _isExhausted = false;
+      _failedUrlBeingHandled = null;
+      _imageRevision = 0;
       _imageFuture = PlaceImageService.resolve(place);
     }
   }
@@ -632,8 +652,40 @@ class _TravelPlaceImageState extends State<TravelPlaceImage> {
     return Icons.landscape_rounded;
   }
 
+  void _scheduleAutoRecovery(String failedUrl) {
+    if (_isExhausted || _failedUrlBeingHandled == failedUrl) return;
+    _failedUrlBeingHandled = failedUrl;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_autoRecoveryAttempts >= _maxAutoRetries) {
+        setState(() {
+          _isExhausted = true;
+        });
+        return;
+      }
+
+      _autoRecoveryAttempts += 1;
+      setState(() {
+        _imageRevision += 1;
+        _imageFuture = PlaceImageService.markFailedAndResolve(
+          place,
+          failedUrl: failedUrl,
+        ).then((nextUrl) {
+          if (nextUrl == null) {
+            _isExhausted = true;
+          }
+          return nextUrl;
+        });
+      });
+    });
+  }
+
   void _retry([String? failedUrl]) {
     setState(() {
+      _autoRecoveryAttempts = 0;
+      _isExhausted = false;
+      _failedUrlBeingHandled = null;
       _imageRevision += 1;
       _imageFuture = PlaceImageService.retry(place, failedUrl: failedUrl);
     });
@@ -659,7 +711,7 @@ class _TravelPlaceImageState extends State<TravelPlaceImage> {
                       color: InkWashColors.blueGrey,
                       size: compact ? 28 : 38,
                     ),
-                    if (!compact) ...[
+                    if (!compact && widget.showTitleInFallback) ...[
                       const SizedBox(height: 7),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -716,7 +768,7 @@ class _TravelPlaceImageState extends State<TravelPlaceImage> {
         }
 
         final url = snapshot.data;
-        if (url == null || url.isEmpty) return _fallback();
+        if (url == null || url.isEmpty || _isExhausted) return _fallback();
 
         return Image.network(
           url,
@@ -724,7 +776,10 @@ class _TravelPlaceImageState extends State<TravelPlaceImage> {
           fit: BoxFit.cover,
           gaplessPlayback: true,
           excludeFromSemantics: true,
-          errorBuilder: (context, error, stackTrace) => _fallback(url),
+          errorBuilder: (context, error, stackTrace) {
+            _scheduleAutoRecovery(url);
+            return _fallback(url);
+          },
           loadingBuilder: (context, child, progress) {
             if (progress == null) return child;
             return Container(

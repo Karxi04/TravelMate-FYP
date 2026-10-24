@@ -23,6 +23,18 @@ class PlaceImageService {
       <String, Set<String>>{};
   static final Map<String, int> _sameUrlRetryCount = <String, int>{};
 
+  /// Clears in-memory caches and failure state for isolated test execution.
+  static void resetForTesting() {
+    _resolvedByPlace.clear();
+    _pendingByPlace.clear();
+    _ownerByImageUrl.clear();
+    _failedUrlsByPlace.clear();
+    _sameUrlRetryCount.clear();
+  }
+
+  /// Exposes the canonical identity key used to cache and track image resolution.
+  static String placeKeyFor(Map<String, dynamic> place) => _placeKey(place);
+
   static const Map<String, String> _wikipediaTitleHints = <String, String>{
     'george town unesco heritage area': 'George Town, Penang',
     'george town heritage core': 'George Town, Penang',
@@ -191,9 +203,35 @@ class PlaceImageService {
     return pending;
   }
 
+  /// Marks a failed candidate URL for [place] and immediately advances to the
+  /// next best candidate (another explicit URL or dynamic fallback).
+  ///
+  /// Bounded automatic recovery calls this when an image network load fails.
+  static Future<String?> markFailedAndResolve(
+    Map<String, dynamic> place, {
+    required String failedUrl,
+  }) {
+    final key = _placeKey(place);
+    final rejected = failedUrl.trim();
+    if (rejected.isNotEmpty) {
+      _failedUrlsByPlace.putIfAbsent(key, () => <String>{}).add(rejected);
+      if (_ownerByImageUrl[rejected] == key) {
+        _ownerByImageUrl.remove(rejected);
+      }
+      if (_resolvedByPlace[key] == rejected) {
+        _resolvedByPlace.remove(key);
+      }
+    }
+    _resolvedByPlace.remove(key);
+    _pendingByPlace.remove(key);
+    return resolve(place);
+  }
+
   /// Clears a failed resolution and retries it. With several provider images,
   /// a failed URL is skipped immediately. A sole image gets one same-URL retry
   /// for transient network failures before fallback resolution is attempted.
+  /// When called without a specific [failedUrl] (e.g. from an exhausted placeholder),
+  /// failure history for [place] is reset to allow a fresh retry.
   static Future<String?> retry(
     Map<String, dynamic> place, {
     String? failedUrl,
@@ -213,6 +251,12 @@ class PlaceImageService {
           _ownerByImageUrl.remove(rejected);
         }
       }
+    } else {
+      _failedUrlsByPlace.remove(key);
+      _sameUrlRetryCount.keys
+          .where((k) => k.startsWith('$key|'))
+          .toList()
+          .forEach(_sameUrlRetryCount.remove);
     }
     _resolvedByPlace.remove(key);
     _pendingByPlace.remove(key);
@@ -332,6 +376,9 @@ class PlaceImageService {
     }
   }
 
+  static bool looksLikeNonPhotoForTesting(String titleOrUrl) =>
+      _looksLikeNonPhoto(titleOrUrl);
+
   static List<String> _wikipediaSummaryImageUrls(
     String articleTitle,
     Object? decoded,
@@ -339,12 +386,15 @@ class PlaceImageService {
     if (decoded is! Map) return const [];
     final returnedTitle = (decoded['title'] ?? '').toString();
     if (!_matchesSearchIdentity(articleTitle, returnedTitle)) return const [];
+    if (_looksLikeNonPhoto(returnedTitle)) return const [];
     final urls = <String>[];
     for (final field in const ['originalimage', 'thumbnail']) {
       final image = decoded[field];
       if (image is! Map) continue;
       final source = (image['source'] ?? '').toString().trim();
-      if (source.startsWith('http') && !urls.contains(source)) {
+      if (source.startsWith('http') &&
+          !_looksLikeNonPhoto(source) &&
+          !urls.contains(source)) {
         urls.add(source);
       }
     }
@@ -403,7 +453,9 @@ class PlaceImageService {
         final thumb = raw['thumbnail'];
         if (thumb is Map) {
           final source = (thumb['source'] ?? '').toString().trim();
-          if (source.startsWith('http') && !urls.contains(source)) {
+          if (source.startsWith('http') &&
+              !_looksLikeNonPhoto(source) &&
+              !urls.contains(source)) {
             urls.add(source);
           }
         }
@@ -457,9 +509,13 @@ class PlaceImageService {
         if (infos is! List || infos.isEmpty || infos.first is! Map) continue;
         final info = infos.first as Map;
         final mime = (info['mime'] ?? '').toString().toLowerCase();
-        if (!mime.startsWith('image/')) continue;
+        if (!mime.startsWith('image/') || mime == 'image/svg+xml') continue;
         final url = (info['thumburl'] ?? info['url'] ?? '').toString().trim();
-        if (url.startsWith('http') && !urls.contains(url)) urls.add(url);
+        if (url.startsWith('http') &&
+            !_looksLikeNonPhoto(url) &&
+            !urls.contains(url)) {
+          urls.add(url);
+        }
       }
       return urls;
     } catch (_) {
@@ -467,19 +523,47 @@ class PlaceImageService {
     }
   }
 
-  static bool _looksLikeNonPhoto(String title) {
-    final bad = <String>[
+  static bool _looksLikeNonPhoto(String nameOrUrl) {
+    String decoded;
+    try {
+      decoded = Uri.decodeFull(nameOrUrl).toLowerCase();
+    } catch (_) {
+      decoded = nameOrUrl.toLowerCase();
+    }
+
+    // Obvious vector graphics and SVG-derived rasterizations
+    if (decoded.endsWith('.svg') ||
+        decoded.contains('.svg.') ||
+        decoded.contains('.svg/') ||
+        decoded.contains('.svg?') ||
+        decoded.contains('svg.png')) {
+      return true;
+    }
+
+    // Normalize hyphens and underscores into spaces for phrase matching
+    final normalized = decoded.replaceAll(RegExp(r'[-_]'), ' ');
+
+    const badPatterns = <String>[
       'logo',
       'icon',
-      'flag',
+      'diagram',
+      'wordmark',
+      'emblem',
+      'insignia',
+      'pictogram',
+      'silhouette',
+      'symbol',
+      'flag of',
+      'flags of',
       'map of',
       'location map',
-      'coat of arms',
-      'diagram',
+      'locator map',
       'route map',
-      'wordmark',
+      'transit map',
+      'coat of arms',
     ];
-    return bad.any(title.contains);
+
+    return badPatterns.any(normalized.contains);
   }
 
   static bool _matchesSearchIdentity(String query, String candidateTitle) {
