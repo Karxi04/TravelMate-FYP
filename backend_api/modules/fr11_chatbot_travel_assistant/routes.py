@@ -49,6 +49,30 @@ def _constraint_acknowledgement(planning_state):
     )
 
 
+def _unsupported_road_trip_reply(planning_state):
+    origin = planning_state.get('originDestination') or 'the origin'
+    target = planning_state.get('targetDestination') or 'the destination'
+    return (
+        f"I understand that you want a road trip from {origin} to {target}. TravelMate currently creates "
+        "verified itineraries for one destination at a time, so I have not generated or exposed a "
+        "save-ready single-city plan for this multi-destination request. Please choose which city to plan "
+        "first, and I can create separate city itineraries while preserving your other trip preferences."
+    )
+
+
+def _destination_change_reply(planning_state):
+    return (
+        f"I have changed the active destination to {planning_state.get('destinationArea')} and kept the "
+        "other validated trip preferences. The refreshed itinerary now uses that destination."
+    )
+
+
+def _clear_multi_destination_state(planning_state):
+    planning_state['tripMode'] = 'single_destination'
+    for key in ('multipleDestinations', 'originDestination', 'targetDestination'):
+        planning_state.pop(key, None)
+
+
 def _session_ref(session_id=None):
     if session_id:
         session = retrieveRecord('chat_sessions', session_id)
@@ -92,6 +116,11 @@ def _context(session=None):
         parts = []
         if planning.get('destinationArea'):
             parts.append(f"Destination: {planning.get('destinationArea')} ({planning.get('destinationState', 'Malaysia')})")
+        if planning.get('tripMode') == 'road_trip':
+            parts.append(
+                f"Road trip: {planning.get('originDestination')} to {planning.get('targetDestination')} "
+                f"via {planning.get('multipleDestinations')}"
+            )
         if planning.get('tripDays'):
             parts.append(f"Duration: {planning.get('tripDays')} days")
         if planning.get('budgetLimit'):
@@ -119,7 +148,7 @@ def _extract_plan_from_message(message, planning_state=None):
     geo = extract_geographic_entities(message)
 
     # Reject foreign destinations from plan generation
-    if geo.get('is_foreign'):
+    if geo.get('is_foreign') or geo.get('is_multi_destination') or state.get('tripMode') == 'road_trip':
         return None
 
     dest = geo.get('destination_area') or state.get('destinationArea')
@@ -281,6 +310,15 @@ def chat():
         planning_state['daySpecificPreferences'] = cur_day
     if detailed_intent:
         planning_state['lastIntent'] = detailed_intent
+    if geo.get('is_multi_destination'):
+        planning_state['tripMode'] = 'road_trip'
+        planning_state['multipleDestinations'] = list(geo.get('multiple_destinations') or [])
+        planning_state['originDestination'] = geo.get('origin_destination')
+        planning_state['targetDestination'] = geo.get('target_destination')
+    elif geo.get('destination_area') and (
+        geo.get('is_destination_change') or detailed_intent == 'ITINERARY_PLANNING'
+    ):
+        _clear_multi_destination_state(planning_state)
 
     session['planningState'] = planning_state
 
@@ -341,13 +379,22 @@ def chat():
         recent_context = '\n'.join(f"Traveller: {x.get('message')}\nTravelMate: {x.get('reply')}" for x in recent)
     context = system_context + ('\nRecent conversation:\n' + recent_context if recent_context else '')
 
-    try:
-        response = (
-            generateFollowUpResponse(message, context, with_source=True, planning_state=planning_state)
-            if history else generateChatbotResponse(message, context, with_source=True, planning_state=planning_state)
-        )
-    except Exception as exc:
-        return jsonify({'ok': False, 'error': str(exc)}), 502
+    road_trip_unsupported = (
+        planning_state.get('tripMode') == 'road_trip'
+        and classify_user_intent(message, planning_state) == 'PLANNING_REQUEST'
+    )
+    if road_trip_unsupported:
+        response = {'reply': _unsupported_road_trip_reply(planning_state), 'source': 'travelmate-assistant'}
+    elif geo.get('is_destination_change'):
+        response = {'reply': _destination_change_reply(planning_state), 'source': 'travelmate-assistant'}
+    else:
+        try:
+            response = (
+                generateFollowUpResponse(message, context, with_source=True, planning_state=planning_state)
+                if history else generateChatbotResponse(message, context, with_source=True, planning_state=planning_state)
+            )
+        except Exception as exc:
+            return jsonify({'ok': False, 'error': str(exc)}), 502
 
     reply, source = response['reply'], response['source']
     if detailed_intent in {'INTEREST_MODIFICATION', 'INDOOR_ALTERNATIVE'} and (
@@ -365,12 +412,25 @@ def chat():
         'source': source,
         'createdAt': utc_now_iso(),
     }
+    if road_trip_unsupported:
+        item['constraintConflict'] = {
+            'status': 'unsupported_multi_destination',
+            'message': reply,
+            'tripMode': 'road_trip',
+            'multipleDestinations': list(planning_state.get('multipleDestinations') or []),
+            'originDestination': planning_state.get('originDestination'),
+            'targetDestination': planning_state.get('targetDestination'),
+        }
 
     # Extract structured plan and suggestions
     dest_for_planning = planning_state.get('destinationArea') or geo.get('destination_area')
     dest_state_for_planning = planning_state.get('destinationState') or geo.get('destination_state')
     plan = None
-    if classify_user_intent(message, planning_state) == 'PLANNING_REQUEST' and dest_for_planning:
+    if (
+        classify_user_intent(message, planning_state) == 'PLANNING_REQUEST'
+        and dest_for_planning
+        and planning_state.get('tripMode') != 'road_trip'
+    ):
         dur_val = planning_state.get('tripDays') or 3
         bud_val = planning_state.get('budgetLimit') or 1200.0
         trav_val = planning_state.get('travellerCount') or 1
@@ -454,6 +514,14 @@ def chat():
 def save_plan():
     payload = request.get_json(silent=True) or {}
     plan = payload.get('plan')
+    if isinstance(plan, dict) and (
+        plan.get('tripMode') == 'road_trip'
+        or len(plan.get('multipleDestinations') or []) > 1
+    ):
+        return jsonify({
+            'ok': False,
+            'error': 'Multi-destination road-trip plans are not saveable until route planning is supported.',
+        }), 400
     valid, err_msg = validate_save_plan_payload(plan)
     if not valid:
         return jsonify({'ok': False, 'error': err_msg}), 400

@@ -29,6 +29,39 @@ def clean_text(text):
     return re.sub(r'[^a-z0-9]+', ' ', v.lower()).strip()
 
 
+def _ordered_malaysian_mentions(text):
+    """Return canonical Malaysian places in the order the traveller wrote them."""
+    mentions = []
+    locality_states = set()
+    for area, (state, aliases) in LOCALITIES.items():
+        positions = [
+            match.start()
+            for alias in aliases
+            for match in re.finditer(rf'\b{re.escape(alias)}\b', text)
+        ]
+        if positions:
+            mentions.append((min(positions), area, state))
+            locality_states.add(state)
+    for state, aliases in STATE_ALIASES.items():
+        if state in locality_states:
+            continue
+        positions = [
+            match.start()
+            for alias in aliases
+            for match in re.finditer(rf'\b{re.escape(alias)}\b', text)
+        ]
+        if positions:
+            mentions.append((min(positions), state, state))
+
+    ordered = []
+    seen = set()
+    for _, area, state in sorted(mentions, key=lambda item: item[0]):
+        if area not in seen:
+            ordered.append({'area': area, 'state': state})
+            seen.add(area)
+    return ordered
+
+
 def extract_geographic_entities(text):
     """Accurately identify destination, origin, multi-destination and country boundary."""
     t_clean = clean_text(text)
@@ -82,25 +115,21 @@ def extract_geographic_entities(text):
                 malaysian_states.append(state_name)
                 break
 
-    # Detect multi-destination Malaysian road trips
-    all_malaysian = []
-    for loc, st in malaysian_locs:
-        if loc not in all_malaysian:
-            all_malaysian.append(loc)
-    for st in malaysian_states:
-        if st not in all_malaysian and not any(l_st == st for _, l_st in malaysian_locs):
-            all_malaysian.append(st)
-
-    # Also check if origin was a Malaysian city in a domestic road trip: e.g. "from Kuala Lumpur to Ipoh and Penang"
-    if from_to and not foreign_origin and not is_dest_change:
-        origin_clean = clean_text(from_to.group(1))
-        for loc_name, (state, aliases) in LOCALITIES.items():
-            for alias in aliases:
-                if re.search(rf'\b{re.escape(alias)}\b', origin_clean) and loc_name not in all_malaysian:
-                    all_malaysian.insert(0, loc_name)
-                    break
+    ordered_mentions = _ordered_malaysian_mentions(text_to_scan)
+    all_malaysian = [item['area'] for item in ordered_mentions]
 
     is_multi = len(all_malaysian) > 1 and not is_dest_change
+    origin_mentions = _ordered_malaysian_mentions(clean_text(origin_part)) if origin_part else []
+    target_mentions = _ordered_malaysian_mentions(clean_text(dest_part)) if dest_part else []
+    origin_destination = None
+    target_destination = None
+    if is_multi:
+        origin_destination = (
+            origin_mentions[0]['area'] if origin_mentions else ordered_mentions[0]['area']
+        )
+        target_destination = (
+            target_mentions[-1]['area'] if target_mentions else ordered_mentions[-1]['area']
+        )
 
     # Foreign destination check: true only if foreign destination found without valid Malaysian sightseeing destination
     is_foreign = bool(foreign_dests and not malaysian_locs and not malaysian_states)
@@ -108,12 +137,12 @@ def extract_geographic_entities(text):
 
     primary_area = None
     primary_state = None
-    if malaysian_locs:
-        primary_area = malaysian_locs[0][0]
-        primary_state = malaysian_locs[0][1]
-    elif malaysian_states:
-        primary_area = malaysian_states[0]
-        primary_state = malaysian_states[0]
+    if is_multi and target_mentions:
+        primary_area = target_mentions[-1]['area']
+        primary_state = target_mentions[-1]['state']
+    elif ordered_mentions:
+        primary_area = ordered_mentions[0]['area']
+        primary_state = ordered_mentions[0]['state']
 
     return {
         'foreign_origin': foreign_origin,
@@ -121,6 +150,9 @@ def extract_geographic_entities(text):
         'unsupported_foreign': unsupported_foreign,
         'is_multi_destination': is_multi,
         'multiple_destinations': all_malaysian if is_multi else [],
+        'origin_destination': origin_destination,
+        'target_destination': target_destination,
+        'is_destination_change': is_dest_change,
         'destination_area': primary_area,
         'destination_state': primary_state,
         'destination_country': 'Malaysia' if (primary_area or primary_state) else None,
@@ -473,6 +505,8 @@ def classify_detailed_intent(text, planning_state=None):
     geo = extract_geographic_entities(text)
     if geo.get('is_foreign'):
         return 'FOREIGN_UNSUPPORTED'
+    if geo.get('is_destination_change'):
+        return 'ITINERARY_MODIFICATION'
 
     # Check for explicit itinerary planning phrases
     is_explicit_planning = (
@@ -492,7 +526,11 @@ def classify_detailed_intent(text, planning_state=None):
         return 'CAR_RENTAL_ENQUIRY'
 
     # 3. Flight search inquiry
-    if re.search(r'\b(?:flights?|airfare|airline|airport|airports|fly\s+to|kul|pen|bki|kch)\b', q) and not is_explicit_planning:
+    explicit_flight = re.search(r'\b(?:flights?|airfare|airline|airports?|fly\s+to)\b', q)
+    airport_route = re.search(
+        r'\b(?:kul|pen|bki|kch)\b\s*(?:to|[-–>])\s*\b(?:kul|pen|bki|kch)\b', q
+    )
+    if (explicit_flight or airport_route) and not is_explicit_planning:
         return 'FLIGHT_ENQUIRY'
 
     # 4. Hotel booking inquiry

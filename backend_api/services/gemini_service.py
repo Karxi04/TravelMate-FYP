@@ -173,6 +173,7 @@ def _local_assistant(question, context='', planning_state=None):
     q = str(question or '').strip().lower()
     context_lower = str(context or '').lower()
     ps = dict(planning_state or {})
+    detailed_intent = ps.get('lastIntent')
     excluded_labels = list(ps.get('excludedInterests') or []) + list(ps.get('excludedActivityTypes') or [])
 
     def constrained_indoor_reply(destination):
@@ -201,6 +202,21 @@ def _local_assistant(question, context='', planning_state=None):
         any(t in q for t in ['plan', 'itinerary']) and any(d in q for d in ['day', 'trip', 'holiday', 'vacation'])
     )
 
+    if ps.get('tripMode') == 'road_trip' and detailed_intent == 'ITINERARY_PLANNING':
+        origin = ps.get('originDestination') or 'the origin'
+        target = ps.get('targetDestination') or 'the destination'
+        return (
+            f"I understand the road-trip request from {origin} to {target}. TravelMate currently generates "
+            "verified itineraries for one destination at a time, so I have not created a misleading "
+            "single-city route. Choose which city to plan first and I can prepare separate itineraries."
+        )
+
+    if detailed_intent == 'ITINERARY_MODIFICATION' and ps.get('destinationArea'):
+        return (
+            f"I have changed the active destination to {ps.get('destinationArea')} and kept the other "
+            "validated trip preferences. The refreshed itinerary now uses that destination."
+        )
+
     # 2. Weather inquiry (bounded regex to prevent 'hotel' matching 'hot')
     is_weather = bool(re.search(r'\b(?:rain|rains|rainy|raining|downpour|thunderstorm|weather|forecast|hot|temperature)\b', q))
     if is_weather and not is_explicit_planning:
@@ -212,7 +228,11 @@ def _local_assistant(question, context='', planning_state=None):
         )
 
     # 3. Flight search inquiry
-    if any(word in q for word in ['flight', 'airport', 'kul', 'pen', 'bki', 'kch', 'airline']) and not is_explicit_planning:
+    explicit_flight = re.search(r'\b(?:flights?|airfare|airline|airports?|fly\s+to)\b', q)
+    airport_route = re.search(
+        r'\b(?:kul|pen|bki|kch)\b\s*(?:to|[-–>])\s*\b(?:kul|pen|bki|kch)\b', q
+    )
+    if (detailed_intent == 'FLIGHT_ENQUIRY' or explicit_flight or airport_route) and not is_explicit_planning:
         return (
             "Use Home → Flights to search by airport code and date across Malaysian hubs (KUL, PEN, BKI, KCH, etc.). "
             "TravelMate can compare price, duration and stops, then attach a selected flight reference and cost to an itinerary. "
