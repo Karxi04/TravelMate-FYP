@@ -1,10 +1,40 @@
 """
-TravelMate Natural Language Processing Evaluation Dataset
+TravelMate Natural Language Processing Evaluation Dataset (Version 1 - Historical)
 Grounded in authentic Malaysian tourism planning scenarios across all 13 states
 and 3 Federal Territories. Includes ground truth annotations for 18 fine-grained
 intents, 4 coarse intents, geographic entities, budget, duration, party size,
 interests, negations, and indoor wet-weather preferences.
+
+HISTORICAL REPRODUCIBILITY CONTRACT:
+Preserves the original 135-item evaluation dataset from Batch 21C / Batch 21D-C1.
+Scored against single-field 'excludedInterests' taxonomy prior to Batch 21D-B1's
+separation of broad travel interests vs specific venue/activity types.
 """
+
+BENCHMARK_V1_METADATA = {
+    "version": "1.0.0",
+    "dataset_size": 135,
+    "dialogues": 3,
+    "single_turn_items": 123,
+    "multi_turn_turns": 12,
+    "scored_state_fields": 63,
+    "evaluation_date": "2026-10-23",
+    "git_commit": "ead4fbfaca8d24c6fb8ae209d1a1066593feb287",
+    "scoring_taxonomy": "single_exclusion_field (excludedInterests only)",
+    "reported_metrics": {
+        "intent_accuracy": 0.9333,
+        "intent_macro_f1": 0.9205,
+        "slot_macro_f1": 0.8346,
+        "multiturn_slot_retention_rate": 0.8889,
+        "multiturn_turn_accuracy": 0.5833,
+    },
+    "limitations": [
+        "Single excludedInterests field conflated broad travel themes with narrow venue/activity types (e.g. museums -> Culture, shopping malls -> Shopping)",
+        "Intent class distribution is imbalanced (49 ITINERARY_PLANNING vs 1 DATE_ADJUSTMENT)",
+        "Includes some overlap with earlier regression test scenarios",
+        "Pre-dates Batch 21D-B1 specific activity exclusion taxonomy",
+    ],
+}
 
 BENCHMARK_DATASET = [
     # -------------------------------------------------------------
@@ -2530,3 +2560,5 @@ BENCHMARK_DATASET = [
         "category": "Negation & Exclusion",
     },
 ]
+
+BENCHMARK_DATASET_V1 = BENCHMARK_DATASET
