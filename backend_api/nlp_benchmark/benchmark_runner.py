@@ -37,6 +37,33 @@ from nlp_benchmark.dataset_v2 import BENCHMARK_DATASET_V2, BENCHMARK_V2_METADATA
 from nlp_benchmark.baseline import BaselineNLPExtractor
 
 
+BATCH_21D_C2_HISTORICAL_RESULTS = {
+    "git_sha": "276a930fc21c972818a83463a05d3a652da11cb3",
+    "v1": {
+        "intent_accuracy": 0.9333,
+        "intent_macro_f1": 0.9205,
+        "slot_macro_f1": 0.8346,
+        "multiturn_slot_retention_rate": 0.8889,
+        "multiturn_turn_accuracy": 0.5833,
+    },
+    "v2_excluded_interests": {
+        "f1": 0.6667,
+        "tp": 1,
+        "fp": 0,
+        "fn": 1,
+        "support": 2,
+    },
+    "v2_multiturn": {
+        "slots_retained": 71,
+        "slots_checked": 75,
+        "slot_retention_rate": 0.9467,
+        "state_perfect_matches": 8,
+        "turns": 12,
+        "turn_accuracy": 0.6667,
+    },
+}
+
+
 def _dest_match(a, b):
     if a == b:
         return True

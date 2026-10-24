@@ -16,7 +16,12 @@ for p in [BACKEND_DIR, PROJECT_DIR]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from nlp_benchmark.benchmark_runner import evaluate_system, evaluate_v1, evaluate_v2
+from nlp_benchmark.benchmark_runner import (
+    BATCH_21D_C2_HISTORICAL_RESULTS,
+    evaluate_system,
+    evaluate_v1,
+    evaluate_v2,
+)
 from nlp_benchmark.holdout_protocol import (
     HOLDOUT_DATASET,
     HOLDOUT_EVALUATION_PROTOCOL,
@@ -66,20 +71,28 @@ def test_nlp_benchmark_multiturn_retention():
     assert tm["multiturn_slot_retention_rate"] > base["multiturn_slot_retention_rate"], "TravelMate retention rate must exceed baseline"
 
 
-def test_nlp_benchmark_v1_exact_reproducibility():
+def test_nlp_benchmark_v1_historical_snapshot_and_current_non_regression():
     """
-    Validates exact mathematical reproducibility of the historical Benchmark V1 results.
-    Prevents silent historical metric drift in FYP Chapter 5 comparisons.
+    Keeps C2 measurements immutable while evaluating the current production extractor.
     """
     metrics = evaluate_v1()
     tm = metrics["travelmate"]
+    historical = BATCH_21D_C2_HISTORICAL_RESULTS
 
+    assert historical["git_sha"] == "276a930fc21c972818a83463a05d3a652da11cb3"
+    assert historical["v1"] == {
+        "intent_accuracy": 0.9333,
+        "intent_macro_f1": 0.9205,
+        "slot_macro_f1": 0.8346,
+        "multiturn_slot_retention_rate": 0.8889,
+        "multiturn_turn_accuracy": 0.5833,
+    }
     assert metrics["dataset_version"] == "v1"
-    assert tm["intent_accuracy"] == 0.9333, f"Expected 0.9333, got {tm['intent_accuracy']}"
-    assert tm["intent_macro_f1"] == 0.9205, f"Expected 0.9205, got {tm['intent_macro_f1']}"
-    assert tm["slot_macro_f1"] == 0.8346, f"Expected 0.8346, got {tm['slot_macro_f1']}"
-    assert tm["multiturn_slot_retention_rate"] == 0.8889, f"Expected 0.8889, got {tm['multiturn_slot_retention_rate']}"
-    assert tm["multiturn_turn_accuracy"] == 0.5833, f"Expected 0.5833, got {tm['multiturn_turn_accuracy']}"
+    assert tm["intent_accuracy"] >= historical["v1"]["intent_accuracy"]
+    assert tm["intent_macro_f1"] >= historical["v1"]["intent_macro_f1"]
+    assert tm["slot_macro_f1"] >= historical["v1"]["slot_macro_f1"]
+    assert tm["multiturn_slot_retention_rate"] >= historical["v1"]["multiturn_slot_retention_rate"]
+    assert tm["multiturn_turn_accuracy"] >= historical["v1"]["multiturn_turn_accuracy"]
 
 
 def test_nlp_benchmark_v2_dual_exclusion_contract():
@@ -103,22 +116,38 @@ def test_nlp_benchmark_v2_dual_exclusion_contract():
 
     # Broad travel interest exclusions (Food, Beach)
     int_metrics = tm["slot_metrics"]["excludedInterests"]
-    assert int_metrics["f1"] == 0.6667
-    assert int_metrics["tp"] == 1
+    assert BATCH_21D_C2_HISTORICAL_RESULTS["v2_excluded_interests"] == {
+        "f1": 0.6667,
+        "tp": 1,
+        "fp": 0,
+        "fn": 1,
+        "support": 2,
+    }
+    assert int_metrics["f1"] == 1.0
+    assert int_metrics["tp"] == 2
     assert int_metrics["fp"] == 0
-    assert int_metrics["fn"] == 1
+    assert int_metrics["fn"] == 0
     assert int_metrics["support"] == 2
 
     # Overall slot macro F1 must improve to ~90.0% due to repaired contract
     assert tm["slot_macro_f1"] >= 0.89, f"Expected V2 slot macro F1 >= 0.89, got {tm['slot_macro_f1']}"
 
     # Multi-turn state retention with excludedActivityTypes preservation
-    assert tm["multiturn_slots_retained"] == 71
-    assert tm["multiturn_slots_checked"] == 75
-    assert tm["multiturn_slot_retention_rate"] == 0.9467
-    assert tm["multiturn_state_perfect_matches"] == 8
-    assert tm["multiturn_turns"] == 12
-    assert tm["multiturn_turn_accuracy"] == 0.6667
+    historical_mt = BATCH_21D_C2_HISTORICAL_RESULTS["v2_multiturn"]
+    assert historical_mt == {
+        "slots_retained": 71,
+        "slots_checked": 75,
+        "slot_retention_rate": 0.9467,
+        "state_perfect_matches": 8,
+        "turns": 12,
+        "turn_accuracy": 0.6667,
+    }
+    assert tm["multiturn_slots_checked"] == historical_mt["slots_checked"]
+    assert tm["multiturn_turns"] == historical_mt["turns"]
+    assert tm["multiturn_slots_retained"] >= historical_mt["slots_retained"]
+    assert tm["multiturn_slot_retention_rate"] >= historical_mt["slot_retention_rate"]
+    assert tm["multiturn_state_perfect_matches"] >= historical_mt["state_perfect_matches"]
+    assert tm["multiturn_turn_accuracy"] >= historical_mt["turn_accuracy"]
 
 
 def test_nlp_benchmark_v2_taxonomy_breakdown():

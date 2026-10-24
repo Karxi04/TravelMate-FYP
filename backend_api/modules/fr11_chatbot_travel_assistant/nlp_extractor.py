@@ -244,7 +244,7 @@ def extract_travellers(text, default=None):
     # 2. Solo / couple phrases
     if any(k in q for k in ['solo', 'by myself', 'alone', 'for 1 person', 'for one person', '1 person']):
         return 1
-    if any(k in q for k in ['couple', 'for two', 'for 2', 'two of us', '2 of us']):
+    if any(k in q for k in ['couple', 'two of us', '2 of us']):
         return 2
 
     # 3. Family of X
@@ -339,7 +339,7 @@ BROAD_EXCLUSION_TERMS = {
     'Food': [r'food', r'culinary', r'dining', r'cuisine'],
     'Culture': [r'culture', r'cultural\s+attractions?', r'heritage\s+attractions?'],
     'Nature': [r'nature', r'outdoor\s+nature'],
-    'Beach': [r'beaches?', r'coastal\s+activities'],
+    'Beach': [r'beach(?:es)?', r'coastal\s+activities'],
     'Relaxation': [r'relaxation', r'relaxing\s+activities'],
     'Shopping': [r'shopping(?!\s+malls?)'],
     'Family': [r'family\s+activities'],
@@ -432,7 +432,7 @@ def extract_excluded_activity_types(text, existing=None):
 
 def extract_indoor_preference(text, existing=None):
     q = text.lower()
-    if re.search(r'\b(?:replace\s+outdoor|indoor\s+only|indoor\s+activities|indoor\s+attractions|indoor\s+alternatives|indoor\s+places|find\s+indoor|sheltered|rain\s+safe|wet\s+weather|avoid\s+outdoor|no\s+outdoor)\b', q):
+    if re.search(r'\b(?:replace\s+outdoor|indoor\s+only|indoor\s+activities|indoor\s+attractions|indoor\s+alternatives|indoor\s+places|find\s+indoor|sheltered|rain[-\s]+safe|wet\s+weather|avoid\s+outdoor|no\s+outdoor)\b', q):
         return True
     if re.search(r'\b(?:prefer\s+outdoor|outdoor\s+only|sunny|outdoor\s+activities|outdoor\s+adventure)\b', q):
         return False
