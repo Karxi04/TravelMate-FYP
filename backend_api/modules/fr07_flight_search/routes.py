@@ -770,6 +770,7 @@ def select_flight():
         'flightQuoteVersion': quote.get('quoteVersion') if quote else None,
         'flightQuoteRetrievedAt': quote.get('retrievedAt') if quote else None,
         'flightSelectionStatus': 'selected',
+        'travelMode': 'flight',
         'flightSearchId': quote.get('id') if quote else None,
         'flightOptionId': trusted.get('optionId') or trusted.get('id'),
         'flightSelectionSource': trusted.get('source') or (quote or {}).get('source'),
@@ -791,6 +792,7 @@ def remove_flight_selection(iid):
     patch = {
         'selectedFlight': None, 'flightCost': 0, 'flightCurrency': None,
         'flightPriceBasis': None, 'flightSelectionStatus': 'removed',
+        'travelMode': 'undecided',
         'flightSelectionRemovedAt': _now(), 'updatedAt': _now(),
     }
     patch['budgetEstimate'] = calculateBudget({**current, **patch})

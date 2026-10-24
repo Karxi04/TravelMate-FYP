@@ -56,6 +56,7 @@ def _trusted_hotel_update(current, payload):
         'hotelCost': float(booking.get('hotelCost') or 0),
         'hotelCurrency': 'MYR',
         'hotelBookingId': booking_id,
+        'accommodationChoice': 'paid_hotel',
     })
     return trusted, None
 
@@ -597,6 +598,7 @@ def remove_hotel_selection(iid):
         'hotelCost': 0,
         'hotelCurrency': None,
         'hotelBookingId': None,
+        'accommodationChoice': 'undecided',
         'hotelSelectionStatus': 'removed',
         'hotelSelectionRemovedAt': utc_now_iso(),
         'updatedAt': utc_now_iso(),
@@ -803,12 +805,15 @@ def apply_lower_cost_alternative(iid):
         patch['flightCost'] = float(data.get('price') or 0)
         patch['flightCurrency'] = str(data.get('currency') or 'MYR').upper()
         patch['flightPriceBasis'] = data.get('priceBasis') or 'legacy_test_fixture'
+        patch['travelMode'] = 'flight'
     elif kind == 'hotel' and data:
         patch['selectedHotel'] = data
         patch['hotelCost'] = float(data.get('price') or 0)
+        patch['accommodationChoice'] = 'paid_hotel'
     elif kind in {'car', 'car_rental', 'rental'} and data:
         patch['selectedCarRental'] = data
         patch['carRentalCost'] = float(data.get('totalPrice') or data.get('price') or data.get('dailyRate') or 0)
+        patch['carRentalChoice'] = 'selected'
     elif kind == 'transport':
         patch['transportCost'] = max(0.0, float(current.get('transportCost') or 35.0 * max(1, int(current.get('tripDays') or 1))) - savings)
     elif kind == 'food':

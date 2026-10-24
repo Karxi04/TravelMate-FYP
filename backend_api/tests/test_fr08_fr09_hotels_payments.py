@@ -573,6 +573,7 @@ def test_itinerary_attachment_retry_does_not_rebook_provider(
     assert first.status_code == second.status_code == 200
     assert first.get_json()['booking']['itineraryAttachmentStatus'] == 'failed'
     assert second.get_json()['booking']['itineraryAttachmentStatus'] == 'succeeded'
+    assert memory.retrieve('itineraries', 'trip_1')['accommodationChoice'] == 'paid_hotel'
     assert book.call_count == 1
 
 

@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from math import radians, sin, cos, sqrt, atan2
+from math import radians, sin, cos, sqrt, atan2, isfinite
 from utils import utc_now_iso
 from services.recommendation_taxonomy import (
     candidate_concepts,
@@ -12,6 +12,11 @@ from services.recommendation_taxonomy import (
     normalize_purpose,
 )
 from services.preference_learning import LEARNED_INTEREST_STRENGTH
+from sequence_contract.validators import (
+    ACCOMMODATION_CHOICES,
+    CAR_RENTAL_CHOICES,
+    TRAVEL_MODES,
+)
 
 
 def _float(value, default=0.0):
@@ -572,64 +577,254 @@ def updateActivity(itinerary, activityId, changes):
     return itinerary
 
 
+def _budget_amount(value):
+    try:
+        amount = float(value or 0)
+        return amount if isfinite(amount) and amount >= 0 else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _budget_choice(data, field, allowed):
+    value = str(data.get(field) or 'undecided').strip().lower()
+    return value if value in allowed else 'undecided'
+
+
+def _expense(amount, state, provenance, **details):
+    return {
+        'amount': round(_budget_amount(amount), 2),
+        'currency': 'MYR',
+        'state': state,
+        'provenance': provenance,
+        **details,
+    }
+
+
+def _simulated_selection(selection, source=None):
+    values = {
+        str(source or '').strip().lower(),
+        str(selection.get('source') or '').strip().lower(),
+        str(selection.get('transactionMode') or '').strip().lower(),
+        str(selection.get('rateProvenance') or '').strip().lower(),
+    }
+    return bool(selection.get('sandbox') or selection.get('isSimulated') or values.intersection({
+        'sample_fixture', 'test_fixture', 'local', 'local_demo',
+        'provider_sandbox', 'sandbox_provider_quote',
+    }))
+
+
 def calculateBudget(itineraryOrSelections):
     data = itineraryOrSelections or {}
-    limit = _float(data.get('budgetLimit'))
+    limit = _budget_amount(data.get('budgetLimit'))
+    has_budget_limit = data.get('budgetLimit') not in (None, '')
     travellers = max(1, int(_float(data.get('travellerCount'), 1)))
+    travel_mode = _budget_choice(data, 'travelMode', TRAVEL_MODES)
+    accommodation_choice = _budget_choice(
+        data, 'accommodationChoice', ACCOMMODATION_CHOICES)
+    rental_choice = _budget_choice(data, 'carRentalChoice', CAR_RENTAL_CHOICES)
+    pending = []
+    excluded = []
+    limitations = []
+
     raw_flight = data.get('flightCost')
     selected_flight = data.get('selectedFlight') if isinstance(data.get('selectedFlight'), dict) else {}
     flight_currency = str(data.get('flightCurrency') or selected_flight.get('currency') or '').upper()
     flight_basis = data.get('flightPriceBasis') or selected_flight.get('priceBasis')
     flight_issue = bool(selected_flight) and (
-        flight_currency != 'MYR' or not flight_basis or selected_flight.get('priceStatus') == 'unknown'
+        flight_currency != 'MYR' or not flight_basis
+        or selected_flight.get('priceStatus') == 'unknown'
+        or _budget_amount(raw_flight) <= 0
     )
-    flight = 0.0 if flight_issue else _float(raw_flight)
+    flight = 0.0 if flight_issue else _budget_amount(raw_flight)
+    if travel_mode == 'flight':
+        if not selected_flight or flight_issue:
+            flight_state = 'selected_unpriced'
+            pending.append('flight')
+        elif _simulated_selection(selected_flight, data.get('flightSelectionSource')):
+            flight_state = 'simulated_estimate'
+            limitations.append('The selected flight price is a planning or sandbox estimate, not a completed reservation.')
+        else:
+            flight_state = 'priced'
+    elif travel_mode == 'undecided':
+        flight_state = 'undecided'
+        pending.append('flight')
+    else:
+        flight = 0.0
+        flight_state = 'not_required'
+
     nights = max(0, _trip_days(data) - 1)
     hotel_is_explicit = data.get('hotelCost') not in (None, '')
     rooms = max(1, int(_float(data.get('roomQuantity'), 1)))
-    nightly_rate = _float(data.get('hotelNightlyRate') or data.get('nightlyRate'))
+    nightly_rate = _budget_amount(data.get('hotelNightlyRate') or data.get('nightlyRate'))
     selected_hotel = data.get('selectedHotel') if isinstance(data.get('selectedHotel'), dict) else {}
     hotel_currency = str(data.get('hotelCurrency') or selected_hotel.get('currency') or '').upper()
     hotel_currency_issue = hotel_is_explicit and hotel_currency != 'MYR'
     hotel = 0.0 if hotel_currency_issue else (
-        _float(data.get('hotelCost')) if hotel_is_explicit else round(nightly_rate * nights * rooms, 2)
+        _budget_amount(data.get('hotelCost')) if hotel_is_explicit else round(nightly_rate * nights * rooms, 2)
     )
-    car_rental = _float(data.get('carRentalCost'))
+    if accommodation_choice == 'paid_hotel':
+        if hotel <= 0 or (selected_hotel and hotel_currency_issue):
+            hotel_state = 'selected_unpriced'
+            pending.append('hotel')
+        elif _simulated_selection(selected_hotel):
+            hotel_state = 'simulated_estimate'
+            limitations.append('The selected hotel price is a sandbox or simulated estimate, not a completed reservation.')
+        else:
+            hotel_state = 'priced'
+    elif accommodation_choice == 'undecided':
+        hotel_state = 'undecided'
+        pending.append('hotel')
+    elif accommodation_choice == 'other':
+        hotel = 0.0
+        hotel_state = 'excluded_outside_scope'
+        excluded.append('accommodation')
+        limitations.append('Costs for the selected other accommodation arrangement are outside the current planner scope.')
+    else:
+        hotel = 0.0
+        hotel_state = 'not_required'
+
+    selected_rental = data.get('selectedCarRental') if isinstance(data.get('selectedCarRental'), dict) else {}
+    car_rental = _budget_amount(data.get('carRentalCost'))
+    if rental_choice == 'selected':
+        if not selected_rental or car_rental <= 0:
+            rental_state = 'selected_unpriced'
+            pending.append('carRental')
+        else:
+            rental_state = 'simulated_estimate'
+            limitations.append('Car-rental pricing uses the simulated local catalogue and is not a live provider quote.')
+    elif rental_choice == 'undecided':
+        rental_state = 'undecided'
+        pending.append('carRental')
+    else:
+        car_rental = 0.0
+        rental_state = 'not_required'
+
     try:
         days = _trip_days(data)
     except Exception:
         days = 1
-    transport = _float(data.get('transportCost')) if data.get('transportCost') not in (None, '') else round(35.0 * days, 2)
-    food = _float(data.get('foodCost')) if data.get('foodCost') not in (None, '') else round(60.0 * travellers * days, 2)
-    activities = sum(_float(x.get('estimatedCost')) for x in data.get('activities', []))
-    total = flight + hotel + car_rental + transport + food + activities
-    difference = limit - total if limit else 0.0
-    status = 'attention_required' if (hotel_currency_issue or flight_issue) else ('within_budget' if not limit or total <= limit else 'over_budget')
-    utilization = round((total / limit) * 100.0, 2) if limit > 0 else 0.0
+    transport = _budget_amount(data.get('transportCost')) if data.get('transportCost') not in (None, '') else round(35.0 * days, 2)
+    food = _budget_amount(data.get('foodCost')) if data.get('foodCost') not in (None, '') else round(60.0 * travellers * days, 2)
+    activity_items = [x for x in data.get('activities', []) if isinstance(x, dict)]
+    activities = sum(_budget_amount(x.get('estimatedCost')) for x in activity_items)
+    if activities > 0:
+        activity_state = 'unit_unknown'
+        pending.append('activities')
+        limitations.append(
+            'Activity estimatedCost values have no verified per-person or per-group pricing unit.')
+        limitations.append(
+            'Food is an allowance and may overlap with activity estimates that include dining.')
+    else:
+        activity_state = 'not_required'
+    if rental_choice == 'selected':
+        limitations.append(
+            'The local-transport allowance may overlap with selected car-rental spending.')
+    if travel_mode == 'own_vehicle':
+        excluded.append('ownVehicleFuelAndTolls')
+        limitations.append(
+            'Own-vehicle fuel and toll costs are outside the current planner scope.')
+    elif travel_mode == 'other':
+        excluded.append('otherTravel')
+        limitations.append(
+            'Costs for the selected other travel mode are outside the current planner scope.')
 
-    return {
-        'limit': round(limit, 2),
-        'travellers': travellers,
+    total = flight + hotel + car_rental + transport + food + activities
+    difference = limit - total if has_budget_limit else 0.0
+    incomplete = bool(pending or excluded)
+    status = 'over_budget' if has_budget_limit and total > limit else (
+        'incomplete' if incomplete else 'within_budget')
+    utilization = round((total / limit) * 100.0, 2) if limit > 0 else 0.0
+    category_totals = {
         'flight': round(flight, 2),
         'hotel': round(hotel, 2),
-        'hotelNights': nights,
-        'hotelRooms': rooms,
         'carRental': round(car_rental, 2),
         'transport': round(transport, 2),
         'food': round(food, 2),
         'activities': round(activities, 2),
+    }
+    expense_breakdown = {
+        'flight': _expense(
+            flight, flight_state, 'selected_flight' if selected_flight else 'none',
+            choice=travel_mode, priceBasis=flight_basis,
+            priceSource=data.get('flightSelectionSource') or selected_flight.get('source'),
+            selectionStatus=data.get('flightSelectionStatus')),
+        'hotel': _expense(
+            hotel, hotel_state,
+            'selected_hotel' if selected_hotel else ('nightly_rate_estimate' if nightly_rate else 'none'),
+            choice=accommodation_choice, priceBasis=selected_hotel.get('priceBasis'),
+            priceSource=selected_hotel.get('rateProvenance') or selected_hotel.get('source'),
+            selectionStatus=data.get('hotelSelectionStatus')),
+        'carRental': _expense(
+            car_rental, rental_state,
+            'simulated_local_catalogue' if selected_rental else 'none',
+            choice=rental_choice,
+            priceSource=(selected_rental.get('source') or 'local') if selected_rental else None,
+            selectionStatus='selected' if selected_rental else None),
+        'transport': _expense(transport, 'priced', 'provided' if data.get('transportCost') not in (None, '') else 'estimated_daily_allowance'),
+        'food': _expense(food, 'priced', 'provided' if data.get('foodCost') not in (None, '') else 'estimated_daily_allowance'),
+        'activities': _expense(activities, activity_state, 'mixed_estimates'),
+    }
+    if travel_mode == 'own_vehicle':
+        expense_breakdown['ownVehicleFuelAndTolls'] = _expense(
+            0, 'excluded_outside_scope', 'not_modelled')
+    elif travel_mode == 'other':
+        expense_breakdown['otherTravel'] = _expense(
+            0, 'excluded_outside_scope', 'not_modelled')
+
+    return {
+        'limit': round(limit, 2),
+        'budgetLimit': round(limit, 2),
+        'travellers': travellers,
+        'flight': category_totals['flight'],
+        'hotel': category_totals['hotel'],
+        'hotelNights': nights,
+        'hotelRooms': rooms,
+        'carRental': category_totals['carRental'],
+        'transport': category_totals['transport'],
+        'food': category_totals['food'],
+        'activities': category_totals['activities'],
         'total': round(total, 2),
+        'totalEstimatedCost': round(total, 2),
+        'knownEstimatedSubtotal': round(total, 2),
+        'categoryTotals': category_totals,
+        'expenseBreakdown': expense_breakdown,
         'difference': round(difference, 2),
-        'remaining': round(max(0.0, difference), 2) if limit else 0.0,
-        'overBy': round(max(0.0, -difference), 2) if limit else 0.0,
+        'remaining': round(max(0.0, difference), 2) if has_budget_limit else 0.0,
+        'overBy': round(max(0.0, -difference), 2) if has_budget_limit else 0.0,
         'utilizationPercent': utilization,
         'status': status,
-        'incomplete': hotel_currency_issue or flight_issue,
-        'attention': ('Flight amount is excluded until a validated MYR planning price is available.' if flight_issue else '') or ('Hotel amount is excluded until a validated MYR currency is available.' if hotel_currency_issue else ''),
+        'affordabilityStatus': status,
+        'completenessStatus': 'incomplete' if incomplete else 'complete',
+        'pendingExpenseCategories': list(dict.fromkeys(pending)),
+        'excludedExpenseCategories': list(dict.fromkeys(excluded)),
+        'estimateLimitations': list(dict.fromkeys(limitations)),
+        'incomplete': incomplete,
+        'attention': (limitations + [
+            f"Pending expense information: {', '.join(dict.fromkeys(pending))}."
+        ])[0] if incomplete else '',
         'costProvenance': {
-            'flight': 'excluded_unknown_currency_or_basis' if flight_issue else ('confirmed_total' if flight else 'not_selected'),
-            'hotel': 'excluded_unknown_currency' if hotel_currency_issue else ('confirmed_total' if hotel_is_explicit else ('estimated_from_nightly_rate' if nightly_rate else 'not_selected')),
-            'carRental': 'confirmed' if car_rental else 'not_selected',
+            'flight': (
+                'not_required' if flight_state == 'not_required'
+                else 'pending_unpriced' if flight_state == 'selected_unpriced'
+                else 'simulated_estimate' if flight_state == 'simulated_estimate'
+                else 'excluded_unknown_currency_or_basis' if flight_issue
+                else 'confirmed_total' if flight else 'not_selected'
+            ),
+            'hotel': (
+                'not_required' if hotel_state == 'not_required'
+                else 'outside_scope' if hotel_state == 'excluded_outside_scope'
+                else 'pending_unpriced' if hotel_state == 'selected_unpriced'
+                else 'simulated_estimate' if hotel_state == 'simulated_estimate'
+                else 'excluded_unknown_currency' if hotel_currency_issue
+                else 'confirmed_total' if hotel_is_explicit
+                else 'estimated_from_nightly_rate' if nightly_rate else 'not_selected'
+            ),
+            'carRental': (
+                'not_required' if rental_state == 'not_required'
+                else 'pending_unpriced' if rental_state == 'selected_unpriced'
+                else 'simulated_local_catalogue' if rental_state == 'simulated_estimate'
+                else 'confirmed' if car_rental else 'not_selected'
+            ),
             'transport': 'provided' if data.get('transportCost') not in (None, '') else 'estimated_daily_allowance',
             'food': 'provided' if data.get('foodCost') not in (None, '') else 'estimated_daily_allowance',
             'activities': 'mixed_estimates',
@@ -641,6 +836,8 @@ def compareBudget(budgetEstimate):
     budget = budgetEstimate or {}
     if budget.get('status') == 'over_budget':
         return f"Over budget by RM {budget.get('overBy', 0):.2f}. Review the suggested alternatives."
+    if budget.get('affordabilityStatus') == 'incomplete' or budget.get('incomplete'):
+        return f"Known estimates total RM {budget.get('knownEstimatedSubtotal', budget.get('total', 0)):.2f}; affordability is incomplete until pending or excluded costs are resolved."
     if _float(budget.get('limit')) <= 0:
         return 'No budget limit has been set yet.'
     return f"Within budget with RM {budget.get('remaining', 0):.2f} remaining."

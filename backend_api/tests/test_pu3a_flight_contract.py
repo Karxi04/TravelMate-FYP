@@ -37,6 +37,7 @@ def test_provider_result_is_allowlisted_and_select_requires_owned_search(client,
         selected = client.post('/api/fr7/flights/select', headers={'Authorization': 'Bearer valid_test_token'}, json={'itineraryId': 'pu3a_trip', 'searchId': data['searchId'], 'optionId': data['items'][0]['id']})
     assert selected.status_code == 200
     assert selected.get_json()['itinerary']['flightCurrency'] == 'MYR'
+    assert selected.get_json()['itinerary']['travelMode'] == 'flight'
 
 
 def test_provider_failure_does_not_silently_use_sample_in_normal_mode(client, mock_traveller_auth, monkeypatch):
@@ -84,6 +85,7 @@ def test_flight_remove_preserves_other_trip_content(client, mock_traveller_auth)
     assert response.status_code == 200
     updated = response.get_json()['itinerary']
     assert updated['selectedFlight'] is None
+    assert updated['travelMode'] == 'undecided'
     assert updated['selectedHotel']['name'] == 'Hotel'
 
 

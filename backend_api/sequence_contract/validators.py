@@ -3,6 +3,9 @@ from datetime import date, datetime
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 AIRPORT_RE = re.compile(r"^[A-Z]{3}$")
+TRAVEL_MODES = {'flight', 'own_vehicle', 'public_transport', 'other', 'undecided'}
+ACCOMMODATION_CHOICES = {'paid_hotel', 'staying_with_family', 'return_home', 'other', 'undecided'}
+CAR_RENTAL_CHOICES = {'selected', 'not_required', 'undecided'}
 
 
 def _parse_iso_date(value):
@@ -101,7 +104,12 @@ def validateItineraryInput(data):
     end = _parse_iso_date(data.get('endDate'))
     budget_ok = _non_negative_number(data.get('budgetLimit', 0))
     travellers_ok = _positive_int(data.get('travellerCount', 1))
-    return title_ok and bool(start) and bool(end) and start <= end and budget_ok and travellers_ok
+    choices_ok = (
+        data.get('travelMode', 'undecided') in TRAVEL_MODES
+        and data.get('accommodationChoice', 'undecided') in ACCOMMODATION_CHOICES
+        and data.get('carRentalChoice', 'undecided') in CAR_RENTAL_CHOICES
+    )
+    return title_ok and bool(start) and bool(end) and start <= end and budget_ok and travellers_ok and choices_ok
 
 
 def validateItineraryForSaving(data):
