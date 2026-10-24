@@ -13,12 +13,17 @@ from .nlp_extractor import (
     extract_travellers,
     extract_dates,
     extract_interests,
+    extract_excluded_interests,
+    extract_excluded_activity_types,
+    extract_indoor_preference,
     extract_day_specific,
     classify_user_intent,
+    classify_detailed_intent,
     check_requirement_completeness,
     build_structured_trip_plan,
     validate_save_plan_payload,
     find_matching_catalog_destinations,
+    filter_constraint_candidates,
 )
 import re
 from datetime import date, timedelta
@@ -29,6 +34,43 @@ bp = Blueprint('fr11_chatbot', __name__, url_prefix='/api/fr11')
 def _session_title(message):
     title = ' '.join(str(message or '').strip().split())
     return title[:42] if title else 'New travel chat'
+
+
+def _constraint_acknowledgement(planning_state):
+    labels = list(planning_state.get('excludedInterests') or [])
+    labels += list(planning_state.get('excludedActivityTypes') or [])
+    if planning_state.get('preferIndoor'):
+        labels.append('indoor-only')
+    destination = planning_state.get('destinationArea') or 'the selected destination'
+    return (
+        f"I have applied these hard constraints for {destination}: {', '.join(labels)}. "
+        "Every structured plan and place suggestion will enforce them. If no verified activity satisfies "
+        "all constraints, I will report a conflict instead of inserting a prohibited substitute."
+    )
+
+
+def _unsupported_road_trip_reply(planning_state):
+    origin = planning_state.get('originDestination') or 'the origin'
+    target = planning_state.get('targetDestination') or 'the destination'
+    return (
+        f"I understand that you want a road trip from {origin} to {target}. TravelMate currently creates "
+        "verified itineraries for one destination at a time, so I have not generated or exposed a "
+        "save-ready single-city plan for this multi-destination request. Please choose which city to plan "
+        "first, and I can create separate city itineraries while preserving your other trip preferences."
+    )
+
+
+def _destination_change_reply(planning_state):
+    return (
+        f"I have changed the active destination to {planning_state.get('destinationArea')} and kept the "
+        "other validated trip preferences. The refreshed itinerary now uses that destination."
+    )
+
+
+def _clear_multi_destination_state(planning_state):
+    planning_state['tripMode'] = 'single_destination'
+    for key in ('multipleDestinations', 'originDestination', 'targetDestination'):
+        planning_state.pop(key, None)
 
 
 def _session_ref(session_id=None):
@@ -74,6 +116,11 @@ def _context(session=None):
         parts = []
         if planning.get('destinationArea'):
             parts.append(f"Destination: {planning.get('destinationArea')} ({planning.get('destinationState', 'Malaysia')})")
+        if planning.get('tripMode') == 'road_trip':
+            parts.append(
+                f"Road trip: {planning.get('originDestination')} to {planning.get('targetDestination')} "
+                f"via {planning.get('multipleDestinations')}"
+            )
         if planning.get('tripDays'):
             parts.append(f"Duration: {planning.get('tripDays')} days")
         if planning.get('budgetLimit'):
@@ -84,6 +131,12 @@ def _context(session=None):
             parts.append(f"Dates: {planning.get('startDate')} to {planning.get('endDate')}")
         if planning.get('interests'):
             parts.append(f"Interests: {', '.join(planning.get('interests'))}")
+        if planning.get('excludedInterests'):
+            parts.append(f"Excluded/Disliked: {', '.join(planning.get('excludedInterests'))}")
+        if planning.get('excludedActivityTypes'):
+            parts.append(f"Excluded activity types: {', '.join(planning.get('excludedActivityTypes'))}")
+        if planning.get('preferIndoor'):
+            parts.append("Weather preference: Prefers indoor / rain-safe activities")
         if planning.get('daySpecificPreferences'):
             parts.append(f"Day preferences: {planning.get('daySpecificPreferences')}")
         base_context += f"\nActive trip planning state: {'; '.join(parts)}."
@@ -95,7 +148,7 @@ def _extract_plan_from_message(message, planning_state=None):
     geo = extract_geographic_entities(message)
 
     # Reject foreign destinations from plan generation
-    if geo.get('is_foreign'):
+    if geo.get('is_foreign') or geo.get('is_multi_destination') or state.get('tripMode') == 'road_trip':
         return None
 
     dest = geo.get('destination_area') or state.get('destinationArea')
@@ -119,6 +172,9 @@ def _extract_plan_from_message(message, planning_state=None):
     trav = extract_travellers(message, state.get('travellerCount', 1))
     s_date, e_date = extract_dates(message, dur or 3, state.get('startDate'), state.get('endDate'))
     ints = extract_interests(message, state.get('interests', []))
+    ex_ints = extract_excluded_interests(message, state.get('excludedInterests', []))
+    ex_types = extract_excluded_activity_types(message, state.get('excludedActivityTypes', []))
+    indoor = extract_indoor_preference(message, state.get('preferIndoor', False))
 
     plan, status = build_structured_trip_plan(
         destination_area=dest,
@@ -129,13 +185,17 @@ def _extract_plan_from_message(message, planning_state=None):
         start_date=s_date,
         end_date=e_date,
         interests=ints,
+        excluded_interests=ex_ints,
+        excluded_activity_types=ex_types,
+        prefer_indoor=indoor,
     )
     return plan if status == 'ready' else None
 
 
-def _extract_place_suggestions(message, destination_area=None):
+def _extract_place_suggestions(message, destination_area=None, prefer_indoor=False,
+                               excluded_interests=None, excluded_activity_types=None):
     q = str(message or '').lower()
-    triggers = ['food', 'eat', 'restaurant', 'place', 'attraction', 'visit', 'recommend', 'where', 'suggest', 'sight', 'see']
+    triggers = ['food', 'eat', 'restaurant', 'place', 'attraction', 'visit', 'recommend', 'where', 'suggest', 'sight', 'see', 'things to do', 'activities']
     if not any(t in q for t in triggers):
         return []
 
@@ -148,16 +208,20 @@ def _extract_place_suggestions(message, destination_area=None):
     if not candidates:
         return []
 
-    # Recognize active rain / wet weather / indoor request using bounded word matching
-    is_rain_indoor = bool(re.search(
+    # Recognize active rain / wet weather / indoor request using bounded word matching or passed preference
+    is_rain_indoor = prefer_indoor or bool(re.search(
         r'\b(?:rain|rains|rainy|raining|downpour|thunderstorm|wet\s+weather|indoor|sheltered)\b',
         q
     ))
 
-    if is_rain_indoor:
-        candidates = [d for d in candidates if bool(d.get('indoor', False))]
-        if not candidates:
-            return []
+    candidates = filter_constraint_candidates(
+        candidates,
+        excluded_interests=excluded_interests,
+        excluded_activity_types=excluded_activity_types,
+        prefer_indoor=is_rain_indoor,
+    )
+    if not candidates:
+        return []
 
     matches = []
     ignore_terms = {
@@ -209,7 +273,11 @@ def chat():
     trav = extract_travellers(message, planning_state.get('travellerCount'))
     s_date, e_date = extract_dates(message, dur or 3, planning_state.get('startDate'), planning_state.get('endDate'))
     ints = extract_interests(message, planning_state.get('interests'))
+    ex_ints = extract_excluded_interests(message, planning_state.get('excludedInterests'))
+    ex_types = extract_excluded_activity_types(message, planning_state.get('excludedActivityTypes'))
+    indoor_pref = extract_indoor_preference(message, planning_state.get('preferIndoor'))
     day_pref = extract_day_specific(message)
+    detailed_intent = classify_detailed_intent(message, planning_state)
 
     # Update accumulated planning state
     if geo.get('destination_area'):
@@ -227,10 +295,30 @@ def chat():
         planning_state['endDate'] = e_date
     if ints:
         planning_state['interests'] = ints
+    if ex_ints:
+        planning_state['excludedInterests'] = ex_ints
+        # Purge excluded interests from positive interests if present
+        if planning_state.get('interests'):
+            planning_state['interests'] = [i for i in planning_state['interests'] if i not in ex_ints]
+    if ex_types or 'excludedActivityTypes' in planning_state:
+        planning_state['excludedActivityTypes'] = ex_types
+    if indoor_pref is not None:
+        planning_state['preferIndoor'] = indoor_pref
     if day_pref:
         cur_day = dict(planning_state.get('daySpecificPreferences') or {})
         cur_day.update(day_pref)
         planning_state['daySpecificPreferences'] = cur_day
+    if detailed_intent:
+        planning_state['lastIntent'] = detailed_intent
+    if geo.get('is_multi_destination'):
+        planning_state['tripMode'] = 'road_trip'
+        planning_state['multipleDestinations'] = list(geo.get('multiple_destinations') or [])
+        planning_state['originDestination'] = geo.get('origin_destination')
+        planning_state['targetDestination'] = geo.get('target_destination')
+    elif geo.get('destination_area') and (
+        geo.get('is_destination_change') or detailed_intent == 'ITINERARY_PLANNING'
+    ):
+        _clear_multi_destination_state(planning_state)
 
     session['planningState'] = planning_state
 
@@ -291,15 +379,31 @@ def chat():
         recent_context = '\n'.join(f"Traveller: {x.get('message')}\nTravelMate: {x.get('reply')}" for x in recent)
     context = system_context + ('\nRecent conversation:\n' + recent_context if recent_context else '')
 
-    try:
-        response = (
-            generateFollowUpResponse(message, context, with_source=True, planning_state=planning_state)
-            if history else generateChatbotResponse(message, context, with_source=True, planning_state=planning_state)
-        )
-    except Exception as exc:
-        return jsonify({'ok': False, 'error': str(exc)}), 502
+    road_trip_unsupported = (
+        planning_state.get('tripMode') == 'road_trip'
+        and classify_user_intent(message, planning_state) == 'PLANNING_REQUEST'
+    )
+    if road_trip_unsupported:
+        response = {'reply': _unsupported_road_trip_reply(planning_state), 'source': 'travelmate-assistant'}
+    elif geo.get('is_destination_change'):
+        response = {'reply': _destination_change_reply(planning_state), 'source': 'travelmate-assistant'}
+    else:
+        try:
+            response = (
+                generateFollowUpResponse(message, context, with_source=True, planning_state=planning_state)
+                if history else generateChatbotResponse(message, context, with_source=True, planning_state=planning_state)
+            )
+        except Exception as exc:
+            return jsonify({'ok': False, 'error': str(exc)}), 502
 
     reply, source = response['reply'], response['source']
+    if detailed_intent in {'INTEREST_MODIFICATION', 'INDOOR_ALTERNATIVE'} and (
+        planning_state.get('excludedInterests')
+        or planning_state.get('excludedActivityTypes')
+        or planning_state.get('preferIndoor')
+    ):
+        reply = _constraint_acknowledgement(planning_state)
+        source = 'travelmate-assistant'
     item = {
         'id': 'chat_' + utc_now_iso().replace(':', '').replace('-', '').replace('.', ''),
         'travellerId': g.uid,
@@ -308,18 +412,34 @@ def chat():
         'source': source,
         'createdAt': utc_now_iso(),
     }
+    if road_trip_unsupported:
+        item['constraintConflict'] = {
+            'status': 'unsupported_multi_destination',
+            'message': reply,
+            'tripMode': 'road_trip',
+            'multipleDestinations': list(planning_state.get('multipleDestinations') or []),
+            'originDestination': planning_state.get('originDestination'),
+            'targetDestination': planning_state.get('targetDestination'),
+        }
 
     # Extract structured plan and suggestions
     dest_for_planning = planning_state.get('destinationArea') or geo.get('destination_area')
     dest_state_for_planning = planning_state.get('destinationState') or geo.get('destination_state')
     plan = None
-    if classify_user_intent(message, planning_state) == 'PLANNING_REQUEST' and dest_for_planning:
+    if (
+        classify_user_intent(message, planning_state) == 'PLANNING_REQUEST'
+        and dest_for_planning
+        and planning_state.get('tripMode') != 'road_trip'
+    ):
         dur_val = planning_state.get('tripDays') or 3
         bud_val = planning_state.get('budgetLimit') or 1200.0
         trav_val = planning_state.get('travellerCount') or 1
         s_date_val = planning_state.get('startDate')
         e_date_val = planning_state.get('endDate')
         ints_val = planning_state.get('interests')
+        ex_ints_val = planning_state.get('excludedInterests')
+        ex_types_val = planning_state.get('excludedActivityTypes')
+        indoor_val = planning_state.get('preferIndoor', False)
 
         plan, plan_status = build_structured_trip_plan(
             destination_area=dest_for_planning,
@@ -330,6 +450,9 @@ def chat():
             start_date=s_date_val,
             end_date=e_date_val,
             interests=ints_val,
+            excluded_interests=ex_ints_val,
+            excluded_activity_types=ex_types_val,
+            prefer_indoor=indoor_val,
         )
         if plan and plan_status == 'ready':
             item['tripPlan'] = plan
@@ -341,8 +464,34 @@ def chat():
                 'destinationCountry': 'Malaysia',
                 'message': f"Structured activity data for {dest_for_planning} is currently undergoing verified catalog ingestion. General travel advice has been provided."
             }
+        elif plan_status == 'constraint_conflict':
+            active_constraints = list(ex_ints_val or []) + list(ex_types_val or [])
+            if indoor_val:
+                active_constraints.append('indoor-only')
+            constraint_text = ', '.join(active_constraints) or 'the requested restrictions'
+            reply = (
+                f"I could not find enough verified activities in {dest_for_planning} that satisfy all active "
+                f"constraints ({constraint_text}). I have not inserted prohibited or outdoor substitutes. "
+                "Please relax one constraint or choose another destination."
+            )
+            source = 'travelmate-assistant'
+            item['reply'] = reply
+            item['source'] = source
+            item['constraintConflict'] = {
+                'status': 'constraint_conflict',
+                'message': reply,
+                'excludedInterests': list(ex_ints_val or []),
+                'excludedActivityTypes': list(ex_types_val or []),
+                'preferIndoor': bool(indoor_val),
+            }
 
-    suggestions = _extract_place_suggestions(message, destination_area=dest_for_planning)
+    suggestions = _extract_place_suggestions(
+        message,
+        destination_area=dest_for_planning,
+        prefer_indoor=planning_state.get('preferIndoor', False),
+        excluded_interests=planning_state.get('excludedInterests'),
+        excluded_activity_types=planning_state.get('excludedActivityTypes'),
+    )
     if suggestions and not plan:
         item['placeSuggestions'] = suggestions
 
@@ -365,6 +514,14 @@ def chat():
 def save_plan():
     payload = request.get_json(silent=True) or {}
     plan = payload.get('plan')
+    if isinstance(plan, dict) and (
+        plan.get('tripMode') == 'road_trip'
+        or len(plan.get('multipleDestinations') or []) > 1
+    ):
+        return jsonify({
+            'ok': False,
+            'error': 'Multi-destination road-trip plans are not saveable until route planning is supported.',
+        }), 400
     valid, err_msg = validate_save_plan_payload(plan)
     if not valid:
         return jsonify({'ok': False, 'error': err_msg}), 400

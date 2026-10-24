@@ -173,6 +173,18 @@ def _local_assistant(question, context='', planning_state=None):
     q = str(question or '').strip().lower()
     context_lower = str(context or '').lower()
     ps = dict(planning_state or {})
+    detailed_intent = ps.get('lastIntent')
+    excluded_labels = list(ps.get('excludedInterests') or []) + list(ps.get('excludedActivityTypes') or [])
+
+    def constrained_indoor_reply(destination):
+        exclusion_note = ''
+        if excluded_labels:
+            exclusion_note = f" I will keep {', '.join(excluded_labels)} out of every suggestion."
+        return (
+            f"Indoor-only planning is active for {destination}.{exclusion_note} TravelMate will use only "
+            "verified rain-safe catalog activities that satisfy all active constraints. If none remain, "
+            "I will report a constraint conflict instead of inserting prohibited or outdoor substitutes."
+        )
 
     # 1. Foreign destinations boundary check
     foreign_keywords = ['singapore', 'tokyo', 'japan', 'bangkok', 'thailand', 'bali', 'indonesia', 'seoul', 'london', 'paris', 'phuket']
@@ -190,16 +202,37 @@ def _local_assistant(question, context='', planning_state=None):
         any(t in q for t in ['plan', 'itinerary']) and any(d in q for d in ['day', 'trip', 'holiday', 'vacation'])
     )
 
+    if ps.get('tripMode') == 'road_trip' and detailed_intent == 'ITINERARY_PLANNING':
+        origin = ps.get('originDestination') or 'the origin'
+        target = ps.get('targetDestination') or 'the destination'
+        return (
+            f"I understand the road-trip request from {origin} to {target}. TravelMate currently generates "
+            "verified itineraries for one destination at a time, so I have not created a misleading "
+            "single-city route. Choose which city to plan first and I can prepare separate itineraries."
+        )
+
+    if detailed_intent == 'ITINERARY_MODIFICATION' and ps.get('destinationArea'):
+        return (
+            f"I have changed the active destination to {ps.get('destinationArea')} and kept the other "
+            "validated trip preferences. The refreshed itinerary now uses that destination."
+        )
+
     # 2. Weather inquiry (bounded regex to prevent 'hotel' matching 'hot')
     is_weather = bool(re.search(r'\b(?:rain|rains|rainy|raining|downpour|thunderstorm|weather|forecast|hot|temperature)\b', q))
     if is_weather and not is_explicit_planning:
+        if ps.get('preferIndoor') or excluded_labels:
+            return constrained_indoor_reply(ps.get('destinationArea') or 'your destination')
         return (
             "Check the Weather tool for the live Open-Meteo forecast. TravelMate's smart itinerary generator treats museums, malls and indoor food experiences "
             "as safer wet-weather choices, while beaches, gardens, hill viewpoints and outdoor adventure stops stay flexible when rain probability is high."
         )
 
     # 3. Flight search inquiry
-    if any(word in q for word in ['flight', 'airport', 'kul', 'pen', 'bki', 'kch', 'airline']) and not is_explicit_planning:
+    explicit_flight = re.search(r'\b(?:flights?|airfare|airline|airports?|fly\s+to)\b', q)
+    airport_route = re.search(
+        r'\b(?:kul|pen|bki|kch)\b\s*(?:to|[-–>])\s*\b(?:kul|pen|bki|kch)\b', q
+    )
+    if (detailed_intent == 'FLIGHT_ENQUIRY' or explicit_flight or airport_route) and not is_explicit_planning:
         return (
             "Use Home → Flights to search by airport code and date across Malaysian hubs (KUL, PEN, BKI, KCH, etc.). "
             "TravelMate can compare price, duration and stops, then attach a selected flight reference and cost to an itinerary. "
@@ -213,6 +246,18 @@ def _local_assistant(question, context='', planning_state=None):
             "The selected hotel cost can then be included in the itinerary budget."
         )
 
+    # 4b. Car rental inquiry
+    if re.search(r'\b(?:car\s+rental|rent\s+a\s+car|car\s+hire|rental\s+car|vehicle\s+rental)\b', q) and not is_explicit_planning:
+        return (
+            "Use Home → Car Rental to compare vehicle categories (Economy, Compact, Sedan, SUV, Van) across Malaysian hubs like Kuala Lumpur, Penang, Kota Kinabalu, and Kuching. "
+            "You can choose pickup dates, check simulated rates, and attach a car rental to your trip itinerary."
+        )
+
+    # 4c. Indoor alternative request
+    if re.search(r'\b(?:replace\s+outdoor|indoor\s+only|indoor\s+activities|indoor\s+attractions|sheltered|rain\s+safe|wet\s+weather|indoor\s+alternatives)\b', q):
+        dest_name = ps.get('destinationArea') or 'your destination'
+        return constrained_indoor_reply(dest_name)
+
     # 5. General feature explanation inquiry
     if any(f in q for f in ['what can you do', 'what can travelmate do', 'how does travelmate work', 'explain features', 'explain travelmate', 'what functions']):
         return (
@@ -222,7 +267,7 @@ def _local_assistant(question, context='', planning_state=None):
 
     # 6. Pure standalone budget advice inquiry
     is_pure_budget = any(p in q for p in ['how to budget', 'how should i budget', 'save money', 'budget tips', 'affordable tips', 'how much should i budget']) or (
-        any(word in q for word in ['budget', 'cheap', 'cost', 'save money', 'affordable']) and not is_explicit_planning and not any(k in q for k in ['change our budget', 'budget to', 'set budget', 'limit of rm', 'budget of rm', 'rm '])
+        any(word in q for word in ['budget', 'cheap', 'cost', 'save money', 'affordable']) and not is_explicit_planning and not any(k in q for k in ['change our budget', 'change the budget', 'budget to', 'set budget', 'limit of rm', 'budget of rm', 'reduce our budget', 'reduce the budget', 'make it cheaper', 'rm '])
     )
     if is_pure_budget and not is_explicit_planning:
         return (
@@ -232,16 +277,15 @@ def _local_assistant(question, context='', planning_state=None):
             "Open Trips → Budget to see the system's calculated total and alternatives."
         )
 
-    # 7. Structured Planning Request / Conversational State with Destination
+    # 6b. Conversational Adjustments when planningState has active destination
     dest = ps.get('destinationArea') or ps.get('destinationState')
     if not dest:
-        # Check if query itself names a known hub
         for candidate, canon in [('kuala lumpur', 'Kuala Lumpur'), ('kl', 'Kuala Lumpur'), ('melaka', 'Melaka'), ('malacca', 'Melaka'), ('penang', 'Penang'), ('george town', 'Penang'), ('langkawi', 'Langkawi'), ('sabah', 'Sabah'), ('kota kinabalu', 'Kota Kinabalu'), ('sarawak', 'Sarawak'), ('kuching', 'Kuching'), ('ipoh', 'Ipoh')]:
             if re.search(r'\b' + re.escape(candidate) + r'\b', q):
                 dest = canon
                 break
 
-    has_planning_intent = is_explicit_planning or ('plan' in q or 'itinerary' in q or 'trip' in q or 'change our budget' in q or 'budget to' in q)
+    has_planning_intent = is_explicit_planning or any(k in q for k in ['plan', 'itinerary', 'trip', 'change our budget', 'budget to', 'make it cheaper', 'days', 'travellers', 'people'])
     if dest and (has_planning_intent or ps.get('tripDays') or ps.get('budgetLimit')):
         dest_state = ps.get('destinationState') or dest
         days = ps.get('tripDays') or 3

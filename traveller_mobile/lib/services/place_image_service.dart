@@ -23,6 +23,18 @@ class PlaceImageService {
       <String, Set<String>>{};
   static final Map<String, int> _sameUrlRetryCount = <String, int>{};
 
+  /// Clears in-memory caches and failure state for isolated test execution.
+  static void resetForTesting() {
+    _resolvedByPlace.clear();
+    _pendingByPlace.clear();
+    _ownerByImageUrl.clear();
+    _failedUrlsByPlace.clear();
+    _sameUrlRetryCount.clear();
+  }
+
+  /// Exposes the canonical identity key used to cache and track image resolution.
+  static String placeKeyFor(Map<String, dynamic> place) => _placeKey(place);
+
   static const Map<String, String> _wikipediaTitleHints = <String, String>{
     'george town unesco heritage area': 'George Town, Penang',
     'george town heritage core': 'George Town, Penang',
@@ -35,11 +47,68 @@ class PlaceImageService {
     'gurney drive hawker & seafront': 'Gurney Drive',
     'petronas twin towers / klcc': 'Petronas Towers',
     'petronas twin towers': 'Petronas Towers',
+    'petronas twin towers & klcc': 'Petronas Towers',
+    'klcc': 'Petronas Towers',
     'river of life / masjid jamek': 'Jamek Mosque',
     'kuala lumpur tower': 'Kuala Lumpur Tower',
     'kl tower': 'Kuala Lumpur Tower',
     'penang botanic gardens': 'Penang Botanic Gardens',
+    'penang hill': 'Penang Hill',
     'kek lok si temple': 'Kek Lok Si',
+    'kek lok si': 'Kek Lok Si',
+    'pinang peranakan mansion': 'Pinang Peranakan Mansion',
+    'wonderfood museum': 'Wonderfood Museum Penang',
+    'batu ferringhi beach': 'Batu Ferringhi',
+    'batu ferringhi': 'Batu Ferringhi',
+    'esplanade & fort cornwallis area': 'Fort Cornwallis',
+    'fort cornwallis': 'Fort Cornwallis',
+    'chew jetty': 'Clan Jetties',
+    'gurney plaza': 'Gurney Plaza',
+    'escape penang': 'Escape (theme park)',
+    'batu caves temple': 'Batu Caves',
+    'batu caves': 'Batu Caves',
+    'merdeka square & sultan abdul samad building':
+        'Merdeka Square, Kuala Lumpur',
+    'merdeka square': 'Merdeka Square, Kuala Lumpur',
+    'sultan abdul samad building': 'Sultan Abdul Samad Building',
+    'bukit bintang & jalan alor food street': 'Bukit Bintang',
+    'bukit bintang': 'Bukit Bintang',
+    'jalan alor': 'Jalan Alor',
+    'thean hou temple': 'Thean Hou Temple',
+    'perdana botanical garden & national museum': 'Perdana Botanical Gardens',
+    'perdana botanical gardens': 'Perdana Botanical Gardens',
+    'national museum': 'National Museum (Malaysia)',
+    "a famosa & st. paul's hill": 'A Famosa',
+    'a famosa': 'A Famosa',
+    "st. paul's church": "St. Paul's Church, Malacca",
+    'jonker street heritage walk': 'Jonker Walk',
+    'jonker street': 'Jonker Walk',
+    'the stadthuys & red square': 'Stadthuys',
+    'stadthuys': 'Stadthuys',
+    'melaka river cruise': 'Malacca River',
+    'melaka river': 'Malacca River',
+    'baba & nyonya heritage museum': 'Baba Nyonya Heritage Museum',
+    'langkawi skycab & sky bridge': 'Langkawi Cable Car',
+    'langkawi skycab': 'Langkawi Cable Car',
+    'langkawi sky bridge': 'Langkawi Sky Bridge',
+    'kilim karst geoforest park': 'Kilim Karst Geoforest Park',
+    'pantai cenang beach': 'Pantai Cenang',
+    'pantai cenang': 'Pantai Cenang',
+    'underwater world langkawi': 'Underwater World Langkawi',
+    'kinabalu national park': 'Kinabalu Park',
+    'kinabalu park': 'Kinabalu Park',
+    'sepilok orangutan rehabilitation centre':
+        'Sepilok Orangutan Rehabilitation Centre',
+    'tunku abdul rahman marine park': 'Tunku Abdul Rahman National Park',
+    'tunku abdul rahman park': 'Tunku Abdul Rahman National Park',
+    'kota kinabalu city mosque & waterfront': 'Kota Kinabalu City Mosque',
+    'kota kinabalu city mosque': 'Kota Kinabalu City Mosque',
+    'sarawak cultural village': 'Sarawak Cultural Village',
+    'bako national park': 'Bako National Park',
+    'kuching waterfront & borneo cultures museum': 'Borneo Cultures Museum',
+    'kuching waterfront': 'Kuching Waterfront',
+    'borneo cultures museum': 'Borneo Cultures Museum',
+    'semenggoh wildlife centre': 'Semenggoh Nature Reserve',
   };
 
   static String _placeKey(Map<String, dynamic> place) {
@@ -134,9 +203,35 @@ class PlaceImageService {
     return pending;
   }
 
+  /// Marks a failed candidate URL for [place] and immediately advances to the
+  /// next best candidate (another explicit URL or dynamic fallback).
+  ///
+  /// Bounded automatic recovery calls this when an image network load fails.
+  static Future<String?> markFailedAndResolve(
+    Map<String, dynamic> place, {
+    required String failedUrl,
+  }) {
+    final key = _placeKey(place);
+    final rejected = failedUrl.trim();
+    if (rejected.isNotEmpty) {
+      _failedUrlsByPlace.putIfAbsent(key, () => <String>{}).add(rejected);
+      if (_ownerByImageUrl[rejected] == key) {
+        _ownerByImageUrl.remove(rejected);
+      }
+      if (_resolvedByPlace[key] == rejected) {
+        _resolvedByPlace.remove(key);
+      }
+    }
+    _resolvedByPlace.remove(key);
+    _pendingByPlace.remove(key);
+    return resolve(place);
+  }
+
   /// Clears a failed resolution and retries it. With several provider images,
   /// a failed URL is skipped immediately. A sole image gets one same-URL retry
   /// for transient network failures before fallback resolution is attempted.
+  /// When called without a specific [failedUrl] (e.g. from an exhausted placeholder),
+  /// failure history for [place] is reset to allow a fresh retry.
   static Future<String?> retry(
     Map<String, dynamic> place, {
     String? failedUrl,
@@ -156,6 +251,12 @@ class PlaceImageService {
           _ownerByImageUrl.remove(rejected);
         }
       }
+    } else {
+      _failedUrlsByPlace.remove(key);
+      _sameUrlRetryCount.keys
+          .where((k) => k.startsWith('$key|'))
+          .toList()
+          .forEach(_sameUrlRetryCount.remove);
     }
     _resolvedByPlace.remove(key);
     _pendingByPlace.remove(key);
@@ -275,6 +376,9 @@ class PlaceImageService {
     }
   }
 
+  static bool looksLikeNonPhotoForTesting(String titleOrUrl) =>
+      _looksLikeNonPhoto(titleOrUrl);
+
   static List<String> _wikipediaSummaryImageUrls(
     String articleTitle,
     Object? decoded,
@@ -282,12 +386,15 @@ class PlaceImageService {
     if (decoded is! Map) return const [];
     final returnedTitle = (decoded['title'] ?? '').toString();
     if (!_matchesSearchIdentity(articleTitle, returnedTitle)) return const [];
+    if (_looksLikeNonPhoto(returnedTitle)) return const [];
     final urls = <String>[];
     for (final field in const ['originalimage', 'thumbnail']) {
       final image = decoded[field];
       if (image is! Map) continue;
       final source = (image['source'] ?? '').toString().trim();
-      if (source.startsWith('http') && !urls.contains(source)) {
+      if (source.startsWith('http') &&
+          !_looksLikeNonPhoto(source) &&
+          !urls.contains(source)) {
         urls.add(source);
       }
     }
@@ -346,7 +453,9 @@ class PlaceImageService {
         final thumb = raw['thumbnail'];
         if (thumb is Map) {
           final source = (thumb['source'] ?? '').toString().trim();
-          if (source.startsWith('http') && !urls.contains(source)) {
+          if (source.startsWith('http') &&
+              !_looksLikeNonPhoto(source) &&
+              !urls.contains(source)) {
             urls.add(source);
           }
         }
@@ -400,9 +509,13 @@ class PlaceImageService {
         if (infos is! List || infos.isEmpty || infos.first is! Map) continue;
         final info = infos.first as Map;
         final mime = (info['mime'] ?? '').toString().toLowerCase();
-        if (!mime.startsWith('image/')) continue;
+        if (!mime.startsWith('image/') || mime == 'image/svg+xml') continue;
         final url = (info['thumburl'] ?? info['url'] ?? '').toString().trim();
-        if (url.startsWith('http') && !urls.contains(url)) urls.add(url);
+        if (url.startsWith('http') &&
+            !_looksLikeNonPhoto(url) &&
+            !urls.contains(url)) {
+          urls.add(url);
+        }
       }
       return urls;
     } catch (_) {
@@ -410,19 +523,47 @@ class PlaceImageService {
     }
   }
 
-  static bool _looksLikeNonPhoto(String title) {
-    final bad = <String>[
+  static bool _looksLikeNonPhoto(String nameOrUrl) {
+    String decoded;
+    try {
+      decoded = Uri.decodeFull(nameOrUrl).toLowerCase();
+    } catch (_) {
+      decoded = nameOrUrl.toLowerCase();
+    }
+
+    // Obvious vector graphics and SVG-derived rasterizations
+    if (decoded.endsWith('.svg') ||
+        decoded.contains('.svg.') ||
+        decoded.contains('.svg/') ||
+        decoded.contains('.svg?') ||
+        decoded.contains('svg.png')) {
+      return true;
+    }
+
+    // Normalize hyphens and underscores into spaces for phrase matching
+    final normalized = decoded.replaceAll(RegExp(r'[-_]'), ' ');
+
+    const badPatterns = <String>[
       'logo',
       'icon',
-      'flag',
+      'diagram',
+      'wordmark',
+      'emblem',
+      'insignia',
+      'pictogram',
+      'silhouette',
+      'symbol',
+      'flag of',
+      'flags of',
       'map of',
       'location map',
-      'coat of arms',
-      'diagram',
+      'locator map',
       'route map',
-      'wordmark',
+      'transit map',
+      'coat of arms',
     ];
-    return bad.any(title.contains);
+
+    return badPatterns.any(normalized.contains);
   }
 
   static bool _matchesSearchIdentity(String query, String candidateTitle) {
@@ -435,6 +576,10 @@ class PlaceImageService {
       'place',
       'restaurant',
       'tourist',
+      'file',
+      'jpg',
+      'jpeg',
+      'png',
     };
     Set<String> tokens(String value) => RegExp(r'[a-z0-9]+')
         .allMatches(value.toLowerCase())
@@ -442,9 +587,32 @@ class PlaceImageService {
         .where((token) => token.length > 2 && !ignored.contains(token))
         .toSet();
 
-    final expected = tokens(query);
     final actual = tokens(candidateTitle.replaceFirst('file:', ''));
-    if (expected.isEmpty || actual.isEmpty) return false;
-    return expected.every(actual.contains);
+    if (actual.isEmpty) return false;
+
+    // Check full query
+    final expectedFull = tokens(query);
+    if (expectedFull.isNotEmpty) {
+      if (expectedFull.every(actual.contains)) return true;
+      if (actual.length >= 2 && actual.every(expectedFull.contains)) return true;
+      if (expectedFull.intersection(actual).length >= 2) return true;
+    }
+
+    // Support composite queries separated by '&', 'and', '/', or '+'
+    final parts =
+        query.split(RegExp(r'\s*(?:&|and|\/|\+)\s*', caseSensitive: false));
+    if (parts.length > 1) {
+      for (final part in parts) {
+        final expectedPart = tokens(part);
+        if (expectedPart.isEmpty) continue;
+        if (expectedPart.every(actual.contains)) return true;
+        if (actual.length >= 2 && actual.every(expectedPart.contains)) {
+          return true;
+        }
+        if (expectedPart.intersection(actual).length >= 2) return true;
+      }
+    }
+
+    return false;
   }
 }
