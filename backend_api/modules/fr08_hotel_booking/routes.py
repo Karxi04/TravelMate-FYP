@@ -1043,6 +1043,7 @@ def _attach_booking_to_itinerary(document_id, booking, payload):
         'hotelCost': hotel_cost,
         'hotelCurrency': str(booking.get('hotelCurrency') or selected_hotel.get('currency') or '').upper(),
         'hotelBookingId': document_id,
+        'accommodationChoice': 'paid_hotel',
     }
     trip_patch['budgetEstimate'] = calculateBudget({**current, **trip_patch})
     try:
@@ -1374,6 +1375,7 @@ def select_car_rental():
     patch = {
         'selectedCarRental': rental,
         'carRentalCost': cost,
+        'carRentalChoice': 'selected',
         'updatedAt': utc_now_iso(),
     }
     patch['budgetEstimate'] = calculateBudget({**current, **patch})

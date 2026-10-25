@@ -5,6 +5,7 @@ from services.gemini_service import generateChatbotResponse, generateFollowUpRes
 from sequence_contract.validators import validateQuestion
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, deleteRecord, updateRecord
 from sequence_contract.domain_functions import createItinerary, calculateBudget
+from services.activity_pricing import pricing_snapshot
 from services.local_catalog import DESTINATIONS
 from .nlp_extractor import (
     extract_geographic_entities,
@@ -543,6 +544,7 @@ def save_plan():
             'timeSlot': act.get('timeSlot') or act.get('timeRangeLabel') or '',
             'timeRangeLabel': act.get('timeRangeLabel') or act.get('timeSlot') or '',
             'estimatedCost': float(act.get('estimatedCost') or 0.0),
+            **pricing_snapshot(act),
             'gps_coordinates': act.get('gps_coordinates') or act.get('gpsCoordinates') or {},
             'type': act.get('type') or act.get('category') or '',
             'category': act.get('category') or act.get('type') or '',
@@ -565,7 +567,12 @@ def save_plan():
         'startDate': start_str,
         'endDate': end_str,
         'numberOfTravellers': int(plan.get('numberOfTravellers') or 1),
+        **({'travellerCount': plan.get('travellerCount', plan.get('numberOfTravellers', 1))}
+           if any(act.get('pricingUnit') for act in clean_activities) else {}),
         'budgetLimit': limit,
+        **{field: plan[field] for field in (
+            'originLocation', 'travelMode', 'accommodationChoice', 'carRentalChoice'
+        ) if field in plan},
         'activities': clean_activities,
         'transportCost': float(plan.get('transportCost') or 0.0),
         'accommodationCost': float(plan.get('accommodationCost') or 0.0),

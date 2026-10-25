@@ -137,8 +137,11 @@ void main() {
     final api = _AdjustmentApi();
     await _pumpAdjustmentTrip(tester, api);
 
-    await tester.drag(find.byKey(const ValueKey('trip-details-scroll')),
-        const Offset(0, -700));
+    await tester.scrollUntilVisible(find.text('Adjust itinerary'), 250,
+        scrollable: find.descendant(
+          of: find.byKey(const ValueKey('trip-details-scroll')),
+          matching: find.byType(Scrollable),
+        ).first);
     await tester.pumpAndSettle();
     final adjust = find.text('Adjust itinerary');
     expect(adjust, findsOneWidget);

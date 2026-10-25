@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'models/budget_model.dart';
 import 'alternative_screen.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/ink_card.dart';
+import 'budget_breakdown.dart';
 
 class BudgetComparisonScreen extends StatelessWidget {
   final BudgetModel budget;
@@ -23,38 +26,22 @@ class BudgetComparisonScreen extends StatelessWidget {
         appBar: AppBar(
           title: const Text("Budget Comparison"),
         ),
-        body: Padding(
-            padding: const EdgeInsets.all(20),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text("Estimated Cost",
-                  style: Theme.of(context).textTheme.headlineSmall),
-              Text("RM ${budget.totalCost.toStringAsFixed(2)}"),
-              const SizedBox(height: 20),
-              Text("Your Budget"),
-              Text("RM ${userBudget.toStringAsFixed(2)}"),
-              const SizedBox(height: 20),
-              Card(
-                  child: ListTile(
-                title: const Text("Budget Status"),
-                subtitle: Text(over
-                    ? "Over Budget RM ${(budget.totalCost - userBudget).toStringAsFixed(2)}"
-                    : "Within Budget"),
-              )),
-              if (over)
-                ElevatedButton(
-                  child: const Text("View Lower-Cost Alternatives"),
-                  onPressed: () {
-                    Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => AlternativeScreen(
-                                  budget: budget,
-                                  userBudget: userBudget,
-                                  tripId: tripId,
-                                )));
-                  },
-                )
-            ])));
+        body: ListView(padding: const EdgeInsets.all(AppSpacing.lg), children: [
+          InkCard(child: BudgetBreakdown(budget: budget, limit: userBudget)),
+          if (over)
+            ElevatedButton(
+              child: const Text("View Lower-Cost Alternatives"),
+              onPressed: () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => AlternativeScreen(
+                              budget: budget,
+                              userBudget: userBudget,
+                              tripId: tripId,
+                            )));
+              },
+            )
+        ]));
   }
 }

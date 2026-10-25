@@ -9,6 +9,7 @@ from services.malaysian_locality import (
     normalize_candidate_geography,
 )
 from services.local_catalog import DESTINATIONS
+from services.activity_pricing import pricing_snapshot
 
 NUMBER_WORDS = {
     'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
@@ -732,6 +733,7 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
                 'timeSlot': slot,
                 'timeRangeLabel': slot,
                 'estimatedCost': float(d.get('estimatedCost', 0) or 0),
+                **pricing_snapshot(d),
                 'gps_coordinates': d.get('gps_coordinates', {}),
                 'type': d.get('type') or d.get('category') or '',
                 'category': d.get('category') or d.get('type') or '',
