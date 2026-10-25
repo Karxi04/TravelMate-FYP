@@ -4,6 +4,9 @@ import re
 from flask import Blueprint, request, jsonify, g
 from auth_utils import auth_required
 from utils import utc_now_iso
+from services.activity_pricing import (
+    activity_pricing, pricing_snapshot, refresh_activity_costs, traveller_count,
+)
 from services.serpapi_service import retrieveLocationAndTravelTime, retrieveLowerCostFlights, retrieveDestinationResults
 from services.open_meteo_service import retrieveSevenDayForecast, geocode
 from services.local_catalog import DESTINATIONS, FLIGHTS, LOCAL_HOTEL_ITEMS
@@ -313,6 +316,7 @@ def _activity_from_destination(item, index):
         'dayNo': 1,
         'timeSlot': '',
         'estimatedCost': float(item.get('estimatedCost', 0) or 0),
+        **pricing_snapshot(item),
         'gps_coordinates': gps,
         'type': item.get('type') or item.get('category') or '',
         'category': item.get('category') or item.get('type') or '',
@@ -536,6 +540,9 @@ def update_itinerary_route(iid):
             payload['dailySchedule'] = daily_schedule
     payload['updatedAt'] = utc_now_iso()
     merged = {**current, **payload}
+    if 'travellerCount' in payload:
+        payload.update(refresh_activity_costs(merged))
+        merged = {**current, **payload}
     payload['budgetEstimate'] = calculateBudget(merged)
     return jsonify({'ok': True, 'itinerary': updateRecord('itineraries', iid, payload)})
 
@@ -630,6 +637,7 @@ def add_activity_route(iid):
         'dayNo': int(payload.get('dayNo', 1) or 1),
         'timeSlot': payload.get('timeSlot', ''),
         'estimatedCost': float(payload.get('estimatedCost', 0) or 0),
+        **pricing_snapshot(payload),
         'gps_coordinates': payload.get('gps_coordinates') or payload.get('gpsCoordinates') or {},
         'type': payload.get('type') or payload.get('category') or '',
         'category': payload.get('category') or payload.get('type') or '',
@@ -824,10 +832,17 @@ def apply_lower_cost_alternative(iid):
     elif kind in {'activity', 'activities'}:
         activities = [dict(x) for x in current.get('activities', [])]
         if activities:
-            expensive = max(activities, key=lambda x: float(x.get('estimatedCost') or 0))
-            expensive['estimatedCost'] = max(0.0, float(expensive.get('estimatedCost') or 0) - savings)
+            count = traveller_count(current.get('travellerCount', 1))
+            expensive = max(activities, key=lambda x: activity_pricing(x, count)['effectiveCost'])
+            reduced = max(0.0, activity_pricing(expensive, count)['effectiveCost'] - savings)
+            if expensive.get('pricingUnit') in {'per_person', 'per_group'}:
+                divisor = count if expensive['pricingUnit'] == 'per_person' else 1
+                expensive['unitPrice'] = reduced / divisor
+            else:
+                expensive['estimatedCost'] = reduced
             expensive['budgetNote'] = 'Lower-cost alternative applied'
             patch['activities'] = activities
+            patch.update(refresh_activity_costs({**current, **patch}))
     elif kind == 'schedule':
         patch['transportCost'] = max(0.0, float(calculateBudget(current).get('transport') or 0) - savings)
         patch['scheduleOptimisationApplied'] = True

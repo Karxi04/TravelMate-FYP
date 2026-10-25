@@ -12,6 +12,7 @@ from services.recommendation_taxonomy import (
     normalize_purpose,
 )
 from services.preference_learning import LEARNED_INTEREST_STRENGTH
+from services.activity_pricing import activity_pricing, traveller_count
 from sequence_contract.validators import (
     ACCOMMODATION_CHOICES,
     CAR_RENTAL_CHOICES,
@@ -617,7 +618,7 @@ def calculateBudget(itineraryOrSelections):
     data = itineraryOrSelections or {}
     limit = _budget_amount(data.get('budgetLimit'))
     has_budget_limit = data.get('budgetLimit') not in (None, '')
-    travellers = max(1, int(_float(data.get('travellerCount'), 1)))
+    travellers = traveller_count(data.get('travellerCount', 1))
     travel_mode = _budget_choice(data, 'travelMode', TRAVEL_MODES)
     accommodation_choice = _budget_choice(
         data, 'accommodationChoice', ACCOMMODATION_CHOICES)
@@ -706,16 +707,25 @@ def calculateBudget(itineraryOrSelections):
     transport = _budget_amount(data.get('transportCost')) if data.get('transportCost') not in (None, '') else round(35.0 * days, 2)
     food = _budget_amount(data.get('foodCost')) if data.get('foodCost') not in (None, '') else round(60.0 * travellers * days, 2)
     activity_items = [x for x in data.get('activities', []) if isinstance(x, dict)]
-    activities = sum(_budget_amount(x.get('estimatedCost')) for x in activity_items)
-    if activities > 0:
-        activity_state = 'unit_unknown'
+    pricing = [activity_pricing(x, data.get('travellerCount', 1)) for x in activity_items]
+    activities = sum(x['effectiveCost'] for x in pricing)
+    pricing_issues = sorted({issue for x in pricing for issue in x['pricingIssues']})
+    activity_overlap = any(x['overlapsAllowance'] for x in pricing)
+    if pricing_issues:
+        activity_state = 'unit_unknown' if 'unknown_pricing_unit' in pricing_issues else 'unverified_estimate'
         pending.append('activities')
         limitations.append(
-            'Activity estimatedCost values have no verified per-person or per-group pricing unit.')
-        limitations.append(
-            'Food is an allowance and may overlap with activity estimates that include dining.')
+            'Some activity pricing units, amounts or source evidence are unknown or unverified.')
     else:
-        activity_state = 'not_required'
+        activity_state = 'priced' if activity_items else 'not_required'
+    if activity_overlap or (activities > 0 and pricing_issues):
+        activity_overlap = True
+        if 'activities' not in pending:
+            pending.append('activities')
+        limitations.append(
+            'Activity spending may overlap food or local-transport allowances; amounts are retained pending clarification.')
+    if any(x['costProvenance'] in {'catalog_estimate', 'user_entered'} for x in pricing):
+        limitations.append('Activity prices include planning estimates, not verified current ticket prices.')
     if rental_choice == 'selected':
         limitations.append(
             'The local-transport allowance may overlap with selected car-rental spending.')
@@ -762,7 +772,9 @@ def calculateBudget(itineraryOrSelections):
             selectionStatus='selected' if selected_rental else None),
         'transport': _expense(transport, 'priced', 'provided' if data.get('transportCost') not in (None, '') else 'estimated_daily_allowance'),
         'food': _expense(food, 'priced', 'provided' if data.get('foodCost') not in (None, '') else 'estimated_daily_allowance'),
-        'activities': _expense(activities, activity_state, 'mixed_estimates'),
+        'activities': _expense(
+            activities, activity_state, 'mixed_estimates',
+            pricingIssues=pricing_issues, overlapsAllowance=activity_overlap),
     }
     if travel_mode == 'own_vehicle':
         expense_breakdown['ownVehicleFuelAndTolls'] = _expense(
@@ -1125,6 +1137,10 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         candidate.pop('unscheduledReason', None)
         if not any(str(x.get('activityId')) == str(candidate.get('activityId')) for x in activities):
             activities.append(candidate)
+    for activity in activities:
+        if activity.get('pricingUnit'):
+            activity['effectiveCost'] = activity_pricing(
+                activity, itinerary.get('travellerCount', 1))['effectiveCost']
     days = _trip_days(itinerary)
     start_date = _trip_start_date(itinerary)
     pace = _pace_key(itinerary)
@@ -1206,7 +1222,8 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
             'planningBlocks': meal_blocks,
             'weather': weather,
             'estimatedMinutes': sum(int(_float(x.get('recommendedDurationMinutes'))) + int(_float(x.get('travelDurationMinutes'))) for x in day_items),
-            'estimatedCost': round(sum(_float(x.get('estimatedCost')) for x in day_items), 2),
+            'estimatedCost': round(sum(activity_pricing(
+                x, itinerary.get('travellerCount', 1))['effectiveCost'] for x in day_items), 2),
         })
 
     unscheduled = []
