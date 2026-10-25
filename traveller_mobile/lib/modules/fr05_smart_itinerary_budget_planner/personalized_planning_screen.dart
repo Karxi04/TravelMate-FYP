@@ -24,6 +24,10 @@ class _PersonalizedPlanningScreenState
   final destination = TextEditingController(text: 'Penang, Malaysia');
   final travellers = TextEditingController(text: '1');
   final budget = TextEditingController(text: '1200');
+  final origin = TextEditingController();
+  String travelMode = 'undecided';
+  String accommodationChoice = 'undecided';
+  String carRentalChoice = 'undecided';
   late final TextEditingController startDate;
   late final TextEditingController endDate;
 
@@ -68,6 +72,7 @@ class _PersonalizedPlanningScreenState
     destination.dispose();
     travellers.dispose();
     budget.dispose();
+    origin.dispose();
     startDate.dispose();
     endDate.dispose();
     super.dispose();
@@ -160,8 +165,8 @@ class _PersonalizedPlanningScreenState
     if (start == null) errors['startDate'] = 'Choose a valid start date.';
     if (end == null) {
       errors['endDate'] = 'Choose a valid end date.';
-    } else if (start != null && !end.isAfter(start)) {
-      errors['endDate'] = 'End date must be after start date.';
+    } else if (start != null && end.isBefore(start)) {
+      errors['endDate'] = 'End date must be on or after start date.';
     }
     final count = int.tryParse(travellers.text.trim());
     if (count == null || count < 1) {
@@ -288,6 +293,10 @@ class _PersonalizedPlanningScreenState
         endDate.text.trim(),
         travellers.text.trim(),
         budget.text.trim(),
+        origin.text.trim(),
+        travelMode,
+        accommodationChoice,
+        carRentalChoice,
         recommendationGenerationId ?? '',
       ].join('|');
 
@@ -299,6 +308,10 @@ class _PersonalizedPlanningScreenState
         'endDate': endDate.text.trim(),
         'travellerCount': int.parse(travellers.text.trim()),
         'budgetLimit': double.parse(budget.text.trim()),
+        if (origin.text.trim().isNotEmpty) 'originLocation': origin.text.trim(),
+        'travelMode': travelMode,
+        'accommodationChoice': accommodationChoice,
+        'carRentalChoice': carRentalChoice,
         'recommendationGenerationId': recommendationGenerationId,
         'generationRequestId': generationRequestId,
       };
@@ -562,9 +575,115 @@ class _PersonalizedPlanningScreenState
               ),
             ],
           ),
+          const SizedBox(height: AppSpacing.xs),
+          const Text(
+              'One total MYR budget for the whole group, including applicable travel and accommodation costs.'),
         ],
       ),
     );
+  }
+
+  Widget _arrangementChoices(String field, String label, String value,
+      Map<String, String> options, ValueChanged<String> onChanged) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: AppSpacing.xs),
+      Wrap(
+        spacing: AppSpacing.xs,
+        runSpacing: AppSpacing.xs,
+        children: options.entries
+            .map((entry) => ChoiceChip(
+                  key: ValueKey('planning-$field-${entry.key}'),
+                  label: Text(entry.value),
+                  selected: value == entry.key,
+                  onSelected: generating
+                      ? null
+                      : (_) {
+                          setState(() {
+                            onChanged(entry.key);
+                            _clearGenerationState();
+                          });
+                        },
+                ))
+            .toList(),
+      ),
+      const SizedBox(height: AppSpacing.sm),
+    ]);
+  }
+
+  Widget _travelArrangements() {
+    return InkCard(
+        child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel(2, 'Travel arrangements',
+            'Choose what applies. Not decided is different from not needed.'),
+        const SizedBox(height: AppSpacing.md),
+        AppTextField(
+          key: const ValueKey('planning-origin'),
+          controller: origin,
+          label: 'Departure location (optional)',
+          hint: 'e.g. Bukit Mertajam, Penang',
+          prefixIcon: Icons.trip_origin,
+          readOnly: generating,
+          onChanged: (_) => _onFieldChanged('origin'),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _arrangementChoices(
+            'travel-mode',
+            'Intercity travel',
+            travelMode,
+            const {
+              'undecided': 'Not decided',
+              'flight': 'Flight',
+              'own_vehicle': 'Own vehicle',
+              'public_transport': 'Public transport',
+              'other': 'Other',
+            },
+            (value) => travelMode = value),
+        if (travelMode == 'own_vehicle')
+          const Text('Fuel and tolls are outside the current budget estimate.'),
+        if (travelMode == 'public_transport' || travelMode == 'other')
+          const Text(
+              'Intercity fares are outside the current budget estimate.'),
+        if (travelMode == 'flight')
+          const Text(
+              'Flight intent only. A flight price is still needed; no ticket is booked.'),
+        const SizedBox(height: AppSpacing.sm),
+        _arrangementChoices(
+            'accommodation',
+            'Accommodation',
+            accommodationChoice,
+            const {
+              'undecided': 'Not decided',
+              'paid_hotel': 'Paid hotel',
+              'staying_with_family': 'Family / friends',
+              'return_home': 'Return home',
+              'other': 'Other',
+            },
+            (value) => accommodationChoice = value),
+        if (accommodationChoice == 'paid_hotel')
+          const Text(
+              'A hotel price is still needed. This choice does not book a room.'),
+        if (accommodationChoice == 'other')
+          const Text(
+              'Other accommodation costs are outside the current budget estimate.'),
+        const SizedBox(height: AppSpacing.sm),
+        _arrangementChoices(
+            'rental',
+            'Car rental at destination',
+            carRentalChoice,
+            const {
+              'undecided': 'Not decided',
+              'selected': 'Want to rent',
+              'not_required': 'Not needed',
+            },
+            (value) => carRentalChoice = value),
+        if (carRentalChoice == 'selected')
+          const Text(
+              'Rental intent only; no quote or reservation is attached. The current rental catalogue uses simulated prices.'),
+      ],
+    ));
   }
 
   Widget _profileSummary() {
@@ -573,7 +692,7 @@ class _PersonalizedPlanningScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionLabel(
-            2,
+            3,
             'Your travel style',
             'TravelMate uses your saved profile to personalise this trip.',
           ),
@@ -767,7 +886,7 @@ class _PersonalizedPlanningScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionLabel(
-            3,
+            4,
             'Suggestions for this trip',
             'These places come from one saved recommendation set for your destination.',
           ),
@@ -920,6 +1039,8 @@ class _PersonalizedPlanningScreenState
             ),
             const SizedBox(height: AppSpacing.md),
             _tripBasics(),
+            const SizedBox(height: AppSpacing.md),
+            _travelArrangements(),
             const SizedBox(height: AppSpacing.md),
             _profileSummary(),
             const SizedBox(height: AppSpacing.md),
