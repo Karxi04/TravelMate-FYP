@@ -774,32 +774,46 @@ class _PersonalizedPlanningScreenState
 
   num? _score(Map<String, dynamic> item) {
     final value = item['finalScore'] ?? item['score'];
-    if (value is num) return value.clamp(0, 100);
-    return num.tryParse((value ?? '').toString())?.clamp(0, 100);
+    if (value == null || value == '') return null;
+    final num? val = value is num ? value : num.tryParse(value.toString());
+    if (val == null || !val.isFinite) return null;
+    return val.clamp(0, 100);
+  }
+
+  static bool _isScoreOrMatchToken(String value) {
+    final lower = value.toLowerCase().trim();
+    return RegExp(r'^\d+(\.\d+)?%\s*match$').hasMatch(lower) ||
+        RegExp(r'^(?:recommendation\s+)?score:?\s*\d+(\.\d+)?(\/100)?$')
+            .hasMatch(lower);
   }
 
   List<String> _reasons(Map<String, dynamic> item) {
     final reasons = item['matchReasons'];
     if (reasons is List) {
-      return reasons
+      final list = reasons
           .map((value) => value.toString().trim())
-          .where((value) => value.isNotEmpty)
+          .where((value) =>
+              value.isNotEmpty &&
+              !_isScoreOrMatchToken(value))
           .take(2)
           .toList();
+      if (list.isNotEmpty) return list;
     }
     final reason = (item['recommendationReason'] ?? item['reason'] ?? '')
         .toString()
         .trim();
-    if (reason.isEmpty) return const [];
-    return reason
-        .split('•')
-        .map((value) => value.trim())
-        .where((value) =>
-            value.isNotEmpty &&
-            !RegExp(r'^\d+(\.\d+)?%\s*match$', caseSensitive: false)
-                .hasMatch(value))
-        .take(2)
-        .toList();
+    if (reason.isNotEmpty) {
+      final list = reason
+          .split('•')
+          .map((value) => value.trim())
+          .where((value) =>
+              value.isNotEmpty &&
+              !_isScoreOrMatchToken(value))
+          .take(2)
+          .toList();
+      if (list.isNotEmpty) return list;
+    }
+    return const [];
   }
 
   Widget _suggestionTile(Map<String, dynamic> item, int index) {
@@ -845,7 +859,7 @@ class _PersonalizedPlanningScreenState
                         if (score != null) ...[
                           const SizedBox(width: AppSpacing.xs),
                           StatusChip(
-                            text: '${score.round()}% match',
+                            text: 'Recommendation score: ${score.round()}/100',
                             icon: Icons.auto_awesome_rounded,
                           ),
                         ],
@@ -854,7 +868,7 @@ class _PersonalizedPlanningScreenState
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
                       reasons.isEmpty
-                          ? 'Recommended for your saved travel style.'
+                          ? 'Recommended based on available destination information.'
                           : reasons.join(' · '),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: AppColors.textSecondary,

@@ -332,7 +332,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
           padding: AppSpacing.page,
           children: [
             const AppSectionHeader(
-              title: 'Places matched to you',
+              title: 'Places recommended for you',
               subtitle:
                   'Based on your saved interests and travel style. Refresh only when you want a new list.',
             ),
