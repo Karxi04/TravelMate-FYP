@@ -619,6 +619,8 @@ def calculateBudget(itineraryOrSelections):
     limit = _budget_amount(data.get('budgetLimit'))
     has_budget_limit = data.get('budgetLimit') not in (None, '')
     travellers = traveller_count(data.get('travellerCount', 1))
+    travel_mode_raw = data.get('travelMode')
+    has_explicit_travel_mode = travel_mode_raw not in (None, '')
     travel_mode = _budget_choice(data, 'travelMode', TRAVEL_MODES)
     accommodation_choice = _budget_choice(
         data, 'accommodationChoice', ACCOMMODATION_CHOICES)
@@ -628,6 +630,8 @@ def calculateBudget(itineraryOrSelections):
     limitations = []
 
     raw_flight = data.get('flightCost')
+    if raw_flight in (None, '') and isinstance(data.get('selectedFlight'), dict):
+        raw_flight = data['selectedFlight'].get('price')
     selected_flight = data.get('selectedFlight') if isinstance(data.get('selectedFlight'), dict) else {}
     flight_currency = str(data.get('flightCurrency') or selected_flight.get('currency') or '').upper()
     flight_basis = data.get('flightPriceBasis') or selected_flight.get('priceBasis')
@@ -637,8 +641,29 @@ def calculateBudget(itineraryOrSelections):
         or _budget_amount(raw_flight) <= 0
     )
     flight = 0.0 if flight_issue else _budget_amount(raw_flight)
-    if travel_mode == 'flight':
-        if not selected_flight or flight_issue:
+    flight_selection_status = data.get('flightSelectionStatus')
+    has_valid_selected_flight = (
+        bool(selected_flight)
+        and not flight_issue
+        and flight > 0
+        and flight_selection_status != 'removed'
+    )
+
+    if not has_explicit_travel_mode:
+        if has_valid_selected_flight:
+            if _simulated_selection(selected_flight, data.get('flightSelectionSource')):
+                flight_state = 'simulated_estimate'
+                limitations.append('The selected flight price is a planning or sandbox estimate, not a completed reservation.')
+            else:
+                flight_state = 'priced'
+        elif selected_flight and (flight_issue or flight <= 0):
+            flight_state = 'selected_unpriced'
+            pending.append('flight')
+        else:
+            flight_state = 'undecided'
+            pending.append('flight')
+    elif travel_mode == 'flight':
+        if not selected_flight or flight_issue or flight <= 0:
             flight_state = 'selected_unpriced'
             pending.append('flight')
         elif _simulated_selection(selected_flight, data.get('flightSelectionSource')):
@@ -649,9 +674,13 @@ def calculateBudget(itineraryOrSelections):
     elif travel_mode == 'undecided':
         flight_state = 'undecided'
         pending.append('flight')
+        if selected_flight:
+            limitations.append('A historical flight selection is attached, but travel mode is undecided; flight selection remains pending confirmation.')
     else:
         flight = 0.0
         flight_state = 'not_required'
+        if selected_flight:
+            limitations.append(f"An attached flight selection conflicts with the selected '{travel_mode}' travel mode; the non-flight choice takes precedence.")
 
     nights = max(0, _trip_days(data) - 1)
     hotel_is_explicit = data.get('hotelCost') not in (None, '')
