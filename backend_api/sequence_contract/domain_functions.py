@@ -108,9 +108,8 @@ def applyContentBasedFiltering(recommendationInput):
     raw_interests = [
         value for value in pref.get('interests', []) if _text(value)
     ]
-    interest_groups = [concepts_for(value) for value in raw_interests]
-    interest_groups = [group for group in interest_groups if group]
-    interest_concepts = set().union(*interest_groups) if interest_groups else set()
+    interest_concepts = concepts_for(raw_interests)
+    excluded_concepts = concepts_for(pref.get('excludedInterests', []))
     travel_type_concepts = concepts_for(pref.get('travelType'))
     requested_budget = normalize_budget(pref.get('budgetRange'))
     requested_pace = normalize_pace(pref.get('travelPace'))
@@ -120,13 +119,14 @@ def applyContentBasedFiltering(recommendationInput):
     results = []
     for item in recommendationInput.get('destinationData', []) or []:
         destination_concepts = candidate_concepts(item)
+        if excluded_concepts.intersection(destination_concepts):
+            continue
         matched_concepts = interest_concepts.intersection(destination_concepts)
-        if interest_groups:
-            matched_group_count = sum(
-                1 for group in interest_groups
-                if group.intersection(destination_concepts)
-            )
-            interest_coverage = matched_group_count / len(interest_groups)
+        if interest_concepts:
+            # Preferences are alternatives, not an attraction's required checklist.
+            # Candidate-side coverage rewards additional relevant evidence without
+            # penalising a specialist when unrelated user interests are added.
+            interest_coverage = len(matched_concepts) / max(1, len(destination_concepts))
             primary_concepts = concepts_for([
                 item.get('title'), item.get('name'), item.get('type')
             ])
