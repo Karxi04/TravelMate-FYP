@@ -397,7 +397,9 @@ void main() {
     await _pumpDetails(tester, api);
 
     await _show(tester, find.text('Visit information'));
-    expect(find.text('Opening hours unavailable'), findsOneWidget);
+    expect(find.text('Opening hours not available'), findsOneWidget);
+    expect(find.text('Check with the attraction before visiting.'),
+        findsOneWidget);
     expect(find.text('About 120 minutes'), findsOneWidget);
     expect(find.text('About RM 20'), findsOneWidget);
 
