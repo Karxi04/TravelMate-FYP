@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'budget_comparison_screen.dart';
+import 'budget_breakdown.dart';
 import 'models/budget_model.dart';
 import 'package_trip_details_screen.dart';
 import 'trip_status_helper.dart';
@@ -1127,25 +1128,30 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
       final data =
           await api.get('/api/fr5/itineraries/${widget.tripId}/budget');
 
-      final budget = Map<String, dynamic>.from(data['budget'] as Map);
-
-      final budgetModel = BudgetModel(
-        accommodation: double.tryParse(budget['hotel'].toString()) ?? 0,
-        food: double.tryParse(budget['food'].toString()) ?? 0,
-        transportation: double.tryParse(budget['transport'].toString()) ?? 0,
-        activities: double.tryParse(budget['activities'].toString()) ?? 0,
+      if (data is! Map || data['ok'] == false || data['budget'] is! Map) {
+        throw StateError('Budget details are unavailable. Please try again.');
+      }
+      final budgetModel = BudgetModel.fromJson(
+        Map<String, dynamic>.from(data['budget'] as Map),
+        fallbackLimit: double.tryParse('${trip?['budgetLimit']}') ?? 0,
       );
 
-      final limit = double.tryParse(budget['limit'].toString()) ?? 0;
-
       if (!mounted) return;
+      setState(() {
+        if (trip != null) {
+          trip = {
+            ...trip!,
+            'budgetEstimate': Map<String, dynamic>.from(data['budget'] as Map),
+          };
+        }
+      });
 
       Navigator.push(
           context,
           MaterialPageRoute(
               builder: (context) => BudgetComparisonScreen(
                     budget: budgetModel,
-                    userBudget: limit,
+                    userBudget: budgetModel.budgetLimit,
                     tripId: widget.tripId,
                   )));
     } catch (e) {
@@ -1700,38 +1706,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     ]);
   }
 
-  String _costKind(Map<String, dynamic> provenance, String key) {
-    final value = (provenance[key] ?? '').toString();
-    if (key == 'flight') {
-      return value.startsWith('confirmed') || value == 'provided'
-          ? 'planning estimate'
-          : 'estimated';
-    }
-    return value.startsWith('confirmed') || value == 'provided'
-        ? 'confirmed'
-        : 'estimated';
-  }
-
   Widget _budgetSection(Map<String, dynamic> t) {
-    if (t['budgetEstimate'] is! Map) return const SizedBox.shrink();
-    final budget = Map<String, dynamic>.from(t['budgetEstimate'] as Map);
-    final total = double.tryParse('${budget['total'] ?? 0}') ?? 0;
-    final limit =
-        double.tryParse('${budget['limit'] ?? t['budgetLimit'] ?? 0}') ?? 0;
-    if (total <= 0 && limit <= 0) return const SizedBox.shrink();
-    final provenance = budget['costProvenance'] is Map
-        ? Map<String, dynamic>.from(budget['costProvenance'] as Map)
-        : <String, dynamic>{};
-    final categories = <(String, String, dynamic)>[
-      ('Activities', 'activities', budget['activities']),
-      ('Food', 'food', budget['food']),
-      ('Transport', 'transport', budget['transport']),
-      ('Stay', 'hotel', budget['hotel']),
-      ('Flights', 'flight', budget['flight']),
-      ('Car rental', 'carRental', budget['carRental']),
-    ].where((entry) => (double.tryParse('${entry.$3 ?? 0}') ?? 0) > 0);
-    final progress = limit <= 0 ? 0.0 : (total / limit).clamp(0.0, 1.0);
-    final overBudget = limit > 0 && total > limit;
+    final budget = BudgetModel.fromJson(
+      t['budgetEstimate'] is Map
+          ? Map<String, dynamic>.from(t['budgetEstimate'] as Map)
+          : <String, dynamic>{},
+      fallbackLimit: double.tryParse('${t['budgetLimit']}') ?? 0,
+    );
     return InkCard(
       key: const ValueKey('trip-budget-progress'),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1742,44 +1723,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           ),
           TertiaryButton(label: 'View details', onPressed: showBudget),
         ]),
-        Text(
-          limit > 0
-              ? 'RM ${_money(total)} of RM ${_money(limit)} estimated'
-              : 'RM ${_money(total)} estimated',
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-        if (limit > 0) ...[
-          const SizedBox(height: AppSpacing.sm),
-          Semantics(
-            label: '${(progress * 100).round()} percent of trip budget used',
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 9,
-              borderRadius: BorderRadius.circular(AppRadii.pill),
-              color: overBudget ? AppColors.error : AppColors.success,
-              backgroundColor: AppColors.divider,
-            ),
-          ),
-        ],
-        if (categories.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.md),
-          ...categories.map((entry) {
-            final value = double.tryParse('${entry.$3}') ?? 0;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-              child: Row(children: [
-                Expanded(child: Text(entry.$1)),
-                Text(
-                  '${_costKind(provenance, entry.$2)} · RM ${_money(value)}',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: AppColors.textSecondary),
-                ),
-              ]),
-            );
-          }),
-        ],
+        BudgetBreakdown(budget: budget, limit: budget.budgetLimit),
       ]),
     );
   }

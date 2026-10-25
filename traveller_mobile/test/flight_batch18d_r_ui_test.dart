@@ -647,7 +647,8 @@ void main() {
 
       await _pumpTripDetails(tester, trip, api);
 
-      expect(find.text('planning estimate · RM 256'), findsOneWidget);
+      expect(find.text('RM 256.00'), findsOneWidget);
+      expect(find.text('Incomplete estimate'), findsOneWidget);
       expect(find.text('confirmed · RM 256'), findsNothing);
     });
 
@@ -663,7 +664,7 @@ void main() {
 
       await _pumpTripDetails(tester, trip, api);
 
-      expect(find.text('RM 556 of RM 2500 estimated'), findsOneWidget);
+      expect(find.text('Known estimated subtotal: RM 556.00'), findsOneWidget);
     });
 
     testWidgets('20. Hotel and Package budget labels are unaffected', (tester) async {
@@ -679,8 +680,9 @@ void main() {
 
       await _pumpTripDetails(tester, trip, api);
 
-      expect(find.text('Stay'), findsOneWidget);
-      expect(find.text('confirmed · RM 300'), findsOneWidget);
+      expect(find.text('Hotel'), findsOneWidget);
+      expect(find.text('RM 300.00'), findsOneWidget);
+      expect(find.text('confirmed · RM 300'), findsNothing);
     });
 
     testWidgets('21. Flight Checkout remains unavailable', (tester) async {

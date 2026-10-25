@@ -174,7 +174,7 @@ void main() {
       _trip('trip-one', 'Penang Getaway'),
       _trip('trip-two', 'Second Penang Trip'),
     ]);
-    await _pumpAtSize(tester, TripsTab(api: api));
+    await _pumpAtSize(tester, TripsTab(api: api, referenceDate: DateTime(2026, 10, 24)));
 
     expect(find.text('Planned'), findsNWidgets(3));
     expect(find.text('1 activity · RM 720 estimated'), findsNWidgets(2));

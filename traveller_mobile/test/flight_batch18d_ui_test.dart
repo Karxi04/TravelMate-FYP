@@ -20,6 +20,15 @@ Widget _wrap(Widget child) {
   );
 }
 
+Future<void> _showAttachedFlight(WidgetTester tester) async {
+  await tester.scrollUntilVisible(find.text('Attached flight'), 250,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('trip-details-scroll')),
+        matching: find.byType(Scrollable),
+      ).first);
+  await tester.pumpAndSettle();
+}
+
 class _MockFlightApi extends ApiService {
   Map<String, dynamic>? searchResponse;
   Map<String, dynamic>? returnsResponse;
@@ -528,6 +537,7 @@ void main() {
     await tester.pumpWidget(_wrap(TripDetailsScreen(tripId: 'trip_123', api: api)));
     await tester.pumpAndSettle();
 
+    await _showAttachedFlight(tester);
     expect(find.text('Attached flight'), findsOneWidget);
     expect(find.text('Flight cost: RM 550.0'), findsOneWidget);
   });
@@ -553,6 +563,7 @@ void main() {
     await tester.pumpWidget(_wrap(TripDetailsScreen(tripId: 'trip_123', api: api)));
     await tester.pumpAndSettle();
 
+    await _showAttachedFlight(tester);
     expect(find.text('Attached flight'), findsOneWidget);
     expect(find.text('Malaysia Airlines MH1138'), findsOneWidget);
   });
@@ -587,6 +598,7 @@ void main() {
     await tester.pumpWidget(_wrap(TripDetailsScreen(tripId: 'trip_123', api: api)));
     await tester.pumpAndSettle();
 
+    await _showAttachedFlight(tester);
     expect(find.textContaining('Outbound: KUL to PEN • 08:10 to 09:10'), findsOneWidget);
     expect(find.textContaining('Return: PEN to KUL • 18:50 to 19:55'), findsOneWidget);
   });
@@ -606,6 +618,7 @@ void main() {
     await tester.pumpWidget(_wrap(TripDetailsScreen(tripId: 'trip_123', api: api)));
     await tester.pumpAndSettle();
 
+    await _showAttachedFlight(tester);
     expect(find.text('Flight cost: RM 550.0'), findsOneWidget);
   });
 
@@ -623,6 +636,7 @@ void main() {
     await tester.pumpWidget(_wrap(TripDetailsScreen(tripId: 'trip_123', api: api)));
     await tester.pumpAndSettle();
 
+    await _showAttachedFlight(tester);
     expect(find.text('Flight cost: RM 550.0'), findsOneWidget);
   });
 
@@ -647,6 +661,7 @@ void main() {
     await tester.pumpWidget(_wrap(TripDetailsScreen(tripId: 'trip_123', api: api)));
     await tester.pumpAndSettle();
 
+    await _showAttachedFlight(tester);
     expect(find.text('Attached flight'), findsOneWidget);
     expect(find.text('Batik Air OD2108'), findsOneWidget);
     expect(find.text('Flight cost: RM 420.0'), findsOneWidget);
@@ -865,6 +880,7 @@ void main() {
     await tester.pumpWidget(_wrap(TripDetailsScreen(tripId: 'trip_123', api: api)));
     await tester.pumpAndSettle();
 
+    await _showAttachedFlight(tester);
     expect(find.text('Planning estimate only • No airline ticket issued'), findsOneWidget);
     expect(find.textContaining('PNR'), findsNothing);
     expect(find.textContaining('Ticket Number:'), findsNothing);

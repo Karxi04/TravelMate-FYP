@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/trip_details_screen.dart';
+import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/budget_comparison_screen.dart';
 import 'package:travelmate_traveller/services/api_service.dart';
 import 'package:travelmate_traveller/widgets/travel_widgets.dart';
 
@@ -163,6 +164,7 @@ class _TripApi extends ApiService {
   int deleteCalls = 0;
   int moveCalls = 0;
   int searchCalls = 0;
+  bool budgetUnavailable = false;
   final List<Map<String, dynamic>> activityPosts = [];
   List<Map<String, dynamic>> searchResults = [];
   Map<String, dynamic>? lastGenerationBody;
@@ -216,6 +218,7 @@ class _TripApi extends ApiService {
       };
     }
     if (path.endsWith('/budget')) {
+      if (budgetUnavailable) return {'ok': false};
       return {'ok': true, 'budget': trip['budgetEstimate']};
     }
     throw StateError('Unexpected GET $path');
@@ -296,7 +299,8 @@ Future<void> _pumpTrip(
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     MaterialApp(
-      home: TripDetailsScreen(tripId: 'trip_target', api: api),
+      home: TripDetailsScreen(tripId: 'trip_target', api: api,
+          referenceDate: DateTime(2026, 10, 24)),
     ),
   );
   if (settle) {
@@ -434,9 +438,11 @@ void main() {
     await _pumpTrip(tester, _TripApi());
 
     await _show(tester, find.byKey(const ValueKey('trip-budget-progress')));
-    expect(find.text('RM 720 of RM 1000 estimated'), findsOneWidget);
-    expect(find.text('confirmed · RM 290'), findsOneWidget);
-    expect(find.text('estimated · RM 160'), findsOneWidget);
+    expect(find.text('Known estimated subtotal: RM 720.00'), findsOneWidget);
+    expect(find.text('Incomplete estimate'), findsOneWidget);
+    expect(find.text('RM 290.00'), findsOneWidget);
+    expect(find.text('RM 160.00'), findsOneWidget);
+    expect(find.textContaining('confirmed ·'), findsNothing);
 
     await _show(tester, find.text('Couldn’t fit into your schedule'));
     expect(find.text('Penang Botanic Gardens'), findsOneWidget);
@@ -445,6 +451,39 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('available time, travel'), findsNothing);
+  });
+
+  testWidgets('budget navigation retains authoritative flight and rental totals', (tester) async {
+    final api = _TripApi();
+    final budget = Map<String, dynamic>.from(api.trip['budgetEstimate'] as Map);
+    api.trip['budgetEstimate'] = budget;
+    budget.addAll({'totalEstimatedCost': 770, 'total': 770, 'carRental': 50});
+    await _pumpTrip(tester, api);
+    await _show(tester, find.byKey(const ValueKey('trip-budget-progress')));
+    expect(find.text('Known estimated subtotal: RM 770.00'), findsOneWidget);
+    await _show(tester, find.text('View details'));
+    await tester.tap(find.text('View details'));
+    await tester.pumpAndSettle();
+    expect(find.byType(BudgetComparisonScreen), findsOneWidget);
+    expect(find.text('Known estimated subtotal: RM 770.00'), findsOneWidget);
+    expect(find.text('RM 94.00'), findsOneWidget);
+    expect(find.text('RM 50.00'), findsOneWidget);
+    expect(find.text('Incomplete estimate'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(TripDetailsScreen), findsOneWidget);
+    expect(budget['total'], 770);
+  });
+
+  testWidgets('budget response error stays on the trip with retryable message', (tester) async {
+    final api = _TripApi()..budgetUnavailable = true;
+    await _pumpTrip(tester, api);
+    await _show(tester, find.text('View details'));
+    await tester.tap(find.text('View details'));
+    await tester.pumpAndSettle();
+    expect(find.byType(BudgetComparisonScreen), findsNothing);
+    expect(find.textContaining('Budget details are unavailable'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('generating lifecycle state is intentional', (tester) async {
