@@ -847,24 +847,17 @@ class _PersonalizedPlanningScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                        if (score != null) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          StatusChip(
-                            text: 'Recommendation score: ${score.round()}/100',
-                            icon: Icons.auto_awesome_rounded,
-                          ),
-                        ],
-                      ],
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
+                    if (score != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      StatusChip(
+                        text: 'Recommendation score: ${score.round()}/100',
+                        icon: Icons.auto_awesome_rounded,
+                      ),
+                    ],
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
                       reasons.isEmpty

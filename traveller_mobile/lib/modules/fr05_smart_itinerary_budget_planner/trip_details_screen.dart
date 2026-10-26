@@ -147,6 +147,16 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     return minutes == 0 ? '${hours}h' : '${hours}h ${minutes}m';
   }
 
+  bool _isProvisional(Map<String, dynamic> activity) {
+    final feasibility =
+        (activity['scheduleFeasibility'] ?? '').toString().toLowerCase();
+    if (feasibility == 'provisional') return true;
+    if (feasibility == 'feasible_with_reported_hours') return false;
+    final status =
+        (activity['openingHoursStatus'] ?? '').toString().toLowerCase();
+    return status == 'unknown';
+  }
+
   List<String> _activityNotes(Map<String, dynamic> activity) {
     final notes = <String>[];
     final weather = (activity['weatherNote'] ?? '').toString();
@@ -156,6 +166,14 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     for (final note in (activity['scheduleNotes'] as List? ?? [])) {
       final text = note.toString();
       if (text.trim().isNotEmpty && !notes.contains(text)) notes.add(text);
+    }
+    if (_isProvisional(activity) &&
+        !notes.any((n) =>
+            n.toLowerCase().contains('opening hours') ||
+            n.toLowerCase().contains('unverified') ||
+            n.toLowerCase().contains('provisional'))) {
+      notes.add(
+          'Operating hours for the planned date are not confirmed. Confirm with the venue before visiting.');
     }
     return notes.take(2).toList();
   }
@@ -390,12 +408,21 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   }
 
   String _friendlyUnscheduledReason(Map<String, dynamic> item) {
-    final reason = (item['unscheduledReason'] ?? '').toString().toLowerCase();
-    if (reason.contains('closed')) {
+    final rawReason = (item['unscheduledReason'] ?? '').toString();
+    final reason = rawReason.toLowerCase();
+    if (reason.contains('closed on all trip days') ||
+        reason.contains('is closed during')) {
       return 'This place is closed during your trip dates.';
+    }
+    if (reason.contains('unverified')) {
+      return 'Couldn’t fit in schedule. Opening hours are unverified; check with venue.';
     }
     if (reason.contains('opening')) {
       return 'It couldn’t fit within the available opening hours.';
+    }
+    if (rawReason.isNotEmpty &&
+        !reason.contains('could not fit within available time')) {
+      return rawReason;
     }
     return 'There wasn’t enough time to fit this place safely.';
   }
@@ -1476,23 +1503,41 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         (activity['category'] ?? activity['type'] ?? '').toString().trim();
     final cost = double.tryParse('${activity['estimatedCost'] ?? 0}') ?? 0;
     final notes = _activityNotes(activity);
+    final isProvisional = _isProvisional(activity);
     return Semantics(
       container: true,
       label:
-          '${_timeText(activity)}, ${activity['activityName'] ?? 'Activity'}',
+          '${_timeText(activity)}${isProvisional ? ' (Hours unverified)' : ''}, ${activity['activityName'] ?? 'Activity'}',
       child: InkCard(
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SizedBox(
-            width: 58,
-            child: Text(
-              (activity['scheduledStartTime'] ??
-                      activity['timeSlot'] ??
-                      'Time TBC')
-                  .toString(),
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(color: AppColors.primaryStrong),
+            width: 62,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  (activity['scheduledStartTime'] ??
+                          activity['timeSlot'] ??
+                          'Time TBC')
+                      .toString(),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(color: AppColors.primaryStrong),
+                ),
+                if (isProvisional) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Hours\nunverified',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          height: 1.15,
+                        ),
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(width: AppSpacing.xs),
@@ -1517,6 +1562,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                         spacing: AppSpacing.xs,
                         runSpacing: AppSpacing.xxs,
                         children: [
+                          if (isProvisional)
+                            const StatusChip(
+                              text: 'Hours unverified',
+                              tone: AppStatusTone.neutral,
+                            ),
                           if (category.isNotEmpty)
                             Text(category,
                                 style: Theme.of(context).textTheme.bodySmall),
@@ -1665,7 +1715,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                             (activity['activityName'] ?? 'Activity').toString(),
                             style: Theme.of(context).textTheme.titleMedium),
                         Text(
-                          '${activity['scheduledStartTime'] ?? activity['timeSlot'] ?? 'Time TBC'} · ${_durationText(activity)}',
+                          '${activity['scheduledStartTime'] ?? activity['timeSlot'] ?? 'Time TBC'} · ${_durationText(activity)}${_isProvisional(activity) ? ' · Hours unverified' : ''}',
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall
