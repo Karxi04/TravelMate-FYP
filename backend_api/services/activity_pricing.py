@@ -1,11 +1,12 @@
 """Optional MYR planning estimates; never infer units for historical amounts."""
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from math import isfinite
+from copy import deepcopy
 
 
 PRICING_FIELDS = (
     'pricingUnit', 'unitPrice', 'costCategory', 'costProvenance',
-    'priceSourceUrl', 'priceVerifiedAt', 'overlapsAllowance',
+    'priceSourceUrl', 'priceVerifiedAt', 'overlapsAllowance', 'pricingEvidence',
 )
 PRICING_UNITS = {'per_person', 'per_group', 'already_aggregated'}
 PROVENANCE = {'verified_ticket', 'catalog_estimate', 'user_entered'}
@@ -13,7 +14,7 @@ PROVENANCE = {'verified_ticket', 'catalog_estimate', 'user_entered'}
 
 def pricing_snapshot(activity):
     # effectiveCost is derived, never an input to subsequent calculations.
-    return {key: activity[key] for key in PRICING_FIELDS if key in activity}
+    return {key: deepcopy(activity[key]) for key in PRICING_FIELDS if key in activity}
 
 
 def traveller_count(value):
@@ -48,6 +49,9 @@ def activity_pricing(activity, travellers=1):
     if unit in {'per_person', 'per_group'} and 'unitPrice' in activity:
         price = _money(activity['unitPrice'])
     issues = []
+    evidence = activity.get('pricingEvidence')
+    if isinstance(evidence, dict) and evidence.get('applicability') != 'applicable':
+        issues.append('conditional_or_unverified_admission')
     if unit == 'unknown':
         issues.append('unknown_pricing_unit')
     if price is None:

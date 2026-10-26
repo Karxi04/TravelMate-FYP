@@ -8,6 +8,7 @@ from auth_utils import auth_required
 from utils import utc_now_iso
 from services.serpapi_service import retrieveDestinationResults
 from services.local_catalog import DESTINATIONS
+from services.pricing_registry import enrich_candidate_pricing
 from services.recommendation_taxonomy import candidate_concepts
 from services.preference_learning import (
     apply_explicit_feedback,
@@ -199,7 +200,7 @@ def _provider_destinations(query, location):
 
 
 def _snapshot_item(item, source):
-    result = dict(item or {})
+    result = enrich_candidate_pricing(item or {})
     result['recommendationSource'] = source
     result['finalScore'] = result.get('score', 0)
     result['recommendationReason'] = result.get('reason', '')

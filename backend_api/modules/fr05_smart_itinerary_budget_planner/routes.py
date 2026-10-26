@@ -11,6 +11,7 @@ from services.activity_pricing import (
 from services.serpapi_service import retrieveLocationAndTravelTime, retrieveLowerCostFlights, retrieveDestinationResults
 from services.open_meteo_service import retrieveSevenDayForecast, geocode
 from services.local_catalog import DESTINATIONS, FLIGHTS, LOCAL_HOTEL_ITEMS
+from services.pricing_registry import enrich_candidate_pricing
 from sequence_contract.validators import validateItineraryInput, validateItineraryForSaving, validateSelectedDestination
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord, deleteRecord
 from sequence_contract.domain_functions import (
@@ -360,7 +361,7 @@ def _destination_candidates(current, snapshot=None):
             result = retrieveDestinationResults(f'top tourist attractions {destination}', destination)
             live = _filter_destination_candidates(result.get('local_results', []) or [], destination)
             if live:
-                return live, 'live_provider'
+                return [enrich_candidate_pricing(item) for item in live], 'live_provider'
         except Exception:
             pass
 
@@ -368,7 +369,7 @@ def _destination_candidates(current, snapshot=None):
     if _fallback_mode():
         fallback = _filter_destination_candidates(DESTINATIONS, destination)
         if fallback:
-            return fallback, 'fallback'
+            return [enrich_candidate_pricing(item) for item in fallback], 'fallback'
     return [], 'none'
 
 
