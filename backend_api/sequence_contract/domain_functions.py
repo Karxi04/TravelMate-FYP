@@ -913,11 +913,11 @@ def buildLowerCostAlternatives(flightOptions=None, hotelOptions=None, budgetEsti
             'data': hotel,
         })
 
-    # Always provide usable strategy alternatives, even without provider results.
+    # Activity savings need an actual priced replacement, not a discount on the same visit.
+    # Preserve the other existing strategy alternatives independently of that workflow.
     if _float(budget.get('overBy')) > 0 or not items:
         strategies = [
             ('transport', 'Use public transport / grouped rides', 'Replace repeated e-hailing trips with bus, rail or grouped transfers.', 45.0),
-            ('activity', 'Replace one premium activity', 'Swap the most expensive paid attraction for a free heritage, beach or garden activity.', 60.0),
             ('food', 'Use a local-food budget', 'Plan one hawker/local meal for each day instead of restaurant-only dining.', 35.0),
             ('schedule', 'Group nearby activities', 'Reduce transport cost by visiting nearby attractions in the same time block.', 25.0),
         ]

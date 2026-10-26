@@ -212,20 +212,21 @@ def test_b1b1_selected_quotes_and_applicability_are_preserved():
     assert missing['pendingExpenseCategories'] == ['flight', 'hotel']
 
 
-def test_lower_cost_action_updates_unit_price_in_group_terms(client, mock_traveller_auth):
+def test_lower_cost_action_cannot_discount_an_unchanged_activity(client, mock_traveller_auth):
     data = generateItinerary([], {}, trip([activity(unitPrice=10)],
                                          travellerId='test_traveller_uid'))
+    before = deepcopy(data)
     with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord', return_value=data), \
-         patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord',
-               side_effect=lambda _c, _id, changes: {**data, **changes}):
+         patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord') as update:
         response = client.post('/api/fr5/itineraries/fixture/lower-cost-alternatives/apply',
                                json={'type': 'activity', 'estimatedSavings': 6},
                                headers={'Authorization': 'Bearer valid_test_token'})
-    assert response.status_code == 200
-    saved = response.get_json()['itinerary']
-    assert saved['activities'][0]['unitPrice'] == 7
-    assert saved['budgetEstimate']['activities'] == 14
-    assert sum(day['estimatedCost'] for day in saved['dailySchedule']) == 14
+    assert response.status_code == 409
+    update.assert_not_called()
+    assert data == before
+    assert data['activities'][0]['unitPrice'] == 10
+    assert calculateBudget(data)['activities'] == 20
+    assert sum(day['estimatedCost'] for day in data['dailySchedule']) == 20
 
 
 def test_count_update_refreshes_daily_cost_without_reordering(client, mock_traveller_auth):

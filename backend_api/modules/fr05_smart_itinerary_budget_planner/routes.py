@@ -793,7 +793,11 @@ def lower_cost_alternatives(iid):
 
     budget = calculateBudget(current)
     alternatives = buildLowerCostAlternatives(flights, hotels, budget, current)
-    return jsonify({'ok': True, 'budget': budget, 'alternatives': alternatives})
+    return jsonify({
+        'ok': True, 'budget': budget, 'alternatives': alternatives,
+        'activityAlternativeStatus': 'priced_replacement_unavailable',
+        'activityAdvice': 'Consider a less expensive attraction only after checking its price, pricing unit and suitability. No comparable priced activity replacement is available here; savings cannot be calculated.',
+    })
 
 
 @bp.post('/itineraries/<iid>/lower-cost-alternatives/apply')
@@ -807,6 +811,14 @@ def apply_lower_cost_alternative(iid):
     payload = request.get_json(silent=True) or {}
     alternative = payload.get('alternative') if isinstance(payload.get('alternative'), dict) else payload
     kind = str(alternative.get('alternativeType') or alternative.get('type') or '').lower()
+    if kind in {'activity', 'activities'}:
+        # Client prices/provenance cannot establish a server-validated replacement.
+        return jsonify({
+            'ok': False,
+            'error': 'No validated priced activity replacement is available. Existing activity prices have not been changed.',
+            'code': 'ACTIVITY_REPLACEMENT_UNAVAILABLE',
+            'canApply': False,
+        }), 409
     data = alternative.get('data') if isinstance(alternative.get('data'), dict) else {}
     savings = float(alternative.get('estimatedSavings') or alternative.get('saving') or 0)
     patch = {'updatedAt': utc_now_iso(), 'lastAppliedLowerCostAlternative': alternative}
@@ -834,20 +846,6 @@ def apply_lower_cost_alternative(iid):
         if current_food <= 0:
             current_food = float(calculateBudget(current).get('food') or 0)
         patch['foodCost'] = max(0.0, current_food - savings)
-    elif kind in {'activity', 'activities'}:
-        activities = [dict(x) for x in current.get('activities', [])]
-        if activities:
-            count = traveller_count(current.get('travellerCount', 1))
-            expensive = max(activities, key=lambda x: activity_pricing(x, count)['effectiveCost'])
-            reduced = max(0.0, activity_pricing(expensive, count)['effectiveCost'] - savings)
-            if expensive.get('pricingUnit') in {'per_person', 'per_group'}:
-                divisor = count if expensive['pricingUnit'] == 'per_person' else 1
-                expensive['unitPrice'] = reduced / divisor
-            else:
-                expensive['estimatedCost'] = reduced
-            expensive['budgetNote'] = 'Lower-cost alternative applied'
-            patch['activities'] = activities
-            patch.update(refresh_activity_costs({**current, **patch}))
     elif kind == 'schedule':
         patch['transportCost'] = max(0.0, float(calculateBudget(current).get('transport') or 0) - savings)
         patch['scheduleOptimisationApplied'] = True
