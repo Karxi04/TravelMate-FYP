@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from copy import deepcopy
 import pytest
 
 from sequence_contract.domain_functions import (
@@ -6,7 +7,10 @@ from sequence_contract.domain_functions import (
     _constraint_plan,
     _candidate_order,
     generateItinerary,
+    _schedule_candidate,
+    _activity_opening,
 )
+from modules.fr05_smart_itinerary_budget_planner.routes import _activity_from_destination
 
 
 def _activity(index, **changes):
@@ -121,6 +125,7 @@ def test_scenario_08_split_opening_periods():
     res = _opening_window('09:00 - 13:00, 14:00 - 18:00', date(2026, 11, 24))
     assert res['status'] == 'open'
     assert res['window'] == (540, 1080)
+    assert res['periods'] == [(540, 780), (840, 1080)]
 
 
 # 9. Overnight operating hours
@@ -135,7 +140,7 @@ def test_scenario_10_genuine_24_hour_schedule():
     for text in ('Open 24 hours', '24 hours', 'open all day', '24/7', '24-hour'):
         res = _opening_window(text, date(2026, 11, 24))
         assert res['status'] == 'open'
-        assert res['window'] == (0, 1439)
+        assert res['window'] == (0, 1440)
 
 
 # 11. Empty opening-hours field
@@ -178,6 +183,9 @@ def test_scenario_15_unknown_hours_candidates_not_falsely_marked_closed_all_trip
     # Both are eligible and should be scheduled within the 1-day planning window
     assert planned['scheduledActivityCount'] == 2
     assert all(a['openingHoursStatus'] == 'unknown' for a in planned['activities'])
+    assert planned['provisionalActivityCount'] == 2
+    assert all(a['scheduleFeasibility'] == 'provisional' for a in planned['activities'])
+    assert all(any('Provisional' in note for note in a['scheduleNotes']) for a in planned['activities'])
     assert planned['unscheduledActivityCount'] == 0
 
 
@@ -222,7 +230,8 @@ def test_scenario_17_travel_time_and_activity_duration_constraints_remain_active
     assert planned['scheduledActivityCount'] < 5
     assert planned['unscheduledActivityCount'] > 0
     for u in planned['unscheduledSuggestions']:
-        assert u['unscheduledReason'] == 'Could not fit within available time, travel, and opening-hour constraints.'
+        assert u['unscheduledReason'].startswith('Could not fit within available time, travel, and opening-hour constraints.')
+        assert 'unverified' in u['unscheduledReason']
 
 
 # 18. Existing weather and geographic restrictions remain active
@@ -287,3 +296,150 @@ def test_scenario_20_historical_stored_itinerary_snapshots_remain_untouched():
     # Verify reading the snapshot does not mutate stored historical fields
     assert snapshot['activities'][0]['openingHoursStatus'] == 'historical_status_unchanged'
     assert snapshot['activities'][0]['scheduledStartTime'] == '09:00'
+
+
+@pytest.mark.parametrize('name,hours,late_start', [
+    ('Wonderfood Museum-like', '09:00-18:00', 17 * 60 + 16),
+    ('Pinang Peranakan Mansion-like', '09:30-17:00', 19 * 60 + 9),
+])
+def test_reported_museum_hours_reject_late_visits(name, hours, late_start):
+    activity = _activity(1, activityName=name, openingHours=hours)
+    rejected, reason = _schedule_candidate(activity, None, late_start, date(2026, 11, 24), 21 * 60)
+    assert rejected is None
+    assert 'opening hours' in reason
+    planned = generateItinerary([], {}, _trip(activities=[activity]))
+    visit = planned['activities'][0]
+    assert visit['scheduleFeasibility'] == 'feasible_with_reported_hours'
+    assert visit['scheduledEndTime'] <= ('18:00' if 'Wonderfood' in name else '17:00')
+    assert visit['openingHoursEvidence']['freshness'] == 'unverified'
+
+
+@pytest.mark.parametrize('hours', ['', 'Closed now', 'Closed · Opens 9 am Mon', 'Closes at 6 pm'])
+def test_unknown_hours_remain_available_but_explicitly_provisional(hours):
+    planned = generateItinerary([], {}, _trip(activities=[_activity(1, openingHours=hours)]))
+    assert planned['scheduledActivityCount'] == 1
+    assert planned['provisionalActivityCount'] == 1
+    visit = planned['activities'][0]
+    assert visit['scheduleFeasibility'] == 'provisional'
+    assert any('Confirm with the venue' in note for note in visit['scheduleNotes'])
+    assert not any('Scheduled before' in note for note in visit['scheduleNotes'])
+
+
+def test_split_periods_are_used_for_actual_scheduling_after_lunch_shift():
+    activity = _activity(1, openingHours='09:00-12:00, 14:00-18:00',
+                         providerDurationMinutes=90)
+    visit, reason = _schedule_candidate(activity, None, 11 * 60, date(2026, 11, 24), 21 * 60)
+    assert reason is None
+    assert (visit['_startMinutes'], visit['_endMinutes']) == (840, 930)
+    too_short = {**activity, 'openingHours': '09:00-09:45, 14:00-14:45'}
+    assert _schedule_candidate(too_short, None, 9 * 60, date(2026, 11, 24), 21 * 60)[0] is None
+
+
+@pytest.mark.parametrize('weekly', [
+    {'tuesday': ['09:30-12:00', '14:00-17:00']},
+    {'weekday_text': ['Monday: Closed', 'Tuesday: 09:30-12:00, 14:00-17:00']},
+    {'periods': [
+        {'open': {'day': 2, 'time': '0930'}, 'close': {'day': 2, 'time': '1200'}},
+        {'open': {'day': 2, 'time': '1400'}, 'close': {'day': 2, 'time': '1700'}},
+    ]},
+])
+def test_structured_weekly_evidence_survives_fr05_conversion_and_overrides_status(weekly):
+    raw = {'destinationId': 'museum', 'title': 'Museum', 'openingHours': 'Closed now',
+           'operating_hours': weekly, 'openingHoursSource': 'fixture_venue_timetable',
+           'openingHoursUpdatedAt': '2026-10-20T10:00:00+08:00'}
+    original = deepcopy(raw)
+    activity = _activity_from_destination(raw, 0)
+    evidence = _activity_opening(activity, date(2026, 11, 24))
+    assert evidence['periods'] == [(570, 720), (840, 1020)]
+    assert evidence['provisional'] is False
+    visit, _ = _schedule_candidate(activity, None, 14 * 60, date(2026, 11, 24), 21 * 60)
+    assert visit['scheduleFeasibility'] == 'feasible_with_reported_hours'
+    assert visit['openingHoursEvidence']['field'] == 'operating_hours'
+    assert visit['openingHoursEvidence']['source'] == 'fixture_venue_timetable'
+    assert visit['openingHoursEvidence']['updatedAt'] == raw['openingHoursUpdatedAt']
+    assert raw == original
+
+
+def test_date_specific_ordering_uses_weekday_closing_time():
+    late = _activity(1, operating_hours={'tuesday': '09:00-21:00'})
+    early = _activity(2, openingHours='Closed now', operating_hours={'tuesday': '09:30-17:00'})
+    ordered = _candidate_order([late, early], None, {}, False, date(2026, 11, 24))
+    assert ordered[0]['activityId'] == 'act_2'
+
+
+@pytest.mark.parametrize('weekly', [
+    {'monday': '20:00-02:00', 'tuesday': 'Closed'},
+    {'periods': [{'open': {'day': 1, 'time': '2000'},
+                  'close': {'day': 2, 'time': '0200'}}]},
+])
+def test_overnight_carry_belongs_to_previous_opening_day(weekly):
+    activity = _activity(1, operating_hours=weekly, providerDurationMinutes=30)
+    early, _ = _schedule_candidate(activity, None, 60, date(2026, 11, 24), 180)
+    assert early is not None
+    assert (early['_startMinutes'], early['_endMinutes']) == (60, 90)
+    assert _schedule_candidate(activity, None, 180, date(2026, 11, 24), 21 * 60)[0] is None
+    if 'periods' in weekly:
+        assert _activity_opening(activity, date(2026, 11, 25))['status'] == 'closed'
+    evening, _ = _schedule_candidate(activity, None, 20 * 60, date(2026, 11, 23), 21 * 60)
+    assert evening is not None and evening['_startMinutes'] == 1200
+
+
+def test_explicit_permanent_closure_overrides_weekly_hours_and_carry():
+    activity = _activity(1, openingHours='Permanently closed',
+                         operating_hours={'monday': '20:00-02:00', 'tuesday': '09:00-18:00'})
+    planned = generateItinerary([], {}, _trip(activities=[activity]))
+    assert planned['scheduledActivityCount'] == 0
+    assert 'closed on all trip days' in planned['unscheduledSuggestions'][0]['unscheduledReason']
+
+
+def test_stale_hours_still_constrain_times_but_visit_remains_provisional():
+    activity = _activity(1, openingHours='09:00-17:00', openingHoursStale=True)
+    visit = generateItinerary([], {}, _trip(activities=[activity]))['activities'][0]
+    assert visit['scheduleFeasibility'] == 'provisional'
+    assert visit['openingHoursEvidence']['freshness'] == 'reported_stale'
+    assert _schedule_candidate(activity, None, 17 * 60, date(2026, 11, 24), 21 * 60)[0] is None
+
+
+def test_unknown_and_known_scheduling_preserve_input_duration_travel_and_cost():
+    trip = _trip(activities=[
+        _activity(1, openingHours='09:00-18:00', providerDurationMinutes=60),
+        _activity(2, openingHours='', providerDurationMinutes=60,
+                  providerTravelDurationMinutes=20, travelTimeSource='provider'),
+    ])
+    original = deepcopy(trip)
+    planned = generateItinerary([], {}, trip)
+    assert trip == original
+    first, second = planned['activities']
+    assert second['travelDurationMinutes'] == 20
+    assert first['recommendedDurationMinutes'] == second['recommendedDurationMinutes'] == 60
+    assert planned['dailySchedule'][0]['estimatedCost'] == 40
+    assert planned['dailySchedule'][0]['estimatedMinutes'] == 140
+
+
+@pytest.mark.parametrize('hours', [
+    {'tuesday': '09:30-17:00'},
+    'Tuesday: 09:30-17:00; Wednesday: Closed',
+    '09:30-17:00',
+])
+def test_separate_hours_field_is_not_lost_behind_closed_now(hours):
+    activity = _activity_from_destination({
+        'title': 'Museum', 'openingHours': 'Closed now', 'hours': hours,
+    }, 0)
+    opening = _activity_opening(activity, date(2026, 11, 24))
+    assert opening['periods'] == [(570, 1020)]
+    assert opening['evidence']['field'] == 'hours'
+    assert opening['provisional'] is False
+
+
+def test_weekday_range_closure_and_invalid_equal_clock_are_not_open_windows():
+    assert _opening_window('Monday-Friday: Closed; Saturday: 09:00-18:00', date(2026, 11, 23))['status'] == 'closed'
+    assert _opening_window('09:00-09:00', date(2026, 11, 24))['status'] == 'unknown'
+
+
+def test_malformed_structured_periods_are_provisional_not_all_day_open():
+    activity = _activity(1, opening_hours={'periods': [
+        {'open': {'day': 2, 'time': '0900'}, 'close': {'day': 2, 'time': '9960'}},
+    ]})
+    visit = generateItinerary([], {}, _trip(activities=[activity]))['activities'][0]
+    assert visit['openingHoursStatus'] == 'unknown'
+    assert visit['scheduleFeasibility'] == 'provisional'

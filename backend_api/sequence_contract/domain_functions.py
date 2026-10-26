@@ -1022,6 +1022,46 @@ def _opening_window(opening_hours, day_date=None):
             day_date = None
 
     value = opening_hours
+    if isinstance(value, dict) and isinstance(value.get('periods'), list):
+        periods = []
+        try:
+            if day_date is None:
+                raise ValueError('A trip weekday is required')
+            for period in value['periods']:
+                opened, closed = period['open'], period.get('close')
+                if not closed:
+                    if len(value['periods']) == 1 and opened == {'day': 0, 'time': '0000'}:
+                        return {'status': 'open', 'window': (0, 1440),
+                                'periods': [(0, 1440)], 'text': str(value)}
+                    raise ValueError('Closing time unavailable')
+                open_day, close_day = int(opened['day']), int(closed['day'])
+                if not (0 <= open_day <= 6 and 0 <= close_day <= 6):
+                    raise ValueError('Invalid weekday')
+                start_text, end_text = str(opened['time']), str(closed['time'])
+                if not all(re.fullmatch(r'\d{4}', clock) for clock in (start_text, end_text)):
+                    raise ValueError('Invalid clock')
+                start = _parse_time_minutes(start_text[:2] + ':' + start_text[2:])
+                end = _parse_time_minutes(end_text[:2] + ':' + end_text[2:])
+                if start is None or end is None:
+                    raise ValueError('Invalid clock')
+                end += ((close_day - open_day) % 7) * 1440
+                if end <= start:
+                    raise ValueError('Invalid period')
+                if open_day == (day_date.weekday() + 1) % 7:
+                    periods.append((start, end))
+        except (KeyError, TypeError, ValueError):
+            return {'status': 'unknown', 'window': None, 'text': str(value)}
+        if periods:
+            return {'status': 'open', 'window': (min(s for s, _ in periods), max(e for _, e in periods)),
+                    'periods': sorted(periods), 'text': str(value)}
+        # A nonempty structured weekly periods list has no new opening that day.
+        # The previous day's overnight tail is resolved by _activity_opening.
+        return {'status': 'closed' if value['periods'] else 'unknown',
+                'window': None, 'text': str(value)}
+    if isinstance(value, dict) and isinstance(value.get('weekday_text'), list):
+        value = '\n'.join(str(line) for line in value['weekday_text'])
+    if isinstance(value, list):
+        value = '\n'.join(str(line) for line in value)
     if isinstance(value, dict):
         if day_date and hasattr(day_date, 'strftime'):
             target_day = day_date.strftime('%A').lower()
@@ -1035,6 +1075,9 @@ def _opening_window(opening_hours, day_date=None):
             value = val if val is not None else ''
         else:
             value = value.get('default') or ''
+
+    if isinstance(value, list):
+        value = ', '.join(str(period) for period in value)
 
     text = _text(value).strip()
     if not text:
@@ -1060,7 +1103,7 @@ def _opening_window(opening_hours, day_date=None):
     eval_text = text
     if target_day:
         day_line_match = re.search(
-            rf'\b(?:{target_day}|{target_day[:3]})\b[ \t]*[:\-–][ \t]*([^\r\n;]+)',
+            rf'\b(?:{target_day}|{target_day[:3]})\b[ \t]*(?::|[\-–](?=[ \t]*(?:\d|closed\b|open\b)))[ \t]*([^\r\n;]+)',
             text, re.IGNORECASE,
         )
         if day_line_match:
@@ -1096,13 +1139,18 @@ def _opening_window(opening_hours, day_date=None):
 
     eval_lowered = eval_text.lower()
 
+    # A next-opening/closing snippet is not a recurring daily timetable.
+    if re.search(r'\b(?:opens|closes)\b', eval_lowered):
+        return {'status': 'unknown', 'window': None, 'text': text}
+
     # 3. Explicit standalone closure
     if re.match(r'^\s*closed\.?\s*$', eval_lowered):
         return {'status': 'closed', 'window': None, 'text': text}
 
     # 4. 24-hour / all day schedule
     if any(k in eval_lowered for k in ('open all day', '24 hours', '24 hour', '24/7', '24-hour', 'open 24 hours')):
-        return {'status': 'open', 'window': (0, 24 * 60 - 1), 'text': text}
+        return {'status': 'open', 'window': (0, 24 * 60),
+                'periods': [(0, 24 * 60)], 'text': text}
 
     # 5. Structured time range (handles split hours & overnight hours)
     time_range_pattern = re.compile(
@@ -1117,16 +1165,82 @@ def _opening_window(opening_hours, day_date=None):
             s = _parse_time_minutes(m.group(1))
             e = _parse_time_minutes(m.group(2))
             if s is not None and e is not None:
-                if e <= s:
+                if e == s:
+                    return {'status': 'unknown', 'window': None, 'text': text}
+                if e < s:
                     e += 24 * 60
                 parsed_windows.append((s, e))
+            else:
+                return {'status': 'unknown', 'window': None, 'text': text}
         if parsed_windows:
             start = min(w[0] for w in parsed_windows)
             end = max(w[1] for w in parsed_windows)
-            return {'status': 'open', 'window': (start, end), 'text': text}
+            # The envelope is retained for legacy consumers/order only, never feasibility.
+            return {'status': 'open', 'window': (start, end),
+                    'periods': sorted(parsed_windows), 'text': text}
 
     # 6. Default to unknown (e.g. transient status 'Closed · Opens ...', 'Currently closed', 'Open now', malformed)
     return {'status': 'unknown', 'window': None, 'text': text}
+
+
+def _activity_opening(activity, day_date=None):
+    """Resolve supplied timetable evidence, not live opening verification."""
+    import re
+    from datetime import timedelta
+    if isinstance(day_date, str):
+        day_date = date.fromisoformat(day_date)
+    raw = activity.get('openingHours') or activity.get('hours') or ''
+    permanent = (
+        activity.get('permanently_closed') is True
+        or activity.get('business_status') == 'CLOSED_PERMANENTLY'
+        or bool(re.search(r'\b(?:permanently\s+closed|closed\s+permanently)\b', str(raw), re.I))
+    )
+    field, value = 'openingHours', raw
+    # A weekly timetable takes precedence over a transient search-result label.
+    for key in ('operating_hours', 'opening_hours', 'openingHours', 'hours'):
+        candidate = activity.get(key)
+        weekly_text = isinstance(candidate, str) and re.search(
+            r'\b(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b\s*:',
+            candidate, re.I)
+        structured = isinstance(candidate, dict) and any(
+            str(key).lower() in {'monday', 'tuesday', 'wednesday', 'thursday',
+                                'friday', 'saturday', 'sunday', 'default', 'periods', 'weekday_text'}
+            for key in candidate)
+        if candidate and (structured or isinstance(candidate, list) or weekly_text):
+            field, value = key, candidate
+            break
+    else:
+        # A separate supplied range is stronger evidence than a status snippet.
+        if _opening_window(raw, day_date)['status'] == 'unknown':
+            for key in ('operating_hours', 'opening_hours', 'hours'):
+                candidate = activity.get(key)
+                if candidate and _opening_window(candidate, day_date)['status'] != 'unknown':
+                    field, value = key, candidate
+                    break
+    opening = _opening_window(value, day_date)
+    if permanent:
+        opening = {'status': 'closed', 'window': None, 'text': str(raw)}
+    elif day_date:
+        # An overnight period belongs to its opening weekday, including its tail
+        # after midnight on the following day (even if that day has no new opening).
+        previous = _opening_window(value, day_date - timedelta(days=1))
+        carry = [(0, end - 1440) for _, end in previous.get('periods', []) if end > 1440]
+        if carry:
+            periods = sorted(carry + opening.get('periods', []))
+            opening = {**opening, 'status': 'open', 'periods': periods,
+                       'window': (periods[0][0], max(end for _, end in periods))}
+    stale = activity.get('openingHoursStale') is True
+    transient = isinstance(value, str) and bool(re.search(r'\b(?:now|currently)\b', value, re.I))
+    return {
+        **opening,
+        'provisional': opening['status'] == 'unknown' or stale or transient,
+        'evidence': {
+            'field': field,
+            'source': activity.get('openingHoursSource') or 'unspecified',
+            'updatedAt': activity.get('openingHoursUpdatedAt') or activity.get('openingHoursFetchedAt'),
+            'freshness': 'reported_stale' if stale else 'unverified',
+        },
+    }
 
 
 def _activity_duration(activity):
@@ -1203,11 +1317,11 @@ def _indoor(activity):
     return bool(activity.get('indoor')) or any(x in label for x in ('indoor', 'museum', 'mall', 'gallery', 'food', 'restaurant'))
 
 
-def _candidate_order(remaining, previous, weather, preserve_order):
+def _candidate_order(remaining, previous, weather, preserve_order, day_date=None):
     if preserve_order:
         return list(remaining)
     def key(item):
-        opening = _opening_window(item.get('openingHours'))
+        opening = _activity_opening(item, day_date)
         close_time = opening['window'][1] if opening.get('window') else 24 * 60
         rain_rank = 0 if weather.get('heavyRainLikely') and _indoor(item) else 1
         distance = _distance_km(previous, item) if previous else None
@@ -1218,20 +1332,24 @@ def _candidate_order(remaining, previous, weather, preserve_order):
 def _schedule_candidate(activity, previous, current_minutes, day_date, window_end):
     duration, duration_source = _activity_duration(activity)
     travel_minutes, distance, travel_source = _travel_leg(previous, activity)
-    opening = _opening_window(activity.get('openingHours'), day_date)
+    opening = _activity_opening(activity, day_date)
     if opening['status'] == 'closed':
         return None, 'Attraction is closed on this trip day.'
-    start = current_minutes + travel_minutes
-    if opening.get('window'):
-        start = max(start, opening['window'][0])
-    # Reserve a simple lunch/rest block instead of scheduling continuously through midday.
-    if start < 13 * 60 + 30 and start + duration > 12 * 60 + 30:
-        start = 13 * 60 + 30
-    end = start + duration
-    if opening.get('window') and end > opening['window'][1]:
-        return None, 'Could not fit within the attraction opening hours.'
-    if end > window_end:
-        return None, 'Could not fit within the daily planning window.'
+    arrival = current_minutes + travel_minutes
+    periods = opening.get('periods') or [(0, 1440)]
+    selected_period = None
+    for period_start, period_end in periods:
+        start = max(arrival, period_start)
+        # Lunch/rest shifting must still fit wholly inside one open period.
+        if start < 13 * 60 + 30 and start + duration > 12 * 60 + 30:
+            start = 13 * 60 + 30
+        end = start + duration
+        if end <= min(period_end, window_end):
+            selected_period = (period_start, period_end)
+            break
+    if selected_period is None:
+        return None, ('Could not fit within the attraction opening hours.'
+                      if opening.get('periods') else 'Could not fit within the daily planning window.')
     return ({
         **activity,
         'recommendedDurationMinutes': duration,
@@ -1242,6 +1360,9 @@ def _schedule_candidate(activity, previous, current_minutes, day_date, window_en
         'travelDistanceKm': distance,
         'travelTimeSource': travel_source,
         'openingHoursStatus': opening['status'],
+        'openingHoursEvidence': opening['evidence'],
+        'scheduleFeasibility': 'provisional' if opening['provisional'] else 'feasible_with_reported_hours',
+        '_openingPeriodEnd': selected_period[1] if opening.get('periods') else None,
         '_startMinutes': start,
         '_endMinutes': end,
     }, None)
@@ -1287,7 +1408,7 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
                 break
             chosen = None
             reason_by_id = {}
-            for candidate in _candidate_order(eligible, previous, weather, preserve_order):
+            for candidate in _candidate_order(eligible, previous, weather, preserve_order, day_date):
                 planned, reason = _schedule_candidate(candidate, previous, current, day_date, window_end)
                 if planned:
                     chosen = planned
@@ -1308,9 +1429,13 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
             notes = []
             if previous and chosen.get('travelTimeSource') == 'estimated_haversine':
                 notes.append('Grouped with a nearby attraction to reduce estimated travel time.')
-            opening = _opening_window(chosen.get('openingHours'), day_date)
-            if opening.get('window') and opening['window'][1] <= 18 * 60:
-                notes.append(f"Scheduled before closing at {_format_time(opening['window'][1])}.")
+            period_end = chosen.pop('_openingPeriodEnd')
+            if chosen['scheduleFeasibility'] == 'provisional':
+                notes.append('Provisional visit time: opening hours are unknown, transient or stale. Confirm with the venue before visiting.')
+            else:
+                notes.append('Fits one reported opening period; current hours and special-date closures are not verified.')
+            if period_end is not None and period_end <= 18 * 60:
+                notes.append(f"Scheduled before the reported period closes at {_format_time(period_end)}.")
             if weather.get('heavyRainLikely'):
                 if _indoor(chosen):
                     notes.append('Indoor activity prioritised because heavy rain is forecast for this date.')
@@ -1346,16 +1471,24 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
 
     unscheduled = []
     for item in remaining:
-        all_closed = all(_opening_window(item.get('openingHours'), start_date.fromordinal(start_date.toordinal() + index))['status'] == 'closed' for index in range(days))
+        evidence = [_activity_opening(item, start_date.fromordinal(start_date.toordinal() + index)) for index in range(days)]
+        all_closed = all(opening['status'] == 'closed' for opening in evidence)
+        uncertain = any(opening['provisional'] for opening in evidence)
+        reason = 'Attraction is closed on all trip days.' if all_closed else 'Could not fit within available time, travel, and opening-hour constraints.'
+        if uncertain and not all_closed:
+            reason += ' Opening hours are unverified; confirm with the venue before arranging a visit.'
         unscheduled.append({
             **item,
-            'unscheduledReason': 'Attraction is closed on all trip days.' if all_closed else 'Could not fit within available time, travel, and opening-hour constraints.',
+            'unscheduledReason': reason,
+            'scheduleFeasibility': 'unscheduled',
+            'openingHoursEvidence': evidence[0]['evidence'],
         })
     itinerary.update({
         'activities': scheduled,
         'unscheduledSuggestions': unscheduled,
         'scheduledActivityCount': len(scheduled),
         'unscheduledActivityCount': len(unscheduled),
+        'provisionalActivityCount': sum(item['scheduleFeasibility'] == 'provisional' for item in scheduled),
         'tripDays': days,
         'paceApplied': pace,
         'dailyPlanningWindow': {'startTime': _format_time(window_start), 'endTime': _format_time(window_end)},

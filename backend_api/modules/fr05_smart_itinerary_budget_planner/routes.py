@@ -322,6 +322,11 @@ def _activity_from_destination(item, index):
         'category': item.get('category') or item.get('type') or '',
         'description': item.get('description') or '',
         'openingHours': item.get('openingHours') or item.get('hours') or '',
+        **{key: item[key] for key in (
+            'operating_hours', 'opening_hours', 'hours', 'openingHoursSource',
+            'openingHoursUpdatedAt', 'openingHoursFetchedAt', 'openingHoursStale',
+            'permanently_closed', 'business_status',
+        ) if key in item},
         'indoor': bool(item.get('indoor', False)),
         **({'recommendedDurationMinutes': int(item.get('recommendedDurationMinutes') or 0)}
            if item.get('recommendedDurationMinutes') not in (None, '') else {}),
