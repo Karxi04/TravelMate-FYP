@@ -884,49 +884,79 @@ def compareBudget(budgetEstimate):
     return f"Within budget with RM {budget.get('remaining', 0):.2f} remaining."
 
 
+def _alternative_savings(kind, option, current):
+    """Compare only server-resolved MYR totals for the same priced scope."""
+    if not option.get('_validatedAlternative'):
+        return None
+    if isinstance(current.get(f'{kind}Cost'), bool) or isinstance(option.get('price'), bool):
+        return None
+    old = _float(current.get(f'{kind}Cost'), float('nan'))
+    new = _float(option.get('price'), float('nan'))
+    if not all(isfinite(value) and value > 0 for value in (old, new)):
+        return None
+    if current.get(f'{kind}Currency') != 'MYR' or option.get('currency') != 'MYR':
+        return None
+    if kind == 'flight':
+        if (current.get('travelMode') != 'flight'
+                or not current.get('flightPriceBasis')
+                or current['flightPriceBasis'] != option.get('priceBasis')
+                or (current.get('selectedFlight') or {}).get('travellerCount') != traveller_count(current.get('travellerCount'))
+                or option.get('travellerCount') != traveller_count(current.get('travellerCount'))):
+            return None
+    elif (current.get('accommodationChoice') != 'paid_hotel'
+          or not current.get('_hotelComparisonCriteria')
+          or current['_hotelComparisonCriteria'] != option.get('comparisonCriteria')):
+        return None
+    return round(old - new, 2) if new < old else None
+
+
 def buildLowerCostAlternatives(flightOptions=None, hotelOptions=None, budgetEstimate=None, itinerary=None):
     items = []
     current = itinerary or {}
     budget = budgetEstimate or calculateBudget(current)
-    current_flight = _float(current.get('flightCost'))
-    current_hotel = _float(current.get('hotelCost'))
 
     for flight in flightOptions or []:
         price = _float(flight.get('price'))
-        savings = max(0.0, current_flight - price) if current_flight else 0.0
+        savings = _alternative_savings('flight', flight, current)
         items.append({
             'alternativeType': 'flight',
-            'title': f"Lower-cost flight: {flight.get('airline', 'Flight')}",
-            'description': f"{flight.get('departureTime', '')} → {flight.get('arrivalTime', '')} • RM {price:.2f}",
-            'estimatedSavings': round(savings, 2),
-            'data': flight,
+            'title': f"{'Lower-cost flight' if savings is not None else 'Flight option'}: {flight.get('airline', 'Flight')}",
+            'description': (f"{flight.get('departureTime', '')} → {flight.get('arrivalTime', '')} • "
+                            + (f'RM {price:.2f}' if isfinite(price) and price > 0 else 'Price unavailable')
+                            + ('' if savings is not None else ' • Review through flight search; no comparable saving established.')),
+            **({'estimatedSavings': savings} if savings is not None else {}),
+            'isAdvisory': savings is None, 'canApply': savings is not None,
+            'data': {key: value for key, value in flight.items() if key != '_validatedAlternative'},
         })
 
     for hotel in hotelOptions or []:
         price = _float(hotel.get('price'))
-        savings = max(0.0, current_hotel - price) if current_hotel else 0.0
+        savings = _alternative_savings('hotel', hotel, current)
         items.append({
             'alternativeType': 'hotel',
-            'title': f"Lower-cost hotel: {hotel.get('name', 'Hotel')}",
-            'description': f"{hotel.get('roomName', 'Room')} • RM {price:.2f}",
-            'estimatedSavings': round(savings, 2),
-            'data': hotel,
+            'title': f"{'Lower-cost hotel' if savings is not None else 'Hotel option'}: {hotel.get('name', 'Hotel')}",
+            'description': (f"{hotel.get('roomName', 'Room')} • "
+                            + (f'RM {price:.2f}' if isfinite(price) and price > 0 else 'Price unavailable')
+                            + ('' if savings is not None else ' • Review through hotel selection; no comparable saving established.')),
+            **({'estimatedSavings': savings} if savings is not None else {}),
+            'isAdvisory': savings is None, 'canApply': savings is not None,
+            'data': {key: value for key, value in hotel.items() if key != '_validatedAlternative'},
         })
 
     # Activity savings need an actual priced replacement, not a discount on the same visit.
     # Preserve the other existing strategy alternatives independently of that workflow.
     if _float(budget.get('overBy')) > 0 or not items:
         strategies = [
-            ('transport', 'Use public transport / grouped rides', 'Replace repeated e-hailing trips with bus, rail or grouped transfers.', 45.0),
-            ('food', 'Use a local-food budget', 'Plan one hawker/local meal for each day instead of restaurant-only dining.', 35.0),
-            ('schedule', 'Group nearby activities', 'Reduce transport cost by visiting nearby attractions in the same time block.', 25.0),
+            ('transport', 'Consider public transport / grouped rides', 'Compare bus, rail or grouped-transfer fares. Savings are unknown without comparable prices.'),
+            ('food', 'Consider local-food options', 'Compare local meals with your planned meals. No priced meal replacement is available here.'),
+            ('schedule', 'Consider grouping nearby activities', 'Nearby visits may reduce travel, but travel costs have not been recalculated.'),
         ]
-        for kind, title, description, saving in strategies:
+        for kind, title, description in strategies:
             items.append({
                 'alternativeType': kind,
                 'title': title,
                 'description': description,
-                'estimatedSavings': saving,
+                'isAdvisory': True, 'canApply': False,
                 'data': {'strategy': kind},
             })
 

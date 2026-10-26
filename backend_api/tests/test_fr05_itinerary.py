@@ -34,7 +34,7 @@ def test_apply_lower_cost_alternative_not_found(client, mock_traveller_auth):
         assert res.status_code == 404
         assert res.get_json()['error'] == 'Itinerary not found'
 
-def test_apply_lower_cost_alternative_success(client, mock_traveller_auth):
+def test_apply_lower_cost_alternative_rejects_client_price_without_reference(client, mock_traveller_auth):
     sample_itinerary = {
         'id': 'itin_123',
         'travellerId': 'test_traveller_uid',
@@ -61,11 +61,8 @@ def test_apply_lower_cost_alternative_success(client, mock_traveller_auth):
                 'saving': 80.0
             }
         )
-        assert res.status_code == 200
-        data = res.get_json()
-        assert data['ok'] is True
-        assert data['itinerary']['flightCost'] == 120.0
-        assert 'budget' in data
+        assert res.status_code == 409
+        mock_update.assert_not_called()
 
 
 def test_trip_date_update_persists_when_no_attached_travel_conflicts(client, mock_traveller_auth):

@@ -133,7 +133,7 @@ def test_missing_price_budget_stays_incomplete_instead_of_becoming_affordable():
     assert before['completenessStatus'] == before['affordabilityStatus'] == 'incomplete'
 
 
-def test_provider_flight_and_hotel_options_keep_prices_provenance_and_savings():
+def test_raw_flight_and_hotel_options_keep_provenance_without_unvalidated_savings():
     flight = {'price': 120, 'currency': 'MYR', 'priceBasis': 'group_total',
               'source': 'fixture_quote', 'quoteId': 'flight-fixture'}
     hotel = {'price': 200, 'currency': 'MYR', 'quoteId': 'hotel-fixture', 'source': 'fixture_quote'}
@@ -142,9 +142,11 @@ def test_provider_flight_and_hotel_options_keep_prices_provenance_and_savings():
                                         {'flightCost': 150, 'hotelCost': 240})
     by_type = {item['alternativeType']: item for item in options}
     assert by_type['flight']['data'] == flight
-    assert by_type['flight']['estimatedSavings'] == 30
+    assert 'estimatedSavings' not in by_type['flight']
+    assert by_type['flight']['canApply'] is False
     assert by_type['hotel']['data'] == hotel
-    assert by_type['hotel']['estimatedSavings'] == 40
+    assert 'estimatedSavings' not in by_type['hotel']
+    assert by_type['hotel']['canApply'] is False
     assert [flight, hotel] == original
 
 
