@@ -157,6 +157,106 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     return status == 'unknown';
   }
 
+  bool _isVerifiedFree(Map<String, dynamic> activity) {
+    final cost = double.tryParse('${activity['estimatedCost'] ?? ''}') ?? 0.0;
+    final provenance = (activity['costProvenance'] ?? '').toString();
+    final status = (activity['selectionPriceStatus'] ?? '').toString();
+    final evidence = activity['pricingEvidence'] is Map
+        ? Map<String, dynamic>.from(activity['pricingEvidence'] as Map)
+        : null;
+    if (evidence != null && evidence['verified'] == true && cost == 0.0) {
+      return true;
+    }
+    if (status == 'verified' && cost == 0.0) return true;
+    if (provenance == 'verified_ticket' && cost == 0.0) return true;
+    return false;
+  }
+
+  bool _isPriceConditional(Map<String, dynamic> activity) {
+    final status = (activity['selectionPriceStatus'] ?? '').toString();
+    if (status == 'conditional') return true;
+    final evidence = activity['pricingEvidence'] is Map
+        ? Map<String, dynamic>.from(activity['pricingEvidence'] as Map)
+        : null;
+    if (evidence != null && evidence['applicability'] == 'conditional') {
+      return true;
+    }
+    return false;
+  }
+
+  bool _isPriceVerified(Map<String, dynamic> activity) {
+    if (_isVerifiedFree(activity)) return true;
+    final status = (activity['selectionPriceStatus'] ?? '').toString();
+    final provenance = (activity['costProvenance'] ?? '').toString();
+    final evidence = activity['pricingEvidence'] is Map
+        ? Map<String, dynamic>.from(activity['pricingEvidence'] as Map)
+        : null;
+    if (evidence != null &&
+        evidence['verified'] == true &&
+        evidence['applicability'] != 'conditional') {
+      return true;
+    }
+    return status == 'verified' || provenance == 'verified_ticket';
+  }
+
+  bool _isPriceUnverified(Map<String, dynamic> activity) {
+    if (_isVerifiedFree(activity) ||
+        _isPriceConditional(activity) ||
+        _isPriceVerified(activity)) {
+      return false;
+    }
+    final status = (activity['selectionPriceStatus'] ?? '').toString();
+    final provenance = (activity['costProvenance'] ?? '').toString();
+    final unit = (activity['pricingUnit'] ?? '').toString();
+    final issues = activity['pricingIssues'] as List? ?? const [];
+    if (status == 'unresolved' || status == 'unverified') return true;
+    if (issues.isNotEmpty) return true;
+    if (unit == 'unknown') return true;
+    if (provenance == 'legacy_estimate' || provenance == 'unverified') {
+      return true;
+    }
+    final costRaw = activity['estimatedCost'];
+    if (costRaw == null) return true;
+    if (provenance.isEmpty || provenance != 'verified_ticket') {
+      return true;
+    }
+    return false;
+  }
+
+  bool _isBudgetAwareApplied(Map<String, dynamic> t) {
+    if (t['budgetAwareSelection'] is Map) {
+      final bas = t['budgetAwareSelection'] as Map;
+      if (bas['applied'] == true) return true;
+    }
+    if (t['generationContext'] is Map) {
+      final gc = t['generationContext'] as Map;
+      if (gc['budgetAwareSelectionApplied'] == true) return true;
+    }
+    return false;
+  }
+
+  String _friendlyUnselectedReason(Map<String, dynamic> item) {
+    final rawReason =
+        (item['reason'] ?? item['unscheduledReason'] ?? '').toString();
+    final reason = rawReason.toLowerCase();
+    if (reason.contains('budget') || reason == 'known_budget_exceeded') {
+      return 'Exceeds remaining activity budget allowance.';
+    }
+    if (reason.contains('schedule') ||
+        reason.contains('opening') ||
+        reason == 'joint_schedule_infeasible') {
+      return 'Could not fit schedule or opening hours safely.';
+    }
+    if (reason.contains('price') || reason == 'unresolved_price') {
+      return 'Admission price unverified (deferred for confirmed places).';
+    }
+    if (reason.contains('score') || reason == 'lower_priority') {
+      return 'Lower match for selected pace and travel preferences.';
+    }
+    if (rawReason.isNotEmpty) return rawReason;
+    return 'Kept as suggestion for future visits.';
+  }
+
   List<String> _activityNotes(Map<String, dynamic> activity) {
     final notes = <String>[];
     final weather = (activity['weatherNote'] ?? '').toString();
@@ -174,6 +274,18 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             n.toLowerCase().contains('provisional'))) {
       notes.add(
           'Operating hours for the planned date are not confirmed. Confirm with the venue before visiting.');
+    }
+    if (_isPriceConditional(activity) &&
+        !notes.any((n) => n.toLowerCase().contains('tariff'))) {
+      notes.add(
+          'Admission tariff varies by visitor category or transport option. Verify before visiting.');
+    } else if (_isPriceUnverified(activity) &&
+        !notes.any((n) =>
+            n.toLowerCase().contains('admission') ||
+            n.toLowerCase().contains('ticket') ||
+            n.toLowerCase().contains('price'))) {
+      notes.add(
+          'Admission price is unverified. Check ticket prices before your visit.');
     }
     return notes.take(2).toList();
   }
@@ -1504,14 +1616,35 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     final cost = double.tryParse('${activity['estimatedCost'] ?? 0}') ?? 0;
     final notes = _activityNotes(activity);
     final isProvisional = _isProvisional(activity);
+    final isFree = _isVerifiedFree(activity);
+    final isConditional = _isPriceConditional(activity);
+    final isPriceUnverified = _isPriceUnverified(activity);
+    final isVerifiedPaid = _isPriceVerified(activity) && !isFree;
+
+    final showLeftNote = isProvisional || isPriceUnverified;
+    final leftNoteText = (isProvisional && isPriceUnverified)
+        ? 'Hours & price\nunverified'
+        : isProvisional
+            ? 'Hours\nunverified'
+            : 'Price\nunverified';
+
+    final semanticsHours = isProvisional ? ', Hours unverified' : '';
+    final semanticsPricing = isFree
+        ? ', Free admission'
+        : isConditional
+            ? ', Tariff conditional'
+            : isPriceUnverified
+                ? ', Price unverified'
+                : '';
+
     return Semantics(
       container: true,
       label:
-          '${_timeText(activity)}${isProvisional ? ' (Hours unverified)' : ''}, ${activity['activityName'] ?? 'Activity'}',
+          '${_timeText(activity)}$semanticsHours$semanticsPricing, ${activity['activityName'] ?? 'Activity'}',
       child: InkCard(
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SizedBox(
-            width: 62,
+            width: 66,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1525,13 +1658,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                       .titleSmall
                       ?.copyWith(color: AppColors.primaryStrong),
                 ),
-                if (isProvisional) ...[
+                if (showLeftNote) ...[
                   const SizedBox(height: 2),
                   Text(
-                    'Hours\nunverified',
+                    leftNoteText,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: AppColors.textSecondary,
-                          fontSize: 10,
+                          fontSize: 9.5,
                           fontWeight: FontWeight.w600,
                           height: 1.15,
                         ),
@@ -1561,11 +1694,30 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                     Wrap(
                         spacing: AppSpacing.xs,
                         runSpacing: AppSpacing.xxs,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           if (isProvisional)
                             const StatusChip(
                               text: 'Hours unverified',
                               tone: AppStatusTone.neutral,
+                            ),
+                          if (isFree)
+                            const StatusChip(
+                              text: 'Free admission',
+                              tone: AppStatusTone.success,
+                              icon: Icons.check_circle_outline_rounded,
+                            ),
+                          if (isConditional)
+                            const StatusChip(
+                              text: 'Tariff conditional',
+                              tone: AppStatusTone.neutral,
+                              icon: Icons.info_outline_rounded,
+                            ),
+                          if (isPriceUnverified)
+                            const StatusChip(
+                              text: 'Admission unverified',
+                              tone: AppStatusTone.neutral,
+                              icon: Icons.help_outline_rounded,
                             ),
                           if (category.isNotEmpty)
                             Text(category,
@@ -1573,7 +1725,19 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                           if (_durationText(activity).isNotEmpty)
                             Text(_durationText(activity),
                                 style: Theme.of(context).textTheme.bodySmall),
-                          if (cost > 0)
+                          if (isConditional && cost > 0)
+                            Text('~RM ${_money(cost)} tariff',
+                                style: Theme.of(context).textTheme.bodySmall)
+                          else if (isPriceUnverified && cost > 0)
+                            Text('~RM ${_money(cost)} estimate',
+                                style: Theme.of(context).textTheme.bodySmall)
+                          else if (isPriceUnverified && cost <= 0)
+                            Text('Price TBC',
+                                style: Theme.of(context).textTheme.bodySmall)
+                          else if (isVerifiedPaid && cost > 0)
+                            Text('RM ${_money(cost)} verified',
+                                style: Theme.of(context).textTheme.bodySmall)
+                          else if (!isFree && cost > 0)
                             Text('RM ${_money(cost)} estimated',
                                 style: Theme.of(context).textTheme.bodySmall),
                         ]),
@@ -1754,6 +1918,125 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         onPressed: busy ? null : addPlaces,
       ),
     ]);
+  }
+
+  Widget _budgetAwareTransparencyCard(Map<String, dynamic> t) {
+    final bas = t['budgetAwareSelection'] is Map
+        ? Map<String, dynamic>.from(t['budgetAwareSelection'] as Map)
+        : <String, dynamic>{};
+    final isProvisional = bas['isProvisional'] == true ||
+        activities.any((a) => _isPriceUnverified(a));
+    final rationale = (bas['selectionRationale'] ?? '').toString().trim();
+    final unselected = (bas['unselectedActivities'] as List? ?? const [])
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+
+    return InkCard(
+      key: const ValueKey('budget-aware-transparency-card'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.tune_rounded,
+                  size: AppSizes.icon, color: AppColors.primaryStrong),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  'Budget-aware itinerary',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              StatusChip(
+                text: isProvisional ? 'Provisional' : 'Verified',
+                tone: isProvisional
+                    ? AppStatusTone.neutral
+                    : AppStatusTone.success,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            isProvisional
+                ? 'Planned with available cost information. Some admission fees remain unverified. Actual venue admission and seasonal rates may vary.'
+                : 'Planned considering your travel style, schedule feasibility, and verified pricing information.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.textSecondary,
+                  height: 1.35,
+                ),
+          ),
+          if (rationale.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              rationale,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontStyle: FontStyle.italic,
+                    color: AppColors.textSecondary,
+                  ),
+            ),
+          ],
+          if (unselected.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            ExpansionTile(
+              key: const ValueKey('unselected-activities-expansion'),
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              title: Text(
+                'Other places considered (${unselected.length})',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              children: [
+                for (final item in unselected)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.info_outline,
+                            size: 16, color: AppColors.textSecondary),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                (item['activityName'] ?? 'Suggested place')
+                                    .toString(),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                _friendlyUnselectedReason(item),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: AppColors.textSecondary),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Unresolved admission costs are not guaranteed within the initial budget. Review venue prices before confirming travel plans.',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: AppColors.textSecondary,
+                  fontStyle: FontStyle.italic,
+                ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _budgetSection(Map<String, dynamic> t) {
@@ -2027,6 +2310,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               _generationState(t),
             ],
             if (!generating) ...[
+              if (_isBudgetAwareApplied(t)) ...[
+                const SizedBox(height: AppSpacing.md),
+                _budgetAwareTransparencyCard(t),
+              ],
               const SizedBox(height: AppSpacing.lg),
               _dayNavigation(t),
               const SizedBox(height: AppSpacing.sm),

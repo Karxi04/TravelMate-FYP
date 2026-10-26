@@ -35,7 +35,7 @@ class BudgetBreakdown extends StatelessWidget {
       if (over) Text('Known costs exceed the budget.'),
       if (!budget.isComplete)
         const Text(
-          'Some expenses or pricing details are unresolved. The subtotal does not establish the full trip cost.',
+          'Some expenses or pricing details are unresolved. The subtotal does not establish the full trip cost, and remaining balance cannot be guaranteed.',
         )
       else if (!over)
         Text('Estimated balance: ${money(limit - budget.totalCost)}'),
