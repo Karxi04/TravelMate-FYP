@@ -5,6 +5,7 @@ from statistics import median
 from time import perf_counter
 from unittest.mock import patch
 import json
+import platform
 
 import pytest
 
@@ -68,6 +69,8 @@ def scenarios():
             gps_coordinates={'latitude': 3.14, 'longitude': 101.69}), activity('local', 80, 80, 'per_group')], trip()),
         'high_relevance_expensive': ([activity('relevant', 90, 99, 'per_group'), activity('low_relevance', 20, 5, 'per_group')], trip()),
         'very_low_relevance_cheap': ([activity('relevant', 40, 95), activity('low_relevance', 20, 1, 'per_group')], trip()),
+        'greedy_trap': ([activity('A', 100, 90, 'per_group'), activity('B', 50, 65, 'per_group'),
+                         activity('C', 50, 64, 'per_group')], trip(budgetLimit=255)),
     }
 
 
@@ -82,7 +85,7 @@ def test_required_offline_scenarios_are_deterministic_and_non_mutating(name):
     assert first['candidateCount'] == len(candidates)
     assert len(first['selectedActivities']) + len(first['unselectedActivities']) == len(candidates)
     budget = first['budget']
-    assert budget['knownEstimatedTotal'] == sum(budget['categoryTotals'].values())
+    assert budget['knownEstimatedTotal'] == sum(budget['knownCategoryTotals'].values())
     assert budget['knownEstimatedTotal'] <= data['budgetLimit']
 
 
@@ -115,11 +118,36 @@ def test_real_registry_free_admission_is_accepted_without_new_price_truth():
 def test_unknown_prices_remain_none_and_do_not_create_a_free_complete_plan():
     candidates, data = scenarios()['all_unknown']
     result = select_budget_aware_activities(candidates, data)
-    assert result['selectedActivities'] == []
+    assert len(result['selectedActivities']) == 2
     assert result['budget']['status'] == 'provisional'
     assert result['budget']['unresolvedExpenseCategories'] == ['activities']
-    assert all(item['groupCost'] is None and item['reasonCode'] == 'unresolved_price'
-               for item in result['unselectedActivities'])
+    assert all(item['groupCost'] is None for item in result['selectionRationale'])
+    assert result['budget']['categoryTotals']['activities'] is None
+    assert result['budget']['unresolvedSelectedActivityCount'] == 2
+    assert result['budget']['knownActivitySubtotal'] == 0
+    assert result['budget']['completenessStatus'] == 'incomplete'
+    assert result['selectionMode'] == 'provisional_unpriced_fallback'
+    assert result['schedule'][0]['estimatedCost'] is None
+
+
+def test_unknown_price_destination_retains_a_useful_provisional_plan():
+    result = select_budget_aware_activities([unknown('first', score=90), unknown('second', score=75)], trip())
+    assert len(result['selectedActivities']) == 2
+    assert result['budget']['status'] == 'provisional'
+    assert all(entry['groupCost'] is None for entry in result['selectionRationale'])
+
+
+def test_bounded_replacement_improves_the_reproducible_greedy_trap():
+    candidates = [activity('A', 100, 90, 'per_group'), activity('B', 50, 65, 'per_group'),
+                  activity('C', 50, 64, 'per_group')]
+    result = select_budget_aware_activities(candidates, trip(budgetLimit=255))
+    assert {item['activityId'] for item in result['selectedActivities']} == {'B', 'C'}
+    assert result['selectedRelevanceTotal'] == 129
+    assert result['budget']['knownActivitySubtotal'] == 100
+    assert result['initialGreedyRelevanceTotal'] == 90
+    assert result['selectedAverageRelevance'] == 64.5
+    assert result['localRepairImproved'] is True
+    assert result['unselectedActivities'][0]['reasonCode'] == 'local_quality_replacement'
 
 
 @pytest.mark.parametrize('evidence', [None, ['malformed'], {'applicability': 'conditional', 'eligibility': 'MyKad'},
@@ -129,7 +157,8 @@ def test_per_person_eligibility_cannot_be_assumed(evidence):
     item = activity('uncertain', pricingEvidence=evidence)
     result = select_budget_aware_activities([item], trip())
     assert result['knownPricedCandidateCount'] == 0
-    assert result['unselectedActivities'][0]['groupCost'] is None
+    assert result['selectionRationale'][0]['groupCost'] is None
+    assert result['budget']['status'] == 'provisional'
 
 
 @pytest.mark.parametrize('changes', [{'currency': 'USD'}, {'unitPrice': -1}, {'unitPrice': True},
@@ -138,8 +167,8 @@ def test_per_person_eligibility_cannot_be_assumed(evidence):
                                    {'overlapsAllowance': True}, {'unitPrice': 0, 'priceSourceUrl': ''}])
 def test_uncertain_invalid_or_overlapping_prices_are_not_used_as_budget_space(changes):
     result = select_budget_aware_activities([activity('invalid', **changes)], trip())
-    assert result['selectedActivities'] == []
-    assert result['unselectedActivities'][0]['groupCost'] is None
+    assert result['selectionRationale'][0]['groupCost'] is None
+    assert result['budget']['status'] == 'provisional'
 
 
 def test_personality_relevance_wins_over_cheapest_first():
@@ -279,6 +308,8 @@ def test_offline_runtime_benchmark(capsys):
         fixtures[f'pool_{size}'] = ([activity(f'p{i:02}', i % 5, 100-i*2, 'per_group',
                                               gps_coordinates={'latitude': 5.414+i*0.0001, 'longitude': 100.329})
                                     for i in range(size)], trip(endDate='2026-11-03', budgetLimit=2000))
+    fixtures['bounded_repair_pool_20'] = ([activity('A', 100, 90, 'per_group')]
+        + [activity(f'b{i:02}', 50, 65-i, 'per_group') for i in range(19)], trip(budgetLimit=255))
     rows = []
     for name, (candidates, data) in fixtures.items():
         times = []
@@ -298,9 +329,98 @@ def test_offline_runtime_benchmark(capsys):
                      'selectedTotalMYR': result['budget']['knownEstimatedTotal'],
                      'selectedBudgetStatus': result['budget']['status'],
                      'baselineScoreSum': sum(item['score'] for item in baseline['activities']),
+                     'baselineAverageScore': round(sum(item['score'] for item in baseline['activities']) / len(baseline['activities']), 2) if baseline['activities'] else None,
+                     'initialGreedyScoreSum': result['initialGreedyRelevanceTotal'],
+                     'initialGreedySelected': result['initialGreedyActivityCount'],
                      'selectedScoreSum': result['selectedRelevanceTotal'],
+                     'selectedAverageScore': result['selectedAverageRelevance'],
+                     'unknownSelected': result['budget']['unresolvedSelectedActivityCount'],
+                     'repairTrials': result['localRepairTrials'],
+                     'excludedCount': len(result['unselectedActivities']),
                      'schedule': result['schedulingStatus'], 'unresolved': result['budget']['unresolvedExpenseCategories'],
                      'medianMs': round(median(times), 3), 'maxMs': round(max(times), 3)})
         assert max(times) < 5000
     with capsys.disabled():
+        print('\nBENCHMARK_ENVIRONMENT=' + json.dumps({'python': platform.python_version(),
+              'os': platform.platform(), 'machine': platform.machine(), 'repetitions': 3}))
         print('\nOFFLINE_SYNTHETIC_BENCHMARK=' + json.dumps(rows, sort_keys=True))
+
+
+def test_mixed_prices_do_not_replace_a_budgeted_plan_with_unknown_costs():
+    result = select_budget_aware_activities([activity('known', 20), unknown('unknown', score=99)], trip())
+    assert [item['activityId'] for item in result['selectedActivities']] == ['known']
+    assert result['selectionMode'] == 'budget_checked'
+    assert result['budget']['unresolvedSelectedActivityCount'] == 0
+    assert result['budget']['status'] == 'provisional'
+
+
+def test_fallback_never_counts_a_legacy_unknown_estimate_as_known():
+    item = unknown('legacy')
+    item['estimatedCost'] = 57
+    result = select_budget_aware_activities([item], trip())
+    assert result['budget']['knownActivitySubtotal'] == 0
+    assert result['budget']['categoryTotals']['activities'] is None
+    assert result['selectedActivities'][0]['estimatedCost'] == 57
+    assert result['selectedActivities'][0]['selectionGroupCost'] is None
+    assert result['schedule'][0]['estimatedCost'] is None
+
+
+@pytest.mark.parametrize('changes', [{'openingHours': 'Closed'},
+    {'address': 'Kuala Lumpur', 'gps_coordinates': {'latitude': 3.14, 'longitude': 101.69}},
+    {'gps_coordinates': {}}])
+def test_fallback_cannot_bypass_geography_or_closure(changes):
+    result = select_budget_aware_activities([unknown('unusable', **changes)], trip())
+    assert result['selectedActivities'] == []
+    assert result['isProvisional'] is True
+
+
+def test_fallback_keeps_uncertain_hours_and_mandatory_costs_provisional():
+    result = select_budget_aware_activities([unknown('visit', openingHours='Closed now')], trip(travelMode='flight'))
+    assert result['schedulingStatus'] == 'provisional'
+    assert result['budget']['status'] == 'provisional'
+    assert set(result['budget']['unresolvedExpenseCategories']) == {'activities', 'flight'}
+
+
+def test_fixed_overrun_prevents_unpriced_fallback():
+    result = select_budget_aware_activities([unknown()], trip(budgetLimit=100))
+    assert result['selectedActivities'] == []
+    assert result['budget']['status'] == 'over_budget'
+
+
+def test_all_verified_free_activities_remain_budget_checked():
+    result = select_budget_aware_activities([activity('a', 0), activity('b', 0)], trip())
+    assert len(result['selectedActivities']) == 2
+    assert result['selectionMode'] == 'budget_checked'
+    assert result['budget']['categoryTotals']['activities'] == 0
+    assert result['budget']['completenessStatus'] == 'complete'
+
+
+@pytest.mark.parametrize('invalid', ['closed', 'far', 'time'])
+def test_quality_repair_cannot_bypass_joint_constraints(invalid):
+    candidates, data = scenarios()['greedy_trap']
+    if invalid == 'closed':
+        candidates[2]['openingHours'] = 'Closed'
+    elif invalid == 'far':
+        candidates[2].update({'address': 'Kuala Lumpur', 'gps_coordinates': {'latitude': 3.14, 'longitude': 101.69}})
+    else:
+        for item in candidates:
+            item['openingHours'] = '09:00-10:00'
+    result = select_budget_aware_activities(candidates, data)
+    assert [item['activityId'] for item in result['selectedActivities']] == ['A']
+    assert result['localRepairImproved'] is False
+
+
+def test_local_repair_has_a_deterministic_trial_bound():
+    candidates = [activity('top', 100, 99, 'per_group')]
+    candidates += [activity(f'low-{i:02}', 60, 10, 'per_group') for i in range(20)]
+    result = select_budget_aware_activities(candidates, trip(budgetLimit=255))
+    assert result['localRepairTrials'] == 64
+    assert [item['activityId'] for item in result['selectedActivities']] == ['top']
+
+
+def test_floating_point_score_tie_is_not_reported_as_quality_improvement():
+    candidates = [activity('A', 100, 0.3, 'per_group'), activity('B', 50, 0.1, 'per_group'),
+                  activity('C', 50, 0.2, 'per_group')]
+    result = select_budget_aware_activities(candidates, trip(budgetLimit=255))
+    assert [item['activityId'] for item in result['selectedActivities']] == ['A']
+    assert result['localRepairImproved'] is False

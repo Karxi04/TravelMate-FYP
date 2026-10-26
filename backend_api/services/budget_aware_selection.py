@@ -1,4 +1,4 @@
-"""Offline prototype only: score-first greedy selection, not an optimal solver.
+"""Offline score-first selection with bounded repair and unpriced fallback.
 
 Inputs are already normalized activities with unique activityId and unchanged FR04
 score (0..100). The pool replaces activities in an offline copy, not a persisted
@@ -6,12 +6,16 @@ Trip. No pricing lookup, provider, repository or route handler is invoked.
 """
 from copy import deepcopy
 from datetime import date
+from itertools import combinations, islice
 from math import isfinite
 from urllib.parse import urlparse
 
 from services.activity_pricing import activity_pricing, traveller_count
 from services.malaysian_locality import normalize_destination_scope, validate_candidate
 from sequence_contract.domain_functions import calculateBudget, generateItinerary
+
+
+LOCAL_REPAIR_TRIAL_LIMIT = 64
 
 
 def _number(value, name):
@@ -59,10 +63,37 @@ def _schedule(base, activities, forecast):
     return plan
 
 
-def select_budget_aware_activities(candidates, itinerary, forecast=None):
-    """Try higher-score candidates first; accept only budgeted, jointly schedulable sets.
+def _improve_once(base, selected, excluded, scores, forecast, limit):
+    """Bounded one-for-two repair of known-price, budget-rejected choices only."""
+    rejected = [entry['activity'] for entry in excluded if entry['reasonCode'] == 'known_budget_exceeded']
+    best, best_plan, attempts = selected, None, 0
+    best_score = round(sum(scores[item['activityId']] for item in selected), 2)
+    trials = ((removed, pair) for removed in selected for pair in combinations(rejected, 2))
+    for removed, pair in islice(trials, LOCAL_REPAIR_TRIAL_LIMIT):
+        attempts += 1
+        proposed = [item for item in selected if item['activityId'] != removed['activityId']] + list(pair)
+        score = round(sum(scores[item['activityId']] for item in proposed), 2)
+        if score <= best_score or calculateBudget({**base, 'activities': proposed})['totalEstimatedCost'] > limit:
+            continue
+        trial = _schedule(base, proposed, forecast)
+        if len(trial['activities']) == len(proposed):
+            best, best_plan, best_score = proposed, trial, score
+    if best_plan is not None:
+        new_ids = {item['activityId'] for item in best}
+        excluded = [entry for entry in excluded if entry['activity']['activityId'] not in new_ids]
+        for item in selected:
+            if item['activityId'] not in new_ids:
+                excluded.append({'activity': item, 'score': scores[item['activityId']],
+                                 'groupCost': activity_pricing(item, base['travellerCount'])['effectiveCost'],
+                                 'pricingIssues': [], 'reasonCode': 'local_quality_replacement',
+                                 'explanation': 'Replaced by two jointly schedulable, budgeted activities with higher aggregate original score.'})
+    return best, excluded, best_plan, attempts
 
-    Unknown/conditional prices are deferred, not assigned RM0. Non-activity costs
+
+def select_budget_aware_activities(candidates, itinerary, forecast=None):
+    """Prefer budgeted schedulable sets; otherwise offer an explicitly unpriced fallback.
+
+    Unknown/conditional prices are not assigned RM0. Non-activity costs
     and allowances come from calculateBudget. Pending non-activity costs and any
     deferred pricing keep the selection provisional, even if its known subtotal fits.
     Positive per-person tickets need caller-supplied applicable eligibility evidence;
@@ -131,7 +162,46 @@ def select_budget_aware_activities(candidates, itinerary, forecast=None):
             excluded.append({'activity': item, 'score': score, 'groupCost': cost,
                              'pricingIssues': issues, 'reasonCode': reason, 'explanation': explanation})
 
-    accounting = calculateBudget(plan)
+    greedy_score = sum(entry['score'] for entry in rationale)
+    greedy_count = len(selected)
+    scores = {item['activityId']: score for item, score, _, _ in entries}
+    costs = {item['activityId']: cost for item, _, cost, _ in entries}
+    selected, excluded, improved_plan, repair_trials = _improve_once(base, selected, excluded, scores, forecast, limit)
+    if improved_plan is not None:
+        plan = improved_plan
+        rationale = [{'activityId': item['activityId'], 'score': scores[item['activityId']],
+                      'groupCost': costs[item['activityId']],
+                      'explanation': 'Selected after bounded one-for-two aggregate-score improvement; full budget and scheduling checks passed.'}
+                     for item in selected]
+
+    fallback = False
+    if not selected and fixed_total <= limit:
+        for entry in list(excluded):
+            if entry['reasonCode'] != 'unresolved_price':
+                continue
+            item = entry['activity']
+            trial = _schedule(base, selected + [item], forecast)
+            if len(trial['activities']) != len(selected) + 1:
+                entry.update({'reasonCode': 'joint_schedule_infeasible',
+                              'explanation': '; '.join(x['unscheduledReason'] for x in trial['unscheduledSuggestions'])})
+                continue
+            selected.append(item)
+            excluded.remove(entry)
+            plan, fallback = trial, True
+            rationale.append({'activityId': item['activityId'], 'score': entry['score'], 'groupCost': None,
+                              'explanation': 'Provisional scheduling fallback only: admission is unresolved and affordability is not established.'})
+
+    # Unverified legacy estimates are not known applicable costs in the fallback.
+    known_selected = [item for item in selected if costs[item['activityId']] is not None]
+    accounting = calculateBudget({**base, 'activities': known_selected})
+    unknown_selected = len(selected) - len(known_selected)
+    if fallback:
+        for item in plan['activities']:
+            item.pop('effectiveCost', None)
+            item.update({'selectionGroupCost': None, 'selectionPriceStatus': 'unresolved'})
+        for day in plan['dailySchedule']:
+            if day['activities']:
+                day['estimatedCost'] = None
     unresolved = sorted(set(accounting['pendingExpenseCategories'] + accounting['excludedExpenseCategories']
                             + (['activities'] if any(cost is None for _, _, cost, _ in entries) else [])))
     budget_status = ('over_budget' if accounting['totalEstimatedCost'] > limit else
@@ -139,7 +209,10 @@ def select_budget_aware_activities(candidates, itinerary, forecast=None):
     scheduling = ('no_activities_selected' if not selected else
                   'provisional' if plan['provisionalActivityCount'] else 'fits_reported_constraints')
     return {
-        'offlineOnly': True, 'algorithm': 'score_first_budget_and_schedule_greedy',
+        'offlineOnly': True, 'algorithm': 'score_first_with_bounded_repair_and_provisional_fallback',
+        'selectionMode': 'provisional_unpriced_fallback' if fallback else 'budget_checked',
+        'initialGreedyRelevanceTotal': greedy_score, 'initialGreedyActivityCount': greedy_count,
+        'localRepairTrials': repair_trials, 'localRepairImproved': improved_plan is not None,
         'candidateCount': len(entries),
         'knownPricedCandidateCount': sum(cost is not None for _, _, cost, _ in entries),
         'unresolvedPricedCandidateCount': sum(cost is None for _, _, cost, _ in entries),
@@ -148,17 +221,21 @@ def select_budget_aware_activities(candidates, itinerary, forecast=None):
         'schedulingStatus': scheduling,
         'isProvisional': bool(unresolved or scheduling != 'fits_reported_constraints'),
         'selectedRelevanceTotal': round(sum(entry['score'] for entry in rationale), 2),
+        'selectedAverageRelevance': round(sum(entry['score'] for entry in rationale) / len(selected), 2) if selected else None,
         'budget': {'groupBudget': limit, 'knownNonActivitySubtotal': fixed_total,
                    'availableActivityBudgetFromKnownEstimates': round(max(0, limit-fixed_total), 2),
                    'knownActivitySubtotal': accounting['activities'],
                    'knownEstimatedTotal': accounting['totalEstimatedCost'],
-                   'categoryTotals': accounting['categoryTotals'],
+                   'categoryTotals': {**accounting['categoryTotals'], 'activities': None if unknown_selected else accounting['activities']},
+                   'knownCategoryTotals': accounting['categoryTotals'],
+                   'unresolvedSelectedActivityCount': unknown_selected,
+                   'completenessStatus': 'incomplete' if unresolved else 'complete',
                    'unresolvedExpenseCategories': unresolved, 'status': budget_status},
         'limitations': [
-            'Greedy score-first heuristic, not an optimal solver; no runtime integration or save-ready Trip.',
+            'Score-first heuristic with at most 64 one-for-two trials and one accepted repair, not an optimal solver; no runtime integration or save-ready Trip.',
             'Eligibility/source evidence is trusted offline input, not independently verified here.',
             'Shared food/transport allowances are estimates, not live quotes. Separate mandatory fees not included in existing category totals are not modelled.',
             'Reported opening hours and the existing travel-time/duration estimates do not guarantee real-world opening or routing; first/last daily transfers are not modelled.',
-            'Unpriced candidates are deferred. Provisional residual activity budget is not guaranteed spending capacity.',
+            'Unpriced candidates are normally deferred; when no priced activity is selected, schedulable unpriced visits may form a provisional fallback. Their totals remain unknown, not free.',
         ],
     }
