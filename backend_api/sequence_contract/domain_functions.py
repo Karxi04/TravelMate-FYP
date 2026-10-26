@@ -1014,30 +1014,119 @@ def _parse_time_minutes(value):
 
 def _opening_window(opening_hours, day_date=None):
     import re
+    from datetime import date as dt_date
+    if isinstance(day_date, str):
+        try:
+            day_date = dt_date.fromisoformat(day_date)
+        except (ValueError, TypeError):
+            day_date = None
+
     value = opening_hours
     if isinstance(value, dict):
-        key = day_date.strftime('%A').lower() if day_date else ''
-        value = value.get(key) or value.get(key.title()) or value.get('default') or ''
-    text = _text(value)
+        if day_date and hasattr(day_date, 'strftime'):
+            target_day = day_date.strftime('%A').lower()
+            val = None
+            for k, v in value.items():
+                if str(k).strip().lower() == target_day:
+                    val = v
+                    break
+            if val is None:
+                val = value.get('default')
+            value = val if val is not None else ''
+        else:
+            value = value.get('default') or ''
+
+    text = _text(value).strip()
     if not text:
         return {'status': 'unknown', 'window': None, 'text': ''}
+
     lowered = text.lower()
-    if re.search(r'\bclosed\b', lowered):
+
+    # 1. Authoritative permanent closure
+    if re.search(r'\b(permanently[ \t]+closed|closed[ \t]+permanently)\b', lowered):
         return {'status': 'closed', 'window': None, 'text': text}
-    if 'open all day' in lowered or '24 hour' in lowered or '24/7' in lowered:
+
+    # Day of interest
+    target_day = day_date.strftime('%A').lower() if (day_date and hasattr(day_date, 'strftime')) else None
+    target_day_idx = day_date.weekday() if (day_date and hasattr(day_date, 'weekday')) else None
+
+    # 2. Day-specific closure expressions in text
+    if target_day:
+        if (re.search(rf'\bclosed[ \t]+(?:on[ \t]+)?(?:{target_day}|{target_day[:3]})s?\b', lowered) or
+            re.search(rf'\b(?:{target_day}|{target_day[:3]})s?[ \t]+(?:is[ \t]+|are[ \t]+)?closed\b', lowered)):
+            return {'status': 'closed', 'window': None, 'text': text}
+
+    # Check for day-specific line or day-range line
+    eval_text = text
+    if target_day:
+        day_line_match = re.search(
+            rf'\b(?:{target_day}|{target_day[:3]})\b[ \t]*[:\-–][ \t]*([^\r\n;]+)',
+            text, re.IGNORECASE,
+        )
+        if day_line_match:
+            eval_text = day_line_match.group(1).strip()
+        else:
+            day_map = {
+                'monday': 0, 'mon': 0, 'tuesday': 1, 'tue': 1, 'wednesday': 2, 'wed': 2,
+                'thursday': 3, 'thu': 3, 'friday': 4, 'fri': 4, 'saturday': 5, 'sat': 5,
+                'sunday': 6, 'sun': 6,
+            }
+            range_pattern = re.compile(
+                r'\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b'
+                r'\s*(?:-|–|—|to)\s*'
+                r'\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b'
+                r'\s*[:\-–]\s*([^\r\n;]+)',
+                re.IGNORECASE,
+            )
+            matched_range = False
+            for rm in range_pattern.finditer(text):
+                d1 = day_map.get(rm.group(1).lower())
+                d2 = day_map.get(rm.group(2).lower())
+                if d1 is not None and d2 is not None and target_day_idx is not None:
+                    in_range = (d1 <= target_day_idx <= d2) if d1 <= d2 else (target_day_idx >= d1 or target_day_idx <= d2)
+                    if in_range:
+                        eval_text = rm.group(3).strip()
+                        matched_range = True
+                        break
+            if not matched_range and re.search(
+                r'\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b[ \t]*[:\-–]',
+                text, re.IGNORECASE,
+            ):
+                return {'status': 'unknown', 'window': None, 'text': text}
+
+    eval_lowered = eval_text.lower()
+
+    # 3. Explicit standalone closure
+    if re.match(r'^\s*closed\.?\s*$', eval_lowered):
+        return {'status': 'closed', 'window': None, 'text': text}
+
+    # 4. 24-hour / all day schedule
+    if any(k in eval_lowered for k in ('open all day', '24 hours', '24 hour', '24/7', '24-hour', 'open 24 hours')):
         return {'status': 'open', 'window': (0, 24 * 60 - 1), 'text': text}
-    match = re.search(
+
+    # 5. Structured time range (handles split hours & overnight hours)
+    time_range_pattern = re.compile(
         r'(\d{1,2}(?::|\.)?\d{0,2}\s*(?:AM|PM)?)\s*(?:–|—|-)\s*'
         r'(\d{1,2}(?::|\.)?\d{0,2}\s*(?:AM|PM)?)',
-        text, re.IGNORECASE,
+        re.IGNORECASE,
     )
-    if not match:
-        return {'status': 'unknown', 'window': None, 'text': text}
-    start = _parse_time_minutes(match.group(1))
-    end = _parse_time_minutes(match.group(2))
-    if start is None or end is None or end <= start:
-        return {'status': 'unknown', 'window': None, 'text': text}
-    return {'status': 'open', 'window': (start, end), 'text': text}
+    matches = list(time_range_pattern.finditer(eval_text))
+    if matches:
+        parsed_windows = []
+        for m in matches:
+            s = _parse_time_minutes(m.group(1))
+            e = _parse_time_minutes(m.group(2))
+            if s is not None and e is not None:
+                if e <= s:
+                    e += 24 * 60
+                parsed_windows.append((s, e))
+        if parsed_windows:
+            start = min(w[0] for w in parsed_windows)
+            end = max(w[1] for w in parsed_windows)
+            return {'status': 'open', 'window': (start, end), 'text': text}
+
+    # 6. Default to unknown (e.g. transient status 'Closed · Opens ...', 'Currently closed', 'Open now', malformed)
+    return {'status': 'unknown', 'window': None, 'text': text}
 
 
 def _activity_duration(activity):
