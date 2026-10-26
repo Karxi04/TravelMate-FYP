@@ -1,5 +1,10 @@
 # F3-P2A offline selection prototype
 
+Historical evidence below describes F3-P2A/P2A-R. F3-P2B added default-disabled
+FR05 integration; [F3-P2D](F3_P2D_SPARSE_COMPLETION.md) supersedes the empty-only
+fallback restriction with bounded provisional completion. Original measurements
+below are retained as historical evidence, not current activation approval.
+
 This is **not production Budget-Aware Optimization**. No route imports the selector.
 It never fetches quotes, looks up prices, writes repositories or returns a save-ready
 Trip. All benchmark prices and scores are synthetic test fixtures, not provider rates.

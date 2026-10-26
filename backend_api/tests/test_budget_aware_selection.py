@@ -345,11 +345,12 @@ def test_offline_runtime_benchmark(capsys):
         print('\nOFFLINE_SYNTHETIC_BENCHMARK=' + json.dumps(rows, sort_keys=True))
 
 
-def test_mixed_prices_do_not_replace_a_budgeted_plan_with_unknown_costs():
+def test_mixed_prices_complete_without_replacing_a_budgeted_visit():
     result = select_budget_aware_activities([activity('known', 20), unknown('unknown', score=99)], trip())
-    assert [item['activityId'] for item in result['selectedActivities']] == ['known']
-    assert result['selectionMode'] == 'budget_checked'
-    assert result['budget']['unresolvedSelectedActivityCount'] == 0
+    assert {item['activityId'] for item in result['selectedActivities']} == {'known', 'unknown'}
+    assert result['selectionMode'] == 'budget_checked_with_provisional_completion'
+    assert result['budget']['knownActivitySubtotal'] == 40
+    assert result['budget']['unresolvedSelectedActivityCount'] == 1
     assert result['budget']['status'] == 'provisional'
 
 

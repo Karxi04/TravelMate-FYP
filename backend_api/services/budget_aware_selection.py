@@ -1,4 +1,4 @@
-"""Offline score-first selection with bounded repair and unpriced fallback.
+"""Score-first selection with bounded repair and provisional completion.
 
 Inputs are already normalized activities with unique activityId and unchanged FR04
 score (0..100). The pool replaces activities in an offline copy, not a persisted
@@ -91,7 +91,7 @@ def _improve_once(base, selected, excluded, scores, forecast, limit):
 
 
 def select_budget_aware_activities(candidates, itinerary, forecast=None):
-    """Prefer budgeted schedulable sets; otherwise offer an explicitly unpriced fallback.
+    """Select budgeted visits, then complete with explicitly unpriced suggestions.
 
     Unknown/conditional prices are not assigned RM0. Non-activity costs
     and allowances come from calculateBudget. Pending non-activity costs and any
@@ -174,12 +174,15 @@ def select_budget_aware_activities(candidates, itinerary, forecast=None):
                       'explanation': 'Selected after bounded one-for-two aggregate-score improvement; full budget and scheduling checks passed.'}
                      for item in selected]
 
-    fallback = False
-    if not selected and fixed_total <= limit:
+    fallback, completion_trials = False, 0
+    budgeted_count = len(selected)
+    if fixed_total <= limit:
+        # One trial per deferred candidate; never displace an already selected visit.
         for entry in list(excluded):
             if entry['reasonCode'] != 'unresolved_price':
                 continue
             item = entry['activity']
+            completion_trials += 1
             trial = _schedule(base, selected + [item], forecast)
             if len(trial['activities']) != len(selected) + 1:
                 entry.update({'reasonCode': 'joint_schedule_infeasible',
@@ -189,7 +192,7 @@ def select_budget_aware_activities(candidates, itinerary, forecast=None):
             excluded.remove(entry)
             plan, fallback = trial, True
             rationale.append({'activityId': item['activityId'], 'score': entry['score'], 'groupCost': None,
-                              'explanation': 'Provisional scheduling fallback only: admission is unresolved and affordability is not established.'})
+                              'explanation': 'Provisional scheduling suggestion only: admission is unresolved and affordability is not established.'})
 
     # Unverified legacy estimates are not known applicable costs in the fallback.
     known_selected = [item for item in selected if costs[item['activityId']] is not None]
@@ -197,10 +200,11 @@ def select_budget_aware_activities(candidates, itinerary, forecast=None):
     unknown_selected = len(selected) - len(known_selected)
     if fallback:
         for item in plan['activities']:
-            item.pop('effectiveCost', None)
-            item.update({'selectionGroupCost': None, 'selectionPriceStatus': 'unresolved'})
+            if costs[item['activityId']] is None:
+                item.pop('effectiveCost', None)
+                item.update({'selectionGroupCost': None, 'selectionPriceStatus': 'unresolved'})
         for day in plan['dailySchedule']:
-            if day['activities']:
+            if any(costs[item['activityId']] is None for item in day['activities']):
                 day['estimatedCost'] = None
     unresolved = sorted(set(accounting['pendingExpenseCategories'] + accounting['excludedExpenseCategories']
                             + (['activities'] if any(cost is None for _, _, cost, _ in entries) else [])))
@@ -210,9 +214,11 @@ def select_budget_aware_activities(candidates, itinerary, forecast=None):
                   'provisional' if plan['provisionalActivityCount'] else 'fits_reported_constraints')
     return {
         'offlineOnly': True, 'algorithm': 'score_first_with_bounded_repair_and_provisional_fallback',
-        'selectionMode': 'provisional_unpriced_fallback' if fallback else 'budget_checked',
+        'selectionMode': ('budget_checked_with_provisional_completion' if fallback and budgeted_count else
+                          'provisional_unpriced_fallback' if fallback else 'budget_checked'),
         'initialGreedyRelevanceTotal': greedy_score, 'initialGreedyActivityCount': greedy_count,
         'localRepairTrials': repair_trials, 'localRepairImproved': improved_plan is not None,
+        'provisionalAdditionTrials': completion_trials,
         'candidateCount': len(entries),
         'knownPricedCandidateCount': sum(cost is not None for _, _, cost, _ in entries),
         'unresolvedPricedCandidateCount': sum(cost is None for _, _, cost, _ in entries),
@@ -237,6 +243,6 @@ def select_budget_aware_activities(candidates, itinerary, forecast=None):
             'Eligibility/source evidence is trusted offline input, not independently verified here.',
             'Shared food/transport allowances are estimates, not live quotes. Separate mandatory fees not included in existing category totals are not modelled.',
             'Reported opening hours and the existing travel-time/duration estimates do not guarantee real-world opening or routing; first/last daily transfers are not modelled.',
-            'Unpriced candidates are normally deferred; when no priced activity is selected, schedulable unpriced visits may form a provisional fallback. Their totals remain unknown, not free.',
+            'Schedulable unpriced visits may complete the budget-checked selection as provisional suggestions. Their admission totals remain unknown, not free or proved affordable.',
         ],
     }

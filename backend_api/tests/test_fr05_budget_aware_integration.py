@@ -146,8 +146,16 @@ def test_mixed_pool_and_pending_flight_remain_incomplete(client, mock_traveller_
         response = client.post(PATH, headers=HEADERS, json={})
         saved = response.json['itinerary']
         assert response.status_code == 200
-        assert len(saved['activities']) == 1
+        assert len(saved['activities']) == 2
         assert saved['budgetEstimate']['activities'] == 40
+        assert saved['budgetAwareSelection']['selectionMode'] == 'budget_checked_with_provisional_completion'
+        known = next(item for item in saved['activities'] if item['destinationId'] == 'synthetic-known')
+        assert known['effectiveCost'] == 40
+        assert known['pricingEvidence']['applicability'] == 'applicable'
+        unresolved = next(item for item in saved['activities'] if item['destinationId'] == 'synthetic-u')
+        assert unresolved['selectionGroupCost'] is None
+        assert saved['dailySchedule'][0]['applicableActivityCost'] is None
+        assert saved['budgetAwareSelection']['budget']['categoryTotals']['activities'] is None
         assert set(saved['budgetEstimate']['pendingExpenseCategories']) == {'flight', 'activities'}
         assert saved['budgetEstimate']['affordabilityStatus'] == 'incomplete'
 
