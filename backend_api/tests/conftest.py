@@ -9,6 +9,7 @@ from unittest.mock import patch, MagicMock
 os.environ["TRAVELMATE_TESTING"] = "true"
 os.environ["FALLBACK_MODE"] = "true"
 os.environ["LOCAL_LAN_DEMO"] = "false"
+os.environ["TRAVELMATE_BUDGET_AWARE_SELECTION_ENABLED"] = "false"
 for _provider_key in (
     "FIREBASE_SERVICE_ACCOUNT",
     "FIREBASE_SERVICE_ACCOUNT_JSON",

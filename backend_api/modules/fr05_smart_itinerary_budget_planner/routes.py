@@ -12,6 +12,7 @@ from services.serpapi_service import retrieveLocationAndTravelTime, retrieveLowe
 from services.open_meteo_service import retrieveSevenDayForecast, geocode
 from services.local_catalog import DESTINATIONS, FLIGHTS, LOCAL_HOTEL_ITEMS
 from services.pricing_registry import enrich_candidate_pricing
+from services.budget_aware_generation import generate_with_budget_selection, qualify_selection_budget
 from sequence_contract.validators import validateItineraryInput, validateItineraryForSaving, validateSelectedDestination
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord, deleteRecord
 from sequence_contract.domain_functions import (
@@ -31,6 +32,10 @@ bp = Blueprint('fr05_itineraries', __name__, url_prefix='/api/fr5')
 
 def _fallback_mode():
     return os.getenv('FALLBACK_MODE', 'false').lower() in {'1', 'true', 'yes'}
+
+
+def _budget_selection_enabled():
+    return os.getenv('TRAVELMATE_BUDGET_AWARE_SELECTION_ENABLED', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
 def _own(iid):
@@ -383,6 +388,9 @@ def _generate_itinerary_data(current, payload, snapshot=None):
 
     generation_source = snapshot.get('source', 'recommendation_snapshot') if snapshot else 'existing-activities'
     working = {**current}
+    selection_enabled = _budget_selection_enabled()
+    apply_selection = False
+    selection_skip_reason = 'existing_activities_preserved'
     if not working.get('activities'):
         candidates, generation_source = _destination_candidates(working, snapshot)
         if not candidates:
@@ -396,6 +404,20 @@ def _generate_itinerary_data(current, payload, snapshot=None):
             _activity_from_destination(item, index)
             for index, item in enumerate(candidates[:max_items])
         ]
+        if selection_enabled:
+            # Only the linked server-owned FR04 snapshot supplies personality scores.
+            apply_selection = bool(snapshot) and all(
+                item.get('score', item.get('finalScore')) is not None for item in candidates[:max_items])
+            selection_skip_reason = 'linked_recommendation_scores_required'
+            if apply_selection:
+                working['activities'] = [
+                    {**_activity_from_destination(enrich_candidate_pricing(item), index),
+                     **{key: item[key] for key in (
+                         'score', 'finalScore', 'contentScore', 'collaborativeScore', 'popularityScore',
+                         'currency', 'providerTravelDurationMinutes', 'travelTimeSource',
+                     ) if key in item}}
+                    for index, item in enumerate(candidates[:max_items])
+                ]
     else:
         working['activities'] = [dict(x) for x in working.get('activities', [])]
 
@@ -403,7 +425,12 @@ def _generate_itinerary_data(current, payload, snapshot=None):
     locations = retrieveLocationAndTravelTime(selected)
     forecast, coords = _forecast_for(working, payload)
 
-    generated = generateItinerary(locations, forecast, working)
+    if apply_selection:
+        generated = generate_with_budget_selection(working, forecast, locations)
+    else:
+        generated = generateItinerary(locations, forecast, working)
+        if selection_enabled:
+            generated['budgetAwareSelection'] = {'enabled': True, 'applied': False, 'reason': selection_skip_reason}
     generated['generationContext'] = {
         **generated.get('generationContext', {}),
         'destinationSource': generation_source,
@@ -411,6 +438,7 @@ def _generate_itinerary_data(current, payload, snapshot=None):
         'recommendationGenerationId': (
             snapshot.get('recommendationGenerationId') if snapshot else None
         ),
+        **({'budgetAwareSelectionApplied': apply_selection} if selection_enabled else {}),
     }
     return generated
 
@@ -437,6 +465,8 @@ def _run_generation_state_machine(iid, current, payload, snapshot):
         partial = _generate_itinerary_data(current, payload, snapshot)
         stage = 'budget_calculation'
         budget = calculateBudget(partial)
+        if partial.get('generationContext', {}).get('budgetAwareSelectionApplied') is True:
+            budget = qualify_selection_budget(budget, partial['budgetAwareSelection'])
         budget['comparison'] = compareBudget(budget)
 
         stage = 'save_generated_trip'

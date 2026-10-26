@@ -297,8 +297,7 @@ def test_original_scoring_generation_and_persistence_are_untouched():
     # 60%*80 + 30%*50 + 10%*(64+1), not a budget-adjusted personality score.
     assert score_before[0]['score'] == 69.5
     project = Path(__file__).resolve().parents[1]
-    for module in ('modules/fr04_hybrid_recommendation/routes.py',
-                   'modules/fr05_smart_itinerary_budget_planner/routes.py'):
+    for module in ('modules/fr04_hybrid_recommendation/routes.py',):
         assert 'budget_aware_selection' not in (project / module).read_text(encoding='utf-8')
 
 

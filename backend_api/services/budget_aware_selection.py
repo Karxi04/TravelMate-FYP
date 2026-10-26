@@ -217,6 +217,7 @@ def select_budget_aware_activities(candidates, itinerary, forecast=None):
         'knownPricedCandidateCount': sum(cost is not None for _, _, cost, _ in entries),
         'unresolvedPricedCandidateCount': sum(cost is None for _, _, cost, _ in entries),
         'selectedActivities': plan['activities'], 'unselectedActivities': excluded,
+        'scheduledItinerary': plan,
         'selectionRationale': rationale, 'schedule': plan['dailySchedule'],
         'schedulingStatus': scheduling,
         'isProvisional': bool(unresolved or scheduling != 'fits_reported_constraints'),
@@ -232,7 +233,7 @@ def select_budget_aware_activities(candidates, itinerary, forecast=None):
                    'completenessStatus': 'incomplete' if unresolved else 'complete',
                    'unresolvedExpenseCategories': unresolved, 'status': budget_status},
         'limitations': [
-            'Score-first heuristic with at most 64 one-for-two trials and one accepted repair, not an optimal solver; no runtime integration or save-ready Trip.',
+            'Score-first heuristic with at most 64 one-for-two trials and one accepted repair, not an optimal solver; runtime activation requires separate approval.',
             'Eligibility/source evidence is trusted offline input, not independently verified here.',
             'Shared food/transport allowances are estimates, not live quotes. Separate mandatory fees not included in existing category totals are not modelled.',
             'Reported opening hours and the existing travel-time/duration estimates do not guarantee real-world opening or routing; first/last daily transfers are not modelled.',
