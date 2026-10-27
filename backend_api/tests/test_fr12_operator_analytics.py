@@ -119,7 +119,8 @@ def test_analytics_expired_and_unpaid_excluded_from_revenue():
 
     assert report["summary"]["bookingRecords"] == 2
     assert report["summary"]["paidBookings"] == 0
-    assert report["summary"]["expiredBookings"] == 2
+    assert report["summary"]["expiredBookings"] == 1
+    assert report["summary"]["pendingBookings"] == 1
     assert report["summary"]["totalPaidRevenue"] == 0.0
 
 
@@ -662,7 +663,10 @@ def test_scenario_7_unpaid_failed_orders_do_not_become_revenue():
 
     assert report["summary"]["bookingRecords"] == 4
     assert report["summary"]["paidBookings"] == 0
-    assert report["summary"]["expiredBookings"] == 2
+    assert report["summary"]["pendingBookings"] == 1
+    assert report["summary"]["expiredBookings"] == 1
+    assert report["summary"]["failedBookings"] == 1
+    assert report["summary"]["cancelledBookings"] == 1
     assert report["summary"]["totalPaidRevenue"] == 0.0
 
 

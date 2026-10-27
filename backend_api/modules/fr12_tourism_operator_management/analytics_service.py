@@ -199,7 +199,10 @@ def generate_business_analytics(db, operator_id):
     bookings = []
     total_paid_revenue = 0.0
     paid_bookings = 0
+    pending_bookings = 0
     expired_bookings = 0
+    failed_bookings = 0
+    cancelled_bookings = 0
     test_mode_orders = 0
 
     for doc in order_docs:
@@ -254,8 +257,23 @@ def generate_business_analytics(db, operator_id):
                         total_paid_revenue += amt
                 except (TypeError, ValueError):
                     pass
-        elif order_status in {"expired", "unpaid"} or payment_status in {"expired", "unpaid"}:
+        elif order_status in {"expired", "checkout_expired"} or payment_status in {"expired"}:
             expired_bookings += 1
+        elif order_status in {"failed", "checkout_failed"} or payment_status in {"failed", "payment_failed"}:
+            failed_bookings += 1
+        elif order_status in {"cancelled", "checkout_cancelled"} or payment_status in {"cancelled", "payment_cancelled"}:
+            cancelled_bookings += 1
+        elif payment_status in {"pending", "payment_pending", "unpaid"}:
+            pending_bookings += 1
+
+    fulfilled_bookings = sum(
+        1 for b in bookings
+        if _normalise(b.get("fulfillmentStatus")) == "fulfilled"
+    )
+    pending_fulfillment_bookings = sum(
+        1 for b in bookings
+        if _normalise(b.get("fulfillmentStatus")) in {"pending", "fulfillment_pending"}
+    )
 
     # ==========================================================
     # PACKAGE VALUE
@@ -298,7 +316,12 @@ def generate_business_analytics(db, operator_id):
 
             "bookingRecords": len(bookings),
             "paidBookings": paid_bookings,
+            "pendingBookings": pending_bookings,
             "expiredBookings": expired_bookings,
+            "failedBookings": failed_bookings,
+            "cancelledBookings": cancelled_bookings,
+            "fulfilledBookings": fulfilled_bookings,
+            "pendingFulfillmentBookings": pending_fulfillment_bookings,
             "testModeOrders": test_mode_orders,
             "totalPaidRevenue": round(total_paid_revenue, 2),
 
@@ -313,7 +336,10 @@ def generate_business_analytics(db, operator_id):
         "campaignCount": total_campaigns,
         "bookingCount": len(bookings),
         "paidBookingCount": paid_bookings,
+        "pendingBookingCount": pending_bookings,
         "expiredBookingCount": expired_bookings,
+        "failedBookingCount": failed_bookings,
+        "cancelledBookingCount": cancelled_bookings,
         "totalPaidRevenue": round(total_paid_revenue, 2),
         "packages": packages,
         "campaigns": campaigns,
