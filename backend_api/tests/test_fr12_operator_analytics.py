@@ -421,3 +421,435 @@ def test_analytics_admin_operator_override(client, mock_admin_auth):
     # Global admin sees the other operator's order when operator_id=None
     assert data["analytics"]["summary"]["bookingRecords"] == 1
     assert data["analytics"]["summary"]["totalPaidRevenue"] == 500.0
+
+
+def test_analytics_strips_sensitive_payment_metadata_vulnerability():
+    """
+    VULNERABILITY PROOF TEST:
+    Verifies that sensitive payment and checkout metadata (checkoutUrl, checkoutSessionId,
+    providerIdempotencyKey, travellerId, clientSecret, packageAttemptId, etc.) are strictly
+    excluded from analytics booking records.
+    """
+    orders = [{
+        "id": "ord_sensitive_leak",
+        "quoteType": "package",
+        "operatorId": "op_test_sec",
+        "amount": 999.0,
+        "currency": "MYR",
+        "status": "paid",
+        "paymentStatus": "paid",
+        "provider": "stripe_checkout_test",
+        # Sensitive payment and session fields:
+        "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_test_sensitive_url_12345",
+        "checkoutSessionId": "cs_test_sensitive_session_67890",
+        "providerIdempotencyKey": "package_checkout:idemp_key_abcde",
+        "stripePaymentIntentId": "pi_secret_intent_123",
+        "stripeSessionId": "cs_test_sensitive_session_67890",
+        "clientSecret": "pi_secret_intent_123_secret_xyz",
+        "paymentMethodId": "pm_secret_card_456",
+        "travellerId": "usr_traveller_confidential_999",
+        "packageAttemptId": "att_attempt_uuid_111",
+        "orderAttemptId": "att_order_uuid_222",
+        "arbitraryLeakKey": "unforeseen_private_token_333",
+        "packageSnapshot": {
+            "title": "Historical Penang Walk",
+            "packageId": "pkg_penang_walk",
+            "internalAdminNotes": "Confidential margin details",
+        },
+    }]
+    db = _build_mock_db(orders=orders)
+    report = generate_business_analytics(db, operator_id="op_test_sec")
+
+    assert len(report["bookings"]) == 1
+    booking = report["bookings"][0]
+
+    # Sensitive fields that MUST NOT exist in the projection:
+    assert "checkoutUrl" not in booking
+    assert "checkoutSessionId" not in booking
+    assert "providerIdempotencyKey" not in booking
+    assert "travellerId" not in booking
+    assert "packageAttemptId" not in booking
+    assert "orderAttemptId" not in booking
+    assert "arbitraryLeakKey" not in booking
+    assert "packageSnapshot" not in booking
+    assert "stripePaymentIntentId" not in booking
+    assert "stripeSessionId" not in booking
+    assert "clientSecret" not in booking
+    assert "paymentMethodId" not in booking
+
+
+# ==============================================================================
+# BATCH P-S1: 14 MANDATORY TEST SCENARIOS
+# ==============================================================================
+
+def test_scenario_1_checkout_url_not_exposed():
+    """Scenario 1: Checkout URL is never exposed in analytics bookings."""
+    orders = [{
+        "id": "ord_s1",
+        "quoteType": "package",
+        "operatorId": "op_test",
+        "amount": 500.0,
+        "status": "paid",
+        "paymentStatus": "paid",
+        "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_test_secret_link_111",
+    }]
+    db = _build_mock_db(orders=orders)
+    report = generate_business_analytics(db, operator_id="op_test")
+    assert len(report["bookings"]) == 1
+    assert "checkoutUrl" not in report["bookings"][0]
+
+
+def test_scenario_2_checkout_session_id_not_exposed():
+    """Scenario 2: Checkout Session ID is never exposed in analytics bookings."""
+    orders = [{
+        "id": "ord_s2",
+        "quoteType": "package",
+        "operatorId": "op_test",
+        "amount": 500.0,
+        "status": "paid",
+        "paymentStatus": "paid",
+        "checkoutSessionId": "cs_test_session_id_222",
+    }]
+    db = _build_mock_db(orders=orders)
+    report = generate_business_analytics(db, operator_id="op_test")
+    assert len(report["bookings"]) == 1
+    assert "checkoutSessionId" not in report["bookings"][0]
+
+
+def test_scenario_3_provider_idempotency_key_not_exposed():
+    """Scenario 3: Provider Idempotency Key is never exposed in analytics bookings."""
+    orders = [{
+        "id": "ord_s3",
+        "quoteType": "package",
+        "operatorId": "op_test",
+        "amount": 500.0,
+        "status": "paid",
+        "paymentStatus": "paid",
+        "providerIdempotencyKey": "package_checkout:idemp_uuid_333",
+    }]
+    db = _build_mock_db(orders=orders)
+    report = generate_business_analytics(db, operator_id="op_test")
+    assert len(report["bookings"]) == 1
+    assert "providerIdempotencyKey" not in report["bookings"][0]
+
+
+def test_scenario_4_unexpected_sensitive_fields_cannot_leak():
+    """Scenario 4: Unexpected or future sensitive fields cannot leak through allowlist projection."""
+    orders = [{
+        "id": "ord_s4",
+        "quoteType": "package",
+        "operatorId": "op_test",
+        "amount": 500.0,
+        "status": "paid",
+        "paymentStatus": "paid",
+        "clientSecret": "secret_abc",
+        "stripePaymentIntentId": "pi_123",
+        "stripeSessionId": "cs_456",
+        "paymentMethodId": "pm_789",
+        "travellerId": "usr_traveller_secret",
+        "packageAttemptId": "att_123",
+        "orderAttemptId": "ord_att_456",
+        "unforeseenToken": "token_future_xyz",
+        "rawCustomerCard": "4242-4242-4242-4242",
+        "internalAuditTrail": {"superAdminReview": True},
+        "packageSnapshot": {
+            "title": "Heritage Walk",
+            "packageId": "pkg_1",
+            "internalMargin": 0.45,
+            "privateSupplierNotes": "DO NOT SHARE WITH OPERATOR",
+        },
+    }]
+    db = _build_mock_db(orders=orders)
+    report = generate_business_analytics(db, operator_id="op_test")
+    booking = report["bookings"][0]
+
+    forbidden_keys = {
+        "clientSecret", "stripePaymentIntentId", "stripeSessionId", "paymentMethodId",
+        "travellerId", "packageAttemptId", "orderAttemptId", "unforeseenToken",
+        "rawCustomerCard", "internalAuditTrail", "packageSnapshot",
+        "checkoutUrl", "checkoutSessionId", "providerIdempotencyKey",
+    }
+    for key in forbidden_keys:
+        assert key not in booking, f"Forbidden key {key} leaked into analytics booking projection"
+
+    # Verify booking has only allowlisted keys
+    allowed_keys = {
+        "id", "orderReference", "packageId", "packageTitle", "operatorId", "quoteType",
+        "departureDate", "groupSize", "adults", "children", "paymentStatus", "orderStatus",
+        "status", "fulfillmentStatus", "amount", "groupTotal", "currency",
+        "supplierReservationStatus", "testMode", "createdAt", "updatedAt",
+    }
+    assert set(booking.keys()).issubset(allowed_keys)
+
+
+def test_scenario_5_safe_business_fields_remain_present():
+    """Scenario 5: Safe business fields remain present and accurately populated."""
+    orders = [{
+        "id": "ord_s5",
+        "quoteType": "package",
+        "operatorId": "op_test",
+        "amount": 1250.00,
+        "currency": "MYR",
+        "status": "paid",
+        "paymentStatus": "paid",
+        "fulfillmentStatus": "fulfilled",
+        "provider": "stripe_checkout_test",
+        "supplierReservationStatus": "not_created",
+        "createdAt": "2026-10-20T10:00:00Z",
+        "updatedAt": "2026-10-20T10:05:00Z",
+        "packageSnapshot": {
+            "packageId": "pkg_penang_5",
+            "title": "Penang Hill Nature & Sunset Tour",
+            "selectedDepartureDate": "2027-03-15",
+            "groupSize": 4,
+            "participants": {"adults": 2, "children": 2, "total": 4},
+        },
+    }]
+    db = _build_mock_db(orders=orders)
+    report = generate_business_analytics(db, operator_id="op_test")
+    assert len(report["bookings"]) == 1
+    b = report["bookings"][0]
+
+    assert b["id"] == "ord_s5"
+    assert b["orderReference"] == "ord_s5"
+    assert b["packageId"] == "pkg_penang_5"
+    assert b["packageTitle"] == "Penang Hill Nature & Sunset Tour"
+    assert b["operatorId"] == "op_test"
+    assert b["quoteType"] == "package"
+    assert b["departureDate"] == "2027-03-15"
+    assert b["groupSize"] == 4
+    assert b["adults"] == 2
+    assert b["children"] == 2
+    assert b["amount"] == 1250.00
+    assert b["groupTotal"] == 1250.00
+    assert b["currency"] == "MYR"
+    assert b["status"] == "paid"
+    assert b["orderStatus"] == "paid"
+    assert b["paymentStatus"] == "paid"
+    assert b["fulfillmentStatus"] == "fulfilled"
+    assert b["supplierReservationStatus"] == "not_created"
+    assert b["testMode"] is True
+    assert b["createdAt"] == "2026-10-20T10:00:00Z"
+    assert b["updatedAt"] == "2026-10-20T10:05:00Z"
+
+
+def test_scenario_6_paid_test_revenue_calculations():
+    """Scenario 6: Paid Test revenue calculations remain strictly correct."""
+    orders = [
+        {"id": "ord_t1", "quoteType": "package", "operatorId": "op_test", "amount": 800.0, "status": "paid", "paymentStatus": "paid", "provider": "stripe_checkout_test"},
+        {"id": "ord_t2", "quoteType": "package", "operatorId": "op_test", "amount": 1200.0, "status": "paid", "paymentStatus": "paid", "testMode": True},
+    ]
+    db = _build_mock_db(orders=orders)
+    report = generate_business_analytics(db, operator_id="op_test")
+
+    assert report["summary"]["bookingRecords"] == 2
+    assert report["summary"]["paidBookings"] == 2
+    assert report["summary"]["testModeOrders"] == 2
+    assert report["summary"]["totalPaidRevenue"] == 2000.0
+    assert report["totalPaidRevenue"] == 2000.0
+
+
+def test_scenario_7_unpaid_failed_orders_do_not_become_revenue():
+    """Scenario 7: Unpaid, expired, failed, and cancelled orders do not count as revenue."""
+    orders = [
+        {"id": "o_unpaid", "quoteType": "package", "operatorId": "op_test", "amount": 500.0, "status": "checkout_open", "paymentStatus": "unpaid"},
+        {"id": "o_expired", "quoteType": "package", "operatorId": "op_test", "amount": 600.0, "status": "expired", "paymentStatus": "unpaid"},
+        {"id": "o_failed", "quoteType": "package", "operatorId": "op_test", "amount": 700.0, "status": "failed", "paymentStatus": "failed"},
+        {"id": "o_cancelled", "quoteType": "package", "operatorId": "op_test", "amount": 800.0, "status": "cancelled", "paymentStatus": "paid"},
+    ]
+    db = _build_mock_db(orders=orders)
+    report = generate_business_analytics(db, operator_id="op_test")
+
+    assert report["summary"]["bookingRecords"] == 4
+    assert report["summary"]["paidBookings"] == 0
+    assert report["summary"]["expiredBookings"] == 2
+    assert report["summary"]["totalPaidRevenue"] == 0.0
+
+
+def test_scenario_8_operator_ownership_isolation():
+    """Scenario 8: Operator ownership isolation strictly enforced."""
+    orders = [
+        {"id": "ord_mine", "quoteType": "package", "operatorId": "op_alpha", "amount": 1000.0, "status": "paid", "paymentStatus": "paid"},
+        {"id": "ord_other", "quoteType": "package", "operatorId": "op_beta", "amount": 5000.0, "status": "paid", "paymentStatus": "paid"},
+    ]
+    db = _build_mock_db(orders=orders)
+    report = generate_business_analytics(db, operator_id="op_alpha")
+
+    assert report["summary"]["bookingRecords"] == 1
+    assert report["summary"]["paidBookings"] == 1
+    assert report["summary"]["totalPaidRevenue"] == 1000.0
+    assert [b["id"] for b in report["bookings"]] == ["ord_mine"]
+
+
+def test_scenario_9_unauthorized_access_rejection(client, mock_traveller_auth):
+    """Scenario 9: Unauthorized access (traveller role) is rejected with 403 Forbidden."""
+    res = client.get("/api/fr12/analytics", headers={"Authorization": "Bearer valid_test_token"})
+    assert res.status_code == 403
+
+
+def test_scenario_10_json_analytics_endpoint_safety(client, mock_operator_auth):
+    """Scenario 10: JSON Analytics API response returns HTTP 200 with sanitized bookings."""
+    orders = [{
+        "id": "ord_api_test",
+        "quoteType": "package",
+        "operatorId": "test_operator_uid",
+        "amount": 750.0,
+        "status": "paid",
+        "paymentStatus": "paid",
+        "checkoutUrl": "https://checkout.stripe.com/pay/cs_live_leak",
+        "checkoutSessionId": "cs_live_leak",
+        "providerIdempotencyKey": "pkg_leak_idemp",
+        "clientSecret": "sec_leak_123",
+        "travellerId": "traveller_leak_456",
+    }]
+    db = _build_mock_db(orders=orders)
+    with patch("modules.fr12_tourism_operator_management.routes.get_db", return_value=db):
+        res = client.get("/api/fr12/analytics", headers={"Authorization": "Bearer valid_test_token"})
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["ok"] is True
+    assert "analytics" in data
+    bookings = data["analytics"]["bookings"]
+    assert len(bookings) == 1
+    b = bookings[0]
+    assert "checkoutUrl" not in b
+    assert "checkoutSessionId" not in b
+    assert "providerIdempotencyKey" not in b
+    assert "clientSecret" not in b
+    assert "travellerId" not in b
+    assert b["id"] == "ord_api_test"
+    assert b["orderReference"] == "ord_api_test"
+
+
+def test_scenario_11_report_export_safety(client, mock_operator_auth):
+    """Scenario 11: PDF report export succeeds cleanly without leaking sensitive payment metadata."""
+    orders = [{
+        "id": "ord_export_test",
+        "quoteType": "package",
+        "operatorId": "test_operator_uid",
+        "amount": 899.0,
+        "status": "paid",
+        "paymentStatus": "paid",
+        "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_leak",
+        "travellerId": "traveller_uid_export",
+    }]
+    db = _build_mock_db(orders=orders)
+    with patch("modules.fr12_tourism_operator_management.routes.get_db", return_value=db), \
+         patch("modules.fr12_tourism_operator_management.routes.retrieveRecord", return_value={"name": "Test Agency"}):
+        res = client.get("/api/fr12/reports/export", headers={"Authorization": "Bearer valid_test_token"})
+    assert res.status_code == 200
+    assert res.headers["Content-Type"] == "application/pdf"
+    assert res.data.startswith(b"%PDF")
+    # Verify raw sensitive URLs or secrets are not dumped into the PDF binary
+    assert b"cs_leak" not in res.data
+    assert b"traveller_uid_export" not in res.data
+
+
+def test_scenario_12_operator_analytics_template_compatibility():
+    """Scenario 12: Existing Operator Analytics template compatibility verified."""
+    orders = [{
+        "id": "ord_tpl",
+        "quoteType": "package",
+        "operatorId": "op_tpl",
+        "amount": 999.0,
+        "status": "paid",
+        "paymentStatus": "paid",
+    }]
+    packages = [{
+        "id": "pkg_tpl",
+        "operatorId": "op_tpl",
+        "packageTitle": "Sample Package",
+        "price": 999.0,
+        "approvalStatus": "approved",
+    }]
+    campaigns = [{
+        "id": "camp_tpl",
+        "operatorId": "op_tpl",
+        "reviewStatus": "approved",
+        "campaignStatus": "active",
+    }]
+    db = _build_mock_db(packages=packages, campaigns=campaigns, orders=orders)
+    report = generate_business_analytics(db, operator_id="op_tpl")
+
+    summary = report.get("summary", {})
+    # Check all keys required by analytics.html template:
+    assert "totalPackages" in summary
+    assert "approvedPackages" in summary
+    assert "pendingPackages" in summary
+    assert "rejectedPackages" in summary
+    assert "draftPackages" in summary
+    assert "totalCampaigns" in summary
+    assert "activeCampaigns" in summary
+    assert "approvedCampaigns" in summary
+    assert "pendingCampaigns" in summary
+    assert "rejectedCampaigns" in summary
+    assert "bookingRecords" in summary
+    assert "totalPackageValue" in summary
+    assert summary["bookingRecords"] == 1
+    assert summary["totalPackageValue"] == 999.0
+
+
+def test_scenario_13_operator_bookings_api_compatibility(client, mock_operator_auth):
+    """Scenario 13: Existing Operator Bookings API (/api/fr12/bookings) retains clean projection."""
+    orders = [{
+        "id": "ord_bkg_api",
+        "quoteType": "package",
+        "operatorId": "test_operator_uid",
+        "amount": 650.0,
+        "status": "paid",
+        "paymentStatus": "paid",
+        "packageSnapshot": {"title": "Penang Food Walk"},
+    }]
+    with patch("modules.fr12_tourism_operator_management.routes.retrieveRecord", return_value=orders):
+        res = client.get("/api/fr12/bookings", headers={"Authorization": "Bearer valid_test_token"})
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["ok"] is True
+    items = data["items"]
+    assert len(items) == 1
+    item = items[0]
+    assert item["orderReference"] == "ord_bkg_api"
+    assert item["packageTitle"] == "Penang Food Walk"
+    assert "checkoutUrl" not in item
+    assert "checkoutSessionId" not in item
+
+
+def test_scenario_14_admin_reporting_preserves_safety(client, mock_admin_auth):
+    """Scenario 14: Admin reporting fallback (operator_id=None) sees global orders without leaking secrets."""
+    orders = [
+        {
+            "id": "ord_adm_1",
+            "quoteType": "package",
+            "operatorId": "op_any_1",
+            "amount": 1000.0,
+            "status": "paid",
+            "paymentStatus": "paid",
+            "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_admin_leak_1",
+            "travellerId": "traveller_secret_adm_1",
+        },
+        {
+            "id": "ord_adm_2",
+            "quoteType": "package",
+            "operatorId": "op_any_2",
+            "amount": 2000.0,
+            "status": "paid",
+            "paymentStatus": "paid",
+            "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_admin_leak_2",
+            "travellerId": "traveller_secret_adm_2",
+        },
+    ]
+    db = _build_mock_db(packages=[], orders=orders)
+    with patch("modules.fr12_tourism_operator_management.routes.get_db", return_value=db):
+        res = client.get("/api/fr12/analytics", headers={"Authorization": "Bearer valid_test_token"})
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["ok"] is True
+    bookings = data["analytics"]["bookings"]
+    assert len(bookings) == 2
+    for b in bookings:
+        assert "checkoutUrl" not in b
+        assert "travellerId" not in b
+        assert "checkoutSessionId" not in b
+        assert "orderReference" in b
+
+

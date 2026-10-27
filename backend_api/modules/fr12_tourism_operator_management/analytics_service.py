@@ -5,6 +5,86 @@ def _normalise(value):
     return str(value or "").strip().lower()
 
 
+def _safe_analytics_booking(order_data):
+    """
+    Project a raw checkout_orders document to an operator-safe analytics booking projection.
+
+    Allowlisted fields:
+    - id / orderReference: Booking document identifier
+    - packageId: Associated tourism package ID
+    - packageTitle: Human-readable package title
+    - operatorId: Owning operator UID
+    - quoteType: 'package'
+    - amount: Order monetary value
+    - groupTotal: Total group booking amount
+    - currency: Transaction currency (e.g. 'MYR')
+    - status / orderStatus: Order lifecycle status
+    - paymentStatus: Payment settlement status
+    - fulfillmentStatus: Fulfillment status
+    - departureDate: Selected departure date
+    - groupSize: Total group size
+    - adults: Number of adult participants
+    - children: Number of child participants
+    - testMode: Boolean flag indicating test payment provider
+    - supplierReservationStatus: Reservation status
+    - createdAt: Creation timestamp
+    - updatedAt: Last updated timestamp
+
+    Strictly excluded:
+    - checkoutUrl (Stripe Checkout direct session URL)
+    - checkoutSessionId (Stripe session identifier)
+    - providerIdempotencyKey (Idempotency key containing internal UUIDs)
+    - stripePaymentIntentId, stripeSessionId, clientSecret, paymentMethodId (Payment secrets)
+    - travellerId (Personal identity / user account ID of traveller)
+    - packageAttemptId, orderAttemptId (Internal checkout state IDs)
+    - packageSnapshot (Raw unverified data payload)
+    """
+    snapshot = order_data.get("packageSnapshot") or {}
+    if not isinstance(snapshot, dict):
+        snapshot = {}
+    participants = order_data.get("participants") or snapshot.get("participants") or {}
+    if not isinstance(participants, dict):
+        participants = {}
+
+    order_id = order_data.get("id")
+    package_id = order_data.get("packageId") or snapshot.get("packageId")
+    package_title = snapshot.get("title") or order_data.get("packageTitle")
+    departure_date = order_data.get("departureDate") or snapshot.get("selectedDepartureDate")
+    group_size = order_data.get("groupSize") or snapshot.get("groupSize") or participants.get("total")
+    adults = participants.get("adults")
+    children = participants.get("children")
+
+    amt_val = order_data.get("amount") if order_data.get("amount") is not None else order_data.get("totalAmount")
+    if amt_val is None:
+        amt_val = order_data.get("groupTotal")
+    group_total = order_data.get("groupTotal") if order_data.get("groupTotal") is not None else amt_val
+
+    return {
+        "id": order_id,
+        "orderReference": order_id,
+        "packageId": package_id,
+        "packageTitle": package_title,
+        "operatorId": order_data.get("operatorId"),
+        "quoteType": "package",
+        "departureDate": departure_date,
+        "groupSize": group_size,
+        "adults": adults,
+        "children": children,
+        "paymentStatus": order_data.get("paymentStatus"),
+        "orderStatus": order_data.get("status"),
+        "status": order_data.get("status"),
+        "fulfillmentStatus": order_data.get("fulfillmentStatus"),
+        "amount": amt_val,
+        "groupTotal": group_total,
+        "currency": str(order_data.get("currency") or "MYR").strip().upper(),
+        "supplierReservationStatus": order_data.get("supplierReservationStatus") or "not_created",
+        "testMode": bool(order_data.get("provider") == "stripe_checkout_test" or order_data.get("testMode")),
+        "createdAt": order_data.get("createdAt"),
+        "updatedAt": order_data.get("updatedAt"),
+    }
+
+
+
 def generate_business_analytics(db, operator_id):
     """
     Generate the Tourism Operator Business Analytics Report.
@@ -136,11 +216,9 @@ def generate_business_analytics(db, operator_id):
         if operator_id and booking_operator != str(operator_id).strip():
             continue
 
-        # Strip sensitive payment provider tokens before inclusion
-        for secret_key in ("stripePaymentIntentId", "stripeSessionId", "clientSecret", "paymentMethodId"):
-            data.pop(secret_key, None)
-
-        bookings.append(data)
+        # Project raw checkout order to safe allowlisted booking
+        safe_booking = _safe_analytics_booking(data)
+        bookings.append(safe_booking)
 
         payment_status = _normalise(data.get("paymentStatus"))
         order_status = _normalise(data.get("status"))
