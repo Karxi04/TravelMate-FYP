@@ -240,16 +240,36 @@ def delete_activity(activity_id):
 def bookings():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    response = call_api("GET", "/api/fr13/bookings")
-    return render_template("fr13_administrator_management/bookings.html", items=response.json().get("items", []) if response.ok else [])
+    booking_type = request.args.get("type", "hotel")
+    params = {"type": booking_type}
+    if request.args.get("q"):
+        params["q"] = request.args.get("q").strip()
+    if request.args.get("status"):
+        params["status"] = request.args.get("status").strip()
+    response = call_api("GET", "/api/fr13/bookings", params=params)
+    return render_template(
+        "fr13_administrator_management/bookings.html",
+        items=response.json().get("items", []) if response.ok else [],
+        booking_type=booking_type,
+        query=params.get("q", ""),
+        status=params.get("status", ""),
+    )
 
 @bp.route("/payments")
 def payments():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    params = {key: request.args.get(key, "").strip() for key in ("q", "status", "product") if request.args.get(key, "").strip()}
+    params = {
+        key: request.args.get(key, "").strip()
+        for key in ("q", "status", "product", "startDate", "endDate")
+        if request.args.get(key, "").strip()
+    }
     response = call_api("GET", "/api/fr13/payments", params=params)
-    return render_template("fr13_administrator_management/payments.html", items=response.json().get("items", []) if response.ok else [], **params)
+    return render_template(
+        "fr13_administrator_management/payments.html",
+        items=response.json().get("items", []) if response.ok else [],
+        **params,
+    )
 
 
 @bp.post("/feedback/<feedback_id>/review")

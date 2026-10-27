@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, date
 from math import radians, sin, cos, sqrt, atan2, isfinite
 from utils import utc_now_iso
@@ -541,10 +542,62 @@ def createItinerary(data, travellerId):
     }
 
 
+def _collect_existing_activity_ids(itinerary):
+    itinerary = itinerary or {}
+    seen = set()
+    for act in itinerary.get('activities', []) or []:
+        if isinstance(act, dict) and act.get('activityId'):
+            seen.add(str(act['activityId']).strip())
+    for item in itinerary.get('unscheduledSuggestions', []) or []:
+        if isinstance(item, dict) and item.get('activityId'):
+            seen.add(str(item['activityId']).strip())
+    for day in itinerary.get('dailySchedule', []) or []:
+        if isinstance(day, dict):
+            for act in day.get('activities', []) or []:
+                if isinstance(act, dict) and act.get('activityId'):
+                    seen.add(str(act['activityId']).strip())
+    return seen
+
+
+def _allocate_activity_id(itinerary, requested_id=None):
+    seen = _collect_existing_activity_ids(itinerary)
+
+    if requested_id and str(requested_id).strip() and str(requested_id).strip() not in seen:
+        assigned = str(requested_id).strip()
+        m = re.match(r'^[Aa](\d+)$', assigned)
+        if m:
+            val = int(m.group(1))
+            itinerary['nextActivitySeq'] = max(val + 1, int(itinerary.get('nextActivitySeq') or 0))
+        return assigned
+
+    # Scan for existing A-prefixed integer IDs
+    max_num = 0
+    for sid in seen:
+        m = re.match(r'^[Aa](\d+)$', sid)
+        if m:
+            num = int(m.group(1))
+            if num > max_num:
+                max_num = num
+
+    stored_seq = int(itinerary.get('nextActivitySeq') or 0)
+    candidate_seq = max(max_num + 1, stored_seq)
+    if candidate_seq < 1:
+        candidate_seq = 1
+
+    while f'A{candidate_seq}' in seen:
+        candidate_seq += 1
+
+    itinerary['nextActivitySeq'] = candidate_seq + 1
+    return f'A{candidate_seq}'
+
+
 def addActivity(itinerary, activityData):
     itinerary = dict(itinerary or {})
     activities = list(itinerary.get('activities', []))
-    activities.append({'activityId': activityData.get('activityId') or f'A{len(activities) + 1}', **activityData})
+    data = dict(activityData or {})
+    activity_id = _allocate_activity_id(itinerary, data.get('activityId'))
+    data['activityId'] = activity_id
+    activities.append(data)
     itinerary['activities'] = activities
     itinerary['updatedAt'] = utc_now_iso()
     return itinerary
@@ -552,7 +605,29 @@ def addActivity(itinerary, activityData):
 
 def removeActivity(itinerary, activityId):
     itinerary = dict(itinerary or {})
-    itinerary['activities'] = [x for x in itinerary.get('activities', []) if str(x.get('activityId')) != str(activityId)]
+    target_id = str(activityId).strip()
+
+    # Track sequence before removal to prevent reusing deleted activity IDs
+    seen = _collect_existing_activity_ids(itinerary)
+    max_num = 0
+    for sid in seen:
+        m = re.match(r'^[Aa](\d+)$', sid)
+        if m:
+            num = int(m.group(1))
+            if num > max_num:
+                max_num = num
+    stored_seq = int(itinerary.get('nextActivitySeq') or 0)
+    itinerary['nextActivitySeq'] = max(max_num + 1, stored_seq)
+
+    itinerary['activities'] = [
+        x for x in itinerary.get('activities', [])
+        if str(x.get('activityId')).strip() != target_id
+    ]
+    if 'unscheduledSuggestions' in itinerary and isinstance(itinerary['unscheduledSuggestions'], list):
+        itinerary['unscheduledSuggestions'] = [
+            x for x in itinerary['unscheduledSuggestions']
+            if str(x.get('activityId')).strip() != target_id
+        ]
     itinerary['updatedAt'] = utc_now_iso()
     return itinerary
 
@@ -560,9 +635,10 @@ def removeActivity(itinerary, activityId):
 def rearrangeActivity(itinerary, orderedActivityIds):
     itinerary = dict(itinerary or {})
     existing = list(itinerary.get('activities', []))
-    by_id = {str(x.get('activityId')): x for x in existing}
-    ordered = [by_id[str(i)] for i in orderedActivityIds if str(i) in by_id]
-    remaining = [x for x in existing if str(x.get('activityId')) not in {str(i) for i in orderedActivityIds}]
+    by_id = {str(x.get('activityId')).strip(): x for x in existing if x.get('activityId') is not None}
+    ordered = [by_id[str(i).strip()] for i in orderedActivityIds if str(i).strip() in by_id]
+    ordered_ids = {str(i).strip() for i in orderedActivityIds}
+    remaining = [x for x in existing if str(x.get('activityId')).strip() not in ordered_ids]
     itinerary['activities'] = ordered + remaining
     itinerary['updatedAt'] = utc_now_iso()
     return itinerary
@@ -570,10 +646,16 @@ def rearrangeActivity(itinerary, orderedActivityIds):
 
 def updateActivity(itinerary, activityId, changes):
     itinerary = dict(itinerary or {})
+    target_id = str(activityId).strip()
     itinerary['activities'] = [
-        {**x, **changes} if str(x.get('activityId')) == str(activityId) else x
+        {**x, **changes} if str(x.get('activityId')).strip() == target_id else x
         for x in itinerary.get('activities', [])
     ]
+    if 'unscheduledSuggestions' in itinerary and isinstance(itinerary['unscheduledSuggestions'], list):
+        itinerary['unscheduledSuggestions'] = [
+            {**x, **changes} if str(x.get('activityId')).strip() == target_id else x
+            for x in itinerary['unscheduledSuggestions']
+        ]
     itinerary['updatedAt'] = utc_now_iso()
     return itinerary
 

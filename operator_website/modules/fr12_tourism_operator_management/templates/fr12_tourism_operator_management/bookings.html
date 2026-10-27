@@ -218,21 +218,27 @@
 
         <td>
           {% set pay_status = (item.paymentStatus or 'unknown')|lower %}
+          {% set ord_status = (item.orderStatus or '')|lower %}
+          {% set is_pending = is_pending_booking(item) if is_pending_booking is defined else (pay_status in ['pending', 'payment_pending', 'unpaid'] and ord_status not in ['expired', 'checkout_expired', 'failed', 'checkout_failed', 'cancelled', 'checkout_cancelled', 'rejected'] and pay_status not in ['paid', 'succeeded', 'failed', 'payment_failed', 'expired', 'cancelled', 'refunded']) %}
           {% if pay_status == 'paid' %}
             <span class="status approved">
               Paid{% if item.testMode %} (Test){% endif %}
             </span>
-          {% elif pay_status in ['pending', 'payment_pending'] %}
-            <span class="status pending">Pending</span>
-          {% elif pay_status in ['failed', 'payment_failed'] %}
+          {% elif is_pending %}
+            <span class="status pending">Pending Payment</span>
+          {% elif pay_status == 'expired' or ord_status in ['expired', 'checkout_expired'] %}
+            <span class="status expired">Expired</span>
+          {% elif pay_status in ['failed', 'payment_failed'] or ord_status in ['failed', 'checkout_failed'] %}
             <span class="status rejected">Failed</span>
+          {% elif pay_status in ['cancelled'] or ord_status in ['cancelled', 'checkout_cancelled'] %}
+            <span class="status rejected">Cancelled</span>
           {% else %}
             <span class="status draft">{{ pay_status|capitalize }}</span>
           {% endif %}
         </td>
 
         <td>
-          {% set ful_status = (item.fulfillmentStatus or 'unknown')|lower %}
+          {% set ful_status = (item.fulfillmentStatus or '')|lower %}
           {% if ful_status == 'fulfilled' %}
             <span class="badge-fulfillment fulfilled">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
@@ -240,6 +246,8 @@
             </span>
           {% elif ful_status in ['pending', 'fulfillment_pending'] %}
             <span class="badge-fulfillment pending">Trip Pending</span>
+          {% elif ful_status in ['not_created', 'none', 'unfulfilled', 'not_fulfilled'] or not item.fulfillmentStatus %}
+            <span class="badge-fulfillment fallback">Not Fulfilled</span>
           {% else %}
             <span class="badge-fulfillment fallback">{{ ful_status|replace('_', ' ')|title }}</span>
           {% endif %}

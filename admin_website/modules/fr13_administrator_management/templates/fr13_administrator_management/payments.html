@@ -1,18 +1,68 @@
 {% extends 'portal_base.html' %}
 {% block title %}Payment Records | TravelMate{% endblock %}
 {% block content %}
-<div class="page-title"><div><h1>Payment Records</h1><p>Monitor Stripe sandbox and TravelMate payment simulation records.</p></div></div>
-<form method="get" class="filters"><input name="q" value="{{ q|default('') }}" placeholder="Order, traveller or package"><select name="status"><option value="">All statuses</option><option value="paid">Paid</option><option value="payment_pending">Pending</option><option value="failed">Failed</option></select><select name="product"><option value="">All products</option><option value="package">Package</option><option value="hotel">Hotel</option><option value="flight">Flight</option></select><button class="btn" type="submit">Filter</button></form>
-<div class="table-wrap"><table><thead><tr><th>Transaction</th><th>Booking</th><th>Traveller</th><th>Status</th><th>Amount</th><th>Created</th></tr></thead><tbody>
-{% for x in items %}
-<tr>
-  <td><strong>{{ x.get('transactionReference', x.get('id','-')) }}</strong><br><small>{{ x.get('cardBrand','Card') }} {{ x.get('cardLast4','') }}</small></td>
-  <td>{{ x.get('productType', x.get('bookingId','-')) }}<br><small>{{ x.get('productTitle','') }}</small></td>
-  <td>{{ x.get('travellerId','-') }}</td>
-  <td><span class="status {{ x.get('paymentStatus','unknown') }}">{{ x.get('paymentStatus','unknown') }}</span></td>
-  <td>{{ x.get('currency','MYR')|upper }} {{ x.get('amount',0) }}</td>
-  <td>{{ x.get('createdAt','-') }}</td>
-</tr>
-{% else %}<tr><td colspan="6">No payment records found.</td></tr>{% endfor %}
-</tbody></table></div>
+<div class="page-title">
+  <div>
+    <h1>Payment Records</h1>
+    <p>Monitor Stripe sandbox and TravelMate payment simulation records across packages, flights and hotels.</p>
+  </div>
+</div>
+<form method="get" class="filters">
+  <input name="q" value="{{ q|default('') }}" placeholder="Order, traveller or package">
+  <select name="status">
+    <option value="">All statuses</option>
+    <option value="paid" {% if status == 'paid' %}selected{% endif %}>Paid</option>
+    <option value="pending" {% if status == 'pending' %}selected{% endif %}>Pending</option>
+    <option value="payment_pending" {% if status == 'payment_pending' %}selected{% endif %}>Payment Pending</option>
+    <option value="unpaid" {% if status == 'unpaid' %}selected{% endif %}>Unpaid</option>
+    <option value="failed" {% if status == 'failed' %}selected{% endif %}>Failed</option>
+    <option value="expired" {% if status == 'expired' %}selected{% endif %}>Expired</option>
+  </select>
+  <select name="product">
+    <option value="">All products</option>
+    <option value="package" {% if product == 'package' %}selected{% endif %}>Package</option>
+    <option value="hotel" {% if product == 'hotel' %}selected{% endif %}>Hotel</option>
+    <option value="flight" {% if product == 'flight' %}selected{% endif %}>Flight</option>
+    <option value="legacy_payment" {% if product == 'legacy_payment' %}selected{% endif %}>Legacy Payment</option>
+  </select>
+  <input type="date" name="startDate" value="{{ startDate|default('') }}" title="Start Date">
+  <input type="date" name="endDate" value="{{ endDate|default('') }}" title="End Date">
+  <button class="btn" type="submit">Filter</button>
+</form>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Transaction</th>
+        <th>Product</th>
+        <th>Traveller</th>
+        <th>Status</th>
+        <th>Amount</th>
+        <th>Environment</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for x in items %}
+      <tr>
+        <td><strong>{{ x.get('transactionReference', x.get('id','-')) }}</strong><br><small>{{ x.get('cardBrand','Card') }} {{ x.get('cardLast4','') }}</small></td>
+        <td>{{ x.get('productType', x.get('bookingId','-')) }}<br><small>{{ x.get('productTitle','') }}</small></td>
+        <td>{{ x.get('travellerId','-') }}</td>
+        <td><span class="status {{ x.get('paymentStatus', x.get('status','unknown')) }}">{{ x.get('paymentStatus', x.get('status','unknown')) }}</span></td>
+        <td>{{ x.get('currency','MYR')|upper }} {{ '%.2f'|format(x.get('amount',0)|float) }}</td>
+        <td>
+          {% if x.get('testMode') or 'test' in (x.get('provider','')|string|lower) or (x.get('transactionReference','')|string).startswith('pi_sim_') %}
+            <span class="badge warning">Stripe Test Mode</span>
+          {% else %}
+            <span class="badge success">Live</span>
+          {% endif %}
+        </td>
+        <td>{{ x.get('createdAt','-') }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No payment records found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}

@@ -174,6 +174,128 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
     await load();
   }
 
+  Future<void> showPlanningModeSheet(BuildContext context) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            8,
+            20,
+            MediaQuery.of(sheetContext).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Plan your trip',
+                style: Theme.of(sheetContext).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ) ??
+                    const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Choose how you would like to plan your itinerary.',
+                style: TextStyle(color: InkWashColors.mutedInk, fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              Card(
+                elevation: 0,
+                color: Theme.of(sheetContext)
+                    .colorScheme
+                    .primaryContainer
+                    .withValues(alpha: 0.4),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: Theme.of(sheetContext)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: 0.3),
+                  ),
+                ),
+                child: ListTile(
+                  key: const ValueKey('plan-for-me-option'),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  leading: CircleAvatar(
+                    backgroundColor: Theme.of(sheetContext).colorScheme.primary,
+                    foregroundColor:
+                        Theme.of(sheetContext).colorScheme.onPrimary,
+                    child: const Icon(Icons.auto_awesome_rounded),
+                  ),
+                  title: const Text(
+                    'Plan for Me',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  subtitle: const Padding(
+                    padding: EdgeInsets.only(top: 4.0),
+                    child: Text(
+                      'Personalized AI recommendations and smart scheduling based on your travel preferences.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.pop(sheetContext, 'plan_for_me'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Card(
+                elevation: 0,
+                color: Theme.of(sheetContext)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withValues(alpha: 0.4),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: Theme.of(sheetContext).colorScheme.outlineVariant,
+                  ),
+                ),
+                child: ListTile(
+                  key: const ValueKey('plan-myself-option'),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  leading: CircleAvatar(
+                    backgroundColor:
+                        Theme.of(sheetContext).colorScheme.secondary,
+                    foregroundColor:
+                        Theme.of(sheetContext).colorScheme.onSecondary,
+                    child: const Icon(Icons.edit_calendar_rounded),
+                  ),
+                  title: const Text(
+                    'Plan Myself',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  subtitle: const Padding(
+                    padding: EdgeInsets.only(top: 4.0),
+                    child: Text(
+                      'Create an empty itinerary and handpick places day by day.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.pop(sheetContext, 'plan_myself'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (choice == 'plan_for_me') {
+      await planTrip();
+    } else if (choice == 'plan_myself') {
+      await createTrip();
+    }
+  }
+
   Future<void> createTrip() async {
     final title = TextEditingController();
     final destination = TextEditingController();
@@ -200,91 +322,165 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
       }
     }
 
+    String? titleError;
+    String? destinationError;
+    String? dateError;
+    String? travellerError;
+    String? budgetError;
+    bool isSubmitting = false;
+
     final payload = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-            18, 0, 18, MediaQuery.of(sheetContext).viewInsets.bottom + 22),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('Create a new trip',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 5),
-              const Text(
-                  'Start with the important trip information. Add real places from search after the trip is created.',
-                  style: TextStyle(color: InkWashColors.mutedInk)),
-              const SizedBox(height: 14),
-              TextField(
-                  controller: title,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+              18, 0, 18, MediaQuery.of(sheetContext).viewInsets.bottom + 22),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Create a new trip',
+                    style:
+                        TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 5),
+                const Text(
+                    'Start with the important trip information. Add real places from search after the trip is created.',
+                    style: TextStyle(color: InkWashColors.mutedInk)),
+                const SizedBox(height: 14),
+                TextField(
+                    controller: title,
+                    decoration: InputDecoration(
+                        labelText: 'Trip title',
+                        errorText: titleError,
+                        prefixIcon: const Icon(Icons.title_rounded))),
+                const SizedBox(height: 9),
+                TextField(
+                    controller: destination,
+                    decoration: InputDecoration(
+                        labelText: 'Destination',
+                        hintText: 'e.g. Kuala Lumpur',
+                        errorText: destinationError,
+                        prefixIcon: const Icon(Icons.location_on_outlined))),
+                const SizedBox(height: 9),
+                TextField(
+                  controller: startDate,
+                  readOnly: true,
+                  onTap: () async {
+                    await pickDate(sheetContext, startDate);
+                    setSheetState(() => dateError = null);
+                  },
                   decoration: const InputDecoration(
-                      labelText: 'Trip title',
-                      prefixIcon: Icon(Icons.title_rounded))),
-              const SizedBox(height: 9),
-              TextField(
-                  controller: destination,
-                  decoration: const InputDecoration(
-                      labelText: 'Destination',
-                      hintText: 'e.g. Kuala Lumpur',
-                      prefixIcon: Icon(Icons.location_on_outlined))),
-              const SizedBox(height: 9),
-              TextField(
-                controller: startDate,
-                readOnly: true,
-                onTap: () => pickDate(sheetContext, startDate),
-                decoration: const InputDecoration(
-                    labelText: 'Start date',
-                    prefixIcon: Icon(Icons.calendar_month_outlined)),
-              ),
-              const SizedBox(height: 9),
-              TextField(
-                controller: endDate,
-                readOnly: true,
-                onTap: () => pickDate(sheetContext, endDate),
-                decoration: const InputDecoration(
-                    labelText: 'End date',
-                    prefixIcon: Icon(Icons.event_outlined)),
-              ),
-              const SizedBox(height: 9),
-              Row(
-                children: [
-                  Expanded(
-                      child: TextField(
-                          controller: travellers,
-                          keyboardType: TextInputType.number,
-                          decoration:
-                              const InputDecoration(labelText: 'Travellers'))),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: TextField(
-                          controller: budget,
-                          keyboardType: TextInputType.number,
-                          decoration:
-                              const InputDecoration(labelText: 'Budget (RM)'))),
-                ],
-              ),
-              const SizedBox(height: 14),
-              FilledButton.icon(
-                onPressed: () {
-                  if (title.text.trim().isEmpty ||
-                      destination.text.trim().isEmpty) return;
-                  Navigator.pop(sheetContext, {
-                    'title': title.text.trim(),
-                    'destinationArea': destination.text.trim(),
-                    'startDate': startDate.text.trim(),
-                    'endDate': endDate.text.trim(),
-                    'travellerCount': int.tryParse(travellers.text) ?? 1,
-                    'budgetLimit': double.tryParse(budget.text) ?? 0,
-                    'activities': <Map<String, dynamic>>[],
-                  });
-                },
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('Create trip'),
-              ),
-            ],
+                      labelText: 'Start date',
+                      prefixIcon: Icon(Icons.calendar_month_outlined)),
+                ),
+                const SizedBox(height: 9),
+                TextField(
+                  controller: endDate,
+                  readOnly: true,
+                  onTap: () async {
+                    await pickDate(sheetContext, endDate);
+                    setSheetState(() => dateError = null);
+                  },
+                  decoration: InputDecoration(
+                      labelText: 'End date',
+                      errorText: dateError,
+                      prefixIcon: const Icon(Icons.event_outlined)),
+                ),
+                const SizedBox(height: 9),
+                Row(
+                  children: [
+                    Expanded(
+                        child: TextField(
+                            controller: travellers,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                                labelText: 'Travellers',
+                                errorText: travellerError))),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: TextField(
+                            controller: budget,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                                labelText: 'Budget (RM)',
+                                errorText: budgetError))),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                FilledButton.icon(
+                  onPressed: isSubmitting
+                      ? null
+                      : () {
+                          final titleText = title.text.trim();
+                          final destText = destination.text.trim();
+                          final startDt =
+                              DateTime.tryParse(startDate.text.trim());
+                          final endDt = DateTime.tryParse(endDate.text.trim());
+                          final count =
+                              int.tryParse(travellers.text.trim());
+                          final b = double.tryParse(budget.text.trim());
+
+                          bool hasError = false;
+                          setSheetState(() {
+                            titleError = null;
+                            destinationError = null;
+                            dateError = null;
+                            travellerError = null;
+                            budgetError = null;
+
+                            if (titleText.isEmpty) {
+                              titleError = 'Trip title is required';
+                              hasError = true;
+                            }
+                            if (destText.isEmpty) {
+                              destinationError = 'Destination area is required';
+                              hasError = true;
+                            }
+                            if (startDt != null &&
+                                endDt != null &&
+                                endDt.isBefore(startDt)) {
+                              dateError =
+                                  'End date cannot be earlier than start date';
+                              hasError = true;
+                            }
+                            if (count == null || count < 1) {
+                              travellerError =
+                                  'At least 1 traveller required';
+                              hasError = true;
+                            }
+                            if (b == null || b < 0) {
+                              budgetError = 'Budget cannot be negative';
+                              hasError = true;
+                            }
+                          });
+
+                          if (hasError || isSubmitting) return;
+
+                          setSheetState(() => isSubmitting = true);
+                          Navigator.pop(sheetContext, {
+                            'title': titleText,
+                            'destinationArea': destText,
+                            'startDate': startDate.text.trim(),
+                            'endDate': endDate.text.trim(),
+                            'travellerCount': count ?? 1,
+                            'budgetLimit': b ?? 0.0,
+                            'activities': <Map<String, dynamic>>[],
+                          });
+                        },
+                  icon: isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_rounded),
+                  label: Text(
+                      isSubmitting ? 'Creating trip…' : 'Create trip'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -461,10 +657,15 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
           PopupMenuButton<String>(
             tooltip: 'More trip actions',
             onSelected: (value) {
+              if (value == 'choice') showPlanningModeSheet(context);
               if (value == 'manual') createTrip();
               if (value == 'refresh') load();
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'choice',
+                child: Text('Plan a trip'),
+              ),
               PopupMenuItem(
                 value: 'manual',
                 child: Text('Add trip manually'),
@@ -476,7 +677,8 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
       ),
       floatingActionButton: selectedSegment == 0
           ? FloatingActionButton.extended(
-              onPressed: busy ? null : planTrip,
+              key: const ValueKey('plan-trip-fab'),
+              onPressed: busy ? null : () => showPlanningModeSheet(context),
               icon: const Icon(Icons.route_rounded),
               label: const Text('Plan a trip'),
             )
@@ -554,23 +756,26 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                 TravelEmptyState(
                   icon: Icons.luggage_outlined,
                   title: 'No travel plans yet',
-                  message: 'Start planning your first personalised trip with custom activities and budget.',
+                  message:
+                      'Start planning your first personalised trip with custom activities and budget.',
                   actionLabel: 'Plan a trip',
-                  onAction: planTrip,
+                  onAction: () => showPlanningModeSheet(context),
                 )
               else if (plans.isEmpty)
                 switch (selectedFilter) {
                   TripFilter.ongoing => const TravelEmptyState(
                       icon: Icons.explore_off_outlined,
                       title: 'No ongoing trips',
-                      message: 'You have no trips currently in progress. Trips taking place today will appear here automatically.',
+                      message:
+                          'You have no trips currently in progress. Trips taking place today will appear here automatically.',
                     ),
                   TripFilter.planned => TravelEmptyState(
                       icon: Icons.event_available_outlined,
                       title: 'No upcoming trips planned',
-                      message: 'You have no upcoming trips scheduled. Plan a new trip to explore Penang.',
+                      message:
+                          'You have no upcoming trips scheduled. Plan a new trip to explore Penang.',
                       actionLabel: 'Plan a trip',
-                      onAction: planTrip,
+                      onAction: () => showPlanningModeSheet(context),
                     ),
                   TripFilter.expired => const TravelEmptyState(
                       icon: Icons.history_toggle_off_rounded,

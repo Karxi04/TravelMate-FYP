@@ -237,6 +237,29 @@ def _safe_float(val, default=0.0):
         return default
 
 
+def _is_pending_booking(b):
+    if not isinstance(b, dict):
+        return False
+    pay = str(b.get("paymentStatus") or "").strip().lower()
+    order = str(b.get("orderStatus") or "").strip().lower()
+    terminal_orders = {
+        "expired", "checkout_expired",
+        "failed", "checkout_failed",
+        "cancelled", "checkout_cancelled",
+        "rejected",
+    }
+    terminal_pays = {
+        "paid", "succeeded",
+        "failed", "payment_failed",
+        "expired",
+        "cancelled",
+        "refunded",
+    }
+    if order in terminal_orders or pay in terminal_pays:
+        return False
+    return pay in {"pending", "payment_pending", "unpaid"}
+
+
 @bp.route("/bookings")
 def bookings():
     if not guard():
@@ -257,7 +280,7 @@ def bookings():
         if status == "paid":
             items = [b for b in items if str(b.get("paymentStatus", "")).lower() == "paid"]
         elif status == "pending":
-            items = [b for b in items if str(b.get("paymentStatus", "")).lower() in {"pending", "payment_pending"}]
+            items = [b for b in items if _is_pending_booking(b)]
         elif status == "fulfilled":
             items = [b for b in items if str(b.get("fulfillmentStatus", "")).lower() == "fulfilled"]
         elif status == "test":
@@ -277,7 +300,7 @@ def bookings():
     summary = {
         "total": len(all_items),
         "paid": sum(1 for b in all_items if str(b.get("paymentStatus", "")).lower() == "paid"),
-        "pending": sum(1 for b in all_items if str(b.get("paymentStatus", "")).lower() in {"pending", "payment_pending"}),
+        "pending": sum(1 for b in all_items if _is_pending_booking(b)),
         "fulfilled": sum(1 for b in all_items if str(b.get("fulfillmentStatus", "")).lower() == "fulfilled"),
         "unconfirmed_supplier": sum(1 for b in all_items if b.get("supplierReservationStatus") == "not_created"),
         "test_orders": sum(1 for b in all_items if b.get("testMode")),
@@ -296,6 +319,7 @@ def bookings():
         status=status,
         query=query,
         backend_error=backend_error,
+        is_pending_booking=_is_pending_booking,
     )
 
 

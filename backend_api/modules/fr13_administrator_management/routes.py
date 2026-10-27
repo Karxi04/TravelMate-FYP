@@ -35,7 +35,27 @@ def _criteria():
     return data
 
 
-def _in_date_range(item, start, end, fields=('createdAt', 'updatedAt', 'submittedAt', 'reviewedAt')):
+FORBIDDEN_COMMERCE_KEYS = {
+    'providerIdempotencyKey',
+    'clientSecret',
+    'stripeClientSecret',
+    'rawSessionId',
+    'checkoutSessionId',
+    'checkoutUrl',
+    'firebaseToken',
+    'authToken',
+    'password',
+    'sessionToken',
+}
+
+
+def _sanitize_commerce_record(record):
+    if not isinstance(record, dict):
+        return record
+    return {k: v for k, v in record.items() if k not in FORBIDDEN_COMMERCE_KEYS}
+
+
+def _in_date_range(item, start, end, fields=('createdAt', 'updatedAt', 'submittedAt', 'reviewedAt', 'timestamp', 'date')):
     if not start and not end:
         return True
     values = [str(item.get(field) or '')[:10] for field in fields if item.get(field)]
@@ -101,18 +121,25 @@ def _normalise_activity_payload(payload):
 
 def _records_for_type(report_type, collections):
     if report_type == 'users':
-        return collections['users']
+        return collections.get('users', [])
     if report_type == 'packages':
-        return collections['packages']
+        return collections.get('packages', [])
     if report_type == 'campaigns':
-        return collections['campaigns']
+        return collections.get('campaigns', [])
     if report_type == 'feedback':
-        return collections['feedback']
+        return collections.get('feedback', [])
     if report_type == 'bookings':
-        return collections['hotel_bookings']
+        return collections.get('hotel_bookings', [])
     if report_type == 'payments':
-        return collections['payment_records']
-    return sum(collections.values(), [])
+        return collections.get('payment_records', [])
+    return (
+        collections.get('users', [])
+        + collections.get('packages', [])
+        + collections.get('campaigns', [])
+        + collections.get('feedback', [])
+        + collections.get('hotel_bookings', [])
+        + collections.get('payment_records', [])
+    )
 @bp.get('/users')
 @auth_required(['admin'])
 def users():
@@ -372,7 +399,132 @@ def delete_activity(aid):
 @bp.get('/bookings')
 @auth_required(['admin'])
 def booking_records():
-    return jsonify({'ok': True, 'items': retrieveRecord('hotel_bookings') or []})
+    booking_type = str(request.args.get('type') or 'hotel').strip().lower()
+    query = str(request.args.get('q') or '').strip().lower()
+    status = str(request.args.get('status') or '').strip().lower()
+
+    items = []
+    if booking_type in {'hotel', 'all'}:
+        hotel_bookings = retrieveRecord('hotel_bookings') or []
+        for h in hotel_bookings:
+            if not isinstance(h, dict):
+                continue
+            sanitized_h = _sanitize_commerce_record(h)
+            sanitized_h.setdefault('bookingType', 'hotel')
+            items.append(sanitized_h)
+
+    if booking_type in {'package', 'all'}:
+        checkout_orders = retrieveRecord('checkout_orders') or []
+        for o in checkout_orders:
+            if not isinstance(o, dict):
+                continue
+            quote_type = str(o.get('quoteType') or '').lower()
+            if quote_type == 'package' or o.get('packageId') or o.get('attemptType') == 'package_checkout':
+                pkg_snapshot = o.get('packageSnapshot') if isinstance(o.get('packageSnapshot'), dict) else {}
+                title = pkg_snapshot.get('title') or pkg_snapshot.get('packageTitle') or o.get('packageTitle') or '-'
+                operator_id = pkg_snapshot.get('operatorId') or o.get('operatorId') or '-'
+                package_id = pkg_snapshot.get('packageId') or o.get('packageId') or '-'
+
+                sanitized_order = _sanitize_commerce_record(o)
+                pkg_proj = {
+                    **sanitized_order,
+                    'bookingType': 'package',
+                    'bookingReference': o.get('id'),
+                    'packageId': package_id,
+                    'packageTitle': title,
+                    'operatorId': operator_id,
+                    'travellerId': o.get('travellerId'),
+                    'paymentStatus': o.get('paymentStatus') or o.get('status') or 'unpaid',
+                    'orderStatus': o.get('status') or 'checkout_pending',
+                    'fulfillmentStatus': o.get('fulfillmentStatus') or 'fulfillment_pending',
+                    'supplierReservationStatus': 'not_created',
+                    'supplierReservationDisclosure': 'Package Trip creation is platform-managed; no direct third-party supplier reservation has been booked.',
+                    'testMode': bool(o.get('testMode', True)),
+                    'amount': _float_or_zero(o.get('amount') or o.get('price')),
+                    'currency': str(o.get('currency') or 'MYR').upper(),
+                    'createdAt': o.get('createdAt') or '',
+                }
+                items.append(pkg_proj)
+
+    if status:
+        items = [
+            item for item in items
+            if str(item.get('bookingStatus') or item.get('paymentStatus') or item.get('orderStatus') or '').lower() == status
+        ]
+    if query:
+        items = [
+            item for item in items
+            if query in ' '.join(str(item.get(key) or '') for key in ('id', 'bookingReference', 'travellerId', 'packageTitle', 'hotelName', 'operatorId')).lower()
+        ]
+
+    items.sort(key=lambda item: str(item.get('createdAt') or ''), reverse=True)
+    return jsonify({'ok': True, 'items': items})
+
+
+def _unified_payment_records(checkout_orders, payment_records):
+    unique_orders = []
+    seen_order_ids = set()
+    for o in (checkout_orders or []):
+        if not isinstance(o, dict):
+            continue
+        oid = str(o.get('id') or '')
+        if oid and oid in seen_order_ids:
+            continue
+        if oid:
+            seen_order_ids.add(oid)
+        unique_orders.append(o)
+
+    known_order_ids = {str(o.get('id')) for o in unique_orders if o.get('id')}
+    known_legacy_payment_ids = {str(o.get('legacyPaymentId')) for o in unique_orders if o.get('legacyPaymentId')}
+
+    unique_payments = []
+    seen_payment_ids = set()
+    for p in (payment_records or []):
+        if not isinstance(p, dict):
+            continue
+        pid = str(p.get('id') or '')
+        if pid and pid in seen_payment_ids:
+            continue
+        if pid:
+            seen_payment_ids.add(pid)
+
+        ref_order = str(p.get('checkoutOrderId') or p.get('orderReference') or p.get('orderId') or '')
+        if ref_order and ref_order in known_order_ids:
+            continue
+        if pid in known_legacy_payment_ids:
+            continue
+
+        unique_payments.append(p)
+
+    projected = []
+    for o in unique_orders:
+        sanitized = _sanitize_commerce_record(o)
+        pkg_snapshot = o.get('packageSnapshot')
+        pkg_title = (
+            pkg_snapshot.get('title')
+            if isinstance(pkg_snapshot, dict)
+            else ''
+        ) or o.get('bookingId') or o.get('orderTitle') or '-'
+        sanitized['productType'] = o.get('quoteType') or 'package'
+        sanitized['productTitle'] = pkg_title
+        if o.get('provider') == 'stripe_checkout_test' or o.get('testMode') is True:
+            sanitized['testMode'] = True
+        elif o.get('testMode') is False:
+            sanitized['testMode'] = False
+        projected.append(sanitized)
+
+    for p in unique_payments:
+        sanitized = _sanitize_commerce_record(p)
+        sanitized.setdefault('productType', 'legacy_payment')
+        sanitized.setdefault('productTitle', p.get('bookingId') or p.get('itemTitle') or '-')
+        if 'testMode' not in sanitized:
+            if 'test' in str(p.get('provider') or '').lower() or str(p.get('transactionReference') or '').startswith('pi_sim_'):
+                sanitized['testMode'] = True
+            else:
+                sanitized['testMode'] = False
+        projected.append(sanitized)
+
+    return projected
 
 
 @bp.get('/payments')
@@ -381,14 +533,24 @@ def payment_records():
     query = str(request.args.get('q') or '').strip().lower()
     status = str(request.args.get('status') or '').strip().lower()
     product = str(request.args.get('product') or '').strip().lower()
-    items = [
-        {**item, 'productType': item.get('quoteType') or 'legacy_payment',
-         'productTitle': ((item.get('packageSnapshot') or {}).get('title') if isinstance(item.get('packageSnapshot'), dict) else '') or item.get('bookingId') or '-'}
-        for item in (retrieveRecord('checkout_orders') or []) + (retrieveRecord('payment_records') or [])
-    ]
-    if status: items = [item for item in items if str(item.get('paymentStatus') or item.get('status') or '').lower() == status]
-    if product: items = [item for item in items if str(item.get('productType') or '').lower() == product]
-    if query: items = [item for item in items if query in ' '.join(str(item.get(key) or '') for key in ('id','travellerId','productType','productTitle')).lower()]
+    start_date = str(request.args.get('startDate') or '').strip()
+    end_date = str(request.args.get('endDate') or '').strip()
+
+    checkout_orders = retrieveRecord('checkout_orders') or []
+    legacy_payments = retrieveRecord('payment_records') or []
+    items = _unified_payment_records(checkout_orders, legacy_payments)
+
+    if status:
+        items = [item for item in items if str(item.get('paymentStatus') or item.get('status') or '').lower() == status]
+    if product:
+        items = [item for item in items if str(item.get('productType') or '').lower() == product]
+    if start_date or end_date:
+        items = [item for item in items if _in_date_range(item, start_date, end_date)]
+    if query:
+        items = [
+            item for item in items
+            if query in ' '.join(str(item.get(key) or '') for key in ('id', 'travellerId', 'productType', 'productTitle', 'operatorId', 'transactionReference')).lower()
+        ]
     items.sort(key=lambda item: str(item.get('createdAt') or ''), reverse=True)
     return jsonify({'ok': True, 'items': items[:100]})
 
@@ -402,14 +564,18 @@ def _summary(criteria=None):
     campaigns = retrieveRecord('promotional_campaigns') or []
     feedback = retrieveRecord('feedback') or []
     hotel_bookings = retrieveRecord('hotel_bookings') or []
-    payment_records = retrieveRecord('payment_records') or []
+    checkout_orders = retrieveRecord('checkout_orders') or []
+    legacy_payments = retrieveRecord('payment_records') or []
+    unified_payments = _unified_payment_records(checkout_orders, legacy_payments)
+
     collections = {
         'users': users,
         'packages': packages,
         'campaigns': campaigns,
         'feedback': feedback,
         'hotel_bookings': hotel_bookings,
-        'payment_records': payment_records,
+        'payment_records': unified_payments,
+        'checkout_orders': checkout_orders,
     }
     report_type = str(criteria.get('reportType') or 'system_summary')
     scoped_records = _filter_records(_records_for_type(report_type, collections), criteria)
@@ -434,6 +600,33 @@ def _summary(criteria=None):
     pending_fb = sum(1 for f in feedback if str(f.get('moderationStatus', '')).lower() in {'pending', 'pending_review'})
     removed_fb = sum(1 for f in feedback if str(f.get('feedbackStatus', '')).lower() == 'removed' or str(f.get('moderationStatus', '')).lower() == 'removed')
 
+    # Payment metrics across unified payments
+    paid_payments = sum(
+        1 for p in unified_payments
+        if str(p.get('paymentStatus') or p.get('status') or '').lower() == 'paid'
+    )
+    pending_payments = sum(
+        1 for p in unified_payments
+        if str(p.get('paymentStatus') or p.get('status') or '').lower() in {'pending', 'payment_pending', 'unpaid', 'checkout_pending'}
+    )
+    failed_payments = sum(
+        1 for p in unified_payments
+        if str(p.get('paymentStatus') or p.get('status') or '').lower() in {'failed', 'payment_failed', 'checkout_failed'}
+    )
+    expired_payments = sum(
+        1 for p in unified_payments
+        if str(p.get('paymentStatus') or p.get('status') or '').lower() in {'expired', 'checkout_expired'}
+    )
+    test_mode_payments = sum(
+        1 for p in unified_payments
+        if p.get('testMode') is True or 'test' in str(p.get('provider') or '').lower() or str(p.get('transactionReference') or '').startswith('pi_sim_')
+    )
+    total_paid_revenue = sum(
+        _float_or_zero(p.get('amount') or p.get('price'))
+        for p in unified_payments
+        if str(p.get('paymentStatus') or p.get('status') or '').lower() == 'paid'
+    )
+
     generated_at = utc_now_iso()
 
     return {
@@ -444,7 +637,8 @@ def _summary(criteria=None):
             'tourism_packages': len(packages),
             'promotional_campaigns': len(campaigns),
             'hotel_bookings': len(hotel_bookings),
-            'payment_records': len(payment_records),
+            'payment_records': len(unified_payments),
+            'checkout_orders': len(checkout_orders),
             'feedback': len(feedback),
             'filtered_records': len(scoped_records),
         },
@@ -476,6 +670,15 @@ def _summary(criteria=None):
                 'visible': visible_fb,
                 'pending': pending_fb,
                 'removed': removed_fb,
+            },
+            'payments': {
+                'total': len(unified_payments),
+                'paid': paid_payments,
+                'pending': pending_payments,
+                'failed': failed_payments,
+                'expired': expired_payments,
+                'testMode': test_mode_payments,
+                'totalPaidRevenue': total_paid_revenue,
             },
         },
         'records': scoped_records[:200],

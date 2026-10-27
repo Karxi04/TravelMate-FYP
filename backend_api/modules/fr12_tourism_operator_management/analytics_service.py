@@ -5,6 +5,86 @@ def _normalise(value):
     return str(value or "").strip().lower()
 
 
+def _safe_analytics_booking(order_data):
+    """
+    Project a raw checkout_orders document to an operator-safe analytics booking projection.
+
+    Allowlisted fields:
+    - id / orderReference: Booking document identifier
+    - packageId: Associated tourism package ID
+    - packageTitle: Human-readable package title
+    - operatorId: Owning operator UID
+    - quoteType: 'package'
+    - amount: Order monetary value
+    - groupTotal: Total group booking amount
+    - currency: Transaction currency (e.g. 'MYR')
+    - status / orderStatus: Order lifecycle status
+    - paymentStatus: Payment settlement status
+    - fulfillmentStatus: Fulfillment status
+    - departureDate: Selected departure date
+    - groupSize: Total group size
+    - adults: Number of adult participants
+    - children: Number of child participants
+    - testMode: Boolean flag indicating test payment provider
+    - supplierReservationStatus: Reservation status
+    - createdAt: Creation timestamp
+    - updatedAt: Last updated timestamp
+
+    Strictly excluded:
+    - checkoutUrl (Stripe Checkout direct session URL)
+    - checkoutSessionId (Stripe session identifier)
+    - providerIdempotencyKey (Idempotency key containing internal UUIDs)
+    - stripePaymentIntentId, stripeSessionId, clientSecret, paymentMethodId (Payment secrets)
+    - travellerId (Personal identity / user account ID of traveller)
+    - packageAttemptId, orderAttemptId (Internal checkout state IDs)
+    - packageSnapshot (Raw unverified data payload)
+    """
+    snapshot = order_data.get("packageSnapshot") or {}
+    if not isinstance(snapshot, dict):
+        snapshot = {}
+    participants = order_data.get("participants") or snapshot.get("participants") or {}
+    if not isinstance(participants, dict):
+        participants = {}
+
+    order_id = order_data.get("id")
+    package_id = order_data.get("packageId") or snapshot.get("packageId")
+    package_title = snapshot.get("title") or order_data.get("packageTitle")
+    departure_date = order_data.get("departureDate") or snapshot.get("selectedDepartureDate")
+    group_size = order_data.get("groupSize") or snapshot.get("groupSize") or participants.get("total")
+    adults = participants.get("adults")
+    children = participants.get("children")
+
+    amt_val = order_data.get("amount") if order_data.get("amount") is not None else order_data.get("totalAmount")
+    if amt_val is None:
+        amt_val = order_data.get("groupTotal")
+    group_total = order_data.get("groupTotal") if order_data.get("groupTotal") is not None else amt_val
+
+    return {
+        "id": order_id,
+        "orderReference": order_id,
+        "packageId": package_id,
+        "packageTitle": package_title,
+        "operatorId": order_data.get("operatorId"),
+        "quoteType": "package",
+        "departureDate": departure_date,
+        "groupSize": group_size,
+        "adults": adults,
+        "children": children,
+        "paymentStatus": order_data.get("paymentStatus"),
+        "orderStatus": order_data.get("status"),
+        "status": order_data.get("status"),
+        "fulfillmentStatus": order_data.get("fulfillmentStatus"),
+        "amount": amt_val,
+        "groupTotal": group_total,
+        "currency": str(order_data.get("currency") or "MYR").strip().upper(),
+        "supplierReservationStatus": order_data.get("supplierReservationStatus") or "not_created",
+        "testMode": bool(order_data.get("provider") == "stripe_checkout_test" or order_data.get("testMode")),
+        "createdAt": order_data.get("createdAt"),
+        "updatedAt": order_data.get("updatedAt"),
+    }
+
+
+
 def generate_business_analytics(db, operator_id):
     """
     Generate the Tourism Operator Business Analytics Report.
@@ -119,7 +199,10 @@ def generate_business_analytics(db, operator_id):
     bookings = []
     total_paid_revenue = 0.0
     paid_bookings = 0
+    pending_bookings = 0
     expired_bookings = 0
+    failed_bookings = 0
+    cancelled_bookings = 0
     test_mode_orders = 0
 
     for doc in order_docs:
@@ -136,11 +219,9 @@ def generate_business_analytics(db, operator_id):
         if operator_id and booking_operator != str(operator_id).strip():
             continue
 
-        # Strip sensitive payment provider tokens before inclusion
-        for secret_key in ("stripePaymentIntentId", "stripeSessionId", "clientSecret", "paymentMethodId"):
-            data.pop(secret_key, None)
-
-        bookings.append(data)
+        # Project raw checkout order to safe allowlisted booking
+        safe_booking = _safe_analytics_booking(data)
+        bookings.append(safe_booking)
 
         payment_status = _normalise(data.get("paymentStatus"))
         order_status = _normalise(data.get("status"))
@@ -176,8 +257,23 @@ def generate_business_analytics(db, operator_id):
                         total_paid_revenue += amt
                 except (TypeError, ValueError):
                     pass
-        elif order_status in {"expired", "unpaid"} or payment_status in {"expired", "unpaid"}:
+        elif order_status in {"expired", "checkout_expired"} or payment_status in {"expired"}:
             expired_bookings += 1
+        elif order_status in {"failed", "checkout_failed"} or payment_status in {"failed", "payment_failed"}:
+            failed_bookings += 1
+        elif order_status in {"cancelled", "checkout_cancelled"} or payment_status in {"cancelled", "payment_cancelled"}:
+            cancelled_bookings += 1
+        elif payment_status in {"pending", "payment_pending", "unpaid"}:
+            pending_bookings += 1
+
+    fulfilled_bookings = sum(
+        1 for b in bookings
+        if _normalise(b.get("fulfillmentStatus")) == "fulfilled"
+    )
+    pending_fulfillment_bookings = sum(
+        1 for b in bookings
+        if _normalise(b.get("fulfillmentStatus")) in {"pending", "fulfillment_pending"}
+    )
 
     # ==========================================================
     # PACKAGE VALUE
@@ -220,7 +316,12 @@ def generate_business_analytics(db, operator_id):
 
             "bookingRecords": len(bookings),
             "paidBookings": paid_bookings,
+            "pendingBookings": pending_bookings,
             "expiredBookings": expired_bookings,
+            "failedBookings": failed_bookings,
+            "cancelledBookings": cancelled_bookings,
+            "fulfilledBookings": fulfilled_bookings,
+            "pendingFulfillmentBookings": pending_fulfillment_bookings,
             "testModeOrders": test_mode_orders,
             "totalPaidRevenue": round(total_paid_revenue, 2),
 
@@ -235,7 +336,10 @@ def generate_business_analytics(db, operator_id):
         "campaignCount": total_campaigns,
         "bookingCount": len(bookings),
         "paidBookingCount": paid_bookings,
+        "pendingBookingCount": pending_bookings,
         "expiredBookingCount": expired_bookings,
+        "failedBookingCount": failed_bookings,
+        "cancelledBookingCount": cancelled_bookings,
         "totalPaidRevenue": round(total_paid_revenue, 2),
         "packages": packages,
         "campaigns": campaigns,
