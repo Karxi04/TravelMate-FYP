@@ -199,7 +199,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
       return false;
     }
 
-    // 7. Source URL or citation must be present
+    // 7. Source URL or citation must be present and non-empty
     final sourceUrl = (evidence['priceSourceUrl'] ??
             evidence['sourceUrl'] ??
             evidence['citation'] ??
@@ -209,10 +209,24 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         .trim();
     if (sourceUrl.isEmpty) return false;
 
-    // 8. Explicit verified flag if present must not be false
-    if (evidence['verified'] == false) return false;
+    // 8. Explicit negative verification evidence must be rejected
+    if (evidence['verified'] == false || activity['verified'] == false) {
+      return false;
+    }
 
-    // 9. Cost / unitPrice must be strictly 0
+    // 9. Valid verification date from supported backend contract is required
+    final dateRaw = (evidence['priceVerifiedAt'] ??
+            evidence['verifiedAt'] ??
+            evidence['verificationDate'] ??
+            activity['priceVerifiedAt'] ??
+            '')
+        .toString()
+        .trim();
+    if (dateRaw.isEmpty) return false;
+    final parsedDate = DateTime.tryParse(dateRaw);
+    if (parsedDate == null) return false;
+
+    // 10. Cost / unitPrice must be strictly 0
     final unitPrice = double.tryParse(
         '${activity['unitPrice'] ?? evidence['unitPrice'] ?? ''}');
     final cost = double.tryParse(
@@ -240,7 +254,14 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   }
 
   bool _isPriceVerified(Map<String, dynamic> activity) {
-    if (_isVerifiedFree(activity)) return true;
+    final unitPrice = double.tryParse('${activity['unitPrice'] ?? ''}');
+    final cost = double.tryParse(
+            '${activity['effectiveCost'] ?? activity['estimatedCost'] ?? ''}') ??
+        0.0;
+    final isZeroCost = (unitPrice != null && unitPrice == 0) || (cost == 0);
+    if (isZeroCost) {
+      return _isVerifiedFree(activity);
+    }
     if (_isPriceConditional(activity)) return false;
     final status =
         (activity['selectionPriceStatus'] ?? '').toString().toLowerCase();
@@ -253,6 +274,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     if (issues.isNotEmpty) return false;
 
     if (evidence != null) {
+      if (evidence['verified'] == false || activity['verified'] == false) {
+        return false;
+      }
       final app = (evidence['applicability'] ?? '').toString().toLowerCase();
       if (app == 'applicable' && provenance == 'verified_ticket') {
         return true;

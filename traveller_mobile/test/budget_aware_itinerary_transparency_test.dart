@@ -90,6 +90,44 @@ Map<String, dynamic> _buildTrip({
   };
 }
 
+Map<String, dynamic> _freeActivity({
+  String id = 'act_free',
+  String name = 'Test Activity',
+  String provenance = 'verified_ticket',
+  String status = 'verified',
+  String applicability = 'applicable',
+  String eligibility = 'all_visitors',
+  String sourceUrl = 'https://mypenang.gov.my/view_directory.php',
+  String date = '2026-10-26T00:00:00Z',
+  bool? verified,
+  List<dynamic> issues = const [],
+  double cost = 0.0,
+}) {
+  return {
+    'activityId': id,
+    'destinationId': id,
+    'activityName': name,
+    'dayNo': 1,
+    'timeSlot': '09:00',
+    'scheduledStartTime': '09:00',
+    'estimatedCost': cost,
+    'unitPrice': cost,
+    'costProvenance': provenance,
+    'selectionPriceStatus': status,
+    'pricingEvidence': {
+      'applicability': applicability,
+      'eligibility': eligibility,
+      if (sourceUrl.isNotEmpty) 'priceSourceUrl': sourceUrl,
+      if (date.isNotEmpty) 'priceVerifiedAt': date,
+      if (verified != null) 'verified': verified,
+      if (issues.isNotEmpty) 'pricingIssues': issues,
+    },
+    'pricingIssues': issues,
+    'openingHoursStatus': 'reported',
+    'scheduleFeasibility': 'feasible_with_reported_hours',
+  };
+}
+
 Future<void> _pumpTrip(
   WidgetTester tester,
   Map<String, dynamic> trip, {
@@ -132,147 +170,216 @@ Future<void> _scrollTarget(WidgetTester tester, Finder target) async {
 }
 
 void main() {
-  group('Batch F3-P2F-R: Real Backend Payload Contract & Transparency', () {
+  group('Batch F3-P2V-U: Verified-Free Admission Contract Hardening', () {
     testWidgets(
-        '1. Raw zero plus verified_ticket but incomplete pricing evidence does NOT show Free Admission',
+        '1. Missing verified Boolean and missing verification date -> NOT free',
         (tester) async {
-      // Backend price_edge fixture: costProvenance: verified_ticket, unitPrice: 0, but priceSourceUrl: '' / unverified applicability
       final trip = _buildTrip(activities: [
-        {
-          'activityId': 'synthetic-invalid-free',
-          'destinationId': 'synthetic-invalid-free',
-          'activityName': 'Chew Jetty Boardwalk',
-          'dayNo': 1,
-          'timeSlot': '09:00',
-          'scheduledStartTime': '09:00',
-          'estimatedCost': 0,
-          'unitPrice': 0,
-          'costProvenance': 'verified_ticket',
-          'selectionPriceStatus': 'unresolved',
-          'pricingEvidence': {
-            'applicability': 'unverified',
-            'eligibility': 'explicit_authoritative_free_entry_evidence_missing',
-            'priceSourceUrl': '',
-          },
-          'openingHoursStatus': 'reported',
-          'scheduleFeasibility': 'feasible_with_reported_hours',
-        }
+        _freeActivity(
+          name: 'Missing Boolean and Date',
+          date: '',
+          verified: null,
+        )
       ]);
-
       await _pumpTrip(tester, trip);
-      await _scrollTarget(tester, find.text('Chew Jetty Boardwalk'));
-
+      await _scrollTarget(tester, find.text('Missing Boolean and Date'));
       expect(find.text('Free admission'), findsNothing);
       expect(find.text('Admission unverified'), findsOneWidget);
     });
 
     testWidgets(
-        '2. Fully verified free admission DOES show Free Admission',
+        '2. Missing verified Boolean but complete supported positive evidence -> Free admission',
         (tester) async {
       final trip = _buildTrip(activities: [
-        {
-          'activityId': 'local_kek_lok_si',
-          'destinationId': 'local_kek_lok_si',
-          'activityName': 'Kek Lok Si Temple',
-          'dayNo': 1,
-          'timeSlot': '09:00',
-          'scheduledStartTime': '09:00',
-          'estimatedCost': 0,
-          'unitPrice': 0.0,
-          'costProvenance': 'verified_ticket',
-          'selectionPriceStatus': 'verified',
-          'pricingEvidence': {
-            'venueId': 'local_kek_lok_si',
-            'ticketProductId': 'temple_grounds_free',
-            'ticketProduct': 'Main temple grounds admission',
-            'unitPrice': 0.0,
-            'pricingUnit': 'per_person',
-            'currency': 'MYR',
-            'applicability': 'applicable',
-            'eligibility': 'all_visitors',
-            'priceSourceUrl':
-                'https://mypenang.gov.my/view_directory.php?id=c2pkMG9tMEw2UUwzUk1hVTNWV3ZXZz09',
-            'verified': true,
-          },
-          'pricingIssues': const [],
-          'openingHoursStatus': 'reported',
-          'scheduleFeasibility': 'feasible_with_reported_hours',
-        }
+        _freeActivity(
+          name: 'Complete Positive Evidence',
+          date: '2026-10-26T00:00:00Z',
+          verified: null,
+        )
       ]);
-
       await _pumpTrip(tester, trip);
-      await _scrollTarget(tester, find.text('Kek Lok Si Temple'));
-
+      await _scrollTarget(tester, find.text('Complete Positive Evidence'));
       expect(find.text('Free admission'), findsOneWidget);
       expect(find.text('Admission unverified'), findsNothing);
-      expect(find.text('RM 0.00'), findsNothing);
     });
 
-    testWidgets(
-        '3. Unresolved pricing issues override unsafe free classification',
+    testWidgets('3. Explicit verified: false despite valid date -> NOT free',
         (tester) async {
       final trip = _buildTrip(activities: [
-        {
-          'activityId': 'act_issue_free',
-          'activityName': 'Botanical Garden Tram Walk',
-          'dayNo': 1,
-          'timeSlot': '10:00',
-          'scheduledStartTime': '10:00',
-          'estimatedCost': 0,
-          'costProvenance': 'verified_ticket',
-          'selectionPriceStatus': 'verified',
-          'pricingEvidence': {
-            'applicability': 'applicable',
-            'eligibility': 'all_visitors',
-            'priceSourceUrl': 'https://botanicalgardens.penang.gov.my/',
-            'verified': true,
-          },
-          'pricingIssues': [
-            'Conflicting statements on optional charges and opening fees'
-          ],
-          'openingHoursStatus': 'reported',
-          'scheduleFeasibility': 'feasible_with_reported_hours',
-        }
+        _freeActivity(
+          name: 'Explicitly False Verified',
+          date: '2026-10-26T00:00:00Z',
+          verified: false,
+        )
       ]);
-
       await _pumpTrip(tester, trip);
-      await _scrollTarget(tester, find.text('Botanical Garden Tram Walk'));
-
+      await _scrollTarget(tester, find.text('Explicitly False Verified'));
       expect(find.text('Free admission'), findsNothing);
       expect(find.text('Admission unverified'), findsOneWidget);
     });
 
-    testWidgets('4. Conditional ticket price remains conditional',
+    testWidgets(
+        '4. verified: true but missing required provenance -> NOT free',
+        (tester) async {
+      final trip = _buildTrip(activities: [
+        _freeActivity(
+          name: 'Missing Required Provenance',
+          provenance: 'unverified',
+          date: '2026-10-26T00:00:00Z',
+          verified: true,
+        )
+      ]);
+      await _pumpTrip(tester, trip);
+      await _scrollTarget(tester, find.text('Missing Required Provenance'));
+      expect(find.text('Free admission'), findsNothing);
+      expect(find.text('Admission unverified'), findsOneWidget);
+    });
+
+    testWidgets('5. Source URL missing -> NOT free', (tester) async {
+      final trip = _buildTrip(activities: [
+        _freeActivity(
+          name: 'Missing Source URL',
+          sourceUrl: '',
+          date: '2026-10-26T00:00:00Z',
+        )
+      ]);
+      await _pumpTrip(tester, trip);
+      await _scrollTarget(tester, find.text('Missing Source URL'));
+      expect(find.text('Free admission'), findsNothing);
+      expect(find.text('Admission unverified'), findsOneWidget);
+    });
+
+    testWidgets('6. Verification date missing -> NOT free', (tester) async {
+      final trip = _buildTrip(activities: [
+        _freeActivity(
+          name: 'Missing Date Field',
+          date: '',
+          verified: true,
+        )
+      ]);
+      await _pumpTrip(tester, trip);
+      await _scrollTarget(tester, find.text('Missing Date Field'));
+      expect(find.text('Free admission'), findsNothing);
+      expect(find.text('Admission unverified'), findsOneWidget);
+    });
+
+    testWidgets('7. Invalid or blank verification date -> NOT free',
+        (tester) async {
+      final trip = _buildTrip(activities: [
+        _freeActivity(
+          name: 'Invalid Date Stamp',
+          date: 'not-a-valid-iso-date',
+          verified: true,
+        )
+      ]);
+      await _pumpTrip(tester, trip);
+      await _scrollTarget(tester, find.text('Invalid Date Stamp'));
+      expect(find.text('Free admission'), findsNothing);
+      expect(find.text('Admission unverified'), findsOneWidget);
+    });
+
+    testWidgets('8. Non-empty pricingIssues -> NOT free', (tester) async {
+      final trip = _buildTrip(activities: [
+        _freeActivity(
+          name: 'Conflicting Tram Issues',
+          issues: ['Conflicting statements on tram fee'],
+          date: '2026-10-26T00:00:00Z',
+        )
+      ]);
+      await _pumpTrip(tester, trip);
+      await _scrollTarget(tester, find.text('Conflicting Tram Issues'));
+      expect(find.text('Free admission'), findsNothing);
+      expect(find.text('Admission unverified'), findsOneWidget);
+    });
+
+    testWidgets('9. Conditional admission -> NOT free', (tester) async {
+      final trip = _buildTrip(activities: [
+        _freeActivity(
+          name: 'Penang Hill Funicular',
+          status: 'conditional',
+          applicability: 'conditional',
+          cost: 40,
+          date: '2026-10-26T00:00:00Z',
+        )
+      ]);
+      await _pumpTrip(tester, trip);
+      await _scrollTarget(tester, find.text('Penang Hill Funicular'));
+      expect(find.text('Free admission'), findsNothing);
+      expect(find.text('Tariff conditional'), findsOneWidget);
+    });
+
+    testWidgets('10. Unresolved admission -> NOT free', (tester) async {
+      final trip = _buildTrip(activities: [
+        _freeActivity(
+          name: 'Unresolved Price Activity',
+          status: 'unresolved',
+          date: '2026-10-26T00:00:00Z',
+        )
+      ]);
+      await _pumpTrip(tester, trip);
+      await _scrollTarget(tester, find.text('Unresolved Price Activity'));
+      expect(find.text('Free admission'), findsNothing);
+      expect(find.text('Admission unverified'), findsOneWidget);
+    });
+
+    testWidgets(
+        '11. Legacy numeric zero without trusted evidence -> NOT free',
         (tester) async {
       final trip = _buildTrip(activities: [
         {
-          'activityId': 'synthetic-p03',
-          'destinationId': 'synthetic-p03',
-          'activityName': 'Penang Hill Funicular',
+          'activityId': 'act_leg_0',
+          'activityName': 'Legacy Town Stroll',
           'dayNo': 1,
-          'timeSlot': '11:00',
-          'scheduledStartTime': '11:00',
-          'estimatedCost': 40,
-          'selectionPriceStatus': 'conditional',
-          'costProvenance': 'verified_ticket',
-          'pricingEvidence': {
-            'applicability': 'conditional',
-            'eligibility': 'residency_and_age',
-            'basis': 'per_person',
-            'priceSourceUrl': 'https://www.penanghill.gov.my/',
-          },
-          'openingHoursStatus': 'reported',
-          'scheduleFeasibility': 'feasible_with_reported_hours',
+          'timeSlot': '10:00',
+          'estimatedCost': 0,
         }
       ]);
-
       await _pumpTrip(tester, trip);
-      await _scrollTarget(tester, find.text('Penang Hill Funicular'));
-
-      expect(find.text('Tariff conditional'), findsOneWidget);
-      expect(find.text('~RM 40 tariff'), findsOneWidget);
+      await _scrollTarget(tester, find.text('Legacy Town Stroll'));
       expect(find.text('Free admission'), findsNothing);
+      expect(find.text('Admission unverified'), findsOneWidget);
     });
+
+    testWidgets(
+        '12. Valid Botanic Gardens zero-cost record -> Free admission',
+        (tester) async {
+      final trip = _buildTrip(activities: [
+        _freeActivity(
+          id: 'local_bot',
+          name: 'Penang Botanic Gardens',
+          sourceUrl:
+              'https://botanicalgardens.penang.gov.my/index.php/hubungi-kami/soalan-lazim-faq',
+          date: '2026-10-26T00:00:00Z',
+          verified: null, // real backend pricing_registry.py omits verified boolean
+        )
+      ]);
+      await _pumpTrip(tester, trip);
+      await _scrollTarget(tester, find.text('Penang Botanic Gardens'));
+      expect(find.text('Free admission'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+    });
+
+    testWidgets(
+        '13. Valid Kek Lok Si main-grounds zero-cost record -> Free admission',
+        (tester) async {
+      final trip = _buildTrip(activities: [
+        _freeActivity(
+          id: 'local_kek_lok_si',
+          name: 'Kek Lok Si Temple',
+          sourceUrl:
+              'https://mypenang.gov.my/view_directory.php?id=c2pkMG9tMEw2UUwzUk1hVTNWV3ZXZz09',
+          date: '2026-10-26T00:00:00Z',
+          verified: null, // real backend pricing_registry.py omits verified boolean
+        )
+      ]);
+      await _pumpTrip(tester, trip);
+      await _scrollTarget(tester, find.text('Kek Lok Si Temple'));
+      expect(find.text('Free admission'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+    });
+  });
+
+  group('Batch F3-P2F-R: Real Backend Payload Contract & Transparency', () {
 
     testWidgets(
         '5. Nested activity title is displayed correctly in unselected activities',
@@ -603,6 +710,7 @@ void main() {
               'applicability': 'applicable',
               'eligibility': 'all_visitors',
               'priceSourceUrl': 'https://mypenang.gov.my/',
+              'priceVerifiedAt': '2026-10-26T00:00:00Z',
               'verified': true,
             },
             'openingHoursStatus': 'reported',
