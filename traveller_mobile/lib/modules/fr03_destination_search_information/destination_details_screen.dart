@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/utils/destination_utils.dart';
+import '../../core/utils/opening_hours_utils.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/destination_card.dart';
@@ -78,6 +79,20 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         'local',
         'demo',
       }.contains(source.toLowerCase());
+
+  bool get _hasEssentialDetails =>
+      (title.isNotEmpty &&
+          title != 'Place' &&
+          title != 'Destination') ||
+      address.isNotEmpty;
+
+  String get _materialWarning => _text(
+        detail['bookingWarning'] ??
+            detail['pricingWarning'] ??
+            detail['materialWarning'] ??
+            detail['bookingNotice'] ??
+            detail['availabilityWarning'],
+      );
 
   Future<void> loadDetails() async {
     final id = destinationId;
@@ -179,27 +194,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     return result;
   }
 
-  String _openingSummary() {
-    final value = _text(
-      detail['open_state'] ?? detail['openingHours'] ?? detail['hours'],
-    );
-    if (value.toLowerCase().contains('not listed') ||
-        value.toLowerCase().contains('unavailable')) {
-      return '';
-    }
-    return value;
-  }
-
-  List<MapEntry<String, String>> _weeklyHours() {
-    final raw = detail['weeklyHours'];
-    if (raw is! Map) return const [];
-    return raw.entries
-        .map((entry) => MapEntry(entry.key.toString(), _text(entry.value)))
-        .where((entry) =>
-            entry.value.isNotEmpty &&
-            !entry.value.toLowerCase().contains('not listed'))
-        .toList();
-  }
+  OpeningHoursSchedule _openingSchedule() => OpeningHoursUtils.parse(detail);
 
   List<String> _personalReasons() {
     final reasons = <String>[];
@@ -345,7 +340,12 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     );
   }
 
-  Widget _informationRow(IconData icon, String label, String value) {
+  Widget _informationRow(
+    IconData icon,
+    String label,
+    String value, {
+    String? subtitle,
+  }) {
     if (value.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -375,6 +375,16 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
                 ),
                 const SizedBox(height: AppSpacing.xxs),
                 Text(value, style: Theme.of(context).textTheme.bodyMedium),
+                if (subtitle != null && subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: AppColors.textSecondary),
+                  ),
+                ],
               ],
             ),
           ),
@@ -384,8 +394,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   }
 
   Widget _visitInformation() {
-    final opening = _openingSummary();
-    final weekly = _weeklyHours();
+    final schedule = _openingSchedule();
     final duration = int.tryParse(
           '${detail['recommendedDurationMinutes'] ?? ''}',
         ) ??
@@ -399,6 +408,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     final website = _text(
       detail['website'] ?? (links is Map ? links['website'] : null),
     );
+    final materialWarning = _materialWarning;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -409,40 +419,145 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _informationRow(
-                Icons.schedule_outlined,
-                'Opening hours',
-                opening.isEmpty && weekly.isEmpty
-                    ? 'Opening hours unavailable'
-                    : (opening.isEmpty ? 'See weekly hours below' : opening),
-              ),
-              if (weekly.isNotEmpty) ...[
-                ...weekly.map(
-                  (entry) => Padding(
-                    padding: const EdgeInsets.only(
-                      left: 52,
-                      bottom: AppSpacing.xs,
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: 88,
-                          child: Text(
-                            entry.key,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                        Expanded(child: Text(entry.value)),
-                      ],
-                    ),
-                  ),
+              if (schedule.isUnavailable)
+                _informationRow(
+                  Icons.schedule_outlined,
+                  'Opening hours',
+                  'Opening hours not available',
+                  subtitle: 'Check with the attraction before visiting.',
+                )
+              else if (!schedule.hasWeeklySchedule &&
+                  schedule.genericHours != null)
+                _informationRow(
+                  Icons.schedule_outlined,
+                  'General opening hours',
+                  schedule.genericHours!,
+                  subtitle: 'Hours for individual days or holidays may vary.',
+                )
+              else ...[
+                _informationRow(
+                  Icons.schedule_outlined,
+                  'Opening hours',
+                  schedule.realTimeStatus != null
+                      ? 'Weekly schedule (${schedule.realTimeStatus})'
+                      : 'Weekly schedule',
                 ),
-                const Padding(
-                  padding: EdgeInsets.only(left: 52, bottom: AppSpacing.sm),
-                  child: Text(
-                    'Hours may change on public holidays.',
-                    style: TextStyle(color: AppColors.textSecondary),
+                Padding(
+                  padding: const EdgeInsets.only(
+                    left: 52,
+                    bottom: AppSpacing.sm,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ...schedule.weeklyHours.map(
+                        (entry) {
+                          final isToday =
+                              entry.key == schedule.currentMalaysiaDay;
+                          final isClosed =
+                              entry.value.toLowerCase().contains('closed');
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: isToday
+                                ? const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  )
+                                : const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 2,
+                                  ),
+                            decoration: isToday
+                                ? BoxDecoration(
+                                    color: AppColors.primarySoft,
+                                    borderRadius: AppRadii.control,
+                                  )
+                                : null,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(minWidth: 80),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        entry.key,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              fontWeight: isToday
+                                                  ? FontWeight.w700
+                                                  : FontWeight.w500,
+                                              color: isToday
+                                                  ? AppColors.primary
+                                                  : AppColors.textPrimary,
+                                            ),
+                                      ),
+                                      if (isToday) ...[
+                                        const SizedBox(height: 2),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 4,
+                                            vertical: 1,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primary,
+                                            borderRadius:
+                                                BorderRadius.circular(3),
+                                          ),
+                                          child: const Text(
+                                            'Today',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.sm),
+                                Expanded(
+                                  child: Text(
+                                    entry.value,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: isClosed
+                                              ? AppColors.textSecondary
+                                              : (isToday
+                                                  ? AppColors.primary
+                                                  : AppColors.textPrimary),
+                                          fontWeight: isToday
+                                              ? FontWeight.w600
+                                              : FontWeight.normal,
+                                          fontStyle: isClosed
+                                              ? FontStyle.italic
+                                              : FontStyle.normal,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Hours may change on public holidays.',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -465,6 +580,45 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
                 'Admission',
                 admission,
               ),
+              if (materialWarning.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.only(
+                    left: 52,
+                    bottom: AppSpacing.sm,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: AppColors.warningSoft,
+                      borderRadius: AppRadii.control,
+                      border: Border.all(
+                        color: AppColors.warning.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.info_outline_rounded,
+                          size: AppSizes.iconSmall,
+                          color: AppColors.warning,
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: Text(
+                            materialWarning,
+                            style: const TextStyle(
+                              color: AppColors.warning,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               _informationRow(
                 Icons.wb_sunny_outlined,
                 'Best time to visit',
@@ -639,6 +793,23 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!loading && detailsFailed && !_hasEssentialDetails) {
+      return TravelMatePageScaffold(
+        appBar: AppBar(title: const Text('Destination details')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: AppErrorState(
+              title: 'Destination details unavailable',
+              message:
+                  'We couldn’t load the details for this destination. Please check your connection and try again.',
+              onRetry: loadDetails,
+            ),
+          ),
+        ),
+      );
+    }
+
     final description =
         _text(detail['description'] ?? detail['snippet'] ?? detail['about']);
     final reasons = _personalReasons();
@@ -715,30 +886,6 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
               const SizedBox(height: AppSpacing.sm),
             ],
             _hero(),
-            if (detailsFailed || providerFallback) ...[
-              const SizedBox(height: AppSpacing.sm),
-              InkCard(
-                color: AppColors.warningSoft,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(
-                      Icons.info_outline_rounded,
-                      color: AppColors.warning,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    const Expanded(
-                      child: Text(
-                        'Some live details are unavailable. TravelMate is showing the reliable information already available.',
-                      ),
-                    ),
-                    if (detailsFailed)
-                      TextButton(
-                          onPressed: loadDetails, child: const Text('Retry')),
-                  ],
-                ),
-              ),
-            ],
             if (reasons.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.lg),
               _personalContext(),

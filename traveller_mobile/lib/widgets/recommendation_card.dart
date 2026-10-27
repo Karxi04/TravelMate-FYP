@@ -43,34 +43,61 @@ class RecommendationCard extends StatelessWidget {
 
   num? get _matchScore {
     final raw = recommendation['finalScore'] ?? recommendation['score'];
-    if (raw is num) return raw.clamp(0, 100);
-    return num.tryParse((raw ?? '').toString())?.clamp(0, 100);
+    if (raw == null || raw == '') return null;
+    final num? val = raw is num ? raw : num.tryParse(raw.toString());
+    if (val == null || !val.isFinite) return null;
+    return val.clamp(0, 100);
+  }
+
+  List<String> get _matchedInterests {
+    final raw = recommendation['matchedInterests'];
+    if (raw is List) {
+      return raw
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .take(3)
+          .toList();
+    }
+    return const [];
+  }
+
+  static bool _isScoreOrMatchToken(String value) {
+    final lower = value.toLowerCase().trim();
+    return RegExp(r'^\d+(\.\d+)?%\s*match$').hasMatch(lower) ||
+        RegExp(r'^(?:recommendation\s+)?score:?\s*\d+(\.\d+)?(\/100)?$')
+            .hasMatch(lower);
   }
 
   List<String> get _reasons {
     final rawReasons = recommendation['matchReasons'];
     if (rawReasons is List) {
-      return rawReasons
+      final list = rawReasons
           .map((value) => value.toString().trim())
-          .where((value) => value.isNotEmpty)
+          .where((value) =>
+              value.isNotEmpty &&
+              !_isScoreOrMatchToken(value))
           .take(2)
           .toList();
+      if (list.isNotEmpty) return list;
     }
 
     final raw = (recommendation['recommendationReason'] ??
             recommendation['reason'] ??
             '')
         .toString();
-    if (raw.trim().isEmpty) return const [];
-    return raw
-        .split('•')
-        .map((value) => value.trim())
-        .where((value) =>
-            value.isNotEmpty &&
-            !RegExp(r'^\d+(\.\d+)?%\s*match$', caseSensitive: false)
-                .hasMatch(value))
-        .take(2)
-        .toList();
+    if (raw.trim().isNotEmpty) {
+      final parts = raw
+          .split('•')
+          .map((value) => value.trim())
+          .where((value) =>
+              value.isNotEmpty &&
+              !_isScoreOrMatchToken(value))
+          .take(2)
+          .toList();
+      if (parts.isNotEmpty) return parts;
+    }
+
+    return const ['Recommended based on available destination information.'];
   }
 
   String get _source =>
@@ -101,7 +128,7 @@ class RecommendationCard extends StatelessWidget {
       container: true,
       label: score == null
           ? 'Recommended destination, $_title'
-          : 'Recommended destination, $_title, ${score.round()} percent match',
+          : 'Recommended destination, $_title, recommendation score ${score.round()} out of 100',
       child: InkCard(
         padding: EdgeInsets.zero,
         child: Column(
@@ -132,13 +159,6 @@ class RecommendationCard extends StatelessWidget {
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                       ),
-                      if (score != null) ...[
-                        const SizedBox(width: AppSpacing.xs),
-                        StatusChip(
-                          text: '${score.round()}% match',
-                          icon: Icons.auto_awesome_rounded,
-                        ),
-                      ],
                       if (onPreferenceFeedback != null)
                         PopupMenuButton<String>(
                           key: ValueKey(
@@ -221,26 +241,43 @@ class RecommendationCard extends StatelessWidget {
                       ],
                     ),
                   ],
-                  if (_category.isNotEmpty || rating != null) ...[
-                    const SizedBox(height: AppSpacing.sm),
-                    Wrap(
-                      spacing: AppSpacing.xs,
-                      runSpacing: AppSpacing.xs,
-                      children: [
-                        if (_category.isNotEmpty)
-                          StatusChip(
-                            text: _category,
-                            tone: AppStatusTone.neutral,
+                  const SizedBox(height: AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    children: [
+                      if (score != null)
+                        InkWell(
+                          onTap: () => _showScoreExplanation(context, score),
+                          borderRadius: BorderRadius.circular(AppRadii.pill),
+                          child: Tooltip(
+                            message:
+                                'Recommendation score: ${score.round()}/100. Tap for details.',
+                            child: StatusChip(
+                              text: 'Recommendation score: ${score.round()}/100',
+                              icon: Icons.auto_awesome_rounded,
+                            ),
                           ),
-                        if (rating != null)
-                          StatusChip(
-                            text: '$rating rating',
-                            icon: Icons.star_rounded,
-                            tone: AppStatusTone.neutral,
-                          ),
-                      ],
-                    ),
-                  ],
+                        ),
+                      if (_category.isNotEmpty)
+                        StatusChip(
+                          text: _category,
+                          tone: AppStatusTone.neutral,
+                        ),
+                      if (rating != null)
+                        StatusChip(
+                          text: '$rating rating',
+                          icon: Icons.star_rounded,
+                          tone: AppStatusTone.neutral,
+                        ),
+                      for (final interest in _matchedInterests)
+                        StatusChip(
+                          text: interest,
+                          icon: Icons.check_circle_outline_rounded,
+                          tone: AppStatusTone.neutral,
+                        ),
+                    ],
+                  ),
                   if (reasons.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.sm),
                     ...reasons.map(
@@ -249,12 +286,18 @@ class RecommendationCard extends StatelessWidget {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Padding(
-                              padding: EdgeInsets.only(top: 2),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
                               child: Icon(
-                                Icons.check_circle_outline_rounded,
+                                reason ==
+                                        'Recommended based on available destination information.'
+                                    ? Icons.info_outline_rounded
+                                    : Icons.check_circle_outline_rounded,
                                 size: AppSizes.iconSmall,
-                                color: AppColors.primary,
+                                color: reason ==
+                                        'Recommended based on available destination information.'
+                                    ? AppColors.textSecondary
+                                    : AppColors.primary,
                               ),
                             ),
                             const SizedBox(width: AppSpacing.xs),
@@ -304,6 +347,175 @@ class RecommendationCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showScoreExplanation(BuildContext context, num score) {
+    final breakdown = recommendation['scoreBreakdown'] is Map
+        ? Map<String, dynamic>.from(recommendation['scoreBreakdown'] as Map)
+        : null;
+    final collaborativeConfidence = num.tryParse(
+            (recommendation['collaborativeConfidence'] ?? '').toString()) ??
+        0;
+    final collaborativeRatingCount = int.tryParse(
+            (recommendation['collaborativeRatingCount'] ?? '').toString()) ??
+        0;
+    final collaborativeSource =
+        (recommendation['collaborativeSource'] ?? '').toString().toLowerCase();
+    final isColdStart = collaborativeConfidence <= 0 ||
+        collaborativeRatingCount == 0 ||
+        collaborativeSource.contains('no similar traveller') ||
+        collaborativeSource.contains('neutral') ||
+        (breakdown != null &&
+            (breakdown['collaborative'] as num?)?.round() == 50 &&
+            collaborativeRatingCount == 0);
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            0,
+            AppSpacing.md,
+            AppSpacing.lg,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.auto_awesome_rounded,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      'Recommendation Score (${score.round()}/100)',
+                      style: Theme.of(sheetContext).textTheme.titleLarge,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'A 0–100 hybrid ranking score used to order recommendations for your profile. This is not an enjoyment probability or percentage guarantee.',
+                style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (breakdown != null) ...[
+                _breakdownCard(
+                  sheetContext,
+                  title: 'Travel style & interests (60% weight)',
+                  scoreText:
+                      '${(breakdown['content'] as num?)?.round() ?? '-'}/100',
+                  description:
+                      'Evaluates compatibility with your saved travel interests, budget preference, and travel pace.',
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _breakdownCard(
+                  sheetContext,
+                  title: 'Similar traveller evidence (30% weight)',
+                  scoreText: isColdStart
+                      ? '50/100 (Neutral baseline)'
+                      : '${(breakdown['collaborative'] as num?)?.round() ?? '-'}/100',
+                  description: isColdStart
+                      ? 'No peer ratings from similar travellers are recorded yet. A neutral 50/100 baseline is used so destinations without reviews are not unfairly penalized.'
+                      : 'Based on feedback and ratings from travellers with similar travel styles.',
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _breakdownCard(
+                  sheetContext,
+                  title: 'Destination popularity (10% weight)',
+                  scoreText:
+                      '${(breakdown['popularity'] as num?)?.round() ?? '-'}/100',
+                  description:
+                      'Based on public ratings and review coverage across all visitors.',
+                ),
+              ] else ...[
+                Container(
+                  padding: AppSpacing.card,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceElevated,
+                    borderRadius: AppRadii.control,
+                    border: Border.all(color: AppColors.divider),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.info_outline_rounded,
+                        color: AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          'Detailed score breakdown is not available for this recommendation.',
+                          style: Theme.of(sheetContext).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.md),
+              SizedBox(
+                width: double.infinity,
+                child: SecondaryButton(
+                  label: 'Close',
+                  onPressed: () => Navigator.pop(sheetContext),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _breakdownCard(
+    BuildContext context, {
+    required String title,
+    required String scoreText,
+    required String description,
+  }) {
+    return Container(
+      padding: AppSpacing.card,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: AppRadii.control,
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              StatusChip(
+                text: scoreText,
+                tone: AppStatusTone.neutral,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            description,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+          ),
+        ],
       ),
     );
   }

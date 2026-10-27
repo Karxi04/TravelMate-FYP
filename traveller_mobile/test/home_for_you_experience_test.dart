@@ -175,7 +175,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('92% match'), findsOneWidget);
+    expect(find.text('Recommendation score: 92/100'), findsOneWidget);
+    expect(find.textContaining('% match'), findsNothing);
     expect(find.text('Matches your Culture interests'), findsOneWidget);
     expect(find.text('Fits your relaxed travel pace'), findsOneWidget);
     expect(find.text('Fallback source'), findsOneWidget);

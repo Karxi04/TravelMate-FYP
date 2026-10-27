@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
 
-import 'models/budget_model.dart';
-import 'alternative_screen.dart';
+import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
+import 'alternative_screen.dart';
 import 'budget_breakdown.dart';
+import 'models/budget_model.dart';
 
 class BudgetComparisonScreen extends StatelessWidget {
   final BudgetModel budget;
   final double userBudget;
   final String? tripId;
+  final ApiService? api;
 
   const BudgetComparisonScreen({
     super.key,
     required this.budget,
     required this.userBudget,
     this.tripId,
+    this.api,
   });
 
   @override
@@ -39,6 +42,7 @@ class BudgetComparisonScreen extends StatelessWidget {
                               budget: budget,
                               userBudget: userBudget,
                               tripId: tripId,
+                              api: api,
                             )));
               },
             )

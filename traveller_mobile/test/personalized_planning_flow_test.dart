@@ -534,7 +534,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Penang Hill'), findsOneWidget);
-    expect(find.text('91% match'), findsOneWidget);
+    expect(find.text('Recommendation score: 91/100'), findsOneWidget);
+    expect(find.textContaining('% match'), findsNothing);
     expect(find.text('Selected for planning'), findsNWidgets(2));
     expect(api.recommendationReads, 1);
     expect(api.recommendationCalls, 0);

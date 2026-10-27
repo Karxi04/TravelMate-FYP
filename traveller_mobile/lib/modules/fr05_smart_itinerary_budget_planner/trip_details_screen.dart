@@ -147,6 +147,272 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     return minutes == 0 ? '${hours}h' : '${hours}h ${minutes}m';
   }
 
+  bool _isProvisional(Map<String, dynamic> activity) {
+    final feasibility =
+        (activity['scheduleFeasibility'] ?? '').toString().toLowerCase();
+    if (feasibility == 'provisional') return true;
+    if (feasibility == 'feasible_with_reported_hours') return false;
+    final status =
+        (activity['openingHoursStatus'] ?? '').toString().toLowerCase();
+    return status == 'unknown';
+  }
+
+  bool _isVerifiedFree(Map<String, dynamic> activity) {
+    // 1. Fail closed if there are pricing issues
+    final issues = activity['pricingIssues'] as List? ?? const [];
+    if (issues.isNotEmpty) return false;
+
+    // 2. Authoritative selection price status must not be unresolved, conditional, or unverified
+    final status =
+        (activity['selectionPriceStatus'] ?? '').toString().toLowerCase();
+    if (status == 'unresolved' ||
+        status == 'conditional' ||
+        status == 'unverified') {
+      return false;
+    }
+
+    // 3. Provenance must be verified_ticket
+    final provenance =
+        (activity['costProvenance'] ?? '').toString().toLowerCase();
+    if (provenance != 'verified_ticket') return false;
+
+    // 4. Must have a valid pricing evidence map
+    if (activity['pricingEvidence'] is! Map) return false;
+    final evidence =
+        Map<String, dynamic>.from(activity['pricingEvidence'] as Map);
+
+    final evidenceIssues = evidence['pricingIssues'] as List? ?? const [];
+    if (evidenceIssues.isNotEmpty) return false;
+
+    // 5. Evidence applicability must be explicitly 'applicable' or 'all'
+    final applicability =
+        (evidence['applicability'] ?? '').toString().toLowerCase();
+    if (applicability != 'applicable' && applicability != 'all') {
+      return false;
+    }
+
+    // 6. Eligibility must not indicate missing evidence or conditional restrictions
+    final eligibility = (evidence['eligibility'] ?? '').toString().toLowerCase();
+    if (eligibility.contains('unverified') ||
+        eligibility.contains('missing') ||
+        eligibility.contains('required')) {
+      return false;
+    }
+
+    // 7. Source URL or citation must be present
+    final sourceUrl = (evidence['priceSourceUrl'] ??
+            evidence['sourceUrl'] ??
+            evidence['citation'] ??
+            activity['priceSourceUrl'] ??
+            '')
+        .toString()
+        .trim();
+    if (sourceUrl.isEmpty) return false;
+
+    // 8. Explicit verified flag if present must not be false
+    if (evidence['verified'] == false) return false;
+
+    // 9. Cost / unitPrice must be strictly 0
+    final unitPrice = double.tryParse(
+        '${activity['unitPrice'] ?? evidence['unitPrice'] ?? ''}');
+    final cost = double.tryParse(
+            '${activity['effectiveCost'] ?? activity['estimatedCost'] ?? ''}') ??
+        0.0;
+    if (unitPrice != null && unitPrice > 0) return false;
+    if (cost > 0) return false;
+
+    return true;
+  }
+
+  bool _isPriceConditional(Map<String, dynamic> activity) {
+    final status =
+        (activity['selectionPriceStatus'] ?? '').toString().toLowerCase();
+    if (status == 'conditional') return true;
+    final evidence = activity['pricingEvidence'] is Map
+        ? Map<String, dynamic>.from(activity['pricingEvidence'] as Map)
+        : null;
+    if (evidence != null &&
+        (evidence['applicability'] ?? '').toString().toLowerCase() ==
+            'conditional') {
+      return true;
+    }
+    return false;
+  }
+
+  bool _isPriceVerified(Map<String, dynamic> activity) {
+    if (_isVerifiedFree(activity)) return true;
+    if (_isPriceConditional(activity)) return false;
+    final status =
+        (activity['selectionPriceStatus'] ?? '').toString().toLowerCase();
+    final provenance =
+        (activity['costProvenance'] ?? '').toString().toLowerCase();
+    final evidence = activity['pricingEvidence'] is Map
+        ? Map<String, dynamic>.from(activity['pricingEvidence'] as Map)
+        : null;
+    final issues = activity['pricingIssues'] as List? ?? const [];
+    if (issues.isNotEmpty) return false;
+
+    if (evidence != null) {
+      final app = (evidence['applicability'] ?? '').toString().toLowerCase();
+      if (app == 'applicable' && provenance == 'verified_ticket') {
+        return true;
+      }
+      if (evidence['verified'] == true &&
+          app != 'conditional' &&
+          app != 'unverified') {
+        return true;
+      }
+    }
+    return status == 'verified' && provenance == 'verified_ticket';
+  }
+
+  bool _isPriceUnverified(Map<String, dynamic> activity) {
+    if (_isVerifiedFree(activity) ||
+        _isPriceConditional(activity) ||
+        _isPriceVerified(activity)) {
+      return false;
+    }
+    return true;
+  }
+
+  bool _isBudgetAwareApplied(Map<String, dynamic> t) {
+    if (t['budgetAwareSelection'] is Map) {
+      final bas = t['budgetAwareSelection'] as Map;
+      if (bas['applied'] == true) return true;
+    }
+    if (t['generationContext'] is Map) {
+      final gc = t['generationContext'] as Map;
+      if (gc['budgetAwareSelectionApplied'] == true) return true;
+    }
+    return false;
+  }
+
+  String _unselectedActivityName(Map<String, dynamic> entry) {
+    if (entry['activity'] is Map) {
+      final act = Map<String, dynamic>.from(entry['activity'] as Map);
+      for (final key in [
+        'activityName',
+        'title',
+        'name',
+        'ticketProduct',
+        'experienceName'
+      ]) {
+        final val = (act[key] ?? '').toString().trim();
+        if (val.isNotEmpty && !val.startsWith('{')) return val;
+      }
+    }
+    for (final key in ['activityName', 'title', 'name']) {
+      final val = (entry[key] ?? '').toString().trim();
+      if (val.isNotEmpty && !val.startsWith('{')) return val;
+    }
+    return 'Suggested place';
+  }
+
+  String _friendlyUnselectedReason(Map<String, dynamic> entry) {
+    final rawExp = (entry['explanation'] ?? '').toString().trim();
+    if (rawExp.isNotEmpty &&
+        !rawExp.startsWith('{') &&
+        !rawExp.startsWith('[')) {
+      return rawExp;
+    }
+    final rawReason =
+        (entry['reasonCode'] ?? entry['reason'] ?? entry['unscheduledReason'] ?? '')
+            .toString()
+            .trim();
+    final r = rawReason.toLowerCase();
+    if (r == 'known_budget_exceeded' || r.contains('budget')) {
+      return 'Exceeds remaining activity budget allowance.';
+    }
+    if (r == 'joint_schedule_infeasible' ||
+        r.contains('schedule') ||
+        r.contains('opening')) {
+      return 'Could not fit schedule or opening hours safely.';
+    }
+    if (r == 'unresolved_price' || r.contains('unresolved')) {
+      return 'Admission price unverified (deferred for confirmed places).';
+    }
+    if (r == 'local_quality_replacement' || r.contains('replacement')) {
+      return 'Replaced by activities with higher travel preference match.';
+    }
+    if (r == 'lower_priority' || r.contains('score')) {
+      return 'Lower match for selected pace and travel preferences.';
+    }
+    if (r == 'closed_on_dates' || r.contains('closed')) {
+      return 'Closed during planned trip dates.';
+    }
+    if (r == 'missing_geographic_coordinates') {
+      return 'Location coordinates unverified.';
+    }
+    if (r == 'ineligible_candidate') {
+      return 'Not eligible for selected trip criteria.';
+    }
+    if (rawReason.isNotEmpty &&
+        !rawReason.startsWith('{') &&
+        !rawReason.startsWith('[')) {
+      return rawReason;
+    }
+    return 'Kept as suggestion for future visits.';
+  }
+
+  String? _formatSelectionRationale(dynamic raw) {
+    if (raw == null) return null;
+
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty ||
+          trimmed.startsWith('[') ||
+          trimmed.startsWith('{')) {
+        return null;
+      }
+      return trimmed;
+    }
+
+    if (raw is List) {
+      final sentences = <String>[];
+      for (final element in raw) {
+        if (element == null) continue;
+        if (element is String) {
+          final t = element.trim();
+          if (t.isNotEmpty && !t.startsWith('[') && !t.startsWith('{')) {
+            if (!sentences.contains(t)) sentences.add(t);
+          }
+        } else if (element is Map) {
+          final text = (element['explanation'] ??
+                  element['summary'] ??
+                  element['text'] ??
+                  element['note'] ??
+                  element['reason'] ??
+                  '')
+              .toString()
+              .trim();
+          if (text.isNotEmpty &&
+              !text.startsWith('{') &&
+              !text.startsWith('[')) {
+            if (!sentences.contains(text)) sentences.add(text);
+          }
+        }
+      }
+      if (sentences.isEmpty) return null;
+      return sentences.take(2).join(' ');
+    }
+
+    if (raw is Map) {
+      final text = (raw['summary'] ??
+              raw['explanation'] ??
+              raw['text'] ??
+              raw['description'] ??
+              '')
+          .toString()
+          .trim();
+      if (text.isNotEmpty && !text.startsWith('{') && !text.startsWith('[')) {
+        return text;
+      }
+      return null;
+    }
+
+    return null;
+  }
+
   List<String> _activityNotes(Map<String, dynamic> activity) {
     final notes = <String>[];
     final weather = (activity['weatherNote'] ?? '').toString();
@@ -156,6 +422,26 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     for (final note in (activity['scheduleNotes'] as List? ?? [])) {
       final text = note.toString();
       if (text.trim().isNotEmpty && !notes.contains(text)) notes.add(text);
+    }
+    if (_isProvisional(activity) &&
+        !notes.any((n) =>
+            n.toLowerCase().contains('opening hours') ||
+            n.toLowerCase().contains('unverified') ||
+            n.toLowerCase().contains('provisional'))) {
+      notes.add(
+          'Operating hours for the planned date are not confirmed. Confirm with the venue before visiting.');
+    }
+    if (_isPriceConditional(activity) &&
+        !notes.any((n) => n.toLowerCase().contains('tariff'))) {
+      notes.add(
+          'Admission tariff varies by visitor category or transport option. Verify before visiting.');
+    } else if (_isPriceUnverified(activity) &&
+        !notes.any((n) =>
+            n.toLowerCase().contains('admission') ||
+            n.toLowerCase().contains('ticket') ||
+            n.toLowerCase().contains('price'))) {
+      notes.add(
+          'Admission price is unverified. Check ticket prices before your visit.');
     }
     return notes.take(2).toList();
   }
@@ -390,12 +676,21 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   }
 
   String _friendlyUnscheduledReason(Map<String, dynamic> item) {
-    final reason = (item['unscheduledReason'] ?? '').toString().toLowerCase();
-    if (reason.contains('closed')) {
+    final rawReason = (item['unscheduledReason'] ?? '').toString();
+    final reason = rawReason.toLowerCase();
+    if (reason.contains('closed on all trip days') ||
+        reason.contains('is closed during')) {
       return 'This place is closed during your trip dates.';
+    }
+    if (reason.contains('unverified')) {
+      return 'Couldn’t fit in schedule. Opening hours are unverified; check with venue.';
     }
     if (reason.contains('opening')) {
       return 'It couldn’t fit within the available opening hours.';
+    }
+    if (rawReason.isNotEmpty &&
+        !reason.contains('could not fit within available time')) {
+      return rawReason;
     }
     return 'There wasn’t enough time to fit this place safely.';
   }
@@ -1476,23 +1771,62 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         (activity['category'] ?? activity['type'] ?? '').toString().trim();
     final cost = double.tryParse('${activity['estimatedCost'] ?? 0}') ?? 0;
     final notes = _activityNotes(activity);
+    final isProvisional = _isProvisional(activity);
+    final isFree = _isVerifiedFree(activity);
+    final isConditional = _isPriceConditional(activity);
+    final isPriceUnverified = _isPriceUnverified(activity);
+    final isVerifiedPaid = _isPriceVerified(activity) && !isFree;
+
+    final showLeftNote = isProvisional || isPriceUnverified;
+    final leftNoteText = (isProvisional && isPriceUnverified)
+        ? 'Hours & price\nunverified'
+        : isProvisional
+            ? 'Hours\nunverified'
+            : 'Price\nunverified';
+
+    final semanticsHours = isProvisional ? ', Hours unverified' : '';
+    final semanticsPricing = isFree
+        ? ', Free admission'
+        : isConditional
+            ? ', Tariff conditional'
+            : isPriceUnverified
+                ? ', Price unverified'
+                : '';
+
     return Semantics(
       container: true,
       label:
-          '${_timeText(activity)}, ${activity['activityName'] ?? 'Activity'}',
+          '${_timeText(activity)}$semanticsHours$semanticsPricing, ${activity['activityName'] ?? 'Activity'}',
       child: InkCard(
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SizedBox(
-            width: 58,
-            child: Text(
-              (activity['scheduledStartTime'] ??
-                      activity['timeSlot'] ??
-                      'Time TBC')
-                  .toString(),
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(color: AppColors.primaryStrong),
+            width: 66,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  (activity['scheduledStartTime'] ??
+                          activity['timeSlot'] ??
+                          'Time TBC')
+                      .toString(),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(color: AppColors.primaryStrong),
+                ),
+                if (showLeftNote) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    leftNoteText,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
+                          height: 1.15,
+                        ),
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(width: AppSpacing.xs),
@@ -1516,14 +1850,50 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                     Wrap(
                         spacing: AppSpacing.xs,
                         runSpacing: AppSpacing.xxs,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
+                          if (isProvisional)
+                            const StatusChip(
+                              text: 'Hours unverified',
+                              tone: AppStatusTone.neutral,
+                            ),
+                          if (isFree)
+                            const StatusChip(
+                              text: 'Free admission',
+                              tone: AppStatusTone.success,
+                              icon: Icons.check_circle_outline_rounded,
+                            ),
+                          if (isConditional)
+                            const StatusChip(
+                              text: 'Tariff conditional',
+                              tone: AppStatusTone.neutral,
+                              icon: Icons.info_outline_rounded,
+                            ),
+                          if (isPriceUnverified)
+                            const StatusChip(
+                              text: 'Admission unverified',
+                              tone: AppStatusTone.neutral,
+                              icon: Icons.help_outline_rounded,
+                            ),
                           if (category.isNotEmpty)
                             Text(category,
                                 style: Theme.of(context).textTheme.bodySmall),
                           if (_durationText(activity).isNotEmpty)
                             Text(_durationText(activity),
                                 style: Theme.of(context).textTheme.bodySmall),
-                          if (cost > 0)
+                          if (isConditional && cost > 0)
+                            Text('~RM ${_money(cost)} tariff',
+                                style: Theme.of(context).textTheme.bodySmall)
+                          else if (isPriceUnverified && cost > 0)
+                            Text('~RM ${_money(cost)} estimate',
+                                style: Theme.of(context).textTheme.bodySmall)
+                          else if (isPriceUnverified && cost <= 0)
+                            Text('Price TBC',
+                                style: Theme.of(context).textTheme.bodySmall)
+                          else if (isVerifiedPaid && cost > 0)
+                            Text('RM ${_money(cost)} verified',
+                                style: Theme.of(context).textTheme.bodySmall)
+                          else if (!isFree && cost > 0)
                             Text('RM ${_money(cost)} estimated',
                                 style: Theme.of(context).textTheme.bodySmall),
                         ]),
@@ -1665,7 +2035,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                             (activity['activityName'] ?? 'Activity').toString(),
                             style: Theme.of(context).textTheme.titleMedium),
                         Text(
-                          '${activity['scheduledStartTime'] ?? activity['timeSlot'] ?? 'Time TBC'} · ${_durationText(activity)}',
+                          '${activity['scheduledStartTime'] ?? activity['timeSlot'] ?? 'Time TBC'} · ${_durationText(activity)}${_isProvisional(activity) ? ' · Hours unverified' : ''}',
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall
@@ -1704,6 +2074,140 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         onPressed: busy ? null : addPlaces,
       ),
     ]);
+  }
+
+  Widget _budgetAwareTransparencyCard(Map<String, dynamic> t) {
+    final bas = t['budgetAwareSelection'] is Map
+        ? Map<String, dynamic>.from(t['budgetAwareSelection'] as Map)
+        : <String, dynamic>{};
+    final isProvisional = bas['isProvisional'] == true ||
+        activities.any((a) => _isPriceUnverified(a) || _isProvisional(a));
+    final rationale = _formatSelectionRationale(bas['selectionRationale']);
+    final unselected = (bas['unselectedActivities'] as List? ?? const [])
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+
+    final bool allAdmissionsVerified = activities.isNotEmpty &&
+        activities.every((a) => _isPriceVerified(a) || _isVerifiedFree(a));
+    final String statusChipLabel = isProvisional
+        ? 'Provisional estimate'
+        : (allAdmissionsVerified ? 'Admission verified' : 'Known estimated costs');
+    final AppStatusTone statusChipTone = isProvisional
+        ? AppStatusTone.neutral
+        : (allAdmissionsVerified ? AppStatusTone.success : AppStatusTone.info);
+
+    return InkCard(
+      key: const ValueKey('budget-aware-transparency-card'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.tune_rounded,
+                      size: AppSizes.icon, color: AppColors.primaryStrong),
+                  const SizedBox(width: AppSpacing.xs),
+                  Flexible(
+                    child: Text(
+                      'Budget-aware itinerary',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                ],
+              ),
+              StatusChip(
+                text: statusChipLabel,
+                tone: statusChipTone,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            isProvisional
+                ? 'Planned with available cost information. Some admission fees or schedule constraints remain unverified. Allowances for food and transport are estimated.'
+                : 'Planned considering your travel style, schedule feasibility, and confirmed admission fees. Food and transport allowances remain estimated.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.textSecondary,
+                  height: 1.35,
+                ),
+          ),
+          if (rationale != null && rationale.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              rationale,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontStyle: FontStyle.italic,
+                    color: AppColors.textSecondary,
+                  ),
+            ),
+          ],
+          if (unselected.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            ExpansionTile(
+              key: const ValueKey('unselected-activities-expansion'),
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              title: Text(
+                'Other places considered (${unselected.length})',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              children: [
+                for (final item in unselected)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.info_outline,
+                            size: 16, color: AppColors.textSecondary),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _unselectedActivityName(item),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                _friendlyUnselectedReason(item),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: AppColors.textSecondary),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Unresolved admission costs are not guaranteed within the initial budget. Food and transport allowances do not confirm payments or reservations.',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: AppColors.textSecondary,
+                  fontStyle: FontStyle.italic,
+                ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _budgetSection(Map<String, dynamic> t) {
@@ -1977,6 +2481,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               _generationState(t),
             ],
             if (!generating) ...[
+              if (_isBudgetAwareApplied(t)) ...[
+                const SizedBox(height: AppSpacing.md),
+                _budgetAwareTransparencyCard(t),
+              ],
               const SizedBox(height: AppSpacing.lg),
               _dayNavigation(t),
               const SizedBox(height: AppSpacing.sm),
