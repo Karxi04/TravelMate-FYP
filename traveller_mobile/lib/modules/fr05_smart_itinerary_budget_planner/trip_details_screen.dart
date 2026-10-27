@@ -158,27 +158,82 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   }
 
   bool _isVerifiedFree(Map<String, dynamic> activity) {
-    final cost = double.tryParse('${activity['estimatedCost'] ?? ''}') ?? 0.0;
-    final provenance = (activity['costProvenance'] ?? '').toString();
-    final status = (activity['selectionPriceStatus'] ?? '').toString();
-    final evidence = activity['pricingEvidence'] is Map
-        ? Map<String, dynamic>.from(activity['pricingEvidence'] as Map)
-        : null;
-    if (evidence != null && evidence['verified'] == true && cost == 0.0) {
-      return true;
+    // 1. Fail closed if there are pricing issues
+    final issues = activity['pricingIssues'] as List? ?? const [];
+    if (issues.isNotEmpty) return false;
+
+    // 2. Authoritative selection price status must not be unresolved, conditional, or unverified
+    final status =
+        (activity['selectionPriceStatus'] ?? '').toString().toLowerCase();
+    if (status == 'unresolved' ||
+        status == 'conditional' ||
+        status == 'unverified') {
+      return false;
     }
-    if (status == 'verified' && cost == 0.0) return true;
-    if (provenance == 'verified_ticket' && cost == 0.0) return true;
-    return false;
+
+    // 3. Provenance must be verified_ticket
+    final provenance =
+        (activity['costProvenance'] ?? '').toString().toLowerCase();
+    if (provenance != 'verified_ticket') return false;
+
+    // 4. Must have a valid pricing evidence map
+    if (activity['pricingEvidence'] is! Map) return false;
+    final evidence =
+        Map<String, dynamic>.from(activity['pricingEvidence'] as Map);
+
+    final evidenceIssues = evidence['pricingIssues'] as List? ?? const [];
+    if (evidenceIssues.isNotEmpty) return false;
+
+    // 5. Evidence applicability must be explicitly 'applicable' or 'all'
+    final applicability =
+        (evidence['applicability'] ?? '').toString().toLowerCase();
+    if (applicability != 'applicable' && applicability != 'all') {
+      return false;
+    }
+
+    // 6. Eligibility must not indicate missing evidence or conditional restrictions
+    final eligibility = (evidence['eligibility'] ?? '').toString().toLowerCase();
+    if (eligibility.contains('unverified') ||
+        eligibility.contains('missing') ||
+        eligibility.contains('required')) {
+      return false;
+    }
+
+    // 7. Source URL or citation must be present
+    final sourceUrl = (evidence['priceSourceUrl'] ??
+            evidence['sourceUrl'] ??
+            evidence['citation'] ??
+            activity['priceSourceUrl'] ??
+            '')
+        .toString()
+        .trim();
+    if (sourceUrl.isEmpty) return false;
+
+    // 8. Explicit verified flag if present must not be false
+    if (evidence['verified'] == false) return false;
+
+    // 9. Cost / unitPrice must be strictly 0
+    final unitPrice = double.tryParse(
+        '${activity['unitPrice'] ?? evidence['unitPrice'] ?? ''}');
+    final cost = double.tryParse(
+            '${activity['effectiveCost'] ?? activity['estimatedCost'] ?? ''}') ??
+        0.0;
+    if (unitPrice != null && unitPrice > 0) return false;
+    if (cost > 0) return false;
+
+    return true;
   }
 
   bool _isPriceConditional(Map<String, dynamic> activity) {
-    final status = (activity['selectionPriceStatus'] ?? '').toString();
+    final status =
+        (activity['selectionPriceStatus'] ?? '').toString().toLowerCase();
     if (status == 'conditional') return true;
     final evidence = activity['pricingEvidence'] is Map
         ? Map<String, dynamic>.from(activity['pricingEvidence'] as Map)
         : null;
-    if (evidence != null && evidence['applicability'] == 'conditional') {
+    if (evidence != null &&
+        (evidence['applicability'] ?? '').toString().toLowerCase() ==
+            'conditional') {
       return true;
     }
     return false;
@@ -186,17 +241,29 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
 
   bool _isPriceVerified(Map<String, dynamic> activity) {
     if (_isVerifiedFree(activity)) return true;
-    final status = (activity['selectionPriceStatus'] ?? '').toString();
-    final provenance = (activity['costProvenance'] ?? '').toString();
+    if (_isPriceConditional(activity)) return false;
+    final status =
+        (activity['selectionPriceStatus'] ?? '').toString().toLowerCase();
+    final provenance =
+        (activity['costProvenance'] ?? '').toString().toLowerCase();
     final evidence = activity['pricingEvidence'] is Map
         ? Map<String, dynamic>.from(activity['pricingEvidence'] as Map)
         : null;
-    if (evidence != null &&
-        evidence['verified'] == true &&
-        evidence['applicability'] != 'conditional') {
-      return true;
+    final issues = activity['pricingIssues'] as List? ?? const [];
+    if (issues.isNotEmpty) return false;
+
+    if (evidence != null) {
+      final app = (evidence['applicability'] ?? '').toString().toLowerCase();
+      if (app == 'applicable' && provenance == 'verified_ticket') {
+        return true;
+      }
+      if (evidence['verified'] == true &&
+          app != 'conditional' &&
+          app != 'unverified') {
+        return true;
+      }
     }
-    return status == 'verified' || provenance == 'verified_ticket';
+    return status == 'verified' && provenance == 'verified_ticket';
   }
 
   bool _isPriceUnverified(Map<String, dynamic> activity) {
@@ -205,22 +272,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         _isPriceVerified(activity)) {
       return false;
     }
-    final status = (activity['selectionPriceStatus'] ?? '').toString();
-    final provenance = (activity['costProvenance'] ?? '').toString();
-    final unit = (activity['pricingUnit'] ?? '').toString();
-    final issues = activity['pricingIssues'] as List? ?? const [];
-    if (status == 'unresolved' || status == 'unverified') return true;
-    if (issues.isNotEmpty) return true;
-    if (unit == 'unknown') return true;
-    if (provenance == 'legacy_estimate' || provenance == 'unverified') {
-      return true;
-    }
-    final costRaw = activity['estimatedCost'];
-    if (costRaw == null) return true;
-    if (provenance.isEmpty || provenance != 'verified_ticket') {
-      return true;
-    }
-    return false;
+    return true;
   }
 
   bool _isBudgetAwareApplied(Map<String, dynamic> t) {
@@ -235,26 +287,130 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     return false;
   }
 
-  String _friendlyUnselectedReason(Map<String, dynamic> item) {
+  String _unselectedActivityName(Map<String, dynamic> entry) {
+    if (entry['activity'] is Map) {
+      final act = Map<String, dynamic>.from(entry['activity'] as Map);
+      for (final key in [
+        'activityName',
+        'title',
+        'name',
+        'ticketProduct',
+        'experienceName'
+      ]) {
+        final val = (act[key] ?? '').toString().trim();
+        if (val.isNotEmpty && !val.startsWith('{')) return val;
+      }
+    }
+    for (final key in ['activityName', 'title', 'name']) {
+      final val = (entry[key] ?? '').toString().trim();
+      if (val.isNotEmpty && !val.startsWith('{')) return val;
+    }
+    return 'Suggested place';
+  }
+
+  String _friendlyUnselectedReason(Map<String, dynamic> entry) {
+    final rawExp = (entry['explanation'] ?? '').toString().trim();
+    if (rawExp.isNotEmpty &&
+        !rawExp.startsWith('{') &&
+        !rawExp.startsWith('[')) {
+      return rawExp;
+    }
     final rawReason =
-        (item['reason'] ?? item['unscheduledReason'] ?? '').toString();
-    final reason = rawReason.toLowerCase();
-    if (reason.contains('budget') || reason == 'known_budget_exceeded') {
+        (entry['reasonCode'] ?? entry['reason'] ?? entry['unscheduledReason'] ?? '')
+            .toString()
+            .trim();
+    final r = rawReason.toLowerCase();
+    if (r == 'known_budget_exceeded' || r.contains('budget')) {
       return 'Exceeds remaining activity budget allowance.';
     }
-    if (reason.contains('schedule') ||
-        reason.contains('opening') ||
-        reason == 'joint_schedule_infeasible') {
+    if (r == 'joint_schedule_infeasible' ||
+        r.contains('schedule') ||
+        r.contains('opening')) {
       return 'Could not fit schedule or opening hours safely.';
     }
-    if (reason.contains('price') || reason == 'unresolved_price') {
+    if (r == 'unresolved_price' || r.contains('unresolved')) {
       return 'Admission price unverified (deferred for confirmed places).';
     }
-    if (reason.contains('score') || reason == 'lower_priority') {
+    if (r == 'local_quality_replacement' || r.contains('replacement')) {
+      return 'Replaced by activities with higher travel preference match.';
+    }
+    if (r == 'lower_priority' || r.contains('score')) {
       return 'Lower match for selected pace and travel preferences.';
     }
-    if (rawReason.isNotEmpty) return rawReason;
+    if (r == 'closed_on_dates' || r.contains('closed')) {
+      return 'Closed during planned trip dates.';
+    }
+    if (r == 'missing_geographic_coordinates') {
+      return 'Location coordinates unverified.';
+    }
+    if (r == 'ineligible_candidate') {
+      return 'Not eligible for selected trip criteria.';
+    }
+    if (rawReason.isNotEmpty &&
+        !rawReason.startsWith('{') &&
+        !rawReason.startsWith('[')) {
+      return rawReason;
+    }
     return 'Kept as suggestion for future visits.';
+  }
+
+  String? _formatSelectionRationale(dynamic raw) {
+    if (raw == null) return null;
+
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty ||
+          trimmed.startsWith('[') ||
+          trimmed.startsWith('{')) {
+        return null;
+      }
+      return trimmed;
+    }
+
+    if (raw is List) {
+      final sentences = <String>[];
+      for (final element in raw) {
+        if (element == null) continue;
+        if (element is String) {
+          final t = element.trim();
+          if (t.isNotEmpty && !t.startsWith('[') && !t.startsWith('{')) {
+            if (!sentences.contains(t)) sentences.add(t);
+          }
+        } else if (element is Map) {
+          final text = (element['explanation'] ??
+                  element['summary'] ??
+                  element['text'] ??
+                  element['note'] ??
+                  element['reason'] ??
+                  '')
+              .toString()
+              .trim();
+          if (text.isNotEmpty &&
+              !text.startsWith('{') &&
+              !text.startsWith('[')) {
+            if (!sentences.contains(text)) sentences.add(text);
+          }
+        }
+      }
+      if (sentences.isEmpty) return null;
+      return sentences.take(2).join(' ');
+    }
+
+    if (raw is Map) {
+      final text = (raw['summary'] ??
+              raw['explanation'] ??
+              raw['text'] ??
+              raw['description'] ??
+              '')
+          .toString()
+          .trim();
+      if (text.isNotEmpty && !text.startsWith('{') && !text.startsWith('[')) {
+        return text;
+      }
+      return null;
+    }
+
+    return null;
   }
 
   List<String> _activityNotes(Map<String, dynamic> activity) {
@@ -1925,48 +2081,64 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         ? Map<String, dynamic>.from(t['budgetAwareSelection'] as Map)
         : <String, dynamic>{};
     final isProvisional = bas['isProvisional'] == true ||
-        activities.any((a) => _isPriceUnverified(a));
-    final rationale = (bas['selectionRationale'] ?? '').toString().trim();
+        activities.any((a) => _isPriceUnverified(a) || _isProvisional(a));
+    final rationale = _formatSelectionRationale(bas['selectionRationale']);
     final unselected = (bas['unselectedActivities'] as List? ?? const [])
         .whereType<Map>()
         .map((m) => Map<String, dynamic>.from(m))
         .toList();
+
+    final bool allAdmissionsVerified = activities.isNotEmpty &&
+        activities.every((a) => _isPriceVerified(a) || _isVerifiedFree(a));
+    final String statusChipLabel = isProvisional
+        ? 'Provisional estimate'
+        : (allAdmissionsVerified ? 'Admission verified' : 'Known estimated costs');
+    final AppStatusTone statusChipTone = isProvisional
+        ? AppStatusTone.neutral
+        : (allAdmissionsVerified ? AppStatusTone.success : AppStatusTone.info);
 
     return InkCard(
       key: const ValueKey('budget-aware-transparency-card'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
             children: [
-              const Icon(Icons.tune_rounded,
-                  size: AppSizes.icon, color: AppColors.primaryStrong),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Text(
-                  'Budget-aware itinerary',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.tune_rounded,
+                      size: AppSizes.icon, color: AppColors.primaryStrong),
+                  const SizedBox(width: AppSpacing.xs),
+                  Flexible(
+                    child: Text(
+                      'Budget-aware itinerary',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                ],
               ),
               StatusChip(
-                text: isProvisional ? 'Provisional' : 'Verified',
-                tone: isProvisional
-                    ? AppStatusTone.neutral
-                    : AppStatusTone.success,
+                text: statusChipLabel,
+                tone: statusChipTone,
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
             isProvisional
-                ? 'Planned with available cost information. Some admission fees remain unverified. Actual venue admission and seasonal rates may vary.'
-                : 'Planned considering your travel style, schedule feasibility, and verified pricing information.',
+                ? 'Planned with available cost information. Some admission fees or schedule constraints remain unverified. Allowances for food and transport are estimated.'
+                : 'Planned considering your travel style, schedule feasibility, and confirmed admission fees. Food and transport allowances remain estimated.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: AppColors.textSecondary,
                   height: 1.35,
                 ),
           ),
-          if (rationale.isNotEmpty) ...[
+          if (rationale != null && rationale.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xs),
             Text(
               rationale,
@@ -2003,8 +2175,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                (item['activityName'] ?? 'Suggested place')
-                                    .toString(),
+                                _unselectedActivityName(item),
                                 style: Theme.of(context)
                                     .textTheme
                                     .bodySmall
@@ -2028,7 +2199,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           ],
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Unresolved admission costs are not guaranteed within the initial budget. Review venue prices before confirming travel plans.',
+            'Unresolved admission costs are not guaranteed within the initial budget. Food and transport allowances do not confirm payments or reservations.',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: AppColors.textSecondary,
                   fontStyle: FontStyle.italic,

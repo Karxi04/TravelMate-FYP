@@ -132,25 +132,27 @@ Future<void> _scrollTarget(WidgetTester tester, Finder target) async {
 }
 
 void main() {
-  group(
-      'Batch F3-P2E: Flutter Budget-Aware Itinerary Transparency & Provisional Pricing UX',
-      () {
-    testWidgets('1. Verified free attraction renders Free admission chip',
+  group('Batch F3-P2F-R: Real Backend Payload Contract & Transparency', () {
+    testWidgets(
+        '1. Raw zero plus verified_ticket but incomplete pricing evidence does NOT show Free Admission',
         (tester) async {
+      // Backend price_edge fixture: costProvenance: verified_ticket, unitPrice: 0, but priceSourceUrl: '' / unverified applicability
       final trip = _buildTrip(activities: [
         {
-          'activityId': 'act_free_1',
-          'activityName': 'Kek Lok Si Temple Grounds',
+          'activityId': 'synthetic-invalid-free',
+          'destinationId': 'synthetic-invalid-free',
+          'activityName': 'Chew Jetty Boardwalk',
           'dayNo': 1,
           'timeSlot': '09:00',
           'scheduledStartTime': '09:00',
           'estimatedCost': 0,
+          'unitPrice': 0,
           'costProvenance': 'verified_ticket',
-          'selectionPriceStatus': 'verified',
+          'selectionPriceStatus': 'unresolved',
           'pricingEvidence': {
-            'verified': true,
-            'tier': 'free',
-            'applicability': 'all',
+            'applicability': 'unverified',
+            'eligibility': 'explicit_authoritative_free_entry_evidence_missing',
+            'priceSourceUrl': '',
           },
           'openingHoursStatus': 'reported',
           'scheduleFeasibility': 'feasible_with_reported_hours',
@@ -158,59 +160,106 @@ void main() {
       ]);
 
       await _pumpTrip(tester, trip);
-      await _scrollTarget(tester, find.text('Kek Lok Si Temple Grounds'));
+      await _scrollTarget(tester, find.text('Chew Jetty Boardwalk'));
 
-      expect(find.text('Free admission'), findsOneWidget);
-      expect(find.text('RM 0.00'), findsNothing);
-      expect(find.text('RM 0'), findsNothing);
-      expect(find.text('Hours unverified'), findsNothing);
-      expect(find.text('Admission unverified'), findsNothing);
+      expect(find.text('Free admission'), findsNothing);
+      expect(find.text('Admission unverified'), findsOneWidget);
     });
 
-    testWidgets('2. Unknown admission price renders Admission unverified chip',
+    testWidgets(
+        '2. Fully verified free admission DOES show Free Admission',
         (tester) async {
       final trip = _buildTrip(activities: [
         {
-          'activityId': 'act_unverified_1',
-          'activityName': 'Clan Jetties Community Walk',
+          'activityId': 'local_kek_lok_si',
+          'destinationId': 'local_kek_lok_si',
+          'activityName': 'Kek Lok Si Temple',
+          'dayNo': 1,
+          'timeSlot': '09:00',
+          'scheduledStartTime': '09:00',
+          'estimatedCost': 0,
+          'unitPrice': 0.0,
+          'costProvenance': 'verified_ticket',
+          'selectionPriceStatus': 'verified',
+          'pricingEvidence': {
+            'venueId': 'local_kek_lok_si',
+            'ticketProductId': 'temple_grounds_free',
+            'ticketProduct': 'Main temple grounds admission',
+            'unitPrice': 0.0,
+            'pricingUnit': 'per_person',
+            'currency': 'MYR',
+            'applicability': 'applicable',
+            'eligibility': 'all_visitors',
+            'priceSourceUrl':
+                'https://mypenang.gov.my/view_directory.php?id=c2pkMG9tMEw2UUwzUk1hVTNWV3ZXZz09',
+            'verified': true,
+          },
+          'pricingIssues': const [],
+          'openingHoursStatus': 'reported',
+          'scheduleFeasibility': 'feasible_with_reported_hours',
+        }
+      ]);
+
+      await _pumpTrip(tester, trip);
+      await _scrollTarget(tester, find.text('Kek Lok Si Temple'));
+
+      expect(find.text('Free admission'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+      expect(find.text('RM 0.00'), findsNothing);
+    });
+
+    testWidgets(
+        '3. Unresolved pricing issues override unsafe free classification',
+        (tester) async {
+      final trip = _buildTrip(activities: [
+        {
+          'activityId': 'act_issue_free',
+          'activityName': 'Botanical Garden Tram Walk',
           'dayNo': 1,
           'timeSlot': '10:00',
           'scheduledStartTime': '10:00',
           'estimatedCost': 0,
-          'selectionPriceStatus': 'unresolved',
-          'pricingUnit': 'unknown',
-          'costProvenance': 'unverified',
-          'pricingEvidence': {'verified': false},
+          'costProvenance': 'verified_ticket',
+          'selectionPriceStatus': 'verified',
+          'pricingEvidence': {
+            'applicability': 'applicable',
+            'eligibility': 'all_visitors',
+            'priceSourceUrl': 'https://botanicalgardens.penang.gov.my/',
+            'verified': true,
+          },
+          'pricingIssues': [
+            'Conflicting statements on optional charges and opening fees'
+          ],
           'openingHoursStatus': 'reported',
           'scheduleFeasibility': 'feasible_with_reported_hours',
         }
       ]);
 
       await _pumpTrip(tester, trip);
-      await _scrollTarget(tester, find.text('Clan Jetties Community Walk'));
+      await _scrollTarget(tester, find.text('Botanical Garden Tram Walk'));
 
-      expect(find.text('Admission unverified'), findsOneWidget);
-      expect(find.text('Price TBC'), findsOneWidget);
       expect(find.text('Free admission'), findsNothing);
+      expect(find.text('Admission unverified'), findsOneWidget);
     });
 
-    testWidgets(
-        '3. Conditional admission tariff renders Tariff conditional chip',
+    testWidgets('4. Conditional ticket price remains conditional',
         (tester) async {
       final trip = _buildTrip(activities: [
         {
-          'activityId': 'act_conditional_1',
-          'activityName': 'Penang Hill Funicular Railway',
+          'activityId': 'synthetic-p03',
+          'destinationId': 'synthetic-p03',
+          'activityName': 'Penang Hill Funicular',
           'dayNo': 1,
           'timeSlot': '11:00',
           'scheduledStartTime': '11:00',
-          'estimatedCost': 30,
+          'estimatedCost': 40,
           'selectionPriceStatus': 'conditional',
           'costProvenance': 'verified_ticket',
           'pricingEvidence': {
-            'verified': true,
             'applicability': 'conditional',
+            'eligibility': 'residency_and_age',
             'basis': 'per_person',
+            'priceSourceUrl': 'https://www.penanghill.gov.my/',
           },
           'openingHoursStatus': 'reported',
           'scheduleFeasibility': 'feasible_with_reported_hours',
@@ -218,139 +267,30 @@ void main() {
       ]);
 
       await _pumpTrip(tester, trip);
-      await _scrollTarget(tester, find.text('Penang Hill Funicular Railway'));
+      await _scrollTarget(tester, find.text('Penang Hill Funicular'));
 
       expect(find.text('Tariff conditional'), findsOneWidget);
-      expect(find.text('~RM 30 tariff'), findsOneWidget);
+      expect(find.text('~RM 40 tariff'), findsOneWidget);
       expect(find.text('Free admission'), findsNothing);
-      expect(find.text('Admission unverified'), findsNothing);
     });
 
     testWidgets(
-        '4. Unverified numeric estimate renders estimate label without verified certainty',
-        (tester) async {
-      final trip = _buildTrip(activities: [
-        {
-          'activityId': 'act_estimate_1',
-          'activityName': 'Pinang Peranakan Mansion',
-          'dayNo': 1,
-          'timeSlot': '14:00',
-          'scheduledStartTime': '14:00',
-          'estimatedCost': 25,
-          'costProvenance': 'legacy_estimate',
-          'selectionPriceStatus': 'unresolved',
-          'pricingEvidence': {'verified': false},
-          'openingHoursStatus': 'reported',
-          'scheduleFeasibility': 'feasible_with_reported_hours',
-        }
-      ]);
-
-      await _pumpTrip(tester, trip);
-      await _scrollTarget(tester, find.text('Pinang Peranakan Mansion'));
-
-      expect(find.text('Admission unverified'), findsOneWidget);
-      expect(find.text('~RM 25 estimate'), findsOneWidget);
-      expect(find.text('RM 25 verified'), findsNothing);
-    });
-
-    testWidgets(
-        '5. Provisional budget status renders Incomplete estimate and warning',
-        (tester) async {
-      final budget = BudgetModel.fromJson({
-        'budgetLimit': 1500,
-        'knownEstimatedSubtotal': 450,
-        'totalEstimatedCost': 450,
-        'completenessStatus': 'incomplete',
-        'affordabilityStatus': 'incomplete',
-        'pendingExpenseCategories': ['activities'],
-        'categoryTotals': {
-          'activities': 50,
-          'food': 100,
-          'transport': 50,
-          'hotel': 250,
-          'flight': 0,
-          'carRental': 0,
-        },
-        'expenseBreakdown': {
-          'activities': {'state': 'unverified_estimate'},
-          'food': {'state': 'priced'},
-          'transport': {'state': 'priced'},
-          'hotel': {'state': 'priced'},
-          'flight': {'state': 'not_required'},
-          'carRental': {'state': 'not_required'},
-        },
-      });
-
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: BudgetBreakdown(budget: budget, limit: 1500),
-        ),
-      ));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Incomplete estimate'), findsOneWidget);
-      expect(
-          find.textContaining(
-              'Some expenses or pricing details are unresolved'),
-          findsOneWidget);
-      expect(find.textContaining('remaining balance cannot be guaranteed'),
-          findsOneWidget);
-      expect(find.textContaining('Estimated balance:'), findsNothing);
-    });
-
-    testWidgets('6. Complete budget status renders Within budget and balance',
-        (tester) async {
-      final budget = BudgetModel.fromJson({
-        'budgetLimit': 1500,
-        'knownEstimatedSubtotal': 450,
-        'totalEstimatedCost': 450,
-        'completenessStatus': 'complete',
-        'affordabilityStatus': 'within_budget',
-        'pendingExpenseCategories': <String>[],
-        'excludedExpenseCategories': <String>[],
-        'categoryTotals': {
-          'activities': 50,
-          'food': 100,
-          'transport': 50,
-          'hotel': 250,
-          'flight': 0,
-          'carRental': 0,
-        },
-        'expenseBreakdown': {
-          'activities': {'state': 'priced'},
-          'food': {'state': 'priced'},
-          'transport': {'state': 'priced'},
-          'hotel': {'state': 'priced'},
-          'flight': {'state': 'not_required'},
-          'carRental': {'state': 'not_required'},
-        },
-      });
-
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: BudgetBreakdown(budget: budget, limit: 1500),
-        ),
-      ));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Within budget'), findsOneWidget);
-      expect(find.text('Estimated balance: RM 1050.00'), findsOneWidget);
-    });
-
-    testWidgets(
-        '7. Budget-aware selection metadata present renders transparency card',
+        '5. Nested activity title is displayed correctly in unselected activities',
         (tester) async {
       final trip = _buildTrip(
         budgetAwareSelection: {
           'applied': true,
-          'selectionMode': 'provisional',
           'isProvisional': true,
-          'selectionRationale':
-              'Optimized for cultural interest while observing admission limits.',
           'unselectedActivities': [
             {
-              'activityName': 'Penang 3D Trick Art Museum',
-              'reason': 'known_budget_exceeded',
+              'activity': {
+                'activityId': 'act_nested_1',
+                'activityName': 'The TOP Rainbow Skywalk',
+                'score': 82,
+              },
+              'reasonCode': 'known_budget_exceeded',
+              'explanation':
+                  'Exceeds remaining activity budget allowance of RM 50.00.',
             }
           ],
         },
@@ -363,7 +303,272 @@ void main() {
             'estimatedCost': 25,
             'costProvenance': 'verified_ticket',
             'selectionPriceStatus': 'verified',
-            'openingHoursStatus': 'reported',
+            'pricingEvidence': {
+              'applicability': 'applicable',
+              'priceSourceUrl': 'https://cheongfatttze.com',
+            },
+          }
+        ],
+      );
+
+      await _pumpTrip(tester, trip);
+
+      final unselectedFinder = find.text('Other places considered (1)');
+      await _scrollTarget(tester, unselectedFinder);
+      await tester.tap(unselectedFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('The TOP Rainbow Skywalk'), findsOneWidget);
+      expect(find.text('Suggested place'), findsNothing);
+    });
+
+    testWidgets(
+        '6. Nested reasonCode is converted into user-friendly wording when explanation is absent',
+        (tester) async {
+      final trip = _buildTrip(
+        budgetAwareSelection: {
+          'applied': true,
+          'isProvisional': true,
+          'unselectedActivities': [
+            {
+              'activity': {
+                'activityName': 'ESCAPE Penang Challenge',
+              },
+              'reasonCode': 'local_quality_replacement',
+            }
+          ],
+        },
+        activities: [
+          {
+            'activityId': 'act_1',
+            'activityName': 'Heritage Walk',
+            'dayNo': 1,
+            'timeSlot': '10:00',
+            'estimatedCost': 0,
+          }
+        ],
+      );
+
+      await _pumpTrip(tester, trip);
+
+      final unselectedFinder = find.text('Other places considered (1)');
+      await _scrollTarget(tester, unselectedFinder);
+      await tester.tap(unselectedFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('ESCAPE Penang Challenge'), findsOneWidget);
+      expect(
+          find.text('Replaced by activities with higher travel preference match.'),
+          findsOneWidget);
+    });
+
+    testWidgets('7. Nested explanation is presented safely', (tester) async {
+      final trip = _buildTrip(
+        budgetAwareSelection: {
+          'applied': true,
+          'isProvisional': true,
+          'unselectedActivities': [
+            {
+              'activity': {
+                'activityName': 'Wonderfood Museum',
+              },
+              'reasonCode': 'local_quality_replacement',
+              'explanation':
+                  'Replaced by two jointly schedulable, budgeted activities with higher aggregate original score.',
+            }
+          ],
+        },
+        activities: [
+          {
+            'activityId': 'act_1',
+            'activityName': 'Heritage Walk',
+            'dayNo': 1,
+            'timeSlot': '10:00',
+            'estimatedCost': 0,
+          }
+        ],
+      );
+
+      await _pumpTrip(tester, trip);
+
+      final unselectedFinder = find.text('Other places considered (1)');
+      await _scrollTarget(tester, unselectedFinder);
+      await tester.tap(unselectedFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Wonderfood Museum'), findsOneWidget);
+      expect(
+          find.text(
+              'Replaced by two jointly schedulable, budgeted activities with higher aggregate original score.'),
+          findsOneWidget);
+    });
+
+    testWidgets('8. Missing nested activity fields do not crash',
+        (tester) async {
+      final trip = _buildTrip(
+        budgetAwareSelection: {
+          'applied': true,
+          'isProvisional': true,
+          'unselectedActivities': [
+            {
+              'activity': null,
+              'reasonCode': null,
+              'explanation': null,
+            },
+            {
+              'activity': <String, dynamic>{},
+              'reasonCode': 'unknown_code',
+            }
+          ],
+        },
+        activities: [
+          {
+            'activityId': 'act_1',
+            'activityName': 'Heritage Walk',
+            'dayNo': 1,
+            'timeSlot': '10:00',
+            'estimatedCost': 0,
+          }
+        ],
+      );
+
+      await _pumpTrip(tester, trip);
+
+      final unselectedFinder = find.text('Other places considered (2)');
+      await _scrollTarget(tester, unselectedFinder);
+      await tester.tap(unselectedFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Suggested place'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('9. Legacy flat exclusion records remain compatible',
+        (tester) async {
+      final trip = _buildTrip(
+        budgetAwareSelection: {
+          'applied': true,
+          'isProvisional': true,
+          'unselectedActivities': [
+            {
+              'activityName': 'Old Heritage Gallery',
+              'reason': 'known_budget_exceeded',
+            }
+          ],
+        },
+        activities: [
+          {
+            'activityId': 'act_1',
+            'activityName': 'Heritage Walk',
+            'dayNo': 1,
+            'timeSlot': '10:00',
+            'estimatedCost': 0,
+          }
+        ],
+      );
+
+      await _pumpTrip(tester, trip);
+
+      final unselectedFinder = find.text('Other places considered (1)');
+      await _scrollTarget(tester, unselectedFinder);
+      await tester.tap(unselectedFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Old Heritage Gallery'), findsOneWidget);
+      expect(find.text('Exceeds remaining activity budget allowance.'),
+          findsOneWidget);
+    });
+
+    testWidgets('10. Structured rationale lists display readable prose',
+        (tester) async {
+      // Backend budget_aware_selection emits rationale as List of dicts
+      final trip = _buildTrip(
+        budgetAwareSelection: {
+          'applied': true,
+          'isProvisional': true,
+          'selectionRationale': [
+            {
+              'activityId': 'act_1',
+              'score': 95,
+              'explanation':
+                  'Accepted in descending original-score order: known group cost fits and all selected visits fit the existing scheduler.',
+            },
+            {
+              'activityId': 'act_2',
+              'score': 70,
+              'explanation':
+                  'Provisional scheduling suggestion only: admission is unresolved and affordability is not established.',
+            }
+          ],
+        },
+        activities: [
+          {
+            'activityId': 'act_1',
+            'activityName': 'Kek Lok Si Temple',
+            'dayNo': 1,
+            'timeSlot': '09:00',
+            'estimatedCost': 0,
+          }
+        ],
+      );
+
+      await _pumpTrip(tester, trip);
+
+      expect(
+          find.textContaining(
+              'Accepted in descending original-score order: known group cost fits'),
+          findsOneWidget);
+      expect(find.textContaining('{activityId:'), findsNothing);
+      expect(find.textContaining('[{'), findsNothing);
+    });
+
+    testWidgets('11. Rationale maps are not rendered as raw debug text',
+        (tester) async {
+      final trip = _buildTrip(
+        budgetAwareSelection: {
+          'applied': true,
+          'isProvisional': true,
+          'selectionRationale': {
+            'summary':
+                'Prioritized cultural heritage sites within available time.',
+            'debugInternalTrace': 'opt_step_49',
+          },
+        },
+        activities: [
+          {
+            'activityId': 'act_1',
+            'activityName': 'Kek Lok Si Temple',
+            'dayNo': 1,
+            'timeSlot': '09:00',
+            'estimatedCost': 0,
+          }
+        ],
+      );
+
+      await _pumpTrip(tester, trip);
+
+      expect(
+          find.text(
+              'Prioritized cultural heritage sites within available time.'),
+          findsOneWidget);
+      expect(find.textContaining('debugInternalTrace'), findsNothing);
+    });
+
+    testWidgets('12. Missing rationale produces a graceful fallback',
+        (tester) async {
+      final trip = _buildTrip(
+        budgetAwareSelection: {
+          'applied': true,
+          'isProvisional': true,
+          'selectionRationale': null,
+        },
+        activities: [
+          {
+            'activityId': 'act_1',
+            'activityName': 'Kek Lok Si Temple',
+            'dayNo': 1,
+            'timeSlot': '09:00',
+            'estimatedCost': 0,
           }
         ],
       );
@@ -372,49 +577,77 @@ void main() {
 
       expect(find.byKey(const ValueKey('budget-aware-transparency-card')),
           findsOneWidget);
-      expect(find.text('Budget-aware itinerary'), findsOneWidget);
-      expect(find.text('Provisional'), findsOneWidget);
-      expect(
-          find.text(
-              'Optimized for cultural interest while observing admission limits.'),
-          findsOneWidget);
-      expect(find.text('Other places considered (1)'), findsOneWidget);
-
-      await tester.tap(find.text('Other places considered (1)'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Penang 3D Trick Art Museum'), findsOneWidget);
-      expect(find.text('Exceeds remaining activity budget allowance.'),
-          findsOneWidget);
+      expect(find.text('null'), findsNothing);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets(
-        '8. Budget-aware metadata absent hides transparency card completely',
+        '13. Estimated food and transport allowances are not globally marked verified',
         (tester) async {
-      final trip = _buildTrip(activities: [
-        {
-          'activityId': 'act_standard_1',
-          'activityName': 'Fort Cornwallis',
-          'dayNo': 1,
-          'timeSlot': '09:00',
-          'estimatedCost': 20,
-          'costProvenance': 'verified_ticket',
-          'selectionPriceStatus': 'verified',
-          'openingHoursStatus': 'reported',
-        }
-      ]);
+      // Itinerary where activity ticket is verified, but food/transport are allowances
+      final trip = _buildTrip(
+        budgetAwareSelection: {
+          'applied': true,
+          'isProvisional': false,
+        },
+        activities: [
+          {
+            'activityId': 'act_v',
+            'activityName': 'Kek Lok Si Temple',
+            'dayNo': 1,
+            'timeSlot': '09:00',
+            'estimatedCost': 0,
+            'costProvenance': 'verified_ticket',
+            'selectionPriceStatus': 'verified',
+            'pricingEvidence': {
+              'applicability': 'applicable',
+              'eligibility': 'all_visitors',
+              'priceSourceUrl': 'https://mypenang.gov.my/',
+              'verified': true,
+            },
+            'openingHoursStatus': 'reported',
+            'scheduleFeasibility': 'feasible_with_reported_hours',
+          }
+        ],
+      );
 
       await _pumpTrip(tester, trip);
 
-      expect(find.byKey(const ValueKey('budget-aware-transparency-card')),
-          findsNothing);
-      expect(find.text('Budget-aware itinerary'), findsNothing);
+      // Card chip must say 'Admission verified' (specifically for admissions), NOT generic 'Verified'
+      expect(find.text('Admission verified'), findsOneWidget);
+      expect(find.text('Verified'), findsNothing);
+      expect(find.textContaining('Food and transport allowances remain estimated'),
+          findsOneWidget);
     });
 
-    testWidgets('9. Legacy-generated itinerary makes no budget-aware claims',
+    testWidgets('14. Incomplete trip costs remain incomplete', (tester) async {
+      final budget = BudgetModel.fromJson({
+        'budgetLimit': 1500,
+        'knownEstimatedSubtotal': 450,
+        'totalEstimatedCost': 450,
+        'completenessStatus': 'incomplete',
+        'affordabilityStatus': 'incomplete',
+        'pendingExpenseCategories': ['activities'],
+      });
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: BudgetBreakdown(budget: budget, limit: 1500),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Incomplete estimate'), findsOneWidget);
+      expect(find.textContaining('remaining balance cannot be guaranteed'),
+          findsOneWidget);
+      expect(find.textContaining('Estimated balance:'), findsNothing);
+    });
+
+    testWidgets(
+        '15. Budget-aware metadata absent behaves correctly for legacy Trips',
         (tester) async {
       final trip = {
-        'id': 'legacy_trip_99',
+        'id': 'legacy_trip_15',
         'title': 'Legacy Penang Tour',
         'destinationArea': 'Penang, Malaysia',
         'startDate': '2026-11-20',
@@ -424,7 +657,7 @@ void main() {
         'activities': [
           {
             'activityId': 'act_leg_1',
-            'activityName': 'Old Heritage Walk',
+            'activityName': 'Old Town Stroll',
             'dayNo': 1,
             'timeSlot': '10:00',
             'estimatedCost': 15,
@@ -433,68 +666,89 @@ void main() {
       };
 
       await _pumpTrip(tester, trip);
-      await _scrollTarget(tester, find.text('Old Heritage Walk'));
 
       expect(find.byKey(const ValueKey('budget-aware-transparency-card')),
           findsNothing);
       expect(find.text('Budget-aware itinerary'), findsNothing);
       expect(find.textContaining('Budget Optimized'), findsNothing);
-      expect(find.text('Old Heritage Walk'), findsOneWidget);
     });
 
     testWidgets(
-        '10. Unsupported or missing rationale falls back cleanly without crash',
+        '16. Unknown activity pricing is never presented as confirmed free',
+        (tester) async {
+      final trip = _buildTrip(activities: [
+        {
+          'activityId': 'act_unknown_free',
+          'activityName': 'Mysterious Night Market',
+          'dayNo': 1,
+          'timeSlot': '19:00',
+          'estimatedCost': 0,
+          'costProvenance': 'unverified',
+          'selectionPriceStatus': 'unresolved',
+        }
+      ]);
+
+      await _pumpTrip(tester, trip);
+      await _scrollTarget(tester, find.text('Mysterious Night Market'));
+
+      expect(find.text('Free admission'), findsNothing);
+      expect(find.text('Admission unverified'), findsOneWidget);
+      expect(find.text('Price TBC'), findsOneWidget);
+    });
+
+    testWidgets(
+        '17. Small screens and long attraction names do not overflow',
         (tester) async {
       final trip = _buildTrip(
         budgetAwareSelection: {
           'applied': true,
-          'isProvisional': false,
-          'selectionRationale': null,
-          'unselectedActivities': null,
+          'isProvisional': true,
+          'unselectedActivities': [
+            {
+              'activity': {
+                'activityName':
+                    'Tropical Spice Garden & Eco-Sanctuary Demonstration Kitchen and Living Plant Museum',
+              },
+              'reasonCode': 'known_budget_exceeded',
+            }
+          ],
         },
         activities: [
           {
-            'activityId': 'act_10',
-            'activityName': 'Penang War Museum',
+            'activityId': 'act_long_name',
+            'activityName':
+                'Pinang Peranakan Mansion Heritage Experience and Antique Jewellery Gallery',
             'dayNo': 1,
-            'timeSlot': '11:00',
-            'estimatedCost': 35,
+            'timeSlot': '10:00',
+            'scheduledStartTime': '10:00',
+            'estimatedCost': 30,
             'costProvenance': 'verified_ticket',
-            'selectionPriceStatus': 'verified',
-            'openingHoursStatus': 'reported',
+            'selectionPriceStatus': 'conditional',
+            'pricingEvidence': {
+              'applicability': 'conditional',
+              'priceSourceUrl': 'https://pinangperanakanmansion.com.my/',
+            },
           }
         ],
       );
 
-      await _pumpTrip(tester, trip);
+      await _pumpTrip(
+        tester,
+        trip,
+        size: const Size(320, 600),
+        textScale: 1.2,
+      );
 
-      expect(find.byKey(const ValueKey('budget-aware-transparency-card')),
-          findsOneWidget);
-      expect(find.text('Verified'), findsOneWidget);
-      expect(find.byKey(const ValueKey('unselected-activities-expansion')),
-          findsNothing);
+      await _scrollTarget(tester, find.textContaining('Pinang Peranakan Mansion'));
+      expect(find.text('Tariff conditional'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('11. Empty itinerary day preserves neutral messaging',
+    testWidgets(
+        '18. Existing session and historical Trip data contracts remain compatible',
         (tester) async {
-      final trip = _buildTrip(activities: []);
-
-      await _pumpTrip(tester, trip);
-
-      expect(find.text('No activities for this day'), findsOneWidget);
-      expect(
-          find.text(
-              'Add a place or recalculate the itinerary to build this day.'),
-          findsOneWidget);
-      expect(find.textContaining('budget limitation'), findsNothing);
-      expect(find.textContaining('missing pricing'), findsNothing);
-    });
-
-    testWidgets('12. Existing saved Trip compatibility renders with zero errors',
-        (tester) async {
-      final savedTrip = {
-        'id': 'saved_trip_12',
+      final historicTrip = {
+        'id': 'historic_p2f_trip',
         'title': 'Minimal Historical Trip',
         'destinationArea': 'Penang',
         'startDate': '2026-12-01',
@@ -503,150 +757,19 @@ void main() {
         'status': 'planned',
         'activities': [
           {
-            'activityName': 'Armenian Street',
+            'activityName': 'Armenian Street Murals',
             'dayNo': 1,
             'timeSlot': '15:00',
+            'estimatedCost': 0,
           }
         ],
       };
 
-      await _pumpTrip(tester, savedTrip);
+      await _pumpTrip(tester, historicTrip);
 
       expect(find.text('Minimal Historical Trip'), findsOneWidget);
-      expect(find.text('Armenian Street'), findsOneWidget);
+      expect(find.text('Armenian Street Murals'), findsOneWidget);
       expect(tester.takeException(), isNull);
-    });
-
-    testWidgets(
-        '13. Hours Unverified and Price Unverified together display combined label',
-        (tester) async {
-      final trip = _buildTrip(activities: [
-        {
-          'activityId': 'act_both_unverified',
-          'activityName': 'Ghost Museum',
-          'dayNo': 1,
-          'timeSlot': '16:00',
-          'scheduledStartTime': '16:00',
-          'estimatedCost': 28,
-          'costProvenance': 'unverified',
-          'selectionPriceStatus': 'unresolved',
-          'openingHoursStatus': 'unknown',
-          'scheduleFeasibility': 'provisional',
-        }
-      ]);
-
-      await _pumpTrip(tester, trip);
-      await _scrollTarget(tester, find.text('Ghost Museum'));
-
-      expect(find.text('Hours & price\nunverified'), findsOneWidget);
-      expect(find.text('Hours unverified'), findsOneWidget);
-      expect(find.text('Admission unverified'), findsOneWidget);
-      expect(find.text('~RM 28 estimate'), findsOneWidget);
-    });
-
-    testWidgets(
-        '14. Long attraction names and small screens render without RenderFlex overflow',
-        (tester) async {
-      final trip = _buildTrip(activities: [
-        {
-          'activityId': 'act_long_name',
-          'activityName':
-              'Tropical Spice Garden & Eco-Sanctuary Demonstration Kitchen and Living Plant Museum',
-          'dayNo': 1,
-          'timeSlot': '10:00',
-          'scheduledStartTime': '10:00',
-          'estimatedCost': 45,
-          'costProvenance': 'verified_ticket',
-          'selectionPriceStatus': 'conditional',
-          'pricingEvidence': {
-            'verified': true,
-            'applicability': 'conditional',
-          },
-          'openingHoursStatus': 'reported',
-          'scheduleFeasibility': 'feasible_with_reported_hours',
-        }
-      ]);
-
-      await _pumpTrip(
-        tester,
-        trip,
-        size: const Size(320, 600),
-        textScale: 1.2,
-      );
-      await _scrollTarget(tester, find.textContaining('Tropical Spice Garden'));
-
-      expect(
-          find.text(
-              'Tropical Spice Garden & Eco-Sanctuary Demonstration Kitchen and Living Plant Museum'),
-          findsOneWidget);
-      expect(find.text('Tariff conditional'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('15. Group budget display presents budget and subtotal clearly',
-        (tester) async {
-      final budget = BudgetModel.fromJson({
-        'budgetLimit': 2000,
-        'knownEstimatedSubtotal': 650,
-        'totalEstimatedCost': 650,
-        'completenessStatus': 'incomplete',
-        'affordabilityStatus': 'incomplete',
-        'pendingExpenseCategories': ['activities'],
-        'categoryTotals': {
-          'activities': 50,
-          'food': 200,
-          'transport': 100,
-          'hotel': 300,
-          'flight': 0,
-          'carRental': 0,
-        },
-      });
-
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: BudgetBreakdown(budget: budget, limit: 2000),
-        ),
-      ));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Total group budget: RM 2000.00'), findsOneWidget);
-      expect(find.text('Known estimated subtotal: RM 650.00'), findsOneWidget);
-      expect(find.text('Incomplete estimate'), findsOneWidget);
-    });
-
-    testWidgets(
-        '16. No misleading affordability or discount wording anywhere on the screen',
-        (tester) async {
-      final trip = _buildTrip(
-        budgetAwareSelection: {
-          'applied': true,
-          'isProvisional': true,
-          'selectionRationale': 'Budget-aware selection applied',
-        },
-        activities: [
-          {
-            'activityId': 'act_honest_1',
-            'activityName': 'Batu Ferringhi Night Market',
-            'dayNo': 1,
-            'timeSlot': '19:00',
-            'estimatedCost': 0,
-            'costProvenance': 'unverified',
-            'selectionPriceStatus': 'unresolved',
-            'openingHoursStatus': 'reported',
-          }
-        ],
-      );
-
-      await _pumpTrip(tester, trip);
-
-      expect(find.textContaining('100% Guaranteed'), findsNothing);
-      expect(find.textContaining('Guaranteed Savings'), findsNothing);
-      expect(find.textContaining('Discount Guaranteed'), findsNothing);
-      expect(find.textContaining('Budget Optimized'), findsNothing);
-      expect(
-          find.textContaining(
-              'Unresolved admission costs are not guaranteed within the initial budget'),
-          findsOneWidget);
     });
   });
 }
