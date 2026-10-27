@@ -697,7 +697,7 @@ def add_activity_route(iid):
     }
     updated = addActivity(current, activity)
     recalculated = recalculateItinerary(
-        {**current, 'activities': updated['activities']},
+        {**current, **updated},
         preserveOrder=True,
         respectDayAssignments=True,
     )
@@ -706,7 +706,7 @@ def add_activity_route(iid):
         for key in ('activities', 'unscheduledSuggestions', 'scheduledActivityCount',
                     'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
                     'paceApplied', 'dailyPlanningWindow', 'tripDays',
-                    'tripDateRangeLabel', 'updatedAt')
+                    'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq')
         if key in recalculated
     }
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
@@ -724,7 +724,7 @@ def remove_activity_route(iid, activity_id):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     updated = removeActivity(current, activity_id)
     recalculated = recalculateItinerary(
-        {**current, 'activities': updated['activities']},
+        {**current, **updated},
         preserveOrder=True,
         respectDayAssignments=True,
     )
@@ -732,7 +732,7 @@ def remove_activity_route(iid, activity_id):
         'activities', 'unscheduledSuggestions', 'scheduledActivityCount',
         'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
         'paceApplied', 'dailyPlanningWindow', 'tripDays',
-        'tripDateRangeLabel', 'updatedAt') if key in recalculated}
+        'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq') if key in recalculated}
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
     updateRecord('itineraries', iid, patch)
     return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
@@ -748,7 +748,7 @@ def update_activity_route(iid, activity_id):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     updated = updateActivity(current, activity_id, request.get_json(silent=True) or {})
     recalculated = recalculateItinerary(
-        {**current, 'activities': updated['activities']},
+        {**current, **updated},
         preserveOrder=True,
         respectDayAssignments=True,
     )
@@ -756,7 +756,7 @@ def update_activity_route(iid, activity_id):
         'activities', 'unscheduledSuggestions', 'scheduledActivityCount',
         'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
         'paceApplied', 'dailyPlanningWindow', 'tripDays',
-        'tripDateRangeLabel', 'updatedAt') if key in recalculated}
+        'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq') if key in recalculated}
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
     updateRecord('itineraries', iid, patch)
     return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
@@ -772,7 +772,7 @@ def rearrange_activity_route(iid):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     updated = rearrangeActivity(current, (request.get_json(silent=True) or {}).get('orderedActivityIds', []))
     recalculated = recalculateItinerary(
-        {**current, 'activities': updated['activities']},
+        {**current, **updated},
         preserveOrder=True,
         respectDayAssignments=True,
     )
@@ -780,7 +780,7 @@ def rearrange_activity_route(iid):
         'activities', 'unscheduledSuggestions', 'scheduledActivityCount',
         'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
         'paceApplied', 'dailyPlanningWindow', 'tripDays',
-        'tripDateRangeLabel', 'updatedAt') if key in recalculated}
+        'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq') if key in recalculated}
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
     updateRecord('itineraries', iid, patch)
     return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
