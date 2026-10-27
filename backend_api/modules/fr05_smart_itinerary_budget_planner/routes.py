@@ -13,6 +13,7 @@ from services.open_meteo_service import retrieveSevenDayForecast, geocode
 from services.local_catalog import DESTINATIONS, FLIGHTS, LOCAL_HOTEL_ITEMS
 from services.pricing_registry import enrich_candidate_pricing
 from services.budget_aware_generation import generate_with_budget_selection, qualify_selection_budget
+from services.itinerary_write_contract import validate_trip_write
 from sequence_contract.validators import validateItineraryInput, validateItineraryForSaving, validateSelectedDestination
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord, deleteRecord
 from sequence_contract.domain_functions import (
@@ -538,7 +539,10 @@ def get_itinerary_route(iid):
 @bp.post('/itineraries')
 @auth_required(['traveller'])
 def create_itinerary_route():
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = validate_trip_write(request.get_json(silent=True))
+    except ValueError as error:
+        return jsonify({'ok': False, 'error': str(error)}), 400
     if not validateItineraryInput(payload) or not str(payload.get('destinationArea') or '').strip():
         return jsonify({'ok': False, 'error': 'Use a title, valid date range, positive traveller count and non-negative budget'}), 400
     itinerary = createItinerary(payload, g.uid)
@@ -556,7 +560,10 @@ def update_itinerary_route(iid):
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     if _is_package_trip(current):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = validate_trip_write(request.get_json(silent=True), update=True)
+    except ValueError as error:
+        return jsonify({'ok': False, 'error': str(error)}), 400
     payload, hotel_error = _trusted_hotel_update(current, payload)
     if hotel_error:
         return jsonify({'ok': False, 'error': hotel_error}), 409
@@ -1026,7 +1033,11 @@ def apply_lower_cost_alternative(iid):
 @bp.post('/personalised-trips/generate')
 @auth_required(['traveller'])
 def generate_personalised_trip_route():
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = validate_trip_write(request.get_json(silent=True), generation=True)
+    except ValueError as error:
+        return jsonify({'ok': False, 'error': str(error), 'stage': 'input_validation',
+                        'retryable': False}), 400
     generation_request_id = str(payload.get('generationRequestId') or '').strip()
     recommendation_generation_id = str(payload.get('recommendationGenerationId') or '').strip()
 
