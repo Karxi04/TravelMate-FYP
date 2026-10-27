@@ -28,9 +28,38 @@
   </div>
   <div class="booking-notice-content">
     <strong>Authoritative Supplier Reservation Status: NOT CREATED</strong>
-    <p>
-      This booking was recorded following verified payment in <strong>Stripe Test Mode</strong>. An independent <strong>Package Trip</strong> has been created in the traveller's mobile application. However, <strong>third-party supplier reservations are NOT created automatically</strong> by TravelMate. You must confirm hotel accommodation, docents, and transport with third-party providers manually.
-    </p>
+    {% set pay_status = (booking.paymentStatus or '')|lower %}
+    {% set ord_status = (booking.orderStatus or '')|lower %}
+    {% set ful_status = (booking.fulfillmentStatus or '')|lower %}
+    {% if pay_status in ['paid', 'succeeded'] and ful_status == 'fulfilled' %}
+      <p>
+        This booking was recorded following verified payment in <strong>Stripe Test Mode</strong>. An independent <strong>Package Trip</strong> has been created in the traveller's mobile application. However, <strong>third-party supplier reservations are NOT created automatically</strong> by TravelMate. You must confirm hotel accommodation, docents, and transport with third-party providers manually.
+      </p>
+    {% elif pay_status in ['paid', 'succeeded'] %}
+      <p>
+        This booking was recorded following verified payment in <strong>Stripe Test Mode</strong>. Package Trip creation in the traveller's mobile application is currently <strong>in progress / pending fulfillment</strong>; an independent package trip has not yet been provisioned. In addition, <strong>third-party supplier reservations are NOT created automatically</strong> by TravelMate and require manual operator coordination.
+      </p>
+    {% elif pay_status == 'expired' or ord_status in ['expired', 'checkout_expired'] %}
+      <p>
+        This checkout session has <strong>expired</strong> without payment completion. No funds were collected, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Third-party supplier reservations are NOT created automatically and require no operator action.
+      </p>
+    {% elif pay_status in ['failed', 'payment_failed'] or ord_status in ['failed', 'checkout_failed'] %}
+      <p>
+        The payment attempt for this booking <strong>failed</strong>. No payment was collected, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Third-party supplier reservations are NOT created automatically and require no operator action.
+      </p>
+    {% elif pay_status in ['cancelled', 'payment_cancelled'] or ord_status in ['cancelled', 'checkout_cancelled'] %}
+      <p>
+        This checkout order was <strong>cancelled</strong>. No payment was processed, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Third-party supplier reservations are NOT created automatically and require no operator action.
+      </p>
+    {% elif pay_status in ['pending', 'payment_pending', 'unpaid'] %}
+      <p>
+        This booking is currently <strong>awaiting payment completion</strong> in <strong>Stripe Test Mode</strong>. No payment has been verified, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Furthermore, <strong>third-party supplier reservations are NOT created automatically</strong> by TravelMate and require manual operator coordination once payment is completed.
+      </p>
+    {% else %}
+      <p>
+        This booking is in state <em>{{ pay_status or 'unrecorded' }}</em>. No verified payment has been confirmed, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Third-party supplier reservations are NOT created automatically by TravelMate.
+      </p>
+    {% endif %}
   </div>
 </div>
 
@@ -142,12 +171,17 @@
         <span>Payment Status</span>
         <span>
           {% set pay_status = (booking.paymentStatus or 'unknown')|lower %}
+          {% set ord_status = (booking.orderStatus or '')|lower %}
           {% if pay_status == 'paid' %}
             <span class="status approved">Paid{% if booking.testMode %} (Stripe Test){% endif %}</span>
-          {% elif pay_status in ['pending', 'payment_pending'] %}
-            <span class="status pending">Payment Pending</span>
-          {% elif pay_status in ['failed', 'payment_failed'] %}
+          {% elif pay_status == 'expired' or ord_status in ['expired', 'checkout_expired'] %}
+            <span class="status expired">Expired</span>
+          {% elif pay_status in ['failed', 'payment_failed'] or ord_status in ['failed', 'checkout_failed'] %}
             <span class="status rejected">Payment Failed</span>
+          {% elif pay_status in ['cancelled', 'payment_cancelled'] or ord_status in ['cancelled', 'checkout_cancelled'] %}
+            <span class="status rejected">Cancelled</span>
+          {% elif pay_status in ['pending', 'payment_pending', 'unpaid'] %}
+            <span class="status pending">Payment Pending</span>
           {% else %}
             <span class="status draft">{{ pay_status|capitalize }}</span>
           {% endif %}
@@ -182,11 +216,13 @@
       <div class="detail-row">
         <span>TravelMate Platform Fulfillment</span>
         <span>
-          {% set ful_status = (booking.fulfillmentStatus or 'unknown')|lower %}
+          {% set ful_status = (booking.fulfillmentStatus or '')|lower %}
           {% if ful_status == 'fulfilled' %}
             <span class="badge-fulfillment fulfilled">Trip Created in App</span>
           {% elif ful_status in ['pending', 'fulfillment_pending'] %}
             <span class="badge-fulfillment pending">Fulfillment Pending</span>
+          {% elif ful_status in ['not_created', 'none', 'unfulfilled', 'not_fulfilled'] or not booking.fulfillmentStatus %}
+            <span class="badge-fulfillment fallback">Not Fulfilled</span>
           {% else %}
             <span class="badge-fulfillment fallback">{{ ful_status|replace('_', ' ')|title }}</span>
           {% endif %}
