@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
+import '../fr05_smart_itinerary_budget_planner/activity_payload_helper.dart';
 import '../fr05_smart_itinerary_budget_planner/trips_tab.dart';
 
 Future<bool> addDestinationToTrip({
@@ -101,44 +102,28 @@ Future<bool> addDestinationToTrip({
     );
 
     if (selected == null) return false;
-    final duration = int.tryParse(
-          '${destination['recommendedDurationMinutes'] ?? ''}',
-        ) ??
-        90;
-    await api.post('/api/fr5/itineraries/${selected['id']}/activities', {
-      'activityName': DestinationUtils.resolveName(destination),
-      'destinationId': DestinationUtils.resolveId(destination),
-      'address': destination['address'] ?? destination['location'] ?? '',
-      'dayNo': 1,
-      'estimatedCost': destination['estimatedCost'] ?? 0,
-      'gps_coordinates': destination['gps_coordinates'] ??
-          destination['gpsCoordinates'] ??
-          const <String, dynamic>{},
-      'type': destination['type'] ?? destination['category'] ?? '',
-      'category': destination['category'] ?? destination['type'] ?? '',
-      'description': destination['description'] ?? '',
-      'indoor': destination['indoor'] ?? false,
-      'openingHours':
-          destination['openingHours'] ?? destination['open_state'] ?? '',
-      'recommendedDurationMinutes': duration <= 0 ? 90 : duration,
-      for (final key in const [
-        'thumbnail',
-        'image',
-        'imageUrl',
-        'mainPhoto',
-        'main_photo',
-        'photo',
-        'photos',
-        'images',
-        'heroImage',
-        'galleryImages',
-      ])
-        if (destination[key] != null) key: destination[key],
-    });
+    final chosenDay = await promptTripDaySelection(
+      context: context,
+      trip: selected,
+    );
+    if (chosenDay == null) return false;
+
+    final payload = buildActivityPayload(
+      destination,
+      dayNo: chosenDay,
+    );
+    payload['activityName'] = DestinationUtils.resolveName(destination);
+    payload['destinationId'] = DestinationUtils.resolveId(destination);
+
+    await api.post('/api/fr5/itineraries/${selected['id']}/activities', payload);
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Added to ${selected['title'] ?? 'your trip'}')),
+        SnackBar(
+          content: Text(
+            'Added to ${selected['title'] ?? 'your trip'} (Day $chosenDay)',
+          ),
+        ),
       );
     }
     return true;

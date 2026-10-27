@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'budget_comparison_screen.dart';
 import 'budget_breakdown.dart';
+import 'activity_payload_helper.dart';
 import 'models/budget_model.dart';
 import 'package_trip_details_screen.dart';
 import 'trip_status_helper.dart';
@@ -1276,41 +1277,29 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         builder: (_) => TripPlacePickerScreen(
           initialLocation: (t['destinationArea'] ?? 'Malaysia').toString(),
           api: api,
+          trip: t,
+          initialDay: selectedDay,
         ),
       ),
     );
     if (selected == null || selected.isEmpty) return;
+    final targetDay = selected.first['dayNo'] is int
+        ? selected.first['dayNo'] as int
+        : selectedDay;
     setState(() => busy = true);
     try {
       for (final place in selected) {
-        await api.post('/api/fr5/itineraries/${widget.tripId}/activities', {
-          'activityName':
-              (place['title'] ?? place['name'] ?? 'Place').toString(),
-          'destinationId':
-              (place['destinationId'] ?? place['place_id'] ?? place['title'])
-                  .toString(),
-          'address': place['address'] ?? '',
-          'estimatedCost': place['estimatedCost'] ?? 0,
-          'gps_coordinates':
-              place['gps_coordinates'] ?? place['gpsCoordinates'] ?? {},
-          'type': place['type'] ?? place['category'] ?? '',
-          'category': place['category'] ?? place['type'] ?? '',
-          'description': place['description'] ?? '',
-          'indoor': place['indoor'] ?? false,
-          'openingHours': place['openingHours'] ?? '',
-          'recommendedDurationMinutes':
-              place['recommendedDurationMinutes'] ?? 90,
-          for (final field in _placeImageFields)
-            if (place[field] != null) field: place[field],
-          'dayNo': 1,
-        });
+        final day = place['dayNo'] is int ? place['dayNo'] as int : targetDay;
+        final payload = buildActivityPayload(place, dayNo: day);
+        await api.post(
+            '/api/fr5/itineraries/${widget.tripId}/activities', payload);
       }
       await load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(
-                  '${selected.length} place${selected.length == 1 ? '' : 's'} added to the trip.')),
+                  '${selected.length} place${selected.length == 1 ? '' : 's'} added to Day $targetDay.')),
         );
       }
     } catch (e) {
@@ -2573,11 +2562,15 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
 class TripPlacePickerScreen extends StatefulWidget {
   final String initialLocation;
   final ApiService? api;
+  final Map<String, dynamic>? trip;
+  final int? initialDay;
 
   const TripPlacePickerScreen({
     super.key,
     required this.initialLocation,
     this.api,
+    this.trip,
+    this.initialDay,
   });
 
   @override
@@ -2588,6 +2581,7 @@ class _TripPlacePickerScreenState extends State<TripPlacePickerScreen> {
   late final ApiService api;
   late final TextEditingController query;
   late final TextEditingController location;
+  late int chosenDay;
   List<Map<String, dynamic>> results = [];
   final Map<String, Map<String, dynamic>> selected = {};
   bool loading = false;
@@ -2596,6 +2590,7 @@ class _TripPlacePickerScreenState extends State<TripPlacePickerScreen> {
   void initState() {
     super.initState();
     api = widget.api ?? ApiService();
+    chosenDay = widget.initialDay ?? 1;
     query = TextEditingController(text: 'attractions');
     location = TextEditingController(text: widget.initialLocation);
     Future.microtask(search);
@@ -2644,7 +2639,14 @@ class _TripPlacePickerScreenState extends State<TripPlacePickerScreen> {
           TextButton(
             onPressed: selected.isEmpty
                 ? null
-                : () => Navigator.pop(context, selected.values.toList()),
+                : () {
+                    final items = selected.values.map((place) {
+                      final copy = Map<String, dynamic>.from(place);
+                      copy['dayNo'] = chosenDay;
+                      return copy;
+                    }).toList();
+                    Navigator.pop(context, items);
+                  },
             child: Text('Add ${selected.length}'),
           ),
         ],
@@ -2679,6 +2681,64 @@ class _TripPlacePickerScreenState extends State<TripPlacePickerScreen> {
                         onPressed: loading ? null : search,
                         icon: const Icon(Icons.travel_explore_rounded),
                         label: const Text('Search'))),
+                if (widget.trip != null &&
+                    extractTripDayOptions(widget.trip!).length > 1) ...[
+                  const SizedBox(height: 8),
+                  InkWell(
+                    key: const ValueKey('change-day-selector'),
+                    onTap: () async {
+                      final picked = await promptTripDaySelection(
+                        context: context,
+                        trip: widget.trip!,
+                        initialDay: chosenDay,
+                      );
+                      if (picked != null && mounted) {
+                        setState(() => chosenDay = picked);
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color:
+                              Theme.of(context).colorScheme.outlineVariant,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.calendar_today_rounded,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.primary),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Adding to: Day $chosenDay',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                          const Spacer(),
+                          Text(
+                            'Change',
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.arrow_drop_down_rounded,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.primary),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
