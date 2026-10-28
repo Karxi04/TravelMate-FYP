@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
+import '../../widgets/local_place_rating.dart';
 import 'destination_details_screen.dart';
 
 class FavouritesScreen extends StatefulWidget {
@@ -78,6 +79,7 @@ class _FavouritesScreenState extends State<FavouritesScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text((item['address'] ?? '').toString()),
+                      LocalPlaceRating(place:item),
                       const SizedBox(height: 3),
                       const Text(
                         'Tap to view full details',

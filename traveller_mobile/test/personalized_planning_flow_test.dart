@@ -374,7 +374,7 @@ void main() {
     await _choose(tester, 'accommodation', 'other');
     await _choose(tester, 'rental', 'selected');
     expect(
-        find.textContaining('catalogue uses simulated prices'), findsOneWidget);
+        find.textContaining('rental catalogue uses estimated rates'), findsOneWidget);
     await _submit(tester);
     final firstRequest = api.lastGenerationBody!['generationRequestId'];
     await tester.pageBack();

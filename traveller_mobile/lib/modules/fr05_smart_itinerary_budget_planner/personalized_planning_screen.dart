@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/local_place_rating.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/api_service.dart';
@@ -681,7 +682,7 @@ class _PersonalizedPlanningScreenState
             (value) => carRentalChoice = value),
         if (carRentalChoice == 'selected')
           const Text(
-              'Rental intent only; no quote or reservation is attached. The current rental catalogue uses simulated prices.'),
+              'Rental intent only; no quote or reservation is attached. The current rental catalogue uses estimated rates.'),
       ],
     ));
   }
@@ -851,6 +852,7 @@ class _PersonalizedPlanningScreenState
                       title,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
+                    LocalPlaceRating(place:item),
                     if (score != null) ...[
                       const SizedBox(height: AppSpacing.xs),
                       StatusChip(

@@ -1,5 +1,5 @@
 {% extends 'portal_base.html' %}{% block title %}Feedback Moderation | TravelMate{% endblock %}{% block content %}
-<div class="page-title"><div><h1>Traveller Reviews</h1><p>Review ratings submitted through the Traveller app. Appropriate reviews stay visible; inappropriate reviews can be removed.</p></div></div>
+<div class="page-title"><div><h1>Traveller Reviews</h1><p>Approve submitted reviews before publication, or remove inappropriate reviews.</p></div></div>
 <div class="grid g2">
 {% for x in items %}
 <div class="card">
@@ -9,16 +9,21 @@
   <p><strong>Traveller:</strong> {{x.get('travellerName','Traveller')}}</p>
   <p><strong>Rating:</strong> {{x.get('rating','-')}} / 5</p>
   <p>{{x.get('comment','')}}</p>
+  {% if x.get('screening') %}
+  <p class="muted"><strong>Screening:</strong> {{x.screening.get('risk','uncertain')|capitalize}}{% if x.screening.get('flags') %} · {{x.screening.get('flags')|join(', ')|replace('_',' ')}}{% endif %}</p>
+  {% endif %}
   {% if x.get('reviewComment') %}
   <p class="muted"><strong>Moderation note:</strong> {{x.get('reviewComment')}}</p>
   {% endif %}
   <p class="muted"><small>Submitted: {{x.get('submittedAt','-')}}</small></p>
   {% if x.get('feedbackStatus') != 'removed' %}
   <form method="post" action="{{ url_for('admin_fr13.review_feedback', feedback_id=x.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="expectedUpdatedAt" value="{{x.get('updatedAt','')}}">
+    <input type="hidden" name="expectedRevision" value="{{x.get('reviewRevision','')}}">
     <div class="field"><label>Moderation note</label><textarea class="input" name="comment" placeholder="Reason or follow-up note"></textarea></div>
     <div class="actions">
-      <button class="btn primary" name="decision" value="keep">Keep Visible</button>
-      <button class="btn danger" name="decision" value="remove">Remove</button>
+      <button class="btn primary" name="decision" value="keep">Approve</button>
+      <button class="btn danger" name="decision" value="remove">{{'Hide' if x.get('moderationStatus') in ['reviewed','approved'] else 'Reject'}}</button>
     </div>
   </form>
   {% endif %}

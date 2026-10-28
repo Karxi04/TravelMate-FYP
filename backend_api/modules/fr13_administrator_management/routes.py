@@ -20,6 +20,7 @@ from services.report_service import (
     export_system_report_pdf
 )
 from services.package_service import package_for_read
+from services.review_service import ReviewConflict, current_screen, review_revision
 from firebase_service import get_db
 
 bp=Blueprint('fr13_admin',__name__,url_prefix='/api/fr13')
@@ -284,14 +285,36 @@ def review_campaign(cid):
     return jsonify({'ok':True,'campaign':updateRecord('promotional_campaigns',cid,updates)})
 @bp.get('/feedback')
 @auth_required(['admin'])
-def all_feedback():return jsonify({'ok':True,'items':retrieveRecord('feedback')})
+def all_feedback():
+    items = retrieveRecord('feedback') or []
+    items = [{**item, 'screening': current_screen(item), 'reviewRevision': review_revision(item)} for item in items]
+    items.sort(key=lambda item: (item.get('moderationStatus') != 'pending_review', str(item.get('submittedAt') or '')))
+    return jsonify({'ok': True, 'items': items})
+
+
+def _commit_review(fid, current, updates, **extra):
+    try:
+        updates['screening'] = current_screen(current)
+        return jsonify({'ok': True, 'feedback': updateRecord('feedback', fid, updates, expected=current), **extra})
+    except ReviewConflict as error:
+        return jsonify({'ok': False, 'error': str(error)}), 409
+    except Exception:
+        return jsonify({'ok': False, 'error': 'Review moderation is temporarily unavailable.'}), 503
 
 @bp.post('/feedback/<fid>/review')
 @auth_required(['admin'])
 def review_feedback(fid):
     current=retrieveRecord('feedback',fid)
     if not current:return jsonify({'ok':False,'error':'Feedback not found'}),404
-    payload=request.get_json(silent=True) or {}; decision=str(payload.get('decision','keep')).lower()
+    payload=request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Invalid moderation request'}),400
+    decision=str(payload.get('decision','')).lower()
+    if 'expectedUpdatedAt' in payload and payload['expectedUpdatedAt'] != (current.get('updatedAt') or ''):
+        return jsonify({'ok':False,'error':'This review changed. Refresh and try again.'}),409
+    if 'expectedRevision' in payload and payload['expectedRevision'] != review_revision(current):
+        return jsonify({'ok':False,'error':'This review changed. Refresh and try again.'}),409
+    if not isinstance(payload.get('comment',''), str) or len(payload.get('comment','')) > 2000:
+        return jsonify({'ok':False,'error':'Use a moderation note of at most 2000 characters.'}),400
     if decision not in {'keep','remove'}:return jsonify({'ok':False,'error':'decision must be keep or remove'}),400
     if decision=='remove':
         updates={
@@ -302,14 +325,15 @@ def review_feedback(fid):
             'removedAt':utc_now_iso(),
             'updatedAt':utc_now_iso(),
         }
-        return jsonify({'ok':True,'feedback':updateRecord('feedback',fid,updates),'removedId':fid,'decision':'remove'})
+        return _commit_review(fid, current, updates, removedId=fid, decision='remove')
     updates={'moderationStatus':'reviewed','feedbackStatus':'visible','reviewComment':payload.get('comment',''),'reviewedBy':g.uid,'reviewedAt':utc_now_iso(),'updatedAt':utc_now_iso()}
-    return jsonify({'ok':True,'feedback':updateRecord('feedback',fid,updates),'decision':'keep'})
+    return _commit_review(fid, current, updates, decision='keep')
 
 @bp.delete('/feedback/<fid>')
 @auth_required(['admin'])
 def remove_feedback(fid):
-    if not retrieveRecord('feedback',fid):return jsonify({'ok':False,'error':'Feedback not found'}),404
+    current = retrieveRecord('feedback',fid)
+    if not current:return jsonify({'ok':False,'error':'Feedback not found'}),404
     updates={
         'moderationStatus':'removed',
         'feedbackStatus':'removed',
@@ -317,7 +341,7 @@ def remove_feedback(fid):
         'removedAt':utc_now_iso(),
         'updatedAt':utc_now_iso(),
     }
-    return jsonify({'ok':True,'feedback':updateRecord('feedback',fid,updates),'removedId':fid})
+    return _commit_review(fid, current, updates, removedId=fid)
 
 
 @bp.get('/destinations')

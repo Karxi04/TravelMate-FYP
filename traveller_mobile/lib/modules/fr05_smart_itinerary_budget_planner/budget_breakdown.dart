@@ -31,7 +31,7 @@ class BudgetBreakdown extends StatelessWidget {
           key: const ValueKey('budget-known-subtotal'),
           style: Theme.of(context).textTheme.titleLarge),
       if (budget.totalCost != budget.knownEstimatedSubtotal)
-        Text('Backend estimated total: ${money(budget.totalCost)}'),
+        Text('Estimated total: ${money(budget.totalCost)}'),
       if (over) Text('Known costs exceed the budget.'),
       if (!budget.isComplete)
         const Text(

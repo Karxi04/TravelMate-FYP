@@ -366,7 +366,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
         final msg = switch (action) {
           'view_booking' => widget.quoteType == 'hotel'
-              ? 'Payment verified (Stripe test)! In this demo phase, hotel reservations are not submitted to suppliers.'
+              ? 'Payment verified (Stripe Test Mode). Hotel reservations require direct property confirmation and are not submitted to suppliers.'
               : 'Payment verified! Your booking is confirmed.',
           'continue_payment' => 'Checkout is open. Tap Continue Payment on Stripe to complete.',
           'restart_payment' => 'Previous session has expired. You may restart payment.',
@@ -946,9 +946,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               icon: Icons.check_circle_rounded,
                             ),
                             StatusChip(
-                              text: 'Demo Only',
+                              text: 'Test Mode',
                               tone: AppStatusTone.neutral,
-                              icon: Icons.science_outlined,
+                              icon: Icons.info_outline_rounded,
                             ),
                           ],
                         ),
@@ -962,7 +962,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'This is a test payment for demonstration purposes. No real payment was charged, and no room has been reserved with the hotel.',
+                          'This is a test payment in Stripe Test Mode. No real charges were incurred, and no room has been reserved with the hotel.',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: AppColors.textSecondary,
                               ),
@@ -1208,7 +1208,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           const TravelSectionHeader(
             title: 'Checkout',
             subtitle:
-                'Review the amount and complete a sandbox or simulated payment.',
+                'Review the amount and complete your test payment.',
           ),
           const SizedBox(height: 12),
           InkCard(
@@ -1220,7 +1220,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'This FYP checkout reproduces the complete card-payment process but does not charge real money. Full card numbers and security codes are never saved.',
+                    'This test checkout reproduces the complete payment process but does not charge real money. Full card numbers and security codes are never saved.',
                   ),
                 ),
               ],
@@ -1364,9 +1364,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     const SizedBox(width: 8),
                     Text(
                         isSuccessfulPayment(result?['paymentStatus'])
-                            ? (isSimulatedPayment(result)
-                                ? 'Demo payment · no real charge'
-                                : 'Test payment · no real charge')
+                            ? 'Test payment · no real charge'
                             : paymentStatusLabel(result?['paymentStatus']),
                         style: const TextStyle(
                             fontWeight: FontWeight.w900, fontSize: 18))
@@ -1399,9 +1397,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             final paymentId =
                 (item['id'] ?? item['transactionReference'] ?? '').toString();
             final status = canonicalPaymentStatus(item['paymentStatus']);
-            final kind = isSimulatedPayment(Map<String, dynamic>.from(item as Map))
-                ? 'Simulated'
-                : 'Sandbox';
+            const kind = 'Test Mode';
             return Padding(
               padding: const EdgeInsets.only(bottom: 9),
               child: InkCard(

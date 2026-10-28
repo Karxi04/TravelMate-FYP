@@ -94,7 +94,7 @@ def test_admin_moderate_feedback(client, mock_admin_auth):
     with patch('modules.fr13_administrator_management.routes.retrieveRecord') as mock_retrieve, \
          patch('modules.fr13_administrator_management.routes.updateRecord') as mock_update:
         mock_retrieve.return_value = sample_fb
-        mock_update.side_effect = lambda coll, doc_id, data: {**sample_fb, **data}
+        mock_update.side_effect = lambda coll, doc_id, data, **kwargs: {**sample_fb, **data}
 
         # Remove spam feedback
         res = client.post(

@@ -25,6 +25,7 @@ from sequence_contract.firebase_firestore import (
     deleteRecord,
 )
 from services.public_content_projection import public_review
+from services.review_service import approved_reviews
 from services.malaysian_locality import (
     normalize_destination_scope,
     normalize_candidate_geography,
@@ -431,6 +432,24 @@ def _merge_destination(cached, provider):
     return merged
 
 
+@bp.get('/local-ratings')
+@auth_required(['traveller'])
+def local_ratings():
+    # One read pass for a page of cards; retain the existing approval/dedup policy.
+    grouped = {}
+    for item in retrieveRecord('feedback'):
+        identity = item.get('destinationId')
+        if isinstance(identity, str) and identity:
+            grouped.setdefault(identity, []).append(item)
+    result = {}
+    for identity, records in grouped.items():
+        approved = approved_reviews(records)
+        if approved:
+            result[identity] = {'rating': round(sum(float(x['rating']) for x in approved) / len(approved), 1),
+                                'reviews': len(approved)}
+    return jsonify({'ok': True, 'items': result})
+
+
 @bp.get('/destinations/search')
 @auth_required(['traveller'])
 def search_destinations():
@@ -612,7 +631,7 @@ def retrieveRatingsAndReviews(place_id):
                 records = retrieveRecord('feedback', filters=[('destinationId', '==', alt_id)])
                 if records:
                     break
-    visible = [x for x in records if str(x.get('feedbackStatus', 'visible')).lower() == 'visible']
+    visible = approved_reviews(records)
     visible.sort(key=lambda x: str(x.get('updatedAt') or x.get('submittedAt') or ''), reverse=True)
     ratings = []
     for item in visible:
@@ -626,7 +645,7 @@ def retrieveRatingsAndReviews(place_id):
         'rating': average,
         'reviews': len(reviews),
         'user_reviews': reviews,
-        'review_summary': 'Ratings and reviews submitted by TravelMate Travellers and available for Administrator moderation.' if reviews else 'No Traveller reviews have been submitted for this place yet.',
+        'review_summary': 'Approved TravelMate reviews.' if reviews else 'No TravelMate reviews yet.',
     }
 
 

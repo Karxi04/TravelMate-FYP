@@ -1,34 +1,85 @@
 from flask import Blueprint, request, jsonify, g
 from auth_utils import auth_required
 from utils import utc_now_iso
-from sequence_contract.validators import validateRatingAndComment, validateFeedback
-from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord, deleteRecord
-bp=Blueprint('fr10_feedback',__name__,url_prefix='/api/fr10')
-_EDITABLE_FEEDBACK_FIELDS = {'rating', 'comment'}
+from sequence_contract.firebase_firestore import retrieveRecord, claimRecord, updateRecord, deleteRecord
+from services.review_service import valid_review, review_id, pending_screen, ReviewConflict
+from google.api_core.exceptions import Aborted, DeadlineExceeded
+
+bp = Blueprint('fr10_feedback', __name__, url_prefix='/api/fr10')
+
 
 @bp.get('/feedback')
 @auth_required(['traveller'])
-def own_feedback(): return jsonify({'ok':True,'items':retrieveRecord('feedback',filters=[('travellerId','==',g.uid)])})
+def own_feedback():
+    return jsonify({'ok': True, 'items': retrieveRecord('feedback', filters=[('travellerId', '==', g.uid)])})
+
+
 @bp.post('/feedback')
 @auth_required(['traveller'])
 def submit_feedback():
-    payload=request.get_json(silent=True) or {}
-    if not validateRatingAndComment(payload): return jsonify({'ok':False,'error':'destinationId and rating 1-5 are required'}),400
-    profile=retrieveRecord('users',g.uid) or {}
-    data={**payload,'travellerId':g.uid,'travellerName':profile.get('name') or profile.get('fullName') or 'Traveller','feedbackStatus':'visible','moderationStatus':'pending_review','submittedAt':utc_now_iso(),'updatedAt':utc_now_iso()}; result=storeRecord('feedback',data); return jsonify({'ok':True,'id':result['id'],'feedback':result}),201
+    payload = request.get_json(silent=True)
+    if not valid_review(payload):
+        return jsonify({'ok': False, 'error': 'Choose a place, rate it 1–5 and write 5–2000 characters.'}), 400
+    payload = {**payload, 'destinationId': payload['destinationId'].strip(), 'comment': payload['comment'].strip()}
+    try:
+        existing = retrieveRecord('feedback', filters=[('travellerId', '==', g.uid), ('destinationId', '==', payload['destinationId'])]) or []
+        existing = sorted(existing, key=lambda x: str(x.get('submittedAt') or ''), reverse=True)
+        profile = retrieveRecord('users', g.uid) or {}
+        now = utc_now_iso()
+        data = {**payload, 'travellerId': g.uid, 'travellerName': profile.get('name') or 'Traveller',
+                'submittedAt': now, 'updatedAt': now, **pending_screen(payload['comment'])}
+        identity = review_id(g.uid, payload['destinationId'])
+        try:
+            result, created = (existing[0], False) if existing else claimRecord('feedback', identity, data)
+        except (Aborted, DeadlineExceeded):
+            # A concurrent claim may have committed. One bounded read can safely
+            # acknowledge it; never retry a write or return success without a record.
+            result = retrieveRecord('feedback', identity)
+            if not result:
+                raise
+            created = False
+        if not created:
+            if result.get('travellerId') != g.uid or result.get('destinationId') != payload['destinationId']:
+                return jsonify({'ok': False, 'error': 'Review could not be submitted.'}), 409
+            if result.get('feedbackStatus') == 'removed':
+                return jsonify({'ok': False, 'error': 'This review was removed. Contact support if you need help.'}), 409
+            if any(result.get(key) != payload[key] for key in ('rating', 'comment')):
+                return jsonify({'ok': False, 'error': 'You already reviewed this place. Edit your existing review.'}), 409
+        return jsonify({'ok': True, 'id': result['id'], 'feedback': result, 'reused': not created}), (201 if created else 200)
+    except Exception:
+        return jsonify({'ok': False, 'error': 'Reviews are temporarily unavailable. Please try again.'}), 503
+
+
 @bp.put('/feedback/<fid>')
 @auth_required(['traveller'])
 def update_feedback(fid):
-    current=retrieveRecord('feedback',fid)
-    if not current or current.get('travellerId')!=g.uid:return jsonify({'ok':False,'error':'Feedback not found'}),404
-    if current.get('feedbackStatus')=='removed':return jsonify({'ok':False,'error':'This feedback was removed by the Administrator and cannot be republished by editing it'}),409
-    payload=request.get_json(silent=True) or {}
-    if not payload or not set(payload).issubset(_EDITABLE_FEEDBACK_FIELDS) or not validateFeedback(payload):return jsonify({'ok':False,'error':'Invalid feedback update'}),400
-    updates={field:payload[field] for field in _EDITABLE_FEEDBACK_FIELDS if field in payload}
-    updates['feedbackStatus']='visible'; updates['moderationStatus']='pending_review'; updates['updatedAt']=utc_now_iso(); return jsonify({'ok':True,'feedback':updateRecord('feedback',fid,updates)})
+    current = retrieveRecord('feedback', fid)
+    if not current or current.get('travellerId') != g.uid:
+        return jsonify({'ok': False, 'error': 'Feedback not found'}), 404
+    if current.get('feedbackStatus') == 'removed':
+        return jsonify({'ok': False, 'error': 'This feedback was removed by the Administrator and cannot be republished by editing it'}), 409
+    payload = request.get_json(silent=True)
+    if not valid_review(payload, partial=True):
+        return jsonify({'ok': False, 'error': 'Invalid feedback update'}), 400
+    updates = {**payload, 'updatedAt': utc_now_iso(), **pending_screen(payload.get('comment', current.get('comment', '')))}
+    try:
+        return jsonify({'ok': True, 'feedback': updateRecord('feedback', fid, updates, expected=current)})
+    except ReviewConflict as error:
+        return jsonify({'ok': False, 'error': str(error)}), 409
+    except Exception:
+        return jsonify({'ok': False, 'error': 'Reviews are temporarily unavailable. Please try again.'}), 503
+
+
 @bp.delete('/feedback/<fid>')
 @auth_required(['traveller'])
 def delete_feedback(fid):
-    current=retrieveRecord('feedback',fid)
-    if not current or current.get('travellerId')!=g.uid:return jsonify({'ok':False,'error':'Feedback not found'}),404
-    deleteRecord('feedback',fid); return jsonify({'ok':True})
+    current = retrieveRecord('feedback', fid)
+    if not current or current.get('travellerId') != g.uid:
+        return jsonify({'ok': False, 'error': 'Feedback not found'}), 404
+    try:
+        deleteRecord('feedback', fid, expected=current)
+        return jsonify({'ok': True})
+    except ReviewConflict as error:
+        return jsonify({'ok': False, 'error': str(error)}), 409
+    except Exception:
+        return jsonify({'ok': False, 'error': 'Reviews are temporarily unavailable. Please try again.'}), 503

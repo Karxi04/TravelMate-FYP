@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from firebase_service import init_firebase
+from services.review_service import published_review, commit_feedback, ReviewConflict
 from sequence_contract.firebase_firestore import deleteRecord, retrieveRecord, storeRecord
 from services.public_content_projection import (
     PUBLIC_CAMPAIGN_COLLECTION,
@@ -42,7 +43,7 @@ def rebuild(apply=False):
     ]
     eligible_reviews = [
         item for item in reviews
-        if str(item.get('feedbackStatus', 'visible')).lower() == 'visible'
+        if published_review(item)
     ]
     counts = {
         'packages': len(eligible_packages),
@@ -71,7 +72,7 @@ def rebuild(apply=False):
     for item in retrieveRecord(PUBLIC_REVIEW_COLLECTION):
         review_id = str(item.get('id'))
         current = retrieveRecord('feedback', review_id)
-        if str((current or {}).get('feedbackStatus', 'visible')).lower() != 'visible':
+        if not published_review(current or {}):
             deleteRecord(PUBLIC_REVIEW_COLLECTION, review_id)
             counts['removedStale'] += 1
 
@@ -115,10 +116,13 @@ def rebuild(apply=False):
     for review in eligible_reviews:
         review_id = str(review.get('id'))
         current = retrieveRecord('feedback', review_id)
-        if _fingerprint(current) != _fingerprint(review) or str((current or {}).get('feedbackStatus', 'visible')).lower() != 'visible':
+        if _fingerprint(current) != _fingerprint(review) or not published_review(current or {}):
             counts['skippedConcurrentChanges'] += 1
             continue
-        storeRecord(PUBLIC_REVIEW_COLLECTION, public_review(current), review_id)
+        try:
+            commit_feedback(review_id, current, {})
+        except ReviewConflict:
+            counts['skippedConcurrentChanges'] += 1
     return counts
 
 

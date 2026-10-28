@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 /// Structured opening hours schedule parsed from various provider or catalog formats.
 @immutable
 class OpeningHoursSchedule {
-  /// Whether a genuine seven-day weekly timetable is available.
+  /// Whether explicit weekday data is available (unreported days remain unknown).
   final bool hasWeeklySchedule;
 
   /// Ordered Monday-to-Sunday timetable entries.
@@ -197,7 +197,10 @@ class OpeningHoursUtils {
     Map<String, dynamic>? detail, {
     DateTime? now,
   }) {
-    final currentDay = currentMalaysiaDay(now);
+    final offset = detail?['utc_offset_minutes'];
+    final currentDay = offset is num && offset >= -720 && offset <= 840
+        ? daysOfWeek[(now ?? DateTime.now()).toUtc().add(Duration(minutes: offset.toInt())).weekday - 1]
+        : currentMalaysiaDay(now);
 
     if (detail == null || detail.isEmpty) {
       return OpeningHoursSchedule(
@@ -221,12 +224,14 @@ class OpeningHoursUtils {
     // Source A: Map in 'weeklyHours', 'weekly_hours', or 'operating_hours'
     final weeklyRaw = detail['weeklyHours'] ??
         detail['weekly_hours'] ??
-        detail['operating_hours'];
+        detail['operating_hours'] ?? detail['hours'] ??
+        (detail['opening_hours'] is Map ? detail['opening_hours'] : null) ??
+        (detail['openingHours'] is Map ? detail['openingHours'] : null);
     if (weeklyRaw is Map) {
       for (final entry in weeklyRaw.entries) {
         final keyNorm = _dayAliases[entry.key.toString().trim().toLowerCase()];
         if (keyNorm != null) {
-          final formatted = formatHoursString(entry.value);
+          final formatted = formatHoursString(entry.value is List ? entry.value.join(', ') : entry.value);
           if (formatted.isNotEmpty) {
             scheduleByDay[keyNorm] = formatted;
           }
@@ -263,6 +268,14 @@ class OpeningHoursUtils {
             }
           }
         } else if (item is Map) {
+          for (final entry in item.entries) {
+            final day = _dayAliases[entry.key.toString().trim().toLowerCase()];
+            if (day != null) {
+              final value = entry.value is List ? entry.value.join(', ') : entry.value;
+              final formatted = formatHoursString(value);
+              if (formatted.isNotEmpty) scheduleByDay[day] = formatted;
+            }
+          }
           final dayPart = (item['day'] ?? item['weekday'] ?? '')
               .toString()
               .trim()
@@ -309,11 +322,15 @@ class OpeningHoursUtils {
             if (day != null && periodsByDay.containsKey(day)) {
               if (close is Map) {
                 final closeTime = close['time']?.toString() ?? '';
+                if (!RegExp(r'^\d{3,4}$').hasMatch(openTime) || !RegExp(r'^\d{3,4}$').hasMatch(closeTime)) continue;
+                final closeDay = int.tryParse('${close['day']}');
+                final overnight = closeDay != null ? closeDay != day : int.parse(closeTime) < int.parse(openTime);
                 final range =
-                    '${_formatTimeDigits(openTime)} – ${_formatTimeDigits(closeTime)}';
+                    '${_formatTimeDigits(openTime)} – ${_formatTimeDigits(closeTime)}${overnight ? ' (next day)' : ''}';
                 periodsByDay[day]!.add(range);
-              } else {
-                periodsByDay[day]!.add('Open 24 hours');
+              } else if (day == 0 && openTime == '0000' && periodsList.length == 1) {
+                // Google's explicit always-open sentinel, not an arbitrary missing close.
+                for (final ranges in periodsByDay.values) { ranges.add('Open 24 hours'); }
               }
             }
           }
@@ -333,17 +350,15 @@ class OpeningHoursUtils {
       for (final entry in dayMapping.entries) {
         final ranges = periodsByDay[entry.key]!;
         if (ranges.isNotEmpty) {
-          scheduleByDay[entry.value] = ranges.join(', ');
-        } else {
-          scheduleByDay[entry.value] = 'Closed';
+          scheduleByDay.putIfAbsent(entry.value, () => ranges.join(', '));
         }
       }
     }
 
     // Check if genuine 7-day schedule is present
-    if (scheduleByDay.length == 7) {
+    if (scheduleByDay.isNotEmpty) {
       final ordered = daysOfWeek
-          .map((day) => MapEntry(day, scheduleByDay[day] ?? 'Closed'))
+          .map((day) => MapEntry(day, scheduleByDay[day] ?? 'Not available'))
           .toList();
       return OpeningHoursSchedule(
         hasWeeklySchedule: true,
@@ -355,9 +370,10 @@ class OpeningHoursUtils {
     }
 
     // If not a full 7-day schedule, check for generic single range
-    final genericRaw = detail['open_state'] ??
-        detail['openingHours'] ??
-        detail['hours'];
+    final legacyRange = detail['open_state']?.toString() ?? '';
+    final genuineLegacyRange = RegExp(r'^\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*[-–—]\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*$',caseSensitive:false).hasMatch(legacyRange);
+    final genericRaw = detail['openingHours'] ??
+        detail['hours'] ?? detail['opening_hours'] ?? (genuineLegacyRange ? legacyRange : null);
     if (genericRaw != null && genericRaw is! Map && genericRaw is! List) {
       final formatted = formatHoursString(genericRaw);
       if (formatted.isNotEmpty) {

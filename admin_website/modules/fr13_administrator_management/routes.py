@@ -280,9 +280,11 @@ def review_feedback(feedback_id):
     response = call_api("POST", f"/api/fr13/feedback/{feedback_id}/review", json={
         "decision": decision,
         "comment": request.form.get("comment", ""),
+        "expectedUpdatedAt": request.form.get("expectedUpdatedAt", ""),
+        **({"expectedRevision": request.form["expectedRevision"]} if "expectedRevision" in request.form else {}),
     })
     if response.ok:
-        flash("Feedback kept visible." if decision == "keep" else "Feedback removed from Traveller view.", "success")
+        flash("Review approved." if decision == "keep" else "Review removed from Traveller view.", "success")
     else:
         flash(_error(response), "error")
     return redirect(url_for("admin_fr13.feedback"))

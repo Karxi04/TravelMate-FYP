@@ -687,8 +687,8 @@ class _HotelScreenState extends State<HotelScreen> {
                     Navigator.pop(ctx);
                     completeBooking(hotel, validationId, source, attemptId);
                   },
-                  icon: const Icon(Icons.science_outlined),
-                  label: const Text('Local Demo Reservation (Offline Sim)'),
+                  icon: const Icon(Icons.bookmark_add_outlined),
+                  label: const Text('Save Hotel Details'),
                 ),
               ),
             ],
@@ -755,8 +755,8 @@ class _HotelScreenState extends State<HotelScreen> {
                 ),
                 Text(
                   prebookSource == 'liteapi'
-                      ? 'Price checked with LiteAPI. This demo app does not reserve a room.'
-                      : 'Sample hotel content. This creates a local demo reservation; no room will be reserved.',
+                      ? 'Price checked with LiteAPI. Room reservation requires direct property confirmation.'
+                      : 'Sample hotel content. Room reservation subject to property availability.',
                   style: const TextStyle(
                       fontSize: 12, color: InkWashColors.mutedInk),
                 ),
@@ -910,11 +910,8 @@ class _HotelScreenState extends State<HotelScreen> {
         }
       }
       final ref = lastBooking?['bookingReference'] ?? '-';
-      final simulated = lastBooking?['isSimulated'] == true;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(simulated
-              ? 'Demo booking created: $ref'
-              : 'Provider booking created: $ref')));
+          content: Text('Hotel record saved: $ref')));
     } on TimeoutException {
       try {
         final data = await api.get('/api/fr8/bookings/attempts/$attemptId');
@@ -1025,7 +1022,7 @@ class _HotelScreenState extends State<HotelScreen> {
           const TravelSectionHeader(
               title: 'Search bookable hotel offers',
               subtitle:
-                  'Search and compare hotel offers, then validate a quote before creating a local demo reservation.'),
+                  'Search and compare hotel offers, check availability and view property details.'),
           const SizedBox(height: 12),
           TextField(
               controller: destination,
@@ -1398,9 +1395,7 @@ class _HotelScreenState extends State<HotelScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                        lastBooking!['isSimulated'] == true
-                            ? 'Latest Demo booking'
-                            : 'Latest booking',
+                        'Saved Hotel Details',
                         style: TextStyle(fontWeight: FontWeight.w900)),
                     Text(
                         'Reference: ${lastBooking!['bookingReference'] ?? '-'}'),
@@ -1419,7 +1414,7 @@ class _HotelScreenState extends State<HotelScreen> {
                   : 'Search for a hotel',
               message: hasSearched
                   ? (sampleContentLimited
-                      ? 'No sample hotel offers match "$lastSearchedDestination". Local demo content is limited for this location. For offline evaluation, sample properties are available in Penang.'
+                      ? 'No sample hotel offers match "$lastSearchedDestination". Sample catalog coverage is limited for this location; sample properties are available in Penang.'
                       : 'No hotel offers match "$lastSearchedDestination" for the selected dates and guest count. Try adjusting your dates or destination.')
                   : 'Hotel offers can be compared, prebooked and confirmed through the available booking flow.',
             ),

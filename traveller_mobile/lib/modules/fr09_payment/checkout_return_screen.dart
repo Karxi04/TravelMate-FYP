@@ -197,9 +197,9 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
                                   icon: Icons.check_circle_rounded,
                                 ),
                                 StatusChip(
-                                  text: 'Demo Only',
+                                  text: 'Test Mode',
                                   tone: AppStatusTone.neutral,
-                                  icon: Icons.science_outlined,
+                                  icon: Icons.info_outline_rounded,
                                 ),
                               ],
                             ),
@@ -213,7 +213,7 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'This is a test payment for demonstration purposes. No real payment was charged, and no room has been reserved with the hotel.',
+                              'This is a test payment in Stripe Test Mode. No real charges were incurred, and no room has been reserved with the hotel.',
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: AppColors.textSecondary,
                                   ),

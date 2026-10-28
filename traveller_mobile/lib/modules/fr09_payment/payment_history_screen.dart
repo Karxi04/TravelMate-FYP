@@ -315,7 +315,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
       return ('Confirmed', AppStatusTone.success, Icons.hotel_rounded, 'Confirmed with supplier');
     }
     if (fulfillmentStatus == 'demo_only') {
-      return ('Demo Only — No Room Reserved', AppStatusTone.neutral, Icons.science_outlined, 'No supplier reservation created');
+      return ('Test Mode — No Room Reserved', AppStatusTone.neutral, Icons.info_outline_rounded, 'No supplier reservation created');
     }
     if (fulfillmentStatus == 'not_started' || (!isPaid && fulfillmentStatus == null)) {
       return ('Not Created', AppStatusTone.neutral, Icons.pause_circle_outline, 'No supplier reservation created');
@@ -489,7 +489,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                     _detailRow(
                       sheetContext,
                       'Payment Provider',
-                      provider == 'travelmate_simulation' ? 'TravelMate Simulation' : provider.toUpperCase(),
+                      provider == 'travelmate_simulation' ? 'TravelMate Test' : provider.toUpperCase(),
                     ),
                   ],
                   if (cardBrand.isNotEmpty || cardLast4.isNotEmpty) ...[
@@ -530,7 +530,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                       'Supplier Confirmation',
                       (item['bookingReference'] != null && item['bookingReference'].toString().isNotEmpty)
                           ? item['bookingReference'].toString()
-                          : 'None (Demo mode — no supplier reservation)',
+                          : 'None (No supplier reservation created)',
                     ),
                   ],
                   if (relatedBookingId.isNotEmpty && !isHotel) ...[
@@ -550,7 +550,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                           Expanded(
                             child: Text(
                               item['demoDisclosure']?.toString() ??
-                                  'This is a test payment for demonstration purposes. No real payment was charged, and no room has been reserved with the hotel.',
+                                  'This is a test payment in Stripe Test Mode. No real charges were incurred, and no room has been reserved with the hotel.',
                               style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
                                     color: AppColors.textSecondary,
                                   ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../widgets/local_place_rating.dart';
 import 'budget_comparison_screen.dart';
 import 'budget_breakdown.dart';
 import 'activity_payload_helper.dart';
@@ -445,7 +446,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         weather != 'No major weather rearrangement required.')
       notes.add(weather);
     for (final note in (activity['scheduleNotes'] as List? ?? [])) {
-      final text = note.toString();
+      var text = note.toString();
+      if (text.contains('Fits one reported opening period; current hours and special-date closures are not verified.')) {
+        text = 'Hours unverified on special dates. Fits one reported opening period.';
+      }
       if (text.trim().isNotEmpty && !notes.contains(text)) notes.add(text);
     }
     if (_isProvisional(activity) &&
@@ -1859,6 +1863,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                   children: [
                     Text((activity['activityName'] ?? 'Activity').toString(),
                         style: Theme.of(context).textTheme.titleMedium),
+                    LocalPlaceRating(place:activity),
                     const SizedBox(height: AppSpacing.xxs),
                     Wrap(
                         spacing: AppSpacing.xs,
@@ -2009,7 +2014,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     final dayItems = _dayActivities(day);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       InkCard(
-        color: AppColors.warningSoft,
+        color: AppColors.infoSoft,
         child: Text(
           'Drag to reorder this day. Use the menu to move or remove an activity. TravelMate recalculates timing and budget after each change.',
           style: Theme.of(context).textTheme.bodyMedium,
@@ -2802,9 +2807,10 @@ class _TripPlacePickerScreenState extends State<TripPlacePickerScreen> {
                                                 color: InkWashColors.mutedInk)),
                                         const SizedBox(height: 5),
                                         Text(
-                                            '★ ${item['rating'] ?? '-'} • ${item['category'] ?? item['type'] ?? ''}',
+                                            '${item['category'] ?? item['type'] ?? ''}',
                                             style:
                                                 const TextStyle(fontSize: 12)),
+                                        LocalPlaceRating(place:item),
                                       ],
                                     ),
                                   ),

@@ -196,7 +196,7 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
       return ('Supplier Confirmed', AppStatusTone.success, Icons.hotel_rounded, 'Reservation confirmed with supplier');
     }
     if (fulfillmentStatus == 'demo_only') {
-      return ('Demo Only — No Room Reserved', AppStatusTone.neutral, Icons.science_outlined, 'No supplier reservation created');
+      return ('Test Mode — No Room Reserved', AppStatusTone.neutral, Icons.info_outline_rounded, 'No supplier reservation created');
     }
     if (fulfillmentStatus == 'not_started' || (!isPaid && (fulfillmentStatus == null || fulfillmentStatus.isEmpty))) {
       return ('Not Started', AppStatusTone.neutral, Icons.pause_circle_outline, 'No supplier reservation created');
@@ -276,7 +276,7 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
     final isPaid = (data['status'] ?? '').toString().toLowerCase() == 'paid' ||
         (data['paymentStatus'] ?? '').toString().toLowerCase() == 'paid';
     final demoDisclosure = (data['demoDisclosure'] ??
-        'This is a test payment for demonstration purposes. No real payment was charged, and no room has been reserved with the hotel.').toString();
+        'This is a test payment in Stripe Test Mode. No real charges were incurred, and no room has been reserved with the hotel.').toString();
 
     return RefreshIndicator(
       onRefresh: reconcile,
@@ -443,7 +443,7 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'FYP Demonstration Notice',
+                        'Important Reservation Notice',
                         style: Theme.of(context).textTheme.labelMedium?.copyWith(
                               fontWeight: FontWeight.w800,
                               color: AppColors.textPrimary,
@@ -529,7 +529,7 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
                   'Supplier Confirmation',
                   (bookingRef != null && bookingRef.isNotEmpty)
                       ? bookingRef
-                      : 'None (Demo mode — no supplier reservation)',
+                      : 'None (No supplier reservation created)',
                 ),
               ],
             ),

@@ -28,7 +28,7 @@ class PublicContentContract {
   static const _reviewFields = {
     'id', 'destinationId', 'destinationName', 'destinationAddress', 'rating',
     'comment', 'travellerName', 'submittedAt', 'updatedAt', 'source',
-    'username', 'description', 'date',
+    'username', 'description', 'date', 'reviewKey',
   };
 
   static Map<String, dynamic> package(Map<String, dynamic> raw) {

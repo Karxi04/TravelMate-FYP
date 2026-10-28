@@ -195,7 +195,7 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
           const TravelSectionHeader(
             title: 'Search car rentals',
             subtitle:
-                'Compare simulated vehicle options and attach the selected rental cost to an itinerary.',
+                'Compare vehicle options and attach the selected rental cost to an itinerary.',
           ),
           const SizedBox(height: 12),
           TextField(
@@ -293,7 +293,7 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
           if (source.isNotEmpty) ...[
             const SizedBox(height: 10),
             TravelStatusPill(
-                text: 'SIMULATED RENTAL OPTIONS', icon: Icons.science_outlined),
+                text: 'Indicative vehicle rates', icon: Icons.directions_car_rounded),
           ],
           const SizedBox(height: 18),
           if (items.isEmpty && !busy)
@@ -303,7 +303,7 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
                   ? 'No rental options in $lastSearchedLocation'
                   : 'Search for a rental car',
               message: hasSearched
-                  ? 'No simulated rental vehicles match "$lastSearchedLocation" for the selected category. Try selecting "All" vehicle types or choose another Malaysian location.'
+                  ? 'No rental vehicles match "$lastSearchedLocation" for the selected category. Try selecting "All" vehicle types or choose another Malaysian location.'
                   : 'Vehicle options can be selected and added into your itinerary budget.',
             ),
           ...items.map((raw) {

@@ -14,6 +14,7 @@ from sequence_contract.firebase_firestore import (
     storeRecord,
 )
 from services.package_service import normalise_package
+from services.review_service import published_review, review_id
 
 
 PUBLIC_PACKAGE_COLLECTION = 'public_tourism_packages'
@@ -104,6 +105,10 @@ def public_review(source):
         'source': 'travelmate',
     }
     result['username'] = str(source.get('travellerName') or 'Traveller')
+    if published_review(source):
+        result['publicationStatus'] = 'approved'
+    if source.get('travellerId') and source.get('destinationId'):
+        result['reviewKey'] = review_id(source['travellerId'], source['destinationId'])
     result['description'] = str(source.get('comment') or '')
     result['date'] = source.get('updatedAt') or source.get('submittedAt') or ''
     return {key: value for key, value in result.items() if value not in (None, '')}
@@ -190,9 +195,10 @@ def sync_review(review_id, source=None):
         return
     deleteRecord(PUBLIC_REVIEW_COLLECTION, review_id)
     source = source if source is not None else retrieveRecord('feedback', review_id)
-    if not source or str(source.get('feedbackStatus', 'visible')).lower() != 'visible':
+    if not source or not published_review(source):
         return
-    storeRecord(PUBLIC_REVIEW_COLLECTION, public_review(source), review_id)
+    from services.review_service import commit_feedback
+    commit_feedback(review_id, source, {})
 
 
 def revoke_projection(collection, document_id):
