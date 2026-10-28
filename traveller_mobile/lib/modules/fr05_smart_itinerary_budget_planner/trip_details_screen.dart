@@ -445,7 +445,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         weather != 'No major weather rearrangement required.')
       notes.add(weather);
     for (final note in (activity['scheduleNotes'] as List? ?? [])) {
-      final text = note.toString();
+      var text = note.toString();
+      if (text.contains('Fits one reported opening period; current hours and special-date closures are not verified.')) {
+        text = 'Hours unverified on special dates. Fits one reported opening period.';
+      }
       if (text.trim().isNotEmpty && !notes.contains(text)) notes.add(text);
     }
     if (_isProvisional(activity) &&
@@ -2009,7 +2012,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     final dayItems = _dayActivities(day);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       InkCard(
-        color: AppColors.warningSoft,
+        color: AppColors.infoSoft,
         child: Text(
           'Drag to reorder this day. Use the menu to move or remove an activity. TravelMate recalculates timing and budget after each change.',
           style: Theme.of(context).textTheme.bodyMedium,

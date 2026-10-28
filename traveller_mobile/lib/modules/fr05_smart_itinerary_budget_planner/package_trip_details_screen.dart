@@ -696,11 +696,11 @@ class _PackageTripDetailsScreenState extends State<PackageTripDetailsScreen> {
             child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.science_outlined, size: 16, color: AppColors.info),
+                Icon(Icons.info_outline_rounded, size: 16, color: AppColors.info),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Stripe Test Mode: This booking was processed in Stripe Test Mode for academic demonstration. No real charges were incurred.',
+                    'Stripe Test Mode: This booking was processed in Stripe Test Mode. No real charges were incurred.',
                     style: TextStyle(
                       color: AppColors.info,
                       fontSize: 11,

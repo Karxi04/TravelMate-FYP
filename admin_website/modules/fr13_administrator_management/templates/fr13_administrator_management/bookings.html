@@ -9,7 +9,7 @@
 </div>
 
 <div class="tabs" style="display: flex; gap: 8px; margin-bottom: 16px;">
-  <a class="btn {% if booking_type == 'hotel' %}primary{% else %}outline{% endif %}" href="{{ url_for('admin_fr13.bookings', type='hotel') }}">Hotel Bookings (Simulated)</a>
+  <a class="btn {% if booking_type == 'hotel' %}primary{% else %}outline{% endif %}" href="{{ url_for('admin_fr13.bookings', type='hotel') }}">Hotel Bookings</a>
   <a class="btn {% if booking_type == 'package' %}primary{% else %}outline{% endif %}" href="{{ url_for('admin_fr13.bookings', type='package') }}">Package Bookings (Platform)</a>
   <a class="btn {% if booking_type == 'all' %}primary{% else %}outline{% endif %}" href="{{ url_for('admin_fr13.bookings', type='all') }}">All Bookings</a>
 </div>
@@ -90,7 +90,7 @@
           {% if btype == 'package' %}
             <span class="badge warning">⚠️ Not Created (Manual)</span>
           {% else %}
-            <span class="badge neutral">Simulated</span>
+            <span class="badge neutral">Test Mode</span>
           {% endif %}
         </td>
         <td>RM {{ '%.2f'|format(x.get('amount', x.get('hotelCost', x.get('price', 0)))|float) }}</td>

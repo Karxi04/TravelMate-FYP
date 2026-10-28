@@ -1424,7 +1424,7 @@ class _TourismPackageDetailsScreenState
                   const Icon(Icons.shield_outlined,
                       size: 18, color: AppColors.primary),
                   const SizedBox(width: AppSpacing.xs),
-                  Expanded(child: _heading('TravelMate Test Disclosures')),
+                  Expanded(child: _heading('Reservation & Payment Notice')),
                 ],
               ),
               const Text(

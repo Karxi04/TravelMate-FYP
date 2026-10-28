@@ -1208,7 +1208,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           const TravelSectionHeader(
             title: 'Checkout',
             subtitle:
-                'Review the amount and complete a sandbox or simulated payment.',
+                'Review the amount and complete your test payment.',
           ),
           const SizedBox(height: 12),
           InkCard(
@@ -1220,7 +1220,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'This FYP checkout reproduces the complete card-payment process but does not charge real money. Full card numbers and security codes are never saved.',
+                    'This test checkout reproduces the complete payment process but does not charge real money. Full card numbers and security codes are never saved.',
                   ),
                 ),
               ],

@@ -755,8 +755,8 @@ class _HotelScreenState extends State<HotelScreen> {
                 ),
                 Text(
                   prebookSource == 'liteapi'
-                      ? 'Price checked with LiteAPI. This demo app does not reserve a room.'
-                      : 'Sample hotel content. This creates a local demo reservation; no room will be reserved.',
+                      ? 'Price checked with LiteAPI. Room reservation requires direct property confirmation.'
+                      : 'Sample hotel content. Room reservation subject to property availability.',
                   style: const TextStyle(
                       fontSize: 12, color: InkWashColors.mutedInk),
                 ),
@@ -1025,7 +1025,7 @@ class _HotelScreenState extends State<HotelScreen> {
           const TravelSectionHeader(
               title: 'Search bookable hotel offers',
               subtitle:
-                  'Search and compare hotel offers, then validate a quote before creating a local demo reservation.'),
+                  'Search and compare hotel offers, check availability and view property details.'),
           const SizedBox(height: 12),
           TextField(
               controller: destination,

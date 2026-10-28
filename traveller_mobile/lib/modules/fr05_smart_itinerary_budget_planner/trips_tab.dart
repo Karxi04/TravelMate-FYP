@@ -686,7 +686,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
       body: RefreshIndicator(
         onRefresh: load,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 6, 18, 92),
+          padding: const EdgeInsets.fromLTRB(18, 6, 18, 120),
           children: [
             // Segmented Control: My Plans vs Package Trips
             SegmentedButton<int>(
@@ -745,7 +745,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
               const TravelSectionHeader(
                 title: 'Your travel plans',
                 subtitle:
-                    'Open a trip when you want to add places, change the sequence or edit details.',
+                    'Select a trip to view or edit details.',
               ),
               const SizedBox(height: 14),
               if (loading)
@@ -929,7 +929,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
               const TravelSectionHeader(
                 title: 'Purchased Tourism Packages',
                 subtitle:
-                    'Official read-only itineraries provided by verified tourism operators.',
+                    'Confirmed itineraries provided by verified tourism operators.',
               ),
               const SizedBox(height: 14),
               if (loading)
@@ -1086,6 +1086,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                   );
                 }),
             ],
+            const SizedBox(height: 72),
           ],
         ),
       ),

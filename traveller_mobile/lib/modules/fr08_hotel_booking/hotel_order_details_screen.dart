@@ -443,7 +443,7 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'FYP Demonstration Notice',
+                        'Important Reservation Notice',
                         style: Theme.of(context).textTheme.labelMedium?.copyWith(
                               fontWeight: FontWeight.w800,
                               color: AppColors.textPrimary,
