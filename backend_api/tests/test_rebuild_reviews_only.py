@@ -19,6 +19,7 @@ Tests all 15 scenarios mandated in TravelMate Batch R-DEP1:
 """
 
 import copy
+import datetime
 import json
 import os
 import sys
@@ -36,17 +37,23 @@ from scripts.rebuild_reviews_only import (
     PUBLIC_REVIEW_COLLECTION,
     PROHIBITED_PRODUCTION_PROJECT,
     assert_project_safety,
-    execute_migration,
+    execute_migration as _execute_migration,
     format_report,
+    manifest_digest,
+    _decode_record,
+    _encode_record,
+    _fingerprint,
+    write_artifact,
     plan_review_migration,
 )
 from services.review_service import ReviewConflict, review_id
 
 
 class FakeDocSnapshot:
-    def __init__(self, doc_id, data):
+    def __init__(self, doc_id, data, update_time=None):
         self.id = doc_id
         self._data = copy.deepcopy(data) if data is not None else None
+        self.update_time = update_time
 
     @property
     def exists(self):
@@ -60,6 +67,13 @@ class FakeFirestoreDB:
     """Deterministic in-memory Firestore fixture supporting collections, streams, docs, and CAS transactions."""
 
     def __init__(self):
+        from google.auth.credentials import AnonymousCredentials
+        self.project = 'demo-travelmate-f3p2v'
+        self._database_string = f'projects/{self.project}/databases/(default)'
+        self._emulator_host = self._target = '127.0.0.1:18085'
+        self._credentials = AnonymousCredentials()
+        self.backup_number = 0
+        self.versions = {}
         self.collections = {
             FEEDBACK_COLLECTION: {},
             PUBLIC_REVIEW_COLLECTION: {},
@@ -101,7 +115,7 @@ class FakeCollectionRef:
                     match = False
                     break
             if match:
-                docs.append(FakeDocSnapshot(doc_id, data))
+                docs.append(FakeDocSnapshot(doc_id, data, self.db.versions.get((self.name, doc_id))))
         return docs
 
 
@@ -113,7 +127,7 @@ class FakeDocumentRef:
 
     def get(self, transaction=None):
         data = self.db.collections[self.col_name].get(self.doc_id)
-        return FakeDocSnapshot(self.doc_id, data)
+        return FakeDocSnapshot(self.doc_id, data, self.db.versions.get((self.col_name, self.doc_id)))
 
     def set(self, data):
         self.db.collections[self.col_name][self.doc_id] = copy.deepcopy(data)
@@ -141,8 +155,9 @@ class FakeTransaction:
 
 
 @pytest.fixture
-def fake_db(monkeypatch):
+def fake_db(monkeypatch, fake_app, tmp_path):
     db = FakeFirestoreDB()
+    db.artifacts = tmp_path
     monkeypatch.setattr('firebase_service.get_db', lambda: db)
     monkeypatch.setattr('scripts.rebuild_reviews_only.get_db', lambda: db)
 
@@ -165,6 +180,13 @@ def fake_db(monkeypatch):
     from google.cloud import firestore as real_firestore
     monkeypatch.setattr(real_firestore, 'transactional', fake_transactional)
     return db
+
+
+def execute_migration(db, manifest, _sources, _projections, project):
+    """Existing scenarios explicitly approve the planned digest and save before-images."""
+    db.backup_number += 1
+    return _execute_migration(db, manifest, project, reviewed_digest=manifest_digest(manifest),
+                              backup_path=db.artifacts / f'backup-{db.backup_number}.json')
 
 
 @pytest.fixture
@@ -421,7 +443,7 @@ def test_12_project_safety_assertions(fake_app):
         assert_project_safety('', is_apply=False)
 
     # Strictly reject production apply
-    with pytest.raises(RuntimeError, match="Production apply against 'travelmate2-30a8a' is strictly prohibited"):
+    with pytest.raises(RuntimeError, match="Production apply is strictly prohibited"):
         assert_project_safety(PROHIBITED_PRODUCTION_PROJECT, is_apply=True)
 
 
@@ -486,4 +508,210 @@ def test_15_manifest_generation(fake_db, tmp_path):
     assert len(loaded['actions']['creates']) == 1
     assert loaded['actions']['creates'][0]['id'] == 'rev_1'
     assert 'expectedProjection' in loaded['actions']['creates'][0]
-    assert loaded['actions']['creates'][0]['expectedProjection']['publicationStatus'] == 'approved'
+    assert _decode_record(loaded['actions']['creates'][0]['expectedProjection'], fake_db)['publicationStatus'] == 'approved'
+
+
+def approved_source(**changes):
+    return {'travellerId': 'synthetic-owner', 'destinationId': 'exact-legacy-id',
+            'rating': 5, 'comment': 'Synthetic approved review.', 'travellerName': 'Synthetic',
+            'feedbackStatus': 'visible', 'moderationStatus': 'reviewed',
+            'submittedAt': '2026-01-01T00:00:00Z', 'updatedAt': '2026-01-01T00:00:00Z', **changes}
+
+
+@pytest.mark.parametrize('changes', [
+    {'comment': 'Changed with the same timestamp'}, {'rating': 1},
+    {'travellerId': 'different-owner'}, {'travellerName': 'Changed name'},
+    {'destinationId': 'different-destination'}, {'moderationStatus': 'pending_review'},
+    {'feedbackStatus': 'hidden'}, {'moderationStatus': 'rejected'},
+    {'reviewerId': 'different-admin'}, {'screening': {'risk': 'flagged'}},
+])
+def test_full_source_cas_same_timestamp(fake_db, changes):
+    fake_db.collections[FEEDBACK_COLLECTION]['cas'] = approved_source()
+    manifest, sources, projs = plan_review_migration(fake_db)
+    fake_db.collections[FEEDBACK_COLLECTION]['cas'].update(changes)
+    before = copy.deepcopy(fake_db.collections)
+    assert execute_migration(fake_db, manifest, sources, projs, fake_db.project)['skippedConcurrentChanges'] == 1
+    assert fake_db.collections == before
+
+
+@pytest.mark.parametrize('mutation', ['source-delete', 'projection-delete', 'projection-edit', 'version-only'])
+def test_projection_and_source_lifecycle_cas(fake_db, mutation):
+    fake_db.collections[FEEDBACK_COLLECTION]['cas'] = approved_source()
+    fake_db.collections[PUBLIC_REVIEW_COLLECTION]['cas'] = {'legacy': True}
+    manifest, sources, projs = plan_review_migration(fake_db)
+    if mutation == 'source-delete':
+        del fake_db.collections[FEEDBACK_COLLECTION]['cas']
+    elif mutation == 'projection-delete':
+        del fake_db.collections[PUBLIC_REVIEW_COLLECTION]['cas']
+    elif mutation == 'projection-edit':
+        fake_db.collections[PUBLIC_REVIEW_COLLECTION]['cas']['legacy'] = False
+    else:
+        fake_db.versions[(FEEDBACK_COLLECTION, 'cas')] = datetime.datetime.now(datetime.timezone.utc)
+    before = copy.deepcopy(fake_db.collections)
+    assert execute_migration(fake_db, manifest, sources, projs, fake_db.project)['skippedConcurrentChanges'] == 1
+    assert fake_db.collections == before
+
+
+def test_orphan_newly_approved_source_is_not_deleted(fake_db):
+    fake_db.collections[PUBLIC_REVIEW_COLLECTION]['orphan'] = {'legacy': True}
+    manifest, sources, projs = plan_review_migration(fake_db)
+    fake_db.collections[FEEDBACK_COLLECTION]['orphan'] = approved_source()
+    assert execute_migration(fake_db, manifest, sources, projs, fake_db.project)['skippedConcurrentChanges'] == 1
+    assert fake_db.collections[PUBLIC_REVIEW_COLLECTION]['orphan'] == {'legacy': True}
+
+
+def test_source_preservation_and_private_projection_fields_removed(fake_db):
+    fake_db.collections[FEEDBACK_COLLECTION]['source-id'] = approved_source(
+        id='untrusted-embedded-id', reviewerId='private-admin', moderatedAt='historic',
+        screening={'risk': 'low'}, publicationStatus='historic-source-metadata')
+    manifest, sources, projs = plan_review_migration(fake_db)
+    execute_migration(fake_db, manifest, sources, projs, fake_db.project)
+    projection = fake_db.collections[PUBLIC_REVIEW_COLLECTION]['source-id']
+    assert projection['id'] == 'source-id'
+    projection['privateNote'] = 'must not survive exact replacement'
+    manifest, current_sources, current_projs = plan_review_migration(fake_db)
+    assert manifest['counts']['projectionsToUpdate'] == 1
+    execute_migration(fake_db, manifest, current_sources, current_projs, fake_db.project)
+    assert 'privateNote' not in fake_db.collections[PUBLIC_REVIEW_COLLECTION]['source-id']
+    assert fake_db.collections[FEEDBACK_COLLECTION] == sources
+
+
+def test_typed_before_images_are_recoverable_and_not_printed(fake_db):
+    from google.cloud.firestore_v1 import GeoPoint
+    before = {'private': b'\x00\xff', 'nested': {'empty': None, 'flag': False}, 'rating': 4.0,
+              'point': GeoPoint(5.0, 100.0), 'timestamp': datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)}
+    fake_db.collections[PUBLIC_REVIEW_COLLECTION]['orphan'] = before
+    manifest, sources, projs = plan_review_migration(fake_db)
+    execute_migration(fake_db, manifest, sources, projs, fake_db.project)
+    evidence = json.loads((fake_db.artifacts / 'backup-1.json').read_text(encoding='utf-8'))
+    action = evidence['manifest']['actions']['removals'][0]
+    assert _decode_record(action['projectionBefore'], fake_db) == before
+    assert evidence['manifestSha256'] == manifest_digest(manifest)
+    assert 'private' not in format_report(manifest)
+
+
+@pytest.mark.parametrize('failure', ['no-approval', 'tampered', 'project', 'database', 'before-image', 'backup-exists'])
+def test_manifest_and_backup_fail_closed(fake_db, failure):
+    fake_db.collections[FEEDBACK_COLLECTION]['one'] = approved_source()
+    manifest, _, _ = plan_review_migration(fake_db)
+    digest = manifest_digest(manifest)
+    backup = fake_db.artifacts / 'exclusive.json'
+    if failure == 'no-approval':
+        digest = ''
+    elif failure == 'tampered':
+        manifest['actions']['creates'][0]['expectedProjection'] = _encode_record({'rating': 1})
+    elif failure in {'project', 'database'}:
+        manifest['projectId' if failure == 'project' else 'database'] = 'wrong'
+        digest = manifest_digest(manifest)
+    elif failure == 'before-image':
+        manifest['actions']['creates'][0]['projectionBefore'] = _encode_record({'unexpected': True})
+        digest = manifest_digest(manifest)
+    else:
+        write_artifact(backup, {'preserve': True})
+    before = copy.deepcopy(fake_db.collections)
+    with pytest.raises((ValueError, FileExistsError)):
+        _execute_migration(fake_db, manifest, fake_db.project, reviewed_digest=digest, backup_path=backup)
+    assert fake_db.collections == before
+
+
+@pytest.mark.parametrize('failure', ['counts', 'mislabelled-delete', 'duplicate-id'])
+def test_malformed_reviewed_manifest_rejected_before_backup_or_writes(fake_db, failure):
+    fake_db.collections[PUBLIC_REVIEW_COLLECTION]['orphan'] = {'legacy': True}
+    manifest, _, _ = plan_review_migration(fake_db)
+    if failure == 'counts':
+        manifest['counts']['projectionsToRemove'] = 0
+    elif failure == 'mislabelled-delete':
+        manifest['actions']['creates'] = manifest['actions']['removals']
+        manifest['actions']['removals'] = []
+        manifest['counts'].update(projectionsToCreate=1, projectionsToRemove=0)
+    else:
+        manifest['actions']['removals'] *= 2
+        manifest['counts']['projectionsToRemove'] = 2
+    before = copy.deepcopy(fake_db.collections)
+    backup = fake_db.artifacts / 'must-not-exist.json'
+    with pytest.raises(ValueError, match='Manifest'):
+        _execute_migration(fake_db, manifest, fake_db.project, reviewed_digest=manifest_digest(manifest), backup_path=backup)
+    assert fake_db.collections == before
+    assert not backup.exists()
+
+
+@pytest.mark.parametrize('attribute,value', [
+    ('project', 'wrong'), ('_database_string', 'projects/demo-travelmate-f3p2v/databases/other'),
+    ('_emulator_host', 'remote.example:8080'), ('_target', 'firestore.googleapis.com'),
+    ('_credentials', None),
+])
+def test_independent_firestore_identity_and_transport(fake_db, attribute, value):
+    setattr(fake_db, attribute, value)
+    with pytest.raises(RuntimeError):
+        assert_project_safety('demo-travelmate-f3p2v', is_apply=True, db=fake_db)
+
+
+def test_all_real_projects_denied_before_initialization(monkeypatch):
+    from scripts.rebuild_reviews_only import main
+    initializer = MagicMock(side_effect=AssertionError('must not initialize or read production'))
+    monkeypatch.setattr('scripts.rebuild_reviews_only.init_reviews_firebase', initializer)
+    for project in (PROHIBITED_PRODUCTION_PROJECT, 'another-real-project'):
+        monkeypatch.setattr(sys, 'argv', ['rebuild', '--project', project, '--apply'])
+        with pytest.raises(RuntimeError, match='production is denied'):
+            main()
+    initializer.assert_not_called()
+
+
+def test_partial_interruption_uses_forward_reconciliation_not_restore(fake_db, monkeypatch):
+    fake_db.collections[FEEDBACK_COLLECTION].update({'one': approved_source(), 'two': approved_source(travellerId='two')})
+    manifest, sources, projs = plan_review_migration(fake_db)
+    original_transaction = fake_db.transaction
+    calls = 0
+
+    def interrupted():
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError('synthetic interruption')
+        return original_transaction()
+
+    monkeypatch.setattr(fake_db, 'transaction', interrupted)
+    with pytest.raises(RuntimeError, match='synthetic interruption'):
+        execute_migration(fake_db, manifest, sources, projs, fake_db.project)
+    assert (fake_db.artifacts / 'backup-1.json').exists()
+    assert len(fake_db.collections[PUBLIC_REVIEW_COLLECTION]) == 1
+    fake_db.collections[FEEDBACK_COLLECTION]['one']['moderationStatus'] = 'rejected'
+    monkeypatch.setattr(fake_db, 'transaction', original_transaction)
+    fresh, current_sources, current_projs = plan_review_migration(fake_db)
+    result = execute_migration(fake_db, fresh, current_sources, current_projs, fake_db.project)
+    assert result['projectionsCreated'] == result['projectionsRemoved'] == 1
+    assert 'one' not in fake_db.collections[PUBLIC_REVIEW_COLLECTION]
+    assert fake_db.collections[FEEDBACK_COLLECTION]['one']['moderationStatus'] == 'rejected'
+
+
+def test_exhausted_transaction_contention_aborts_without_false_success(fake_db, monkeypatch):
+    fake_db.collections[FEEDBACK_COLLECTION]['one'] = approved_source()
+    manifest, sources, projs = plan_review_migration(fake_db)
+
+    def unavailable():
+        raise ValueError('Failed to commit transaction in 5 attempts.')
+
+    monkeypatch.setattr(fake_db, 'transaction', unavailable)
+    with pytest.raises(ValueError, match='Failed to commit'):
+        execute_migration(fake_db, manifest, sources, projs, fake_db.project)
+    assert fake_db.collections[FEEDBACK_COLLECTION] == sources
+    assert fake_db.collections[PUBLIC_REVIEW_COLLECTION] == projs
+    assert (fake_db.artifacts / 'backup-1.json').exists()
+
+
+def test_scoped_plan_does_not_delete_moved_source_projection(fake_db):
+    fake_db.collections[FEEDBACK_COLLECTION]['moved'] = approved_source(destinationId='new-id')
+    fake_db.collections[PUBLIC_REVIEW_COLLECTION]['moved'] = {'destinationId': 'old-id'}
+    with pytest.raises(RuntimeError, match='unscoped plan'):
+        plan_review_migration(fake_db, destination_id='old-id')
+
+
+def test_legacy_status_is_not_inferred_and_destination_ids_not_merged(fake_db):
+    fake_db.collections[FEEDBACK_COLLECTION]['legacy-status'] = approved_source(moderationStatus=None, status='approved')
+    fake_db.collections[FEEDBACK_COLLECTION]['alias-a'] = approved_source(destinationId='Penang Hill')
+    fake_db.collections[FEEDBACK_COLLECTION]['alias-b'] = approved_source(destinationId='penang_hill')
+    manifest, sources, projs = plan_review_migration(fake_db)
+    assert manifest['counts']['approvedSources'] == manifest['counts']['distinctApprovedContributions'] == 2
+    execute_migration(fake_db, manifest, sources, projs, fake_db.project)
+    assert 'legacy-status' not in fake_db.collections[PUBLIC_REVIEW_COLLECTION]
+    assert {p['destinationId'] for p in fake_db.collections[PUBLIC_REVIEW_COLLECTION].values()} == {'Penang Hill', 'penang_hill'}

@@ -58,14 +58,115 @@ client and Rules together; old direct SDK edits of approved sources will fail
 closed without projection revocation. Legacy projection docs lack the approval
 marker and will not be readable with new Rules until explicitly rebuilt.
 
-Use the existing dry-run-by-default `backend_api/scripts/rebuild_public_content.py`
-only after separate approval and an explicit target project/count review. It now
-excludes pending/unmoderated reviews and republishes only existing affirmative
-decisions using CAS. A derived-projection refresh is required, not a source-review
-schema migration; no automatic approval, source rewrite or production rebuild is
-authorized here. The tool also handles package/campaign projections, so any future
-apply requires reviewing its complete existing scope before approval.
+For reviews use `backend_api/scripts/rebuild_reviews_only.py`, not the broad
+Package/Campaign rebuild. A derived-projection refresh is required, not a
+source-review schema migration. No automatic approval or source rewrite is needed.
+See the R-DEP1S gates below. No production inventory or apply is authorized/enabled.
 
 Emulator API/Rules acceptance and widget/HTML tests are not physical Vivo or
 browser-to-browser UI E2E acceptance. Live services, Firebase Rules and production
 records remain unchanged until separately authorized rollout.
+
+## Reviews-only migration safety — R-DEP1S
+
+This release enables **only `demo-travelmate-f3p2v` on a loopback Firestore
+emulator**, including for CLI inventory. Real-project execution remains denied;
+never remove the guard to perform a release. Firebase App identity, environment,
+Firestore client project, default database, anonymous credentials and actual SDK
+emulator target are checked separately before collection access.
+
+Dry-run reads only `feedback` and `public_destination_reviews`. Its version2
+manifest includes project/database, exact affected IDs, planned creates/updates/
+deletes, full-content hashes, F-R1 content revisions, Firestore update times,
+typed complete projection before-images and derived after-images. Source fields
+and Admin decisions are never mutated. `status:approved` alone is not approval;
+only the existing visible + moderationStatus reviewed/approved contract applies.
+Destination IDs remain exact. All historical source duplicates are retained.
+
+Apply consumes the saved manifest, **does not replan**, and requires the reviewed
+canonical SHA-256 digest plus a fresh backup path. It saves/fsyncs the complete
+manifest/before-images before the first mutation. Every mutation transaction reads
+both source and projection and checks existence, full content and update times;
+changed/deleted/recreated records conflict, including orphan cleanup. It rebuilds
+the desired allowlisted projection from the current source before writing. Extra
+legacy fields are removed by replacement. Conflicts return CLI exit2, not success;
+other errors abort. A run is per-document atomic, not globally atomic.
+
+Example **emulator only**, from backend_api, with an existing protected D: folder:
+
+```powershell
+python -B scripts/rebuild_reviews_only.py --project demo-travelmate-f3p2v --manifest-path D:\workspace\TravelMate\verification\r-dep1s\reviewed-plan.json
+# Human reviews exact IDs, counts, before/after images and printed digest first.
+python -B scripts/rebuild_reviews_only.py --project demo-travelmate-f3p2v --apply --reviewed-manifest D:\workspace\TravelMate\verification\r-dep1s\reviewed-plan.json --manifest-sha256 <independently-reviewed-digest> --backup-path D:\workspace\TravelMate\verification\r-dep1s\before-images.json
+```
+
+The digest detects changes relative to the independently approved value; it is
+**not an approval signature, credential or recoverable backup** by itself. The
+before-images are typed Firestore JSON (including timestamps/bytes/references),
+not lossy stringified values. They can contain private legacy fields: restrict
+the parent directory to the release operator/approved reviewer, encrypt protected
+storage, exclude Git/cloud-sync/public logs, and apply a retention policy. New files
+are exclusive; POSIX permissions are0600. Windows inherited ACLs must be restricted
+and verified separately; this utility does not certify Windows storage security.
+
+### Future production authorization design — not enabled
+
+A separately approved release must implement/test a release gate, not remove
+project checks: independently reviewed exact manifest digest bound to project,
+database, scope, source commit and expiry; named human approval stored outside the
+editable manifest in protected release controls; an interactive confirmation of
+that project/digest by the operator; short-lived least-privilege release credentials;
+and the independent App/client/transport identity checks. Unattended invocations,
+missing/expired approvals and mismatches must deny before network access. An env
+variable or `--apply` alone must never authorize production. Approval storage/IAM,
+protected backups and this production gate remain release prerequisites, not
+features claimed implemented by the emulator-only tool.
+
+### Maintenance and forward recovery
+
+1. Separately authorize read-only inventory; identify actual loaded Backend/Admin,
+   installed client versions, Rules and projection revisions. No production state
+   was inspected in R-DEP1S. Resolve real browser/Android acceptance gates first.
+2. Drain/freeze **all server review writers**, including Admin moderation, jobs and
+   old backend instances. A backend toggle cannot freeze direct Firebase SDK writes.
+   A separately reviewed temporary Rules policy must deny review source/projection
+   client writes as well. Temporarily deny public-review SDK reads and block old
+   review API read handlers while stale projections/old writers may remain; an
+   approval marker alone cannot repair stale data. Keep other modules' permissions
+   intact. Test queued/offline writes after reconnection.
+3. Stage compatible Backend+Admin together. Make an explicit upgrade/outage decision
+   for old standalone clients: new Rules deny their broad queries and source-only
+   edits; do not weaken Rules to make them work. Keep review access frozen if client
+   rollout fails. Stale Admin forms must be discarded/refreshed.
+4. Under the freeze, capture protected before-images and approved manifest, then
+   have one operator perform only separately authorized projection reconciliation.
+   Competing migrations can exhaust SDK transaction retries on lock timeouts; they
+   fail closed, not guarantee progress. Any conflict or
+   partial failure keeps the review cutover gated; regenerate and independently
+   review a fresh plan. Do not reuse an old approval digest for a new plan.
+5. Activate final Rules and compatible client/backend together; verify approved-only
+   reads, privacy, local counts, owner edit/delete revocation and stale moderation.
+   Reconcile again before lifting **both** freezes. Rules alone do not constrain
+   privileged Admin SDK writers. Rules/client/backend success is not projection success.
+6. Recover **forward from current authoritative feedback**. Before-images support
+   investigation, not blind restoration. Never restore an old public review merely
+   because it was public before interruption: its owner/Admin may since have edited,
+   hidden, rejected or deleted it. No restore command is provided. An interruption
+   may leave some reviewed actions committed; the backup exists before any write,
+   but is not a durable per-action completion journal. Compare current state and
+   create a fresh reviewed delta. Do not roll back to unsafe old Rules/writers.
+
+Mixed-version limitations remain: old Backend may publish pending content regardless
+of Rules; old Admin forms lack reliable revision acknowledgement; old direct clients
+with old Rules can leave stale approved projections after edits. New client + old
+Rules cannot perform the required projection-revocation batch. New client + new
+Rules hides legacy unmarked projections until refreshed. Cached content cannot be
+recalled. No seamless mixed-version rollout is claimed.
+
+Public API lists and aggregates deduplicate approved sources by owner; direct SDK
+lists and aggregates deduplicate projections by reviewKey. However, the standalone
+sort currently uses updatedAt only, whereas Backend also falls back to submittedAt.
+For historical duplicates without updatedAt, the chosen card/contribution may differ
+between modes. Migration preserves both source/projection IDs and does not invent
+timestamps to mask this. A focused client compatibility fix/acceptance is a release
+gate; Local Rating presentation is unchanged in R-DEP1S.
