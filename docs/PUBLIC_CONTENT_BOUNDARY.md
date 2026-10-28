@@ -18,8 +18,9 @@ fields cannot survive. Package and campaign projections are fail-closed when
 approval, availability, campaign status, or the package relationship is not
 eligible. Approved campaign date windows remain in the safe projection and
 are evaluated at read time, so a future campaign becomes visible when its
-start date arrives. Reviews follow the existing `feedbackStatus == visible`
-policy.
+start date arrives. F-R1 reviews require an affirmative moderation decision as
+well as visible status; see LOCAL_REVIEWS.md for the coordinated Rules/client
+and derived-projection rollout, including atomic owner revocation.
 
 Expiry is a presentation policy: an expired campaign remains a safe historical
 public record in its projection, while the cloud list, standalone list, and

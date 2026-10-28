@@ -91,7 +91,7 @@ def test_cloud_review_response_does_not_spread_feedback_record(client, mock_trav
     review = {
         'id': 'review-1', 'destinationId': 'D1', 'rating': 5, 'comment': 'Good',
         'travellerId': 'private', 'travellerName': 'Traveller',
-        'feedbackStatus': 'visible', 'moderationStatus': 'pending_review',
+        'feedbackStatus': 'visible', 'moderationStatus': 'reviewed',
         'reviewComment': 'internal', 'reviewedBy': 'admin',
     }
     with patch('modules.fr03_destination_search_information.routes.retrieveRecord', return_value=[review]):

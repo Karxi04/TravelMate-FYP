@@ -15,9 +15,9 @@ def test_submit_and_retrieve_ratings_reviews(client, mock_traveller_auth):
     }
 
     with patch('modules.fr10_feedback_rating.routes.retrieveRecord') as mock_retrieve_fr10, \
-         patch('modules.fr10_feedback_rating.routes.storeRecord') as mock_store_fr10:
-        mock_retrieve_fr10.return_value = {'uid': 'test_traveller_uid', 'name': 'Test Traveller'}
-        mock_store_fr10.return_value = sample_feedback
+         patch('modules.fr10_feedback_rating.routes.claimRecord') as mock_claim:
+        mock_retrieve_fr10.side_effect = lambda collection, *args, **kwargs: [] if collection == 'feedback' else {'uid': 'test_traveller_uid', 'name': 'Test Traveller'}
+        mock_claim.return_value = (sample_feedback, True)
 
         res = client.post(
             '/api/fr10/feedback',
@@ -34,6 +34,8 @@ def test_submit_and_retrieve_ratings_reviews(client, mock_traveller_auth):
         assert data['ok'] is True
         assert data['feedback']['destinationId'] == 'D1'
 
+    # Only the affirmative legacy Admin decision may publish this review.
+    sample_feedback['moderationStatus'] = 'reviewed'
     with patch('modules.fr03_destination_search_information.routes.retrieveRecord') as mock_retrieve_fr03:
         mock_retrieve_fr03.return_value = [sample_feedback]
 

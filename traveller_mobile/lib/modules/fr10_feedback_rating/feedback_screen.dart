@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/utils/destination_utils.dart';
 import '../../services/api_service.dart';
+import '../../services/review_contract.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
@@ -9,8 +10,9 @@ import '../fr03_destination_search_information/destination_details_screen.dart';
 
 class FeedbackScreen extends StatefulWidget {
   final Map<String, dynamic>? initialDestination;
+  final ApiService? api;
 
-  const FeedbackScreen({super.key, this.initialDestination});
+  const FeedbackScreen({super.key, this.initialDestination, this.api});
 
   @override
   State<FeedbackScreen> createState() => _FeedbackScreenState();
@@ -18,7 +20,7 @@ class FeedbackScreen extends StatefulWidget {
 
 class _FeedbackScreenState extends State<FeedbackScreen> {
   final comment = TextEditingController();
-  final api = ApiService();
+  late final ApiService api;
   List<dynamic> items = [];
   Map<String, dynamic>? selectedPlace;
   int rating = 5;
@@ -27,6 +29,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   @override
   void initState() {
     super.initState();
+    api = widget.api ?? ApiService();
     if (widget.initialDestination != null) {
       selectedPlace = Map<String, dynamic>.from(widget.initialDestination!);
     }
@@ -40,7 +43,14 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   Future<void> load() async {
     try {
       final data = await api.get('/api/fr10/feedback');
-      if (mounted) setState(() => items = data['items'] ?? []);
+      if (mounted) setState(() {
+        items = data['items'] ?? [];
+        final existing = items.where((item) => item['destinationId'] == (selectedPlace == null ? null : placeId(selectedPlace!)));
+        if (existing.isNotEmpty && comment.text.isEmpty) {
+          comment.text = existing.first['comment'] ?? '';
+          rating = int.tryParse('${existing.first['rating']}') ?? 5;
+        }
+      });
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -138,18 +148,22 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   }
 
   Future<void> submit() async {
+    if (busy) return;
     if (selectedPlace == null) {
       showError(context, 'Choose the destination or place you want to review.');
       return;
     }
-    if (comment.text.trim().length < 5) {
+    if (comment.text.trim().length < 5 || comment.text.trim().length > 2000) {
       showError(context, 'Write a short comment about your experience.');
       return;
     }
     setState(() => busy = true);
     try {
       final place = selectedPlace!;
-      await api.post('/api/fr10/feedback', {
+      final existing = items.where((item) => item['destinationId'] == placeId(place));
+      final response = existing.isNotEmpty
+          ? await api.put('/api/fr10/feedback/${existing.first['id']}', {'rating': rating, 'comment': comment.text.trim()})
+          : await api.post('/api/fr10/feedback', {
         'destinationId': placeId(place),
         'destinationName': placeName(place),
         'destinationAddress': (place['address'] ?? '').toString(),
@@ -163,13 +177,20 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       });
       await load();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Your review was submitted.')));
+        final review = response is Map && response['feedback'] is Map ? Map<String, dynamic>.from(response['feedback']) : <String, dynamic>{};
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ReviewContract.status(review) == 'Published' ? 'Your review is published.' : 'Your review is awaiting approval.')));
       }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  @override
+  void dispose() {
+    comment.dispose();
+    super.dispose();
   }
 
   Future<void> edit(Map<String, dynamic> item) async {
@@ -310,9 +331,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                     if ((item['destinationAddress'] ?? '').toString().isNotEmpty) Text((item['destinationAddress']).toString(), style: const TextStyle(color: InkWashColors.mutedInk, fontSize: 12)),
                     const SizedBox(height: 7),
                     TravelStatusPill(
-                      text: (item['feedbackStatus'] ?? 'visible').toString() == 'removed'
-                          ? 'REMOVED BY ADMINISTRATOR'
-                          : ((item['moderationStatus'] ?? 'pending_review').toString() == 'reviewed' ? 'REVIEWED' : 'AWAITING ADMIN REVIEW'),
+                      text: ReviewContract.status(item),
                       icon: (item['feedbackStatus'] ?? 'visible').toString() == 'removed'
                           ? Icons.block_outlined
                           : Icons.verified_user_outlined,

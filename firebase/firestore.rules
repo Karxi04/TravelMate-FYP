@@ -2,6 +2,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function validReview(data) {
+      return data.destinationId is string && data.destinationId.size() > 0 && data.destinationId.size() <= 500
+        && data.rating is int && data.rating >= 1 && data.rating <= 5
+        && data.comment is string && data.comment.size() >= 5 && data.comment.size() <= 2000;
+    }
 
     // Operator and Administrator applications write through the trusted Flask
     // backend (Firebase Admin SDK). Standalone Traveller reads use only the
@@ -56,6 +61,8 @@ service cloud.firestore {
                       'updatedAt'
                     ])
                     && request.resource.data.travellerId == request.auth.uid
+                    && validReview(request.resource.data)
+                    && request.resource.data.travellerName == request.auth.token.get('name', 'Traveller')
                     && request.resource.data.feedbackStatus == 'visible'
                     && request.resource.data.moderationStatus == 'pending_review'
                     && request.resource.data.rating is number
@@ -65,6 +72,7 @@ service cloud.firestore {
       allow update: if signedIn()
                     && resource.data.travellerId == request.auth.uid
                     && resource.data.feedbackStatus == 'visible'
+                    && !existsAfter(/databases/$(database)/documents/public_destination_reviews/$(feedbackId))
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                       'rating',
                       'comment',
@@ -75,17 +83,27 @@ service cloud.firestore {
                     && request.resource.data.travellerId == request.auth.uid
                     && request.resource.data.feedbackStatus == 'visible'
                     && request.resource.data.moderationStatus == 'pending_review'
+                    && validReview(request.resource.data)
                     && request.resource.data.rating is number
                     && request.resource.data.rating >= 1
                     && request.resource.data.rating <= 5;
 
       allow delete: if signedIn()
-                    && resource.data.travellerId == request.auth.uid;
+                    && resource.data.travellerId == request.auth.uid
+                    && !existsAfter(/databases/$(database)/documents/public_destination_reviews/$(feedbackId));
     }
 
     match /public_destination_reviews/{reviewId} {
-      allow read: if signedIn();
-      allow write: if false;
+      // Queries must constrain the server-authored approval marker. Old projections
+      // without it fail closed until explicitly rebuilt; no source migration.
+      allow read: if signedIn() && resource.data.publicationStatus == 'approved';
+      allow create, update: if false;
+      // Owners may revoke only as part of an edit/delete that also unpublishes
+      // their source. They can never create or approve a public document.
+      allow delete: if signedIn()
+        && get(/databases/$(database)/documents/feedback/$(reviewId)).data.travellerId == request.auth.uid
+        && (!existsAfter(/databases/$(database)/documents/feedback/$(reviewId))
+            || getAfter(/databases/$(database)/documents/feedback/$(reviewId)).data.moderationStatus == 'pending_review');
     }
 
     // All other application business data remains backend-only.

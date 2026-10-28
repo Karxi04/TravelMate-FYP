@@ -59,15 +59,14 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       (detail['category'] ?? detail['type'] ?? '').toString().trim();
 
   num? get rating {
-    final community = reviewInfo?['rating'];
-    final raw = community ?? detail['rating'];
+    final raw = detail['rating'];
     if (raw is num && raw > 0) return raw;
     final value = num.tryParse((raw ?? '').toString());
     return value != null && value > 0 ? value : null;
   }
 
   int get reviewCount {
-    final raw = reviewInfo?['reviews'] ?? detail['reviews'];
+    final raw = detail['reviews'];
     if (raw is num) return raw.toInt();
     return int.tryParse((raw ?? '').toString()) ?? 0;
   }
@@ -293,7 +292,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
                   label: '$rating out of 5 stars',
                   child: StatusChip(
                     text:
-                        '$rating${reviewCount > 0 ? ' · $reviewCount reviews' : ''}',
+                        'External $rating${reviewCount > 0 ? ' · $reviewCount reviews' : ''}',
                     icon: Icons.star_rounded,
                     tone: AppStatusTone.neutral,
                   ),
@@ -696,9 +695,9 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       children: [
         AppSectionHeader(
           title: 'Reviews',
-          subtitle: rating == null
-              ? null
-              : '$rating out of 5${reviewCount > 0 ? ' from $reviewCount reviews' : ''}',
+          subtitle: reviewInfo?['rating'] == null
+              ? 'TravelMate community reviews'
+              : 'TravelMate ${reviewInfo!['rating']} out of 5 · ${reviewInfo!['reviews']} reviews',
         ),
         const SizedBox(height: AppSpacing.sm),
         if (reviewsFailed)
@@ -710,7 +709,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         else if (reviews.isEmpty)
           const TravelEmptyState(
             icon: Icons.rate_review_outlined,
-            title: 'No traveller reviews yet',
+            title: 'No TravelMate reviews yet.',
             message: 'Be the first to share your experience of this place.',
           )
         else ...[
@@ -736,12 +735,12 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         SecondaryButton(
           label: 'Write a review',
           icon: Icons.rate_review_outlined,
-          onPressed: () => Navigator.push(
+          onPressed: () async { await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => FeedbackScreen(initialDestination: detail),
+              builder: (_) => FeedbackScreen(initialDestination: detail, api: api),
             ),
-          ),
+          ); if (mounted) await loadDetails(); },
         ),
       ],
     );

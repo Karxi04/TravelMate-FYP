@@ -1,6 +1,21 @@
 from scripts import rebuild_public_content as rebuild_tool
 
 
+def test_review_rebuild_uses_approved_policy_and_cas_without_source_migration(monkeypatch):
+    reviewed = {'id': 'kept', 'rating': 5, 'feedbackStatus': 'visible', 'moderationStatus': 'reviewed'}
+    pending = {**reviewed, 'id': 'pending', 'moderationStatus': 'pending_review'}
+    def retrieve(collection, document_id=None, **kwargs):
+        if collection == 'feedback':
+            return reviewed if document_id == 'kept' else [reviewed, pending]
+        return []
+    writes = []
+    monkeypatch.setattr(rebuild_tool, 'retrieveRecord', retrieve)
+    monkeypatch.setattr(rebuild_tool, 'commit_feedback', lambda *args: writes.append(args))
+    assert rebuild_tool.rebuild(apply=False)['reviews'] == 1 and writes == []
+    assert rebuild_tool.rebuild(apply=True)['reviews'] == 1
+    assert writes == [('kept', reviewed, {})]
+
+
 def test_rebuild_dry_run_performs_no_projection_writes(monkeypatch):
     package = {'id': 'pkg-1', 'approvalStatus': 'approved', 'availabilityStatus': 'available'}
     calls = []

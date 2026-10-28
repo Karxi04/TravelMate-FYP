@@ -58,8 +58,11 @@ def claimRecord(collectionName, documentId, data):
         return ({"id": snap.id, **(snap.to_dict() or {})}, False)
 
 
-def updateRecord(collectionName, documentId, data):
+def updateRecord(collectionName, documentId, data, expected=None):
     """Exact sequence-diagram name for Firestore update."""
+    if collectionName == 'feedback' and expected is not None:
+        from services.review_service import commit_feedback
+        return commit_feedback(documentId, expected, data)
     ref = get_db().collection(collectionName).document(str(documentId))
     if not ref.get().exists:
         return None
@@ -70,8 +73,11 @@ def updateRecord(collectionName, documentId, data):
     return result
 
 
-def deleteRecord(collectionName, documentId):
+def deleteRecord(collectionName, documentId, expected=None):
     """Exact sequence-diagram name for Firestore delete."""
+    if collectionName == 'feedback' and expected is not None:
+        from services.review_service import commit_feedback
+        return commit_feedback(documentId, expected)
     ref = get_db().collection(collectionName).document(str(documentId))
     if not ref.get().exists:
         return False

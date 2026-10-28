@@ -395,6 +395,7 @@ void main() {
       (tester) async {
     final api = _ExploreApi()..openingAvailable = false;
     await _pumpDetails(tester, api);
+    expect(find.text('External 4.7 · 128 reviews'), findsOneWidget);
 
     await _show(tester, find.text('Visit information'));
     expect(find.text('Opening hours not available'), findsOneWidget);
@@ -404,6 +405,7 @@ void main() {
     expect(find.text('About RM 20'), findsOneWidget);
 
     await _show(tester, find.text('Reviews'));
+    expect(find.text('TravelMate 4.8 out of 5 · 1 reviews'), findsOneWidget);
     expect(find.text('Alya'), findsOneWidget);
     expect(find.text('Beautiful views and a peaceful visit.'), findsOneWidget);
 
