@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/local_place_rating.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/api_service.dart';
@@ -851,6 +852,7 @@ class _PersonalizedPlanningScreenState
                       title,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
+                    LocalPlaceRating(place:item),
                     if (score != null) ...[
                       const SizedBox(height: AppSpacing.xs),
                       StatusChip(

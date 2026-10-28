@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/local_place_rating.dart';
 
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
@@ -434,8 +435,9 @@ class _ChatTabState extends State<ChatTab> {
                                   fontSize: 11, color: InkWashColors.mutedInk)),
                           const SizedBox(height: 5),
                           Text(
-                              '★ ${place['rating'] ?? '-'} • ${place['category'] ?? place['type'] ?? ''}',
+                              '${place['category'] ?? place['type'] ?? ''}',
                               style: const TextStyle(fontSize: 11)),
+                          LocalPlaceRating(place:place),
                           const SizedBox(height: 6),
                           Wrap(
                             spacing: 6,

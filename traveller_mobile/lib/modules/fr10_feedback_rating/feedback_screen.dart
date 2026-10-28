@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/utils/destination_utils.dart';
 import '../../services/api_service.dart';
 import '../../services/review_contract.dart';
+import '../../widgets/local_place_rating.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
@@ -175,6 +176,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
         rating = 5;
         selectedPlace = null;
       });
+      LocalReviewRatings.invalidate();
       await load();
       if (mounted) {
         final review = response is Map && response['feedback'] is Map ? Map<String, dynamic>.from(response['feedback']) : <String, dynamic>{};
@@ -230,6 +232,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     if (result == null) return;
     try {
       await api.put('/api/fr10/feedback/${item['id']}', result);
+      LocalReviewRatings.invalidate();
       await load();
     } catch (e) {
       if (mounted) showError(context, e);
@@ -251,6 +254,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     if (confirmed != true) return;
     try {
       await api.delete('/api/fr10/feedback/$id');
+      LocalReviewRatings.invalidate();
       await load();
     } catch (e) {
       if (mounted) showError(context, e);

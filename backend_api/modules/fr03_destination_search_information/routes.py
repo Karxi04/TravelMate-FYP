@@ -432,6 +432,24 @@ def _merge_destination(cached, provider):
     return merged
 
 
+@bp.get('/local-ratings')
+@auth_required(['traveller'])
+def local_ratings():
+    # One read pass for a page of cards; retain the existing approval/dedup policy.
+    grouped = {}
+    for item in retrieveRecord('feedback'):
+        identity = item.get('destinationId')
+        if isinstance(identity, str) and identity:
+            grouped.setdefault(identity, []).append(item)
+    result = {}
+    for identity, records in grouped.items():
+        approved = approved_reviews(records)
+        if approved:
+            result[identity] = {'rating': round(sum(float(x['rating']) for x in approved) / len(approved), 1),
+                                'reviews': len(approved)}
+    return jsonify({'ok': True, 'items': result})
+
+
 @bp.get('/destinations/search')
 @auth_required(['traveller'])
 def search_destinations():

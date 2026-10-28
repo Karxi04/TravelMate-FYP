@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/theme/app_theme.dart';
 import 'package:travelmate_traveller/widgets/recommendation_card.dart';
+import 'package:travelmate_traveller/widgets/local_place_rating.dart';
 
 Widget _wrap(Widget child, {double width = 360, double textScale = 1.0}) {
   return MaterialApp(
@@ -246,6 +247,8 @@ void main() {
 
     testWidgets('8. Matched-interest chips display only when supported by evidence',
         (tester) async {
+      LocalReviewRatings.remember('rec_interests', {'rating':4.0,'reviews':2});
+      addTearDown(LocalReviewRatings.invalidate);
       final recWithInterests = {
         'destinationId': 'rec_interests',
         'title': 'Penang Street Food Tour',
@@ -265,7 +268,8 @@ void main() {
       expect(find.text('Food and dining'), findsOneWidget);
       expect(find.text('Culture and heritage'), findsOneWidget);
       expect(find.text('Food Tour'), findsOneWidget);
-      expect(find.text('4.9 rating'), findsOneWidget);
+      expect(find.text('4.9 rating'), findsNothing);
+      expect(find.text('4.0 · 2 reviews'), findsOneWidget);
     });
 
     testWidgets('9. View button triggers navigation callback',

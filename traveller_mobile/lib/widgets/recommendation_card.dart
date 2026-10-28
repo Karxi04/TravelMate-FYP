@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'ink_card.dart';
 import 'travel_widgets.dart';
+import 'local_place_rating.dart';
 
 class RecommendationCard extends StatelessWidget {
   final Map<String, dynamic> recommendation;
@@ -122,7 +123,6 @@ class RecommendationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final score = _matchScore;
     final reasons = _reasons;
-    final rating = recommendation['rating'];
 
     return Semantics(
       container: true,
@@ -264,12 +264,7 @@ class RecommendationCard extends StatelessWidget {
                           text: _category,
                           tone: AppStatusTone.neutral,
                         ),
-                      if (rating != null)
-                        StatusChip(
-                          text: '$rating rating',
-                          icon: Icons.star_rounded,
-                          tone: AppStatusTone.neutral,
-                        ),
+                      LocalPlaceRating(place: recommendation),
                       for (final interest in _matchedInterests)
                         StatusChip(
                           text: interest,

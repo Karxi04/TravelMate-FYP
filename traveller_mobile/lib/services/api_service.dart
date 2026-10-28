@@ -161,6 +161,18 @@ class ApiService {
   }
 
   Future<dynamic> _sharedGet(String path) async {
+    if (path == '/api/fr3/local-ratings') {
+      final groups = <String, List<num>>{};
+      for (final review in await _shared.visibleReviews()) {
+        final id = '${review['destinationId'] ?? ''}';
+        final rating = num.tryParse('${review['rating']}');
+        if (id.isNotEmpty && rating != null && rating.isFinite && rating >= 1 && rating <= 5) {
+          groups.putIfAbsent(id, () => []).add(rating);
+        }
+      }
+      return {'ok':true, 'items':groups.map((id, values) => MapEntry(id, {
+        'rating':double.parse((values.reduce((a,b) => a+b)/values.length).toStringAsFixed(1)), 'reviews':values.length}))};
+    }
     if (path == '/api/public/tourism-packages') {
       return {
         'ok': true,
@@ -220,7 +232,7 @@ class ApiService {
     // Cross-role shared data comes directly from Firebase in standalone mode so
     // Traveller can see Operator/Admin changes without USB or a local Flask server.
     if (isStandalone &&
-        (path.startsWith('/api/public/') ||
+        (path == '/api/fr3/local-ratings' || path.startsWith('/api/public/') ||
             path == '/api/fr10/feedback' ||
             _isReviewDetailsPath(path))) {
       return _sharedGet(path);

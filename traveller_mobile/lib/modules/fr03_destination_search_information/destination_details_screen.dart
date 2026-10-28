@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/utils/destination_utils.dart';
 import '../../core/utils/opening_hours_utils.dart';
+import '../../widgets/local_place_rating.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/destination_card.dart';
@@ -58,19 +59,6 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   String get category =>
       (detail['category'] ?? detail['type'] ?? '').toString().trim();
 
-  num? get rating {
-    final raw = detail['rating'];
-    if (raw is num && raw > 0) return raw;
-    final value = num.tryParse((raw ?? '').toString());
-    return value != null && value > 0 ? value : null;
-  }
-
-  int get reviewCount {
-    final raw = detail['reviews'];
-    if (raw is num) return raw.toInt();
-    return int.tryParse((raw ?? '').toString()) ?? 0;
-  }
-
   bool get _showSourceDisclosure => const {
         'cache',
         'cached',
@@ -107,6 +95,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       loading = true;
       detailsFailed = false;
       reviewsFailed = false;
+      reviewInfo = null;
       nearbyFailed = false;
       providerFallback = false;
     });
@@ -115,9 +104,13 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     try {
       final data = await api.get('/api/fr3/destinations/$encoded');
       if (data['destination'] is Map) {
+        final fetched = Map<String, dynamic>.from(data['destination'] as Map);
+        final hours = OpeningHoursUtils.parse(fetched);
         detail = {
           ...detail,
-          ...Map<String, dynamic>.from(data['destination'] as Map),
+          ...fetched,
+          if (hours.hasWeeklySchedule) 'weeklyHours': Map.fromEntries(
+            hours.weeklyHours.where((entry) => entry.value != 'Not available')),
         };
       }
       source = (data['source'] ?? '').toString();
@@ -133,6 +126,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       reviewInfo = data['result'] is Map
           ? Map<String, dynamic>.from(data['result'] as Map)
           : null;
+      if (reviewInfo != null) LocalReviewRatings.remember(id, reviewInfo!);
     } catch (_) {
       reviewsFailed = true;
     }
@@ -287,16 +281,6 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             children: [
               if (category.isNotEmpty)
                 StatusChip(text: category, tone: AppStatusTone.neutral),
-              if (rating != null)
-                Semantics(
-                  label: '$rating out of 5 stars',
-                  child: StatusChip(
-                    text:
-                        'External $rating${reviewCount > 0 ? ' · $reviewCount reviews' : ''}',
-                    icon: Icons.star_rounded,
-                    tone: AppStatusTone.neutral,
-                  ),
-                ),
               if (_showSourceDisclosure) SourceFallbackBadge(source: source),
             ],
           ),
@@ -697,7 +681,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
           title: 'Reviews',
           subtitle: reviewInfo?['rating'] == null
               ? 'TravelMate community reviews'
-              : 'TravelMate ${reviewInfo!['rating']} out of 5 · ${reviewInfo!['reviews']} reviews',
+              : 'TravelMate ${reviewInfo!['rating']} out of 5 · ${reviewInfo!['reviews']} ${reviewInfo!['reviews'] == 1 ? 'review' : 'reviews'}',
         ),
         const SizedBox(height: AppSpacing.sm),
         if (reviewsFailed)
@@ -709,7 +693,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         else if (reviews.isEmpty)
           const TravelEmptyState(
             icon: Icons.rate_review_outlined,
-            title: 'No TravelMate reviews yet.',
+            title: 'No reviews yet.',
             message: 'Be the first to share your experience of this place.',
           )
         else ...[

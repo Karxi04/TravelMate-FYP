@@ -4,6 +4,7 @@ import '../core/utils/destination_utils.dart';
 import '../theme/app_theme.dart';
 import 'ink_card.dart';
 import 'travel_widgets.dart';
+import 'local_place_rating.dart';
 
 class DestinationCard extends StatelessWidget {
   final Map<String, dynamic> destination;
@@ -37,13 +38,6 @@ class DestinationCard extends StatelessWidget {
       (destination['category'] ?? destination['type'] ?? '').toString().trim();
   String get _reason => (destination['searchReason'] ?? '').toString().trim();
 
-  num? get _rating {
-    final raw = destination['rating'];
-    if (raw is num && raw > 0) return raw;
-    final value = num.tryParse((raw ?? '').toString());
-    return value != null && value > 0 ? value : null;
-  }
-
   String get _resolvedSource =>
       (destination['source'] ?? source).toString().trim().toLowerCase();
 
@@ -61,15 +55,7 @@ class DestinationCard extends StatelessWidget {
         children: [
           if (_category.isNotEmpty)
             StatusChip(text: _category, tone: AppStatusTone.neutral),
-          if (_rating != null)
-            Semantics(
-              label: '${_rating!} out of 5 stars',
-              child: StatusChip(
-                text: '${_rating!}',
-                icon: Icons.star_rounded,
-                tone: AppStatusTone.neutral,
-              ),
-            ),
+          LocalPlaceRating(place: destination),
         ],
       );
 
@@ -154,9 +140,7 @@ class DestinationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       container: true,
-      label: _rating == null
-          ? 'Destination, $_title'
-          : 'Destination, $_title, ${_rating!} out of 5 stars',
+      label: 'Destination, $_title',
       child: InkCard(
         padding: EdgeInsets.zero,
         child: compact

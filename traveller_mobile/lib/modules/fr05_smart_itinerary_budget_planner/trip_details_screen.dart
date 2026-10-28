@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../widgets/local_place_rating.dart';
 import 'budget_comparison_screen.dart';
 import 'budget_breakdown.dart';
 import 'activity_payload_helper.dart';
@@ -1862,6 +1863,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                   children: [
                     Text((activity['activityName'] ?? 'Activity').toString(),
                         style: Theme.of(context).textTheme.titleMedium),
+                    LocalPlaceRating(place:activity),
                     const SizedBox(height: AppSpacing.xxs),
                     Wrap(
                         spacing: AppSpacing.xs,
@@ -2805,9 +2807,10 @@ class _TripPlacePickerScreenState extends State<TripPlacePickerScreen> {
                                                 color: InkWashColors.mutedInk)),
                                         const SizedBox(height: 5),
                                         Text(
-                                            '★ ${item['rating'] ?? '-'} • ${item['category'] ?? item['type'] ?? ''}',
+                                            '${item['category'] ?? item['type'] ?? ''}',
                                             style:
                                                 const TextStyle(fontSize: 12)),
+                                        LocalPlaceRating(place:item),
                                       ],
                                     ),
                                   ),

@@ -40,7 +40,14 @@ without granting publishing authority. SDK edits/deletes use the required batch.
 The API computes averages/counts from approved valid feedback only and deduplicates
 owner contributions; standalone pages approved projections in batches of10 and
 deduplicates contribution keys. Unknown/empty local rating is null, never a provider
-fallback. Destination Details shows external and TravelMate ratings separately.
+fallback. F-U1 uses only approved TravelMate ratings in destination presentation;
+provider ratings remain metadata/internal ranking inputs, never a display fallback.
+`GET /api/fr3/local-ratings` batches the same approved-source aggregation for all
+cards. Standalone mode batches existing approved projections instead. The shared
+Flutter lookup coalesces requests for 30 seconds; review edits/deletes/submissions
+invalidate it and freshly loaded Details seed the same canonical destination ID.
+Administrator changes are visible on Details refresh, or on the next card lookup
+after the cache expires. Failed/unrated card lookups omit stars rather than imply0.
 Existing legacy projections without contribution keys need explicit refresh for
 complete standalone historical deduplication. External ratings never enter totals.
 
