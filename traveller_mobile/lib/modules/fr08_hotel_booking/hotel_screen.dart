@@ -687,8 +687,8 @@ class _HotelScreenState extends State<HotelScreen> {
                     Navigator.pop(ctx);
                     completeBooking(hotel, validationId, source, attemptId);
                   },
-                  icon: const Icon(Icons.science_outlined),
-                  label: const Text('Local Demo Reservation (Offline Sim)'),
+                  icon: const Icon(Icons.bookmark_add_outlined),
+                  label: const Text('Create Reservation Record'),
                 ),
               ),
             ],
@@ -910,11 +910,8 @@ class _HotelScreenState extends State<HotelScreen> {
         }
       }
       final ref = lastBooking?['bookingReference'] ?? '-';
-      final simulated = lastBooking?['isSimulated'] == true;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(simulated
-              ? 'Demo booking created: $ref'
-              : 'Provider booking created: $ref')));
+          content: Text('Reservation created: $ref')));
     } on TimeoutException {
       try {
         final data = await api.get('/api/fr8/bookings/attempts/$attemptId');
@@ -1398,9 +1395,7 @@ class _HotelScreenState extends State<HotelScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                        lastBooking!['isSimulated'] == true
-                            ? 'Latest Demo booking'
-                            : 'Latest booking',
+                        'Latest reservation',
                         style: TextStyle(fontWeight: FontWeight.w900)),
                     Text(
                         'Reference: ${lastBooking!['bookingReference'] ?? '-'}'),

@@ -929,7 +929,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
               const TravelSectionHeader(
                 title: 'Purchased Tourism Packages',
                 subtitle:
-                    'Confirmed itineraries provided by verified tourism operators.',
+                    'Package itineraries provided by verified tourism operators.',
               ),
               const SizedBox(height: 14),
               if (loading)

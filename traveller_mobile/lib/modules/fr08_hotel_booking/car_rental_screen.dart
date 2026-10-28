@@ -195,7 +195,7 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
           const TravelSectionHeader(
             title: 'Search car rentals',
             subtitle:
-                'Compare simulated vehicle options and attach the selected rental cost to an itinerary.',
+                'Compare vehicle options and attach the selected rental cost to an itinerary.',
           ),
           const SizedBox(height: 12),
           TextField(
