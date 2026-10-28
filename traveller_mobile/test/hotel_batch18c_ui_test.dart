@@ -187,7 +187,7 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    expect(find.text('Demo Only — No Room Reserved'), findsOneWidget);
+    expect(find.text('Test Mode — No Room Reserved'), findsOneWidget);
     expect(find.text('No supplier reservation created'), findsOneWidget);
   });
 
@@ -219,7 +219,7 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    expect(find.text('None (Demo mode — no supplier reservation)'), findsOneWidget);
+    expect(find.text('None (No supplier reservation created)'), findsOneWidget);
     expect(find.textContaining('HOTEL-CONF-'), findsNothing);
     expect(find.textContaining('BOOKING-CONF-'), findsNothing);
   });
@@ -375,7 +375,7 @@ void main() {
 
     expect(find.text('Hotel — The Waterfront Hotel Kuching'), findsOneWidget);
     expect(find.text('Paid (Stripe Test)'), findsOneWidget);
-    expect(find.text('Demo Only — No Room Reserved'), findsOneWidget);
+    expect(find.text('Test Mode — No Room Reserved'), findsOneWidget);
   });
 
   // 13. Missing fulfillmentStatus is handled safely
@@ -560,7 +560,7 @@ void main() {
     expect(find.text('Package — Kinabatangan Wildlife River Cruise'), findsOneWidget);
     expect(find.text('Paid'), findsOneWidget);
     // Package orders must NOT show hotel demo fulfillment chip
-    expect(find.text('Demo Only — No Room Reserved'), findsNothing);
+    expect(find.text('Test Mode — No Room Reserved'), findsNothing);
   });
 
   // 21. Flight Order presentation remains unchanged
@@ -587,7 +587,7 @@ void main() {
     expect(find.text('Flight — Kuala Lumpur to Penang Flight'), findsOneWidget);
     expect(find.text('Paid'), findsOneWidget);
     // Flight orders must NOT show hotel demo fulfillment chip
-    expect(find.text('Demo Only — No Room Reserved'), findsNothing);
+    expect(find.text('Test Mode — No Room Reserved'), findsNothing);
   });
 
   // 22. No supplier booking endpoint is invoked

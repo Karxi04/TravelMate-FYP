@@ -688,7 +688,7 @@ class _HotelScreenState extends State<HotelScreen> {
                     completeBooking(hotel, validationId, source, attemptId);
                   },
                   icon: const Icon(Icons.bookmark_add_outlined),
-                  label: const Text('Create Reservation Record'),
+                  label: const Text('Save Hotel Details'),
                 ),
               ),
             ],
@@ -911,7 +911,7 @@ class _HotelScreenState extends State<HotelScreen> {
       }
       final ref = lastBooking?['bookingReference'] ?? '-';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Reservation created: $ref')));
+          content: Text('Hotel record saved: $ref')));
     } on TimeoutException {
       try {
         final data = await api.get('/api/fr8/bookings/attempts/$attemptId');
@@ -1395,7 +1395,7 @@ class _HotelScreenState extends State<HotelScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                        'Latest reservation',
+                        'Saved Hotel Details',
                         style: TextStyle(fontWeight: FontWeight.w900)),
                     Text(
                         'Reference: ${lastBooking!['bookingReference'] ?? '-'}'),
@@ -1414,7 +1414,7 @@ class _HotelScreenState extends State<HotelScreen> {
                   : 'Search for a hotel',
               message: hasSearched
                   ? (sampleContentLimited
-                      ? 'No sample hotel offers match "$lastSearchedDestination". Local demo content is limited for this location. For offline evaluation, sample properties are available in Penang.'
+                      ? 'No sample hotel offers match "$lastSearchedDestination". Sample catalog coverage is limited for this location; sample properties are available in Penang.'
                       : 'No hotel offers match "$lastSearchedDestination" for the selected dates and guest count. Try adjusting your dates or destination.')
                   : 'Hotel offers can be compared, prebooked and confirmed through the available booking flow.',
             ),

@@ -682,7 +682,7 @@ class _PersonalizedPlanningScreenState
             (value) => carRentalChoice = value),
         if (carRentalChoice == 'selected')
           const Text(
-              'Rental intent only; no quote or reservation is attached. The current rental catalogue uses simulated prices.'),
+              'Rental intent only; no quote or reservation is attached. The current rental catalogue uses estimated rates.'),
       ],
     ));
   }

@@ -579,7 +579,7 @@ def test_p1_18_existing_fr09_checkout_fulfillment_contract(auth_client):
         assert res_det.status_code == 200
         html_det = res_det.get_data(as_text=True)
         assert "awaiting payment completion" in html_det
-        assert "Stripe Checkout (Test Mode Sandbox)" in html_det
+        assert "Stripe Checkout (Test Mode)" in html_det
         assert "⚠️ Not Created (Operator Action Required)" in html_det
 
 

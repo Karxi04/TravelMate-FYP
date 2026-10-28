@@ -109,7 +109,7 @@ void main() {
     // Verify empty state clearly explains limited local sample content for KL
     expect(find.text('No hotel offers in Kuala Lumpur'), findsOneWidget);
     expect(
-        find.textContaining('Local demo content is limited for this location'),
+        find.textContaining('Sample catalog coverage is limited for this location'),
         findsOneWidget);
     expect(find.textContaining('sample properties are available in Penang'),
         findsOneWidget);
