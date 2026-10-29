@@ -712,6 +712,24 @@ def _apply_package_payment(order, session):
     return {**patch, **fulfillment}
 
 
+@bp.get('/checkout/capabilities')
+@auth_required(['traveller'])
+def checkout_capabilities():
+    # Configuration only: never contact Stripe or disclose credential values.
+    available = (os.getenv('STRIPE_SECRET_KEY', '').strip().startswith('sk_test_') and
+                 os.getenv('STRIPE_WEBHOOK_SECRET', '').strip().startswith('whsec_') and
+                 (os.getenv('STRIPE_CHECKOUT_RETURN_ORIGIN', '').strip() or
+                  (os.getenv('STRIPE_CHECKOUT_SUCCESS_URL', '').strip() and
+                   os.getenv('STRIPE_CHECKOUT_CANCEL_URL', '').strip())))
+    try:
+        _checkout_return_url('success')
+        _checkout_return_url('cancel')
+    except RuntimeError:
+        available = False
+    return jsonify({'ok': True, 'mode': 'test', 'hostedCheckout': bool(available),
+                    'supportedQuoteTypes': ['hotel', 'package'] if available else []})
+
+
 @bp.post('/package-checkout-attempts/<attempt_id>/checkout/session')
 @auth_required(['traveller'])
 def create_package_checkout_session(attempt_id):

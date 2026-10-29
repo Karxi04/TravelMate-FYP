@@ -163,6 +163,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   String? errorMessage;
   bool isSessionExpired = false;
   bool actionBusy = false;
+  Set<String> checkoutTypes = {};
   final TransactionAttemptLifecycle _restartIntent =
       TransactionAttemptLifecycle('package_checkout_restart');
 
@@ -182,6 +183,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
     });
 
     try {
+      final types = await loadHostedCheckoutCapabilities(api);
       final response = await api.get('/api/fr9/payments');
       if (!mounted) return;
 
@@ -200,6 +202,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
         });
 
         setState(() {
+          checkoutTypes = types;
           payments = parsed;
           loading = false;
         });
@@ -231,12 +234,17 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   }
 
   Future<void> _handleCheckoutAction(Map<String, dynamic> item) async {
-    if (!consumerPaymentsAvailable || actionBusy) return;
+    if (!checkoutTypes.contains(item['bookingType']) || actionBusy ||
+        isSuccessfulPayment(item['paymentStatus'])) return;
     final orderId = (item['orderReference'] ?? item['id'] ?? '').toString();
     if (orderId.isEmpty) return;
     setState(() => actionBusy = true);
     try {
-      var action = (item['checkoutAction'] ?? 'check_status').toString();
+      final response = await api.get('/api/fr9/orders/$orderId/reconcile');
+      final order = response['order'] is Map
+          ? Map<String, dynamic>.from(response['order'] as Map)
+          : <String, dynamic>{};
+      final action = (order['checkoutAction'] ?? 'check_status').toString();
       if (action == 'restart_payment') {
         if ((item['bookingType'] ?? '').toString() != 'package') {
           throw Exception('Restart this payment from its original booking screen.');
@@ -277,11 +285,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
         return;
       }
 
-      final response = await api.get('/api/fr9/orders/$orderId/reconcile');
-      final order = response['order'] is Map
-          ? Map<String, dynamic>.from(response['order'] as Map)
-          : <String, dynamic>{};
-      action = (order['checkoutAction'] ?? 'check_status').toString();
+      // Only the freshly verified action can reopen or restart a payment.
       if (action == 'continue_payment') {
         final url = Uri.tryParse((order['checkoutUrl'] ?? '').toString());
         if (url == null || !await launchUrl(url, mode: LaunchMode.externalApplication)) {
@@ -759,8 +763,8 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                       ),
                     ),
                   ],
-                  if (consumerPaymentsAvailable && item['source'] == 'checkout_order' &&
-                      checkoutAction != 'view_booking') ...[
+                  if (checkoutTypes.contains(item['bookingType']) && item['source'] == 'checkout_order' &&
+                      checkoutAction != 'view_booking' && !isSuccessfulPayment(item['paymentStatus'])) ...[
                     const SizedBox(height: AppSpacing.sm),
                     SizedBox(
                       width: double.infinity,

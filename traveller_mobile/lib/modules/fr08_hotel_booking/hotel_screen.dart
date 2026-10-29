@@ -10,6 +10,8 @@ import '../../widgets/travel_widgets.dart';
 import 'hotel_details_screen.dart';
 import 'hotel_trip_attachment.dart';
 import '../fr09_payment/payment_history_screen.dart';
+import '../fr09_payment/payment_screen.dart';
+import '../fr09_payment/payment_status.dart';
 
 class RoomOccupancyConfig {
   int adults;
@@ -576,6 +578,8 @@ class _HotelScreenState extends State<HotelScreen> {
     required String source,
     required String validationId,
   }) async {
+    final canPay = (await loadHostedCheckoutCapabilities(api)).contains('hotel');
+    if (!mounted) return;
     final currency = acceptedPrebook?['currency'] ?? hotel['currency'] ?? 'Unknown currency';
     final amount = acceptedPrebook?['amount'] ?? hotel['price'];
     await showModalBottomSheet<void>(
@@ -596,6 +600,26 @@ class _HotelScreenState extends State<HotelScreen> {
             if (acceptedPrebookSnapshotId.isEmpty)
               const Text('Please validate this offer again before saving.'),
             const SizedBox(height: 12),
+            if (canPay && acceptedPrebookSnapshotId.isNotEmpty) ...[
+              const Text(academicPaymentDisclosure),
+              FilledButton.icon(
+                key: const ValueKey('hotel-continue-payment'),
+                icon: const Icon(Icons.payment_outlined),
+                label: const Text('Continue to Payment'),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => PaymentScreen(
+                    api: api, quoteType: 'hotel',
+                    quoteId: (acceptedPrebook?['quoteId'] ?? hotel['quoteId'] ?? '').toString(),
+                    offerId: (acceptedPrebook?['offerId'] ?? hotel['offerId'] ?? '').toString(),
+                    acceptedPrebookSnapshotId: acceptedPrebookSnapshotId,
+                    acceptedPrebook: acceptedPrebook,
+                    hotelBookingAttemptId: attemptId,
+                  )));
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
             FilledButton.icon(
               onPressed: () {
                 Navigator.pop(ctx);

@@ -9,9 +9,13 @@ class _MockPaymentApi extends ApiService {
   List<dynamic> paymentItems = [];
   List<dynamic> tripItems = [];
   List<dynamic> hotelItems = [];
+  bool checkoutEnabled = false;
+  @override
+  bool get isStandalone => false;
   bool shouldThrowError = false;
   bool shouldThrowAuthError = false;
   int getPaymentsCount = 0;
+  int reconcileCount = 0;
   int postCount = 0;
   String? postedPath;
   Map<String, dynamic>? postedBody;
@@ -37,6 +41,10 @@ class _MockPaymentApi extends ApiService {
     if (path == '/api/fr4/preference-feedback') {
       return {'ok': true, 'learning': {}};
     }
+    if (path == '/api/fr9/checkout/capabilities') {
+      return {'ok': true, 'mode': 'test', 'hostedCheckout': checkoutEnabled,
+        'supportedQuoteTypes': ['hotel', 'package']};
+    }
     if (path == '/api/fr9/payments') {
       getPaymentsCount++;
       if (shouldThrowAuthError) {
@@ -51,6 +59,7 @@ class _MockPaymentApi extends ApiService {
       return {'ok': true, 'items': []};
     }
     if (path.contains('/api/fr9/orders/') && path.endsWith('/reconcile')) {
+      reconcileCount++;
       return {'ok': true, 'order': reconciledOrder ?? {}};
     }
     return {'ok': true};
@@ -250,6 +259,54 @@ void main() {
     'timestamp': '2026-10-15T09:00:00+00:00',
     'source': 'checkout_order',
   };
+
+  testWidgets('F-F1A-P configured history preserves paid records without purchase actions', (tester) async {
+    final api = _MockPaymentApi(items: [samplePackagePayment])..checkoutEnabled = true;
+    await tester.pumpWidget(buildTestWidget(PaymentHistoryScreen(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('payment-item-order-pkg-101')));
+    await tester.pumpAndSettle();
+    expect(find.text('Continue Payment'), findsNothing);
+    expect(find.text('Restart Payment'), findsNothing);
+    expect(find.textContaining('Stripe'), findsWidgets);
+    expect(api.postCount, 0);
+    expect(api.paymentItems.single, samplePackagePayment);
+  });
+
+  testWidgets('F-F1A-P configured pending history restores status recovery', (tester) async {
+    final api = _MockPaymentApi(items: [samplePendingPayment])..checkoutEnabled = true
+      ..reconciledOrder = {'id': 'order-pending-505', 'quoteType': 'package',
+        'status': 'paid', 'paymentStatus': 'paid', 'checkoutAction': 'view_booking'};
+    await tester.pumpWidget(buildTestWidget(PaymentHistoryScreen(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('payment-item-order-pending-505')));
+    await tester.pumpAndSettle();
+    expect(find.text('Check Payment Status'), findsOneWidget);
+    await tester.ensureVisible(find.text('Check Payment Status'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Check Payment Status'));
+    await tester.pumpAndSettle();
+    expect(api.postCount, 0);
+    expect(api.reconcileCount, 1);
+    expect(api.getPaymentsCount, greaterThanOrEqualTo(2));
+  });
+
+  testWidgets('F-F1A-P stale expired history cannot restart an already paid order', (tester) async {
+    final api = _MockPaymentApi(items: [sampleExpiredPackagePayment])..checkoutEnabled = true
+      ..reconciledOrder = {'id': 'order-expired-707', 'quoteType': 'package',
+        'status': 'paid', 'paymentStatus': 'paid', 'checkoutAction': 'view_booking'};
+    await tester.pumpWidget(buildTestWidget(PaymentHistoryScreen(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Package — Penang Street Food Adventure'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Restart Payment'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Restart Payment'));
+    await tester.pumpAndSettle();
+    expect(api.reconcileCount, 1);
+    expect(api.postCount, 0);
+    expect(find.byType(PaymentScreen), findsNothing);
+  });
 
   testWidgets('1. Paid Package Order displayed with title, MYR amount, Paid status, and Test Mode', (tester) async {
     final api = _MockPaymentApi(items: [samplePackagePayment]);

@@ -102,7 +102,7 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
         '/api/fr9/orders/${Uri.encodeComponent(widget.link.orderId)}',
       );
       var current = Map<String, dynamic>.from(owned['order'] as Map);
-      if (consumerPaymentsAvailable && _needsReconciliation(current)) {
+      if ((await loadHostedCheckoutCapabilities(api)).contains(current['quoteType']) && _needsReconciliation(current)) {
         final recovered = await api.get(
           '/api/fr9/orders/${Uri.encodeComponent(widget.link.orderId)}/reconcile',
         );
@@ -142,16 +142,16 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
     final tripId = (order?['fulfilledTripId'] ?? '').toString();
     final orderId = (order?['id'] ?? widget.link.orderId).toString();
     final title = paid
-        ? (isTestPaymentRecord(order ?? {}) || isHotel ? 'Test payment recorded' : 'Payment record')
+        ? 'Payment Completed'
         : processing
             ? 'Payment Processing'
             : 'Payment Not Completed';
     final message = paid
         ? (isHotel
-            ? 'Your Stripe Test Mode payment is verified. No room has been reserved with the hotel.'
-            : 'Your TravelMate test payment has been verified. Your Orders and Payment History are refreshed.')
+            ? 'Your payment is verified. $academicPaymentDisclosure'
+            : 'Your payment is verified. $academicPaymentDisclosure Your Orders and Payment History are refreshed.')
         : processing
-            ? 'This historical test order is pending. No new payment can be started here.'
+            ? 'Your payment is being verified. Check My Orders again shortly.'
             : 'No successful payment has been confirmed for this order.';
 
     return Scaffold(

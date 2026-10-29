@@ -5,6 +5,9 @@ import 'package:travelmate_traveller/core/operator_content/package_details_scree
 import 'package:travelmate_traveller/services/api_service.dart';
 
 class _PackageDetailsApi extends ApiService {
+  bool checkoutEnabled = false;
+  @override
+  bool get isStandalone => false;
   String? postedPath;
   Map<String, dynamic>? postedPayload;
   final List<Map<String, dynamic>> postedPayloads = [];
@@ -21,6 +24,10 @@ class _PackageDetailsApi extends ApiService {
 
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (path == '/api/fr9/checkout/capabilities') {
+      return {'ok': true, 'mode': 'test', 'hostedCheckout': checkoutEnabled,
+        'supportedQuoteTypes': ['hotel', 'package']};
+    }
     if (path == '/api/fr1/me') {
       return {'ok': true, 'profile': {'name': 'Test Traveller'}};
     }
@@ -74,6 +81,28 @@ Future<void> _openBookingSheet(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('F-F1A-P approved package purchase resumes existing authoritative attempt flow', (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = _PackageDetailsApi()..checkoutEnabled = true
+      ..mockAttempt = {'id': 'approved-attempt', 'amount': 100};
+    await tester.pumpWidget(MaterialApp(home: TourismPackageDetailsScreen(
+      item: _checkoutPackage, api: api)));
+    await tester.pumpAndSettle();
+    await _openBookingSheet(tester);
+    expect(find.textContaining('Academic demonstration'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('package-checkout-btn')));
+    await tester.pumpAndSettle();
+    expect(api.postedPath, '/api/fr15/package-checkout-attempts');
+    expect(api.postedPayload!['packageId'], 'package-repeat');
+    expect(api.postedPayload!['participants'], {'adults': 1, 'children': 0});
+    expect(api.postedPayload!.containsKey('price'), isFalse);
+    expect(find.text('Review Payment'), findsOneWidget);
+    expect(api.postedPayloads, hasLength(1));
+  });
+
   testWidgets('complete package shows traveller-ready product details and clean tabs',
       (tester) async {
     tester.view.physicalSize = const Size(800, 2400);
@@ -174,7 +203,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Cancellation policy'), findsOneWidget);
     expect(find.textContaining('Cancel seven days before departure.'), findsOneWidget);
-    expect(find.textContaining('Contact the operator for current availability'), findsOneWidget);
+    expect(find.textContaining('Academic demonstration'), findsOneWidget);
 
     // Reopen booking sheet and checkout
     await _openBookingSheet(tester);

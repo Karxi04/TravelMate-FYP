@@ -1,8 +1,42 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travelmate_traveller/services/api_service.dart';
 import 'package:travelmate_traveller/modules/fr09_payment/payment_status.dart';
 import 'package:travelmate_traveller/widgets/ink_card.dart';
 
+class _CapabilityApi extends ApiService {
+  final Map<String, dynamic> response;
+  final bool standalone;
+  _CapabilityApi(this.response, {this.standalone = false});
+  @override
+  bool get isStandalone => standalone;
+  @override
+  Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    expect(path, '/api/fr9/checkout/capabilities');
+    if (standalone) throw StateError('Standalone must not query payment capability');
+    return response;
+  }
+}
+
 void main() {
+  test('F-F1A-P backend capability is test-only and category-allowlisted', () async {
+    for (final mode in ['test', 'live', 'simulation']) {
+      final types = await loadHostedCheckoutCapabilities(_CapabilityApi({
+        'ok': true, 'mode': mode, 'hostedCheckout': true,
+        'supportedQuoteTypes': ['hotel', 'package', 'flight', 'rental', 'legacy'],
+      }));
+      expect(types, mode == 'test' ? {'hotel', 'package'} : isEmpty);
+    }
+    expect(await loadHostedCheckoutCapabilities(_CapabilityApi({})), isEmpty);
+    expect(await loadHostedCheckoutCapabilities(_CapabilityApi({
+      'ok': true, 'mode': 'test', 'hostedCheckout': false,
+      'supportedQuoteTypes': ['hotel', 'package'],
+    })), isEmpty);
+    expect(await loadHostedCheckoutCapabilities(_CapabilityApi({
+      'ok': true, 'mode': 'test', 'hostedCheckout': true,
+      'supportedQuoteTypes': ['hotel', 'package'],
+    }, standalone: true)), isEmpty);
+  });
+
   test('fallback payment references are explicitly simulation, not Stripe', () {
     expect(isSimulatedPayment({'transactionReference': 'pi_sim_demo'}), isTrue);
     expect(isSimulatedPayment({'transactionReference': 'TM-PAY-DEMO'}), isTrue);

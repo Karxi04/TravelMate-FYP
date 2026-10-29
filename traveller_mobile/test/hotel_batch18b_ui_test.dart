@@ -8,6 +8,7 @@ import 'package:travelmate_traveller/modules/fr09_payment/payment_screen.dart';
 import 'package:travelmate_traveller/services/api_service.dart';
 
 class _Batch18bMockApi extends ApiService {
+  bool checkoutEnabled = false;
   final List<String> postedPaths = [];
   final List<Map<String, dynamic>?> postedBodies = [];
   Future<dynamic> Function(String path, Map<String, dynamic>? body)? postHandler;
@@ -18,6 +19,10 @@ class _Batch18bMockApi extends ApiService {
 
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (path == '/api/fr9/checkout/capabilities') {
+      return {'ok': true, 'mode': 'test', 'hostedCheckout': checkoutEnabled,
+        'supportedQuoteTypes': ['hotel', 'package']};
+    }
     if (getHandler != null) {
       return getHandler!(path, query);
     }
@@ -103,6 +108,28 @@ Widget _wrap(Widget child) {
 }
 
 void main() {
+  testWidgets('F-F1A-P validated hotel offers independent Save and Pay actions', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi()..checkoutEnabled = true;
+    await tester.pumpWidget(_wrap(HotelScreen(api: api, initialDestination: 'Penang')));
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    await state.search();
+    final pending = state.prebook(Map<String, dynamic>.from(state.items.first as Map));
+    await tester.pumpAndSettle();
+    expect(find.text('Save Hotel Details'), findsOneWidget);
+    expect(find.text('Continue to Payment'), findsOneWidget);
+    expect(find.textContaining('Academic demonstration'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('hotel-continue-payment')));
+    await tester.pumpAndSettle();
+    await pending;
+    final screen = tester.widget<PaymentScreen>(find.byType(PaymentScreen));
+    expect(screen.acceptedPrebookSnapshotId, 'snap-authoritative-99');
+    expect(screen.quoteId, 'quote-b18-001');
+    expect(screen.offerId, 'offer-b18-001');
+    expect(api.postedPaths, isNot(contains('/api/fr8/hotels/book')));
+    expect(api.postedPaths.where((p) => p.contains('/checkout/session')), isEmpty);
+  });
+
   testWidgets('F-F1A pending validation never claims hotel details are saved', (tester) async {
     _setViewport(tester);
     final api = _Batch18bMockApi();

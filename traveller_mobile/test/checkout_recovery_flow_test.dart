@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:travelmate_traveller/modules/fr09_payment/payment_screen.dart';
 import 'package:travelmate_traveller/services/api_service.dart';
 
@@ -9,6 +11,8 @@ class _MockCheckoutApi extends ApiService {
   Map<String, dynamic>? sessionPostResponse;
   Map<String, dynamic>? reconcileResponse;
   Map<String, dynamic>? newAttemptResponse;
+  bool checkoutEnabled = false;
+  Map<String, dynamic>? lastPostedBody;
   bool shouldThrowTimeout = false;
   bool shouldThrowAuthError = false;
   int postCount = 0;
@@ -21,6 +25,10 @@ class _MockCheckoutApi extends ApiService {
 
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (path == '/api/fr9/checkout/capabilities') {
+      return {'ok': true, 'mode': 'test', 'hostedCheckout': checkoutEnabled,
+        'supportedQuoteTypes': ['hotel', 'package']};
+    }
     if (path == '/api/fr9/payments') {
       return {'ok': true, 'items': []};
     }
@@ -41,6 +49,7 @@ class _MockCheckoutApi extends ApiService {
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
     postCount++;
     lastPostedPath = path;
+    lastPostedBody = body;
     if (shouldThrowAuthError) {
       throw const ApiException('Unauthorized traveller', 401, {'ok': false});
     }
@@ -81,6 +90,111 @@ Widget buildTestApp(Widget child) {
 }
 
 void main() {
+  for (final kind in ['hotel', 'package']) {
+    testWidgets('F-F1A-P $kind hosted checkout uses authoritative attempt only', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final api = _MockCheckoutApi()..checkoutEnabled = true
+        ..sessionPostResponse = {'ok': true, 'order': {
+          'id': 'order-restored', 'quoteType': kind,
+          'status': 'checkout_pending', 'checkoutAction': 'check_status',
+          'paymentStatus': 'unpaid', 'amount': 420, 'currency': 'MYR',
+        }};
+      await tester.pumpWidget(buildTestApp(PaymentScreen(api: api,
+        quoteType: kind, quoteId: 'owned-quote', offerId: 'owned-offer',
+        packageAttemptId: kind == 'package' ? 'owned-package-attempt' : '',
+        acceptedPrebookSnapshotId: 'accepted-snapshot',
+        acceptedPrebook: const {'expiresAt': '2099-01-01T00:00:00Z'})));
+      await tester.pumpAndSettle();
+      expect(find.text('Review Payment'), findsOneWidget);
+      expect(find.textContaining('Academic demonstration'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+      final dynamic state = tester.state(find.byType(PaymentScreen));
+      await state.launchCheckout();
+      await tester.pumpAndSettle();
+      expect(api.postCount, 1);
+      expect(api.lastPostedPath, kind == 'package'
+        ? '/api/fr9/package-checkout-attempts/owned-package-attempt/checkout/session'
+        : '/api/fr9/checkout/session');
+      expect(api.lastPostedBody, isNot(contains('amount')));
+      if (kind == 'hotel') {
+        expect(api.lastPostedBody!['acceptedPrebookSnapshotId'], 'accepted-snapshot');
+      }
+      await state.process();
+      await state.updatePayment('old-record', 'retry');
+      expect(api.postCount, 1); // No legacy simulated payment.
+    });
+
+    testWidgets('F-F1A-P paid $kind recovers after reopening without checkout creation', (tester) async {
+      final api = _MockCheckoutApi()..checkoutEnabled = true..ordersList = [{
+        'id': 'paid-order', 'quoteType': kind, 'quoteId': 'owned-quote',
+        'packageAttemptId': kind == 'package' ? 'owned-package-attempt' : null,
+        'status': 'paid', 'paymentStatus': 'paid', 'checkoutAction': 'view_booking',
+        'amount': 420, 'currency': 'MYR', 'supplierBookingStatus': 'not_created',
+      }];
+      for (var reopen = 0; reopen < 2; reopen++) {
+        await tester.pumpWidget(buildTestApp(PaymentScreen(key: ValueKey(reopen), api: api,
+          quoteType: kind, quoteId: 'owned-quote',
+          packageAttemptId: kind == 'package' ? 'owned-package-attempt' : '',
+          acceptedPrebookSnapshotId: 'accepted-snapshot')));
+        await tester.pumpAndSettle();
+        final dynamic state = tester.state(find.byType(PaymentScreen));
+        expect(state.checkoutAction, 'view_booking');
+        expect(find.text('Continue to Payment'), findsNothing);
+      }
+      expect(api.postCount, 0);
+    });
+  }
+
+  testWidgets('F-F1A-P authorized hosted URL opens without app card entry', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final launches = <MethodCall>[];
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+      launches.add(call);
+      return true;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
+    final api = _MockCheckoutApi()..checkoutEnabled = true..sessionPostResponse = {
+      'ok': true, 'order': {'id': 'hosted-order', 'quoteType': 'package',
+        'status': 'checkout_open', 'checkoutAction': 'continue_payment',
+        'checkoutUrl': 'https://checkout.stripe.com/pay/synthetic-fixture',
+        'amount': 100, 'currency': 'MYR'}};
+    await tester.pumpWidget(buildTestApp(PaymentScreen(api: api, packageAttemptId: 'approved-attempt')));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(PaymentScreen));
+    await state.launchCheckout();
+    await tester.pumpAndSettle();
+    expect(api.postCount, 1);
+    expect(launches.any((call) => call.arguments.toString().contains('https://checkout.stripe.com/pay/synthetic-fixture')), isTrue);
+  });
+
+  for (final missing in [true, false]) {
+    testWidgets('F-F1A-P ${missing ? "missing" : "expired"} accepted snapshot cannot pay', (tester) async {
+      final api = _MockCheckoutApi()..checkoutEnabled = true;
+      await tester.pumpWidget(buildTestApp(PaymentScreen(api: api,
+        quoteType: 'hotel', quoteId: 'owned-quote', offerId: 'owned-offer',
+        acceptedPrebookSnapshotId: missing ? '' : 'expired-snapshot',
+        acceptedPrebook: const {'expiresAt': '2000-01-01T00:00:00Z'})));
+      await tester.pumpAndSettle();
+      final dynamic state = tester.state(find.byType(PaymentScreen));
+      await state.launchCheckout();
+      expect(api.postCount, 0);
+    });
+  }
+
+  for (final kind in ['flight', 'rental', 'legacy']) {
+    testWidgets('F-F1A-P configured checkout never enables $kind', (tester) async {
+      final api = _MockCheckoutApi()..checkoutEnabled = true;
+      await tester.pumpWidget(buildTestApp(PaymentScreen(api: api,
+        quoteType: kind == 'legacy' ? '' : kind)));
+      await tester.pumpAndSettle();
+      expect(find.text('Payments unavailable'), findsOneWidget);
+      final dynamic state = tester.state(find.byType(PaymentScreen));
+      await state.launchCheckout();
+      expect(api.postCount, 0);
+    });
+  }
+
   for (final kind in ['package', 'hotel', 'flight', 'legacy']) {
     testWidgets('F-F1A $kind payment entry is unavailable and cannot mutate', (tester) async {
       final api = _MockCheckoutApi();

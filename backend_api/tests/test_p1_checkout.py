@@ -10,6 +10,38 @@ from services.stripe_service import constructStripeWebhookEvent
 from test_fr08_fr09_hotels_payments import MemoryPersistence
 
 
+@pytest.mark.parametrize('key,webhook,origin,expected', [
+    ('sk_test_fixture', 'whsec_fixture', 'https://api.example.invalid', True),
+    ('', 'whsec_fixture', 'https://api.example.invalid', False),
+    ('sk_live_rejected_fixture', 'whsec_fixture', 'https://api.example.invalid', False),
+    ('sk_test_fixture', '', 'https://api.example.invalid', False),
+    ('sk_test_fixture', 'whsec_fixture', 'not-a-url', False),
+    ('sk_test_fixture', 'whsec_fixture', '', False),
+])
+def test_academic_checkout_capability_is_safe_and_provider_free(
+        client, mock_traveller_auth, key, webhook, origin, expected):
+    with patch.dict('os.environ', {
+        'STRIPE_SECRET_KEY': key, 'STRIPE_WEBHOOK_SECRET': webhook,
+        'STRIPE_CHECKOUT_RETURN_ORIGIN': origin, 'LOCAL_LAN_DEMO': 'false',
+        'STRIPE_CHECKOUT_SUCCESS_URL': '', 'STRIPE_CHECKOUT_CANCEL_URL': '',
+    }), patch('modules.fr09_payment.routes.createCheckoutSession') as create, \
+         patch('modules.fr09_payment.routes.retrieveCheckoutSession') as retrieve:
+        response = client.get('/api/fr9/checkout/capabilities',
+                              headers={'Authorization': 'Bearer valid_test_token'})
+    assert response.status_code == 200
+    assert response.get_json() == {
+        'ok': True, 'mode': 'test', 'hostedCheckout': expected,
+        'supportedQuoteTypes': ['hotel', 'package'] if expected else [],
+    }
+    create.assert_not_called()
+    retrieve.assert_not_called()
+    assert 'fixture' not in response.get_data(as_text=True)
+
+
+def test_checkout_capability_requires_authentication(client):
+    assert client.get('/api/fr9/checkout/capabilities').status_code == 401
+
+
 def test_liteapi_offer_total_and_currency_are_preserved_without_defaults():
     from services.liteapi_service import normalizeHotelOffers
 

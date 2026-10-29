@@ -36,6 +36,7 @@ class _TourismPackageDetailsScreenState
     extends State<TourismPackageDetailsScreen> {
   late final ApiService api;
   bool submitting = false;
+  bool consumerPaymentsAvailable = false;
   int adults = 1;
   int children = 0;
   String? selectedDepartureDate;
@@ -48,6 +49,10 @@ class _TourismPackageDetailsScreenState
   void initState() {
     super.initState();
     api = widget.api ?? ApiService();
+    Future.microtask(() async {
+      final types = await loadHostedCheckoutCapabilities(api);
+      if (mounted) setState(() => consumerPaymentsAvailable = types.contains('package'));
+    });
     adults = 1;
     children = 0;
     final dates = _list(widget.item['departureDates']);
@@ -262,7 +267,7 @@ class _TourismPackageDetailsScreenState
 
   Future<void> _startCheckout() async {
     if (!consumerPaymentsAvailable) {
-      showError(context, 'Package purchase is not available in TravelMate. Contact the operator about booking arrangements.');
+      showError(context, 'Checkout is not configured or is temporarily unavailable. Please try again later.');
       return;
     }
     if (submitting) return;
@@ -889,7 +894,7 @@ class _TourismPackageDetailsScreenState
                               ),
                               const SizedBox(height: AppSpacing.xs),
                               const Text(
-                                'Review the group price. Package purchase is not available in TravelMate; contact the operator about booking arrangements.',
+                                academicPaymentDisclosure,
                                 style: TextStyle(
                                     fontSize: 12,
                                     color: AppColors.textSecondary),
@@ -924,7 +929,7 @@ class _TourismPackageDetailsScreenState
                                         ? 'Preparing checkout...'
                                         : !_hasVerifiedPriceBasis
                                             ? 'Price basis unverified'
-                                            : 'Checkout package',
+                                            : 'Continue to Payment',
                                   ),
                                 ),
                               ),
@@ -1435,7 +1440,7 @@ class _TourismPackageDetailsScreenState
                 ],
               ),
               const Text(
-                'Package purchase is not available in TravelMate. Contact the operator for current availability and booking arrangements.',
+                academicPaymentDisclosure,
                 style: TextStyle(fontSize: 13, height: 1.45),
               ),
               const SizedBox(height: AppSpacing.xs),

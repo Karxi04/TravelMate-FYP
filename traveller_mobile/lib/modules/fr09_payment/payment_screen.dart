@@ -64,6 +64,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
   List<dynamic> orders = [];
   bool busy = false;
   bool showCard = false;
+  bool capabilityLoading = true;
+  Set<String> checkoutTypes = {};
+  String get checkoutType => widget.packageAttemptId.isNotEmpty ? 'package' : widget.quoteType;
+  bool get consumerPaymentsAvailable => hostedCheckout && checkoutTypes.contains(checkoutType);
   final paymentAttempt = TransactionAttemptLifecycle('payment');
   final checkoutAttempts = CheckoutAttemptStore();
 
@@ -89,6 +93,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
       billingEmail.text = FirebaseAuth.instance.currentUser?.email ?? '';
     } catch (_) {}
     Future.microtask(() async {
+      final types = await loadHostedCheckoutCapabilities(api);
+      if (!mounted) return;
+      setState(() { checkoutTypes = types; capabilityLoading = false; });
       await loadHistory();
       if (hostedCheckout) await loadOrders();
     });
@@ -179,7 +186,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   bool _paymentUnavailable() {
     if (consumerPaymentsAvailable) return false;
-    showError(context, 'Payments are not available in TravelMate. Your saved travel details and history are unchanged.');
+    showError(context, 'Checkout is unavailable for this selection. Your saved details and history are unchanged.');
     return true;
   }
 
@@ -375,8 +382,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
         final msg = switch (action) {
           'view_booking' => widget.quoteType == 'hotel'
               ? 'Payment verified (Stripe Test Mode). Hotel reservations require direct property confirmation and are not submitted to suppliers.'
-              : 'Payment verified! Your booking is confirmed.',
-          'continue_payment' => 'Checkout is open. Tap Continue Payment on Stripe to complete.',
+              : 'Payment verified. View your order for fulfillment status.',
+          'continue_payment' => 'Checkout is open. Tap Continue to Payment to complete.',
           'restart_payment' => 'Previous session has expired. You may restart payment.',
           _ => 'Payment status is still being verified. No additional payment was opened.',
         };
@@ -610,130 +617,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> process() async {
-    if (_paymentUnavailable()) return;
-    if (busy || isSuccessfulPayment(result?['paymentStatus'])) return;
-    final value = double.tryParse(amount.text.trim()) ?? 0;
-    final number = digits(cardNumber.text);
-
-    if (value <= 0) {
-      showError(context, 'Enter a valid payment amount.');
-      return;
-    }
-    if (cardholder.text.trim().length < 2) {
-      showError(context, 'Enter the cardholder name.');
-      return;
-    }
-    if (number.length < 16) {
-      showError(context, 'Card number must contain at least 16 digits.');
-      return;
-    }
-    if (!expiryValid(expiry.text.trim())) {
-      showError(context, 'Enter a valid future expiry date in MM/YY format.');
-      return;
-    }
-    if (cvc.text.trim().length < 3) {
-      showError(context, 'Enter a valid security code.');
-      return;
-    }
-    if (!billingEmail.text.contains('@')) {
-      showError(context, 'Enter a valid billing email.');
-      return;
-    }
-
-    setState(() => busy = true);
-    try {
-      final paymentAttemptId = paymentAttempt.currentOrCreate;
-      if (canonicalPaymentStatus(result?['paymentStatus']) == 'pending') {
-        final reconciled = await api.get(
-          '/api/fr9/payments/attempts/$paymentAttemptId',
-        );
-        if (reconciled['payment'] is Map) {
-          result = Map<String, dynamic>.from(reconciled['payment'] as Map);
-        }
-        if (isSuccessfulPayment(result?['paymentStatus'])) {
-          if (mounted) setState(() {});
-          await loadHistory();
-          return;
-        }
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 900));
-      final data = await api.post('/api/fr9/payments/process', {
-        'paymentAttemptId': paymentAttemptId,
-        'bookingId': bookingId.text.trim(),
-        'amount': value,
-        'cardholderName': cardholder.text.trim(),
-        'billingEmail': billingEmail.text.trim(),
-        'cardBrand': cardBrand(number),
-        'cardLast4': number.substring(number.length - 4),
-      });
-      if (!mounted) return;
-      setState(
-          () => result = Map<String, dynamic>.from(data['payment'] as Map));
-      if (isSuccessfulPayment(result?['paymentStatus'])) {
-        cardNumber.clear();
-        expiry.clear();
-        cvc.clear();
-      }
-      await loadHistory();
-    } on TimeoutException {
-      if (!mounted) return;
-      setState(() => result = {
-            'paymentAttemptId': paymentAttempt.current,
-            'paymentStatus': 'pending',
-            'transactionReference': 'Verification pending',
-            'amount': value,
-            'currency': 'MYR',
-          });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text(
-          'The payment outcome is still being checked. The same attempt will be reconciled; no new payment was created.',
-        ),
-      ));
-    } catch (e) {
-      if (e is ApiException && e.data['newAttemptRequired'] == true) {
-        paymentAttempt.startNewAttempt();
-      }
-      if (mounted) showError(context, e);
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
+    showError(context, 'Use hosted Checkout for an eligible Hotel or Package.');
   }
 
   Future<void> updatePayment(String paymentId, String action) async {
-    if (_paymentUnavailable()) return;
-    if (paymentId.isEmpty) {
-      showError(context, 'Payment reference is unavailable.');
-      return;
-    }
-    setState(() => busy = true);
-    try {
-      final data = await api.post('/api/fr9/payments/$paymentId/$action');
-      if (!mounted) return;
-      if (data['payment'] is Map) {
-        result = Map<String, dynamic>.from(data['payment'] as Map);
-      }
-      await loadHistory();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(action == 'retry'
-            ? 'Payment status checked.'
-            : (data['message'] ?? 'Payment cancelled in TravelMate.')
-                .toString()),
-      ));
-    } on ApiException catch (e) {
-      if (mounted) {
-        if (e.code == 'flight_ticketing_unavailable') {
-          showError(context,
-              'TravelMate can save this fare as a planning estimate, but cannot issue or reserve an airline ticket.');
-        } else {
-          showError(context, e.message.isNotEmpty ? e.message : e.toString());
-        }
-      }
-    } catch (e) {
-      if (mounted) showError(context, e);
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
+    showError(context, 'Use the order status and hosted Checkout recovery actions.');
   }
 
   Widget _buildDisclaimer() {
@@ -745,13 +633,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final String text;
     if (isPackage) {
       text =
-          'This is a Stripe test-mode order for an operator tourism package. Payment confirms your booking and fulfills a dedicated Package Trip in TravelMate. Supplier reservations remain managed by the licensed operator. TravelMate does not receive or store card numbers or security codes.';
+          '$academicPaymentDisclosure A verified payment can fulfill a dedicated Package Trip in TravelMate, not an external reservation. Card details are entered only on hosted Checkout.';
     } else if (isHotel) {
       text =
-          'Stripe Test Mode — No real payment will be charged. This checkout does not confirm a reservation with the hotel. The selected hotel quote is a provider sandbox quote and is not live inventory. The provider offer total covers the requested stay and occupancy; any excluded property fees remain due at the property. TravelMate does not receive or store card numbers or security codes.';
+          '$academicPaymentDisclosure Review the accepted stay total and any excluded property fees. Card details are entered only on hosted Checkout.';
     } else {
       text =
-          'This is a Stripe test-mode order. Payment confirms your verified fare quote. TravelMate does not receive or store card numbers or security codes.';
+          academicPaymentDisclosure;
     }
 
     return InkCard(
@@ -811,12 +699,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ? 'Payment Verified (Stripe Test)'
               : isFlight
                   ? 'Payment Verified (Historical)'
-                  : 'Payment Verified · Booking Confirmed',
+                  : 'Payment Completed',
           AppStatusTone.success,
           Icons.check_circle_rounded
         ),
       'continue_payment' => (
-          'Stripe Checkout Open',
+          'Checkout Open',
           AppStatusTone.warning,
           Icons.open_in_new_rounded
         ),
@@ -852,14 +740,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final buttonLabel = busy
         ? 'Preparing Checkout…'
         : switch (currentAction) {
-            'continue_payment' => 'Continue Payment on Stripe',
+            'continue_payment' => 'Continue to Payment',
             'check_status' => 'Check Payment Status',
             'restart_payment' => 'Restart Payment',
             'view_booking' =>
-                isHotel ? 'View Order Details' : 'View Confirmed Booking',
+                isHotel ? 'View Order Details' : 'View Order',
             _ => (isFlight && !isPaid)
                 ? 'Flight ticketing unavailable'
-                : 'Open Stripe test Checkout',
+                : 'Continue to Payment',
           };
 
     final buttonIcon = busy
@@ -880,7 +768,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
         children: [
           const TravelSectionHeader(
-            title: 'Stripe test Checkout',
+            title: 'Review Payment',
             subtitle: 'Card details are entered only on Stripe-hosted Checkout.',
           ),
           const SizedBox(height: 12),
@@ -1131,7 +1019,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             OutlinedButton.icon(
               onPressed: busy ? null : _reopenStripe,
               icon: const Icon(Icons.open_in_new_rounded),
-              label: const Text('Re-open Stripe Checkout'),
+              label: const Text('Complete Checkout'),
             ),
           ],
           const SizedBox(height: 24),
@@ -1211,6 +1099,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (capabilityLoading) {
+      return Scaffold(appBar: AppBar(title: const Text('Review Payment')),
+        body: const Center(child: CircularProgressIndicator()));
+    }
     if (!consumerPaymentsAvailable) {
       return Scaffold(
         appBar: AppBar(title: const Text('Payments unavailable')),
@@ -1219,7 +1111,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             const TravelEmptyState(icon: Icons.bookmark_outline,
               title: 'Keep planning your trip',
-              message: 'TravelMate can save travel options, but cannot take payment or confirm supplier reservations.'),
+              message: 'Checkout is unavailable for this selection or is not configured. Your saved details and payment history remain available.'),
             TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => TravelRecordsScreen(api: api))),
               child: const Text('View Travel Records')),

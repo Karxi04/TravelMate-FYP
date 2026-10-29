@@ -29,6 +29,7 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
   Map<String, dynamic>? order;
   bool loading = true;
   bool reconciling = false;
+  bool consumerPaymentsAvailable = false;
   String? error;
 
   @override
@@ -57,7 +58,10 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
       });
     }
     try {
+      final types = await loadHostedCheckoutCapabilities(api);
       final response = await api.get('/api/fr9/orders/${Uri.encodeComponent(widget.orderId)}');
+      if (!mounted) return;
+      consumerPaymentsAvailable = types.contains('hotel');
       var current = Map<String, dynamic>.from(response['order'] as Map);
 
       if (consumerPaymentsAvailable && _needsReconciliation(current) && current['checkoutSessionId'] != null) {
@@ -543,7 +547,7 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
             FilledButton.icon(
               key: const ValueKey('hotel-order-continue-checkout-button'),
               icon: const Icon(Icons.open_in_new_rounded),
-              label: const Text('Continue to Stripe Checkout'),
+              label: const Text('Continue to Payment'),
               onPressed: () async {
                 final uri = Uri.tryParse(checkoutUrl);
                 if (uri != null) {

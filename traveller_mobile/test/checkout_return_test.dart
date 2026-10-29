@@ -12,6 +12,9 @@ class _ReturnApi extends ApiService {
   final Map<String, dynamic>? reconciledOrder;
   final bool denied;
   final calls = <String>[];
+  bool checkoutEnabled = false;
+  @override
+  bool get isStandalone => false;
   var reconcileCalls = 0;
   var postCalls = 0;
 
@@ -20,6 +23,10 @@ class _ReturnApi extends ApiService {
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
     calls.add(path);
+    if (path == '/api/fr9/checkout/capabilities') {
+      return {'ok': true, 'mode': 'test', 'hostedCheckout': checkoutEnabled,
+        'supportedQuoteTypes': ['hotel', 'package']};
+    }
     if (denied && path.contains('/orders/')) {
       throw const ApiException('Order not found', 404, {});
     }
@@ -50,6 +57,23 @@ Widget _screen(_ReturnApi api, {String state = 'paid'}) => MaterialApp(
     );
 
 void main() {
+  testWidgets('F-F1A-P pending return reconciles authoritative hotel state, never redirect hints', (tester) async {
+    final api = _ReturnApi({
+      'id': 'package_checkout_order_12345678', 'quoteType': 'hotel',
+      'status': 'checkout_open', 'paymentStatus': 'unpaid',
+    }, reconciledOrder: {
+      'id': 'package_checkout_order_12345678', 'quoteType': 'hotel',
+      'status': 'paid', 'paymentStatus': 'paid', 'provider': 'stripe_checkout_test',
+      'supplierBookingStatus': 'not_created',
+    })..checkoutEnabled = true;
+    await tester.pumpWidget(_screen(api, state: 'not_completed'));
+    await tester.pumpAndSettle();
+    expect(api.reconcileCalls, 1);
+    expect(find.text('Payment Completed'), findsOneWidget);
+    expect(find.textContaining('no actual charge or supplier reservation'), findsOneWidget);
+    expect(api.postCalls, 0);
+  });
+
   test('custom checkout scheme is registered only in the debug manifest', () {
     final mainManifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
     final debugManifest = File('android/app/src/debug/AndroidManifest.xml').readAsStringSync();
@@ -91,7 +115,7 @@ void main() {
     await tester.pumpWidget(_screen(api));
     await tester.pumpAndSettle();
 
-    expect(find.text('Test payment recorded'), findsOneWidget);
+    expect(find.text('Payment Completed'), findsOneWidget);
     expect(find.text('Open Package Trip'), findsOneWidget);
     expect(find.text('View Payment History'), findsOneWidget);
     expect(api.reconcileCalls, 0);
@@ -111,7 +135,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Payment Processing'), findsOneWidget);
-    expect(find.text('Test payment recorded'), findsNothing);
+    expect(find.text('Payment Completed'), findsNothing);
     expect(find.text('Check payment status'), findsOneWidget);
     expect(api.reconcileCalls, 0);
     expect(api.postCalls, 0);
@@ -129,7 +153,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Payment Not Completed'), findsOneWidget);
-    expect(find.text('Test payment recorded'), findsNothing);
+    expect(find.text('Payment Completed'), findsNothing);
     expect(find.text('Open Package Trip'), findsNothing);
     expect(api.reconcileCalls, 0);
     expect(api.postCalls, 0);
@@ -144,7 +168,7 @@ void main() {
       find.text('This Checkout order is not available for the signed-in Traveller.'),
       findsOneWidget,
     );
-    expect(find.text('Test payment recorded'), findsNothing);
+    expect(find.text('Payment Completed'), findsNothing);
     expect(api.reconcileCalls, 0);
     expect(api.postCalls, 0);
   });

@@ -699,7 +699,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Payments unavailable'), findsOneWidget);
-      expect(find.textContaining('cannot take payment or confirm supplier reservations'), findsOneWidget);
+      expect(find.textContaining('Checkout is unavailable for this selection'), findsOneWidget);
+      expect(find.text('Continue to Payment'), findsNothing);
       expect(find.text('View Travel Records'), findsOneWidget);
     });
 
