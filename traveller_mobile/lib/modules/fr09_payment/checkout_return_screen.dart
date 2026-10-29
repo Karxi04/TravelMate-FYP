@@ -8,6 +8,7 @@ import '../../widgets/travel_widgets.dart';
 import '../fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
 import '../fr08_hotel_booking/hotel_order_details_screen.dart';
 import 'payment_history_screen.dart';
+import 'payment_status.dart';
 
 class CheckoutReturnLink {
   static final _orderId = RegExp(r'^[A-Za-z0-9_-]{8,180}$');
@@ -101,7 +102,7 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
         '/api/fr9/orders/${Uri.encodeComponent(widget.link.orderId)}',
       );
       var current = Map<String, dynamic>.from(owned['order'] as Map);
-      if (_needsReconciliation(current)) {
+      if (consumerPaymentsAvailable && _needsReconciliation(current)) {
         final recovered = await api.get(
           '/api/fr9/orders/${Uri.encodeComponent(widget.link.orderId)}/reconcile',
         );
@@ -141,7 +142,7 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
     final tripId = (order?['fulfilledTripId'] ?? '').toString();
     final orderId = (order?['id'] ?? widget.link.orderId).toString();
     final title = paid
-        ? (isHotel ? 'Payment Verified (Stripe Test)' : 'Payment Successful')
+        ? (isTestPaymentRecord(order ?? {}) || isHotel ? 'Test payment recorded' : 'Payment record')
         : processing
             ? 'Payment Processing'
             : 'Payment Not Completed';
@@ -150,7 +151,7 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
             ? 'Your Stripe Test Mode payment is verified. No room has been reserved with the hotel.'
             : 'Your TravelMate test payment has been verified. Your Orders and Payment History are refreshed.')
         : processing
-            ? 'Your payment is still being verified. You can safely check again without paying twice.'
+            ? 'This historical test order is pending. No new payment can be started here.'
             : 'No successful payment has been confirmed for this order.';
 
     return Scaffold(

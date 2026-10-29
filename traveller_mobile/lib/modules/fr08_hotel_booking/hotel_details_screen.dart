@@ -255,6 +255,8 @@ class HotelDetailsScreen extends StatelessWidget {
             Text('Room facilities: ${roomAmenities.join(' • ')}'),
           ],
           const SizedBox(height: 18),
+          const TravelPreparationGuide(service: 'Hotel'),
+          const SizedBox(height: 18),
           const TravelSectionHeader(title: 'Amenities'),
           const SizedBox(height: 8),
           InkCard(

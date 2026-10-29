@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/api_service.dart';
+import '../fr09_payment/payment_status.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
@@ -59,7 +60,7 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
       final response = await api.get('/api/fr9/orders/${Uri.encodeComponent(widget.orderId)}');
       var current = Map<String, dynamic>.from(response['order'] as Map);
 
-      if (_needsReconciliation(current) && current['checkoutSessionId'] != null) {
+      if (consumerPaymentsAvailable && _needsReconciliation(current) && current['checkoutSessionId'] != null) {
         try {
           final recovered = await api.get('/api/fr9/orders/${Uri.encodeComponent(widget.orderId)}/reconcile');
           if (recovered is Map && recovered['order'] is Map) {
@@ -93,6 +94,7 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
   }
 
   Future<void> reconcile() async {
+    if (!consumerPaymentsAvailable) { await load(); return; }
     if (reconciling) return;
     setState(() => reconciling = true);
     try {
@@ -537,7 +539,7 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
           const SizedBox(height: AppSpacing.lg),
 
           // Action Buttons
-          if (!isPaid && checkoutAction == 'continue_payment' && checkoutUrl != null && checkoutUrl.isNotEmpty) ...[
+          if (consumerPaymentsAvailable && !isPaid && checkoutAction == 'continue_payment' && checkoutUrl != null && checkoutUrl.isNotEmpty) ...[
             FilledButton.icon(
               key: const ValueKey('hotel-order-continue-checkout-button'),
               icon: const Icon(Icons.open_in_new_rounded),
@@ -561,7 +563,7 @@ class _HotelOrderDetailsScreenState extends State<HotelOrderDetailsScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.refresh_rounded),
-              label: const Text('Check Payment Status'),
+              label: const Text('Refresh historical record'),
               onPressed: reconciling ? null : reconcile,
             ),
             const SizedBox(height: AppSpacing.sm),

@@ -177,8 +177,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return 'check_status';
   }
 
+  bool _paymentUnavailable() {
+    if (consumerPaymentsAvailable) return false;
+    showError(context, 'Payments are not available in TravelMate. Your saved travel details and history are unchanged.');
+    return true;
+  }
+
   Future<void> launchCheckout() async {
-    if (busy) return;
+    if (_paymentUnavailable() || busy) return;
 
     if (checkoutAction == 'view_booking' || isSuccessfulPayment(result?['paymentStatus']) || activeOrder?['status'] == 'paid') {
       _navigateToBooking();
@@ -330,6 +336,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> reconcileActiveOrder() async {
+    if (_paymentUnavailable()) return;
     final orderId = (activeOrder?['id'] ?? result?['orderId'] ?? '').toString();
     if (orderId.isNotEmpty) {
       await reconcileOrder(orderId);
@@ -339,6 +346,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> reconcileOrder(String orderId) async {
+    if (_paymentUnavailable()) return;
     if (orderId.isEmpty || busy) return;
     setState(() => busy = true);
     try {
@@ -392,6 +400,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> _handleRestartPayment() async {
+    if (_paymentUnavailable()) return;
     setState(() => busy = true);
     try {
       final isPackage = currentAttemptId.isNotEmpty || widget.packageAttemptId.isNotEmpty || (activeOrder?['quoteType'] == 'package');
@@ -544,6 +553,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> _reopenStripe() async {
+    if (_paymentUnavailable()) return;
     if (checkoutUrl != null && checkoutUrl!.isNotEmpty) {
       final uri = Uri.tryParse(checkoutUrl!);
       if (uri != null && await launchUrl(uri, mode: LaunchMode.externalApplication)) {
@@ -600,6 +610,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> process() async {
+    if (_paymentUnavailable()) return;
     if (busy || isSuccessfulPayment(result?['paymentStatus'])) return;
     final value = double.tryParse(amount.text.trim()) ?? 0;
     final number = digits(cardNumber.text);
@@ -689,6 +700,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> updatePayment(String paymentId, String action) async {
+    if (_paymentUnavailable()) return;
     if (paymentId.isEmpty) {
       showError(context, 'Payment reference is unavailable.');
       return;
@@ -1199,6 +1211,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!consumerPaymentsAvailable) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Payments unavailable')),
+        body: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const TravelEmptyState(icon: Icons.bookmark_outline,
+              title: 'Keep planning your trip',
+              message: 'TravelMate can save travel options, but cannot take payment or confirm supplier reservations.'),
+            TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => TravelRecordsScreen(api: api))),
+              child: const Text('View Travel Records')),
+          ]),
+        ),
+      );
+    }
     if (hostedCheckout) return _buildHostedCheckout();
     return Scaffold(
       appBar: AppBar(title: const Text('Secure card payment')),

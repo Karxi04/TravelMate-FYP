@@ -7,6 +7,8 @@ import 'package:travelmate_traveller/services/api_service.dart';
 
 class _MockPaymentApi extends ApiService {
   List<dynamic> paymentItems = [];
+  List<dynamic> tripItems = [];
+  List<dynamic> hotelItems = [];
   bool shouldThrowError = false;
   bool shouldThrowAuthError = false;
   int getPaymentsCount = 0;
@@ -19,6 +21,10 @@ class _MockPaymentApi extends ApiService {
 
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (path == '/api/fr5/itineraries' || path == '/api/fr8/bookings') {
+      if (shouldThrowAuthError) throw const ApiException('Unauthorized', 401, {});
+      return {'ok': true, 'items': path == '/api/fr5/itineraries' ? tripItems : hotelItems};
+    }
     if (path == '/api/fr1/me') {
       return {
         'ok': true,
@@ -66,6 +72,67 @@ class _MockPaymentApi extends ApiService {
 }
 
 void main() {
+  testWidgets('F-F1A one-way record never invents a return date from Trip end', (tester) async {
+    final api = _MockPaymentApi()..tripItems = [{
+      'id': 'one-way-trip', 'title': 'Penang', 'endDate': '2030-01-04',
+      'selectedFlight': {'departureAirport': 'KUL', 'arrivalAirport': 'PEN',
+        'outboundDate': '2030-01-01', 'price': 300, 'currency': 'MYR'},
+    }];
+    await tester.pumpWidget(MaterialApp(home: TravelRecordsScreen(api: api)));
+    await tester.pumpAndSettle();
+    expect(find.text('2030-01-01 → 2030-01-04'), findsNothing);
+    expect(find.text('Departure: 2030-01-01'), findsOneWidget);
+    expect(api.postCount, 0);
+  });
+
+  testWidgets('F-F1A Travel Records unifies owned selections without duplicating attached hotel', (tester) async {
+    tester.view.physicalSize = const Size(1200, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = _MockPaymentApi();
+    api.tripItems = [{
+      'id': 'own-trip', 'title': 'Penang journey', 'hotelBookingId': 'attached-hotel',
+      'destinationArea': 'Penang', 'startDate': '2030-01-01', 'endDate': '2030-01-04',
+      'selectedFlight': {'departureAirport': 'KUL', 'arrivalAirport': 'PEN', 'price': 450, 'currency': 'MYR', 'expiresAt': '2000-01-01T00:00:00Z'},
+      'selectedHotel': {'name': 'Saved Penang Hotel', 'price': 420, 'priceStatus': 'available', 'currency': 'MYR', 'checkin': '2030-01-01', 'checkout': '2030-01-04'},
+      'selectedCarRental': {'vehicleName': 'Illustrative Sedan', 'totalPrice': 100, 'currency': 'MYR'},
+    }];
+    api.hotelItems = [
+      {'id': 'attached-hotel', 'selectedHotel': {'name': 'Saved Penang Hotel'}},
+      {'id': 'historical-hotel', 'bookingStatus': 'confirmed', 'selectedHotel': {'name': 'Earlier Hotel', 'price': 300, 'currency': 'MYR'}},
+    ];
+    await tester.pumpWidget(MaterialApp(home: TravelRecordsScreen(api: api)));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(TravelRecordsScreen));
+    expect(state.records.length, 4);
+    expect(find.text('Hotel · Saved Penang Hotel'), findsOneWidget);
+    expect(find.text('Hotel · Earlier Hotel'), findsOneWidget);
+    expect(find.textContaining('Offer expired'), findsOneWidget);
+    expect(find.textContaining('450'), findsOneWidget);
+    expect(find.text('Continue to Provider'), findsNothing);
+    expect(find.text('Pay Now'), findsNothing);
+    expect(api.postCount, 0);
+    await tester.tap(find.text('View details & guide').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Select flight'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Airport Guide'), 250);
+    await tester.tap(find.text('Airport Guide'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('does not issue tickets'), findsOneWidget);
+    expect(api.postCount, 0);
+  });
+
+  testWidgets('F-F1A Travel Records authentication errors are not empty success', (tester) async {
+    final api = _MockPaymentApi()..shouldThrowAuthError = true;
+    await tester.pumpWidget(MaterialApp(home: TravelRecordsScreen(api: api)));
+    await tester.pumpAndSettle();
+    expect(find.text('No saved travel options yet'), findsNothing);
+    expect(find.byType(TravelRecordsScreen), findsOneWidget);
+    expect(api.postCount, 0);
+    expect(find.text('Try again'), findsWidgets);
+  });
+
   Widget buildTestWidget(Widget child, {Size size = const Size(390, 844)}) {
     return MaterialApp(
       home: MediaQuery(
@@ -191,7 +258,7 @@ void main() {
 
     expect(find.text('Package — Penang Heritage & Hills Escape'), findsOneWidget);
     expect(find.text('MYR 3346.00'), findsOneWidget);
-    expect(find.text('Paid'), findsOneWidget);
+    expect(find.text('Paid (Stripe Test)'), findsOneWidget);
     expect(find.text('Test Mode'), findsOneWidget);
   });
 
@@ -213,7 +280,7 @@ void main() {
 
     expect(find.text('Legacy Payment Booking'), findsOneWidget);
     expect(find.text('MYR 80.00'), findsOneWidget);
-    expect(find.text('Paid'), findsOneWidget);
+    expect(find.text('Paid (Stripe Test)'), findsOneWidget);
   });
 
   testWidgets('4. Pending/unpaid payment is marked Pending and NOT marked Paid', (tester) async {
@@ -271,7 +338,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('payment-history-empty')), findsOneWidget);
     expect(find.text('No payment records yet'), findsOneWidget);
-    expect(find.text('Completed package bookings and checkout transactions will appear here.'), findsOneWidget);
+    expect(find.text('Historical records appear here. No new payment can be started from this screen.'), findsOneWidget);
   });
 
   testWidgets('8. Backend error displays error state with retry action', (tester) async {
@@ -356,8 +423,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify Payment history tile is present
-    await tester.scrollUntilVisible(find.text('Payment history'), 300);
-    expect(find.text('Payment history'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Travel Records'), 300);
+    expect(find.text('Travel Records'), findsOneWidget);
 
     // Verify NO Checkout Test button, card or tile exists in Profile
     expect(find.textContaining('Checkout Test'), findsNothing);
@@ -366,20 +433,13 @@ void main() {
     expect(find.textContaining('Pay RM'), findsNothing);
   });
 
-  testWidgets('13. Existing Stripe Checkout functionality in PaymentScreen remains functional', (tester) async {
+  testWidgets('F-F1A direct payment navigation is unavailable', (tester) async {
     final api = _MockPaymentApi();
-    // Hosted checkout mode for package
-    await tester.pumpWidget(buildTestWidget(PaymentScreen(
-      api: api,
-      packageAttemptId: 'attempt-123',
-      initialAmount: 799.00,
-      initialBookingReference: 'PKG-REF-1',
-    )));
+    await tester.pumpWidget(buildTestWidget(PaymentScreen(api: api, quoteType: 'hotel')));
     await tester.pumpAndSettle();
-
-    expect(find.text('TravelMate Checkout'), findsOneWidget);
-    expect(find.text('Stripe test Checkout'), findsOneWidget);
-    expect(find.text('Open Stripe test Checkout'), findsOneWidget);
+    expect(find.text('Payments unavailable'), findsOneWidget);
+    expect(find.text('Open Stripe test Checkout'), findsNothing);
+    expect(api.postCount, 0);
   });
 
   testWidgets('14. Refreshing Payment History does not call any POST payment endpoints', (tester) async {
@@ -398,58 +458,42 @@ void main() {
     expect(api.postCount, 0); // Zero POST calls made!
   });
 
-  testWidgets('15. Tapping Payment history in ProfileTab opens PaymentHistoryScreen', (tester) async {
+  testWidgets('F-F1A Profile opens Travel Records then read-only financial history', (tester) async {
     final api = _MockPaymentApi(items: [samplePackagePayment]);
     await tester.pumpWidget(buildTestWidget(ProfileTab(api: api)));
     await tester.pumpAndSettle();
-
-    await tester.scrollUntilVisible(find.text('Payment history'), 300);
-    await tester.tap(find.text('Payment history'));
+    await tester.scrollUntilVisible(find.text('Travel Records'), 300);
+    await tester.tap(find.text('Travel Records'));
     await tester.pumpAndSettle();
-
+    expect(find.byType(TravelRecordsScreen), findsOneWidget);
+    await tester.tap(find.text('Historical payment records'));
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('payment-history-screen')), findsOneWidget);
     expect(find.text('Package — Penang Heritage & Hills Escape'), findsOneWidget);
+    expect(api.postCount, 0);
   });
 
-  testWidgets('16. Pending Checkout offers status verification, not a blind payment link',
+  testWidgets('F-F1A pending historical record offers no payment action',
       (tester) async {
     final api = _MockPaymentApi(items: [samplePendingPayment]);
-    api.reconciledOrder = {
-      'id': 'order-pending-505',
-      'checkoutAction': 'check_status',
-      'status': 'payment_pending',
-    };
     await tester.pumpWidget(buildTestWidget(PaymentHistoryScreen(api: api)));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('payment-item-order-pending-505')));
     await tester.pumpAndSettle();
-
-    expect(find.text('Check Payment Status'), findsOneWidget);
     expect(find.text('Continue Payment'), findsNothing);
-    await tester.ensureVisible(find.text('Check Payment Status'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Check Payment Status'));
-    await tester.pumpAndSettle();
+    expect(find.text('Check Payment Status'), findsNothing);
     expect(api.postCount, 0);
   });
 
-  testWidgets('17. Expired Package Checkout creates a fresh attempt before PaymentScreen',
+  testWidgets('F-F1A expired historical package does not create a fresh payment',
       (tester) async {
     final api = _MockPaymentApi(items: [sampleExpiredPackagePayment]);
     await tester.pumpWidget(buildTestWidget(PaymentHistoryScreen(api: api)));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('payment-item-order-expired-707')));
     await tester.pumpAndSettle();
-
-    expect(find.text('Restart Payment'), findsOneWidget);
-    await tester.ensureVisible(find.text('Restart Payment'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Restart Payment'));
-    await tester.pumpAndSettle();
-
-    expect(api.postedPath, '/api/fr15/package-checkout-attempts');
-    expect(api.postedBody?['packageId'], 'package-food-1');
-    expect(api.postedBody?['participants'], {'adults': 2, 'children': 1});
-    expect(find.text('TravelMate Checkout'), findsOneWidget);
+    expect(find.text('Restart Payment'), findsNothing);
+    expect(api.postCount, 0);
+    expect(api.paymentItems.single['orderStatus'], sampleExpiredPackagePayment['orderStatus']);
   });
 }

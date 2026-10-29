@@ -17,7 +17,7 @@ import '../fr07_flight_search/flight_screen.dart';
 import '../fr08_hotel_booking/hotel_screen.dart';
 import '../fr08_hotel_booking/hotel_details_screen.dart';
 import '../fr08_hotel_booking/car_rental_screen.dart';
-import '../fr09_payment/payment_screen.dart';
+import '../fr09_payment/payment_history_screen.dart';
 
 class TripDetailsScreen extends StatefulWidget {
   final String tripId;
@@ -2304,12 +2304,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   Widget _tripEssentials(Map<String, dynamic> t) {
     final list = activities;
     final attachments = _attachedTravelCards(t);
-    final selectedHotel = t['selectedHotel'] is Map
-        ? Map<String, dynamic>.from(t['selectedHotel'] as Map)
-        : <String, dynamic>{};
-    final selectedFlight = t['selectedFlight'] is Map
-        ? Map<String, dynamic>.from(t['selectedFlight'] as Map)
-        : <String, dynamic>{};
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const AppSectionHeader(
           title: 'Trip essentials',
@@ -2391,56 +2385,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           ),
         ),
         SecondaryButton(
-          label: 'Payment',
-          icon: Icons.credit_card_rounded,
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) {
-                final flightSearchId = (t['flightSearchId'] ??
-                        selectedFlight['flightSearchId'] ??
-                        '')
-                    .toString();
-                final flightOptionId = (t['flightOptionId'] ??
-                        selectedFlight['flightOptionId'] ??
-                        selectedFlight['optionId'] ??
-                        selectedFlight['id'] ??
-                        '')
-                    .toString();
-                return PaymentScreen(
-                  api: api,
-                  initialBookingReference:
-                      (selectedHotel['bookingReference'] ?? '').toString(),
-                  initialAmount: selectedHotel['price'] is num
-                      ? (selectedHotel['price'] as num).toDouble()
-                      : t['flightCost'] is num
-                          ? (t['flightCost'] as num).toDouble()
-                          : selectedFlight['price'] is num
-                              ? (selectedFlight['price'] as num).toDouble()
-                              : null,
-                  quoteType:
-                      (selectedHotel['quoteId'] ?? '').toString().isNotEmpty
-                          ? 'hotel'
-                          : flightSearchId.isNotEmpty
-                              ? 'flight'
-                              : '',
-                  quoteId: (selectedHotel['quoteId'] ?? '').toString(),
-                  offerId: (selectedHotel['offerId'] ?? '').toString(),
-                  acceptedPrebookSnapshotId:
-                      (selectedHotel['acceptedPrebookSnapshotId'] ??
-                              selectedHotel['snapshotId'] ??
-                              '')
-                          .toString(),
-                  acceptedPrebook: selectedHotel['acceptedPrebook'] is Map
-                      ? Map<String, dynamic>.from(
-                          selectedHotel['acceptedPrebook'] as Map)
-                      : null,
-                  searchId: flightSearchId,
-                  optionId: flightOptionId,
-                );
-              },
-            ),
-          ),
+          label: 'Travel Records',
+          icon: Icons.bookmark_outline_rounded,
+          onPressed: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => TravelRecordsScreen(api: api))),
         ),
       ]),
     ]);

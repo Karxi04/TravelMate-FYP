@@ -748,6 +748,10 @@ class _FlightScreenState extends State<FlightScreen> {
                 const Text('Attach flight to itinerary',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 8),
+                Text('Selected offer estimate: ${flight['currency'] ?? 'Currency unavailable'} ${returnOption?['combinedPrice'] ?? returnOption?['price'] ?? flight['price'] ?? 'Unavailable'}'),
+                Text('${flight['departureAirport'] ?? '-'} → ${flight['arrivalAirport'] ?? '-'}${returnOption == null ? '' : ' · return included'}'),
+                const Text('Adding this offer saves a planning estimate, not an airline ticket. Purchase must be arranged outside TravelMate.'),
+                const SizedBox(height: 8),
                 ...trips.map((raw) {
                   final trip = Map<String, dynamic>.from(raw as Map);
                   final dates = [trip['startDate'], trip['endDate']]

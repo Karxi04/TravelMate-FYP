@@ -6,12 +6,14 @@ import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 
 class CarRentalScreen extends StatefulWidget {
+  final ApiService? api;
   final String? initialPickupLocation;
   final String? initialPickupDate;
   final String? initialDropoffDate;
 
   const CarRentalScreen({
     super.key,
+    this.api,
     this.initialPickupLocation,
     this.initialPickupDate,
     this.initialDropoffDate,
@@ -26,7 +28,7 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
   late final TextEditingController pickupDate;
   late final TextEditingController dropoffDate;
   final driverCount = TextEditingController(text: '1');
-  final api = ApiService();
+  late final ApiService api;
 
   List<dynamic> items = [];
   bool busy = false;
@@ -59,6 +61,7 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
   @override
   void initState() {
     super.initState();
+    api = widget.api ?? ApiService();
     final start = DateTime.now().add(const Duration(days: 30));
     final initialLoc = widget.initialPickupLocation?.trim();
     pickupLocation = TextEditingController(
@@ -178,7 +181,7 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
           : <String, dynamic>{};
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
-            'Car rental selected. New estimated trip total: RM ${budget['total'] ?? '-'}'),
+            'Rental Option Saved. Estimated trip total: RM ${budget['total'] ?? '-'}. No vehicle is reserved.'),
       ));
     } catch (e) {
       if (mounted) showError(context, e);
@@ -195,9 +198,10 @@ class _CarRentalScreenState extends State<CarRentalScreen> {
           const TravelSectionHeader(
             title: 'Search car rentals',
             subtitle:
-                'Compare vehicle options and attach the selected rental cost to an itinerary.',
+                'Illustrative vehicle options and estimated rates, not live inventory. Saving an option does not reserve a vehicle.',
           ),
           const SizedBox(height: 12),
+          const TravelPreparationGuide(service: 'Rental'),
           TextField(
             controller: pickupLocation,
             decoration: const InputDecoration(

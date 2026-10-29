@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/api_service.dart';
 import '../../services/transaction_request.dart';
 import '../../theme/app_theme.dart';
@@ -10,7 +9,7 @@ import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import 'hotel_details_screen.dart';
 import 'hotel_trip_attachment.dart';
-import '../fr09_payment/payment_screen.dart';
+import '../fr09_payment/payment_history_screen.dart';
 
 class RoomOccupancyConfig {
   int adults;
@@ -363,7 +362,7 @@ class _HotelScreenState extends State<HotelScreen> {
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
           children: [
-            const Text('Add booking to which itinerary?',
+            const Text('Add hotel details to which Trip?',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
             ...trips.map((raw) {
@@ -577,165 +576,41 @@ class _HotelScreenState extends State<HotelScreen> {
     required String source,
     required String validationId,
   }) async {
-    final cur = (acceptedPrebook?['currency'] ?? hotel['currency'] ?? 'MYR')
-        .toString();
-    final amt = acceptedPrebook?['amount'] ?? hotel['price'] ?? 0;
-    final expAt = acceptedPrebook?['expiresAt']?.toString();
-    String expNotice = '';
-    if (expAt != null && expAt.isNotEmpty) {
-      final dt = DateTime.tryParse(expAt);
-      if (dt != null) {
-        final local = dt.toLocal();
-        expNotice =
-            'Accepted price valid until ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-      }
-    }
-
+    final currency = acceptedPrebook?['currency'] ?? hotel['currency'] ?? 'Unknown currency';
+    final amount = acceptedPrebook?['amount'] ?? hotel['price'];
     await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Hotel Offer Validated',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 6),
-              Text('${hotel['name']} • ${hotel['roomName']}'),
-              const SizedBox(height: 10),
-              InkCard(
-                color: InkWashColors.cream,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Authoritative total',
-                            style: TextStyle(
-                                color: InkWashColors.mutedInk, fontSize: 13)),
-                        Text('$cur $amt',
-                            style: const TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.w900)),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Dates: ${hotel['checkin'] ?? checkin.text} → ${hotel['checkout'] ?? checkout.text} • ${hotel['roomQuantity'] ?? rooms.length} room(s)',
-                      style: const TextStyle(
-                          fontSize: 12, color: InkWashColors.mutedInk),
-                    ),
-                    if (expNotice.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(expNotice,
-                          style: const TextStyle(
-                              fontSize: 11,
-                              color: InkWashColors.blueGrey,
-                              fontWeight: FontWeight.w600)),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              InkCard(
-                color: const Color(0xFFEFF6FF),
-                child: const Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.shield_outlined,
-                        size: 20, color: InkWashColors.blueGrey),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Stripe Test Mode — No real payment will be charged. This checkout does not confirm a reservation with the hotel.',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: InkWashColors.ink,
-                            height: 1.35),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (acceptedPrebookSnapshotId.isEmpty) ...[
-                InkCard(
-                  color: const Color(0xFFFEF3C7),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.warning_amber_rounded,
-                          size: 20, color: Color(0xFFD97706)),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'An accepted quote snapshot was not received. Please re-validate the quote before opening card checkout.',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF92400E),
-                              fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    if (acceptedPrebookSnapshotId.isEmpty) {
-                      prebook(hotel);
-                      return;
-                    }
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PaymentScreen(
-                          quoteType: 'hotel',
-                          quoteId: (hotel['quoteId'] ?? '').toString(),
-                          offerId: (hotel['offerId'] ?? '').toString(),
-                          acceptedPrebookSnapshotId: acceptedPrebookSnapshotId,
-                          acceptedPrebook: acceptedPrebook,
-                          initialAmount: (amt is num)
-                              ? amt.toDouble()
-                              : double.tryParse('$amt'),
-                          initialBookingReference: acceptedPrebookSnapshotId,
-                          hotelBookingAttemptId: attemptId,
-                          api: api,
-                        ),
-                      ),
-                    );
-                  },
-                  icon: Icon(acceptedPrebookSnapshotId.isEmpty
-                      ? Icons.refresh_rounded
-                      : Icons.payment_rounded),
-                  label: Text(acceptedPrebookSnapshotId.isEmpty
-                      ? 'Re-validate Quote for Checkout'
-                      : 'Pay with Card (Stripe Test)'),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    completeBooking(hotel, validationId, source, attemptId);
-                  },
-                  icon: const Icon(Icons.bookmark_add_outlined),
-                  label: const Text('Save Hotel Details'),
-                ),
-              ),
-            ],
-          ),
+      context: context, showDragHandle: true, isScrollControlled: true,
+      builder: (ctx) => SafeArea(child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Hotel Offer Validated', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            Text('${hotel['name']} • ${hotel['roomName']}'),
+            Text('Selected stay total: $currency ${amount ?? 'Unavailable'}'),
+            Text('Dates: ${hotel['checkin'] ?? checkin.text} → ${hotel['checkout'] ?? checkout.text} • ${hotel['roomQuantity'] ?? rooms.length} room(s)'),
+            if (acceptedPrebook?['expiresAt'] != null)
+              _buildQuoteFreshnessPill('${acceptedPrebook!['expiresAt']}'),
+            const SizedBox(height: 12),
+            const Text('Saving these details does not reserve a room or take payment. Confirm your reservation directly with the property or booking provider.'),
+            if (acceptedPrebookSnapshotId.isEmpty)
+              const Text('Please validate this offer again before saving.'),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                if (acceptedPrebookSnapshotId.isEmpty) {
+                  prebook(hotel);
+                } else {
+                  completeBooking(hotel, validationId, source, attemptId);
+                }
+              },
+              icon: Icon(acceptedPrebookSnapshotId.isEmpty ? Icons.refresh_rounded : Icons.bookmark_add_outlined),
+              label: Text(acceptedPrebookSnapshotId.isEmpty ? 'Re-validate Quote' : 'Save Hotel Details'),
+            ),
+          ],
         ),
-      ),
+      )),
     );
   }
 
@@ -754,18 +629,13 @@ class _HotelScreenState extends State<HotelScreen> {
 
   Future<void> completeBooking(Map<String, dynamic> hotel, String validationId,
       String prebookSource, String attemptId) async {
-    final firstName = TextEditingController(text: 'TravelMate');
-    final lastName = TextEditingController(text: 'Traveller');
-    final email = TextEditingController(
-        text: FirebaseAuth.instance.currentUser?.email ??
-            'traveller@example.test');
     bool attachToTrip = true;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Confirm booking'),
+          title: const Text('Confirm & Save Hotel Details'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -776,18 +646,6 @@ class _HotelScreenState extends State<HotelScreen> {
                     style: const TextStyle(
                         fontWeight: FontWeight.w900, fontSize: 18)),
                 const SizedBox(height: 12),
-                TextField(
-                    controller: firstName,
-                    decoration: const InputDecoration(labelText: 'First name')),
-                const SizedBox(height: 8),
-                TextField(
-                    controller: lastName,
-                    decoration: const InputDecoration(labelText: 'Last name')),
-                const SizedBox(height: 8),
-                TextField(
-                    controller: email,
-                    decoration: const InputDecoration(labelText: 'Email')),
-                const SizedBox(height: 6),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   value: attachToTrip,
@@ -796,8 +654,8 @@ class _HotelScreenState extends State<HotelScreen> {
                 ),
                 Text(
                   prebookSource == 'liteapi'
-                      ? 'Price checked with LiteAPI. Room reservation requires direct property confirmation.'
-                      : 'Sample hotel content. Room reservation subject to property availability.',
+                      ? 'Offer checked. No room is reserved; arrange your booking directly with the property.'
+                      : 'Sample offer for planning only. Room availability has not been checked.',
                   style: const TextStyle(
                       fontSize: 12, color: InkWashColors.mutedInk),
                 ),
@@ -810,7 +668,7 @@ class _HotelScreenState extends State<HotelScreen> {
                 child: const Text('Cancel')),
             FilledButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Confirm booking')),
+                child: const Text('Confirm & Save Hotel Details')),
           ],
         ),
       ),
@@ -828,20 +686,7 @@ class _HotelScreenState extends State<HotelScreen> {
       final bookingRequest = <String, dynamic>{
         'hotelBookingAttemptId': attemptId,
         'validationId': validationId,
-        'holder': {
-          'firstName': firstName.text.trim(),
-          'lastName': lastName.text.trim(),
-          'email': email.text.trim(),
-        },
-        'guests': [
-          {
-            'firstName': firstName.text.trim(),
-            'lastName': lastName.text.trim(),
-            'email': email.text.trim(),
-            'occupancyNumber': 1,
-          }
-        ],
-        'payment': {'method': 'ACC_CREDIT_CARD'},
+        'saveDetailsOnly': true,
         'itineraryId': itinerary?['id'],
         'selectedHotel': hotel,
         'roomQuantity': hotel['roomQuantity'] ??
@@ -903,7 +748,7 @@ class _HotelScreenState extends State<HotelScreen> {
             lastBooking?['itineraryAttachmentError']?.toString();
         if (attachmentOutcome == HotelTripAttachmentOutcome.attached) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Hotel booking added to the trip budget.'),
+            content: Text('Hotel details added to the trip budget.'),
           ));
         } else if (attachmentOutcome == HotelTripAttachmentOutcome.incompatible ||
             attachmentOutcome == HotelTripAttachmentOutcome.failed) {
@@ -939,7 +784,7 @@ class _HotelScreenState extends State<HotelScreen> {
                       lastBooking?['itineraryAttachmentStatus']) ==
                   HotelTripAttachmentOutcome.attached) {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Hotel booking added to the trip budget.'),
+                  content: Text('Hotel details added to the trip budget.'),
                 ));
               } else {
                 showError(context,
@@ -950,9 +795,9 @@ class _HotelScreenState extends State<HotelScreen> {
           }
         }
       }
-      final ref = lastBooking?['bookingReference'] ?? '-';
+      final ref = lastBooking?['id'] ?? '-';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Hotel record saved: $ref')));
+          content: Text('Hotel Details Saved · Record $ref')));
     } on TimeoutException {
       try {
         final data = await api.get('/api/fr8/bookings/attempts/$attemptId');
@@ -1438,13 +1283,17 @@ class _HotelScreenState extends State<HotelScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                        'Saved Hotel Details',
+                        lastBooking!['bookingStatus'] == 'pending'
+                            ? 'Hotel Details Pending'
+                            : lastBooking!['bookingStatus'] == 'failed'
+                                ? 'Hotel Details Not Saved'
+                                : 'Hotel Details Saved',
                         style: TextStyle(fontWeight: FontWeight.w900)),
                     Text(
-                        'Reference: ${lastBooking!['bookingReference'] ?? '-'}'),
-                    Text('Status: ${lastBooking!['bookingStatus'] ?? '-'}'),
-                    if (lastBooking!['confirmationLabel'] != null)
-                      Text('${lastBooking!['confirmationLabel']}'),
+                        'TravelMate record: ${lastBooking!['id'] ?? '-'}'),
+                    Text('Room reservation: not confirmed'),
+                    TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => TravelRecordsScreen(api: api))), child: const Text('View Travel Records')),
                   ]),
             ),
           ],
@@ -1459,7 +1308,7 @@ class _HotelScreenState extends State<HotelScreen> {
                   ? (sampleContentLimited
                       ? 'No sample hotel offers match "$lastSearchedDestination". Sample catalog coverage is limited for this location; sample properties are available in Penang.'
                       : 'No hotel offers match "$lastSearchedDestination" for the selected dates and guest count. Try adjusting your dates or destination.')
-                  : 'Hotel offers can be compared, prebooked and confirmed through the available booking flow.',
+                  : 'Compare hotel offers and save stay details for your Trip. A saved record is not a room reservation.',
             ),
           ...items.map((raw) {
             final h = Map<String, dynamic>.from(raw as Map);

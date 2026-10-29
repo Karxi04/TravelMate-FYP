@@ -1,3 +1,11 @@
+// No authorized consumer payment capability is enabled in this release.
+bool get consumerPaymentsAvailable => false;
+
+bool isTestPaymentRecord(Map<String, dynamic> record) =>
+    record['testMode'] == true || record['isSimulated'] == true ||
+    isSimulatedPayment(record) ||
+    '${record['paymentProvider'] ?? record['provider'] ?? ''}'.toLowerCase().endsWith('_test');
+
 String canonicalPaymentStatus(Object? raw) {
   final value = (raw ?? 'unknown').toString().trim().toLowerCase();
   return switch (value) {

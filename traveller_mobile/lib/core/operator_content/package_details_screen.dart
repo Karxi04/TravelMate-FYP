@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../modules/fr09_payment/payment_screen.dart';
+import '../../modules/fr09_payment/payment_status.dart';
 import '../../modules/fr09_payment/checkout_return_screen.dart';
 import '../../modules/fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
 import '../../services/api_service.dart';
@@ -260,6 +261,10 @@ class _TourismPackageDetailsScreenState
   }
 
   Future<void> _startCheckout() async {
+    if (!consumerPaymentsAvailable) {
+      showError(context, 'Package purchase is not available in TravelMate. Contact the operator about booking arrangements.');
+      return;
+    }
     if (submitting) return;
     setState(() => submitting = true);
     try {
@@ -884,14 +889,14 @@ class _TourismPackageDetailsScreenState
                               ),
                               const SizedBox(height: AppSpacing.xs),
                               const Text(
-                                'One signed-in traveller pays for the complete group. Stripe Checkout remains in Test Mode.',
+                                'Review the group price. Package purchase is not available in TravelMate; contact the operator about booking arrangements.',
                                 style: TextStyle(
                                     fontSize: 12,
                                     color: AppColors.textSecondary),
                               ),
                               const SizedBox(height: AppSpacing.xxs),
                               const Text(
-                                'Verified payment creates a new independent Package Trip; existing personal Trips are not changed.',
+                                'Reviewing this package does not create a reservation or change your Trips.',
                                 style: TextStyle(
                                     fontSize: 12,
                                     color: AppColors.textSecondary),
@@ -901,7 +906,7 @@ class _TourismPackageDetailsScreenState
                                 width: double.infinity,
                                 child: FilledButton.icon(
                                   key: const ValueKey('package-checkout-btn'),
-                                  onPressed: (submitting ||
+                                  onPressed: (!consumerPaymentsAvailable || submitting ||
                                           !_hasVerifiedPriceBasis ||
                                           !meetsMin ||
                                           (_departureDates.isNotEmpty &&
@@ -913,7 +918,9 @@ class _TourismPackageDetailsScreenState
                                         },
                                   icon: const Icon(Icons.payment_outlined),
                                   label: Text(
-                                    submitting
+                                    !consumerPaymentsAvailable
+                                        ? 'Purchase unavailable'
+                                        : submitting
                                         ? 'Preparing checkout...'
                                         : !_hasVerifiedPriceBasis
                                             ? 'Price basis unverified'
@@ -1424,16 +1431,16 @@ class _TourismPackageDetailsScreenState
                   const Icon(Icons.shield_outlined,
                       size: 18, color: AppColors.primary),
                   const SizedBox(width: AppSpacing.xs),
-                  Expanded(child: _heading('Reservation & Payment Notice')),
+                  Expanded(child: _heading('Booking arrangements')),
                 ],
               ),
               const Text(
-                'Test payment recorded. Your Package Trip is available in TravelMate. No external supplier reservation has been created.',
+                'Package purchase is not available in TravelMate. Contact the operator for current availability and booking arrangements.',
                 style: TextStyle(fontSize: 13, height: 1.45),
               ),
               const SizedBox(height: AppSpacing.xs),
               const Text(
-                'Stripe checkout runs in Test Mode. Verified payment creates a dedicated, read-only Package Trip under Trips.',
+                'Reviewing dates and group prices does not create a supplier reservation or a Package Trip.',
                 style: TextStyle(
                     fontSize: 12,
                     color: AppColors.textSecondary,

@@ -103,6 +103,25 @@ Widget _wrap(Widget child) {
 }
 
 void main() {
+  testWidgets('F-F1A pending validation never claims hotel details are saved', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(api: api, initialDestination: 'Penang')));
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    await state.search();
+    api.postHandler = (path, body) async => {'ok': true, 'status': 'pending'};
+    await state.prebook(Map<String, dynamic>.from(state.items.first as Map));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Hotel Details Pending'), 250,
+        scrollable: find.descendant(
+          of: find.byType(ListView).first,
+          matching: find.byType(Scrollable),
+        ).first);
+    expect(find.text('Hotel Details Saved'), findsNothing);
+    expect(find.text('Room reservation: not confirmed'), findsOneWidget);
+    expect(api.postedPaths, isNot(contains('/api/fr8/hotels/book')));
+  });
+
   testWidgets('F-B2 changed inputs discard an in-flight hotel response', (tester) async {
     _setViewport(tester);
     final result = Completer<Map<String, dynamic>>();
@@ -466,44 +485,35 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Hotel Offer Validated'), findsOneWidget);
-    expect(find.text('Authoritative total'), findsOneWidget);
-    expect(find.text('MYR 420.0'), findsWidgets);
+    expect(find.textContaining('Selected stay total:'), findsOneWidget);
+    expect(find.textContaining('MYR 420.0'), findsWidgets);
   });
 
   // 11. Prebook ID propagation
-  testWidgets('11. Prebook ID propagation passes snapshot ID to PaymentScreen', (tester) async {
+  testWidgets('F-F1A accepted hotel saves details only, never payment', (tester) async {
     _setViewport(tester);
     final api = _Batch18bMockApi();
-    await tester.pumpWidget(_wrap(HotelScreen(
-      api: api,
-      initialDestination: 'Penang',
-      initialCheckin: '2026-11-10',
-      initialCheckout: '2026-11-12',
-    )));
+    await tester.pumpWidget(_wrap(HotelScreen(api: api, initialDestination: 'Penang')));
     await tester.pumpAndSettle();
-
-    final searchBtn = find.text('Search hotels');
-    await tester.ensureVisible(searchBtn);
-    await tester.tap(searchBtn);
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    await state.search();
+    final future = state.prebook(Map<String, dynamic>.from(state.items.first as Map));
     await tester.pumpAndSettle();
-
-    final validateBtn = find.text('Validate quote');
-    await tester.ensureVisible(validateBtn);
-    await tester.tap(validateBtn);
+    expect(find.text('Pay with Card (Stripe Test)'), findsNothing);
+    await tester.tap(find.text('Save Hotel Details'));
     await tester.pumpAndSettle();
-
-    final payBtn = find.text('Pay with Card (Stripe Test)');
-    expect(payBtn, findsOneWidget);
-    await tester.ensureVisible(payBtn);
-    await tester.tap(payBtn);
+    await future;
+    expect(find.text('Confirm & Save Hotel Details'), findsWidgets);
+    await tester.tap(find.byType(SwitchListTile));
     await tester.pumpAndSettle();
-
-    final paymentScreenFinder = find.byType(PaymentScreen);
-    expect(paymentScreenFinder, findsOneWidget);
-
-    final paymentScreen = tester.widget<PaymentScreen>(paymentScreenFinder);
-    expect(paymentScreen.acceptedPrebookSnapshotId, 'snap-authoritative-99');
-    expect(paymentScreen.quoteType, 'hotel');
+    await tester.tap(find.widgetWithText(FilledButton, 'Confirm & Save Hotel Details'));
+    await tester.pumpAndSettle();
+    final index = api.postedPaths.indexOf('/api/fr8/hotels/book');
+    expect(index, greaterThanOrEqualTo(0));
+    expect(api.postedBodies[index]?['saveDetailsOnly'], isTrue);
+    expect(api.postedBodies[index]?.containsKey('payment'), isFalse);
+    expect(api.postedPaths, isNot(contains('/api/fr9/checkout/session')));
+    expect(find.textContaining('Status: confirmed'), findsNothing);
   });
 
   // 12. Price-change confirmation
@@ -701,197 +711,99 @@ void main() {
   });
 
   // 15. Correct Hotel Checkout payload
-  testWidgets('15. Hotel checkout payload includes acceptedPrebookSnapshotId', (tester) async {
+  testWidgets('F-F1A accepted snapshot does not enable hotel payment', (tester) async {
     _setViewport(tester);
     final api = _Batch18bMockApi();
-    await tester.pumpWidget(_wrap(PaymentScreen(
-      api: api,
-      quoteType: 'hotel',
-      quoteId: 'quote-hotel-15',
-      offerId: 'offer-hotel-15',
-      acceptedPrebookSnapshotId: 'snap-authoritative-15',
-      initialAmount: 420.0,
-    )));
+    await tester.pumpWidget(_wrap(PaymentScreen(api: api, quoteType: 'hotel',
+      quoteId: 'old-quote', acceptedPrebookSnapshotId: 'old-snapshot')));
     await tester.pumpAndSettle();
-
-    final checkoutBtn = find.text('Open Stripe test Checkout');
-    expect(checkoutBtn, findsOneWidget);
-    await tester.ensureVisible(checkoutBtn);
-    await tester.tap(checkoutBtn);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(api.postedPaths, contains('/api/fr9/checkout/session'));
-    final sessionBody = api.postedBodies.firstWhere(
-        (b) => b != null && b['quoteType'] == 'hotel')!;
-    expect(sessionBody['quoteType'], 'hotel');
-    expect(sessionBody['quoteId'], 'quote-hotel-15');
-    expect(sessionBody['offerId'], 'offer-hotel-15');
-    expect(sessionBody['acceptedPrebookSnapshotId'], 'snap-authoritative-15');
-    expect(sessionBody['orderAttemptId'], isNotEmpty);
+    expect(find.text('Payments unavailable'), findsOneWidget);
+    expect(find.textContaining('Stripe test Checkout'), findsNothing);
+    final dynamic state = tester.state(find.byType(PaymentScreen));
+    await state.launchCheckout();
+    await tester.pumpAndSettle();
+    expect(api.postedPaths, isEmpty);
   });
 
   // 16. Checkout blocked without snapshot
-  testWidgets('16. Checkout blocked without acceptedPrebookSnapshotId', (tester) async {
+  testWidgets('F-F1A missing snapshot cannot enable hotel payment', (tester) async {
     _setViewport(tester);
     final api = _Batch18bMockApi();
-    await tester.pumpWidget(_wrap(PaymentScreen(
-      api: api,
-      quoteType: 'hotel',
-      quoteId: 'quote-hotel-16',
-      offerId: 'offer-hotel-16',
-      acceptedPrebookSnapshotId: '',
-      initialAmount: 420.0,
-    )));
+    await tester.pumpWidget(_wrap(PaymentScreen(api: api, quoteType: 'hotel',
+      quoteId: 'old-quote', acceptedPrebookSnapshotId: '')));
     await tester.pumpAndSettle();
-
-    final checkoutBtn = find.text('Open Stripe test Checkout');
-    await tester.ensureVisible(checkoutBtn);
-    await tester.tap(checkoutBtn);
+    expect(find.text('Payments unavailable'), findsOneWidget);
+    expect(find.textContaining('Stripe test Checkout'), findsNothing);
+    final dynamic state = tester.state(find.byType(PaymentScreen));
+    await state.launchCheckout();
     await tester.pumpAndSettle();
-
-    expect(
-      find.text('An accepted hotel prebook snapshot is required before Checkout.'),
-      findsOneWidget,
-    );
-    expect(api.postedPaths, isNot(contains('/api/fr9/checkout/session')));
+    expect(api.postedPaths, isEmpty);
   });
 
   // 17. Checkout blocked for expired snapshot
-  testWidgets('17. Checkout blocked for expired prebook snapshot', (tester) async {
+  testWidgets('F-F1A expired snapshot cannot enable hotel payment', (tester) async {
     _setViewport(tester);
     final api = _Batch18bMockApi();
-    await tester.pumpWidget(_wrap(PaymentScreen(
-      api: api,
-      quoteType: 'hotel',
-      quoteId: 'quote-hotel-17',
-      offerId: 'offer-hotel-17',
-      acceptedPrebookSnapshotId: 'snap-hotel-17',
-      acceptedPrebook: const {
-        'id': 'snap-hotel-17',
-        'expiresAt': '2020-01-01T00:00:00Z',
-      },
-      initialAmount: 420.0,
-    )));
+    await tester.pumpWidget(_wrap(PaymentScreen(api: api, quoteType: 'hotel',
+      quoteId: 'old-quote', acceptedPrebookSnapshotId: 'old-snapshot',
+      acceptedPrebook: const {'expiresAt': '2000-01-01T00:00:00Z'})));
     await tester.pumpAndSettle();
-
-    final checkoutBtn = find.text('Open Stripe test Checkout');
-    await tester.ensureVisible(checkoutBtn);
-    await tester.tap(checkoutBtn);
+    expect(find.text('Payments unavailable'), findsOneWidget);
+    expect(find.textContaining('Stripe test Checkout'), findsNothing);
+    final dynamic state = tester.state(find.byType(PaymentScreen));
+    await state.launchCheckout();
     await tester.pumpAndSettle();
-
-    expect(
-      find.text('This accepted hotel price has expired. Search and validate the offer again.'),
-      findsOneWidget,
-    );
-    expect(api.postedPaths, isNot(contains('/api/fr9/checkout/session')));
+    expect(api.postedPaths, isEmpty);
   });
 
   // 18. Server HTTP 409 recovery in PaymentScreen
-  testWidgets('18. Server HTTP 409 recovery releases loading state without crashing', (tester) async {
+  testWidgets('F-F1A stale payment navigation cannot start a checkout', (tester) async {
     _setViewport(tester);
     final api = _Batch18bMockApi();
-    api.postHandler = (path, body) async {
-      if (path.contains('/checkout/session')) {
-        throw const ApiException('Hotel quote expired on server', 409, {
-          'status': 'quote_expired',
-          'message': 'Hotel quote expired on server',
-        });
-      }
-      return {'ok': true};
-    };
-
-    await tester.pumpWidget(_wrap(PaymentScreen(
-      api: api,
-      quoteType: 'hotel',
-      quoteId: 'quote-hotel-18',
-      offerId: 'offer-hotel-18',
-      acceptedPrebookSnapshotId: 'snap-hotel-18',
-      initialAmount: 420.0,
-    )));
+    await tester.pumpWidget(_wrap(PaymentScreen(api: api, quoteType: 'hotel',
+      quoteId: 'old-quote', acceptedPrebookSnapshotId: 'old-snapshot')));
     await tester.pumpAndSettle();
-
-    final checkoutBtn = find.text('Open Stripe test Checkout');
-    await tester.ensureVisible(checkoutBtn);
-    await tester.tap(checkoutBtn);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(find.textContaining('Hotel quote expired on server'), findsOneWidget);
-    expect(find.text('Open Stripe test Checkout'), findsOneWidget);
+    expect(find.text('Payments unavailable'), findsOneWidget);
+    expect(find.textContaining('Stripe test Checkout'), findsNothing);
+    final dynamic state = tester.state(find.byType(PaymentScreen));
+    await state.launchCheckout();
+    await tester.pumpAndSettle();
+    expect(api.postedPaths, isEmpty);
   });
 
   // 19. No accidental supplier booking before Hotel Test Checkout
-  testWidgets('19. No supplier booking endpoint called before checkout', (tester) async {
+  testWidgets('F-F1A validating an offer never books or pays', (tester) async {
     _setViewport(tester);
     final api = _Batch18bMockApi();
-    await tester.pumpWidget(_wrap(HotelScreen(
-      api: api,
-      initialDestination: 'Penang',
-      initialCheckin: '2026-11-10',
-      initialCheckout: '2026-11-12',
-    )));
+    await tester.pumpWidget(_wrap(HotelScreen(api: api, initialDestination: 'Penang')));
     await tester.pumpAndSettle();
-
-    final searchBtn = find.text('Search hotels');
-    await tester.ensureVisible(searchBtn);
-    await tester.tap(searchBtn);
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    await state.search();
+    final future = state.prebook(Map<String, dynamic>.from(state.items.first as Map));
     await tester.pumpAndSettle();
-
-    final validateBtn = find.text('Validate quote');
-    await tester.ensureVisible(validateBtn);
-    await tester.tap(validateBtn);
-    await tester.pumpAndSettle();
-
-    final payBtn = find.text('Pay with Card (Stripe Test)');
-    await tester.ensureVisible(payBtn);
-    await tester.tap(payBtn);
-    await tester.pumpAndSettle();
-
+    expect(find.text('Save Hotel Details'), findsOneWidget);
     expect(api.postedPaths, isNot(contains('/api/fr8/hotels/book')));
+    expect(api.postedPaths, isNot(contains('/api/fr9/checkout/session')));
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+    await tester.pumpAndSettle();
+    await future;
   });
 
   // 20. Demo and Stripe Test disclosures
-  testWidgets('20. Demo and Stripe Test disclosures displayed accurately', (tester) async {
+  testWidgets('F-F1A saving is disclosed without advertising a test payment', (tester) async {
     _setViewport(tester);
     final api = _Batch18bMockApi();
-    api.getHandler = (path, query) async {
-      if (path == '/api/fr9/orders') {
-        return {
-          'ok': true,
-          'items': [
-            {
-              'id': 'ord-hotel-20',
-              'quoteType': 'hotel',
-              'quoteId': 'quote-hotel-20',
-              'status': 'paid',
-              'paymentStatus': 'paid',
-              'checkoutAction': 'view_booking',
-              'amount': 420.0,
-            }
-          ]
-        };
-      }
-      return {'ok': true, 'items': []};
-    };
-
-    await tester.pumpWidget(_wrap(PaymentScreen(
-      api: api,
-      quoteType: 'hotel',
-      quoteId: 'quote-hotel-20',
-      offerId: 'offer-hotel-20',
-      acceptedPrebookSnapshotId: 'snap-hotel-20',
-      initialAmount: 420.0,
-    )));
+    await tester.pumpWidget(_wrap(HotelScreen(api: api, initialDestination: 'Penang')));
     await tester.pumpAndSettle();
-
-    expect(
-      find.textContaining('Stripe Test Mode — No real payment will be charged. This checkout does not confirm a reservation with the hotel.'),
-      findsOneWidget,
-    );
-    expect(find.text('Payment Verified (Stripe Test)'), findsOneWidget);
-    expect(find.text('View Paid Order'), findsOneWidget);
-    expect(find.textContaining('Supplier Booking Reference'), findsNothing);
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    await state.search();
+    final future = state.prebook(Map<String, dynamic>.from(state.items.first as Map));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('does not reserve a room or take payment'), findsOneWidget);
+    expect(find.textContaining('Stripe Test'), findsNothing);
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+    await tester.pumpAndSettle();
+    await future;
   });
 
   // 21. Navigation and state preservation
@@ -920,41 +832,17 @@ void main() {
   });
 
   // 22. Package/Flight payment regression safety
-  testWidgets('22. Package and Flight checkout payloads remain unaffected and safe', (tester) async {
+  testWidgets('F-F1A no new package or flight payment through legacy screen', (tester) async {
     _setViewport(tester);
     final api = _Batch18bMockApi();
-
-    // Package checkout
-    await tester.pumpWidget(_wrap(PaymentScreen(
-      key: const ValueKey('package_checkout_screen'),
-      api: api,
-      packageAttemptId: 'attempt-pkg-22',
-      initialAmount: 1800.0,
-    )));
+    await tester.pumpWidget(_wrap(PaymentScreen(api: api, quoteType: 'hotel',
+      quoteId: 'old-quote', acceptedPrebookSnapshotId: 'old-snapshot')));
     await tester.pumpAndSettle();
-
-    final packageCheckoutBtn = find.text('Open Stripe test Checkout');
-    await tester.ensureVisible(packageCheckoutBtn);
-    await tester.tap(packageCheckoutBtn);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(api.postedPaths, contains('/api/fr9/package-checkout-attempts/attempt-pkg-22/checkout/session'));
-    final packageSessionBody = api.postedBodies.last;
-    expect(packageSessionBody?['acceptedPrebookSnapshotId'], isNull);
-
-    // Flight checkout (Batch 18D safe planning: ticketing is unavailable)
-    await tester.pumpWidget(_wrap(PaymentScreen(
-      key: const ValueKey('flight_checkout_screen'),
-      api: api,
-      quoteType: 'flight',
-      searchId: 'search-flight-22',
-      optionId: 'opt-flight-22',
-      initialAmount: 650.0,
-    )));
+    expect(find.text('Payments unavailable'), findsOneWidget);
+    expect(find.textContaining('Stripe test Checkout'), findsNothing);
+    final dynamic state = tester.state(find.byType(PaymentScreen));
+    await state.launchCheckout();
     await tester.pumpAndSettle();
-
-    expect(find.text('Ticketing Unavailable'), findsOneWidget);
-    expect(find.text('Flight ticketing unavailable'), findsOneWidget);
+    expect(api.postedPaths, isEmpty);
   });
 }

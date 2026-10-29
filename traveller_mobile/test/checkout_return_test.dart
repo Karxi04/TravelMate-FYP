@@ -83,7 +83,7 @@ void main() {
   testWidgets('verified paid order refreshes history and exposes its Package Trip', (tester) async {
     final api = _ReturnApi({
       'id': 'package_checkout_order_12345678',
-      'status': 'paid',
+      'status': 'paid', 'testMode': true,
       'paymentStatus': 'paid',
       'quoteType': 'package',
       'fulfilledTripId': 'package_trip_12345678',
@@ -91,7 +91,7 @@ void main() {
     await tester.pumpWidget(_screen(api));
     await tester.pumpAndSettle();
 
-    expect(find.text('Payment Successful'), findsOneWidget);
+    expect(find.text('Test payment recorded'), findsOneWidget);
     expect(find.text('Open Package Trip'), findsOneWidget);
     expect(find.text('View Payment History'), findsOneWidget);
     expect(api.reconcileCalls, 0);
@@ -111,9 +111,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Payment Processing'), findsOneWidget);
-    expect(find.text('Payment Successful'), findsNothing);
+    expect(find.text('Test payment recorded'), findsNothing);
     expect(find.text('Check payment status'), findsOneWidget);
-    expect(api.reconcileCalls, 1);
+    expect(api.reconcileCalls, 0);
     expect(api.postCalls, 0);
   });
 
@@ -129,9 +129,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Payment Not Completed'), findsOneWidget);
-    expect(find.text('Payment Successful'), findsNothing);
+    expect(find.text('Test payment recorded'), findsNothing);
     expect(find.text('Open Package Trip'), findsNothing);
-    expect(api.reconcileCalls, 1);
+    expect(api.reconcileCalls, 0);
     expect(api.postCalls, 0);
   });
 
@@ -144,7 +144,7 @@ void main() {
       find.text('This Checkout order is not available for the signed-in Traveller.'),
       findsOneWidget,
     );
-    expect(find.text('Payment Successful'), findsNothing);
+    expect(find.text('Test payment recorded'), findsNothing);
     expect(api.reconcileCalls, 0);
     expect(api.postCalls, 0);
   });

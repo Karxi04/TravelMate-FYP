@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/core/home/home_tab.dart';
 import 'package:travelmate_traveller/core/operator_content/package_details_screen.dart';
-import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
-import 'package:travelmate_traveller/modules/fr09_payment/payment_screen.dart';
 import 'package:travelmate_traveller/services/api_service.dart';
 
 class _PackageDetailsApi extends ApiService {
@@ -18,7 +16,6 @@ class _PackageDetailsApi extends ApiService {
   _PackageDetailsApi({
     List<dynamic>? packages,
     List<dynamic>? orders,
-    this.postError,
   })  : packages = packages ?? [],
         orders = orders ?? [];
 
@@ -177,18 +174,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Cancellation policy'), findsOneWidget);
     expect(find.textContaining('Cancel seven days before departure.'), findsOneWidget);
-    expect(find.textContaining('No external supplier reservation has been created.'), findsOneWidget);
+    expect(find.textContaining('Contact the operator for current availability'), findsOneWidget);
 
     // Reopen booking sheet and checkout
     await _openBookingSheet(tester);
     expect(find.text('Group total: MYR 800'), findsOneWidget);
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-
-    expect(api.postedPath, '/api/fr15/package-checkout-attempts');
-    expect(api.postedPayload?['participants'], {'adults': 2, 'children': 1});
-    expect(api.postedPayload?['departureDate'], '2026-12-10');
-    expect(api.postedPayload?.containsKey('intendedTripId'), isFalse);
+    expect(find.text('Purchase unavailable'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.byKey(const ValueKey('package-checkout-btn'))).onPressed, isNull);
+    expect(api.postedPayloads, isEmpty);
     expect(legacyCallbackCalled, isFalse);
   });
 
@@ -428,243 +421,125 @@ void main() {
     expect(find.text('Group total: MYR 600'), findsOneWidget);
   });
 
-  testWidgets('checkout blocks on server-client price mismatch', (tester) async {
-    final api = _PackageDetailsApi();
-    api.mockAttempt = {
-      'id': 'attempt-mismatch',
-      'amount': 3596, // Server returns 3596 while client estimated 799
-    };
-
-    await tester.pumpWidget(MaterialApp(
-      home: TourismPackageDetailsScreen(
-        item: {
-          'id': 'package-mismatch',
-          'title': 'Penang Heritage & Hills Escape',
-          'priceBasis': 'per_person',
-          'adultPrice': 899,
-          'promotionalPrice': 799,
-          'promotionStart': '2020-01-01',
-          'promotionEnd': '2030-12-31',
-          'minimumTravellers': 1,
-        },
-        api: api,
-      ),
-    ));
-
+  testWidgets('F-F1A package review cannot start test purchase 0', (tester) async {
+    final api = _PackageDetailsApi(orders: [{
+      'id': 'historical-order', 'packageId': 'package-repeat',
+      'status': 'paid',
+      'paymentStatus': 'unpaid', 'testMode': true,
+    }]);
+    await tester.pumpWidget(MaterialApp(home: TourismPackageDetailsScreen(
+      item: _checkoutPackage, api: api)));
+    await tester.pumpAndSettle();
     await _openBookingSheet(tester);
-
-    // Client estimate for 1 adult is 799
-    expect(find.text('Group total: MYR 799'), findsOneWidget);
-
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-
-    expect(api.postedPath, '/api/fr15/package-checkout-attempts');
-    // Error snackbar should be displayed
-    expect(find.textContaining('Checkout price mismatch'), findsOneWidget);
-  });
-
-  testWidgets('genuine retry retains its key and changed participants rotate it',
-      (tester) async {
-    final api = _PackageDetailsApi();
-    await tester.pumpWidget(MaterialApp(
-      home: TourismPackageDetailsScreen(item: _checkoutPackage, api: api),
-    ));
-
-    await _openBookingSheet(tester);
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-    final firstKey = api.postedPayload?['idempotencyKey'];
-
-    await _openBookingSheet(tester);
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-    expect(api.postedPayload?['idempotencyKey'], firstKey);
-
-    await _openBookingSheet(tester);
-    await tester.tap(find.byKey(const ValueKey('package-adults-add')));
-    await tester.pump();
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-    expect(api.postedPayload?['idempotencyKey'], isNot(firstKey));
-    expect(api.postedPayload?['participants'], {'adults': 2, 'children': 0});
-  });
-
-  testWidgets('server idempotency conflict is recoverable and never shown raw',
-      (tester) async {
-    final api = _PackageDetailsApi(
-      postError: const ApiException(
-        'Idempotency key is already bound to another package checkout.',
-        409,
-        {},
-      ),
-    );
-    await tester.pumpWidget(MaterialApp(
-      home: TourismPackageDetailsScreen(item: _checkoutPackage, api: api),
-    ));
-
-    await _openBookingSheet(tester);
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-    final firstKey = api.postedPayload?['idempotencyKey'];
-    expect(find.textContaining('conflicts with an earlier attempt'), findsOneWidget);
-    expect(find.textContaining('Idempotency key is already bound'), findsNothing);
-
-    await _openBookingSheet(tester);
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-    expect(api.postedPayload?['idempotencyKey'], isNot(firstKey));
-  });
-
-  testWidgets('paid duplicate requires cancel, view, or explicit buy again',
-      (tester) async {
-    final api = _PackageDetailsApi(orders: [
-      {
-        'id': 'order-paid-1',
-        'quoteType': 'package',
-        'packageSnapshot': {
-          'packageId': 'package-repeat',
-          'selectedDepartureDate': '2027-01-10T00:00:00Z',
-          'participants': {'adults': '1', 'children': '0'},
-        },
-        'status': 'checkout_complete',
-        'paymentStatus': 'succeeded',
-        'fulfilledTripId': 'package-trip-1',
-        'packageAttemptId': 'attempt-paid-1',
-        'amount': 100,
-      }
-    ]);
-    await tester.pumpWidget(MaterialApp(
-      home: TourismPackageDetailsScreen(item: _checkoutPackage, api: api),
-    ));
-
-    await _openBookingSheet(tester);
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-    expect(find.text("You've booked this package before"), findsOneWidget);
-    expect(find.text('View Existing Booking'), findsOneWidget);
-    expect(find.text('Buy Again Anyway'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
+    expect(find.text('Purchase unavailable'), findsOneWidget);
+    final action = tester.widget<FilledButton>(find.byKey(const ValueKey('package-checkout-btn')));
+    expect(action.onPressed, isNull);
     expect(api.postedPayloads, isEmpty);
-
-    await _openBookingSheet(tester);
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('View Existing Booking'));
-    await tester.pumpAndSettle();
-    expect(find.byType(PackageTripDetailsScreen), findsOneWidget);
-    Navigator.of(tester.element(find.byType(PackageTripDetailsScreen))).pop();
-    await tester.pumpAndSettle();
-
-    await _openBookingSheet(tester);
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Buy Again Anyway'));
-    await tester.pumpAndSettle();
-    expect(api.postedPayloads, hasLength(1));
-    expect(api.postedPayload?['idempotencyKey'], startsWith('package_checkout_'));
-
-    await _openBookingSheet(tester);
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-    expect(find.text("You've booked this package before"), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(api.postedPayloads, hasLength(1));
+    expect(find.textContaining('Stripe Checkout remains'), findsNothing);
   });
 
-  testWidgets('pending duplicate continues the existing package attempt',
+  testWidgets('F-F1A package review cannot start test purchase 1',
       (tester) async {
-    final api = _PackageDetailsApi(orders: [
-      {
-        'id': 'order-pending-1',
-        'quoteType': 'package',
-        'packageSnapshot': {
-          'packageId': 'package-repeat',
-          'selectedDepartureDate': '2027-01-10',
-          'participants': {'adults': 1, 'children': 0},
-        },
-        'status': 'checkout_open',
-        'paymentStatus': 'unpaid',
-        'packageAttemptId': 'attempt-pending-1',
-        'amount': 100,
-      }
-    ]);
-    await tester.pumpWidget(MaterialApp(
-      home: TourismPackageDetailsScreen(item: _checkoutPackage, api: api),
-    ));
-
+    final api = _PackageDetailsApi(orders: [{
+      'id': 'historical-order', 'packageId': 'package-repeat',
+      'status': 'checkout_open',
+      'paymentStatus': 'unpaid', 'testMode': true,
+    }]);
+    await tester.pumpWidget(MaterialApp(home: TourismPackageDetailsScreen(
+      item: _checkoutPackage, api: api)));
+    await tester.pumpAndSettle();
     await _openBookingSheet(tester);
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-    expect(find.text('Checkout already in progress'), findsOneWidget);
-    await tester.tap(find.text('Continue Existing Checkout'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(PaymentScreen), findsOneWidget);
+    expect(find.text('Purchase unavailable'), findsOneWidget);
+    final action = tester.widget<FilledButton>(find.byKey(const ValueKey('package-checkout-btn')));
+    expect(action.onPressed, isNull);
     expect(api.postedPayloads, isEmpty);
+    expect(find.textContaining('Stripe Checkout remains'), findsNothing);
   });
 
-  testWidgets('different participant composition shows a truthful similar warning',
+  testWidgets('F-F1A package review cannot start test purchase 2',
       (tester) async {
-    final api = _PackageDetailsApi(orders: [
-      {
-        'id': 'order-similar-1',
-        'quoteType': 'package',
-        'packageId': 'package-repeat',
-        'departureDate': '2027-01-10',
-        'participants': {'adults': 2, 'children': 0},
-        'status': 'paid',
-        'paymentStatus': 'paid',
-        'fulfilledTripId': 'package-trip-similar',
-      }
-    ]);
-    await tester.pumpWidget(MaterialApp(
-      home: TourismPackageDetailsScreen(item: _checkoutPackage, api: api),
-    ));
-
+    final api = _PackageDetailsApi(orders: [{
+      'id': 'historical-order', 'packageId': 'package-repeat',
+      'status': 'expired',
+      'paymentStatus': 'unpaid', 'testMode': true,
+    }]);
+    await tester.pumpWidget(MaterialApp(home: TourismPackageDetailsScreen(
+      item: _checkoutPackage, api: api)));
+    await tester.pumpAndSettle();
     await _openBookingSheet(tester);
-    await tester.tap(find.text('Checkout package'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Similar booking exists'), findsOneWidget);
-    expect(find.textContaining('different adult or child counts'), findsOneWidget);
-    expect(find.text("You've booked this package before"), findsNothing);
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
+    expect(find.text('Purchase unavailable'), findsOneWidget);
+    final action = tester.widget<FilledButton>(find.byKey(const ValueKey('package-checkout-btn')));
+    expect(action.onPressed, isNull);
     expect(api.postedPayloads, isEmpty);
+    expect(find.textContaining('Stripe Checkout remains'), findsNothing);
+  });
+
+  testWidgets('F-F1A package review cannot start test purchase 3',
+      (tester) async {
+    final api = _PackageDetailsApi(orders: [{
+      'id': 'historical-order', 'packageId': 'package-repeat',
+      'status': 'cancelled',
+      'paymentStatus': 'unpaid', 'testMode': true,
+    }]);
+    await tester.pumpWidget(MaterialApp(home: TourismPackageDetailsScreen(
+      item: _checkoutPackage, api: api)));
+    await tester.pumpAndSettle();
+    await _openBookingSheet(tester);
+    expect(find.text('Purchase unavailable'), findsOneWidget);
+    final action = tester.widget<FilledButton>(find.byKey(const ValueKey('package-checkout-btn')));
+    expect(action.onPressed, isNull);
+    expect(api.postedPayloads, isEmpty);
+    expect(find.textContaining('Stripe Checkout remains'), findsNothing);
+  });
+
+  testWidgets('F-F1A package review cannot start test purchase 4',
+      (tester) async {
+    final api = _PackageDetailsApi(orders: [{
+      'id': 'historical-order', 'packageId': 'package-repeat',
+      'status': 'payment_failed',
+      'paymentStatus': 'unpaid', 'testMode': true,
+    }]);
+    await tester.pumpWidget(MaterialApp(home: TourismPackageDetailsScreen(
+      item: _checkoutPackage, api: api)));
+    await tester.pumpAndSettle();
+    await _openBookingSheet(tester);
+    expect(find.text('Purchase unavailable'), findsOneWidget);
+    final action = tester.widget<FilledButton>(find.byKey(const ValueKey('package-checkout-btn')));
+    expect(action.onPressed, isNull);
+    expect(api.postedPayloads, isEmpty);
+    expect(find.textContaining('Stripe Checkout remains'), findsNothing);
+  });
+
+  testWidgets('F-F1A package review cannot start test purchase 5',
+      (tester) async {
+    final api = _PackageDetailsApi(orders: [{
+      'id': 'historical-order', 'packageId': 'package-repeat',
+      'status': 'paid',
+      'paymentStatus': 'unpaid', 'testMode': true,
+    }]);
+    await tester.pumpWidget(MaterialApp(home: TourismPackageDetailsScreen(
+      item: _checkoutPackage, api: api)));
+    await tester.pumpAndSettle();
+    await _openBookingSheet(tester);
+    expect(find.text('Purchase unavailable'), findsOneWidget);
+    final action = tester.widget<FilledButton>(find.byKey(const ValueKey('package-checkout-btn')));
+    expect(action.onPressed, isNull);
+    expect(api.postedPayloads, isEmpty);
+    expect(find.textContaining('Stripe Checkout remains'), findsNothing);
   });
 
   for (final terminalStatus in ['expired', 'cancelled', 'payment_failed']) {
-    testWidgets('$terminalStatus checkout permits a new deliberate attempt',
+    testWidgets('F-F1A $terminalStatus history does not enable package purchase',
         (tester) async {
-      final api = _PackageDetailsApi(orders: [
-        {
-          'id': 'order-$terminalStatus',
-          'quoteType': 'package',
-          'packageId': 'package-repeat',
-          'departureDate': '2027-01-10',
-          'participants': {'adults': 1, 'children': 0},
-          'status': terminalStatus,
-          'paymentStatus': 'unpaid',
-          'packageAttemptId': 'attempt-$terminalStatus',
-          'amount': 100,
-        }
-      ]);
-      await tester.pumpWidget(MaterialApp(
-        home: TourismPackageDetailsScreen(item: _checkoutPackage, api: api),
-      ));
-
+      final api = _PackageDetailsApi(orders: [{
+        'id': 'order-$terminalStatus', 'packageId': 'package-repeat',
+        'status': terminalStatus, 'testMode': true}]);
+      await tester.pumpWidget(MaterialApp(home: TourismPackageDetailsScreen(item: _checkoutPackage, api: api)));
       await _openBookingSheet(tester);
-      await tester.tap(find.text('Checkout package'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Checkout already in progress'), findsNothing);
-      expect(find.text("You've booked this package before"), findsNothing);
-      expect(api.postedPayloads, hasLength(1));
-      expect(api.postedPayload?['idempotencyKey'], startsWith('package_checkout_'));
-    });
+      expect(find.text('Purchase unavailable'), findsOneWidget);
+      expect(tester.widget<FilledButton>(find.byKey(const ValueKey('package-checkout-btn'))).onPressed, isNull);
+      expect(api.postedPayloads, isEmpty);
+  });
   }
 
   testWidgets('Home Tourism Package has View Package action and no Add to Trip',

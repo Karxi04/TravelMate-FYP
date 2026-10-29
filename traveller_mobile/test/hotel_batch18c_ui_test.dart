@@ -225,36 +225,18 @@ void main() {
   });
 
   // 6. PaymentScreen opens the correct Order details
-  testWidgets('6. PaymentScreen opens the correct Order details', (tester) async {
+  testWidgets('F-F1A historical order does not re-enable new payment', (tester) async {
     _setViewport(tester);
     final api = _MockBatch18cApi();
-    api.ordersList = [samplePaidHotelOrder];
-    api.singleOrderResponse = samplePaidHotelOrder;
-
-    await tester.pumpWidget(_wrap(PaymentScreen(
-      quoteType: 'hotel',
-      quoteId: 'quote-hotel-paid-1',
-      offerId: 'offer-1',
-      acceptedPrebookSnapshotId: 'snap-1',
-      initialAmount: 780.0,
-      api: api,
-    )));
+    await tester.pumpWidget(_wrap(PaymentScreen(api: api, quoteType: 'hotel',
+      quoteId: 'old-quote', acceptedPrebookSnapshotId: 'old-snapshot')));
     await tester.pumpAndSettle();
-
-    // Verify PaymentScreen shows the post-payment hotel presentation
-    expect(find.text('Payment Verified (Stripe Test)'), findsOneWidget);
-    expect(find.text('Paid — Stripe Test Mode'), findsOneWidget);
-    expect(find.text('Hotel Reservation Status: No supplier reservation created'), findsOneWidget);
-
-    // Tap View Order Details
-    final viewOrderBtn = find.text('View Order Details');
-    expect(viewOrderBtn, findsOneWidget);
-    await tester.tap(viewOrderBtn);
+    expect(find.text('Payments unavailable'), findsOneWidget);
+    expect(find.textContaining('Stripe test Checkout'), findsNothing);
+    final dynamic state = tester.state(find.byType(PaymentScreen));
+    await state.launchCheckout();
     await tester.pumpAndSettle();
-
-    // Verify HotelOrderDetailsScreen is opened
-    expect(find.byType(HotelOrderDetailsScreen), findsOneWidget);
-    expect(find.text('The Waterfront Hotel Kuching'), findsOneWidget);
+    expect(api.postPaths, isEmpty);
   });
 
   // 7. Hotel Order details display correct hotel name
@@ -323,26 +305,17 @@ void main() {
   });
 
   // 11. Browser return recovers the current Order
-  testWidgets('11. Browser return recovers the current Order', (tester) async {
+  testWidgets('F-F1A historical browser return is read-only', (tester) async {
     _setViewport(tester);
-    final api = _MockBatch18cApi();
-    api.singleOrderResponse = samplePaidHotelOrder;
-
-    await tester.pumpWidget(_wrap(CheckoutReturnScreen(
-      link: const CheckoutReturnLink('order-hotel-paid-1', 'paid'),
-      api: api,
-    )));
+    final api = _MockBatch18cApi()..singleOrderResponse = {
+      'id': 'historical-hotel', 'quoteType': 'hotel', 'status': 'checkout_open',
+      'paymentStatus': 'unpaid', 'checkoutSessionId': 'old-session', 'testMode': true};
+    await tester.pumpWidget(_wrap(CheckoutReturnScreen(api: api,
+      link: const CheckoutReturnLink('historical-hotel', 'processing'))));
     await tester.pumpAndSettle();
-
-    expect(find.text('Payment Verified (Stripe Test)'), findsOneWidget);
-    expect(find.text('Hotel Reservation Status: No supplier reservation created'), findsOneWidget);
-    expect(find.byKey(const ValueKey('view-hotel-order-button')), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('view-hotel-order-button')));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(HotelOrderDetailsScreen), findsOneWidget);
-    expect(find.text('The Waterfront Hotel Kuching'), findsOneWidget);
+    expect(api.getPaths.where((path) => path.endsWith('/reconcile')), isEmpty);
+    expect(api.postPaths, isEmpty);
+    expect(find.text('Test payment recorded'), findsNothing);
   });
 
   // 12. App restart recovers paid Order history
@@ -558,7 +531,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Package — Kinabatangan Wildlife River Cruise'), findsOneWidget);
-    expect(find.text('Paid'), findsOneWidget);
+    expect(find.text('Paid (Stripe Test)'), findsOneWidget);
     // Package orders must NOT show hotel demo fulfillment chip
     expect(find.text('Test Mode — No Room Reserved'), findsNothing);
   });
@@ -585,7 +558,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Flight — Kuala Lumpur to Penang Flight'), findsOneWidget);
-    expect(find.text('Paid'), findsOneWidget);
+    expect(find.text('Paid (Stripe Test)'), findsOneWidget);
     // Flight orders must NOT show hotel demo fulfillment chip
     expect(find.text('Test Mode — No Room Reserved'), findsNothing);
   });

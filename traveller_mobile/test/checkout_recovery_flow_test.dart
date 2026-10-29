@@ -81,178 +81,44 @@ Widget buildTestApp(Widget child) {
 }
 
 void main() {
-  testWidgets('Package checkout shows package-specific disclaimer, not hotel disclaimer', (tester) async {
-    final api = _MockCheckoutApi();
-    await tester.pumpWidget(buildTestApp(PaymentScreen(
-      api: api,
-      packageAttemptId: 'attempt-pkg-100',
-      initialAmount: 3596.00,
-      initialBookingReference: 'PKG-PENANG-100',
-    )));
-    await tester.pumpAndSettle();
+  for (final kind in ['package', 'hotel', 'flight', 'legacy']) {
+    testWidgets('F-F1A $kind payment entry is unavailable and cannot mutate', (tester) async {
+      final api = _MockCheckoutApi();
+      await tester.pumpWidget(buildTestApp(PaymentScreen(api: api,
+        packageAttemptId: kind == 'package' ? 'existing-attempt' : '',
+        quoteType: kind == 'legacy' || kind == 'package' ? '' : kind,
+        quoteId: 'old-quote', acceptedPrebookSnapshotId: 'old-snapshot')));
+      await tester.pumpAndSettle();
+      expect(find.text('Payments unavailable'), findsOneWidget);
+      expect(find.textContaining('Open Stripe'), findsNothing);
+      expect(find.byType(TextField), findsNothing);
+      final dynamic state = tester.state(find.byType(PaymentScreen));
+      await state.launchCheckout();
+      await state.process();
+      await state.updatePayment('legacy-record', 'retry');
+      await state.reconcileOrder('old-order');
+      await tester.pumpAndSettle();
+      expect(api.postCount, 0);
+      expect(find.textContaining('Payment Successful'), findsNothing);
+    });
+  }
 
-    expect(find.text('TravelMate Checkout'), findsOneWidget);
-    expect(find.text('Authoritative quote: MYR 3596.00'), findsOneWidget);
-
-    // Package-specific disclaimer is shown:
-    expect(
-      find.textContaining('This is a Stripe test-mode order for an operator tourism package'),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('Supplier reservations remain managed by the licensed operator'),
-      findsOneWidget,
-    );
-    // Hotel-specific property fees disclaimer is NOT shown:
-    expect(
-      find.textContaining('The selected hotel quote is a provider sandbox quote and is not live inventory'),
-      findsNothing,
-    );
-  });
-
-  testWidgets('Hotel checkout shows hotel-specific provider sandbox and property fees disclaimer', (tester) async {
-    final api = _MockCheckoutApi();
-    await tester.pumpWidget(buildTestApp(PaymentScreen(
-      api: api,
-      quoteType: 'hotel',
-      quoteId: 'hotel-quote-1',
-      offerId: 'offer-1',
-      initialAmount: 450.00,
-    )));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.textContaining('The selected hotel quote is a provider sandbox quote and is not live inventory'),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('excluded property fees remain due at the property'),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('operator tourism package'),
-      findsNothing,
-    );
-  });
-
-  testWidgets('HTTP 202 or check_status releases loading and transitions button to Check Payment Status', (tester) async {
-    final api = _MockCheckoutApi();
-    api.sessionPostResponse = {
-      'ok': true,
-      'order': {
-        'id': 'order-pending-1',
-        'quoteType': 'package',
-        'status': 'checkout_pending',
-        'paymentStatus': 'unpaid',
-        'checkoutAction': 'check_status',
-        'amount': 3596.00,
-      }
-    };
-
-    await tester.pumpWidget(buildTestApp(PaymentScreen(
-      api: api,
-      packageAttemptId: 'attempt-pkg-100',
-      initialAmount: 3596.00,
-    )));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Open Stripe test Checkout'), findsOneWidget);
-
-    // Tap to launch checkout
-    await tester.tap(find.text('Open Stripe test Checkout'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.pump(const Duration(milliseconds: 200));
-
-    // Button MUST NOT remain stuck on 'Preparing Checkout…'
-    expect(find.text('Preparing Checkout…'), findsNothing);
-    // Button transitions to 'Check Payment Status'
-    expect(find.text('Check Payment Status'), findsOneWidget);
-    // SnackBar informs traveller truthfully
-    expect(
-      find.text('Payment status is still being verified. No additional payment was opened.'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('Network timeout releases loading and shows recoverable error', (tester) async {
-    final api = _MockCheckoutApi();
-    api.shouldThrowTimeout = true;
-
-    await tester.pumpWidget(buildTestApp(PaymentScreen(
-      api: api,
-      packageAttemptId: 'attempt-pkg-100',
-      initialAmount: 3596.00,
-    )));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Open Stripe test Checkout'), findsOneWidget);
-
-    await tester.tap(find.text('Open Stripe test Checkout'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.pump(const Duration(milliseconds: 200));
-
-    // Button MUST NOT be stuck on 'Preparing Checkout…'
-    expect(find.text('Preparing Checkout…'), findsNothing);
-    // Error message appears
-    expect(find.textContaining('couldn’t connect to TravelMate'), findsOneWidget);
-  });
-
-  testWidgets('Expired Session offers Restart Payment and does not throw raw exception', (tester) async {
-    final api = _MockCheckoutApi();
-    api.sessionPostResponse = {
-      'ok': true,
-      'order': {
-        'id': 'order-expired-1',
-        'quoteType': 'package',
-        'packageId': 'pkg-food-1',
-        'status': 'expired',
-        'paymentStatus': 'unpaid',
-        'checkoutAction': 'restart_payment',
-        'amount': 3596.00,
-      }
-    };
-
-    await tester.pumpWidget(buildTestApp(PaymentScreen(
-      api: api,
-      packageAttemptId: 'attempt-pkg-100',
-      initialAmount: 3596.00,
-    )));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Open Stripe test Checkout'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.pump(const Duration(milliseconds: 200));
-
-    // Button transitions to Restart Payment
-    expect(find.text('Restart Payment'), findsOneWidget);
-    expect(find.text('This Checkout Session has ended. You can restart payment.'), findsOneWidget);
-  });
-
-  testWidgets('Paid order displays Payment Verified and View Confirmed Booking', (tester) async {
-    final api = _MockCheckoutApi();
-    api.ordersList = [
-      {
-        'id': 'order-paid-1',
-        'packageAttemptId': 'attempt-pkg-paid',
-        'quoteType': 'package',
-        'status': 'paid',
-        'paymentStatus': 'paid',
-        'checkoutAction': 'view_booking',
-        'amount': 3596.00,
-      }
-    ];
-
-    await tester.pumpWidget(buildTestApp(PaymentScreen(
-      api: api,
-      packageAttemptId: 'attempt-pkg-paid',
-      initialAmount: 3596.00,
-    )));
-    await tester.pumpAndSettle();
-
-    expect(find.text('View Confirmed Booking'), findsOneWidget);
-    expect(find.text('Payment Verified · Booking Confirmed'), findsOneWidget);
-  });
+  for (final status in ['paid', 'checkout_open', 'expired', 'failed']) {
+    testWidgets('F-F1A historical $status never re-enables test Checkout', (tester) async {
+      final api = _MockCheckoutApi()..ordersList = [{
+        'id': 'historical-order', 'packageAttemptId': 'existing-attempt',
+        'status': status, 'paymentStatus': status == 'paid' ? 'paid' : 'unpaid',
+        'checkoutUrl': 'https://checkout.stripe.test/not-opened', 'testMode': true,
+        'checkoutAction': status == 'paid' ? 'view_booking' : 'continue_payment',
+      }];
+      await tester.pumpWidget(buildTestApp(PaymentScreen(api: api,
+        packageAttemptId: 'existing-attempt')));
+      await tester.pumpAndSettle();
+      expect(find.text('Payments unavailable'), findsOneWidget);
+      expect(find.text('Re-open Stripe Checkout'), findsNothing);
+      expect(find.text('View Confirmed Booking'), findsNothing);
+      expect(api.postCount, 0);
+      expect(api.ordersList.single['status'], status);
+    });
+  }
 }

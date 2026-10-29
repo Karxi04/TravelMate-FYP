@@ -1,7 +1,10 @@
 from unittest.mock import patch
 
+import pytest
 
-def test_fb2_sample_hotel_total_includes_nights_rooms_and_persists(client, mock_traveller_auth):
+
+@pytest.mark.parametrize('save_details_only', [False, True])
+def test_fb2_sample_hotel_total_includes_nights_rooms_and_persists(client, mock_traveller_auth, save_details_only):
     from tests.test_pu2b_hotel_offer_integrity import MemoryPersistence
     memory = MemoryPersistence()
     memory.collections['itineraries'] = {'fb2-trip': {
@@ -31,11 +34,17 @@ def test_fb2_sample_hotel_total_includes_nights_rooms_and_persists(client, mock_
             'quoteId': offer['quoteId'], 'offerId': offer['offerId'], 'hotelBookingAttemptId': 'fb2-hotel-attempt',
         }).get_json()
         request = {'validationId': validation['result']['validationId'],
-                   'hotelBookingAttemptId': 'fb2-hotel-attempt', 'itineraryId': 'fb2-trip'}
+                   'hotelBookingAttemptId': 'fb2-hotel-attempt', 'itineraryId': 'fb2-trip',
+                   'saveDetailsOnly': save_details_only}
         for _ in range(2):
-            saved = client.post('/api/fr8/hotels/book', headers=headers, json=request)
+            with patch.dict('os.environ', {'HOTEL_TRANSACTION_MODE': 'provider_sandbox' if save_details_only else 'local_demo'}):
+                saved = client.post('/api/fr8/hotels/book', headers=headers, json=request)
             assert saved.status_code == 200
             body = saved.get_json()
+            if save_details_only:
+                assert not body['booking']['bookingReference']
+                assert body['booking']['confirmationLabel'] == 'Hotel Details Saved'
+                assert body['booking']['providerMutationCalled'] is False
             assert body['booking']['hotelCost'] == expected
             assert body['itinerary']['budgetEstimate']['hotel'] == expected
             assert body['itinerary']['budgetEstimate']['flight'] == 300

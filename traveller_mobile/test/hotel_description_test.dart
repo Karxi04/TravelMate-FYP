@@ -3,8 +3,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/modules/fr08_hotel_booking/hotel_description.dart';
 import 'package:travelmate_traveller/modules/fr08_hotel_booking/hotel_details_screen.dart';
 import 'package:travelmate_traveller/theme/app_theme.dart';
+import 'package:travelmate_traveller/widgets/travel_widgets.dart';
 
 void main() {
+  for (final service in ['Hotel', 'Rental']) {
+    testWidgets('F-F1A $service preparation guide does not claim a reservation', (tester) async {
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: TravelPreparationGuide(service: service))));
+      await tester.tap(find.text(service == 'Hotel' ? 'Hotel Arrival Guide' : 'Pickup & Return Guide'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining(service == 'Hotel' ? 'not a voucher or room reservation' : 'do not reserve a vehicle'), findsOneWidget);
+      expect(find.text('Booking Confirmed'), findsNothing);
+    });
+  }
+
   test('renders supported hotel markup without raw tags or active links', () {
     final spans = HotelDescription.spans(
       '<p>Welcome <strong>guests</strong>.</p><ul><li>Breakfast</li></ul><a href="https://unsafe.example">Terms</a>',
