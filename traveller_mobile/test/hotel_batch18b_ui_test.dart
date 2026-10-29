@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -101,6 +103,65 @@ Widget _wrap(Widget child) {
 }
 
 void main() {
+  testWidgets('F-B2 changed inputs discard an in-flight hotel response', (tester) async {
+    _setViewport(tester);
+    final result = Completer<Map<String, dynamic>>();
+    final api = _Batch18bMockApi()..postHandler = (path, body) => result.future;
+    await tester.pumpWidget(_wrap(HotelScreen(api: api, initialDestination: 'Penang')));
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    final Future<void> request = state.search();
+    state.destination.text = 'Melaka';
+    result.complete({'ok': true, 'items': [{'name': 'Obsolete property', 'quoteId': 'old'}]});
+    await request;
+    await tester.pumpAndSettle();
+    expect(state.items, isEmpty);
+    expect(api.postedPaths, ['/api/fr8/hotels/search']);
+  });
+
+  testWidgets('F-B2 refreshed quote gets a new attempt but duplicate retry reuses it', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    var quote = 'first-quote';
+    api.postHandler = (path, body) async {
+      if (path == '/api/fr8/hotels/search') {
+        return {'ok': true, 'items': [{'hotelId': 'same-property', 'offerId': 'same-offer',
+          'quoteId': quote, 'name': 'Property', 'roomName': 'Room', 'price': 420, 'currency': 'MYR'}]};
+      }
+      return {'ok': true, 'status': 'pending'};
+    };
+    await tester.pumpWidget(_wrap(HotelScreen(api: api, initialDestination: 'Penang')));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    await state.search();
+    await state.prebook(Map<String, dynamic>.from(state.items.first as Map));
+    await state.prebook(Map<String, dynamic>.from(state.items.first as Map));
+    quote = 'refreshed-quote';
+    await state.search();
+    await state.prebook(Map<String, dynamic>.from(state.items.first as Map));
+    final requests = <Map<String, dynamic>>[];
+    for (var i = 0; i < api.postedPaths.length; i++) {
+      if (api.postedPaths[i] == '/api/fr8/hotels/prebook') requests.add(api.postedBodies[i]!);
+    }
+    expect(requests.length, 3);
+    expect(requests[0]['hotelBookingAttemptId'], requests[1]['hotelBookingAttemptId']);
+    expect(requests[2]['hotelBookingAttemptId'], isNot(requests[0]['hotelBookingAttemptId']));
+  });
+
+  testWidgets('F-B2 changed destination invalidates displayed hotel offer', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bMockApi();
+    await tester.pumpWidget(_wrap(HotelScreen(api: api, initialDestination: 'Penang')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Search hotels'));
+    await tester.pumpAndSettle();
+    expect(find.text('Penang Heritage Resort'), findsOneWidget);
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    state.destination.text = 'Melaka';
+    await tester.pumpAndSettle();
+    expect(find.text('Penang Heritage Resort'), findsNothing);
+    expect(api.postedPaths, isNot(contains('/api/fr8/hotels/prebook')));
+  });
+
   setUp(() {
     TestWidgetsFlutterBinding.ensureInitialized();
     SharedPreferences.setMockInitialValues({});

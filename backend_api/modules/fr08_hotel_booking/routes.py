@@ -664,7 +664,9 @@ def hotels_search():
         item['roomQuantity'] = room_quantity
         if item.get('priceBasis') == 'per_room_night' and item.get('priceStatus') == 'available':
             item['nightlyRoomRate'] = item.get('price')
-            item['price'] = round(float(item['price']) * room_quantity, 2)
+            nights = (datetime.strptime(payload['checkout'], '%Y-%m-%d') -
+                      datetime.strptime(payload['checkin'], '%Y-%m-%d')).days
+            item['price'] = round(float(item['price']) * room_quantity * nights, 2)
             item['priceBasis'] = 'stay_total'
         elif item.get('priceBasis') == 'room_total':
             item['nightlyRoomRate'] = None

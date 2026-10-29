@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -79,6 +80,29 @@ class _HotelScreenState extends State<HotelScreen> {
   bool sampleContentLimited = false;
   Map<String, dynamic>? lastBooking;
   final Map<String, String> bookingAttemptIds = {};
+  String? _quotedCriteria;
+
+  String _criteriaKey() => jsonEncode([destination.text.trim(), checkin.text.trim(),
+    checkout.text.trim(), adults.text.trim(), children.text.trim(),
+    rooms.map((room) => [room.adults, room.childAges]).toList(), refundableOnly, sort]);
+
+  void _clearResults() {
+    items = [];
+    compareIds.clear();
+    source = '';
+    sampleContentLimited = false;
+    _quotedCriteria = null;
+  }
+
+  void _invalidateResults() {
+    if (_quotedCriteria != null) setState(_clearResults);
+  }
+
+  bool _quoteMatchesCriteria() {
+    if (_quotedCriteria != null && _quotedCriteria == _criteriaKey()) return true;
+    showError(context, 'Search again after changing your hotel dates or guests.');
+    return false;
+  }
 
   String dateText(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -117,6 +141,7 @@ class _HotelScreenState extends State<HotelScreen> {
       children.text = '$totalChildren';
     }
     roomQuantity.text = '${rooms.length}';
+    _invalidateResults();
     setState(() {});
   }
 
@@ -186,6 +211,9 @@ class _HotelScreenState extends State<HotelScreen> {
         childAges: List.generate(initialChildCount, (_) => null),
       ),
     ];
+    for (final controller in [destination, checkin, checkout, adults, children]) {
+      controller.addListener(_invalidateResults);
+    }
   }
 
   @override
@@ -262,9 +290,10 @@ class _HotelScreenState extends State<HotelScreen> {
       return;
     }
 
+    final requestedCriteria = _criteriaKey();
     setState(() {
       busy = true;
-      compareIds.clear();
+      _clearResults();
       hasSearched = true;
       lastSearchedDestination = destination.text.trim();
     });
@@ -285,7 +314,9 @@ class _HotelScreenState extends State<HotelScreen> {
         if (sort == 'rating') 'sort': 'rating',
       });
       if (!mounted) return;
+      if (requestedCriteria != _criteriaKey()) return;
       setState(() {
+        _quotedCriteria = requestedCriteria;
         items = data['items'] ??
             (data['result'] is Map ? data['result']['items'] ?? [] : []);
         source = (data['source'] ?? '').toString();
@@ -300,6 +331,7 @@ class _HotelScreenState extends State<HotelScreen> {
 
   Future<void> details(Map<String, dynamic> hotel) async {
     if (!mounted) return;
+    if (!_quoteMatchesCriteria()) return;
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -356,6 +388,8 @@ class _HotelScreenState extends State<HotelScreen> {
 
   Future<void> prebook(Map<String, dynamic> hotel) async {
     if (busy) return;
+    if (!_quoteMatchesCriteria()) return;
+    final requestedCriteria = _quotedCriteria;
     final offerId = (hotel['offerId'] ?? '').toString();
     if (offerId.isEmpty) {
       showError(
@@ -363,7 +397,7 @@ class _HotelScreenState extends State<HotelScreen> {
       return;
     }
     final attemptId = bookingAttemptIds.putIfAbsent(
-      offerId,
+      '${hotel['quoteId']}|$offerId',
       () => newTransactionAttemptId('hotel'),
     );
     setState(() => busy = true);
@@ -455,6 +489,7 @@ class _HotelScreenState extends State<HotelScreen> {
         data = Map<String, dynamic>.from(
             await api.post('/api/fr8/hotels/prebook', request));
       }
+      if (!mounted || requestedCriteria != _criteriaKey() || requestedCriteria != _quotedCriteria) return;
       if (data['status'] == 'pending') {
         if (!mounted) return;
         setState(() => lastBooking = {
@@ -475,6 +510,12 @@ class _HotelScreenState extends State<HotelScreen> {
       final acceptedPrebook = data['acceptedPrebook'] is Map
           ? Map<String, dynamic>.from(data['acceptedPrebook'] as Map)
           : null;
+      final acceptedExpiry = DateTime.tryParse('${acceptedPrebook?['expiresAt'] ?? ''}');
+      if (acceptedPrebook?['status'] == 'expired' ||
+          (acceptedExpiry != null && !acceptedExpiry.isAfter(DateTime.now()))) {
+        showError(context, 'This accepted hotel price has expired. Search again.');
+        return;
+      }
       final acceptedPrebookSnapshotId = (acceptedPrebook?['id'] ??
               data['acceptedPrebookSnapshotId'] ??
               data['acceptedPrebookId'] ??
@@ -584,7 +625,7 @@ class _HotelScreenState extends State<HotelScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Dates: ${checkin.text} → ${checkout.text} • ${rooms.length} room(s)',
+                      'Dates: ${hotel['checkin'] ?? checkin.text} → ${hotel['checkout'] ?? checkout.text} • ${hotel['roomQuantity'] ?? rooms.length} room(s)',
                       style: const TextStyle(
                           fontSize: 12, color: InkWashColors.mutedInk),
                     ),
@@ -1157,6 +1198,7 @@ class _HotelScreenState extends State<HotelScreen> {
                       onChanged: (val) {
                         setState(() {
                           rooms[0].childAges[childIdx] = val;
+                          _clearResults();
                         });
                       },
                     ),
@@ -1340,6 +1382,7 @@ class _HotelScreenState extends State<HotelScreen> {
                               onChanged: (val) {
                                 setState(() {
                                   rooms[i].childAges[childIdx] = val;
+                                  _clearResults();
                                 });
                               },
                             ),
@@ -1358,19 +1401,19 @@ class _HotelScreenState extends State<HotelScreen> {
             FilterChip(
                 selected: refundableOnly,
                 label: const Text('Refundable'),
-                onSelected: (v) => setState(() => refundableOnly = v)),
+                onSelected: (v) => setState(() { refundableOnly = v; _clearResults(); })),
             ChoiceChip(
                 selected: sort == 'top',
                 label: const Text('Top'),
-                onSelected: (_) => setState(() => sort = 'top')),
+                onSelected: (_) => setState(() { sort = 'top'; _clearResults(); })),
             ChoiceChip(
                 selected: sort == 'price',
                 label: const Text('Lowest price'),
-                onSelected: (_) => setState(() => sort = 'price')),
+                onSelected: (_) => setState(() { sort = 'price'; _clearResults(); })),
             ChoiceChip(
                 selected: sort == 'rating',
                 label: const Text('Best rating'),
-                onSelected: (_) => setState(() => sort = 'rating')),
+                onSelected: (_) => setState(() { sort = 'rating'; _clearResults(); })),
           ]),
           const SizedBox(height: 10),
           FilledButton.icon(

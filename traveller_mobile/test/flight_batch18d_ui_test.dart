@@ -31,8 +31,10 @@ Future<void> _showAttachedFlight(WidgetTester tester) async {
 
 class _MockFlightApi extends ApiService {
   Map<String, dynamic>? searchResponse;
+  Completer<Map<String, dynamic>>? pendingSearch;
   Map<String, dynamic>? returnsResponse;
   Map<String, dynamic>? detailsResponse;
+  Completer<Map<String, dynamic>>? pendingDetails;
   Map<String, dynamic>? selectResponse;
   Map<String, dynamic>? tripResponse;
   Map<String, dynamic>? tripsResponse;
@@ -63,6 +65,7 @@ class _MockFlightApi extends ApiService {
     }
 
     if (path == '/api/fr7/flights/search') {
+      if (pendingSearch != null) return pendingSearch!.future;
       if (shouldThrowValidation) {
         throw const ApiException(
           'Use different 3-letter airports and current or future flight dates',
@@ -246,6 +249,7 @@ class _MockFlightApi extends ApiService {
     }
 
     if (path == '/api/fr7/flights/details') {
+      if (pendingDetails != null) return pendingDetails!.future;
       return detailsResponse ?? {
         'ok': true,
         'flight': {
@@ -310,6 +314,105 @@ class _MockFlightApi extends ApiService {
 }
 
 void main() {
+  testWidgets('F-B2 changed inputs discard in-flight flight details', (tester) async {
+    _setViewport(tester);
+    final api = _MockFlightApi()..pendingDetails = Completer<Map<String, dynamic>>();
+    await tester.pumpWidget(_wrap(FlightScreen(api: api)));
+    final dynamic state = tester.state(find.byType(FlightScreen));
+    await state.search();
+    final flight = Map<String, dynamic>.from(state.items.first as Map);
+    final Future<void> request = state.showDetails(flight);
+    state.travellers.text = '2';
+    api.pendingDetails!.complete({'ok': true, 'flight': flight});
+    await tester.pumpAndSettle();
+    expect(find.byType(FlightDetailsScreen), findsNothing);
+    await request;
+  });
+
+  testWidgets('F-B2 blank origin makes no flight request', (tester) async {
+    _setViewport(tester);
+    final api = _MockFlightApi();
+    await tester.pumpWidget(_wrap(FlightScreen(api: api)));
+    final dynamic state = tester.state(find.byType(FlightScreen));
+    state.from.text = '';
+    await state.search();
+    await tester.pumpAndSettle();
+    expect(api.getPaths, isEmpty);
+    expect(find.textContaining('Enter 3-letter airport codes'), findsOneWidget);
+  });
+
+  testWidgets('F-B2 changed inputs discard an in-flight flight response', (tester) async {
+    _setViewport(tester);
+    final api = _MockFlightApi()..pendingSearch = Completer<Map<String, dynamic>>();
+    await tester.pumpWidget(_wrap(FlightScreen(api: api)));
+    final dynamic state = tester.state(find.byType(FlightScreen));
+    final Future<void> request = state.search();
+    state.travellers.text = '2';
+    api.pendingSearch!.complete({'ok': true, 'searchId': 'obsolete', 'items': [
+      {'id': 'old', 'airline': 'Obsolete result', 'price': 180, 'currency': 'MYR'}
+    ]});
+    await request;
+    await tester.pumpAndSettle();
+    expect(state.items, isEmpty);
+    expect(state.searchId, isEmpty);
+    expect(api.postPaths, isEmpty);
+  });
+
+  testWidgets('F-B2 returning from Flights reloads Trip and keeps injected API', (tester) async {
+    _setViewport(tester);
+    final api = _MockFlightApi();
+    await tester.pumpWidget(_wrap(TripDetailsScreen(tripId: 'trip_mock_1', api: api)));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Flights'), 250,
+        scrollable: find.descendant(of: find.byKey(const ValueKey('trip-details-scroll')),
+            matching: find.byType(Scrollable)).first);
+    final reads = api.getPaths.where((path) => path == '/api/fr5/itineraries').length;
+    await tester.tap(find.text('Flights'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<FlightScreen>(find.byType(FlightScreen)).api, same(api));
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+    await tester.pumpAndSettle();
+    expect(api.getPaths.where((path) => path == '/api/fr5/itineraries').length, reads + 1);
+  });
+
+  testWidgets('F-B2 saved hotel reopens without inventing cancellation or supplier state', (tester) async {
+    _setViewport(tester);
+    final api = _MockFlightApi();
+    api.tripsResponse = {'ok': true, 'items': [{
+      'id': 'trip_mock_1', 'title': 'Saved trip', 'activities': [], 'budgetLimit': 2000,
+      'hotelCost': 420, 'hotelBookingId': 'synthetic-record',
+      'selectedHotel': {'name': 'Saved Property', 'roomName': 'Saved Room', 'price': 420,
+        'priceStatus': 'available', 'currency': 'MYR', 'checkin': '2030-01-01', 'checkout': '2030-01-03'},
+    }]};
+    await tester.pumpWidget(_wrap(TripDetailsScreen(tripId: 'trip_mock_1', api: api)));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Attached hotel'), 250,
+        scrollable: find.descendant(of: find.byKey(const ValueKey('trip-details-scroll')),
+            matching: find.byType(Scrollable)).first);
+    expect(find.textContaining('Non-refundable'), findsNothing);
+    await tester.ensureVisible(find.text('View details').last);
+    await tester.tap(find.text('View details').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Select room'), findsNothing);
+    expect(find.textContaining('2030-01-03'), findsWidgets);
+    expect(api.postPaths, isEmpty);
+  });
+
+  testWidgets('F-B2 changed passenger count invalidates displayed quote', (tester) async {
+    _setViewport(tester);
+    final api = _MockFlightApi();
+    await tester.pumpWidget(_wrap(FlightScreen(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Search flights'));
+    await tester.pumpAndSettle();
+    expect(find.text('Malaysia Airlines MH1138'), findsOneWidget);
+    final dynamic state = tester.state(find.byType(FlightScreen));
+    state.travellers.text = '2';
+    await tester.pumpAndSettle();
+    expect(find.text('Malaysia Airlines MH1138'), findsNothing);
+    expect(api.postPaths, isEmpty);
+  });
+
   // 1. One-way Flight search results render
   testWidgets('1. One-way Flight search results render', (tester) async {
     _setViewport(tester);

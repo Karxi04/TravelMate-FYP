@@ -7,12 +7,12 @@ import 'hotel_description.dart';
 
 class HotelDetailsScreen extends StatelessWidget {
   final Map<String, dynamic> hotel;
-  final VoidCallback onProceed;
+  final VoidCallback? onProceed;
 
   const HotelDetailsScreen({
     super.key,
     required this.hotel,
-    required this.onProceed,
+    this.onProceed,
   });
 
   Widget row(String label, dynamic value, {IconData? icon}) {
@@ -113,7 +113,7 @@ class HotelDetailsScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              FilledButton.icon(
+              if (onProceed != null) FilledButton.icon(
                   onPressed: onProceed,
                   icon: const Icon(Icons.hotel_class_outlined),
                   label: const Text('Select room')),

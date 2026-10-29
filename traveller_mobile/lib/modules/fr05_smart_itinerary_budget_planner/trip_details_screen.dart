@@ -15,6 +15,7 @@ import '../fr03_destination_search_information/destination_details_screen.dart';
 import '../fr06_weather_forecast/weather_screen.dart';
 import '../fr07_flight_search/flight_screen.dart';
 import '../fr08_hotel_booking/hotel_screen.dart';
+import '../fr08_hotel_booking/hotel_details_screen.dart';
 import '../fr08_hotel_booking/car_rental_screen.dart';
 import '../fr09_payment/payment_screen.dart';
 
@@ -896,7 +897,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             Text((hotel['name'] ?? 'Hotel').toString(),
                 style: const TextStyle(fontWeight: FontWeight.w700)),
             Text(
-              '${hotel['roomName'] ?? 'Room'} - ${hotel['refundable'] == true ? 'Refundable' : 'Non-refundable'}',
+              '${hotel['roomName'] ?? 'Room'} - ${hotel['refundable'] == true ? 'Refundable' : hotel['refundable'] == false ? 'Non-refundable' : 'Cancellation terms unavailable'}',
               style:
                   const TextStyle(fontSize: 12, color: InkWashColors.mutedInk),
             ),
@@ -905,11 +906,17 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
             if ((t['hotelBookingId'] ?? '').toString().isNotEmpty)
-              Text('Booking ID: ${t['hotelBookingId']}',
+              Text('Hotel record ID: ${t['hotelBookingId']}',
                   style: const TextStyle(
                       fontSize: 12, color: InkWashColors.mutedInk)),
             const SizedBox(height: 10),
             Wrap(spacing: 8, children: [
+              OutlinedButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => HotelDetailsScreen(hotel: hotel))),
+                icon: const Icon(Icons.info_outline_rounded),
+                label: const Text('View details'),
+              ),
               OutlinedButton.icon(
                 onPressed: busy ? null : () => _replaceHotel(t),
                 icon: const Icon(Icons.swap_horiz_rounded),
@@ -989,6 +996,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         context,
         MaterialPageRoute(
             builder: (_) => HotelScreen(
+                  api: api,
                   initialDestination: (t['destinationArea'] ?? '').toString(),
                   initialCheckin: (t['startDate'] ?? '').toString(),
                   initialCheckout: (t['endDate'] ?? '').toString(),
@@ -1134,6 +1142,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
       context,
       MaterialPageRoute(
         builder: (_) => FlightScreen(
+          api: api,
           initialDeparture: (flight['departureAirport'] ?? '').toString(),
           initialArrival:
               (flight['arrivalAirport'] ?? t['destinationArea'] ?? '')
@@ -2332,15 +2341,19 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         SecondaryButton(
           label: 'Flights',
           icon: Icons.flight_takeoff_rounded,
-          onPressed: () => Navigator.push(
+          onPressed: () async {
+            await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => FlightScreen(
+                api: api,
                 initialOutboundDate: (t['startDate'] ?? '').toString(),
                 initialReturnDate: (t['endDate'] ?? '').toString(),
               ),
             ),
-          ),
+            );
+            if (mounted) await load();
+          },
         ),
         SecondaryButton(
           label: 'Hotels',
@@ -2350,6 +2363,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               context,
               MaterialPageRoute(
                 builder: (_) => HotelScreen(
+                  api: api,
                   initialDestination: (t['destinationArea'] ?? '').toString(),
                   initialCheckin: (t['startDate'] ?? '').toString(),
                   initialCheckout: (t['endDate'] ?? '').toString(),
@@ -2394,6 +2408,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                         '')
                     .toString();
                 return PaymentScreen(
+                  api: api,
                   initialBookingReference:
                       (selectedHotel['bookingReference'] ?? '').toString(),
                   initialAmount: selectedHotel['price'] is num

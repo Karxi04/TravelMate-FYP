@@ -1,6 +1,50 @@
 from unittest.mock import patch
 
 
+def test_fb2_sample_hotel_total_includes_nights_rooms_and_persists(client, mock_traveller_auth):
+    from tests.test_pu2b_hotel_offer_integrity import MemoryPersistence
+    memory = MemoryPersistence()
+    memory.collections['itineraries'] = {'fb2-trip': {
+        'id': 'fb2-trip', 'travellerId': 'test_traveller_uid', 'destinationArea': 'Penang',
+        'startDate': '2030-01-01', 'endDate': '2030-01-04', 'travellerCount': 4,
+        'selectedFlight': {'price': 300, 'currency': 'MYR', 'priceBasis': 'itinerary_total'},
+        'flightCost': 300, 'flightCurrency': 'MYR', 'travelMode': 'flight',
+        'activities': [], 'budgetLimit': 3000,
+    }}
+    headers = {'Authorization': 'Bearer valid_test_token'}
+    with patch.dict('os.environ', {'HOTEL_SAMPLE_MODE': 'true', 'HOTEL_TRANSACTION_MODE': 'local_demo'}), \
+         patch('modules.fr08_hotel_booking.routes.retrieveHotelOffers', side_effect=RuntimeError('offline fixture')), \
+         patch('modules.fr08_hotel_booking.routes.claimRecord', side_effect=memory.claim), \
+         patch('modules.fr08_hotel_booking.routes.retrieveRecord', side_effect=memory.retrieve), \
+         patch('modules.fr08_hotel_booking.routes.updateRecord', side_effect=memory.update), \
+         patch('modules.fr08_hotel_booking.routes.validateHotelOffer') as provider_prebook, \
+         patch('modules.fr08_hotel_booking.routes.createBookingReference') as provider_book:
+        response = client.post('/api/fr8/hotels/search', headers=headers, json={
+            'destination': 'Penang', 'checkin': '2030-01-01', 'checkout': '2030-01-04',
+            'adults': 4, 'roomQuantity': 2, 'occupancies': [{'adults': 2}, {'adults': 2}],
+        })
+        assert response.status_code == 200
+        offer = response.get_json()['items'][0]
+        expected = offer['nightlyRoomRate'] * 3 * 2
+        assert offer['price'] == expected
+        validation = client.post('/api/fr8/hotels/prebook', headers=headers, json={
+            'quoteId': offer['quoteId'], 'offerId': offer['offerId'], 'hotelBookingAttemptId': 'fb2-hotel-attempt',
+        }).get_json()
+        request = {'validationId': validation['result']['validationId'],
+                   'hotelBookingAttemptId': 'fb2-hotel-attempt', 'itineraryId': 'fb2-trip'}
+        for _ in range(2):
+            saved = client.post('/api/fr8/hotels/book', headers=headers, json=request)
+            assert saved.status_code == 200
+            body = saved.get_json()
+            assert body['booking']['hotelCost'] == expected
+            assert body['itinerary']['budgetEstimate']['hotel'] == expected
+            assert body['itinerary']['budgetEstimate']['flight'] == 300
+            assert body['itinerary']['selectedFlight']['price'] == 300
+        assert len(memory.collections['hotel_bookings']) == 1
+        provider_prebook.assert_not_called()
+        provider_book.assert_not_called()
+
+
 def test_hotel_content_projection_is_allowlisted():
     from services.liteapi_service import normalizeHotelContent
 

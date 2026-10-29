@@ -480,6 +480,8 @@ CITY_TO_IATA = {
 
 def _resolve_iata(val):
     c = str(val or '').strip().upper()
+    if not c:
+        return c
     if len(c) == 3 and c.isalpha():
         return c
     for k, v in CITY_TO_IATA.items():
