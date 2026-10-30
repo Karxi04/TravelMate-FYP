@@ -90,8 +90,22 @@ class _HotelScreenState extends State<HotelScreen> {
     for (final raw in items) {
       if (raw is! Map) continue;
       final item = Map<String, dynamic>.from(raw);
-      final propId = (item['hotelId'] ?? item['id'] ?? item['name'] ?? '').toString().trim();
-      final key = propId.isNotEmpty ? propId : 'prop_${item.hashCode}';
+      final hotelId = (item['hotelId'] ?? '').toString().trim();
+      final id = (item['id'] ?? '').toString().trim();
+      final offerId = (item['offerId'] ?? '').toString().trim();
+      final name = (item['name'] ?? '').toString().trim();
+      final address = (item['address'] ?? '').toString().trim();
+
+      String key;
+      if (hotelId.isNotEmpty) {
+        key = hotelId;
+      } else if (id.isNotEmpty && id != offerId) {
+        key = id;
+      } else if (name.isNotEmpty) {
+        key = address.isNotEmpty ? '${name}_$address' : name;
+      } else {
+        key = 'prop_${item.hashCode}';
+      }
 
       if (!groups.containsKey(key)) {
         groups[key] = {
@@ -100,13 +114,29 @@ class _HotelScreenState extends State<HotelScreen> {
         };
       } else {
         final offerList = groups[key]!['offers'] as List<Map<String, dynamic>>;
-        final offerId = (item['offerId'] ?? '').toString();
         if (offerId.isEmpty || !offerList.any((o) => (o['offerId'] ?? '').toString() == offerId)) {
           offerList.add(item);
         }
       }
     }
     return groups.values.toList();
+  }
+
+  String _resolveHotelPhoto(Map<String, dynamic> h) {
+    final direct = (h['mainPhoto'] ?? h['main_photo'] ?? h['thumbnailUrl'] ?? h['thumbnail'] ?? '').toString().trim();
+    if (direct.startsWith('http://') || direct.startsWith('https://')) {
+      return direct;
+    }
+    for (final key in ['imageUrls', 'images', 'photos', 'roomImageUrls']) {
+      final list = h[key];
+      if (list is List && list.isNotEmpty) {
+        for (final entry in list) {
+          final u = (entry is Map ? (entry['url'] ?? entry['image']) : entry)?.toString().trim() ?? '';
+          if (u.startsWith('http://') || u.startsWith('https://')) return u;
+        }
+      }
+    }
+    return '';
   }
 
   String _criteriaKey() => jsonEncode([destination.text.trim(), checkin.text.trim(),
@@ -360,14 +390,26 @@ class _HotelScreenState extends State<HotelScreen> {
   Future<void> details(Map<String, dynamic> hotel) async {
     if (!mounted) return;
     if (!_quoteMatchesCriteria()) return;
+    final propKey = (hotel['hotelId'] ?? hotel['id'] ?? hotel['name'] ?? '').toString().trim();
+    Map<String, dynamic> activeOffer = Map<String, dynamic>.from(hotel);
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => HotelDetailsScreen(
-          hotel: hotel,
+          hotel: activeOffer,
+          onOfferSelected: (newOffer) {
+            activeOffer = Map<String, dynamic>.from(newOffer);
+            final allOffers = (activeOffer['_allOffers'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
+            final newIdx = allOffers.indexWhere((o) => o['offerId'] == activeOffer['offerId']);
+            if (newIdx != -1 && propKey.isNotEmpty) {
+              setState(() {
+                _selectedOfferIndexByProperty[propKey] = newIdx;
+              });
+            }
+          },
           onProceed: () {
             Navigator.pop(context);
-            prebook(hotel);
+            prebook(activeOffer);
           },
         ),
       ),
@@ -1378,8 +1420,8 @@ class _HotelScreenState extends State<HotelScreen> {
             h['_allOffers'] = offers;
             final id = idOf(h);
             final selected = compareIds.contains(id);
-            final photoUrl = (h['mainPhoto'] ?? h['main_photo'] ?? '').toString().trim();
-            final hasValidPhoto = photoUrl.startsWith('http://') || photoUrl.startsWith('https://');
+            final photoUrl = _resolveHotelPhoto(h);
+            final hasValidPhoto = photoUrl.isNotEmpty;
 
             return Padding(
               key: ValueKey('hotel-card-$propertyKey'),

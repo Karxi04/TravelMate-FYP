@@ -164,24 +164,31 @@ class _PaymentScreenState extends State<PaymentScreen> {
           orElse: () => null,
         );
       }
-      if (match == null && widget.acceptedPrebookSnapshotId.isNotEmpty) {
+      if (match == null && (widget.acceptedPrebookSnapshotId.isNotEmpty || widget.quoteId.isNotEmpty)) {
         match = list.cast<Map<String, dynamic>?>().firstWhere(
           (item) {
             if (item?['quoteType'] != 'hotel') return false;
             final itemSnapshot = (item?['acceptedPrebookSnapshotId'] ?? '').toString();
             final itemOffer = (item?['offerId'] ?? '').toString();
             final itemQuote = (item?['quoteId'] ?? '').toString();
-            if (itemSnapshot.isNotEmpty && itemSnapshot != widget.acceptedPrebookSnapshotId) {
-              return false;
+
+            // If both have snapshot IDs, they MUST match
+            if (itemSnapshot.isNotEmpty && widget.acceptedPrebookSnapshotId.isNotEmpty) {
+              return itemSnapshot == widget.acceptedPrebookSnapshotId;
             }
+            // If both have offer IDs, they must match
             if (itemOffer.isNotEmpty && widget.offerId.isNotEmpty && itemOffer != widget.offerId) {
               return false;
             }
-            if (itemQuote.isNotEmpty && widget.quoteId.isNotEmpty && itemQuote != widget.quoteId) {
+            // If item has a snapshot ID but widget doesn't, cannot match
+            if (itemSnapshot.isNotEmpty && widget.acceptedPrebookSnapshotId.isEmpty) {
               return false;
             }
-            return itemSnapshot == widget.acceptedPrebookSnapshotId ||
-                (itemSnapshot.isEmpty && widget.quoteId.isNotEmpty && itemQuote == widget.quoteId);
+            // If item has NO snapshot ID, match if quoteId matches
+            if (itemSnapshot.isEmpty && widget.quoteId.isNotEmpty) {
+              return itemQuote == widget.quoteId;
+            }
+            return false;
           },
           orElse: () => null,
         );
