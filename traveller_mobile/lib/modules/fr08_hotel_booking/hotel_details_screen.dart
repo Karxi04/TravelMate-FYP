@@ -68,9 +68,9 @@ class HotelDetailsScreen extends StatelessWidget {
         .where((value) => value.isNotEmpty)
         .join(' • ');
     final images = <String>{
-      (hotel['mainPhoto'] ?? '').toString(),
+      (hotel['mainPhoto'] ?? hotel['main_photo'] ?? '').toString(),
       ...(hotel['imageUrls'] as List? ?? []).map((e) => e.toString()),
-    }.where((e) => e.isNotEmpty).take(6).toList();
+    }.where((e) => e.isNotEmpty && (e.startsWith('http://') || e.startsWith('https://'))).take(6).toList();
     final roomImages = (hotel['roomImageUrls'] as List? ?? [])
         .map((e) => e.toString())
         .where((e) => e.isNotEmpty)
@@ -133,15 +133,37 @@ class HotelDetailsScreen extends StatelessWidget {
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (_, index) => ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: Image.network(images[index],
+                  child: Image.network(
+                    images[index],
+                    width: 260,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (ctx, child, progress) {
+                      if (progress == null) return child;
+                      return Container(
+                        width: 260,
+                        color: InkWashColors.cream,
+                        alignment: Alignment.center,
+                        child: const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      );
+                    },
+                    errorBuilder: (_, __, ___) => Container(
                       width: 260,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                            width: 260,
-                            color: InkWashColors.cream,
-                            alignment: Alignment.center,
-                            child: const Icon(Icons.hotel_outlined, size: 42),
-                          )),
+                      color: InkWashColors.cream,
+                      alignment: Alignment.center,
+                      child: const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.hotel_outlined, size: 42, color: InkWashColors.blueGrey),
+                          SizedBox(height: 4),
+                          Text('Photo unavailable', style: TextStyle(fontSize: 12, color: InkWashColors.mutedInk)),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -192,6 +214,43 @@ class HotelDetailsScreen extends StatelessWidget {
                               'Hotel information is available for the selected offer.')
                           .toString(),
                           bodyStyle: descriptionStyle)))),
+          if (hotel['_allOffers'] is List && (hotel['_allOffers'] as List).length > 1) ...[
+            const SizedBox(height: 18),
+            const TravelSectionHeader(title: 'Available room types'),
+            const SizedBox(height: 8),
+            InkCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${(hotel['_allOffers'] as List).length} room options offered by this property:',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: InkWashColors.blueGrey)),
+                  const SizedBox(height: 8),
+                  ...((hotel['_allOffers'] as List).whereType<Map>()).map((off) {
+                    final isCurrent = off['offerId'] == hotel['offerId'];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Icon(isCurrent ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                              size: 16, color: isCurrent ? AppColors.success : InkWashColors.blueGrey),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${off['roomName'] ?? 'Room'}: ${off['currency'] ?? 'MYR'} ${off['price'] ?? '-'}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 18),
           const TravelSectionHeader(title: 'Room & stay details'),
           const SizedBox(height: 8),

@@ -81,7 +81,33 @@ class _HotelScreenState extends State<HotelScreen> {
   bool sampleContentLimited = false;
   Map<String, dynamic>? lastBooking;
   final Map<String, String> bookingAttemptIds = {};
+  final Map<String, int> _selectedOfferIndexByProperty = {};
   String? _quotedCriteria;
+
+  List<Map<String, dynamic>> get _groupedHotels {
+    if (items.isEmpty) return const [];
+    final Map<String, Map<String, dynamic>> groups = {};
+    for (final raw in items) {
+      if (raw is! Map) continue;
+      final item = Map<String, dynamic>.from(raw);
+      final propId = (item['hotelId'] ?? item['id'] ?? item['name'] ?? '').toString().trim();
+      final key = propId.isNotEmpty ? propId : 'prop_${item.hashCode}';
+
+      if (!groups.containsKey(key)) {
+        groups[key] = {
+          'propertyKey': key,
+          'offers': <Map<String, dynamic>>[item],
+        };
+      } else {
+        final offerList = groups[key]!['offers'] as List<Map<String, dynamic>>;
+        final offerId = (item['offerId'] ?? '').toString();
+        if (offerId.isEmpty || !offerList.any((o) => (o['offerId'] ?? '').toString() == offerId)) {
+          offerList.add(item);
+        }
+      }
+    }
+    return groups.values.toList();
+  }
 
   String _criteriaKey() => jsonEncode([destination.text.trim(), checkin.text.trim(),
     checkout.text.trim(), adults.text.trim(), children.text.trim(),
@@ -93,6 +119,7 @@ class _HotelScreenState extends State<HotelScreen> {
     source = '';
     sampleContentLimited = false;
     _quotedCriteria = null;
+    _selectedOfferIndexByProperty.clear();
   }
 
   void _invalidateResults() {
@@ -607,6 +634,11 @@ class _HotelScreenState extends State<HotelScreen> {
                 icon: const Icon(Icons.payment_outlined),
                 label: const Text('Continue to Payment'),
                 onPressed: () {
+                  final rawAmount = acceptedPrebook?['amount'] ?? hotel['price'];
+                  final double? parsedAmount = rawAmount is num
+                      ? rawAmount.toDouble()
+                      : (rawAmount != null ? double.tryParse(rawAmount.toString()) : null);
+                  final bookingTitle = '${hotel['name'] ?? ''}${hotel['roomName'] != null ? ' - ${hotel['roomName']}' : ''}'.trim();
                   Navigator.pop(ctx);
                   Navigator.push(context, MaterialPageRoute(builder: (_) => PaymentScreen(
                     api: api, quoteType: 'hotel',
@@ -615,6 +647,8 @@ class _HotelScreenState extends State<HotelScreen> {
                     acceptedPrebookSnapshotId: acceptedPrebookSnapshotId,
                     acceptedPrebook: acceptedPrebook,
                     hotelBookingAttemptId: attemptId,
+                    initialAmount: parsedAmount,
+                    initialBookingReference: bookingTitle,
                   )));
                 },
               ),
@@ -1334,11 +1368,21 @@ class _HotelScreenState extends State<HotelScreen> {
                       : 'No hotel offers match "$lastSearchedDestination" for the selected dates and guest count. Try adjusting your dates or destination.')
                   : 'Compare hotel offers and save stay details for your Trip. A saved record is not a room reservation.',
             ),
-          ...items.map((raw) {
-            final h = Map<String, dynamic>.from(raw as Map);
+          ..._groupedHotels.map((group) {
+            final propertyKey = (group['propertyKey'] ?? '').toString();
+            final offers = (group['offers'] as List<Map<String, dynamic>>?) ?? const [];
+            if (offers.isEmpty) return const SizedBox.shrink();
+
+            final selectedIdx = (_selectedOfferIndexByProperty[propertyKey] ?? 0).clamp(0, offers.length - 1);
+            final h = Map<String, dynamic>.from(offers[selectedIdx]);
+            h['_allOffers'] = offers;
             final id = idOf(h);
             final selected = compareIds.contains(id);
+            final photoUrl = (h['mainPhoto'] ?? h['main_photo'] ?? '').toString().trim();
+            final hasValidPhoto = photoUrl.startsWith('http://') || photoUrl.startsWith('https://');
+
             return Padding(
+              key: ValueKey('hotel-card-$propertyKey'),
               padding: const EdgeInsets.only(bottom: 10),
               child: InkWell(
                 borderRadius: BorderRadius.circular(20),
@@ -1363,24 +1407,65 @@ class _HotelScreenState extends State<HotelScreen> {
                                     }
                                   })),
                         ]),
-                        if ((h['mainPhoto'] ?? '').toString().isNotEmpty) ...[
-                          const SizedBox(height: 10),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(14),
-                            child: Image.network(
-                              h['mainPhoto'].toString(),
-                              height: 150,
-                              width: double.infinity,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
-                                height: 80,
-                                color: InkWashColors.cream,
-                                alignment: Alignment.center,
-                                child: const Text('Hotel photo unavailable'),
-                              ),
-                            ),
-                          ),
-                        ],
+                        const SizedBox(height: 10),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: hasValidPhoto
+                              ? Image.network(
+                                  photoUrl,
+                                  height: 150,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  loadingBuilder: (ctx, child, progress) {
+                                    if (progress == null) return child;
+                                    return Container(
+                                      height: 150,
+                                      width: double.infinity,
+                                      color: InkWashColors.cream,
+                                      alignment: Alignment.center,
+                                      child: const SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      ),
+                                    );
+                                  },
+                                  errorBuilder: (_, __, ___) => Container(
+                                    height: 120,
+                                    width: double.infinity,
+                                    color: InkWashColors.cream,
+                                    alignment: Alignment.center,
+                                    child: const Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.hotel_outlined, size: 36, color: InkWashColors.blueGrey),
+                                        SizedBox(height: 4),
+                                        Text('Hotel photo unavailable',
+                                            style: TextStyle(fontSize: 12, color: InkWashColors.mutedInk)),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : Container(
+                                  height: 100,
+                                  width: double.infinity,
+                                  decoration: BoxDecoration(
+                                    color: InkWashColors.cream,
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: const Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.hotel_outlined, size: 36, color: InkWashColors.blueGrey),
+                                      SizedBox(height: 4),
+                                      Text('Hotel photo unavailable',
+                                          style: TextStyle(fontSize: 12, color: InkWashColors.mutedInk)),
+                                    ],
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(height: 8),
                         Text((h['address'] ?? '').toString(),
                             style:
                                 const TextStyle(color: InkWashColors.mutedInk)),
@@ -1409,6 +1494,37 @@ class _HotelScreenState extends State<HotelScreen> {
                             _buildQuoteFreshnessPill(
                                 h['quoteExpiresAt'].toString()),
                         ]),
+                        if (offers.length > 1) ...[
+                          const SizedBox(height: 10),
+                          Text('${offers.length} Room Options Available:',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: InkWashColors.blueGrey)),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: List.generate(offers.length, (idx) {
+                              final off = offers[idx];
+                              final isSel = idx == selectedIdx;
+                              final rName = (off['roomName'] ?? 'Room ${idx + 1}').toString();
+                              final rPrice = off['price'] != null ? ' (MYR ${off['price']})' : '';
+                              return ChoiceChip(
+                                label: Text('$rName$rPrice',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: isSel ? FontWeight.w700 : FontWeight.normal,
+                                    )),
+                                selected: isSel,
+                                onSelected: (val) {
+                                  if (val) {
+                                    setState(() {
+                                      _selectedOfferIndexByProperty[propertyKey] = idx;
+                                    });
+                                  }
+                                },
+                              );
+                            }),
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         Text((h['roomName'] ?? 'Available room').toString(),
                             style:
