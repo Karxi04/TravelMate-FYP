@@ -77,7 +77,8 @@ class SharedFirestoreService {
       if (page.docs.length < 10) break;
       cursor = page.docs.last;
     }
-    all.sort((a, b) => '${b['updatedAt'] ?? ''}'.compareTo('${a['updatedAt'] ?? ''}'));
+    all.sort((a, b) => '${b['updatedAt'] ?? b['submittedAt'] ?? b['date'] ?? ''}'
+        .compareTo('${a['updatedAt'] ?? a['submittedAt'] ?? a['date'] ?? ''}'));
     final unique = <String, Map<String, dynamic>>{};
     for (final item in all) {
       unique.putIfAbsent('${item['reviewKey'] ?? item['id']}', () => item);

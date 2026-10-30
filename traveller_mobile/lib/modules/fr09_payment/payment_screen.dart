@@ -64,6 +64,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
   List<dynamic> orders = [];
   bool busy = false;
   bool showCard = false;
+  bool capabilityLoading = true;
+  Set<String> checkoutTypes = {};
+  String get checkoutType => widget.packageAttemptId.isNotEmpty ? 'package' : widget.quoteType;
+  bool get consumerPaymentsAvailable => hostedCheckout && checkoutTypes.contains(checkoutType);
   final paymentAttempt = TransactionAttemptLifecycle('payment');
   final checkoutAttempts = CheckoutAttemptStore();
 
@@ -77,6 +81,36 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool get hostedCheckout =>
       (widget.quoteType.isNotEmpty || widget.packageAttemptId.isNotEmpty) && !api.isStandalone;
 
+  double? get authoritativeAmount {
+    if (activeOrder?['amount'] != null) {
+      final amt = num.tryParse(activeOrder!['amount'].toString())?.toDouble();
+      if (amt != null && amt > 0) return amt;
+    }
+    if (widget.initialAmount != null && widget.initialAmount! > 0) {
+      return widget.initialAmount;
+    }
+    if (widget.acceptedPrebook != null) {
+      final raw = widget.acceptedPrebook!['amount'] ?? widget.acceptedPrebook!['price'];
+      if (raw != null) {
+        final amt = (raw is num) ? raw.toDouble() : double.tryParse(raw.toString());
+        if (amt != null && amt > 0) return amt;
+      }
+    }
+    return null;
+  }
+
+  bool get isHotelQuoteValid {
+    if (widget.quoteType != 'hotel') return true;
+    if (widget.acceptedPrebookSnapshotId.isEmpty) return false;
+    if (widget.acceptedPrebook != null && widget.acceptedPrebook!['expiresAt'] != null) {
+      final exp = DateTime.tryParse(widget.acceptedPrebook!['expiresAt'].toString());
+      if (exp != null && DateTime.now().toUtc().isAfter(exp.toUtc())) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +123,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
       billingEmail.text = FirebaseAuth.instance.currentUser?.email ?? '';
     } catch (_) {}
     Future.microtask(() async {
+      final types = await loadHostedCheckoutCapabilities(api);
+      if (!mounted) return;
+      setState(() { checkoutTypes = types; capabilityLoading = false; });
       await loadHistory();
       if (hostedCheckout) await loadOrders();
     });
@@ -118,12 +155,50 @@ class _PaymentScreenState extends State<PaymentScreen> {
         orElse: () => null,
       );
     }
-    if (match == null && !isPackage && widget.quoteType.isNotEmpty) {
+    if (match == null && !isPackage && widget.quoteType == 'hotel') {
+      if (widget.hotelBookingAttemptId != null && widget.hotelBookingAttemptId!.isNotEmpty) {
+        match = list.cast<Map<String, dynamic>?>().firstWhere(
+          (item) => item?['quoteType'] == 'hotel' &&
+              (item?['hotelBookingAttemptId'] == widget.hotelBookingAttemptId ||
+               item?['orderAttemptId'] == widget.hotelBookingAttemptId),
+          orElse: () => null,
+        );
+      }
+      if (match == null && (widget.acceptedPrebookSnapshotId.isNotEmpty || widget.quoteId.isNotEmpty)) {
+        match = list.cast<Map<String, dynamic>?>().firstWhere(
+          (item) {
+            if (item?['quoteType'] != 'hotel') return false;
+            final itemSnapshot = (item?['acceptedPrebookSnapshotId'] ?? '').toString();
+            final itemOffer = (item?['offerId'] ?? '').toString();
+            final itemQuote = (item?['quoteId'] ?? '').toString();
+
+            // If both have snapshot IDs, they MUST match
+            if (itemSnapshot.isNotEmpty && widget.acceptedPrebookSnapshotId.isNotEmpty) {
+              return itemSnapshot == widget.acceptedPrebookSnapshotId;
+            }
+            // If both have offer IDs, they must match
+            if (itemOffer.isNotEmpty && widget.offerId.isNotEmpty && itemOffer != widget.offerId) {
+              return false;
+            }
+            // If item has a snapshot ID but widget doesn't, cannot match
+            if (itemSnapshot.isNotEmpty && widget.acceptedPrebookSnapshotId.isEmpty) {
+              return false;
+            }
+            // If item has NO snapshot ID, match if quoteId matches
+            if (itemSnapshot.isEmpty && widget.quoteId.isNotEmpty) {
+              return itemQuote == widget.quoteId;
+            }
+            return false;
+          },
+          orElse: () => null,
+        );
+      }
+    }
+    if (match == null && !isPackage && widget.quoteType == 'flight') {
       match = list.cast<Map<String, dynamic>?>().firstWhere(
-        (item) => item?['quoteType'] == widget.quoteType &&
-            (item?['quoteId'] == (widget.quoteType == 'hotel' ? widget.quoteId : widget.searchId) ||
-             (widget.quoteType == 'hotel' && widget.acceptedPrebookSnapshotId.isNotEmpty &&
-              item?['acceptedPrebookSnapshotId'] == widget.acceptedPrebookSnapshotId)),
+        (item) => item?['quoteType'] == 'flight' &&
+            widget.searchId.isNotEmpty && item?['quoteId'] == widget.searchId &&
+            widget.optionId.isNotEmpty && item?['optionId'] == widget.optionId,
         orElse: () => null,
       );
     }
@@ -177,8 +252,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return 'check_status';
   }
 
+  bool _paymentUnavailable() {
+    if (consumerPaymentsAvailable) return false;
+    showError(context, 'Checkout is unavailable for this selection. Your saved details and history are unchanged.');
+    return true;
+  }
+
   Future<void> launchCheckout() async {
-    if (busy) return;
+    if (_paymentUnavailable() || busy) return;
 
     if (checkoutAction == 'view_booking' || isSuccessfulPayment(result?['paymentStatus']) || activeOrder?['status'] == 'paid') {
       _navigateToBooking();
@@ -247,9 +328,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final terminalOrder = orders.any((raw) {
         final item = Map<String, dynamic>.from(raw as Map);
         final sameQuote = isPackage
-            ? (item['packageAttemptId'] == scope || item['orderAttemptId'] == scope)
+            ? (scope.isNotEmpty && (item['packageAttemptId'] == scope || item['orderAttemptId'] == scope))
             : (item['quoteType'] == widget.quoteType &&
-                item['quoteId'] == (widget.quoteType == 'hotel' ? widget.quoteId : widget.searchId));
+                (widget.quoteType == 'hotel'
+                    ? (widget.acceptedPrebookSnapshotId.isNotEmpty &&
+                       item['acceptedPrebookSnapshotId'] == widget.acceptedPrebookSnapshotId &&
+                       (widget.offerId.isEmpty || item['offerId'] == widget.offerId))
+                    : (widget.searchId.isNotEmpty && item['quoteId'] == widget.searchId &&
+                       widget.optionId.isNotEmpty && item['optionId'] == widget.optionId)));
         return sameQuote &&
             {'expired', 'payment_failed', 'payment_mismatch', 'cancelled'}.contains(item['status']);
       });
@@ -330,6 +416,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> reconcileActiveOrder() async {
+    if (_paymentUnavailable()) return;
     final orderId = (activeOrder?['id'] ?? result?['orderId'] ?? '').toString();
     if (orderId.isNotEmpty) {
       await reconcileOrder(orderId);
@@ -339,6 +426,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> reconcileOrder(String orderId) async {
+    if (_paymentUnavailable()) return;
     if (orderId.isEmpty || busy) return;
     setState(() => busy = true);
     try {
@@ -367,8 +455,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
         final msg = switch (action) {
           'view_booking' => widget.quoteType == 'hotel'
               ? 'Payment verified (Stripe Test Mode). Hotel reservations require direct property confirmation and are not submitted to suppliers.'
-              : 'Payment verified! Your booking is confirmed.',
-          'continue_payment' => 'Checkout is open. Tap Continue Payment on Stripe to complete.',
+              : 'Payment verified. View your order for fulfillment status.',
+          'continue_payment' => 'Checkout is open. Tap Continue to Payment to complete.',
           'restart_payment' => 'Previous session has expired. You may restart payment.',
           _ => 'Payment status is still being verified. No additional payment was opened.',
         };
@@ -392,6 +480,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> _handleRestartPayment() async {
+    if (_paymentUnavailable()) return;
     setState(() => busy = true);
     try {
       final isPackage = currentAttemptId.isNotEmpty || widget.packageAttemptId.isNotEmpty || (activeOrder?['quoteType'] == 'package');
@@ -544,6 +633,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> _reopenStripe() async {
+    if (_paymentUnavailable()) return;
     if (checkoutUrl != null && checkoutUrl!.isNotEmpty) {
       final uri = Uri.tryParse(checkoutUrl!);
       if (uri != null && await launchUrl(uri, mode: LaunchMode.externalApplication)) {
@@ -600,153 +690,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> process() async {
-    if (busy || isSuccessfulPayment(result?['paymentStatus'])) return;
-    final value = double.tryParse(amount.text.trim()) ?? 0;
-    final number = digits(cardNumber.text);
-
-    if (value <= 0) {
-      showError(context, 'Enter a valid payment amount.');
-      return;
-    }
-    if (cardholder.text.trim().length < 2) {
-      showError(context, 'Enter the cardholder name.');
-      return;
-    }
-    if (number.length < 16) {
-      showError(context, 'Card number must contain at least 16 digits.');
-      return;
-    }
-    if (!expiryValid(expiry.text.trim())) {
-      showError(context, 'Enter a valid future expiry date in MM/YY format.');
-      return;
-    }
-    if (cvc.text.trim().length < 3) {
-      showError(context, 'Enter a valid security code.');
-      return;
-    }
-    if (!billingEmail.text.contains('@')) {
-      showError(context, 'Enter a valid billing email.');
-      return;
-    }
-
-    setState(() => busy = true);
-    try {
-      final paymentAttemptId = paymentAttempt.currentOrCreate;
-      if (canonicalPaymentStatus(result?['paymentStatus']) == 'pending') {
-        final reconciled = await api.get(
-          '/api/fr9/payments/attempts/$paymentAttemptId',
-        );
-        if (reconciled['payment'] is Map) {
-          result = Map<String, dynamic>.from(reconciled['payment'] as Map);
-        }
-        if (isSuccessfulPayment(result?['paymentStatus'])) {
-          if (mounted) setState(() {});
-          await loadHistory();
-          return;
-        }
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 900));
-      final data = await api.post('/api/fr9/payments/process', {
-        'paymentAttemptId': paymentAttemptId,
-        'bookingId': bookingId.text.trim(),
-        'amount': value,
-        'cardholderName': cardholder.text.trim(),
-        'billingEmail': billingEmail.text.trim(),
-        'cardBrand': cardBrand(number),
-        'cardLast4': number.substring(number.length - 4),
-      });
-      if (!mounted) return;
-      setState(
-          () => result = Map<String, dynamic>.from(data['payment'] as Map));
-      if (isSuccessfulPayment(result?['paymentStatus'])) {
-        cardNumber.clear();
-        expiry.clear();
-        cvc.clear();
-      }
-      await loadHistory();
-    } on TimeoutException {
-      if (!mounted) return;
-      setState(() => result = {
-            'paymentAttemptId': paymentAttempt.current,
-            'paymentStatus': 'pending',
-            'transactionReference': 'Verification pending',
-            'amount': value,
-            'currency': 'MYR',
-          });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text(
-          'The payment outcome is still being checked. The same attempt will be reconciled; no new payment was created.',
-        ),
-      ));
-    } catch (e) {
-      if (e is ApiException && e.data['newAttemptRequired'] == true) {
-        paymentAttempt.startNewAttempt();
-      }
-      if (mounted) showError(context, e);
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
+    showError(context, 'Use hosted Checkout for an eligible Hotel or Package.');
   }
 
   Future<void> updatePayment(String paymentId, String action) async {
-    if (paymentId.isEmpty) {
-      showError(context, 'Payment reference is unavailable.');
-      return;
-    }
-    setState(() => busy = true);
-    try {
-      final data = await api.post('/api/fr9/payments/$paymentId/$action');
-      if (!mounted) return;
-      if (data['payment'] is Map) {
-        result = Map<String, dynamic>.from(data['payment'] as Map);
-      }
-      await loadHistory();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(action == 'retry'
-            ? 'Payment status checked.'
-            : (data['message'] ?? 'Payment cancelled in TravelMate.')
-                .toString()),
-      ));
-    } on ApiException catch (e) {
-      if (mounted) {
-        if (e.code == 'flight_ticketing_unavailable') {
-          showError(context,
-              'TravelMate can save this fare as a planning estimate, but cannot issue or reserve an airline ticket.');
-        } else {
-          showError(context, e.message.isNotEmpty ? e.message : e.toString());
-        }
-      }
-    } catch (e) {
-      if (mounted) showError(context, e);
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
+    showError(context, 'Use the order status and hosted Checkout recovery actions.');
   }
 
   Widget _buildDisclaimer() {
-    final isPackage = widget.packageAttemptId.isNotEmpty ||
-        widget.quoteType == 'package' ||
-        activeOrder?['quoteType'] == 'package';
-    final isHotel = widget.quoteType == 'hotel';
-
-    final String text;
-    if (isPackage) {
-      text =
-          'This is a Stripe test-mode order for an operator tourism package. Payment confirms your booking and fulfills a dedicated Package Trip in TravelMate. Supplier reservations remain managed by the licensed operator. TravelMate does not receive or store card numbers or security codes.';
-    } else if (isHotel) {
-      text =
-          'Stripe Test Mode — No real payment will be charged. This checkout does not confirm a reservation with the hotel. The selected hotel quote is a provider sandbox quote and is not live inventory. The provider offer total covers the requested stay and occupancy; any excluded property fees remain due at the property. TravelMate does not receive or store card numbers or security codes.';
-    } else {
-      text =
-          'This is a Stripe test-mode order. Payment confirms your verified fare quote. TravelMate does not receive or store card numbers or security codes.';
-    }
-
     return InkCard(
       color: InkWashColors.cream,
-      child: Text(
-        text,
-        style: const TextStyle(color: InkWashColors.ink, height: 1.35),
+      child: const Text(
+        '$academicPaymentDisclosure Review the accepted total before continuing. Card details are entered only on hosted Checkout.',
+        style: TextStyle(color: InkWashColors.ink, height: 1.35),
       ),
     );
   }
@@ -781,9 +737,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           '$a Adult${a != 1 ? 's' : ''}${c > 0 ? ', $c Child${c != 1 ? 'ren' : ''}' : ''}';
     }
 
-    final displayAmount = activeOrder?['amount'] != null
-        ? num.tryParse(activeOrder!['amount'].toString())?.toDouble()
-        : widget.initialAmount;
+    final displayAmount = authoritativeAmount;
 
     final currentAction = checkoutAction;
     final bool isFlight = widget.quoteType == 'flight';
@@ -791,20 +745,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
         activeOrder?['paymentStatus'] == 'paid' ||
         result?['paymentStatus'] == 'paid' ||
         currentAction == 'view_booking';
-    final bool isHotelMissingSnapshot =
-        isHotel && widget.acceptedPrebookSnapshotId.isEmpty && activeOrder == null;
     final (statusLabel, statusTone, statusIcon) = switch (currentAction) {
       'view_booking' => (
-          isHotel
-              ? 'Payment Verified (Stripe Test)'
-              : isFlight
-                  ? 'Payment Verified (Historical)'
-                  : 'Payment Verified · Booking Confirmed',
+          'Payment Completed',
           AppStatusTone.success,
           Icons.check_circle_rounded
         ),
       'continue_payment' => (
-          'Stripe Checkout Open',
+          'Checkout Open',
           AppStatusTone.warning,
           Icons.open_in_new_rounded
         ),
@@ -818,9 +766,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
           AppStatusTone.neutral,
           Icons.replay_rounded
         ),
-      _ => isHotelMissingSnapshot
+      _ => !isHotelQuoteValid
           ? (
-              'Validation Required',
+              'Price Unavailable',
               AppStatusTone.warning,
               Icons.warning_amber_rounded,
             )
@@ -840,14 +788,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final buttonLabel = busy
         ? 'Preparing Checkout…'
         : switch (currentAction) {
-            'continue_payment' => 'Continue Payment on Stripe',
+            'continue_payment' => 'Continue to Payment',
             'check_status' => 'Check Payment Status',
             'restart_payment' => 'Restart Payment',
-            'view_booking' =>
-                isHotel ? 'View Order Details' : 'View Confirmed Booking',
+            'view_booking' => 'View Order Details',
             _ => (isFlight && !isPaid)
                 ? 'Flight ticketing unavailable'
-                : 'Open Stripe test Checkout',
+                : 'Continue to Payment',
           };
 
     final buttonIcon = busy
@@ -868,7 +815,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
         children: [
           const TravelSectionHeader(
-            title: 'Stripe test Checkout',
+            title: 'Review Payment',
             subtitle: 'Card details are entered only on Stripe-hosted Checkout.',
           ),
           const SizedBox(height: 12),
@@ -928,63 +875,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                   ),
                 ],
-                if (isHotel && (currentAction == 'view_booking' || activeOrder?['status'] == 'paid' || activeOrder?['paymentStatus'] == 'paid')) ...[
-                  const SizedBox(height: 10),
-                  InkCard(
-                    color: InkWashColors.cream,
-                    padding: const EdgeInsets.all(AppSpacing.sm),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            StatusChip(
-                              text: 'Paid — Stripe Test Mode',
-                              tone: AppStatusTone.success,
-                              icon: Icons.check_circle_rounded,
-                            ),
-                            StatusChip(
-                              text: 'Test Mode',
-                              tone: AppStatusTone.neutral,
-                              icon: Icons.info_outline_rounded,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Hotel Reservation Status: No supplier reservation created',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textPrimary,
-                              ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'This is a test payment in Stripe Test Mode. No real charges were incurred, and no room has been reserved with the hotel.',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                if (isHotelMissingSnapshot) ...[
+                if (isHotel && !isHotelQuoteValid) ...[
                   const SizedBox(height: 10),
                   InkCard(
                     color: const Color(0xFFFEF3C7),
-                    child: const Row(
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.warning_amber_rounded,
+                        const Icon(Icons.warning_amber_rounded,
                             size: 18, color: Color(0xFFD97706)),
-                        SizedBox(width: 8),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'An accepted hotel prebook snapshot is required before Checkout. Return to Hotel search and validate the quote to proceed.',
-                            style: TextStyle(
+                            widget.acceptedPrebookSnapshotId.isEmpty
+                                ? 'Price unavailable — refresh hotel offer. An accepted hotel prebook snapshot is required before Checkout.'
+                                : 'This accepted hotel price has expired. Search and validate the offer again.',
+                            style: const TextStyle(
                               fontSize: 12,
                               color: Color(0xFF92400E),
                               fontWeight: FontWeight.w600,
@@ -1047,13 +953,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                     Flexible(
                       child: Text(
-                        displayAmount != null
-                            ? 'Authoritative quote: MYR ${displayAmount.toStringAsFixed(2)}'
-                            : 'MYR 0.00',
-                        style: const TextStyle(
-                          fontSize: 16,
+                        !isHotelQuoteValid
+                            ? 'Price unavailable — refresh hotel offer'
+                            : displayAmount != null
+                                ? 'Authoritative quote: MYR ${displayAmount.toStringAsFixed(2)}'
+                                : 'Loading price...',
+                        style: TextStyle(
+                          fontSize: !isHotelQuoteValid ? 13 : 16,
                           fontWeight: FontWeight.w800,
-                          color: InkWashColors.ink,
+                          color: !isHotelQuoteValid
+                              ? const Color(0xFFD97706)
+                              : InkWashColors.ink,
                         ),
                         textAlign: TextAlign.end,
                       ),
@@ -1075,7 +985,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: (busy || (isFlight && !isPaid)) ? null : launchCheckout,
+            onPressed: (busy || (isFlight && !isPaid) || !isHotelQuoteValid || (displayAmount == null && !isPaid))
+                ? null
+                : launchCheckout,
             icon: busy
                 ? const SizedBox(
                     width: 18,
@@ -1086,7 +998,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                   )
                 : Icon(buttonIcon),
-            label: Text(buttonLabel),
+            label: Text(!isHotelQuoteValid
+                ? 'Price unavailable — refresh hotel offer'
+                : (displayAmount == null && !isPaid)
+                    ? 'Loading price...'
+                    : buttonLabel),
           ),
           if (isFlight && !isPaid) ...[
             const SizedBox(height: 8),
@@ -1101,7 +1017,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             OutlinedButton.icon(
               onPressed: busy ? null : _navigateToBooking,
               icon: const Icon(Icons.receipt_long_rounded),
-              label: const Text('View Paid Order'),
+              label: const Text('View Order Details'),
             ),
           ],
           if (currentAction == 'continue_payment') ...[
@@ -1119,12 +1035,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
             OutlinedButton.icon(
               onPressed: busy ? null : _reopenStripe,
               icon: const Icon(Icons.open_in_new_rounded),
-              label: const Text('Re-open Stripe Checkout'),
+              label: const Text('Complete Checkout'),
             ),
           ],
           const SizedBox(height: 24),
           const TravelSectionHeader(
-            title: 'Order history',
+            title: 'Payment History',
             subtitle: 'Pending orders are reconciled when you return to the app.',
           ),
           const SizedBox(height: 10),
@@ -1132,7 +1048,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             const TravelEmptyState(
               icon: Icons.receipt_long_outlined,
               title: 'No Checkout orders yet',
-              message: 'Your Stripe test orders will appear here.',
+              message: 'Your orders will appear here.',
             ),
           ...orders.take(3).map((raw) {
             final item = Map<String, dynamic>.from(raw as Map);
@@ -1188,7 +1104,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   );
                 },
                 icon: const Icon(Icons.history_rounded, size: 16),
-                label: const Text('View full payment history'),
+                label: const Text('View Payment History'),
               ),
             ),
           ],
@@ -1199,6 +1115,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (capabilityLoading) {
+      return Scaffold(appBar: AppBar(title: const Text('Review Payment')),
+        body: const Center(child: CircularProgressIndicator()));
+    }
+    if (!consumerPaymentsAvailable) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Payments unavailable')),
+        body: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const TravelEmptyState(icon: Icons.bookmark_outline,
+              title: 'Keep planning your trip',
+              message: 'Checkout is unavailable for this selection or is not configured. Your saved details and payment history remain available.'),
+            TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => TravelRecordsScreen(api: api))),
+              child: const Text('View Travel Records')),
+          ]),
+        ),
+      );
+    }
     if (hostedCheckout) return _buildHostedCheckout();
     return Scaffold(
       appBar: AppBar(title: const Text('Secure card payment')),

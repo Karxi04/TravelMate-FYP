@@ -472,9 +472,9 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
               menuTile(
                 Icons.receipt_long_outlined,
-                'Payment history',
-                'View transactions and payment records',
-                () => open(PaymentHistoryScreen(api: api)),
+                'Travel Records',
+                'Saved travel options and historical records',
+                () => open(TravelRecordsScreen(api: api)),
               ),
               const SizedBox(height: 18),
               const TravelSectionHeader(title: 'Settings'),

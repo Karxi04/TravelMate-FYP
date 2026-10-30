@@ -171,38 +171,19 @@ void main() {
       expect(find.text('2 Rooms · 5 Adults · 1 Child'), findsOneWidget);
     });
 
-    testWidgets('ISS-18B-03 A: PaymentScreen displays Validation Required when snapshot is missing', (tester) async {
-      _setViewport(tester);
-      final api = _Batch18bV1MockApi();
-      await tester.pumpWidget(_wrap(PaymentScreen(
-        api: api,
-        quoteType: 'hotel',
-        quoteId: 'quote-v1-missing',
-        offerId: 'offer-v1-missing',
-        acceptedPrebookSnapshotId: '',
-        initialAmount: 336.94,
-      )));
-      await tester.pumpAndSettle();
-
-      // Status chip must show Validation Required
-      expect(find.text('Validation Required'), findsOneWidget);
-      expect(find.text('Ready for Checkout'), findsNothing);
-
-      // Authoritative quote display
-      expect(find.text('Authoritative quote: MYR 336.94'), findsOneWidget);
-
-      // Warning card must be visible explaining that snapshot is required
-      expect(find.textContaining('An accepted hotel prebook snapshot is required before Checkout'), findsOneWidget);
-
-      // Button is present and tapping it shows clear error without invoking Stripe
-      final checkoutBtn = find.text('Open Stripe test Checkout');
-      expect(checkoutBtn, findsOneWidget);
-      await tester.tap(checkoutBtn);
-      await tester.pumpAndSettle();
-
-      expect(find.text('An accepted hotel prebook snapshot is required before Checkout.'), findsOneWidget);
-      expect(api.postedPaths, isNot(contains('/api/fr9/checkout/session')));
-    });
+    testWidgets('F-F1A missing accepted price cannot expose payment', (tester) async {
+    _setViewport(tester);
+    final api = _Batch18bV1MockApi();
+    await tester.pumpWidget(_wrap(PaymentScreen(api: api, quoteType: 'hotel',
+      quoteId: 'old-quote', acceptedPrebookSnapshotId: '')));
+    await tester.pumpAndSettle();
+    expect(find.text('Payments unavailable'), findsOneWidget);
+    expect(find.textContaining('Stripe test Checkout'), findsNothing);
+    final dynamic state = tester.state(find.byType(PaymentScreen));
+    await state.launchCheckout();
+    await tester.pumpAndSettle();
+    expect(api.postedPaths, isEmpty);
+  });
 
     testWidgets('ISS-18B-03 B: Hotel prebook outcome sheet prompts re-validation if snapshot ID is missing', (tester) async {
       _setViewport(tester);
@@ -238,10 +219,10 @@ void main() {
       expect(find.text('Hotel Offer Validated'), findsOneWidget);
 
       // Warning card should alert traveller that quote snapshot was not received
-      expect(find.textContaining('An accepted quote snapshot was not received'), findsOneWidget);
+      expect(find.textContaining('Please validate this offer again before saving.'), findsOneWidget);
 
       // Button should offer Re-validate Quote for Checkout, NOT Pay with Card
-      final revalidateBtn = find.text('Re-validate Quote for Checkout');
+      final revalidateBtn = find.text('Re-validate Quote');
       expect(revalidateBtn, findsOneWidget);
       expect(find.text('Pay with Card (Stripe Test)'), findsNothing);
 
@@ -265,7 +246,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // After re-validation, sheet re-opens with valid snapshot
-      expect(find.text('Pay with Card (Stripe Test)'), findsOneWidget);
+      expect(find.text('Save Hotel Details'), findsOneWidget);
     });
   });
 }

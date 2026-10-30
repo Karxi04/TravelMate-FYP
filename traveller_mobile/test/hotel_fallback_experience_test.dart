@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/modules/fr08_hotel_booking/hotel_screen.dart';
 import 'package:travelmate_traveller/services/api_service.dart';
+import 'package:travelmate_traveller/services/standalone_api_service.dart';
 
 class _MockHotelApi extends ApiService {
   final Map<String, dynamic> Function(String path, dynamic body)? postHandler;
@@ -32,6 +35,31 @@ void _setViewport(WidgetTester tester) {
 }
 
 void main() {
+  test('F-F1A standalone saved hotel reads remain account-scoped and read-only', () async {
+    final before = jsonEncode([{'id': 'legacy-local', 'bookingReference': 'TM-DEMO-OLD', 'bookingStatus': 'confirmed'}]);
+    final store = {'travelmate_owner_bookings': before};
+    final owner = StandaloneApiService(uidOverride: 'owner', memoryStore: store);
+    final other = StandaloneApiService(uidOverride: 'other', memoryStore: store);
+    expect((await owner.get('/api/fr8/bookings'))['items'].length, 1);
+    expect((await other.get('/api/fr8/bookings'))['items'], isEmpty);
+    expect(store['travelmate_owner_bookings'], before);
+  });
+
+  test('F-F1A standalone details-only save does not invent a reservation reference', () async {
+    final store = {'travelmate_owner_hotel_prebook_attempts': jsonEncode([{
+      'hotelBookingAttemptId': 'details-only', 'validatedOffer': {
+        'name': 'Saved hotel', 'currency': 'MYR', 'price': 420,
+        'priceStatus': 'available', 'offerId': 'owned-offer'},
+    }])};
+    final api = StandaloneApiService(uidOverride: 'owner', memoryStore: store);
+    final result = await api.post('/api/fr8/hotels/book', {
+      'hotelBookingAttemptId': 'details-only', 'saveDetailsOnly': true});
+    expect(result['booking']['bookingReference'], isEmpty);
+    expect(result['booking']['confirmationLabel'], 'Hotel Details Saved');
+    expect(result['booking']['isSimulated'], isTrue);
+    expect((await api.get('/api/fr8/bookings'))['items'].length, 1);
+  });
+
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
   testWidgets('opens with prefilled destination when supplied from context',

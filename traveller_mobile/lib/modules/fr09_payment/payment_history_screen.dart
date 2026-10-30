@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../fr05_smart_itinerary_budget_planner/trip_details_screen.dart';
+import '../fr07_flight_search/flight_details_screen.dart';
+import '../fr07_flight_search/flight_screen.dart';
+import '../fr08_hotel_booking/hotel_details_screen.dart';
+import '../fr08_hotel_booking/hotel_screen.dart';
 import '../../services/api_service.dart';
 import '../../services/transaction_request.dart';
 import '../../theme/app_theme.dart';
@@ -11,6 +16,136 @@ import '../fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart'
 import '../fr08_hotel_booking/hotel_order_details_screen.dart';
 import 'payment_screen.dart';
 import 'payment_status.dart';
+
+class TravelRecordsScreen extends StatefulWidget {
+  final ApiService? api;
+  const TravelRecordsScreen({super.key, this.api});
+  @override
+  State<TravelRecordsScreen> createState() => _TravelRecordsScreenState();
+}
+
+class _TravelRecordsScreenState extends State<TravelRecordsScreen> {
+  late final ApiService api;
+  final List<Map<String, dynamic>> records = [];
+  bool loading = true;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    api = widget.api ?? ApiService();
+    Future.microtask(load);
+  }
+
+  Future<void> load() async {
+    setState(() { loading = true; error = null; });
+    try {
+      final responses = await Future.wait([
+        api.get('/api/fr5/itineraries'), api.get('/api/fr8/bookings')]);
+      if (responses.any((response) => response is! Map || response['ok'] != true)) {
+        throw const ApiException('Travel records could not be loaded. Please retry.', 503, {});
+      }
+      final next = <Map<String, dynamic>>[];
+      final attachedHotels = <String>{};
+      for (final raw in responses[0]['items'] as List? ?? []) {
+        final trip = Map<String, dynamic>.from(raw as Map);
+        for (final (service, field) in [('Flight', 'selectedFlight'), ('Hotel', 'selectedHotel'), ('Rental', 'selectedCarRental')]) {
+          if (trip[field] is! Map || (trip[field] as Map).isEmpty) continue;
+          next.add({'service': service, 'details': Map<String, dynamic>.from(trip[field] as Map), 'trip': trip});
+          if (service == 'Hotel' && trip['hotelBookingId'] != null) attachedHotels.add('${trip['hotelBookingId']}');
+        }
+      }
+      for (final raw in responses[1]['items'] as List? ?? []) {
+        final booking = Map<String, dynamic>.from(raw as Map);
+        if (attachedHotels.contains('${booking['id']}')) continue;
+        next.add({'service': 'Hotel', 'details': Map<String, dynamic>.from(
+          booking['selectedHotel'] is Map ? booking['selectedHotel'] as Map : {}), 'booking': booking});
+      }
+      if (mounted) setState(() { records..clear()..addAll(next); loading = false; });
+    } catch (failure) {
+      if (mounted) setState(() { loading = false; error = travellerErrorMessage(failure); });
+    }
+  }
+
+  String _title(String service, Map<String, dynamic> details) => switch (service) {
+    'Flight' => '${details['departureAirport'] ?? 'Origin'} → ${details['arrivalAirport'] ?? 'Destination'}',
+    'Hotel' => '${details['name'] ?? 'Saved hotel'}',
+    _ => '${details['vehicleName'] ?? 'Rental option'}',
+  };
+
+  Future<void> _details(String service, Map<String, dynamic> details) async {
+    if (service == 'Rental') {
+      await showModalBottomSheet<void>(context: context, showDragHandle: true,
+        builder: (_) => SingleChildScrollView(child: Column(children: [
+          ListTile(title: Text(_title(service, details)),
+            subtitle: Text('${details['pickupLocation'] ?? 'Location unavailable'}\n${details['pickupDate'] ?? 'Date unavailable'} → ${details['dropoffDate'] ?? 'Date unavailable'}')),
+          const TravelPreparationGuide(service: 'Rental'),
+        ])));
+    } else {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => service == 'Flight'
+        ? FlightDetailsScreen(flight: details) : HotelDetailsScreen(hotel: details)));
+    }
+  }
+
+  Widget _record(Map<String, dynamic> record) {
+    final service = record['service'] as String;
+    final details = record['details'] as Map<String, dynamic>;
+    final trip = record['trip'] as Map<String, dynamic>?;
+    final booking = record['booking'] as Map<String, dynamic>?;
+    final expiry = DateTime.tryParse('${details['expiresAt'] ?? details['quoteExpiresAt'] ?? ''}');
+    final expired = expiry != null && !expiry.isAfter(DateTime.now());
+    final price = details['price'] ?? details['totalPrice'] ?? booking?['hotelCost'];
+    final currency = details['currency'] ?? booking?['hotelCurrency'] ?? 'Currency unavailable';
+    final outbound = details['outboundSegments'];
+    final inbound = details['returnSegments'];
+    final departureDate = details['outboundDate'] ??
+        (outbound is List && outbound.isNotEmpty && outbound.first is Map ? outbound.first['departureDate'] : null);
+    final returnDate = details['returnDate'] ??
+        (inbound is List && inbound.isNotEmpty && inbound.first is Map ? inbound.first['departureDate'] : null);
+    final dates = service == 'Flight'
+      ? 'Departure: ${departureDate ?? 'Date unavailable'}${returnDate == null ? '' : ' · Return: $returnDate'}'
+      : '${details['checkin'] ?? details['pickupDate'] ?? 'Date unavailable'} → ${details['checkout'] ?? details['dropoffDate'] ?? ''}';
+    return Padding(padding: const EdgeInsets.only(bottom: 12), child: InkCard(child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('$service · ${_title(service, details)}', style: const TextStyle(fontWeight: FontWeight.w800)),
+        Text(dates),
+        Text('$currency ${price ?? 'Price unavailable'} · historical estimate'),
+        Text(service == 'Rental' ? 'Illustrative catalogue · availability unverified' : 'Provider: ${details['source'] ?? booking?['source'] ?? 'Not recorded'}'),
+        Text(trip == null ? 'Saved record · not a current Trip selection' : 'Attached to Trip: ${trip['title'] ?? trip['id']}'),
+        if (booking?['bookingStatus'] == 'pending') const Text('Save attempt pending — refresh to check')
+        else if (booking?['bookingStatus'] == 'failed') const Text('Save attempt failed — details are not confirmed'),
+        const Text('Reservation unverified · no payment is taken here'),
+        Text(expired ? 'Offer expired · search again for current prices' : expiry == null ? 'Price freshness unknown' : 'Selected offer · not a reservation'),
+        Wrap(spacing: 8, children: [
+          TextButton(onPressed: () => _details(service, details), child: const Text('View details & guide')),
+          if (trip != null) TextButton(onPressed: () async {
+            await Navigator.push(context, MaterialPageRoute(builder: (_) => TripDetailsScreen(tripId: '${trip['id']}', api: api)));
+            if (mounted) await load();
+          }, child: const Text('Open Trip')),
+          if (service != 'Rental') TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => service == 'Flight'
+            ? FlightScreen(api: api, initialDeparture: '${details['departureAirport'] ?? ''}', initialArrival: '${details['arrivalAirport'] ?? ''}')
+            : HotelScreen(api: api, initialDestination: '${trip?['destinationArea'] ?? details['address'] ?? ''}', requiresGuestConfirmation: true))),
+            child: const Text('Search current offers')),
+        ]),
+      ])));
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Travel Records'), actions: [
+      IconButton(onPressed: loading ? null : load, icon: const Icon(Icons.refresh), tooltip: 'Refresh records')]),
+    body: loading ? const Center(child: CircularProgressIndicator()) : error != null
+      ? AppErrorState(message: error!, onRetry: load)
+      : RefreshIndicator(onRefresh: load, child: ListView(padding: const EdgeInsets.all(18), children: [
+          const Text('Saved options help you plan. Only your supplier can confirm a reservation.'),
+          if (records.isEmpty) const ListTile(title: Text('No saved travel options yet')),
+          ...records.map(_record),
+          ListTile(leading: const Icon(Icons.history), title: const Text('Historical payment records'),
+            subtitle: const Text('Read-only history; test transactions stay clearly labelled'),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PaymentHistoryScreen(api: api)))),
+        ])),
+  );
+}
 
 class PaymentHistoryScreen extends StatefulWidget {
   final ApiService? api;
@@ -28,6 +163,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   String? errorMessage;
   bool isSessionExpired = false;
   bool actionBusy = false;
+  Set<String> checkoutTypes = {};
   final TransactionAttemptLifecycle _restartIntent =
       TransactionAttemptLifecycle('package_checkout_restart');
 
@@ -47,6 +183,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
     });
 
     try {
+      final types = await loadHostedCheckoutCapabilities(api);
       final response = await api.get('/api/fr9/payments');
       if (!mounted) return;
 
@@ -65,6 +202,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
         });
 
         setState(() {
+          checkoutTypes = types;
           payments = parsed;
           loading = false;
         });
@@ -96,12 +234,17 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   }
 
   Future<void> _handleCheckoutAction(Map<String, dynamic> item) async {
-    if (actionBusy) return;
+    if (!checkoutTypes.contains(item['bookingType']) || actionBusy ||
+        isSuccessfulPayment(item['paymentStatus'])) return;
     final orderId = (item['orderReference'] ?? item['id'] ?? '').toString();
     if (orderId.isEmpty) return;
     setState(() => actionBusy = true);
     try {
-      var action = (item['checkoutAction'] ?? 'check_status').toString();
+      final response = await api.get('/api/fr9/orders/$orderId/reconcile');
+      final order = response['order'] is Map
+          ? Map<String, dynamic>.from(response['order'] as Map)
+          : <String, dynamic>{};
+      final action = (order['checkoutAction'] ?? 'check_status').toString();
       if (action == 'restart_payment') {
         if ((item['bookingType'] ?? '').toString() != 'package') {
           throw Exception('Restart this payment from its original booking screen.');
@@ -142,11 +285,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
         return;
       }
 
-      final response = await api.get('/api/fr9/orders/$orderId/reconcile');
-      final order = response['order'] is Map
-          ? Map<String, dynamic>.from(response['order'] as Map)
-          : <String, dynamic>{};
-      action = (order['checkoutAction'] ?? 'check_status').toString();
+      // Only the freshly verified action can reopen or restart a payment.
       if (action == 'continue_payment') {
         final url = Uri.tryParse((order['checkoutUrl'] ?? '').toString());
         if (url == null || !await launchUrl(url, mode: LaunchMode.externalApplication)) {
@@ -261,7 +400,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
         paymentStatus == 'successful' ||
         paymentStatus == 'completed') {
       return (
-        isHotel ? 'Paid (Stripe Test)' : 'Paid',
+        isTestPaymentRecord(item) || isHotel ? 'Paid (Stripe Test)' : 'Paid',
         AppStatusTone.success,
         Icons.check_circle_rounded,
       );
@@ -624,8 +763,8 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                       ),
                     ),
                   ],
-                  if (item['source'] == 'checkout_order' &&
-                      checkoutAction != 'view_booking') ...[
+                  if (checkoutTypes.contains(item['bookingType']) && item['source'] == 'checkout_order' &&
+                      checkoutAction != 'view_booking' && !isSuccessfulPayment(item['paymentStatus'])) ...[
                     const SizedBox(height: AppSpacing.sm),
                     SizedBox(
                       width: double.infinity,
@@ -771,7 +910,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
           TravelEmptyState(
             icon: Icons.receipt_long_outlined,
             title: 'No payment records yet',
-            message: 'Completed package bookings and checkout transactions will appear here.',
+            message: 'Historical records appear here. No new payment can be started from this screen.',
           ),
         ],
       );

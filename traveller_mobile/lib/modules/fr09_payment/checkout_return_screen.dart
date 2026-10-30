@@ -8,6 +8,7 @@ import '../../widgets/travel_widgets.dart';
 import '../fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
 import '../fr08_hotel_booking/hotel_order_details_screen.dart';
 import 'payment_history_screen.dart';
+import 'payment_status.dart';
 
 class CheckoutReturnLink {
   static final _orderId = RegExp(r'^[A-Za-z0-9_-]{8,180}$');
@@ -101,7 +102,7 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
         '/api/fr9/orders/${Uri.encodeComponent(widget.link.orderId)}',
       );
       var current = Map<String, dynamic>.from(owned['order'] as Map);
-      if (_needsReconciliation(current)) {
+      if ((await loadHostedCheckoutCapabilities(api)).contains(current['quoteType']) && _needsReconciliation(current)) {
         final recovered = await api.get(
           '/api/fr9/orders/${Uri.encodeComponent(widget.link.orderId)}/reconcile',
         );
@@ -141,17 +142,35 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
     final tripId = (order?['fulfilledTripId'] ?? '').toString();
     final orderId = (order?['id'] ?? widget.link.orderId).toString();
     final title = paid
-        ? (isHotel ? 'Payment Verified (Stripe Test)' : 'Payment Successful')
+        ? 'Payment Completed'
         : processing
             ? 'Payment Processing'
             : 'Payment Not Completed';
     final message = paid
-        ? (isHotel
-            ? 'Your Stripe Test Mode payment is verified. No room has been reserved with the hotel.'
-            : 'Your TravelMate test payment has been verified. Your Orders and Payment History are refreshed.')
+        ? 'Your payment is verified.'
         : processing
-            ? 'Your payment is still being verified. You can safely check again without paying twice.'
+            ? 'Your payment is being verified. Check Payment History again shortly.'
             : 'No successful payment has been confirmed for this order.';
+
+    final snapshot = order?['quoteSnapshot'] is Map
+        ? Map<String, dynamic>.from(order!['quoteSnapshot'] as Map)
+        : (order?['packageSnapshot'] is Map
+            ? Map<String, dynamic>.from(order!['packageSnapshot'] as Map)
+            : null);
+    final hotelName = (snapshot?['name'] ??
+            snapshot?['hotelName'] ??
+            snapshot?['title'] ??
+            order?['hotelName'] ??
+            order?['productTitle'] ??
+            '')
+        .toString()
+        .trim();
+
+    final verifiedAmount = order?['amount'] != null
+        ? num.tryParse(order!['amount'].toString())?.toDouble()
+        : null;
+    final verifiedCurrency =
+        (order?['currency'] ?? 'MYR').toString().toUpperCase();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Checkout return')),
@@ -180,48 +199,85 @@ class _CheckoutReturnScreenState extends State<CheckoutReturnScreen> {
                         style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
                     const SizedBox(height: 8),
                     Text(message, textAlign: TextAlign.center),
-                    if (paid && isHotel) ...[
-                      const SizedBox(height: 16),
-                      InkCard(
-                        color: InkWashColors.cream,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Wrap(
-                              spacing: 8,
-                              runSpacing: 4,
+                    const SizedBox(height: 16),
+                    InkCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Payment Details',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: InkWashColors.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          if (hotelName.isNotEmpty) ...[
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                StatusChip(
-                                  text: 'Paid — Stripe Test Mode',
-                                  tone: AppStatusTone.success,
-                                  icon: Icons.check_circle_rounded,
+                                const SizedBox(
+                                  width: 120,
+                                  child: Text('Hotel:', style: TextStyle(color: InkWashColors.mutedInk)),
                                 ),
-                                StatusChip(
-                                  text: 'Test Mode',
-                                  tone: AppStatusTone.neutral,
-                                  icon: Icons.info_outline_rounded,
+                                Expanded(
+                                  child: Text(hotelName, style: const TextStyle(fontWeight: FontWeight.w700)),
                                 ),
                               ],
                             ),
                             const SizedBox(height: 8),
-                            Text(
-                              'Hotel Reservation Status: No supplier reservation created',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          ],
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(
+                                width: 120,
+                                child: Text('Payment Status:', style: TextStyle(color: InkWashColors.mutedInk)),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  paid
+                                      ? 'Completed'
+                                      : processing
+                                          ? 'Pending'
+                                          : 'Not Completed',
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w700,
-                                    color: AppColors.textPrimary,
+                                    color: paid ? AppColors.success : InkWashColors.ink,
                                   ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'This is a test payment in Stripe Test Mode. No real charges were incurred, and no room has been reserved with the hotel.',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (verifiedAmount != null) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(
+                                  width: 120,
+                                  child: Text('Amount:', style: TextStyle(color: InkWashColors.mutedInk)),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    '$verifiedCurrency ${verifiedAmount.toStringAsFixed(2)}',
+                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                                   ),
+                                ),
+                              ],
                             ),
                           ],
-                        ),
+                          const SizedBox(height: 10),
+                          const Divider(height: 1),
+                          const SizedBox(height: 8),
+                          const Text(
+                            academicPaymentDisclosure,
+                            style: TextStyle(fontSize: 12, color: InkWashColors.mutedInk),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                     const SizedBox(height: 24),
                     if (processing)
                       FilledButton.icon(

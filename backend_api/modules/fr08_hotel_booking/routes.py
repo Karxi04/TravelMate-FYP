@@ -664,7 +664,9 @@ def hotels_search():
         item['roomQuantity'] = room_quantity
         if item.get('priceBasis') == 'per_room_night' and item.get('priceStatus') == 'available':
             item['nightlyRoomRate'] = item.get('price')
-            item['price'] = round(float(item['price']) * room_quantity, 2)
+            nights = (datetime.strptime(payload['checkout'], '%Y-%m-%d') -
+                      datetime.strptime(payload['checkin'], '%Y-%m-%d')).days
+            item['price'] = round(float(item['price']) * room_quantity * nights, 2)
             item['priceBasis'] = 'stay_total'
         elif item.get('priceBasis') == 'room_total':
             item['nightlyRoomRate'] = None
@@ -1186,11 +1188,12 @@ def hotel_book():
         return _booking_response(claimed, reused=True, status_code=202)
 
     source = 'liteapi'
-    use_demo = _transaction_mode() == 'local_demo'
+    save_details_only = payload.get('saveDetailsOnly') is True
+    use_demo = save_details_only or _transaction_mode() == 'local_demo'
     try:
         if use_demo:
             result = {
-                'bookingId': _simulated_reference(provider_key, 'demo_booking_', 10),
+                'bookingId': None if save_details_only else _simulated_reference(provider_key, 'demo_booking_', 10),
                 'status': 'confirmed',
                 'isSimulated': True,
             }
@@ -1295,7 +1298,7 @@ def hotel_book():
         'isSimulated': source == 'local',
         'providerMutationCalled': source != 'local',
         'demoDisclosure': 'Demo reservation — no room will be reserved.' if source == 'local' else None,
-        'confirmationLabel': 'Simulated confirmation' if source == 'local' else 'Provider confirmation',
+        'confirmationLabel': 'Hotel Details Saved' if save_details_only else ('Simulated confirmation' if source == 'local' else 'Provider confirmation'),
         'stage': 'booking_confirmed',
         'updatedAt': utc_now_iso(),
     }

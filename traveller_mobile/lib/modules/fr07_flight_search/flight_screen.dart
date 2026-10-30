@@ -51,6 +51,31 @@ class _FlightScreenState extends State<FlightScreen> {
   String quoteCompleteness = '';
   String selectionStage = '';
   bool returnLoading = false;
+  String? _quotedCriteria;
+
+  String _criteriaKey() => [from.text.trim().toUpperCase(), to.text.trim().toUpperCase(),
+    outbound.text.trim(), if (roundTrip) returnDate.text.trim(), travellers.text.trim(),
+    roundTrip, travelClass, nonstopOnly, sort].join('|');
+
+  void _clearResults() {
+    items = [];
+    compareIds.clear();
+    searchId = '';
+    source = '';
+    sourceLabel = '';
+    expiresAt = null;
+    _quotedCriteria = null;
+  }
+
+  void _invalidateResults() {
+    if (_quotedCriteria != null) setState(_clearResults);
+  }
+
+  bool _quoteMatchesCriteria() {
+    if (_quotedCriteria != null && _quotedCriteria == _criteriaKey()) return true;
+    showError(context, 'Search again after changing your flight details.');
+    return false;
+  }
 
   String dateText(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -102,6 +127,9 @@ class _FlightScreenState extends State<FlightScreen> {
             ? widget.initialReturnDate!.trim()
             : dateText(start.add(const Duration(days: 3))));
     roundTrip = widget.initialReturnDate?.trim().isNotEmpty == true;
+    for (final controller in [from, to, travellers, outbound, returnDate]) {
+      controller.addListener(_invalidateResults);
+    }
   }
 
   @override
@@ -154,6 +182,7 @@ class _FlightScreenState extends State<FlightScreen> {
 
   String resolveIata(String input) {
     final cleaned = input.trim().toUpperCase();
+    if (cleaned.isEmpty) return cleaned;
     if (cleaned.length == 3 && RegExp(r'^[A-Z]{3}$').hasMatch(cleaned)) {
       return cleaned;
     }
@@ -196,9 +225,10 @@ class _FlightScreenState extends State<FlightScreen> {
       return;
     }
 
+    final requestedCriteria = _criteriaKey();
     setState(() {
       busy = true;
-      compareIds.clear();
+      _clearResults();
       returnLoading = false;
     });
 
@@ -217,7 +247,9 @@ class _FlightScreenState extends State<FlightScreen> {
       };
       final data = await api.get('/api/fr7/flights/search', query);
       if (!mounted) return;
+      if (requestedCriteria != _criteriaKey()) return;
       setState(() {
+        _quotedCriteria = requestedCriteria;
         items = data['items'] ?? data['best_flights'] ?? [];
         source = (data['source'] ?? '').toString();
         sourceLabel = (data['sourceLabel'] ?? '').toString();
@@ -246,6 +278,8 @@ class _FlightScreenState extends State<FlightScreen> {
       .toString();
 
   Future<void> showDetails(Map<String, dynamic> item) async {
+    if (!_quoteMatchesCriteria()) return;
+    final requestedSearch = searchId;
     try {
       final data = await api.post('/api/fr7/flights/details', {
         'flight': item,
@@ -256,6 +290,7 @@ class _FlightScreenState extends State<FlightScreen> {
           ? Map<String, dynamic>.from(data['flight'] as Map)
           : Map<String, dynamic>.from(item);
       if (!mounted) return;
+      if (requestedSearch != searchId || !_quoteMatchesCriteria()) return;
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -283,7 +318,9 @@ class _FlightScreenState extends State<FlightScreen> {
   }
 
   Future<void> chooseReturn(Map<String, dynamic> outboundFlight) async {
+    if (!_quoteMatchesCriteria()) return;
     if (!roundTrip || searchId.isEmpty) return;
+    final outboundSearch = searchId;
     if (isQuoteExpired()) {
       showError(
           context, 'This flight quote has expired. Please search again.');
@@ -300,6 +337,7 @@ class _FlightScreenState extends State<FlightScreen> {
           .map((item) => Map<String, dynamic>.from(item))
           .toList();
       if (!mounted) return;
+      if (outboundSearch != searchId || !_quoteMatchesCriteria()) return;
       if (returns.isEmpty) {
         showError(context,
             'No compatible return flight was found. Try another outbound option.');
@@ -601,6 +639,7 @@ class _FlightScreenState extends State<FlightScreen> {
 
   Future<void> selectFlight(Map<String, dynamic> flight,
       {Map<String, dynamic>? returnOption}) async {
+    if (!_quoteMatchesCriteria()) return;
     if (isQuoteExpired()) {
       showError(
           context, 'This flight quote has expired. Please search again.');
@@ -708,6 +747,10 @@ class _FlightScreenState extends State<FlightScreen> {
               children: [
                 const Text('Attach flight to itinerary',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                Text('Selected offer estimate: ${flight['currency'] ?? 'Currency unavailable'} ${returnOption?['combinedPrice'] ?? returnOption?['price'] ?? flight['price'] ?? 'Unavailable'}'),
+                Text('${flight['departureAirport'] ?? '-'} → ${flight['arrivalAirport'] ?? '-'}${returnOption == null ? '' : ' · return included'}'),
+                const Text('Adding this offer saves a planning estimate, not an airline ticket. Purchase must be arranged outside TravelMate.'),
                 const SizedBox(height: 8),
                 ...trips.map((raw) {
                   final trip = Map<String, dynamic>.from(raw as Map);
@@ -857,8 +900,10 @@ class _FlightScreenState extends State<FlightScreen> {
                   icon: Icon(Icons.sync_alt_rounded))
             ],
             selected: {roundTrip},
-            onSelectionChanged: (value) =>
-                setState(() => roundTrip = value.first),
+            onSelectionChanged: (value) => setState(() {
+              roundTrip = value.first;
+              _clearResults();
+            }),
           ),
           const SizedBox(height: 10),
           Row(children: [
@@ -905,7 +950,7 @@ class _FlightScreenState extends State<FlightScreen> {
                   DropdownMenuItem(value: 4, child: Text('First')),
                 ],
                 onChanged: (val) {
-                  if (val != null) setState(() => travelClass = val);
+                  if (val != null) setState(() { travelClass = val; _clearResults(); });
                 },
               ),
             ),
@@ -943,19 +988,19 @@ class _FlightScreenState extends State<FlightScreen> {
                 selected: nonstopOnly,
                 label: const Text('Nonstop only'),
                 avatar: const Icon(Icons.flight_rounded, size: 17),
-                onSelected: (v) => setState(() => nonstopOnly = v)),
+                onSelected: (v) => setState(() { nonstopOnly = v; _clearResults(); })),
             ChoiceChip(
                 selected: sort == 'top',
                 label: const Text('Top'),
-                onSelected: (_) => setState(() => sort = 'top')),
+                onSelected: (_) => setState(() { sort = 'top'; _clearResults(); })),
             ChoiceChip(
                 selected: sort == 'price',
                 label: const Text('Lowest price'),
-                onSelected: (_) => setState(() => sort = 'price')),
+                onSelected: (_) => setState(() { sort = 'price'; _clearResults(); })),
             ChoiceChip(
                 selected: sort == 'duration',
                 label: const Text('Shortest'),
-                onSelected: (_) => setState(() => sort = 'duration')),
+                onSelected: (_) => setState(() { sort = 'duration'; _clearResults(); })),
           ]),
           const SizedBox(height: 10),
           FilledButton.icon(

@@ -698,9 +698,10 @@ void main() {
       )));
       await tester.pumpAndSettle();
 
-      expect(find.text('Ticketing Unavailable'), findsOneWidget);
-      expect(find.text('Flight ticketing is unavailable.'), findsOneWidget);
-      expect(find.text('Back to Trip Planning'), findsOneWidget);
+      expect(find.text('Payments unavailable'), findsOneWidget);
+      expect(find.textContaining('Checkout is unavailable for this selection'), findsOneWidget);
+      expect(find.text('Continue to Payment'), findsNothing);
+      expect(find.text('View Travel Records'), findsOneWidget);
     });
 
     testWidgets('22. No fake airline ticket or PNR is displayed', (tester) async {

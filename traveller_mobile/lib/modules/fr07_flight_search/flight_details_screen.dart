@@ -6,12 +6,12 @@ import '../../widgets/travel_widgets.dart';
 
 class FlightDetailsScreen extends StatelessWidget {
   final Map<String, dynamic> flight;
-  final VoidCallback onSelect;
+  final VoidCallback? onSelect;
 
   const FlightDetailsScreen({
     super.key,
     required this.flight,
-    required this.onSelect,
+    this.onSelect,
   });
 
   static String? formatCabinClass(dynamic val) {
@@ -93,7 +93,7 @@ class FlightDetailsScreen extends StatelessWidget {
         flight['quoteCompleteness'] == 'return_selection_pending';
     return Scaffold(
       appBar: AppBar(title: const Text('Flight details')),
-      bottomNavigationBar: SafeArea(
+      bottomNavigationBar: onSelect == null ? null : SafeArea(
         child: Container(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           decoration: const BoxDecoration(
@@ -211,6 +211,8 @@ class FlightDetailsScreen extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 18),
+          const TravelPreparationGuide(service: 'Flight'),
           const SizedBox(height: 18),
           const TravelSectionHeader(title: 'Flight information'),
           const SizedBox(height: 8),

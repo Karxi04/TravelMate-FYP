@@ -17,6 +17,14 @@ def _provider_item():
     }
 
 
+def test_fb2_blank_airport_is_rejected_before_provider(client, mock_traveller_auth):
+    with patch('modules.fr07_flight_search.routes.retrieveFlightOptions') as provider:
+        response = client.get('/api/fr7/flights/search?departure_id=&arrival_id=PEN&outbound_date=2030-01-01',
+                              headers={'Authorization': 'Bearer valid_test_token'})
+    assert response.status_code == 400
+    provider.assert_not_called()
+
+
 def test_provider_result_is_allowlisted_and_select_requires_owned_search(client, mock_traveller_auth):
     reset_flight_quotes()
     with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [_provider_item()]}):

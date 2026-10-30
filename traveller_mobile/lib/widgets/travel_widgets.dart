@@ -80,6 +80,25 @@ class AppSectionHeader extends StatelessWidget {
   }
 }
 
+class TravelPreparationGuide extends StatelessWidget {
+  final String service;
+  const TravelPreparationGuide({super.key, required this.service});
+
+  @override
+  Widget build(BuildContext context) {
+    final (title, guidance) = switch (service) {
+      'Flight' => ('Airport Guide',
+        'Check your airline or agency confirmation for check-in and boarding deadlines. Obtain your boarding pass from the airline. Verify baggage allowances, terminals and travel documents before departure. Allow time for airport arrival, security and reaching the gate. TravelMate does not issue tickets or boarding passes.'),
+      'Hotel' => ('Hotel Arrival Guide',
+        'Confirm the property address and arrival/check-out times with the hotel. Bring required identification and your official provider confirmation. Check the property policies, cancellation terms, deposits and taxes; details not supplied here must be confirmed with the property. A saved TravelMate record is not a voucher or room reservation.'),
+      _ => ('Pickup & Return Guide',
+        'Confirm availability, pickup/return location and times with the rental provider. Check licence and identification requirements, deposit, insurance, fuel, mileage and cancellation terms before booking. Inspect the vehicle at pickup and return. TravelMate catalogue estimates do not reserve a vehicle.'),
+    };
+    return ExpansionTile(title: Text(title), leading: const Icon(Icons.info_outline),
+      children: [Padding(padding: const EdgeInsets.all(16), child: Text(guidance))]);
+  }
+}
+
 class TravelSectionHeader extends StatelessWidget {
   final String title;
   final String? subtitle;

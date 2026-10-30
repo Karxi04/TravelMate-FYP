@@ -197,6 +197,9 @@ class StandaloneApiService {
         'reused': true,
       };
     }
+    if (path == '/api/fr8/bookings') {
+      return {'ok': true, 'items': await _readList('bookings')};
+    }
     if (path.startsWith('/api/fr8/bookings/attempts/')) {
       final attemptId = path.split('/').last;
       final items = await _readList('bookings');
@@ -5209,11 +5212,11 @@ class StandaloneApiService {
       'id': id,
       'bookingId': id,
       'hotelBookingAttemptId': attemptId,
-      'bookingReference': 'TM-DEMO-${stable.toUpperCase()}',
+      'bookingReference': payload['saveDetailsOnly'] == true ? '' : 'TM-DEMO-${stable.toUpperCase()}',
       'bookingStatus': 'confirmed',
       'bookingMode': 'simulation',
       'isSimulated': true,
-      'confirmationLabel': 'Simulated confirmation',
+      'confirmationLabel': payload['saveDetailsOnly'] == true ? 'Hotel Details Saved' : 'Simulated confirmation',
       'selectedHotel': trusted,
       'hotelName': trusted['name'] ?? 'Hotel',
       'roomType': trusted['roomName'] ?? '',
