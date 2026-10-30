@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../widgets/local_place_rating.dart';
 import 'budget_comparison_screen.dart';
 import 'budget_breakdown.dart';
+import 'flight_adjustment_preview_sheet.dart';
 import 'activity_payload_helper.dart';
 import 'models/budget_model.dart';
 import 'package_trip_details_screen.dart';
@@ -776,25 +777,29 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     final cards = <Widget>[];
     if (t['selectedFlight'] is Map) {
       final flight = Map<String, dynamic>.from(t['selectedFlight'] as Map);
+      final bool isOneWay = flight['tripType'] == 'one_way';
       final returnSegments = (flight['returnSegments'] as List? ?? [])
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
-      final bool isRoundTrip = flight['tripType'] == 'round_trip' ||
-          flight['roundTripComplete'] == true ||
-          returnSegments.isNotEmpty ||
-          (flight['returnDate'] ?? '').toString().isNotEmpty;
+      final bool isRoundTrip = !isOneWay &&
+          (flight['tripType'] == 'round_trip' ||
+              flight['roundTripComplete'] == true ||
+              returnSegments.isNotEmpty ||
+              (flight['returnDate'] ?? '').toString().isNotEmpty);
 
       String? returnSummary;
-      if (returnSegments.isNotEmpty) {
-        final ret = returnSegments.first;
-        final retDept = ret['departureAirportCode'] ?? ret['departureAirport'] ?? '-';
-        final retArr = ret['arrivalAirportCode'] ?? ret['arrivalAirport'] ?? '-';
-        final retDeptTime = ret['departureTime'] ?? '';
-        final retArrTime = ret['arrivalTime'] ?? '';
-        returnSummary = '$retDept to $retArr • $retDeptTime to $retArrTime'.trim();
-      } else if ((flight['returnDate'] ?? '').toString().isNotEmpty) {
-        returnSummary = 'Return date: ${flight['returnDate']}';
+      if (isRoundTrip) {
+        if (returnSegments.isNotEmpty) {
+          final ret = returnSegments.first;
+          final retDept = ret['departureAirportCode'] ?? ret['departureAirport'] ?? '-';
+          final retArr = ret['arrivalAirportCode'] ?? ret['arrivalAirport'] ?? '-';
+          final retDeptTime = ret['departureTime'] ?? '';
+          final retArrTime = ret['arrivalTime'] ?? '';
+          returnSummary = '$retDept to $retArr • $retDeptTime to $retArrTime'.trim();
+        } else if ((flight['returnDate'] ?? '').toString().isNotEmpty) {
+          returnSummary = 'Return date: ${flight['returnDate']}';
+        }
       }
 
       final bool hasDateMismatch = _hasFlightDateMismatch(t, flight);
@@ -845,6 +850,16 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               style:
                   const TextStyle(fontSize: 12, color: InkWashColors.mutedInk),
             ),
+            if (isOneWay) ...[
+              const SizedBox(height: 2),
+              const Text(
+                'One-way flight',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: InkWashColors.mutedInk,
+                    fontWeight: FontWeight.w600),
+              ),
+            ],
             if (isRoundTrip && returnSummary != null) ...[
               const SizedBox(height: 2),
               Text(
@@ -866,19 +881,22 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             const SizedBox(height: 8),
             Wrap(spacing: 8, children: [
               OutlinedButton.icon(
+                key: const ValueKey('adjust-flight-itinerary-btn'),
                 onPressed: busy ? null : _previewFlightAdjustment,
                 icon: const Icon(Icons.auto_fix_high_rounded),
                 label: const Text('Adjust itinerary'),
               ),
               OutlinedButton.icon(
+                key: const ValueKey('replace-flight-btn'),
                 onPressed: busy ? null : () => _replaceFlight(t),
                 icon: const Icon(Icons.swap_horiz_rounded),
-                label: const Text('Change'),
+                label: const Text('Replace Flight'),
               ),
               OutlinedButton.icon(
+                key: const ValueKey('remove-flight-btn'),
                 onPressed: busy ? null : _removeFlight,
                 icon: const Icon(Icons.remove_circle_outline_rounded),
-                label: const Text('Remove'),
+                label: const Text('Remove Flight'),
               ),
             ]),
           ],
@@ -1008,18 +1026,43 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   }
 
   Future<void> _removeFlight() async {
+    final t = trip;
+    final flightCost = t?['flightCost'] ?? t?['selectedFlight']?['price'] ?? 0;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Remove flight from trip?'),
-        content: const Text('This removes the planning reference only.'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Are you sure you want to remove this flight planning reference?',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            Text(
+                '• Flight cost (RM $flightCost) will be deducted from your committed transport budget.'),
+            const SizedBox(height: 4),
+            const Text('• Hotel and car rental bookings remain unaffected.'),
+            const SizedBox(height: 4),
+            const Text(
+                '• Planned activities on travel dates will remain in your itinerary and may need manual review.'),
+            const SizedBox(height: 4),
+            const Text('• Manually protected activities will stay protected.'),
+          ],
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Keep')),
+            key: const ValueKey('cancel-remove-flight-btn'),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep Flight'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Remove')),
+            key: const ValueKey('confirm-remove-flight-btn'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove Flight'),
+          ),
         ],
       ),
     );
@@ -1028,104 +1071,15 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     try {
       final data = await api.post(
           '/api/fr7/itineraries/${widget.tripId}/flight-selection/remove');
-      if (mounted)
-        setState(
-            () => trip = Map<String, dynamic>.from(data['itinerary'] as Map));
-    } catch (error) {
-      if (mounted) showError(context, error);
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
-  }
-
-  Future<void> _previewFlightAdjustment() async {
-    setState(() => busy = true);
-    try {
-      final data = await api.post(
-          '/api/fr5/itineraries/${widget.tripId}/flight-adjustment/preview');
-      final preview = data['preview'] is Map
-          ? Map<String, dynamic>.from(data['preview'] as Map)
-          : <String, dynamic>{};
-      if (!mounted) return;
-      final apply = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) {
-          final changes = (preview['changes'] as List? ?? [])
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
-          final unscheduled = (preview['newlyUnscheduled'] as List? ?? [])
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
-          final conflicts = (preview['remainingConflicts'] as List? ?? [])
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
-          final canApply = preview['canApply'] == true;
-          return AlertDialog(
-            title: const Text('Review flight-aware adjustment'),
-            content: SizedBox(
-              width: 520,
-              child: SingleChildScrollView(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(canApply
-                          ? 'TravelMate proposes changes only on the flight-affected dates. Your current trip stays saved until you apply this preview.'
-                          : (preview['reason'] ??
-                                  'The flight data is incomplete for a safe adjustment.')
-                              .toString()),
-                      const SizedBox(height: 12),
-                      if (preview['availability'] is Map)
-                        Text(
-                            'Availability uses Penang local time and the stated TravelMate planning assumptions.'),
-                      if (changes.isEmpty && canApply)
-                        const Text('No activity timing changes are needed.'),
-                      ...changes.map((change) => Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                                '${change['activityName'] ?? 'Activity'}: ${change['kind'] ?? 'retained'}${change['reason'] == null ? '' : ' — ${change['reason']}'}'),
-                          )),
-                      if (unscheduled.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        const Text('Would become unscheduled',
-                            style: TextStyle(fontWeight: FontWeight.w900)),
-                        ...unscheduled.map((item) => Text(
-                            '• ${item['activityName'] ?? item['activityId']}: ${item['unscheduledReason'] ?? 'Needs manual review'}')),
-                      ],
-                      if (conflicts.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        const Text('Remaining conflicts',
-                            style: TextStyle(fontWeight: FontWeight.w900)),
-                        ...conflicts.map((item) => Text(
-                            '• ${item['message'] ?? 'Manual review required'}')),
-                      ],
-                    ]),
-              ),
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Keep current plan')),
-              FilledButton(
-                  onPressed: canApply
-                      ? () => Navigator.pop(dialogContext, true)
-                      : null,
-                  child: const Text('Apply changes')),
-            ],
-          );
-        },
-      );
-      if (apply != true) return;
-      final result = await api.post(
-          '/api/fr5/itineraries/${widget.tripId}/flight-adjustment/apply',
-          {'previewId': preview['previewId']});
-      if (mounted && result['itinerary'] is Map) {
-        setState(
-            () => trip = Map<String, dynamic>.from(result['itinerary'] as Map));
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Flight-aware itinerary changes applied.')));
+      if (mounted) {
+        setState(() {
+          trip = Map<String, dynamic>.from(data['itinerary'] as Map);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Flight removed from trip. Budget updated.'),
+          ),
+        );
       }
     } catch (error) {
       if (mounted) showError(context, error);
@@ -1134,25 +1088,53 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     }
   }
 
+  Future<void> _previewFlightAdjustment() async {
+    final result = await FlightAdjustmentPreviewSheet.show(
+      context: context,
+      api: api,
+      tripId: widget.tripId,
+      trip: trip ?? {},
+    );
+    if (result != null && result['itinerary'] is Map) {
+      if (mounted) {
+        setState(() =>
+            trip = Map<String, dynamic>.from(result['itinerary'] as Map));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Flight-aware itinerary changes applied.')));
+      }
+    }
+  }
+
   Future<void> _replaceFlight(Map<String, dynamic> t) async {
     final flight = t['selectedFlight'] is Map
         ? Map<String, dynamic>.from(t['selectedFlight'] as Map)
         : <String, dynamic>{};
-    await Navigator.push(
+    final bool isOneWay = flight['tripType'] == 'one_way';
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => FlightScreen(
           api: api,
+          targetTripId: widget.tripId,
+          targetTrip: t,
           initialDeparture: (flight['departureAirport'] ?? '').toString(),
           initialArrival:
               (flight['arrivalAirport'] ?? t['destinationArea'] ?? '')
                   .toString(),
-          initialOutboundDate: (t['startDate'] ?? '').toString(),
-          initialReturnDate: (t['endDate'] ?? '').toString(),
+          initialOutboundDate:
+              (flight['outboundDate'] ?? t['startDate'] ?? '').toString(),
+          initialReturnDate: isOneWay
+              ? null
+              : (flight['returnDate'] ?? t['endDate'] ?? '').toString(),
         ),
       ),
     );
-    await load();
+    if (mounted) {
+      if (result is Map && result['id'] != null) {
+        setState(() => trip = Map<String, dynamic>.from(result));
+      }
+      await load();
+    }
   }
 
   Future<void> editTrip() async {
