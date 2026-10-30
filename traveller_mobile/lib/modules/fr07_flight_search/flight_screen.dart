@@ -4,6 +4,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import 'flight_details_screen.dart';
+import 'flight_replacement_sheet.dart';
 
 class FlightScreen extends StatefulWidget {
   final String? initialOutboundDate;
@@ -11,6 +12,8 @@ class FlightScreen extends StatefulWidget {
   final String? initialDeparture;
   final String? initialArrival;
   final ApiService? api;
+  final String? targetTripId;
+  final Map<String, dynamic>? targetTrip;
 
   const FlightScreen({
     super.key,
@@ -19,6 +22,8 @@ class FlightScreen extends StatefulWidget {
     this.initialDeparture,
     this.initialArrival,
     this.api,
+    this.targetTripId,
+    this.targetTrip,
   });
 
   @override
@@ -737,45 +742,73 @@ class _FlightScreenState extends State<FlightScreen> {
         return;
       }
       while (true) {
-        final selected = await showModalBottomSheet<Map<String, dynamic>>(
-          context: context,
-          showDragHandle: true,
-          builder: (context) => SafeArea(
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
-              children: [
-                const Text('Attach flight to itinerary',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-                const SizedBox(height: 8),
-                Text('Selected offer estimate: ${flight['currency'] ?? 'Currency unavailable'} ${returnOption?['combinedPrice'] ?? returnOption?['price'] ?? flight['price'] ?? 'Unavailable'}'),
-                Text('${flight['departureAirport'] ?? '-'} → ${flight['arrivalAirport'] ?? '-'}${returnOption == null ? '' : ' · return included'}'),
-                const Text('Adding this offer saves a planning estimate, not an airline ticket. Purchase must be arranged outside TravelMate.'),
-                const SizedBox(height: 8),
-                ...trips.map((raw) {
-                  final trip = Map<String, dynamic>.from(raw as Map);
-                  final dates = [trip['startDate'], trip['endDate']]
-                      .where((d) => d != null && d.toString().isNotEmpty)
-                      .join(' to ');
-                  final subtitleText = dates.isNotEmpty
-                      ? '$dates • Budget RM ${trip['budgetLimit'] ?? 0}'
-                      : 'Budget RM ${trip['budgetLimit'] ?? 0}';
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const CircleAvatar(
-                        backgroundColor: InkWashColors.cream,
-                        child: Icon(Icons.luggage_outlined,
-                            color: InkWashColors.blueGrey)),
-                    title: Text((trip['title'] ?? 'Trip').toString()),
-                    subtitle: Text(subtitleText),
-                    onTap: () => Navigator.pop(context, trip),
-                  );
-                }),
-              ],
-            ),
-          ),
-        );
+        Map<String, dynamic>? targetedTrip = widget.targetTrip;
+        if (targetedTrip == null && widget.targetTripId != null) {
+          final match = trips.firstWhere(
+            (t) => t is Map && t['id'] == widget.targetTripId,
+            orElse: () => null,
+          );
+          if (match is Map) targetedTrip = Map<String, dynamic>.from(match);
+        }
+
+        final Map<String, dynamic>? selected = targetedTrip ??
+            await showModalBottomSheet<Map<String, dynamic>>(
+              context: context,
+              showDragHandle: true,
+              builder: (context) => SafeArea(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+                  children: [
+                    const Text('Attach flight to itinerary',
+                        style: TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 8),
+                    Text(
+                        'Selected offer estimate: ${flight['currency'] ?? 'Currency unavailable'} ${returnOption?['combinedPrice'] ?? returnOption?['price'] ?? flight['price'] ?? 'Unavailable'}'),
+                    Text(
+                        '${flight['departureAirport'] ?? '-'} → ${flight['arrivalAirport'] ?? '-'}${returnOption == null ? '' : ' · return included'}'),
+                    const Text(
+                        'Adding this offer saves a planning estimate, not an airline ticket. Purchase must be arranged outside TravelMate.'),
+                    const SizedBox(height: 8),
+                    ...trips.map((raw) {
+                      final trip = Map<String, dynamic>.from(raw as Map);
+                      final dates = [trip['startDate'], trip['endDate']]
+                          .where((d) => d != null && d.toString().isNotEmpty)
+                          .join(' to ');
+                      final subtitleText = dates.isNotEmpty
+                          ? '$dates • Budget RM ${trip['budgetLimit'] ?? 0}'
+                          : 'Budget RM ${trip['budgetLimit'] ?? 0}';
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const CircleAvatar(
+                            backgroundColor: InkWashColors.cream,
+                            child: Icon(Icons.luggage_outlined,
+                                color: InkWashColors.blueGrey)),
+                        title: Text((trip['title'] ?? 'Trip').toString()),
+                        subtitle: Text(subtitleText),
+                        onTap: () => Navigator.pop(context, trip),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            );
         if (selected == null) return;
+
+        final bool isReplacement = selected['selectedFlight'] != null;
+        if (isReplacement) {
+          final confirmed = await FlightReplacementSheet.show(
+            context: context,
+            currentFlight:
+                Map<String, dynamic>.from(selected['selectedFlight'] as Map),
+            newFlight: flight,
+            returnOption: returnOption,
+            trip: selected,
+          );
+          if (confirmed != true) return;
+        }
+
         final request = <String, dynamic>{
           'itineraryId': selected['id'],
           'searchId': searchId,
@@ -813,7 +846,7 @@ class _FlightScreenState extends State<FlightScreen> {
                   ? (error.data['conflicts'] as List)
                   : null,
             );
-            if (chooseAnother == true) {
+            if (chooseAnother == true && targetedTrip == null) {
               continue;
             }
             return;
@@ -854,11 +887,17 @@ class _FlightScreenState extends State<FlightScreen> {
           final budget = result['budget'] is Map
               ? Map<String, dynamic>.from(result['budget'] as Map)
               : <String, dynamic>{};
+          final msg = isReplacement
+              ? 'Flight replaced! Review itinerary changes to update your schedule.'
+              : 'Flight attached to trip plan! Estimated trip total: RM ${budget['total'] ?? '-'}';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(
-                    'Flight attached to trip plan! Estimated trip total: RM ${budget['total'] ?? '-'}')),
+            SnackBar(content: Text(msg)),
           );
+          if (widget.targetTripId != null || widget.targetTrip != null) {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context, result['itinerary'] ?? result);
+            }
+          }
         }
         break;
       }
@@ -1164,6 +1203,7 @@ class _FlightScreenState extends State<FlightScreen> {
                               child: const Text('Details')),
                           const SizedBox(width: 6),
                           FilledButton.tonal(
+                              key: ValueKey('flight-select-${idOf(item)}'),
                               onPressed: returnLoading
                                   ? null
                                   : () => roundTrip
