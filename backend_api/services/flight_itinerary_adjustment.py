@@ -43,6 +43,22 @@ def fingerprint(value):
     return hashlib.sha256(_stable(value).encode('utf-8')).hexdigest()
 
 
+def flight_selection_change_patch(trip, flight):
+    previous = trip.get('selectedFlight') or {}
+    if fingerprint(previous) == fingerprint(flight):
+        return {}
+    patch = {'revision': int(trip.get('revision') or 0) + 1}
+    if trip.get('flightAdjustmentPreviewId') or trip.get('flightAdjustmentStatus') in {'applied', 'review_required'}:
+        # Keep the last application metadata as provenance, not current synchronization.
+        patch.update({
+            'flightAdjustmentStatus': 'review_required',
+            'flightAdjustmentReviewReason': 'flight_replaced' if flight else 'flight_removed',
+        })
+        if previous and not trip.get('flightAdjustmentFlightFingerprint'):
+            patch['flightAdjustmentFlightFingerprint'] = fingerprint(previous)
+    return patch
+
+
 def _finite_env(name, default, minimum=0, maximum=720):
     try:
         value = float(os.getenv(name, default))
@@ -345,6 +361,9 @@ def apply_preview(preview_id, trip, flight, owner, update):
         if not preview or preview.get('owner') != owner:
             return None, 'Preview not found'
         if preview.get('status') == 'applied':
+            if (preview.get('appliedTripFingerprint') != fingerprint(trip)
+                    or preview.get('flightFingerprint') != fingerprint(flight)):
+                return None, 'This preview is stale because the trip or selected flight changed. Create a new preview.'
             result = deepcopy(preview.get('appliedResult'))
             if isinstance(result, dict):
                 result['idempotent'] = True
@@ -358,14 +377,17 @@ def apply_preview(preview_id, trip, flight, owner, update):
         proposed['flightAdjustmentAppliedAt'] = datetime.now(PENANG_ZONE).isoformat()
         proposed['flightAdjustmentAssumptions'] = preview['assumptions']
         proposed['flightAdjustmentStatus'] = 'applied'
+        proposed['flightAdjustmentFlightFingerprint'] = fingerprint(flight)
+        proposed['flightAdjustmentReviewReason'] = None
         proposed['revision'] = int(trip.get('revision') or 0) + 1
         patch = {key: proposed[key] for key in ('activities', 'unscheduledSuggestions', 'scheduledActivityCount', 'unscheduledActivityCount', 'budgetEstimate') if key in proposed}
-        patch.update({key: proposed[key] for key in ('flightAdjustmentPreviewId', 'flightAdjustmentAppliedAt', 'flightAdjustmentAssumptions', 'flightAdjustmentStatus', 'revision')})
+        patch.update({key: proposed[key] for key in ('flightAdjustmentPreviewId', 'flightAdjustmentAppliedAt', 'flightAdjustmentAssumptions', 'flightAdjustmentStatus', 'flightAdjustmentFlightFingerprint', 'flightAdjustmentReviewReason', 'revision')})
         updated = update(trip.get('id'), patch)
         if updated is None:
             return None, 'The itinerary could not be saved.'
         result = {'ok': True, 'itinerary': updated, 'previewId': preview_id, 'idempotent': False}
         preview['status'] = 'applied'
-        preview['appliedResult'] = result
+        preview['appliedTripFingerprint'] = fingerprint(updated)
+        preview['appliedResult'] = deepcopy(result)
         return result, None
 
