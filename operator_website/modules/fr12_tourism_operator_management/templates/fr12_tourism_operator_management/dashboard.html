@@ -26,6 +26,10 @@
 </div>
 
 <!-- Package Catalog Metrics Pipeline -->
+{% if backend_error %}
+<div class="card" role="alert">Business data is temporarily unavailable. Please try again.</div>
+{% else %}
+{% if data_limited %}<p class="muted">Totals cover the loaded records, not the complete business history.</p>{% endif %}
 <div class="card-heading" style="margin-top: 8px;">
   <div>
     <span class="eyebrow">Catalog Overview</span>
@@ -261,4 +265,5 @@
     </div>
   </div>
 </section>
+{% endif %}
 {% endblock %}

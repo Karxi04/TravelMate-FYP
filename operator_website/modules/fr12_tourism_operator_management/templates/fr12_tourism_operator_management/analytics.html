@@ -18,6 +18,11 @@
 </div>
 
 <!-- Primary KPIs -->
+{% if backend_error %}
+<div class="card" role="alert">Business analytics are temporarily unavailable. Please try again.</div>
+{% else %}
+{% if analytics.get('dataLimited') %}<p class="muted">Totals cover up to {{ analytics.get('recordLimit') }} loaded records per category, not the complete business history.</p>{% endif %}
+{% if summary.get('unpricedPaidOrders', 0) %}<p class="muted">Some paid-order amounts are unavailable and excluded from monetary totals.</p>{% endif %}
 <div class="grid g4">
   <div class="metric-card accent-blue">
     <div class="metric-card-top">
@@ -170,4 +175,5 @@
     <span class="muted" style="font-size: 11px;">Calculated from approved catalog rates</span>
   </div>
 </div>
+{% endif %}
 {% endblock %}

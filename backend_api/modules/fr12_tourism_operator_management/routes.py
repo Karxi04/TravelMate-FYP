@@ -25,7 +25,8 @@ from sequence_contract.domain_functions import (
 from firebase_service import get_db
 
 from flask import send_file
-from .analytics_service import generate_business_analytics
+from .analytics_service import generate_business_analytics, _safe_analytics_booking, unique_package_orders, RECORD_LIMIT
+from services.public_content_projection import eligible_package
 from services.report_service import export_operator_report
 from services.package_service import (
     normalise_package,
@@ -90,40 +91,35 @@ def packages():
 
 
 def _booking_projection(order):
-    snapshot = order.get('packageSnapshot') or {}
-    participants = order.get('participants') or snapshot.get('participants') or {}
-    return {
-        'orderReference': order.get('id'),
-        'packageId': order.get('packageId') or snapshot.get('packageId'),
-        'packageTitle': snapshot.get('title'),
-        'departureDate': order.get('departureDate') or snapshot.get('selectedDepartureDate'),
-        'groupSize': order.get('groupSize') or snapshot.get('groupSize') or participants.get('total'),
-        'adults': participants.get('adults'), 'children': participants.get('children'),
-        'paymentStatus': order.get('paymentStatus'), 'orderStatus': order.get('status'),
-        'fulfillmentStatus': order.get('fulfillmentStatus'),
-        'groupTotal': order.get('amount'), 'currency': order.get('currency'),
-        'supplierReservationStatus': 'not_created',
-        'testMode': order.get('provider') == 'stripe_checkout_test',
-        'createdAt': order.get('createdAt'),
-    }
+    return _safe_analytics_booking(order)
 
 
 @bp.get('/bookings')
 @auth_required(['operator', 'admin'])
 def package_bookings():
     filters = [('operatorId', '==', g.uid)] if g.role == 'operator' else None
-    orders = retrieveRecord('checkout_orders', filters=filters) or []
+    orders = retrieveRecord('checkout_orders', filters=filters, limit=RECORD_LIMIT + 1) or []
     items = [
-        _booking_projection(order) for order in orders
-        if isinstance(order, dict) and order.get('quoteType') == 'package'
+        _booking_projection(order) for order in unique_package_orders(orders[:RECORD_LIMIT])
+        if g.role == 'admin' or order.get('operatorId') == g.uid
     ]
-    return jsonify({'ok': True, 'items': items})
+    return jsonify({'ok': True, 'items': items, 'dataLimited': len(orders) > RECORD_LIMIT, 'recordLimit': RECORD_LIMIT})
+
+
+@bp.get('/bookings/<order_reference>')
+@auth_required(['operator', 'admin'])
+def package_booking_detail(order_reference):
+    order = retrieveRecord('checkout_orders', order_reference)
+    if not order or order.get('quoteType') != 'package' or (g.role != 'admin' and order.get('operatorId') != g.uid):
+        return jsonify({'ok': False, 'error': 'Booking not found'}), 404
+    return jsonify({'ok': True, 'booking': _booking_projection(order)})
 
 
 @bp.post('/packages')
 @auth_required(['operator'])
 def create_package_route():
     payload=request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Package data must be an object'}),400
     error=package_validation_error(payload)
     if error:return jsonify({'ok':False,'error':error}),400
     profile=retrieveRecord('users',g.uid) or {}
@@ -141,6 +137,7 @@ def update_package(pid):
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
     if current.get('approvalStatus') in {'pending','submitted','archived'}:return jsonify({'ok':False,'error':'Package cannot be edited in its current state'}),409
     payload=request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Package data must be an object'}),400
     merged={**current, **payload}; error=package_validation_error(merged)
     if error:return jsonify({'ok':False,'error':error}),400
     updates=normalise_package(payload,current)
@@ -153,6 +150,8 @@ def delete_package(pid):
     current=_own('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
     if current.get('approvalStatus') in {'pending','submitted','approved','suspended'}:return jsonify({'ok':False,'error':'Submitted, approved or suspended packages cannot be deleted'}),409
+    if retrieveRecord('checkout_orders', filters=[('packageId', '==', pid)], limit=1):
+        return jsonify({'ok': False, 'error': 'Packages with order history must be archived, not deleted.'}), 409
     deleteRecord('tourism_packages',pid); return jsonify({'ok':True})
 @bp.post('/packages/<pid>/submit')
 @auth_required(['operator'])
@@ -178,6 +177,7 @@ def campaigns():return jsonify({'ok':True,'items':retrieveRecord('promotional_ca
 @auth_required(['operator'])
 def create_campaign_route():
     payload=request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Campaign data must be an object'}),400
     disallowed = [k for k in payload if k in PROTECTED_CAMPAIGN_FIELDS]
     if disallowed:
         return jsonify({'ok':False,'error':f'Field "{disallowed[0]}" is protected and cannot be supplied by operator'}),400
@@ -186,7 +186,7 @@ def create_campaign_route():
     if pid:
         pkg=_own('tourism_packages',pid)
         if not pkg:return jsonify({'ok':False,'error':'Related package not found'}),404
-        if pkg.get('approvalStatus')!='approved':return jsonify({'ok':False,'error':'Promotional campaign requires an approved package'}),409
+        if not eligible_package(pkg):return jsonify({'ok':False,'error':'Promotional campaign requires an approved package'}),409
     profile=retrieveRecord('users',g.uid) or {}
     campaign_data = {k: payload[k] for k in payload if k in CAMPAIGN_EDITABLE_FIELDS}
     campaign_data['operatorName']=profile.get('companyName') or profile.get('businessName') or profile.get('name') or 'TravelMate Tourism Operator'
@@ -196,8 +196,9 @@ def create_campaign_route():
 def update_campaign(cid):
     current=_own('promotional_campaigns',cid)
     if not current:return jsonify({'ok':False,'error':'Campaign not found'}),404
-    if current.get('reviewStatus')=='pending':return jsonify({'ok':False,'error':'Campaign under administrator review cannot be edited'}),409
+    if current.get('reviewStatus') in {'pending','submitted','under_review'}:return jsonify({'ok':False,'error':'Campaign under administrator review cannot be edited'}),409
     payload=request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Campaign data must be an object'}),400
     if not payload:
         return jsonify({'ok':False,'error':'No update data provided'}),400
     disallowed = [k for k in payload if k in PROTECTED_CAMPAIGN_FIELDS]
@@ -213,7 +214,7 @@ def update_campaign(cid):
         if pid:
             pkg=_own('tourism_packages',pid)
             if not pkg:return jsonify({'ok':False,'error':'Related package not found'}),404
-            if pkg.get('approvalStatus')!='approved':return jsonify({'ok':False,'error':'Promotional campaign requires an approved package'}),409
+            if not eligible_package(pkg):return jsonify({'ok':False,'error':'Promotional campaign requires an approved package'}),409
     updates['updatedAt']=utc_now_iso()
     if current.get('reviewStatus') == 'approved':
         updates.update({
@@ -250,6 +251,16 @@ def submit_campaign(cid):
             'error': 'Campaign not found'
         }), 404
 
+    if current.get('reviewStatus', 'draft') not in {'draft', 'rejected'}:
+        return jsonify({'ok': False, 'error': 'Only draft or rejected campaigns can be submitted.'}), 409
+    if not validateCampaignDatesAndContent(current):
+        return jsonify({'ok': False, 'error': 'Invalid campaign dates or content'}), 400
+    package = _own('tourism_packages', str(current.get('packageId') or '').strip())
+    if not package:
+        return jsonify({'ok': False, 'error': 'Related package not found'}), 404
+    if not eligible_package(package):
+        return jsonify({'ok': False, 'error': 'Promotional campaign requires an approved package'}), 409
+
     return jsonify({
         'ok': True,
         'campaign': updateRecord(
@@ -257,6 +268,8 @@ def submit_campaign(cid):
             cid,
             {
                 'reviewStatus': 'pending',
+                'campaignStatus': 'draft',
+                'submittedAt': utc_now_iso(),
                 'updatedAt': utc_now_iso()
             }
         ),

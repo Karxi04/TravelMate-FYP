@@ -1,6 +1,8 @@
 import pytest
 from unittest.mock import patch, MagicMock
+from types import SimpleNamespace
 from modules.fr12_tourism_operator_management.analytics_service import generate_business_analytics
+import math
 
 
 def _make_mock_doc(doc_id, data):
@@ -15,7 +17,7 @@ def _build_mock_db(packages=None, campaigns=None, orders=None):
 
     pkg_docs = [_make_mock_doc(p.get("id", f"pkg_{i}"), p) for i, p in enumerate(packages or [])]
     camp_docs = [_make_mock_doc(c.get("id", f"camp_{i}"), c) for i, c in enumerate(campaigns or [])]
-    order_docs = [_make_mock_doc(o.get("id", f"ord_{i}"), o) for i, o in enumerate(orders or [])]
+    order_docs = [_make_mock_doc(o.get("id", f"ord_{i}"), {'currency': 'MYR', **o}) for i, o in enumerate(orders or [])]
 
     def mock_collection(name):
         coll_mock = MagicMock()
@@ -24,25 +26,31 @@ def _build_mock_db(packages=None, campaigns=None, orders=None):
                 w_mock = MagicMock()
                 filtered = [d for d in pkg_docs if d.to_dict().get(field) == val]
                 w_mock.stream.return_value = filtered
+                w_mock.limit.side_effect = lambda n: SimpleNamespace(stream=lambda: filtered[:n])
                 return w_mock
             coll_mock.where.side_effect = where_pkg
             coll_mock.stream.return_value = pkg_docs
+            coll_mock.limit.side_effect = lambda n: SimpleNamespace(stream=lambda: pkg_docs[:n])
         elif name == "promotional_campaigns":
             def where_camp(field, op, val):
                 w_mock = MagicMock()
                 filtered = [d for d in camp_docs if d.to_dict().get(field) == val]
                 w_mock.stream.return_value = filtered
+                w_mock.limit.side_effect = lambda n: SimpleNamespace(stream=lambda: filtered[:n])
                 return w_mock
             coll_mock.where.side_effect = where_camp
             coll_mock.stream.return_value = camp_docs
+            coll_mock.limit.side_effect = lambda n: SimpleNamespace(stream=lambda: camp_docs[:n])
         elif name == "checkout_orders":
             def where_orders(field, op, val):
                 w_mock = MagicMock()
                 filtered = [d for d in order_docs if d.to_dict().get(field) == val]
                 w_mock.stream.return_value = filtered
+                w_mock.limit.side_effect = lambda n: SimpleNamespace(stream=lambda: filtered[:n])
                 return w_mock
             coll_mock.where.side_effect = where_orders
             coll_mock.stream.return_value = order_docs
+            coll_mock.limit.side_effect = lambda n: SimpleNamespace(stream=lambda: order_docs[:n])
         else:
             coll_mock.stream.return_value = []
             coll_mock.where.return_value.stream.return_value = []
@@ -50,6 +58,57 @@ def _build_mock_db(packages=None, campaigns=None, orders=None):
 
     mock_db.collection.side_effect = mock_collection
     return mock_db
+
+
+def test_f4a_analytics_deduplicates_settlement_and_rejects_nonfinite_amounts():
+    base = {'quoteType': 'package', 'operatorId': 'op', 'status': 'paid', 'paymentStatus': 'paid',
+            'currency': 'MYR', 'provider': 'stripe_checkout_test'}
+    orders = [{**base, 'id': 'one', 'checkoutSessionId': 'synthetic-shared', 'amount': 100},
+              {**base, 'id': 'duplicate', 'checkoutSessionId': 'synthetic-shared', 'amount': 100},
+              {**base, 'id': 'bad', 'amount': float('inf')},
+              {**base, 'id': 'expired', 'status': 'checkout_expired', 'amount': 999}]
+    report = generate_business_analytics(_build_mock_db(orders=orders), 'op')
+    assert report['summary']['bookingRecords'] == 3
+    assert report['summary']['totalPaidRevenue'] == 100
+    assert math.isfinite(report['summary']['totalPaidRevenue'])
+
+
+def test_f4a_analytics_active_campaign_requires_dates_and_eligible_package():
+    packages = [{'id': 'p', 'operatorId': 'op', 'approvalStatus': 'approved', 'price': 100}]
+    campaigns = [
+        {'id': 'past', 'operatorId': 'op', 'packageId': 'p', 'reviewStatus': 'approved',
+         'campaignStatus': 'active', 'startDate': '2000-01-01', 'endDate': '2000-01-02'},
+        {'id': 'future', 'operatorId': 'op', 'packageId': 'p', 'reviewStatus': 'approved',
+         'campaignStatus': 'active', 'startDate': '2099-01-01', 'endDate': '2099-01-02'},
+        {'id': 'missing', 'operatorId': 'op', 'packageId': 'absent', 'reviewStatus': 'approved', 'campaignStatus': 'active'}]
+    report = generate_business_analytics(_build_mock_db(packages=packages, campaigns=campaigns), 'op')
+    assert report['summary']['activeCampaigns'] == 0
+
+
+def test_f4a_analytics_discloses_bounded_results():
+    orders = [{'id': f'order{i}', 'operatorId': 'op', 'quoteType': 'package', 'amount': 1,
+               'paymentStatus': 'paid', 'provider': 'stripe_checkout_test'} for i in range(502)]
+    report = generate_business_analytics(_build_mock_db(orders=orders), 'op')
+    assert report['dataLimited'] is True
+    assert report['recordLimit'] == report['summary']['bookingRecords'] == 500
+    assert report['summary']['testPaidTotal'] == 500
+
+
+def test_f4a_missing_currency_is_not_invented_as_myr():
+    report = generate_business_analytics(_build_mock_db(orders=[{'id': 'unknown', 'operatorId': 'op',
+        'quoteType': 'package', 'currency': None, 'amount': 100, 'paymentStatus': 'paid'}]), 'op')
+    assert report['summary']['totalPaidRevenue'] == 0
+    assert report['bookings'][0]['currency'] == 'UNKNOWN'
+
+
+def test_f4a_pdf_escapes_profile_and_catalog_markup():
+    from io import BytesIO
+    from services.report_service import export_operator_report
+    buffer = BytesIO()
+    export_operator_report({'summary': {}, 'packages': [{'packageTitle': '<img src="file:///forbidden">'}],
+                            'campaigns': [], 'dataLimited': True}, buffer,
+                           operator_profile={'companyName': '<img src="file:///forbidden">'})
+    assert buffer.getvalue().startswith(b'%PDF')
 
 
 # ==============================================================================
@@ -577,7 +636,7 @@ def test_scenario_4_unexpected_sensitive_fields_cannot_leak():
     allowed_keys = {
         "id", "orderReference", "packageId", "packageTitle", "operatorId", "quoteType",
         "departureDate", "groupSize", "adults", "children", "paymentStatus", "orderStatus",
-        "status", "fulfillmentStatus", "amount", "groupTotal", "currency",
+        "status", "fulfillmentStatus", "amount", "groupTotal", "currency", "isPaid",
         "supplierReservationStatus", "testMode", "createdAt", "updatedAt",
     }
     assert set(booking.keys()).issubset(allowed_keys)

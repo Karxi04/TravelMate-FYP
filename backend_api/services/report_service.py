@@ -220,6 +220,8 @@ def export_operator_report(data, target, operator_profile=None):
     data: report dictionary from generate_business_analytics
     target: file path or BytesIO buffer
     """
+    from xml.sax.saxutils import escape
+    from math import isfinite
     doc = SimpleDocTemplate(
         target,
         pagesize=A4,
@@ -237,11 +239,11 @@ def export_operator_report(data, target, operator_profile=None):
 
     packages = data.get("packages", []) if isinstance(data, dict) else []
     campaigns = data.get("campaigns", []) if isinstance(data, dict) else []
-    operator_profile = operator_profile or {}
+    operator_profile = {key: escape(str(value)) for key, value in (operator_profile or {}).items() if value is not None}
 
     company_name = operator_profile.get("companyName") or operator_profile.get("businessName") or "Tourism Operator"
     rep_name = operator_profile.get("name") or operator_profile.get("fullName") or "Operator Representative"
-    reg_no = operator_profile.get("registrationNo") or "TM20260001"
+    reg_no = operator_profile.get("registrationNo") or "-"
     contact = operator_profile.get("businessContact") or operator_profile.get("phoneNo") or "-"
     email = operator_profile.get("email") or operator_profile.get("businessEmail") or "-"
     gen_date = datetime.now().strftime("%d %B %Y, %H:%M:%S UTC")
@@ -308,6 +310,8 @@ def export_operator_report(data, target, operator_profile=None):
     ]))
     story.append(meta_table)
     story.append(Spacer(1, 14))
+    if data.get('dataLimited'):
+        story.append(Paragraph('Totals cover up to 500 loaded records per category, not the complete business history.', styles['SectionDesc']))
 
     # 3. Executive KPI Metric Cards
     total_packages = summary.get("totalPackages", len(packages))
@@ -341,7 +345,7 @@ def export_operator_report(data, target, operator_profile=None):
         [
             Paragraph("Package Title", styles["TableHeader"]),
             Paragraph("Destination", styles["TableHeader"]),
-            Paragraph("Price (RM)", styles["TableHeader"]),
+            Paragraph("Price", styles["TableHeader"]),
             Paragraph("Duration", styles["TableHeader"]),
             Paragraph("Max Guests", styles["TableHeader"]),
             Paragraph("Status", styles["TableHeader"]),
@@ -350,17 +354,21 @@ def export_operator_report(data, target, operator_profile=None):
 
     if packages:
         for p in packages:
-            title = p.get("packageTitle") or "Untitled Package"
-            dest = p.get("destinationName") or "-"
-            price = float(p.get("price") or 0)
-            duration = f"{p.get('durationDays', 1)} Day(s)"
-            max_travellers = str(p.get("maxTravellers", 1))
-            status = str(p.get("approvalStatus", "draft")).upper()
+            title = escape(str(p.get("packageTitle") or "Untitled Package"))
+            dest = escape(str(p.get("destinationName") or "-"))
+            try:
+                price = float(p.get('adultPrice', p.get('price')))
+                price_label = f"{escape(str(p.get('currency') or 'MYR'))} {price:,.2f}" if isfinite(price) and price >= 0 else 'Unavailable'
+            except (TypeError, ValueError):
+                price_label = 'Unavailable'
+            duration = escape(f"{p.get('durationDays', 1)} Day(s)")
+            max_travellers = escape(str(p.get("maxTravellers", 1)))
+            status = escape(str(p.get("approvalStatus", "draft")).upper())
 
             pkg_table_rows.append([
                 Paragraph(title, styles["TableCellBold"]),
                 Paragraph(dest, styles["TableCell"]),
-                Paragraph(f"RM {price:,.2f}", styles["TableCellBold"]),
+                Paragraph(price_label, styles["TableCellBold"]),
                 Paragraph(duration, styles["TableCell"]),
                 Paragraph(max_travellers, styles["TableCell"]),
                 Paragraph(status, styles["TableCellBold"]),
@@ -396,13 +404,13 @@ def export_operator_report(data, target, operator_profile=None):
 
     if campaigns:
         for c in campaigns:
-            c_title = c.get("campaignTitle") or "Promotion"
-            promo = c.get("promoCode") or "-"
+            c_title = escape(str(c.get("campaignTitle") or "Promotion"))
+            promo = escape(str(c.get("promoCode") or "-"))
             dtype = c.get("discountType", "percentage")
             dval = float(c.get("discountValue") or 0)
             disc_str = f"{dval:g}%" if dtype == "percentage" else f"RM {dval:,.2f}"
-            valid_period = f"{c.get('startDate', '-')} to {c.get('endDate', '-')}"
-            r_status = str(c.get("reviewStatus", "draft")).upper()
+            valid_period = escape(f"{c.get('startDate', '-')} to {c.get('endDate', '-')}")
+            r_status = escape(str(c.get("reviewStatus", "draft")).upper())
 
             camp_table_rows.append([
                 Paragraph(c_title, styles["TableCellBold"]),

@@ -111,7 +111,7 @@
     <input class="input search-input" name="q" value="{{ query|default('') }}" placeholder="Search campaigns...">
     <select class="input filter-input" name="status" aria-label="Filter by campaign status">
       <option value="all">All statuses</option>
-      {% for value, label in [('draft', 'Drafts'), ('pending', 'Under Review'), ('approved', 'Approved'), ('rejected', 'Needs Changes'), ('expired', 'Expired')] %}
+      {% for value, label in [('draft', 'Drafts'), ('pending', 'Under Review'), ('approved', 'Approved'), ('scheduled', 'Scheduled'), ('rejected', 'Needs Changes'), ('expired', 'Expired')] %}
         <option value="{{ value }}" {% if status|default('all') == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
