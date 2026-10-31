@@ -51,10 +51,102 @@ def validateEmailAddress(email):
     return validateEmailFormat(email)
 
 
+PHONE_RE = re.compile(r"^\+?[0-9\s\-()]{7,25}$")
+VALID_GENDERS = {'Prefer not to say', 'Female', 'Male', 'Other', ''}
+
+
+def getUpdatedProfileValidationError(data):
+    if not isinstance(data, dict):
+        return 'Payload must be a JSON object.'
+
+    # Name validation: must contain letters, not only numbers/symbols, 2-100 chars
+    if 'name' in data:
+        val = data['name']
+        if not isinstance(val, str):
+            return 'Name must be a string.'
+        s = val.strip()
+        if not s or len(s) < 2 or len(s) > 100:
+            return 'Invalid name. Must contain letters and be between 2 and 100 characters.'
+        if not any(c.isalpha() for c in s):
+            return 'Name cannot consist only of digits or symbols.'
+        if not all(c.isalnum() or c.isspace() or c in "'-." for c in s):
+            return 'Name contains invalid characters.'
+
+    # Phone validation
+    if 'phoneNo' in data:
+        val = data['phoneNo']
+        if val is not None and str(val).strip():
+            if not isinstance(val, str) or not PHONE_RE.match(val.strip()):
+                return 'Invalid phone number format.'
+
+    # Date of Birth validation
+    if 'dateOfBirth' in data:
+        val = data['dateOfBirth']
+        if val is not None and str(val).strip():
+            if not isinstance(val, str):
+                return 'Date of birth must be a string.'
+            try:
+                dt = datetime.strptime(val.strip(), "%Y-%m-%d").date()
+            except Exception:
+                return 'Invalid date of birth. Must be a valid date in YYYY-MM-DD format.'
+            if dt > date.today():
+                return 'Date of birth cannot be in the future.'
+            if dt < date(1900, 1, 1):
+                return 'Date of birth is out of range.'
+
+    # Nationality validation
+    if 'nationality' in data:
+        val = data['nationality']
+        if val is not None and not isinstance(val, str):
+            return 'Nationality must be a string.'
+        if isinstance(val, str) and len(val) > 100:
+            return 'Nationality must not exceed 100 characters.'
+
+    # Current City validation
+    if 'currentCity' in data:
+        val = data['currentCity']
+        if val is not None and not isinstance(val, str):
+            return 'Current city must be a string.'
+        if isinstance(val, str) and len(val) > 100:
+            return 'Current city must not exceed 100 characters.'
+
+    # Gender validation
+    if 'gender' in data:
+        val = data['gender']
+        if val is not None and str(val).strip():
+            if str(val).strip() not in VALID_GENDERS:
+                return 'Invalid gender option.'
+
+    # Emergency Contact validation
+    e_name = str(data.get('emergencyContactName', '') or '').strip()
+    e_phone = str(data.get('emergencyContact', '') or '').strip()
+    e_rel = str(data.get('emergencyRelationship', '') or '').strip()
+
+    if 'emergencyContactName' in data or 'emergencyContact' in data:
+        if e_name and not e_phone:
+            return 'Emergency contact phone is required when contact name is provided.'
+        if e_phone and not e_name:
+            return 'Emergency contact name is required when contact phone is provided.'
+        if e_phone and not PHONE_RE.match(e_phone):
+            return 'Invalid emergency contact phone number.'
+        if len(e_name) > 100:
+            return 'Emergency contact name must not exceed 100 characters.'
+        if len(e_rel) > 50:
+            return 'Emergency relationship must not exceed 50 characters.'
+
+    # Travel Bio validation
+    if 'travelBio' in data:
+        val = data['travelBio']
+        if val is not None and not isinstance(val, str):
+            return 'Travel bio must be a string.'
+        if isinstance(val, str) and len(val) > 2000:
+            return 'Travel bio exceeds maximum allowed length of 2000 characters.'
+
+    return None
+
+
 def validateUpdatedProfile(data):
-    if 'name' in data and not str(data.get('name', '')).strip():
-        return False
-    return True
+    return getUpdatedProfileValidationError(data) is None
 
 
 def validateAccountAction(data):

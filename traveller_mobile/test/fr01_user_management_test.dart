@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travelmate_traveller/core/utils/country_city_data.dart';
 import 'package:travelmate_traveller/modules/fr01_user_management/edit_profile_screen.dart';
 import 'package:travelmate_traveller/modules/fr01_user_management/login_screen.dart';
 import 'package:travelmate_traveller/modules/fr01_user_management/profile_details_screen.dart';
@@ -443,9 +444,312 @@ void main() {
       await tester.tap(find.byIcon(Icons.location_city_outlined));
       await tester.pumpAndSettle();
 
-      expect(find.text('Select current city'), findsOneWidget);
+      expect(find.text('Select city (Malaysia)'), findsOneWidget);
       expect(find.text('George Town'), findsWidgets);
       expect(find.text('Kuala Lumpur'), findsOneWidget);
+    });
+  });
+
+  group('FR1 Country-Dependent City Selection (FR1-CITY-01 to FR1-CITY-08)', () {
+    test('FR1-CITY-01: Malaysia country returns comprehensive Malaysian cities', () {
+      final cities = CountryCityData.getCitiesForCountry('Malaysia');
+      expect(cities, contains('Kuala Lumpur'));
+      expect(cities, contains('George Town'));
+      expect(cities, contains('Johor Bahru'));
+      expect(cities, contains('Ipoh'));
+      expect(cities, contains('Kota Kinabalu'));
+      expect(cities, contains('Kuching'));
+      expect(cities.length, greaterThanOrEqualTo(30));
+    });
+
+    test('FR1-CITY-02: Japan country returns Tokyo, Osaka, Kyoto, etc.', () {
+      final cities = CountryCityData.getCitiesForCountry('Japan');
+      expect(cities, contains('Tokyo'));
+      expect(cities, contains('Osaka'));
+      expect(cities, contains('Kyoto'));
+      expect(cities, contains('Yokohama'));
+      expect(cities, contains('Sapporo'));
+    });
+
+    test('FR1-CITY-03: China country returns Beijing, Shanghai, Guangzhou, etc.', () {
+      final cities = CountryCityData.getCitiesForCountry('China');
+      expect(cities, contains('Beijing'));
+      expect(cities, contains('Shanghai'));
+      expect(cities, contains('Guangzhou'));
+      expect(cities, contains('Shenzhen'));
+      expect(cities, contains('Chengdu'));
+    });
+
+    test('FR1-CITY-04: Australia country returns Sydney, Melbourne, Brisbane, etc.', () {
+      final cities = CountryCityData.getCitiesForCountry('Australia');
+      expect(cities, contains('Sydney'));
+      expect(cities, contains('Melbourne'));
+      expect(cities, contains('Brisbane'));
+      expect(cities, contains('Perth'));
+    });
+
+    test('FR1-CITY-05: Singapore country returns Singapore', () {
+      final cities = CountryCityData.getCitiesForCountry('Singapore');
+      expect(cities, contains('Singapore'));
+      expect(cities, hasLength(1));
+    });
+
+    testWidgets(
+        'FR1-CITY-06: Switching country from Malaysia to Japan clears George Town',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final mockApi = _MockProfileApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditProfileScreen(api: mockApi),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Malaysia'), findsOneWidget);
+      expect(find.text('George Town'), findsOneWidget);
+
+      // Open Nationality picker
+      await tester.tap(find.byIcon(Icons.public_rounded));
+      await tester.pumpAndSettle();
+
+      // Filter for Japan
+      final searchField = find.byType(TextField).last;
+      await tester.enterText(searchField, 'Japan');
+      await tester.pumpAndSettle();
+
+      // Tap Japan
+      await tester.tap(find.text('Japan').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Japan'), findsOneWidget);
+      expect(find.text('George Town'), findsNothing);
+    });
+
+    testWidgets(
+        'FR1-CITY-07: Custom international city entry allows typing custom city',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final mockApi = _MockProfileApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditProfileScreen(api: mockApi),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap Current City picker
+      await tester.tap(find.byIcon(Icons.location_city_outlined));
+      await tester.pumpAndSettle();
+
+      // Type a custom city name not in list: "Monte Carlo"
+      final searchField = find.byType(TextField).last;
+      await tester.enterText(searchField, 'Monte Carlo');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Use "Monte Carlo"'), findsOneWidget);
+      await tester.tap(find.text('Use "Monte Carlo"'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Monte Carlo'), findsOneWidget);
+    });
+
+    testWidgets('FR1-CITY-08: Saved country and city load correctly on reload',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final mockApi = _MockProfileApi(initialProfile: {
+        'name': 'International Traveller',
+        'nationality': 'Japan',
+        'currentCity': 'Kyoto',
+        'dateOfBirth': '1990-01-01',
+        'gender': 'Male',
+        'phoneNo': '+819012345678',
+        'emergencyContactName': 'Kenji',
+        'emergencyContact': '+819098765432',
+        'emergencyRelationship': 'Friend',
+        'travelBio': 'Exploring temples and nature.',
+        'preferredLanguage': 'Japanese',
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditProfileScreen(api: mockApi),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('International Traveller'), findsOneWidget);
+      expect(find.text('Japan'), findsOneWidget);
+      expect(find.text('Kyoto'), findsOneWidget);
+      expect(find.text('Male'), findsOneWidget);
+      expect(find.text('Kenji'), findsOneWidget);
+      expect(find.text('+819098765432'), findsOneWidget);
+      expect(find.text('Friend'), findsOneWidget);
+      expect(find.text('Exploring temples and nature.'), findsOneWidget);
+    });
+  });
+
+  group('FR1 Profile Save & Full-Stack Persistence (FR1-SAVE-01 to FR1-SAVE-18)', () {
+    testWidgets('FR1-SAVE-01 to 11: All profile fields correctly captured in save payload',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final mockApi = _MockProfileApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditProfileScreen(api: mockApi),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Save changes'));
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+
+      expect(mockApi.putCalls, hasLength(1));
+      final payload = mockApi.putCalls.first;
+
+      // FR1-SAVE-01 Name
+      expect(payload['name'], 'Original Name');
+      // FR1-SAVE-02 Phone
+      expect(payload['phoneNo'], '+60123456789');
+      // FR1-SAVE-03 Date of Birth
+      expect(payload['dateOfBirth'], '1995-05-15');
+      // FR1-SAVE-04 Nationality
+      expect(payload['nationality'], 'Malaysia');
+      // FR1-SAVE-05 Current City
+      expect(payload['currentCity'], 'George Town');
+      // FR1-SAVE-06 Gender
+      expect(payload['gender'], 'Female');
+      // FR1-SAVE-07 Emergency Contact Name
+      expect(payload['emergencyContactName'], 'Jane Doe');
+      // FR1-SAVE-08 Emergency Contact Phone
+      expect(payload['emergencyContact'], '+60198765432');
+      // FR1-SAVE-09 Emergency Relationship
+      expect(payload['emergencyRelationship'], 'Family');
+      // FR1-SAVE-10 Travel Bio
+      expect(payload['travelBio'], 'I love Penang food and beach walks.');
+      // FR1-SAVE-11 Preferred Language preserved
+      expect(payload['preferredLanguage'], 'English');
+    });
+
+    testWidgets('FR1-SAVE-12 to 14: Client payload excludes protected metadata',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final mockApi = _MockProfileApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditProfileScreen(api: mockApi),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Save changes'));
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+
+      final payload = mockApi.putCalls.first;
+      // FR1-SAVE-12: role is never submitted by client
+      expect(payload.containsKey('role'), isFalse);
+      // FR1-SAVE-13: uid is never submitted by client
+      expect(payload.containsKey('uid'), isFalse);
+      // FR1-SAVE-14: email is never submitted by client
+      expect(payload.containsKey('email'), isFalse);
+    });
+
+    testWidgets('FR1-SAVE-15: Empty name blocks form submission',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final mockApi = _MockProfileApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditProfileScreen(api: mockApi),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final nameField = find.widgetWithText(TextFormField, 'Original Name');
+      await tester.enterText(nameField, '');
+
+      await tester.ensureVisible(find.text('Save changes'));
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Please enter your full name.'), findsOneWidget);
+      expect(mockApi.putCalls, isEmpty);
+    });
+
+    testWidgets('FR1-SAVE-16: Malformed phone blocks form submission',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final mockApi = _MockProfileApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditProfileScreen(api: mockApi),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final phoneField = find.widgetWithText(TextFormField, '+60123456789');
+      await tester.enterText(phoneField, 'not-a-phone');
+
+      await tester.ensureVisible(find.text('Save changes'));
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Enter a valid phone number.'), findsOneWidget);
+      expect(mockApi.putCalls, isEmpty);
+    });
+
+    testWidgets(
+        'FR1-SAVE-17 & 18: Incomplete emergency contact blocks form submission',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final mockApi = _MockProfileApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EditProfileScreen(api: mockApi),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Clear emergency phone while keeping contact name
+      final phoneField = find.widgetWithText(TextFormField, '+60198765432');
+      await tester.enterText(phoneField, '');
+
+      await tester.ensureVisible(find.text('Save changes'));
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+
+      // FR1-SAVE-18: emergency phone missing when name provided
+      expect(
+        find.text('Please enter emergency contact phone.'),
+        findsOneWidget,
+      );
+      expect(mockApi.putCalls, isEmpty);
     });
   });
 }

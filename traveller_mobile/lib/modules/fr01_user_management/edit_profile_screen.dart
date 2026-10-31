@@ -105,6 +105,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> pickNationality() async {
+    final prevCountry = nationality.text.trim();
     final selected = await _showSearchablePicker(
       context: context,
       title: 'Select nationality / country',
@@ -114,21 +115,47 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       customHint: 'Type your country name...',
     );
     if (selected != null && mounted) {
-      setState(() => nationality.text = selected);
+      final newCountry = selected.trim();
+      setState(() {
+        nationality.text = newCountry;
+        if (prevCountry.isNotEmpty &&
+            newCountry.toLowerCase() != prevCountry.toLowerCase()) {
+          final curCity = currentCity.text.trim();
+          if (curCity.isNotEmpty) {
+            final wasInPrev =
+                CountryCityData.isCityInCountry(curCity, prevCountry);
+            final isInNew =
+                CountryCityData.isCityInCountry(curCity, newCountry);
+            if (wasInPrev && !isInNew) {
+              currentCity.text = '';
+            }
+          }
+        }
+      });
     }
   }
 
   Future<void> pickCurrentCity() async {
+    final country = nationality.text.trim();
+    final cities = CountryCityData.getCitiesForCountry(country);
+    final title = country.isNotEmpty
+        ? 'Select city ($country)'
+        : 'Select current city';
+    final emptyMsg = country.isEmpty
+        ? 'Tip: Select Nationality / Country first to see suggested cities.'
+        : 'No preset cities available for $country. Type your city name below.';
+
     final selected = await _showSearchablePicker(
       context: context,
-      title: 'Select current city',
-      items: CountryCityData.suggestedCities,
+      title: title,
+      items: cities,
       currentValue: currentCity.text,
       allowCustom: true,
       customHint: 'Type your city name...',
+      emptyMessage: emptyMsg,
     );
     if (selected != null && mounted) {
-      setState(() => currentCity.text = selected);
+      setState(() => currentCity.text = selected.trim());
     }
   }
 
@@ -158,7 +185,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         if (savedLanguage.isNotEmpty) 'preferredLanguage': savedLanguage,
       };
 
-      await api.put('/api/fr1/me', payload);
+      final response = await api.put('/api/fr1/me', payload);
+      if (response is Map && response['ok'] == false) {
+        throw Exception(response['error'] ?? 'Failed to update profile');
+      }
       try {
         await _currentUser?.updateDisplayName(name.text.trim());
       } catch (_) {}
@@ -441,6 +471,7 @@ Future<String?> _showSearchablePicker({
   required String currentValue,
   bool allowCustom = false,
   String customHint = 'Type custom value...',
+  String? emptyMessage,
 }) {
   return showModalBottomSheet<String>(
     context: context,
@@ -456,6 +487,7 @@ Future<String?> _showSearchablePicker({
         currentValue: currentValue,
         allowCustom: allowCustom,
         customHint: customHint,
+        emptyMessage: emptyMessage,
       );
     },
   );
@@ -467,6 +499,7 @@ class _SearchablePickerSheet extends StatefulWidget {
   final String currentValue;
   final bool allowCustom;
   final String customHint;
+  final String? emptyMessage;
 
   const _SearchablePickerSheet({
     required this.title,
@@ -474,6 +507,7 @@ class _SearchablePickerSheet extends StatefulWidget {
     required this.currentValue,
     this.allowCustom = false,
     this.customHint = 'Type custom value...',
+    this.emptyMessage,
   });
 
   @override
@@ -549,7 +583,9 @@ class _SearchablePickerSheetState extends State<_SearchablePickerSheet> {
                   controller: searchController,
                   autofocus: false,
                   decoration: InputDecoration(
-                    hintText: 'Search or filter...',
+                    hintText: widget.customHint.isNotEmpty
+                        ? widget.customHint
+                        : 'Search or filter...',
                     prefixIcon: const Icon(Icons.search_rounded),
                     suffixIcon: searchController.text.isNotEmpty
                         ? IconButton(
@@ -565,62 +601,95 @@ class _SearchablePickerSheetState extends State<_SearchablePickerSheet> {
                 ),
               ),
               Expanded(
-                child: ListView.builder(
-                  controller: scrollController,
-                  itemCount: filtered.length +
-                      (widget.allowCustom &&
+                child: filtered.isEmpty &&
+                        trimmedQuery.isEmpty &&
+                        widget.emptyMessage != null
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 32,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.location_off_outlined,
+                              size: 44,
+                              color:
+                                  InkWashColors.blueGrey.withValues(alpha: 0.5),
+                            ),
+                            const SizedBox(height: 14),
+                            Text(
+                              widget.emptyMessage!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: InkWashColors.mutedInk,
+                                fontSize: 14,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        itemCount: filtered.length +
+                            (widget.allowCustom &&
+                                    trimmedQuery.isNotEmpty &&
+                                    !hasExactMatch
+                                ? 1
+                                : 0),
+                        itemBuilder: (context, index) {
+                          if (widget.allowCustom &&
                               trimmedQuery.isNotEmpty &&
-                              !hasExactMatch
-                          ? 1
-                          : 0),
-                  itemBuilder: (context, index) {
-                    if (widget.allowCustom &&
-                        trimmedQuery.isNotEmpty &&
-                        !hasExactMatch &&
-                        index == 0) {
-                      return ListTile(
-                        leading: const Icon(
-                          Icons.add_circle_outline_rounded,
-                          color: InkWashColors.blueGrey,
-                        ),
-                        title: Text(
-                          'Use "$trimmedQuery"',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        subtitle: const Text('Custom entry'),
-                        onTap: () => Navigator.pop(context, trimmedQuery),
-                      );
-                    }
-                    final adjustedIndex = (widget.allowCustom &&
-                            trimmedQuery.isNotEmpty &&
-                            !hasExactMatch)
-                        ? index - 1
-                        : index;
-                    final item = filtered[adjustedIndex];
-                    final isSelected = item.toLowerCase() ==
-                        widget.currentValue.toLowerCase().trim();
+                              !hasExactMatch &&
+                              index == 0) {
+                            return ListTile(
+                              leading: const Icon(
+                                Icons.add_circle_outline_rounded,
+                                color: InkWashColors.blueGrey,
+                              ),
+                              title: Text(
+                                'Use "$trimmedQuery"',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              subtitle: const Text('Custom entry'),
+                              onTap: () => Navigator.pop(context, trimmedQuery),
+                            );
+                          }
+                          final adjustedIndex = (widget.allowCustom &&
+                                  trimmedQuery.isNotEmpty &&
+                                  !hasExactMatch)
+                              ? index - 1
+                              : index;
+                          final item = filtered[adjustedIndex];
+                          final isSelected = item.toLowerCase() ==
+                              widget.currentValue.toLowerCase().trim();
 
-                    return ListTile(
-                      title: Text(
-                        item,
-                        style: TextStyle(
-                          fontWeight:
-                              isSelected ? FontWeight.w900 : FontWeight.w500,
-                          color: isSelected
-                              ? InkWashColors.blueGrey
-                              : InkWashColors.ink,
-                        ),
+                          return ListTile(
+                            title: Text(
+                              item,
+                              style: TextStyle(
+                                fontWeight: isSelected
+                                    ? FontWeight.w900
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? InkWashColors.blueGrey
+                                    : InkWashColors.ink,
+                              ),
+                            ),
+                            trailing: isSelected
+                                ? const Icon(
+                                    Icons.check_rounded,
+                                    color: InkWashColors.blueGrey,
+                                  )
+                                : null,
+                            onTap: () => Navigator.pop(context, item),
+                          );
+                        },
                       ),
-                      trailing: isSelected
-                          ? const Icon(
-                              Icons.check_rounded,
-                              color: InkWashColors.blueGrey,
-                            )
-                          : null,
-                      onTap: () => Navigator.pop(context, item),
-                    );
-                  },
-                ),
               ),
             ],
           ),
