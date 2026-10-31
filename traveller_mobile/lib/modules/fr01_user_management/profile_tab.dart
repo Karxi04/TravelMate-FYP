@@ -156,7 +156,7 @@ class _ProfileTabState extends State<ProfileTab> {
   Future<void> editProfile() async {
     final updated = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+      MaterialPageRoute(builder: (_) => EditProfileScreen(api: api)),
     );
     if (updated == true) await load();
   }

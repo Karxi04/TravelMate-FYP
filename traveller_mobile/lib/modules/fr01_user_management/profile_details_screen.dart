@@ -8,14 +8,16 @@ import '../../widgets/travel_widgets.dart';
 import 'edit_profile_screen.dart';
 
 class ProfileDetailsScreen extends StatefulWidget {
-  const ProfileDetailsScreen({super.key});
+  final ApiService? api;
+
+  const ProfileDetailsScreen({super.key, this.api});
 
   @override
   State<ProfileDetailsScreen> createState() => _ProfileDetailsScreenState();
 }
 
 class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
-  final api = ApiService();
+  late final ApiService api = widget.api ?? ApiService();
   Map<String, dynamic>? profile;
   bool loading = true;
 
@@ -37,7 +39,7 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
   Future<void> edit() async {
     final updated = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+      MaterialPageRoute(builder: (_) => EditProfileScreen(api: api)),
     );
     if (updated == true) await load();
   }
@@ -77,10 +79,18 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
     Future.microtask(load);
   }
 
+  User? get _currentUser {
+    try {
+      return FirebaseAuth.instance.currentUser;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = profile ?? <String, dynamic>{};
-    final firebaseUser = FirebaseAuth.instance.currentUser;
+    final firebaseUser = _currentUser;
     final name = (p['name'] ?? 'Traveller').toString();
 
     return Scaffold(
@@ -129,7 +139,6 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
                   infoTile(Icons.public_rounded, 'Nationality', (p['nationality'] ?? '').toString()),
                   infoTile(Icons.location_city_outlined, 'Current city', (p['currentCity'] ?? '').toString()),
                   infoTile(Icons.badge_outlined, 'Gender', (p['gender'] ?? 'Prefer not to say').toString()),
-                  infoTile(Icons.language_rounded, 'Preferred language', (p['preferredLanguage'] ?? 'English').toString()),
                   infoTile(Icons.person_pin_outlined, 'Emergency contact name', (p['emergencyContactName'] ?? '').toString()),
                   infoTile(Icons.emergency_outlined, 'Emergency contact phone', (p['emergencyContact'] ?? '').toString()),
                   infoTile(Icons.group_outlined, 'Emergency relationship', (p['emergencyRelationship'] ?? '').toString()),

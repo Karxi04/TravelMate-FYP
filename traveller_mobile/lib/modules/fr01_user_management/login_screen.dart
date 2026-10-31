@@ -5,7 +5,10 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final AuthService? auth;
+  final ApiService? api;
+
+  const LoginScreen({super.key, this.auth, this.api});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -14,41 +17,80 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final email = TextEditingController();
   final password = TextEditingController();
+  final confirmPassword = TextEditingController();
   final name = TextEditingController();
-  final auth = AuthService();
+  late final AuthService auth = widget.auth ?? AuthService();
 
   bool registerMode = false;
   bool busy = false;
   bool showPassword = false;
+  bool showConfirmPassword = false;
 
   Future<void> submit() async {
-    if (email.text.trim().isEmpty ||
-        password.text.length < 6 ||
-        (registerMode && name.text.trim().isEmpty)) {
-      showError(
-        context,
-        'Please complete the required fields. Password must be at least 6 characters.',
-      );
-      return;
+    final emailText = email.text.trim();
+    final passwordText = password.text;
+
+    if (registerMode) {
+      final nameText = name.text.trim();
+      if (nameText.isEmpty) {
+        showError(context, 'Please enter your full name.');
+        return;
+      }
+      if (!AuthService.validateFullName(nameText)) {
+        showError(context, 'Please enter a valid full name (letters required).');
+        return;
+      }
+      if (emailText.isEmpty) {
+        showError(context, 'Please enter your email address.');
+        return;
+      }
+      if (!AuthService.validateEmailFormat(emailText)) {
+        showError(context, 'Please enter a valid email address.');
+        return;
+      }
+      final passwordError =
+          AuthService.validateRegistrationPasswordRequirement(passwordText);
+      if (passwordError != null) {
+        showError(context, passwordError);
+        return;
+      }
+      if (confirmPassword.text.isEmpty) {
+        showError(context, 'Please confirm your password.');
+        return;
+      }
+      if (passwordText != confirmPassword.text) {
+        showError(context, 'Passwords do not match.');
+        return;
+      }
+    } else {
+      if (emailText.isEmpty) {
+        showError(context, 'Please enter your email address.');
+        return;
+      }
+      if (!AuthService.validateEmailFormat(emailText)) {
+        showError(context, 'Please enter a valid email address.');
+        return;
+      }
+      if (passwordText.isEmpty) {
+        showError(context, 'Please enter your password.');
+        return;
+      }
     }
 
     setState(() => busy = true);
     try {
       if (registerMode) {
         await auth.registerTraveller(
-          name: name.text,
-          email: email.text,
-          password: password.text,
+          name: name.text.trim(),
+          email: emailText,
+          password: passwordText,
         );
       } else {
-        await auth.loginTraveller(email.text, password.text);
+        await auth.loginTraveller(emailText, passwordText);
       }
     } catch (e) {
       if (mounted) {
-        showError(
-          context,
-          isBackendConnectionFailure(e) ? backendConnectionMessage : e,
-        );
+        showError(context, AuthService.formatAuthError(e));
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -56,20 +98,34 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> reset() async {
-    if (email.text.trim().isEmpty) {
-      showError(context, 'Enter your registered email first.');
+    final emailText = email.text.trim();
+    if (emailText.isEmpty) {
+      showError(context, 'Please enter your email address.');
+      return;
+    }
+    if (!AuthService.validateEmailFormat(emailText)) {
+      showError(context, 'Please enter a valid email address.');
       return;
     }
     try {
-      await auth.resetPassword(email.text);
+      await auth.resetPassword(emailText);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Password reset email sent.')),
         );
       }
     } catch (e) {
-      if (mounted) showError(context, e);
+      if (mounted) showError(context, AuthService.formatAuthError(e));
     }
+  }
+
+  @override
+  void dispose() {
+    email.dispose();
+    password.dispose();
+    confirmPassword.dispose();
+    name.dispose();
+    super.dispose();
   }
 
   @override
@@ -166,6 +222,28 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ),
+                        if (registerMode) ...[
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: confirmPassword,
+                            obscureText: !showConfirmPassword,
+                            onSubmitted: (_) => submit(),
+                            decoration: InputDecoration(
+                              labelText: 'Confirm password',
+                              prefixIcon:
+                                  const Icon(Icons.lock_outline_rounded),
+                              suffixIcon: IconButton(
+                                onPressed: () => setState(() =>
+                                    showConfirmPassword = !showConfirmPassword),
+                                icon: Icon(
+                                  showConfirmPassword
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 14),
                         FilledButton(
                           onPressed: busy ? null : submit,
