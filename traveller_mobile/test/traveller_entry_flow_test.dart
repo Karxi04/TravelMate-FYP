@@ -34,6 +34,11 @@ class _EntryApi extends ApiService {
     }
     if (path == '/api/fr1/me') {
       meCallCount++;
+      if (nextGetFailure != null) {
+        final failure = nextGetFailure!;
+        nextGetFailure = null;
+        throw failure;
+      }
       if (meCallCount >= profileAvailableOnMeCall) {
         return {'ok': true, 'profile': profile};
       }
@@ -168,7 +173,8 @@ void main() {
     expect(api.calls.where((call) => call.startsWith('PUT ')).length, 2);
   });
 
-  testWidgets('delayed profile readiness resolves via polling and reaches questionnaire',
+  testWidgets(
+      'delayed profile readiness resolves via polling and reaches questionnaire',
       (tester) async {
     final api = _EntryApi(
       profile: const {'uid': 'test-traveller', 'role': 'traveller'},
@@ -183,7 +189,8 @@ void main() {
     expect(api.meCallCount, 2);
   });
 
-  testWidgets('missing profile self-heals via POST profile and reaches questionnaire',
+  testWidgets(
+      'missing profile self-heals via POST profile and reaches questionnaire',
       (tester) async {
     final api = _EntryApi(
       profile: null,
@@ -208,8 +215,78 @@ void main() {
     await tester.pumpWidget(_gate(api));
     await tester.pump();
 
-    expect(find.text('This account is not a Traveller account.'), findsOneWidget);
+    expect(
+        find.text('This account is not a Traveller account.'), findsOneWidget);
     expect(find.text('Back to Sign In'), findsOneWidget);
+  });
+
+  testWidgets('admin role is strictly rejected without profile mutation',
+      (tester) async {
+    final api = _EntryApi(
+      profile: const {'uid': 'test-admin', 'role': 'admin'},
+    );
+
+    await tester.pumpWidget(_gate(api));
+    await tester.pump();
+
+    expect(
+        find.text('This account is not a Traveller account.'), findsOneWidget);
+    expect(find.text('Back to Sign In'), findsOneWidget);
+    expect(api.calls.where((c) => c.startsWith('POST')), isEmpty);
+  });
+
+  testWidgets('existing profile never triggers duplicate profile creation',
+      (tester) async {
+    final api = _EntryApi(
+      profile: const {'uid': 'existing-user', 'role': 'traveller'},
+      preferences: const {'travelType': 'Nature'},
+    );
+
+    await tester.pumpWidget(_gate(api));
+    await tester.pump();
+
+    expect(find.text('TravelMate Home'), findsOneWidget);
+    expect(api.calls, ['GET /api/fr1/me', 'GET /api/fr2/preferences']);
+    expect(api.calls.where((c) => c.startsWith('POST')), isEmpty);
+  });
+
+  testWidgets('repeated retry recovers after transient failure',
+      (tester) async {
+    final api = _EntryApi()
+      ..nextGetFailure = http.ClientException('Network down');
+
+    await tester.pumpWidget(_gate(api));
+    await tester.pump();
+
+    expect(find.text(backendConnectionMessage), findsOneWidget);
+
+    // First retry still fails
+    api.nextGetFailure = http.ClientException('Network still down');
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    expect(find.text(backendConnectionMessage), findsOneWidget);
+
+    // Second retry recovers
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    expect(find.byType(PreferencesScreen), findsOneWidget);
+  });
+
+  testWidgets(
+      'failed self-heal stops gracefully at max attempts without infinite loop',
+      (tester) async {
+    final api = _EntryApi(
+      profile: null,
+      profileAvailableOnMeCall: 99,
+    )..nextPostFailure = const ApiException('Database error', 500, {});
+
+    await tester.pumpWidget(_gate(api));
+    await tester.pump();
+
+    expect(find.text('Database error'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Back to Sign In'), findsOneWidget);
+    expect(api.calls.where((c) => c.startsWith('POST')).length, 1);
   });
 
   testWidgets('error state shows Back to Sign In button', (tester) async {
