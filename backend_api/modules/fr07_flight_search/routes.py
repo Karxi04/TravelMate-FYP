@@ -9,6 +9,7 @@ from services.local_catalog import FLIGHTS
 from sequence_contract.validators import validateFlightSearchCriteria
 from sequence_contract.domain_functions import applyFlightFilter, compareSelectedFlights, calculateBudget
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord
+from services.flight_itinerary_adjustment import flight_selection_change_patch
 
 bp = Blueprint('fr07_flights', __name__, url_prefix='/api/fr7')
 
@@ -697,6 +698,8 @@ def select_flight():
     current = _own_itinerary(itinerary_id)
     if not current:
         return jsonify({'ok': False, 'error': 'Select a valid itinerary first'}), 404
+    if current.get('tripType') == 'package' or current.get('packageTrip'):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     quote, trusted, quote_error = _quote_item(payload)
     client_match_target = trusted
     return_option = None
@@ -780,6 +783,7 @@ def select_flight():
         'flightConflicts': conflicts,
         'flightConflictStatus': 'acknowledged' if conflicts else 'none',
     }
+    patch.update(flight_selection_change_patch(current, trusted))
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
     updated = updateRecord('itineraries', itinerary_id, patch)
     return jsonify({'ok': True, 'itinerary': updated, 'selectedFlight': _public_option(trusted), 'budget': patch['budgetEstimate']})
@@ -791,11 +795,14 @@ def remove_flight_selection(iid):
     current = _own_itinerary(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if current.get('tripType') == 'package' or current.get('packageTrip'):
+        return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     patch = {
         'selectedFlight': None, 'flightCost': 0, 'flightCurrency': None,
         'flightPriceBasis': None, 'flightSelectionStatus': 'removed',
         'travelMode': 'undecided',
         'flightSelectionRemovedAt': _now(), 'updatedAt': _now(),
     }
+    patch.update(flight_selection_change_patch(current, None))
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
     return jsonify({'ok': True, 'itinerary': updateRecord('itineraries', iid, patch), 'budget': patch['budgetEstimate']})

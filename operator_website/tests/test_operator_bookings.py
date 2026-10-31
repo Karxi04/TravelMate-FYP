@@ -192,7 +192,7 @@ def test_operator_bookings_search_and_filter(auth_client):
 
 def test_operator_booking_detail_view(auth_client):
     mock_resp = MagicMock(ok=True)
-    mock_resp.json.return_value = {"ok": True, "items": SAMPLE_BOOKINGS}
+    mock_resp.json.return_value = {"ok": True, "booking": SAMPLE_BOOKINGS[0]}
 
     with patch.dict(app.view_functions["operator_fr12.booking_detail"].__globals__, {"call_api": lambda m, p, **k: mock_resp}):
         res = auth_client.get("/bookings/order-heritage-101")
@@ -207,6 +207,43 @@ def test_operator_booking_detail_view(auth_client):
         assert "Stripe Test Mode" in html
         assert "Authoritative Supplier Reservation Status: NOT CREATED" in html
         assert "Read-Only Governance" in html
+
+
+def test_f4a_outage_has_no_exception_disclosure_or_fake_metrics(auth_client):
+    import requests
+    with patch('api_client.requests.request', side_effect=requests.Timeout('private-token-must-not-leak')):
+        for path in ('/dashboard', '/bookings', '/analytics', '/profile'):
+            response = auth_client.get(path)
+            assert response.status_code == 200
+            html = response.get_data(as_text=True)
+            assert 'private-token' not in html
+            assert 'temporarily unavailable' in html or 'Unavailable' in html or "couldn&#39;t load" in html
+
+
+def test_f4a_csrf_denies_mutation_before_api_call(auth_client):
+    previous = app.config['WTF_CSRF_ENABLED']
+    app.config['WTF_CSRF_ENABLED'] = True
+    try:
+        with patch('api_client.requests.request') as request:
+            response = auth_client.post('/packages/new', data={'title': 'Synthetic'})
+        assert response.status_code == 400
+        request.assert_not_called()
+    finally:
+        app.config['WTF_CSRF_ENABLED'] = previous
+
+
+def test_f4a_booking_metrics_reject_terminal_paid_and_non_myr_totals(auth_client):
+    data = [
+        {**SAMPLE_BOOKINGS[0], 'orderReference': 'good', 'groupTotal': 100},
+        {**SAMPLE_BOOKINGS[0], 'orderReference': 'cancelled', 'orderStatus': 'checkout_cancelled', 'groupTotal': 900},
+        {**SAMPLE_BOOKINGS[0], 'orderReference': 'usd', 'currency': 'USD', 'groupTotal': 999},
+    ]
+    response = MagicMock(ok=True)
+    response.json.return_value = {'items': data, 'dataLimited': True}
+    with patch.dict(app.view_functions['operator_fr12.bookings'].__globals__, {'call_api': lambda *a, **k: response}):
+        result = auth_client.get('/bookings')
+    assert 'MYR 100.00 total paid' in result.get_data(as_text=True)
+    assert 'Totals cover the loaded records only' in result.get_data(as_text=True)
 
 
 def test_operator_booking_detail_not_found_redirects(auth_client):
@@ -239,6 +276,7 @@ def test_operator_booking_security_no_sensitive_secrets(auth_client):
         assert "eyJhbGciOiJ..." not in html
 
     with patch.dict(app.view_functions["operator_fr12.booking_detail"].__globals__, {"call_api": lambda m, p, **k: mock_resp}):
+        mock_resp.json.return_value = {"ok": True, "booking": sensitive_order}
         res_detail = auth_client.get("/bookings/order-heritage-101")
         html_detail = res_detail.get_data(as_text=True)
         assert "pi_secret_1234567890" not in html_detail

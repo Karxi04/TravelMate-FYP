@@ -1,4 +1,5 @@
 import re
+from math import isfinite
 from datetime import date, datetime
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -190,11 +191,22 @@ def validatePackageCompleteness(data):
 
 
 def validateCampaignDatesAndContent(data):
-    if not str(data.get('campaignTitle','')).strip(): return False
+    if not isinstance(data, dict) or not isinstance(data.get('campaignTitle'), str): return False
+    if not 1 <= len(data['campaignTitle'].strip()) <= 200: return False
     start, end = data.get('startDate'), data.get('endDate')
     start_date = _parse_iso_date(start)
     end_date = _parse_iso_date(end)
-    return bool(start_date and end_date and start_date <= end_date)
+    if not (start_date and end_date and start_date <= end_date): return False
+    if 'discountType' in data or 'discountValue' in data:
+        kind, value = data.get('discountType'), data.get('discountValue')
+        if not isinstance(kind, str) or kind not in {'percentage', 'fixed'} or isinstance(value, bool): return False
+        try:
+            amount = float(value)
+        except (TypeError, ValueError):
+            return False
+        if not isfinite(amount) or amount < 0 or (kind == 'percentage' and amount > 100): return False
+    return all(isinstance(data.get(key, ''), str) and len(data.get(key, '')) <= maximum
+               for key, maximum in [('description', 5000), ('promoCode', 100), ('termsConditions', 5000)])
 
 
 def validateReportCriteria(data):

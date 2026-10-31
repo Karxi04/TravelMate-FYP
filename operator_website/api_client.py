@@ -20,10 +20,17 @@ def _ensure_token():
 
 
 def call_api(method, path, **kwargs):
-    token = _ensure_token()
-    headers = kwargs.pop("headers", {})
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    headers.setdefault("Accept", "application/json")
-    url = backend_base_url() + path
-    return requests.request(method, url, headers=headers, timeout=60, **kwargs)
+    try:
+        token = _ensure_token()
+        headers = kwargs.pop("headers", {})
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        headers.setdefault("Accept", "application/json")
+        url = backend_base_url() + path
+        return requests.request(method, url, headers=headers, timeout=60, **kwargs)
+    except requests.RequestException:
+        response = requests.Response()
+        response.status_code = 503
+        response.headers['Content-Type'] = 'application/json'
+        response._content = b'{"ok":false,"error":"TravelMate is temporarily unavailable. Please try again."}'
+        return response

@@ -118,7 +118,7 @@ def test_admin_booking_projection_can_read_all_package_orders(client, mock_admin
         )
     assert response.status_code == 200
     assert [item['orderReference'] for item in response.get_json()['items']] == ['one', 'two']
-    retrieve.assert_called_once_with('checkout_orders', filters=None)
+    retrieve.assert_called_once_with('checkout_orders', filters=None, limit=501)
 
 def test_operator_packages_crud(client, mock_operator_auth):
     sample_pkg = {
@@ -181,6 +181,8 @@ def test_operator_analytics_data_isolation():
         elif name in ('tourism_packages', 'promotional_campaigns'):
             coll_mock.where.return_value.stream.return_value = [pkg_doc] if name == 'tourism_packages' else []
             coll_mock.stream.return_value = [pkg_doc] if name == 'tourism_packages' else []
+        coll_mock.limit.return_value = coll_mock
+        coll_mock.where.return_value.limit.return_value = coll_mock.where.return_value
         return coll_mock
 
     mock_db.collection.side_effect = mock_collection
@@ -292,7 +294,7 @@ def test_package_v2_ownership_approved_edit_and_archive(client, mock_operator_au
     assert denied.status_code == 404
 
     draft = {**approved, 'approvalStatus': 'draft'}
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=draft), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=lambda collection, *_a, **_k: draft if collection == 'tourism_packages' else []), \
          patch('modules.fr12_tourism_operator_management.routes.deleteRecord') as delete:
         removed = client.delete('/api/fr12/packages/pkg_v2',
                                 headers={'Authorization': 'Bearer valid_test_token'})
@@ -328,3 +330,106 @@ def test_approved_campaign_edit_returns_to_review(client, mock_operator_auth):
     saved = response.get_json()['campaign']
     assert saved['reviewStatus'] == 'draft'
     assert saved['campaignStatus'] == 'draft'
+
+
+@pytest.mark.parametrize('changes', [{'adultPrice': float('nan')}, {'adultPrice': float('inf')},
+    {'maximumTravellers': 'many'}, {'minimumTravellers': 'invalid'}, {'title': {'invalid': True}}])
+def test_f4a_package_numeric_validation(client, mock_operator_auth, changes):
+    payload = {'title': 'Synthetic tour', 'destination': 'Penang', 'durationDays': 1,
+               'adultPrice': 100, 'currency': 'MYR', **changes}
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value={}), \
+         patch('modules.fr12_tourism_operator_management.routes.storeRecord', side_effect=lambda _c, data: {'id': 'synthetic', **data}) as store:
+        response = client.post('/api/fr12/packages', headers={'Authorization': 'Bearer test'}, json=payload)
+    assert response.status_code == 400
+    store.assert_not_called()
+
+
+@pytest.mark.parametrize('changes', [
+    {'discountType': 'percentage', 'discountValue': 101}, {'discountType': 'fixed', 'discountValue': -1},
+    {'discountType': 'percentage', 'discountValue': float('nan')},
+    {'discountType': 'percentage', 'discountValue': 'invalid'}, {'discountType': 'unsupported', 'discountValue': 10},
+    {'discountType': ['percentage'], 'discountValue': 10}])
+def test_f4a_campaign_discount_validation(client, mock_operator_auth, changes):
+    payload = {'campaignTitle': 'Synthetic offer', 'startDate': '2030-01-01', 'endDate': '2030-01-02', **changes}
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value={}), \
+         patch('modules.fr12_tourism_operator_management.routes.storeRecord', side_effect=lambda _c, data: {'id': 'synthetic', **data}) as store:
+        response = client.post('/api/fr12/campaigns', headers={'Authorization': 'Bearer test'}, json=payload)
+    assert response.status_code == 400
+    store.assert_not_called()
+
+
+@pytest.mark.parametrize('status', ['pending', 'approved'])
+def test_f4a_campaign_submission_lifecycle(client, mock_operator_auth, status):
+    campaign = {'operatorId': 'test_operator_uid', 'reviewStatus': status, 'packageId': 'p',
+                'campaignTitle': 'Synthetic offer', 'startDate': '2030-01-01', 'endDate': '2030-01-02'}
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=campaign), \
+         patch('modules.fr12_tourism_operator_management.routes.updateRecord', side_effect=lambda _c, _i, data: data) as update:
+        response = client.post('/api/fr12/campaigns/c/submit', headers={'Authorization': 'Bearer test'})
+    assert response.status_code == 409
+    update.assert_not_called()
+
+
+@pytest.mark.parametrize('package', [None, {'operatorId': 'other', 'approvalStatus': 'approved'},
+    {'operatorId': 'test_operator_uid', 'approvalStatus': 'archived'},
+    {'operatorId': 'test_operator_uid', 'approvalStatus': 'approved', 'availabilityStatus': 'unavailable'}])
+def test_f4a_campaign_submit_rechecks_package(client, mock_operator_auth, package):
+    campaign = {'operatorId': 'test_operator_uid', 'reviewStatus': 'rejected', 'packageId': 'p',
+                'campaignTitle': 'Synthetic offer', 'startDate': '2030-01-01', 'endDate': '2030-01-02'}
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord',
+               side_effect=lambda coll, *_a, **_k: campaign if coll == 'promotional_campaigns' else package), \
+         patch('modules.fr12_tourism_operator_management.routes.updateRecord', side_effect=lambda _c, _i, data: data) as update:
+        response = client.post('/api/fr12/campaigns/c/submit', headers={'Authorization': 'Bearer test'})
+    assert response.status_code in {404, 409}
+    update.assert_not_called()
+
+
+def test_f4a_package_with_order_history_requires_archive(client, mock_operator_auth):
+    package = {'operatorId': 'test_operator_uid', 'approvalStatus': 'draft'}
+    order = {'id': 'historical-order', 'packageId': 'p', 'status': 'paid'}
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord',
+               side_effect=lambda coll, *_a, **_k: package if coll == 'tourism_packages' else [order]), \
+         patch('modules.fr12_tourism_operator_management.routes.deleteRecord') as delete:
+        response = client.delete('/api/fr12/packages/p', headers={'Authorization': 'Bearer test'})
+    assert response.status_code == 409
+    assert 'archive' in response.get_json()['error'].lower()
+    delete.assert_not_called()
+
+
+def test_f4a_booking_detail_owner_and_redaction(client, mock_operator_auth):
+    order = {'id': 'owned', 'operatorId': 'test_operator_uid', 'quoteType': 'package',
+             'amount': 100, 'currency': 'MYR', 'paymentStatus': 'paid', 'status': 'paid',
+             'travellerId': 'private-user', 'checkoutUrl': 'private-checkout-url'}
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=order):
+        response = client.get('/api/fr12/bookings/owned', headers={'Authorization': 'Bearer test'})
+    assert response.status_code == 200
+    assert response.get_json()['booking']['orderReference'] == 'owned'
+    assert 'private-' not in response.get_data(as_text=True)
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value={**order, 'operatorId': 'other'}):
+        assert client.get('/api/fr12/bookings/owned', headers={'Authorization': 'Bearer test'}).status_code == 404
+
+
+def test_f4a_profile_cannot_forge_privileges(client, mock_operator_auth):
+    profile = {'uid': 'test_operator_uid', 'role': 'operator', 'verificationStatus': 'approved'}
+    with patch('modules.fr01_user_management.routes.updateRecord', side_effect=lambda c, uid, fields: {**profile, **fields}) as update:
+        response = client.put('/api/fr1/me', headers={'Authorization': 'Bearer test'}, json={
+            'name': 'Synthetic Owner', 'companyName': 'Synthetic Business', 'role': 'admin',
+            'operatorId': 'other', 'verificationStatus': 'rejected'})
+    assert response.status_code == 200
+    assert response.get_json()['profile']['role'] == 'operator'
+    assert response.get_json()['profile']['verificationStatus'] == 'approved'
+    assert not {'role', 'operatorId', 'verificationStatus'} & set(update.call_args.args[2])
+
+
+def test_f4a_campaign_rejected_resubmission_validates_and_persists(client, mock_operator_auth):
+    campaign = {'operatorId': 'test_operator_uid', 'reviewStatus': 'rejected', 'campaignStatus': 'rejected',
+                'campaignTitle': 'Synthetic offer', 'packageId': 'p', 'startDate': '2030-01-01', 'endDate': '2030-01-02',
+                'discountType': 'percentage', 'discountValue': 10}
+    package = {'operatorId': 'test_operator_uid', 'approvalStatus': 'approved'}
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord',
+               side_effect=lambda coll, *_a, **_k: campaign if coll == 'promotional_campaigns' else package), \
+         patch('modules.fr12_tourism_operator_management.routes.updateRecord', side_effect=lambda _c, _id, fields: {**campaign, **fields}) as update:
+        response = client.post('/api/fr12/campaigns/c/submit', headers={'Authorization': 'Bearer test'})
+    assert response.status_code == 200
+    assert response.get_json()['campaign']['reviewStatus'] == 'pending'
+    assert response.get_json()['campaign']['campaignStatus'] == 'draft'
+    assert update.call_args.args[2]['submittedAt']

@@ -1,4 +1,5 @@
 from datetime import date
+from math import isfinite
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response, jsonify
 from api_client import call_api
 
@@ -75,7 +76,7 @@ def _campaign_payload():
         "endDate": request.form.get("endDate", ""),
         "promoCode": request.form.get("promoCode", "").strip(),
         "discountType": request.form.get("discountType", "percentage"),
-        "discountValue": _float_field("discountValue"),
+        "discountValue": _optional_float("discountValue") if request.form.get('discountValue', '').strip() else 0,
         "bannerImageUrl": request.form.get("bannerImageUrl", "").strip(),
         "termsConditions": request.form.get("termsConditions", "").strip(),
     }
@@ -85,6 +86,8 @@ def _campaign_state(item):
     status = str(item.get("reviewStatus", "draft") or "draft").lower()
     if status == "approved" and item.get("endDate") and str(item["endDate"]) < date.today().isoformat():
         return "expired"
+    if status == 'approved' and item.get('startDate') and str(item['startDate']) > date.today().isoformat():
+        return 'scheduled'
     return status
 
 
@@ -193,9 +196,12 @@ def dashboard():
         "suspendedPackages": sum(1 for item in packages if str(item.get("approvalStatus", "")).lower() == "suspended"),
         "totalCampaigns": len(campaigns),
         "pendingCampaigns": sum(1 for item in campaigns if str(item.get("reviewStatus", "")).lower() in {"pending", "submitted"}),
-        "activeCampaigns": sum(1 for item in campaigns if str(item.get("campaignStatus", "")).lower() in {"active", "approved"}),
+        "activeCampaigns": sum(1 for item in campaigns if _campaign_state(item) == 'approved'
+            and str(item.get('campaignStatus', 'approved')).lower() in {'active', 'approved'}
+            and any(p.get('id') == item.get('packageId') and p.get('approvalStatus') == 'approved'
+                    and p.get('availabilityStatus', 'available') == 'available' for p in packages)),
         "totalBookings": len(bookings_data),
-        "paidBookings": sum(1 for item in bookings_data if str(item.get("paymentStatus", "")).lower() == "paid"),
+        "paidBookings": sum(1 for item in bookings_data if _is_paid_booking(item)),
     }
     attention = []
     for package in packages:
@@ -227,14 +233,27 @@ def dashboard():
         summary=summary,
         profile=me.json().get("profile", {}) if me.ok else {},
         attention=attention,
+        backend_error=not all(r.ok for r in (package_response, campaign_response, booking_response, me)),
+        data_limited=any(r.json().get('dataLimited', False) for r in (package_response, campaign_response, booking_response) if r.ok),
     )
 
 
 def _safe_float(val, default=0.0):
     try:
-        return float(val or default)
+        number = float(val or default)
+        return number if isfinite(number) else default
     except (ValueError, TypeError):
         return default
+
+
+def _is_paid_booking(booking):
+    if isinstance(booking.get('isPaid'), bool):
+        return booking['isPaid']
+    pay = str(booking.get('paymentStatus') or '').lower()
+    status = str(booking.get('orderStatus') or '').lower()
+    terminal = {'expired', 'checkout_expired', 'failed', 'checkout_failed', 'payment_failed',
+                'cancelled', 'checkout_cancelled', 'refunded', 'partially_refunded', 'rejected'}
+    return status not in terminal and (pay in {'paid', 'succeeded'} or (not pay and status in {'paid', 'succeeded'}))
 
 
 def _is_pending_booking(b):
@@ -278,7 +297,7 @@ def bookings():
     items = list(all_items)
     if status != "all":
         if status == "paid":
-            items = [b for b in items if str(b.get("paymentStatus", "")).lower() == "paid"]
+            items = [b for b in items if _is_paid_booking(b)]
         elif status == "pending":
             items = [b for b in items if _is_pending_booking(b)]
         elif status == "fulfilled":
@@ -299,7 +318,7 @@ def bookings():
 
     summary = {
         "total": len(all_items),
-        "paid": sum(1 for b in all_items if str(b.get("paymentStatus", "")).lower() == "paid"),
+        "paid": sum(1 for b in all_items if _is_paid_booking(b)),
         "pending": sum(1 for b in all_items if _is_pending_booking(b)),
         "fulfilled": sum(1 for b in all_items if str(b.get("fulfillmentStatus", "")).lower() == "fulfilled"),
         "unconfirmed_supplier": sum(1 for b in all_items if b.get("supplierReservationStatus") == "not_created"),
@@ -307,7 +326,7 @@ def bookings():
         "total_revenue": sum(
             _safe_float(b.get("groupTotal"))
             for b in all_items
-            if str(b.get("paymentStatus", "")).lower() == "paid"
+            if _is_paid_booking(b) and str(b.get('currency') or '').upper() == 'MYR'
         ),
     }
 
@@ -320,6 +339,7 @@ def bookings():
         query=query,
         backend_error=backend_error,
         is_pending_booking=_is_pending_booking,
+        data_limited=response.json().get('dataLimited', False) if response.ok else False,
     )
 
 
@@ -327,12 +347,11 @@ def bookings():
 def booking_detail(order_reference):
     if not guard():
         return redirect(url_for("operator_fr01.login"))
-    response = call_api("GET", "/api/fr12/bookings")
+    response = call_api("GET", f"/api/fr12/bookings/{order_reference}")
     if not response.ok:
         flash(_error(response, fallback="Unable to retrieve booking details."), "error")
         return redirect(url_for("operator_fr12.bookings"))
-    items = response.json().get("items", []) or []
-    item = next((b for b in items if str(b.get("orderReference", "")).strip() == str(order_reference).strip()), None)
+    item = response.json().get('booking')
     if not item:
         flash(f"Booking reference '{order_reference}' not found or not accessible.", "error")
         return redirect(url_for("operator_fr12.bookings"))
@@ -347,6 +366,8 @@ def packages():
     if not guard():
         return redirect(url_for("operator_fr01.login"))
     listing = call_api("GET", "/api/fr12/packages")
+    if not listing.ok:
+        flash(_error(listing), 'error')
     items = listing.json().get("items", []) if listing.ok else []
     status = request.args.get("status", "all").lower()
     query = request.args.get("q", "").strip().lower()
@@ -436,6 +457,8 @@ def campaigns():
         decorated = _decorate_campaigns(campaigns, package_items)
         return render_template("fr12_tourism_operator_management/campaigns.html", items=decorated, approved_packages=approved_packages, form=payload, status="all", query="")
     response = call_api("GET", "/api/fr12/campaigns")
+    if not response.ok:
+        flash(_error(response), 'error')
     campaign_items = response.json().get("items", []) if response.ok else []
     decorated = _decorate_campaigns(campaign_items, package_items)
     status = request.args.get("status", "all").lower()
@@ -470,6 +493,8 @@ def package_status():
     if not guard():
         return redirect(url_for("operator_fr01.login"))
     response = call_api("GET", "/api/fr12/packages")
+    if not response.ok:
+        flash(_error(response), 'error')
     return render_template(
         "fr12_tourism_operator_management/package_status.html",
         items=response.json().get("items", []) if response.ok else [],
@@ -506,6 +531,7 @@ def analytics():
     return render_template(
         "fr12_tourism_operator_management/analytics.html",
         analytics=response.json().get("analytics", {}) if response.ok else {},
+        backend_error=not response.ok,
     )
 
 

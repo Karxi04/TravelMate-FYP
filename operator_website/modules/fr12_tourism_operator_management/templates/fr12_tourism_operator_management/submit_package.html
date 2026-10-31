@@ -1,1 +1,61 @@
-{% extends 'portal_base.html' %}{% block title %}Submit package | TravelMate{% endblock %}{% block content %}<div class="page-title"><div><span class="eyebrow">REVIEW WORKFLOW</span><h1>Submit a package</h1><p>Choose a draft, rejected, or suspended package and send it to the Administrator.</p></div></div><div class="card cream" style="max-width:760px"><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="field"><label for="packageId">Package</label><select id="packageId" class="input" name="packageId" required><option value="">Select a package</option>{% for item in items %}<option value="{{ item.id }}">{{ item.get('title',item.get('packageTitle','Package')) }} · {{ {'draft':'Draft','rejected':'Needs changes','suspended':'Suspended'}.get(item.get('approvalStatus','draft'),item.get('approvalStatus','draft')|title) }}</option>{% endfor %}</select></div>{% if not items %}<div class="empty-state compact"><strong>Nothing is ready to submit</strong><p>Complete a draft package first.</p></div>{% else %}<p class="muted">The Administrator will review the complete package before it becomes visible to travellers.</p><button class="btn primary" type="submit">Submit for review</button>{% endif %}</form></div>{% endblock %}
+{% extends 'portal_base.html' %}
+{% block title %}Submit Package for Review | TravelMate{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <span class="eyebrow">Review Workflow</span>
+    <h1>Submit a Package</h1>
+    <p>Choose an unsubmitted draft, rejected, or suspended package to send for Administrator moderation.</p>
+  </div>
+  <a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+    <span>Back to Packages</span>
+  </a>
+</div>
+
+<div class="card" style="max-width: 680px;">
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="card-heading">
+      <div>
+        <span class="eyebrow">Moderation Queue</span>
+        <h3>Submission Details</h3>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 16px;">
+      <label for="packageId">Select Package for Submission *</label>
+      <select id="packageId" class="input" name="packageId" required>
+        <option value="">Select a package</option>
+        {% for item in items %}
+          <option value="{{ item.id }}">
+            {{ item.get('title', item.get('packageTitle', 'Package')) }} · {{ {'draft': 'Draft', 'rejected': 'Needs changes', 'suspended': 'Suspended'}.get(item.get('approvalStatus', 'draft'), item.get('approvalStatus', 'draft')|title) }}
+          </option>
+        {% endfor %}
+      </select>
+      <span class="field-help">Only draft, rejected, or suspended packages are eligible for submission.</span>
+    </div>
+
+    {% if not items %}
+      <div class="empty-state compact" style="margin-top: 20px; padding: 28px 16px;">
+        <div class="empty-icon" aria-hidden="true" style="width: 44px; height: 44px; margin-bottom: 12px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <strong>Nothing is ready to submit</strong>
+        <p style="margin: 4px 0 16px; font-size: 13px;">Complete a draft package first.</p>
+        <a class="btn primary btn-sm" href="{{ url_for('operator_fr12.new_package') }}">Create Package</a>
+      </div>
+    {% else %}
+      <div class="notice-banner-limited" style="margin-top: 20px; margin-bottom: 24px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <p class="muted">The Administrator will review the complete package before it becomes visible to travellers.</p>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">Cancel</a>
+        <button class="btn primary" type="submit">Submit for review</button>
+      </div>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}

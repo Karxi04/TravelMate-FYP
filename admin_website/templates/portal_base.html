@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block body %}
-<div class="sidebar-backdrop" onclick="document.querySelector('.layout').classList.remove('sidebar-open')" aria-hidden="true"></div>
+<a href="#main-content" class="skip-link">Skip to main content</a>
 <div class="layout">
 
   <aside class="sidebar">
@@ -11,12 +11,12 @@
           <strong>TravelMate</strong>
           <small>Administrator Portal</small>
         </div>
-        <button class="mobile-sidebar-close" type="button" aria-label="Close navigation" onclick="document.querySelector('.layout').classList.remove('sidebar-open')">
+        <button class="mobile-sidebar-close" type="button" aria-label="Close navigation" onclick="closeSidebar()">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
 
-      <nav aria-label="Administrator portal navigation">
+      <nav id="sidebar-nav" aria-label="Administrator portal navigation">
         <div class="sidebar-nav-section">
           <span class="sidebar-nav-title">Overview</span>
         </div>
@@ -113,7 +113,7 @@
   <section class="content">
     <header class="topbar">
       <div class="topbar-left">
-        <button class="mobile-menu-btn" type="button" aria-label="Toggle navigation menu" onclick="document.querySelector('.layout').classList.toggle('sidebar-open')">
+        <button class="mobile-menu-btn" type="button" aria-label="Toggle navigation menu" aria-controls="sidebar-nav" aria-expanded="false" onclick="toggleSidebar()">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
         <div>
@@ -137,9 +137,9 @@
       </div>
     </header>
 
-    <main class="main">
+    <main class="main" id="main-content" tabindex="-1">
       {% for c,m in get_flashed_messages(with_categories=true) %}
-      <div class="msg {{c}}">
+      <div class="msg {{c}}" role="status">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span>{{m}}</span>
       </div>
@@ -149,11 +149,26 @@
     </main>
   </section>
 </div>
+<div class="sidebar-backdrop" onclick="closeSidebar()" aria-hidden="true"></div>
 <script>
+  function toggleSidebar() {
+    var layout = document.querySelector('.layout');
+    var btn = document.querySelector('.mobile-menu-btn');
+    if (!layout) return;
+    var isOpen = layout.classList.toggle('sidebar-open');
+    if (btn) btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  }
+
+  function closeSidebar() {
+    var layout = document.querySelector('.layout');
+    var btn = document.querySelector('.mobile-menu-btn');
+    if (layout) layout.classList.remove('sidebar-open');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-      var layout = document.querySelector('.layout');
-      if (layout) layout.classList.remove('sidebar-open');
+      closeSidebar();
     }
   });
 </script>

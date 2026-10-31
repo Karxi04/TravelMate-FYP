@@ -17,6 +17,12 @@
 </div>
 
 <!-- Honest System Disclosure Banner -->
+{% if data_limited %}
+<div class="notice-banner-limited" role="region" aria-label="Data Scope Notice">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <p class="muted">Showing up to 500 records. Totals cover the loaded records only.</p>
+</div>
+{% endif %}
 <div class="booking-notice-card" role="region" aria-label="System Disclosures">
   <div class="booking-notice-icon" aria-hidden="true">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -30,6 +36,7 @@
 </div>
 
 <!-- Metrics Overview Ribbon -->
+{% if not backend_error %}
 <div class="grid g4 operator-stats" style="margin-bottom: 24px;">
   <div class="metric-card accent-blue">
     <div class="metric-card-top">
@@ -77,6 +84,7 @@
 </div>
 
 <!-- Toolbar: Search and Filter -->
+{% endif %}
 <div class="toolbar">
   <form class="actions" method="get">
     <input class="input search-input" name="q" value="{{ query }}" placeholder="Search by order ref, package, date...">

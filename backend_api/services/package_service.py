@@ -1,4 +1,5 @@
 from datetime import date
+from math import isfinite
 
 
 PACKAGE_FIELDS = {
@@ -41,7 +42,8 @@ def _number(value):
     if value in (None, '') or isinstance(value, bool):
         return None
     try:
-        return float(value)
+        number = float(value)
+        return number if isfinite(number) else None
     except (TypeError, ValueError):
         return None
 
@@ -160,6 +162,11 @@ def _valid_date(value):
 
 def package_validation_error(data):
     raw = data or {}
+    for key, maximum in [('title', 200), ('packageTitle', 200), ('destination', 500),
+                         ('destinationName', 500), ('shortDescription', 1000),
+                         ('fullDescription', 10000), ('description', 10000), ('currency', 3)]:
+        if key in raw and (not isinstance(raw[key], str) or len(raw[key]) > maximum):
+            return f'{key} must be text of at most {maximum} characters.'
     if 'itineraryDays' in raw:
         if not isinstance(raw['itineraryDays'], list) or any(
             not isinstance(day, dict) for day in raw['itineraryDays']
@@ -211,6 +218,10 @@ def package_validation_error(data):
     minimum = _integer(raw.get('minimumTravellers')) if raw.get('minimumTravellers') not in (None, '') else None
     maximum_raw = raw.get('maximumTravellers') if 'maximumTravellers' in raw else raw.get('maxTravellers')
     maximum = _integer(maximum_raw) if maximum_raw not in (None, '') else None
+    if raw.get('minimumTravellers') not in (None, '') and minimum is None:
+        return 'Minimum travellers must be a whole number.'
+    if maximum_raw not in (None, '') and maximum is None:
+        return 'Maximum travellers must be a whole number.'
     if minimum is not None and minimum < 1:
         return 'Minimum travellers must be at least one.'
     if maximum is not None and maximum < 1:

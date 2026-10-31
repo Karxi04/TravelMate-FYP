@@ -302,7 +302,7 @@ def test_p1_06_pending_list_and_total_counts_match(auth_client):
 # =========================================================================
 def test_p1_07_unpaid_booking_detail_does_not_claim_payment_success(auth_client):
     mock_resp = MagicMock(ok=True)
-    mock_resp.json.return_value = {"ok": True, "items": P1_FIXTURES}
+    mock_resp.json.return_value = {"ok": True, "booking": next(b for b in P1_FIXTURES if b['orderReference'] == 'ord-active-unpaid')}
 
     with patch.dict(app.view_functions["operator_fr12.booking_detail"].__globals__, {"call_api": lambda m, p, **k: mock_resp}):
         res = auth_client.get("/bookings/ord-active-unpaid")
@@ -324,7 +324,7 @@ def test_p1_07_unpaid_booking_detail_does_not_claim_payment_success(auth_client)
 # =========================================================================
 def test_p1_08_failed_booking_detail_does_not_claim_fulfillment(auth_client):
     mock_resp = MagicMock(ok=True)
-    mock_resp.json.return_value = {"ok": True, "items": P1_FIXTURES}
+    mock_resp.json.return_value = {"ok": True, "booking": next(b for b in P1_FIXTURES if b['orderReference'] == 'ord-failed-checkout')}
 
     with patch.dict(app.view_functions["operator_fr12.booking_detail"].__globals__, {"call_api": lambda m, p, **k: mock_resp}):
         res = auth_client.get("/bookings/ord-failed-checkout")
@@ -343,7 +343,7 @@ def test_p1_08_failed_booking_detail_does_not_claim_fulfillment(auth_client):
 # =========================================================================
 def test_p1_09_expired_booking_detail_shows_accurate_explanation(auth_client):
     mock_resp = MagicMock(ok=True)
-    mock_resp.json.return_value = {"ok": True, "items": P1_FIXTURES}
+    mock_resp.json.return_value = {"ok": True, "booking": next(b for b in P1_FIXTURES if b['orderReference'] == 'ord-expired-checkout')}
 
     with patch.dict(app.view_functions["operator_fr12.booking_detail"].__globals__, {"call_api": lambda m, p, **k: mock_resp}):
         res = auth_client.get("/bookings/ord-expired-checkout")
@@ -362,7 +362,7 @@ def test_p1_09_expired_booking_detail_shows_accurate_explanation(auth_client):
 # =========================================================================
 def test_p1_10_verified_payment_with_pending_fulfillment_does_not_claim_trip_creation(auth_client):
     mock_resp = MagicMock(ok=True)
-    mock_resp.json.return_value = {"ok": True, "items": P1_FIXTURES}
+    mock_resp.json.return_value = {"ok": True, "booking": next(b for b in P1_FIXTURES if b['orderReference'] == 'ord-paid-pending-ful')}
 
     with patch.dict(app.view_functions["operator_fr12.booking_detail"].__globals__, {"call_api": lambda m, p, **k: mock_resp}):
         res = auth_client.get("/bookings/ord-paid-pending-ful")
@@ -384,7 +384,7 @@ def test_p1_10_verified_payment_with_pending_fulfillment_does_not_claim_trip_cre
 # =========================================================================
 def test_p1_11_completed_fulfillment_displays_package_trip_information_correctly(auth_client):
     mock_resp = MagicMock(ok=True)
-    mock_resp.json.return_value = {"ok": True, "items": P1_FIXTURES}
+    mock_resp.json.return_value = {"ok": True, "booking": next(b for b in P1_FIXTURES if b['orderReference'] == 'ord-paid-fulfilled')}
 
     with patch.dict(app.view_functions["operator_fr12.booking_detail"].__globals__, {"call_api": lambda m, p, **k: mock_resp}):
         res = auth_client.get("/bookings/ord-paid-fulfilled")
@@ -407,6 +407,7 @@ def test_p1_12_supplier_reservation_disclosure_remains_truthful(auth_client):
 
     with patch.dict(app.view_functions["operator_fr12.booking_detail"].__globals__, {"call_api": lambda m, p, **k: mock_resp}):
         for fixture in P1_FIXTURES[:7]:  # Test paid, pending, unpaid, expired, failed, cancelled
+            mock_resp.json.return_value = {'ok': True, 'booking': fixture}
             res = auth_client.get(f"/bookings/{fixture['orderReference']}")
             assert res.status_code == 200
             html = res.get_data(as_text=True)
@@ -575,6 +576,7 @@ def test_p1_18_existing_fr09_checkout_fulfillment_contract(auth_client):
         assert "Not Fulfilled" in html
 
     with patch.dict(app.view_functions["operator_fr12.booking_detail"].__globals__, {"call_api": lambda m, p, **k: mock_resp}):
+        mock_resp.json.return_value = {'ok': True, 'booking': fr09_projected_order}
         res_det = auth_client.get("/bookings/ord_fr09_stripe_checkout")
         assert res_det.status_code == 200
         html_det = res_det.get_data(as_text=True)
