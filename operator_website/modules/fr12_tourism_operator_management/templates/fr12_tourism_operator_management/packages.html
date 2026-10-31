@@ -125,22 +125,22 @@
           </td>
 
           <td style="text-align: right;">
-            <div class="actions" style="justify-content: flex-end;">
+            <div class="actions" style="justify-content: flex-end; gap: 6px;">
               {% if state not in ['pending', 'submitted', 'archived'] %}
-                <a class="btn outline" href="{{ url_for('operator_fr12.edit_package_page', package_id=item.id) }}" title="Edit package">Edit</a>
+                <a class="btn outline btn-sm" href="{{ url_for('operator_fr12.edit_package_page', package_id=item.id) }}" title="Edit package">Edit</a>
               {% endif %}
 
               {% if state in ['draft', 'rejected', 'suspended'] %}
                 <form method="post" action="/packages/{{ item.id }}/submit" style="display: inline-block; margin: 0;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn primary" type="submit">{{ 'Resubmit' if state in ['rejected', 'suspended'] else 'Submit' }}</button>
+                  <button class="btn primary btn-sm" type="submit">{{ 'Resubmit' if state in ['rejected', 'suspended'] else 'Submit' }}</button>
                 </form>
               {% endif %}
 
               {% if state in ['draft', 'rejected'] %}
                 <form method="post" action="/packages/{{ item.id }}/delete" onsubmit="return confirm('Delete this package draft permanently?')" style="display: inline-block; margin: 0;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn danger" type="submit">Delete</button>
+                  <button class="btn danger btn-sm" type="submit">Delete</button>
                 </form>
               {% elif state in ['pending', 'submitted'] %}
                 <span class="muted" style="font-size: 12px; font-weight: 500;">Awaiting Review</span>
@@ -149,7 +149,7 @@
               {% if state in ['draft', 'rejected', 'approved'] %}
                 <form method="post" action="/packages/{{ item.id }}/archive" onsubmit="return confirm('Archive this package?')" style="display: inline-block; margin: 0;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn outline" type="submit">Archive</button>
+                  <button class="btn outline btn-sm" type="submit">Archive</button>
                 </form>
               {% endif %}
             </div>

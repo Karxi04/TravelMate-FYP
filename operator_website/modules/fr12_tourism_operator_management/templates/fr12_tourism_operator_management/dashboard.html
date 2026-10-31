@@ -27,15 +27,28 @@
 
 <!-- Package Catalog Metrics Pipeline -->
 {% if backend_error %}
-<div class="card" role="alert">Business data is temporarily unavailable. Please try again.</div>
+<div class="card service-unavailable-card" role="alert">
+  <div class="error-icon" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  </div>
+  <div>
+    <strong>Service Disruption Notice</strong>
+    <div style="font-size: 13px; margin-top: 2px;">Business data is temporarily unavailable. Please try again.</div>
+  </div>
+</div>
 {% else %}
-{% if data_limited %}<p class="muted">Totals cover the loaded records, not the complete business history.</p>{% endif %}
-<div class="card-heading" style="margin-top: 8px;">
+{% if data_limited %}
+<div class="notice-banner-limited" role="region" aria-label="Data Scope Notice">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <p class="muted">Totals cover the loaded records, not the complete business history.</p>
+</div>
+{% endif %}
+<div class="card-heading" style="margin-top: 12px; margin-bottom: 12px;">
   <div>
     <span class="eyebrow">Catalog Overview</span>
     <h3>Package Performance Pipeline</h3>
   </div>
-  <span class="muted" style="font-size: 12px;">Package Catalog Overview</span>
+  <span class="muted" style="font-size: 12px;">Penang Catalog Status</span>
 </div>
 
 <div class="grid g4 operator-stats">
@@ -85,7 +98,14 @@
 </div>
 
 <!-- Secondary Marketing & Pipeline Stats -->
-<div class="grid g4" style="margin-top: 20px;">
+<div class="card-heading" style="margin-top: 28px; margin-bottom: 12px;">
+  <div>
+    <span class="eyebrow">Marketing & Reach</span>
+    <h3>Promotions & Bookings</h3>
+  </div>
+  <span class="muted" style="font-size: 12px;">Operational Snapshot</span>
+</div>
+<div class="grid g4">
   <div class="metric-card">
     <div class="metric-card-top">
       <span class="metric-label">Draft Packages</span>
