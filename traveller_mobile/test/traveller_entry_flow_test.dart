@@ -8,12 +8,21 @@ import 'package:travelmate_traveller/modules/fr02_travel_preference/preferences_
 import 'package:travelmate_traveller/services/api_service.dart';
 
 class _EntryApi extends ApiService {
+  Map<String, dynamic>? profile;
   Map<String, dynamic>? preferences;
   Object? nextGetFailure;
   Object? nextPutFailure;
+  Object? nextPostFailure;
   final calls = <String>[];
+  final postBodies = <Map<String, dynamic>>[];
+  int meCallCount = 0;
+  int profileAvailableOnMeCall = 1;
 
-  _EntryApi({this.preferences});
+  _EntryApi({
+    this.profile = const {'uid': 'test-traveller', 'role': 'traveller'},
+    this.preferences,
+    this.profileAvailableOnMeCall = 1,
+  });
 
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
@@ -24,15 +33,41 @@ class _EntryApi extends ApiService {
       throw failure;
     }
     if (path == '/api/fr1/me') {
-      return {
-        'ok': true,
-        'profile': {'uid': 'test-traveller', 'role': 'traveller'}
-      };
+      meCallCount++;
+      if (nextGetFailure != null) {
+        final failure = nextGetFailure!;
+        nextGetFailure = null;
+        throw failure;
+      }
+      if (meCallCount >= profileAvailableOnMeCall) {
+        return {'ok': true, 'profile': profile};
+      }
+      return {'ok': true, 'profile': null};
     }
     if (path == '/api/fr2/preferences') {
       return {'ok': true, 'preferences': preferences};
     }
     throw StateError('Unexpected GET $path');
+  }
+
+  @override
+  Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
+    calls.add('POST $path');
+    if (body != null) postBodies.add(body);
+    if (nextPostFailure != null) {
+      final failure = nextPostFailure!;
+      nextPostFailure = null;
+      throw failure;
+    }
+    if (path == '/api/fr1/profile') {
+      profile = {
+        'uid': 'test-traveller',
+        'role': body?['role'] ?? 'traveller',
+        'name': body?['name'] ?? 'Test Traveller',
+      };
+      return {'ok': true, 'profile': profile};
+    }
+    throw StateError('Unexpected POST $path');
   }
 
   @override
@@ -48,10 +83,17 @@ class _EntryApi extends ApiService {
   }
 }
 
-Widget _gate(_EntryApi api) => MaterialApp(
+Widget _gate(
+  _EntryApi api, {
+  String? candidateName,
+  Duration pollDelay = Duration.zero,
+}) =>
+    MaterialApp(
       home: TravellerEntryGate(
         api: api,
         home: const Scaffold(body: Text('TravelMate Home')),
+        candidateName: candidateName,
+        pollDelay: pollDelay,
       ),
     );
 
@@ -129,5 +171,132 @@ void main() {
 
     expect(find.text('TravelMate Home'), findsOneWidget);
     expect(api.calls.where((call) => call.startsWith('PUT ')).length, 2);
+  });
+
+  testWidgets(
+      'delayed profile readiness resolves via polling and reaches questionnaire',
+      (tester) async {
+    final api = _EntryApi(
+      profile: const {'uid': 'test-traveller', 'role': 'traveller'},
+      profileAvailableOnMeCall: 2,
+    );
+
+    await tester.pumpWidget(_gate(api));
+    await tester.pump();
+
+    expect(find.byType(PreferencesScreen), findsOneWidget);
+    expect(api.calls, contains('GET /api/fr1/me'));
+    expect(api.meCallCount, 2);
+  });
+
+  testWidgets(
+      'missing profile self-heals via POST profile and reaches questionnaire',
+      (tester) async {
+    final api = _EntryApi(
+      profile: null,
+      profileAvailableOnMeCall: 99,
+    );
+
+    await tester.pumpWidget(_gate(api, candidateName: 'Alice'));
+    await tester.pump();
+
+    expect(find.byType(PreferencesScreen), findsOneWidget);
+    expect(api.calls, contains('POST /api/fr1/profile'));
+    expect(api.postBodies.first['name'], 'Alice');
+    expect(api.postBodies.first['role'], 'traveller');
+  });
+
+  testWidgets('non-traveller role displays rejection error and sign out option',
+      (tester) async {
+    final api = _EntryApi(
+      profile: const {'uid': 'test-operator', 'role': 'operator'},
+    );
+
+    await tester.pumpWidget(_gate(api));
+    await tester.pump();
+
+    expect(
+        find.text('This account is not a Traveller account.'), findsOneWidget);
+    expect(find.text('Back to Sign In'), findsOneWidget);
+  });
+
+  testWidgets('admin role is strictly rejected without profile mutation',
+      (tester) async {
+    final api = _EntryApi(
+      profile: const {'uid': 'test-admin', 'role': 'admin'},
+    );
+
+    await tester.pumpWidget(_gate(api));
+    await tester.pump();
+
+    expect(
+        find.text('This account is not a Traveller account.'), findsOneWidget);
+    expect(find.text('Back to Sign In'), findsOneWidget);
+    expect(api.calls.where((c) => c.startsWith('POST')), isEmpty);
+  });
+
+  testWidgets('existing profile never triggers duplicate profile creation',
+      (tester) async {
+    final api = _EntryApi(
+      profile: const {'uid': 'existing-user', 'role': 'traveller'},
+      preferences: const {'travelType': 'Nature'},
+    );
+
+    await tester.pumpWidget(_gate(api));
+    await tester.pump();
+
+    expect(find.text('TravelMate Home'), findsOneWidget);
+    expect(api.calls, ['GET /api/fr1/me', 'GET /api/fr2/preferences']);
+    expect(api.calls.where((c) => c.startsWith('POST')), isEmpty);
+  });
+
+  testWidgets('repeated retry recovers after transient failure',
+      (tester) async {
+    final api = _EntryApi()
+      ..nextGetFailure = http.ClientException('Network down');
+
+    await tester.pumpWidget(_gate(api));
+    await tester.pump();
+
+    expect(find.text(backendConnectionMessage), findsOneWidget);
+
+    // First retry still fails
+    api.nextGetFailure = http.ClientException('Network still down');
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    expect(find.text(backendConnectionMessage), findsOneWidget);
+
+    // Second retry recovers
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    expect(find.byType(PreferencesScreen), findsOneWidget);
+  });
+
+  testWidgets(
+      'failed self-heal stops gracefully at max attempts without infinite loop',
+      (tester) async {
+    final api = _EntryApi(
+      profile: null,
+      profileAvailableOnMeCall: 99,
+    )..nextPostFailure = const ApiException('Database error', 500, {});
+
+    await tester.pumpWidget(_gate(api));
+    await tester.pump();
+
+    expect(find.text('Database error'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Back to Sign In'), findsOneWidget);
+    expect(api.calls.where((c) => c.startsWith('POST')).length, 1);
+  });
+
+  testWidgets('error state shows Back to Sign In button', (tester) async {
+    final api = _EntryApi()
+      ..nextGetFailure = TimeoutException('Timeout');
+
+    await tester.pumpWidget(_gate(api));
+    await tester.pump();
+
+    expect(find.text(backendConnectionMessage), findsOneWidget);
+    expect(find.text('Back to Sign In'), findsOneWidget);
   });
 }
