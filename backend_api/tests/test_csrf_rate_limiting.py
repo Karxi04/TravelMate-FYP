@@ -125,14 +125,15 @@ def test_rendered_portal_forms_have_valid_tokens(portal):
     name, app, _api, _auth = portal
     client = app.test_client()
     csrf_token(client)
-    with client.session_transaction() as session:
-        session.update(id_token="test-token", uid="portal-user",portal_role=name,verification_status='approved')
     paths = ["/admin/users", "/admin/destinations", "/admin/activities",
              "/admin/packages", "/admin/campaigns", "/admin/feedback"] if name == "admin" else [
         "/register", "/reset", "/profile", "/packages", "/campaigns", "/submit-package",
         "/packages/item/edit-page", "/campaigns/item/edit-page",
     ]
     for path in paths:
+        # GET /register clears authentication; each form needs its own valid session.
+        with client.session_transaction() as session:
+            session.update(id_token="test-token", uid="portal-user",portal_role=name,verification_status='approved')
         response = client.get(path)
         assert response.status_code == 200, path
         forms = re.findall(r'<form\b[^>]*method="post"[^>]*>(.*?)</form>', response.get_data(as_text=True), re.S)
@@ -165,11 +166,13 @@ def test_all_portal_mutations_accept_valid_csrf(portal):
         auth.signOutUser.reset_mock()
         path = re.sub(r"<[^>]+>", "item", rule.rule)
         post_data = {
-            "csrf_token": token, "email": "test@example.com", "password": "test",
+            "csrf_token": token, "email": "test@example.com", "password": "test-only-password",
             "decision": "approved", "packageId": "item", "name": "Test",
             "companyName": "Test", "registrationNo": "Test", "businessContact": "Test",
             "reason": "Valid suspension reason for testing purposes.",
         }
+        if path.endswith("/fulfillment"):
+            post_data.update(serviceType="accommodation", reference="synthetic-reference")
         if "upload-image" in path:
             post_data["file"] = (io.BytesIO(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"), "test.png", "image/png")
             response = client.post(path, data=post_data, content_type="multipart/form-data")
