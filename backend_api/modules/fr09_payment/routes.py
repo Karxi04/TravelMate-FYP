@@ -501,6 +501,15 @@ def _sync_package_attempt_status(order):
     })
 
 
+def _persist_checkout_update(record, patch):
+    if record.get('quoteType') == 'package':
+        updated = updateRecord(ORDER_COLLECTION, record['id'], patch, expected=record)
+        if not updated:
+            raise RuntimeError('Package order storage unavailable')
+        return updated
+    return updateRecord(ORDER_COLLECTION, record['id'], patch) or {**record, **patch}
+
+
 def _reconcile_checkout_order(record):
     session_id = str(record.get('checkoutSessionId') or '').strip()
     if not session_id:
@@ -513,7 +522,7 @@ def _reconcile_checkout_order(record):
     else:
         patch = _apply_checkout_session(record, session)
     patch['checkoutSessionStatus'] = str(_stripe_value(session, 'status', '') or '').lower()
-    updated = updateRecord(ORDER_COLLECTION, record['id'], patch) or {**record, **patch}
+    updated = _persist_checkout_update(record, patch)
     if updated.get('quoteType') == 'package':
         _sync_package_attempt_status(updated)
     return updated, True
@@ -705,8 +714,17 @@ def _fulfill_package_order(order):
 
 
 def _apply_package_payment(order, session):
+    # A replayed paid session is not permission to reopen a terminal order.
+    if any(str(order.get(key) or '').lower() in {'refunded', 'partially_refunded', 'rejected'}
+           for key in ('status', 'paymentStatus')):
+        return {key: order.get(key) for key in ('status', 'paymentStatus')}
     patch = _apply_checkout_session(order, session)
     if patch['status'] != 'paid':
+        return patch
+    # Supplier progress is independent of repeated payment verification. Omit
+    # these fields entirely so a concurrent attestation is not overwritten.
+    if (order.get('fulfillmentStatus') in {'trip_ready', 'partially_fulfilled', 'fulfillment_declined'} or
+            (order.get('fulfilledTripId') and not order.get('fulfillmentRetryRequired'))):
         return patch
     fulfillment = _fulfill_package_order(order)
     updateRecord(PACKAGE_ATTEMPT_COLLECTION, order['packageAttemptId'], {
@@ -955,7 +973,7 @@ def checkout_return(outcome):
             patch = _apply_hotel_payment(record, session)
         else:
             patch = _apply_checkout_session(record, session)
-        updated = updateRecord(ORDER_COLLECTION, order_id, patch) or {**record, **patch}
+        updated = _persist_checkout_update(record, patch)
         status = str(updated.get('status') or '').lower()
         if status == 'paid':
             heading = 'Payment Successful'
@@ -1058,7 +1076,7 @@ def stripe_webhook():
                 patch = _apply_hotel_payment(record, data)
             else:
                 patch = _apply_checkout_session(record, data)
-        updateRecord(ORDER_COLLECTION, order_id, patch)
+        _persist_checkout_update(record, patch)
         if record.get('quoteType') == 'package' and event_type in {
             'checkout.session.async_payment_failed', 'checkout.session.expired',
         }:

@@ -86,6 +86,45 @@ def updateRecord(collectionName, documentId, data, expected=None):
     return result
 
 
+def commitPackageFulfillment(document_id, expected, patch):
+    """CAS a package order and its owned Trip mirror in one transaction."""
+    from google.cloud import firestore
+    from services.review_service import ReviewConflict
+    db = get_db()
+    source = db.collection('checkout_orders').document(document_id)
+
+    @firestore.transactional
+    def commit(transaction):
+        snap = source.get(transaction=transaction)
+        current = {'id': snap.id, **(snap.to_dict() or {})} if snap.exists else None
+        if current != expected:
+            raise ReviewConflict('Booking changed. Refresh and try again.')
+        trip_id = current.get('fulfilledTripId')
+        trip_ref = None
+        if trip_id:
+            trip_ref = db.collection('itineraries').document(trip_id)
+            trip_snap = trip_ref.get(transaction=transaction)
+            trip = trip_snap.to_dict() if trip_snap.exists else None
+            if (not trip or trip.get('travellerId') != current.get('travellerId') or
+                    trip.get('checkoutOrderId') != document_id or
+                    trip.get('operatorId') != current.get('operatorId')):
+                raise ReviewConflict('Linked Package Trip is unavailable or inconsistent.')
+        elif patch.get('fulfillmentStatus') == 'trip_ready':
+            raise ReviewConflict('Recover the paid Package Trip before confirming arrangements.')
+        if patch:
+            transaction.update(source, patch)
+        if trip_ref is not None:
+            updated = {**current, **patch}
+            mirror = {key: updated[key] for key in ('fulfillmentStatus', 'supplierReservationStatus', 'fulfillmentRecord')
+                      if key in updated}
+            if patch:
+                mirror['updatedAt'] = patch['updatedAt']
+            transaction.update(trip_ref, mirror)
+        return {**current, **patch}
+
+    return commit(db.transaction())
+
+
 def deleteRecord(collectionName, documentId, expected=None):
     """Exact sequence-diagram name for Firestore delete."""
     if collectionName == 'feedback' and expected is not None:

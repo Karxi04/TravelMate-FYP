@@ -296,11 +296,11 @@ def generate_business_analytics(db, operator_id):
 
     fulfilled_bookings = sum(
         1 for b in bookings
-        if _normalise(b.get("fulfillmentStatus")) == "fulfilled"
+        if _normalise(b.get("fulfillmentStatus")) in {"fulfilled", "trip_ready"}
     )
     pending_fulfillment_bookings = sum(
         1 for b in bookings
-        if _normalise(b.get("fulfillmentStatus")) in {"pending", "fulfillment_pending"}
+        if _normalise(b.get("fulfillmentStatus")) in {"pending", "fulfillment_pending", "awaiting_operator_fulfillment", "partially_fulfilled"}
     )
 
     # ==========================================================

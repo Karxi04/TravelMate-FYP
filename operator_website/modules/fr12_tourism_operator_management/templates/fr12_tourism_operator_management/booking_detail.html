@@ -43,7 +43,7 @@
       </p>
     {% else %}
       <strong>Authoritative Supplier Reservation Status: NOT CREATED</strong>
-      {% if pay_status in ['paid', 'succeeded'] and ful_status in ['fulfilled', 'trip_ready'] %}
+      {% if pay_status in ['paid', 'succeeded'] and ful_status in ['fulfilled', 'trip_ready', 'awaiting_operator_fulfillment', 'partially_fulfilled'] %}
         <p>
           This booking was recorded following verified payment in <strong>Stripe Test Mode</strong>. An independent <strong>Package Trip</strong> has been created in the traveller's mobile application. However, <strong>third-party supplier reservations are NOT created automatically</strong> by TravelMate. You must confirm hotel accommodation, docents, and transport with third-party providers manually.
         </p>

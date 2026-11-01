@@ -58,7 +58,11 @@
         </td>
         <td>
           <span class="badge warning" title="{{ x.get('supplierReservationDisclosure', 'Platform order only. Direct supplier airline/hotel booking is not executed.') }}" style="font-size: 11px;">
-            ⚠️ Not Created (Manual)
+            {% set supplier_status = x.get('supplierReservationStatus', 'not_created') %}
+            {% if supplier_status == 'operator_attested' %}Operator Attested
+            {% elif supplier_status == 'declined' %}Fulfillment Declined
+            {% elif supplier_status == 'not_required' %}Not Required
+            {% else %}⚠️ Not Created (Manual){% endif %}
           </span>
         </td>
         <td>

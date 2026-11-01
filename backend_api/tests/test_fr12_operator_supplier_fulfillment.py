@@ -11,6 +11,33 @@ from services.package_checkout_contract import (
 AUTH_HEADER = {'Authorization': 'Bearer valid_test_token'}
 
 
+def _memory_commit(store):
+    """Atomic persistence double; real SDK transaction is verified separately."""
+    from threading import Lock
+    from services.review_service import ReviewConflict
+    lock = Lock()
+
+    def commit(document_id, expected, patch):
+        with lock:
+            current = store.get(document_id)
+            if current != expected:
+                raise ReviewConflict('Changed')
+            trip = store.get(current.get('fulfilledTripId'))
+            if not trip or trip.get('checkoutOrderId') != document_id:
+                raise ReviewConflict('Missing linked Trip')
+            updated = {**current, **deepcopy(patch)}
+            store[document_id] = updated
+            trip.update({k: deepcopy(updated[k]) for k in
+                         ('fulfillmentStatus', 'supplierReservationStatus', 'fulfillmentRecord')})
+            return deepcopy(updated)
+    return commit
+
+
+def _trip_for(order):
+    return {'id': order['fulfilledTripId'], 'checkoutOrderId': order['id'],
+            'travellerId': order['travellerId'], 'operatorId': order['operatorId']}
+
+
 def _sample_order(order_ref='ord-sample-1', operator_id='test_operator_uid', **extra):
     snapshot = {
         'packageId': 'pkg-penang-heritage',
@@ -135,6 +162,7 @@ def test_operator_attests_accommodation_component(client, mock_operator_auth):
     store = {}
     order = _sample_order()
     store[order['id']] = deepcopy(order)
+    store[order['fulfilledTripId']] = _trip_for(order)
 
     def mock_retrieve(col, doc_id=None, **k):
         if doc_id:
@@ -147,7 +175,8 @@ def test_operator_attests_accommodation_component(client, mock_operator_auth):
         return deepcopy(store[doc_id])
 
     with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=mock_retrieve), \
-         patch('modules.fr12_tourism_operator_management.routes.updateRecord', side_effect=mock_update):
+         patch('modules.fr12_tourism_operator_management.routes.updateRecord', side_effect=mock_update), \
+         patch('modules.fr12_tourism_operator_management.routes.commitPackageFulfillment', side_effect=_memory_commit(store)):
 
         payload = {
             'serviceType': 'accommodation',
@@ -231,7 +260,7 @@ def test_confirmation_gate_succeeds_when_all_required_attested(client, mock_oper
         })
     order['fulfillmentStatus'] = 'partially_fulfilled'
     store[order['id']] = deepcopy(order)
-    store['trip-pkg-101'] = {'id': 'trip-pkg-101', 'supplierReservationStatus': 'not_created'}
+    store['trip-pkg-101'] = {**_trip_for(order), 'supplierReservationStatus': 'not_created'}
 
     def mock_retrieve(col, doc_id=None, **k):
         if doc_id:
@@ -244,7 +273,8 @@ def test_confirmation_gate_succeeds_when_all_required_attested(client, mock_oper
         return deepcopy(store[doc_id])
 
     with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=mock_retrieve), \
-         patch('modules.fr12_tourism_operator_management.routes.updateRecord', side_effect=mock_update):
+         patch('modules.fr12_tourism_operator_management.routes.updateRecord', side_effect=mock_update), \
+         patch('modules.fr12_tourism_operator_management.routes.commitPackageFulfillment', side_effect=_memory_commit(store)):
 
         res = client.post(
             f"/api/fr12/bookings/{order['id']}/confirm-fulfillment",
@@ -296,7 +326,7 @@ def test_decline_workflow_requires_detailed_reason_and_updates_status(client, mo
     store = {}
     order = _sample_order()
     store[order['id']] = deepcopy(order)
-    store['trip-pkg-101'] = {'id': 'trip-pkg-101'}
+    store['trip-pkg-101'] = _trip_for(order)
 
     def mock_retrieve(col, doc_id=None, **k):
         if doc_id:
@@ -309,7 +339,8 @@ def test_decline_workflow_requires_detailed_reason_and_updates_status(client, mo
         return deepcopy(store[doc_id])
 
     with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=mock_retrieve), \
-         patch('modules.fr12_tourism_operator_management.routes.updateRecord', side_effect=mock_update):
+         patch('modules.fr12_tourism_operator_management.routes.updateRecord', side_effect=mock_update), \
+         patch('modules.fr12_tourism_operator_management.routes.commitPackageFulfillment', side_effect=_memory_commit(store)):
 
         # Short reason fails
         res_short = client.post(

@@ -8,11 +8,14 @@ from test_fr15_package_checkout_api import AtomicMemory
 
 
 class PaymentMemory(AtomicMemory):
-    def update(self, collection, document_id, data):
+    def update(self, collection, document_id, data, expected=None):
         with self._lock:
             records = self.collections.setdefault(collection, {})
             if document_id not in records:
                 return None
+            if expected is not None and records[document_id] != expected:
+                from services.review_service import ReviewConflict
+                raise ReviewConflict('Changed')
             records[document_id] = {**records[document_id], **deepcopy(data)}
             return deepcopy(records[document_id])
 

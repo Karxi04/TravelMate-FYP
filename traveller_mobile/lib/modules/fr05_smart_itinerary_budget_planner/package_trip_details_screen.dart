@@ -618,10 +618,19 @@ class _PackageTripDetailsScreenState extends State<PackageTripDetailsScreen> {
     required String supplierStatus,
   }) {
     final basisLabel = priceBasis == 'per_group' ? 'Per Group' : 'Per Person';
-    final isConfirmedSupplier = supplierStatus.trim().toLowerCase() == 'confirmed';
-    final supplierMessage = isConfirmedSupplier
-        ? 'Reservation confirmed by operator.'
-        : 'Test payment recorded. Your Package Trip is available in TravelMate. No external supplier reservation has been created.';
+    final isConfirmedSupplier = const {'confirmed', 'operator_attested'}
+        .contains(supplierStatus.trim().toLowerCase());
+    final supplierMessage = switch (supplierStatus.trim().toLowerCase()) {
+      'confirmed' => 'Reservation confirmed by operator.',
+      'operator_attested' =>
+        'The operator has recorded supplier arrangements. These references have not been verified directly with suppliers by TravelMate.',
+      'declined' =>
+        'The operator is unable to fulfill this booking. Check your order and contact the operator for assistance. No refund is confirmed by this notice.',
+      'not_required' =>
+        'The operator has marked this Package Trip ready. No supplier reservations are required for the included services.',
+      _ =>
+        'Test payment recorded. Your Package Trip is available in TravelMate. No external supplier reservation has been created.',
+    };
 
     return InkCard(
       child: Column(
