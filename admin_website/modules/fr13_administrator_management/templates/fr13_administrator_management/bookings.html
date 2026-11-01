@@ -1,6 +1,7 @@
 {% extends 'portal_base.html' %}
 {% block title %}Booking Records | TravelMate{% endblock %}
 {% block content %}
+{% include '_admin_data_state.html' %}
 <div class="page-title">
   <div>
     <h1>Booking Records</h1>
@@ -40,7 +41,7 @@
         <td><span class="status {{ x.get('paymentStatus','unpaid') }}">{{ x.get('paymentStatus','unpaid') }}</span></td>
         <td><span class="status {{ x.get('fulfillmentStatus','pending') }}">{{ x.get('fulfillmentStatus','pending') }}</span></td>
         <td><span class="badge warning" title="{{ x.get('supplierReservationDisclosure','') }}">⚠️ Not Created (Manual)</span></td>
-        <td>{{ x.get('currency','MYR') }} {{ '%.2f'|format(x.get('amount', 0)|float) }}</td>
+        <td>{% if x.get('amount') is not none %}{{ x.get('currency','UNKNOWN') }} {{ '%.2f'|format(x.get('amount')|float) }}{% else %}Unavailable{% endif %}</td>
         <td>{{ x.get('createdAt','-') }}</td>
       </tr>
       {% else %}
@@ -83,17 +84,18 @@
           {% if btype == 'package' %}
             <span class="status {{ x.get('paymentStatus','unpaid') }}">{{ x.get('paymentStatus','unpaid') }}</span>
           {% else %}
-            <span class="status {{ x.get('bookingStatus','confirmed') }}">{{ x.get('bookingStatus','confirmed') }}</span>
+            <span class="status {{ x.get('bookingStatus','unknown') }}">{{ x.get('bookingStatus','unknown') }}</span>
           {% endif %}
         </td>
         <td>
           {% if btype == 'package' %}
             <span class="badge warning">⚠️ Not Created (Manual)</span>
           {% else %}
-            <span class="badge neutral">Test Mode</span>
+            <span class="badge neutral">{{ x.get('reservationProvenance','unverified')|replace('_',' ') }}</span>
           {% endif %}
         </td>
-        <td>RM {{ '%.2f'|format(x.get('amount', x.get('hotelCost', x.get('price', 0)))|float) }}</td>
+        {% set amount = x.get('amount', x.get('hotelCost', x.get('price'))) %}
+        <td>{% if amount is not none %}{{ x.get('currency','UNKNOWN') }} {{ '%.2f'|format(amount|float) }}{% else %}Unavailable{% endif %}</td>
         <td>{{ x.get('createdAt','-') }}</td>
       </tr>
       {% else %}
@@ -122,8 +124,9 @@
         <td><strong>{{ x.get('bookingReference', x.get('id','-')) }}</strong><br><small>{{ x.get('source','-') }}</small></td>
         <td>{{ x.get('travellerId','-') }}</td>
         <td>{{ hotel.get('name', x.get('hotelName','-')) }}<br><small>{{ hotel.get('roomName', x.get('roomType','')) }}</small></td>
-        <td><span class="status {{ x.get('bookingStatus','confirmed') }}">{{ x.get('bookingStatus','confirmed') }}</span></td>
-        <td>RM {{ '%.2f'|format(x.get('hotelCost', x.get('price',0))|float) }}</td>
+        <td><span class="status {{ x.get('bookingStatus','unknown') }}">{{ x.get('confirmationLabel') or x.get('bookingStatus','unknown') }}</span><br><small>{{ x.get('reservationProvenance','unverified')|replace('_',' ') }}</small></td>
+        {% set amount = x.get('amount', x.get('hotelCost', x.get('price'))) %}
+        <td>{% if amount is not none %}{{ x.get('currency','UNKNOWN') }} {{ '%.2f'|format(amount|float) }}{% else %}Unavailable{% endif %}</td>
         <td>{{ x.get('createdAt','-') }}</td>
       </tr>
       {% else %}

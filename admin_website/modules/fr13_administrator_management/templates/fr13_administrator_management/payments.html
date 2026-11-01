@@ -1,6 +1,7 @@
 {% extends 'portal_base.html' %}
 {% block title %}Payment Records | TravelMate{% endblock %}
 {% block content %}
+{% include '_admin_data_state.html' %}
 <div class="page-title">
   <div>
     <h1>Payment Records</h1>
@@ -48,13 +49,14 @@
         <td><strong>{{ x.get('transactionReference', x.get('id','-')) }}</strong><br><small>{{ x.get('cardBrand','Card') }} {{ x.get('cardLast4','') }}</small></td>
         <td>{{ x.get('productType', x.get('bookingId','-')) }}<br><small>{{ x.get('productTitle','') }}</small></td>
         <td>{{ x.get('travellerId','-') }}</td>
-        <td><span class="status {{ x.get('paymentStatus', x.get('status','unknown')) }}">{{ x.get('paymentStatus', x.get('status','unknown')) }}</span></td>
-        <td>{{ x.get('currency','MYR')|upper }} {{ '%.2f'|format(x.get('amount',0)|float) }}</td>
+        {% set payment_state = x.get('status','unknown') if x.get('isPaid') is sameas false and x.get('paymentStatus') in ['paid','succeeded'] else x.get('paymentStatus', x.get('status','unknown')) %}
+        <td><span class="status {{ payment_state }}">{{ payment_state }}</span></td>
+        <td>{% if x.get('amount') is not none %}{{ x.get('currency','UNKNOWN')|upper }} {{ '%.2f'|format(x.get('amount')|float) }}{% else %}Unavailable{% endif %}</td>
         <td>
           {% if x.get('testMode') or 'test' in (x.get('provider','')|string|lower) or (x.get('transactionReference','')|string).startswith('pi_sim_') %}
             <span class="badge warning">Stripe Test Mode</span>
           {% else %}
-            <span class="badge success">Live</span>
+            <span class="badge neutral">Mode unverified</span>
           {% endif %}
         </td>
         <td>{{ x.get('createdAt','-') }}</td>

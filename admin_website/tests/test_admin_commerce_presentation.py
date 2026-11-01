@@ -38,6 +38,64 @@ def _patch_view_api(view_name, mock_fn):
     return patch.dict(fn_globals, {"call_api": mock_fn})
 
 
+@pytest.mark.parametrize('page',['dashboard','users','packages','campaigns','feedback','destinations','activities','bookings','payments','reports'])
+def test_f4b_outage_is_visible_without_private_exception(auth_client,page):
+    import requests
+    with patch('api_client.requests.request',side_effect=requests.Timeout('private-sentinel')):
+        response=auth_client.get('/admin/'+page)
+    assert response.status_code == 200
+    html=response.get_data(as_text=True)
+    assert 'temporarily unavailable' in html and 'private-sentinel' not in html
+    if page == 'dashboard':assert 'Queue Clear' not in html
+
+
+def test_f4b_non_admin_session_is_rejected_before_proxy(auth_client):
+    with auth_client.session_transaction() as sess:sess['portal_role']='operator'
+    api=MagicMock()
+    with _patch_view_api('admin_fr13.users',api):
+        response=auth_client.get('/admin/users')
+    assert response.status_code == 302
+    api.assert_not_called()
+
+
+def test_f4b_expired_token_clears_session_and_redirects(auth_client):
+    import requests
+    failure=requests.Response();failure.status_code=401
+    failure._content=b'{"ok":false,"error":"expired"}'
+    with patch('api_client.requests.request',return_value=failure):
+        response=auth_client.get('/admin/users')
+    assert response.status_code == 302
+    with auth_client.session_transaction() as sess:assert not sess.get('id_token')
+
+
+def test_f4b_csrf_blocks_mutation_before_proxy(auth_client):
+    previous=app.config['WTF_CSRF_ENABLED'];app.config['WTF_CSRF_ENABLED']=True
+    try:
+        with patch('api_client.requests.request') as api:
+            response=auth_client.post('/admin/packages/p/review',data={'decision':'approved'})
+        assert response.status_code == 400
+        api.assert_not_called()
+    finally:app.config['WTF_CSRF_ENABLED']=previous
+
+
+def test_f4b_partial_dashboard_is_disclosed(auth_client):
+    import requests
+    response=requests.Response();response.status_code=200
+    response._content=b'{"ok":true,"report":{"dataLimited":true,"counts":{"users":500}}}'
+    with patch('api_client.requests.request',return_value=response):
+        page=auth_client.get('/admin/dashboard')
+    assert page.status_code == 200 and b'Partial results' in page.data and b'500' in page.data
+
+
+def test_f4b_unknown_payment_is_not_free_or_live(auth_client):
+    response=MagicMock(ok=True)
+    response.json.return_value={'ok':True,'items':[{'id':'unknown','amount':None,'currency':'UNKNOWN'}]}
+    with _patch_view_api('admin_fr13.payments',MagicMock(return_value=response)):
+        page=auth_client.get('/admin/payments')
+    html=page.get_data(as_text=True)
+    assert 'Unavailable' in html and 'Mode unverified' in html and '>Live</span>' not in html
+
+
 def test_admin_payments_renders_filters_and_test_mode_badge(auth_client):
     mock_resp = MagicMock()
     mock_resp.ok = True

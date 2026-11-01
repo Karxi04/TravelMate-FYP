@@ -2,6 +2,8 @@
 {% block title %}Admin Dashboard | TravelMate{% endblock %}
 
 {% block content %}
+{% include '_admin_data_state.html' %}
+{% if not backend_error %}
 <div class="page-title">
   <div>
     <span class="eyebrow">ADMINISTRATION • SYSTEM OVERVIEW</span>
@@ -243,4 +245,5 @@
     </div>
   </div>
 </div>
+{% endif %}
 {% endblock %}

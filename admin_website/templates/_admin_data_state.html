@@ -1,0 +1,5 @@
+{% if backend_error %}
+<div class="service-unavailable-card" role="alert">Administrator data is temporarily unavailable. Please try again.</div>
+{% elif data_limited %}
+<div class="notice-banner-limited" role="status">Partial results: up to 500 records per source category are loaded. Totals are not the complete system history.</div>
+{% endif %}

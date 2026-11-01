@@ -1,6 +1,7 @@
 {% extends 'portal_base.html' %}
 {% block title %}Activity Records | TravelMate{% endblock %}
 {% block content %}
+{% include '_admin_data_state.html' %}
 <div class="page-title"><div><h1>Activity Management</h1><p>Create and maintain activity records for destination planning.</p></div></div>
 <form class="card" method="post" action="{{ url_for('admin_fr13.create_activity') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="grid g2">

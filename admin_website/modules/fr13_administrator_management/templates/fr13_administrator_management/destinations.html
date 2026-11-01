@@ -1,6 +1,7 @@
 {% extends 'portal_base.html' %}
 {% block title %}Destination Records | TravelMate{% endblock %}
 {% block content %}
+{% include '_admin_data_state.html' %}
 <div class="page-title"><div><h1>Destination Management</h1><p>Create and maintain destination records used by TravelMate administrators.</p></div></div>
 <form class="card" method="post" action="{{ url_for('admin_fr13.create_destination') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="grid g2">

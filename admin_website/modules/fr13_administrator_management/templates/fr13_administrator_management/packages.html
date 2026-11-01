@@ -1,4 +1,5 @@
 {% extends 'portal_base.html' %}{% block title %}Package Review | TravelMate{% endblock %}{% block content %}
+{% include '_admin_data_state.html' %}
 <div class="page-title"><div><span class="eyebrow">PACKAGE MODERATION</span><h1>Tourism Package Queue</h1><p>Submitted packages are prioritised for review.</p></div></div>
 <form class="toolbar card" method="get"><div class="actions"><input class="input search-input" name="q" value="{{query}}" placeholder="Search title, destination or operator"><select class="input filter-input" name="status"><option value="all">All statuses</option>{% for value,label in [('pending','Under review'),('approved','Approved'),('suspended','Suspended'),('rejected','Needs changes'),('draft','Draft'),('archived','Archived')] %}<option value="{{value}}" {% if status==value %}selected{% endif %}>{{label}}</option>{% endfor %}</select><button class="btn primary">Apply filters</button></div></form>
 <div class="table-wrap"><table><thead><tr><th>Package</th><th>Operator</th><th>Destination</th><th>Submitted / reviewed</th><th>Price</th><th>Status</th><th></th></tr></thead><tbody>

@@ -11,8 +11,8 @@ import pytest
 # Mock records helper
 def _make_sample_collections(checkout_orders=None, payment_records=None, hotel_bookings=None):
     return {
-        'checkout_orders': checkout_orders or [],
-        'payment_records': payment_records or [],
+        'checkout_orders': [{'currency':'MYR',**record} for record in (checkout_orders or [])],
+        'payment_records': [{'currency':'MYR',**record} for record in (payment_records or [])],
         'hotel_bookings': hotel_bookings or [],
         'users': [{'uid': 'admin_1', 'role': 'admin', 'status': 'active'}],
         'tourism_packages': [{'id': 'pkg_1', 'approvalStatus': 'approved'}],
@@ -22,11 +22,11 @@ def _make_sample_collections(checkout_orders=None, payment_records=None, hotel_b
 
 
 def _side_effect_for_collections(collections):
-    def _retrieve(coll, doc_id=None, filters=None):
+    def _retrieve(coll, doc_id=None, filters=None, limit=None):
         data = collections.get(coll, [])
         if doc_id:
             return next((x for x in data if x.get('id') == doc_id or x.get('uid') == doc_id), None)
-        return data
+        return data[:limit] if limit else data
     return _retrieve
 
 

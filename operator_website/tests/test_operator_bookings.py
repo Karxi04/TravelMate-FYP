@@ -232,6 +232,16 @@ def test_f4a_csrf_denies_mutation_before_api_call(auth_client):
         app.config['WTF_CSRF_ENABLED'] = previous
 
 
+def test_f4b_verification_refresh_updates_cached_gate(auth_client):
+    with auth_client.session_transaction() as sess:sess['verification_status']='pending'
+    response=MagicMock(ok=True)
+    response.json.return_value={'profile':{'verificationStatus':'approved','role':'operator'}}
+    with patch.dict(app.view_functions['operator_fr01.verification'].__globals__,{'call_api':lambda *a,**k:response}):
+        page=auth_client.get('/verification')
+    assert page.status_code == 200
+    with auth_client.session_transaction() as sess:assert sess['verification_status']=='approved'
+
+
 def test_f4a_booking_metrics_reject_terminal_paid_and_non_myr_totals(auth_client):
     data = [
         {**SAMPLE_BOOKINGS[0], 'orderReference': 'good', 'groupTotal': 100},

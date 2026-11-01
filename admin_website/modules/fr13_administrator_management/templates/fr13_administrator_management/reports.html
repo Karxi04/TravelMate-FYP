@@ -6,6 +6,9 @@ System Reports | TravelMate
 
 
 {% block content %}
+{% include '_admin_data_state.html' %}
+{% if not backend_error %}
+{% if report.get('recordsLimited') %}<p class="notice-banner-limited">Exports contain the first {{ report.get('recordDisplayLimit',200) }} matching records. Summary counts cover the loaded source records.</p>{% endif %}
 
 <div class="page-title">
 
@@ -262,4 +265,5 @@ System Reports | TravelMate
 </div>
 
 
+{% endif %}
 {% endblock %}

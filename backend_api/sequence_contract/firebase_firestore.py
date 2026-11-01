@@ -1,6 +1,6 @@
 from firebase_service import get_db
 from utils import doc_to_dict
-from google.api_core.exceptions import AlreadyExists
+from google.api_core.exceptions import AlreadyExists, FailedPrecondition, NotFound
 
 
 def _public_projection_changed(collection_name, document_id, source):
@@ -64,10 +64,23 @@ def updateRecord(collectionName, documentId, data, expected=None):
         from services.review_service import commit_feedback
         return commit_feedback(documentId, expected, data)
     ref = get_db().collection(collectionName).document(str(documentId))
-    if not ref.get().exists:
+    snap = ref.get()
+    if not snap.exists:
         return None
+    option = None
+    if expected is not None:
+        from services.review_service import ReviewConflict
+        if {"id": snap.id, **(snap.to_dict() or {})} != expected:
+            raise ReviewConflict('This record changed. Refresh and try again.')
+        option = get_db().write_option(last_update_time=snap.update_time)
     _revoke_public_projection(collectionName, documentId)
-    ref.set(data, merge=True)
+    if option is None:
+        ref.set(data, merge=True)
+    else:
+        try:
+            ref.update(data, option=option)
+        except (FailedPrecondition, NotFound) as error:
+            raise ReviewConflict('This record changed. Refresh and try again.') from error
     result = retrieveRecord(collectionName, documentId)
     _public_projection_changed(collectionName, documentId, result)
     return result

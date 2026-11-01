@@ -126,7 +126,7 @@ def test_rendered_portal_forms_have_valid_tokens(portal):
     client = app.test_client()
     csrf_token(client)
     with client.session_transaction() as session:
-        session.update(id_token="test-token", uid="portal-user")
+        session.update(id_token="test-token", uid="portal-user",portal_role=name,verification_status='approved')
     paths = ["/admin/users", "/admin/destinations", "/admin/activities",
              "/admin/packages", "/admin/campaigns", "/admin/feedback"] if name == "admin" else [
         "/register", "/reset", "/profile", "/packages", "/campaigns", "/submit-package",
@@ -157,7 +157,7 @@ def test_all_portal_mutations_accept_valid_csrf(portal):
             continue
         token = csrf_token(client)
         with client.session_transaction() as session:
-            session.update(id_token="test-token", uid="portal-user")
+            session.update(id_token="test-token", uid="portal-user",portal_role=_name,verification_status='approved')
         api.reset_mock()
         auth.authenticateCredentials.reset_mock()
         auth.createUserAccount.reset_mock()

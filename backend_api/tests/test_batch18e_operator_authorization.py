@@ -317,9 +317,10 @@ def test_campaign_under_review_cannot_be_edited(client, mock_multi_auth):
 def test_admin_campaign_review_approval_and_rejection_preserved(client, mock_multi_auth):
     """Admin review endpoint continues to function for approval and rejection."""
     pending = {**BASE_CAMPAIGN, 'reviewStatus': 'pending'}
-    with patch('modules.fr13_administrator_management.routes.retrieveRecord', return_value=pending), \
+    with patch('modules.fr13_administrator_management.routes.retrieveRecord',
+               side_effect=lambda collection, *args, **kwargs: pending if collection == 'promotional_campaigns' else {'id':pending['packageId'],'operatorId':pending['operatorId'],'approvalStatus':'approved'}), \
          patch('modules.fr13_administrator_management.routes.updateRecord') as update:
-        update.side_effect = lambda coll, doc_id, data: {**pending, **data}
+        update.side_effect = lambda coll, doc_id, data, **kwargs: {**pending, **data}
         # Admin approves
         res_approve = client.post(
             f'/api/fr13/campaigns/{pending["id"]}/review',

@@ -146,6 +146,8 @@ def verification():
     response = call_api("GET", "/api/fr1/me")
     profile = response.json().get("profile", {}) if response.ok else {}
     status = str(profile.get("verificationStatus", "pending")).lower()
+    if response.ok:
+        session['verification_status'] = status
     return render_template("fr01_user_management/verification.html", profile=profile, verification_status=status)
 
 

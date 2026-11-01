@@ -27,6 +27,12 @@ PREFERENCES = {
 
 
 class JourneyMemory(MemoryPersistence):
+    def update(self, collection, document_id, data, expected=None):
+        if expected is not None and self.retrieve(collection,document_id) != expected:
+            from services.review_service import ReviewConflict
+            raise ReviewConflict('This record changed. Refresh and try again.')
+        return super().update(collection,document_id,data)
+
     def store(self, collection, data, document_id=None, merge=False):
         document_id = document_id or f"{collection}_{len(self.collections.get(collection, {})) + 1}"
         previous = self.retrieve(collection, document_id) if merge else {}

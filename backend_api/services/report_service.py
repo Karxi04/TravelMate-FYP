@@ -468,6 +468,7 @@ def export_system_report_pdf(data, target, admin_profile=None):
     data: report dictionary from /api/fr13/reports/summary or _summary()
     target: file path or BytesIO buffer
     """
+    from xml.sax.saxutils import escape
     doc = SimpleDocTemplate(
         target,
         pagesize=A4,
@@ -483,9 +484,9 @@ def export_system_report_pdf(data, target, admin_profile=None):
     summary = data.get("summary", {}) if isinstance(data, dict) else {}
     admin_profile = admin_profile or {}
 
-    admin_name = admin_profile.get("name") or "TravelMate Administrator"
-    admin_email = admin_profile.get("email") or "admin@travelmate.com"
-    gen_date = datetime.now().strftime("%d %B %Y, %H:%M:%S UTC")
+    admin_name = escape(str(admin_profile.get("name") or "TravelMate Administrator"))
+    admin_email = escape(str(admin_profile.get("email") or "-"))
+    gen_date = datetime.now(timezone.utc).strftime("%d %B %Y, %H:%M:%S UTC")
 
     # 1. Header Banner & Branding
     header_data = [
@@ -525,7 +526,7 @@ def export_system_report_pdf(data, target, admin_profile=None):
         ],
         [
             Paragraph("System Environment:", styles["MetaLabel"]),
-            Paragraph("Live Cloud Firestore / Production", styles["MetaValue"]),
+            Paragraph("Configured TravelMate data source", styles["MetaValue"]),
             Paragraph("Generation Timestamp:", styles["MetaLabel"]),
             Paragraph(gen_date, styles["MetaValue"]),
         ]
@@ -543,6 +544,14 @@ def export_system_report_pdf(data, target, admin_profile=None):
     ]))
     story.append(meta_table)
     story.append(Spacer(1, 14))
+
+    criteria=data.get('criteria') or {}
+    scope=f"Scope: {criteria.get('reportType','system_summary')}; {criteria.get('startDate') or 'all dates'} to {criteria.get('endDate') or 'all dates'}; filter: {criteria.get('filter') or 'none'}."
+    story.append(Paragraph(escape(scope),styles['SectionDesc']))
+    if data.get('dataLimited'):
+        story.append(Paragraph('Partial results: up to 500 records per source category; not the complete system history.',styles['SectionDesc']))
+    if data.get('recordsLimited'):
+        story.append(Paragraph('Detailed exports contain at most 200 matching records; summary counts cover the loaded source scope.',styles['SectionDesc']))
 
     # 3. Executive KPI Metric Cards
     u_total = counts.get("users", summary.get("users", {}).get("total", 0))
@@ -576,7 +585,7 @@ def export_system_report_pdf(data, target, admin_profile=None):
     user_rows = [
         [Paragraph("Account Category / Role", styles["TableHeader"]), Paragraph("Total Accounts", styles["TableHeader"]), Paragraph("Status / Proportion", styles["TableHeader"])],
         [Paragraph("Traveller Accounts", styles["TableCellBold"]), Paragraph(str(u_data.get("travellers", 0)), styles["TableCellBold"]), Paragraph("End-user mobile travellers", styles["TableCellMuted"])],
-        [Paragraph("Tourism Operators", styles["TableCellBold"]), Paragraph(str(u_data.get("operators", 0)), styles["TableCellBold"]), Paragraph("Verified business partners", styles["TableCellMuted"])],
+        [Paragraph("Tourism Operators", styles["TableCellBold"]), Paragraph(str(u_data.get("operators", 0)), styles["TableCellBold"]), Paragraph("Registered business accounts", styles["TableCellMuted"])],
         [Paragraph("System Administrators", styles["TableCellBold"]), Paragraph(str(u_data.get("administrators", 0)), styles["TableCellBold"]), Paragraph("Central administrative control", styles["TableCellMuted"])],
         [Paragraph("Active Accounts", styles["TableCellBold"]), Paragraph(str(u_data.get("active", 0)), styles["TableCellBold"]), Paragraph("Permitted system access", styles["TableCellBold"])],
         [Paragraph("Deactivated Accounts", styles["TableCellBold"]), Paragraph(str(u_data.get("deactivated", 0)), styles["TableCellBold"]), Paragraph("Suspended accounts", styles["TableCellMuted"])],
@@ -592,7 +601,7 @@ def export_system_report_pdf(data, target, admin_profile=None):
 
     pkg_rows = [
         [Paragraph("Approval Status", styles["TableHeader"]), Paragraph("Package Count", styles["TableHeader"]), Paragraph("Moderation Notes", styles["TableHeader"])],
-        [Paragraph("Approved Packages", styles["TableCellBold"]), Paragraph(str(p_data.get("approved", 0)), styles["TableCellBold"]), Paragraph("Published & visible to travellers", styles["TableCellBold"])],
+        [Paragraph("Approved Packages", styles["TableCellBold"]), Paragraph(str(p_data.get("approved", 0)), styles["TableCellBold"]), Paragraph("Publication also requires availability", styles["TableCellBold"])],
         [Paragraph("Pending Review", styles["TableCellBold"]), Paragraph(str(p_data.get("pending", 0)), styles["TableCellBold"]), Paragraph("Awaiting administrator review", styles["TableCellMuted"])],
         [Paragraph("Rejected Packages", styles["TableCellBold"]), Paragraph(str(p_data.get("rejected", 0)), styles["TableCellBold"]), Paragraph("Returned with review comments", styles["TableCellMuted"])],
         [Paragraph("Draft Packages", styles["TableCellBold"]), Paragraph(str(p_data.get("draft", 0)), styles["TableCellBold"]), Paragraph("Saved by operators (not submitted)", styles["TableCellMuted"])],
@@ -609,13 +618,13 @@ def export_system_report_pdf(data, target, admin_profile=None):
 
     extra_rows = [
         [Paragraph("Category", styles["TableHeader"]), Paragraph("Count", styles["TableHeader"]), Paragraph("Moderation & Operations Status", styles["TableHeader"])],
-        [Paragraph("Approved Campaigns", styles["TableCellBold"]), Paragraph(str(c_data.get("approved", 0)), styles["TableCellBold"]), Paragraph("Active promo codes and banners", styles["TableCellMuted"])],
+        [Paragraph("Approved Campaigns", styles["TableCellBold"]), Paragraph(str(c_data.get("approved", 0)), styles["TableCellBold"]), Paragraph("Activity depends on dates and package eligibility", styles["TableCellMuted"])],
         [Paragraph("Pending Campaigns", styles["TableCellBold"]), Paragraph(str(c_data.get("pending", 0)), styles["TableCellBold"]), Paragraph("Awaiting campaign approval", styles["TableCellMuted"])],
         [Paragraph("Visible Feedback", styles["TableCellBold"]), Paragraph(str(f_data.get("visible", 0)), styles["TableCellBold"]), Paragraph("Published traveller reviews", styles["TableCellBold"])],
         [Paragraph("Feedback Pending Moderation", styles["TableCellBold"]), Paragraph(str(f_data.get("pending", 0)), styles["TableCellBold"]), Paragraph("Queued for review", styles["TableCellMuted"])],
         [Paragraph("Removed Feedback", styles["TableCellBold"]), Paragraph(str(f_data.get("removed", 0)), styles["TableCellBold"]), Paragraph("Flagged & hidden from travellers", styles["TableCellMuted"])],
         [Paragraph("Hotel Bookings", styles["TableCellBold"]), Paragraph(str(counts.get("hotel_bookings", 0)), styles["TableCellBold"]), Paragraph("Recorded reservations", styles["TableCellMuted"])],
-        [Paragraph("Payment Records", styles["TableCellBold"]), Paragraph(str(counts.get("payment_records", 0)), styles["TableCellBold"]), Paragraph("Processed transactions", styles["TableCellMuted"])],
+        [Paragraph("Payment Records", styles["TableCellBold"]), Paragraph(str(counts.get("payment_records", 0)), styles["TableCellBold"]), Paragraph("Platform payment/order records", styles["TableCellMuted"])],
     ]
     story.append(_style_table(extra_rows, colWidths=[180, 140, 203], header_bg="#334155"))
 
