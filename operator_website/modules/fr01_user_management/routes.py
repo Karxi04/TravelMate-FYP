@@ -20,10 +20,16 @@ def _api_error(response, fallback="Request failed"):
     except Exception:
         message = fallback
     text = str(message)
+    if "expired" in text.lower() or "id token" in text.lower():
+        return "Your session expired while creating your account. Please try continuing your registration."
     if "not verified" in text.lower():
         return "Your operator account is still awaiting administrator approval."
     if "deactivated" in text.lower():
         return "This operator account is disabled. Contact TravelMate support."
+    if "required" in text.lower() or "company" in text.lower():
+        return "Please complete the required company information."
+    if response.status_code >= 500:
+        return "Unable to connect to TravelMate. Check your connection and try again."
     return text if text and text != fallback else "We couldn't complete that request. Try again."
 
 
@@ -31,6 +37,10 @@ def _clean_firebase_error(data):
     error_code = data.get("error", {}).get("message", "Login failed") if isinstance(data, dict) else "Login failed"
     if error_code in {"INVALID_LOGIN_CREDENTIALS", "INVALID_PASSWORD", "EMAIL_NOT_FOUND"}:
         return "Invalid email or password."
+    if "EMAIL_EXISTS" in error_code:
+        return "This email is already registered. Sign in to continue your account setup."
+    if "EXPIRED" in error_code or "TOKEN_EXPIRED" in error_code:
+        return "Your session expired while creating your account. Please try continuing your registration."
     if error_code == "USER_DISABLED":
         return "This account has been disabled. Please contact support."
     if error_code == "TOO_MANY_ATTEMPTS_TRY_LATER":
@@ -41,10 +51,16 @@ def _clean_firebase_error(data):
 @bp.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        email = (request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
+        if not email or not password:
+            flash("Please enter both email and password.", "error")
+            return render_template("fr01_user_management/login.html")
+
         try:
-            data, status = authenticateCredentials(request.form["email"], request.form["password"])
+            data, status = authenticateCredentials(email, password)
         except Exception:
-            flash("We couldn't sign you in. Check your connection and try again.", "error")
+            flash("Unable to connect to TravelMate. Check your connection and try again.", "error")
             return render_template("fr01_user_management/login.html")
 
         if status == 200:
@@ -74,10 +90,13 @@ def login():
                 return render_template("fr01_user_management/login.html")
 
             profile = body.get("profile") if isinstance(body, dict) else None
+
+            # Recovery for interrupted registrations: Firebase user exists but Firestore profile is missing
             if not profile or not isinstance(profile, dict):
-                session.clear()
-                flash("User profile could not be found. Please contact support.", "error")
-                return render_template("fr01_user_management/login.html")
+                session["portal_role"] = "operator"
+                session["incomplete_setup"] = True
+                flash("Please complete your business details to continue your account setup.", "info")
+                return redirect(url_for("operator_fr01.complete_setup"))
 
             user_role = str(profile.get("role", "")).strip().lower()
             if user_role not in {"operator", "tourism_operator", "admin"}:
@@ -85,6 +104,7 @@ def login():
                 flash("This account is not a Tourism Operator account.", "error")
                 return render_template("fr01_user_management/login.html")
 
+            session.pop("incomplete_setup", None)
             session["portal_role"] = user_role
             verification_status = str(profile.get("verificationStatus", "pending")).strip().lower()
             session["verification_status"] = verification_status
@@ -103,39 +123,127 @@ def login():
 @bp.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
+        email = (request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
+        name = (request.form.get("name") or "").strip()
+        company_name = (request.form.get("companyName") or "").strip()
+        reg_no = (request.form.get("registrationNo") or "").strip()
+        business_contact = (request.form.get("businessContact") or "").strip()
+
+        if not name or not company_name or not reg_no or not business_contact or not email or not password:
+            flash("Please complete all required fields.", "error")
+            return render_template("fr01_user_management/register.html", form=request.form)
+
+        if len(password) < 8:
+            flash("Password must be at least 8 characters.", "error")
+            return render_template("fr01_user_management/register.html", form=request.form)
+
         try:
-            data, status = createUserAccount(request.form["email"], request.form["password"])
-        except Exception as exc:
-            flash("We couldn't create the account. Check your details and try again.", "error")
-            return render_template("fr01_user_management/register.html")
+            data, status = createUserAccount(email, password)
+        except Exception:
+            flash("Unable to connect to TravelMate. Check your connection and try again.", "error")
+            return render_template("fr01_user_management/register.html", form=request.form)
+
         if status == 200:
             _store_auth(data)
             payload = {
                 "role": "operator",
-                "name": request.form["name"],
-                "companyName": request.form["companyName"],
-                "registrationNo": request.form["registrationNo"],
-                "businessContact": request.form["businessContact"],
+                "name": name,
+                "companyName": company_name,
+                "registrationNo": reg_no,
+                "businessContact": business_contact,
             }
             response = call_api("POST", "/api/fr1/profile", json=payload)
             if response.ok:
                 session.clear()
-                flash("Operator account created and awaiting administrator verification.", "success")
+                flash("Your Operator account has been created and is awaiting Administrator verification.", "success")
                 return redirect(url_for("operator_fr01.login"))
-            flash(_api_error(response, "Profile creation failed"), "error")
+
+            flash("We couldn't complete your account setup. Your email may already be registered. Please sign in to continue.", "error")
+            return redirect(url_for("operator_fr01.login"))
         else:
-            flash(data.get("error", {}).get("message", "Registration failed"), "error")
+            error_code = data.get("error", {}).get("message", "") if isinstance(data, dict) else ""
+            if "EMAIL_EXISTS" in error_code:
+                flash("This email is already registered. Sign in to continue your account setup.", "error")
+                return redirect(url_for("operator_fr01.login"))
+            elif "WEAK_PASSWORD" in error_code:
+                flash("Password must be at least 8 characters with a mix of letters and numbers.", "error")
+            elif "INVALID_EMAIL" in error_code:
+                flash("Please enter a valid business email address.", "error")
+            elif "TOO_MANY_ATTEMPTS_TRY_LATER" in error_code:
+                flash("Too many failed attempts. Please try again later.", "error")
+            else:
+                flash("Registration failed. Please check your details and try again.", "error")
+            return render_template("fr01_user_management/register.html", form=request.form)
+
+    # Clean session state when opening register page
+    session.clear()
     return render_template("fr01_user_management/register.html")
+
+
+@bp.route("/complete-setup", methods=["GET", "POST"])
+def complete_setup():
+    if not session.get("id_token"):
+        return redirect(url_for("operator_fr01.login"))
+
+    profile = {}
+    try:
+        me = call_api("GET", "/api/fr1/me")
+        if me.ok and isinstance(me.json(), dict):
+            profile = me.json().get("profile") or {}
+    except Exception:
+        profile = {}
+
+    if profile and isinstance(profile, dict):
+        user_role = str(profile.get("role", "")).strip().lower()
+        if user_role and user_role not in {"operator", "tourism_operator"}:
+            session.clear()
+            flash("This account is not authorized for operator setup.", "error")
+            return redirect(url_for("operator_fr01.login"))
+
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        company_name = (request.form.get("companyName") or "").strip()
+        reg_no = (request.form.get("registrationNo") or "").strip()
+        business_contact = (request.form.get("businessContact") or "").strip()
+
+        if not name or not company_name or not reg_no or not business_contact:
+            flash("Please complete all required fields.", "error")
+            return render_template("fr01_user_management/complete_setup.html", profile=profile, form=request.form)
+
+        payload = {
+            "role": "operator",
+            "name": name,
+            "companyName": company_name,
+            "registrationNo": reg_no,
+            "businessContact": business_contact,
+        }
+        response = call_api("POST", "/api/fr1/profile", json=payload)
+        if response.ok:
+            session.pop("incomplete_setup", None)
+            session["portal_role"] = "operator"
+            session["verification_status"] = "pending"
+            flash("Your Operator account has been created and is awaiting Administrator verification.", "success")
+            return redirect(url_for("operator_fr01.verification"))
+        else:
+            flash(_api_error(response, "Setup failed. Please check your details and try again."), "error")
+            return render_template("fr01_user_management/complete_setup.html", profile=profile, form=request.form)
+
+    return render_template("fr01_user_management/complete_setup.html", profile=profile, form=profile)
 
 
 @bp.route("/reset", methods=["GET", "POST"])
 def reset():
     if request.method == "POST":
+        email = (request.form.get("email") or "").strip()
         try:
-            data, status = sendPasswordResetEmail(request.form["email"])
-            flash("Password reset email sent." if status == 200 else data.get("error", {}).get("message", "Reset failed"), "success" if status == 200 else "error")
-        except Exception as exc:
-            flash("We couldn't send the reset email. Check your connection and try again.", "error")
+            data, status = sendPasswordResetEmail(email)
+            if status == 200:
+                flash("Password reset email sent. Check your inbox to proceed.", "success")
+            else:
+                flash("If this email is registered, a password reset link has been sent.", "info")
+        except Exception:
+            flash("Unable to connect to TravelMate. Check your connection and try again.", "error")
     return render_template("fr01_user_management/reset.html")
 
 
@@ -143,6 +251,8 @@ def reset():
 def verification():
     if not session.get("id_token"):
         return redirect(url_for("operator_fr01.login"))
+    if session.get("incomplete_setup"):
+        return redirect(url_for("operator_fr01.complete_setup"))
     response = call_api("GET", "/api/fr1/me")
     profile = response.json().get("profile", {}) if response.ok else {}
     status = str(profile.get("verificationStatus", "pending")).lower()
@@ -155,6 +265,8 @@ def verification():
 def profile():
     if not session.get("id_token"):
         return redirect(url_for("operator_fr01.login"))
+    if session.get("incomplete_setup"):
+        return redirect(url_for("operator_fr01.complete_setup"))
     if request.method == "POST":
         payload = {
             "name": request.form.get("name", ""),

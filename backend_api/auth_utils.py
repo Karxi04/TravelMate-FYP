@@ -28,7 +28,7 @@ def auth_required(roles=None):
 
             token = header.split(" ", 1)[1].strip()
             try:
-                decoded = auth.verify_id_token(token)
+                decoded = auth.verify_id_token(token, clock_skew_seconds=10)
             except Exception:
                 return _error("Invalid or expired Firebase ID token")
 
