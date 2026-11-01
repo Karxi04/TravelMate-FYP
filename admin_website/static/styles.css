@@ -1724,4 +1724,49 @@ tbody tr:hover td {
   .detail-list dt {
     margin-top: 8px;
   }
+
+  .filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filters .input {
+    width: 100% !important;
+  }
 }
+
+/* ==========================================================================
+   FEATURE-LEVEL POLISH COMPONENTS (F-F4B-UI)
+   ========================================================================== */
+
+.table-inline-editor summary {
+  list-style: none;
+  user-select: none;
+}
+
+.table-inline-editor summary::-webkit-details-marker {
+  display: none;
+}
+
+.table-inline-editor[open] summary {
+  background: var(--bluegrey-subtle);
+  color: var(--bluegrey);
+  border-color: var(--bluegrey);
+}
+
+.review-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.review-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.filters {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+

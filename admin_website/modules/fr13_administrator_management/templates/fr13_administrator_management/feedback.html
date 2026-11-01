@@ -1,36 +1,108 @@
-{% extends 'portal_base.html' %}{% block title %}Feedback Moderation | TravelMate{% endblock %}{% block content %}
+{% extends 'portal_base.html' %}
+{% block title %}Feedback Moderation | TravelMate{% endblock %}
+
+{% block content %}
 {% include '_admin_data_state.html' %}
-<div class="page-title"><div><h1>Traveller Reviews</h1><p>Approve submitted reviews before publication, or remove inappropriate reviews.</p></div></div>
-<div class="grid g2">
-{% for x in items %}
-<div class="card">
-  <div class="actions" style="justify-content:space-between"><span class="status {{'rejected' if x.get('feedbackStatus')=='removed' else 'active'}}">{{x.get('feedbackStatus','visible')}}</span><span class="status {{'pending' if x.get('moderationStatus','pending_review')=='pending_review' else 'approved'}}">{{x.get('moderationStatus','pending_review')}}</span></div>
-  <h3 style="margin-top:12px">{{x.get('destinationName', x.get('destinationId','Destination'))}}</h3>
-  <p class="muted">{{x.get('destinationAddress','')}}</p>
-  <p><strong>Traveller:</strong> {{x.get('travellerName','Traveller')}}</p>
-  <p><strong>Rating:</strong> {{x.get('rating','-')}} / 5</p>
-  <p>{{x.get('comment','')}}</p>
-  {% if x.get('screening') %}
-  <p class="muted"><strong>Screening:</strong> {{x.screening.get('risk','uncertain')|capitalize}}{% if x.screening.get('flags') %} · {{x.screening.get('flags')|join(', ')|replace('_',' ')}}{% endif %}</p>
-  {% endif %}
-  {% if x.get('reviewComment') %}
-  <p class="muted"><strong>Moderation note:</strong> {{x.get('reviewComment')}}</p>
-  {% endif %}
-  <p class="muted"><small>Submitted: {{x.get('submittedAt','-')}}</small></p>
-  {% if x.get('feedbackStatus') != 'removed' %}
-  <form method="post" action="{{ url_for('admin_fr13.review_feedback', feedback_id=x.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="expectedUpdatedAt" value="{{x.get('updatedAt','')}}">
-    <input type="hidden" name="expectedRevision" value="{{x.get('reviewRevision','')}}">
-    <div class="field"><label>Moderation note</label><textarea class="input" name="comment" placeholder="Reason or follow-up note"></textarea></div>
-    <div class="actions">
-      <button class="btn primary" name="decision" value="keep">Approve</button>
-      <button class="btn danger" name="decision" value="remove">{{'Hide' if x.get('moderationStatus') in ['reviewed','approved'] else 'Reject'}}</button>
-    </div>
-  </form>
-  {% endif %}
+<div class="page-title">
+  <div>
+    <span class="eyebrow">COMMUNITY &amp; CONTENT SAFETY</span>
+    <h1>Traveller Reviews &amp; Feedback</h1>
+    <p>Approve submitted community reviews before public display, or remove inappropriate or policy-violating comments.</p>
+  </div>
 </div>
-{% else %}
-<div class="card cream">No Traveller reviews have been submitted.</div>
-{% endfor %}
+
+<div class="grid g2">
+  {% for x in items %}
+    <article class="card review-card" style="display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <!-- Status & Moderation Header -->
+        <div class="actions" style="justify-content: space-between; margin-bottom: 12px;">
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <span class="status {{ 'rejected' if x.get('feedbackStatus') == 'removed' else 'active' }}">
+              {{ x.get('feedbackStatus', 'visible')|title }}
+            </span>
+            <span class="status {{ 'pending' if x.get('moderationStatus', 'pending_review') == 'pending_review' else 'approved' }}">
+              {{ x.get('moderationStatus', 'pending_review')|replace('_', ' ')|title }}
+            </span>
+          </div>
+
+          <!-- Rating Badge -->
+          <div style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: var(--canvas); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; color: #D97706;">
+            <span>★</span>
+            <span>{{ x.get('rating', '-') }}</span>
+            <span class="muted" style="font-weight: 400; font-size: 11px;">/ 5</span>
+          </div>
+        </div>
+
+        <!-- Destination & Author -->
+        <h3 style="margin: 0 0 4px; font-size: 17px;">{{ x.get('destinationName', x.get('destinationId', 'Destination')) }}</h3>
+        {% if x.get('destinationAddress') %}
+          <p class="muted" style="margin: 0 0 8px; font-size: 12.5px;">{{ x.get('destinationAddress') }}</p>
+        {% endif %}
+
+        <div style="font-size: 13px; margin-bottom: 10px;">
+          <strong>Traveller:</strong> {{ x.get('travellerName', 'Traveller') }}
+        </div>
+
+        <!-- Review Comment -->
+        <blockquote style="margin: 0 0 14px; padding: 10px 14px; background: var(--canvas); border-left: 3px solid var(--bluegrey); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-style: normal; font-size: 13.5px; line-height: 1.5; color: var(--ink);">
+          {{ x.get('comment', '') }}
+        </blockquote>
+
+        <!-- Automated Screening Flags -->
+        {% if x.get('screening') %}
+          {% set risk = x.screening.get('risk', 'uncertain')|lower %}
+          <div style="padding: 8px 12px; background: {% if risk == 'high' or risk == 'unsafe' %}var(--danger-bg){% elif risk == 'medium' or risk == 'uncertain' %}var(--warning-bg){% else %}var(--success-bg){% endif %}; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <strong>Screening Risk:</strong>
+            <span class="badge {% if risk == 'high' or risk == 'unsafe' %}danger{% elif risk == 'medium' or risk == 'uncertain' %}warning{% else %}success{% endif %}" style="font-size: 10.5px; padding: 1px 6px;">
+              {{ risk|capitalize }}
+            </span>
+            {% if x.screening.get('flags') %}
+              <span class="muted">· Flags: {{ x.screening.get('flags')|join(', ')|replace('_', ' ') }}</span>
+            {% endif %}
+          </div>
+        {% endif %}
+
+        <!-- Moderation Note -->
+        {% if x.get('reviewComment') %}
+          <p class="muted" style="font-size: 12.5px; margin: 0 0 10px; background: var(--canvas); padding: 8px 12px; border-radius: var(--radius-sm);">
+            <strong>Moderation note:</strong> {{ x.get('reviewComment') }}
+          </p>
+        {% endif %}
+
+        <p class="muted" style="font-size: 11.5px; margin: 0 0 14px;">
+          <small>Submitted: {{ x.get('submittedAt', '-') }}</small>
+        </p>
+      </div>
+
+      <!-- Decision Form -->
+      {% if x.get('feedbackStatus') != 'removed' %}
+        <form method="post" action="{{ url_for('admin_fr13.review_feedback', feedback_id=x.id) }}" style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="expectedUpdatedAt" value="{{ x.get('updatedAt', '') }}">
+          <input type="hidden" name="expectedRevision" value="{{ x.get('reviewRevision', '') }}">
+          
+          <div class="field" style="margin-bottom: 12px;">
+            <label style="font-size: 12px; font-weight: 600;">Moderation note</label>
+            <textarea class="input" name="comment" placeholder="Reason or follow-up note" rows="2" style="font-size: 12.5px; padding: 6px 10px;"></textarea>
+          </div>
+          <div class="actions">
+            <button class="btn primary btn-sm" name="decision" value="keep" type="submit">Approve</button>
+            <button class="btn danger btn-sm" name="decision" value="remove" type="submit">
+              {{ 'Hide' if x.get('moderationStatus') in ['reviewed', 'approved'] else 'Reject' }}
+            </button>
+          </div>
+        </form>
+      {% endif %}
+    </article>
+  {% else %}
+    <div class="card cream empty-state" style="grid-column: 1 / -1;">
+      <div class="empty-icon" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </div>
+      <strong>No Traveller reviews have been submitted.</strong>
+      <p>Community ratings and feedback will appear here for administrative moderation.</p>
+    </div>
+  {% endfor %}
 </div>
 {% endblock %}

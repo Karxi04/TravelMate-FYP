@@ -1,66 +1,247 @@
-{% extends 'portal_base.html' %}{% block title %}Package Review | TravelMate{% endblock %}{% block content %}
-{% set state=item.get('approvalStatus','draft') %}{% set days=item.get('itineraryDays',[]) %}
-<div class="page-title"><div><span class="eyebrow">PACKAGE REVIEW</span><h1>{{item.get('title',item.get('packageTitle','Package'))}}</h1><p>{{item.get('destination',item.get('destinationName',''))}}{% if item.get('destinationArea') %} · {{item.get('destinationArea')}}{% endif %}</p></div><a class="btn outline" href="{{url_for('admin_fr13.packages')}}">Back to queue</a></div>
-{% if item.get('heroImage',item.get('imageUrl')) %}<img class="review-hero" src="{{item.get('heroImage',item.get('imageUrl'))}}" alt="Package hero image">{% endif %}
+{% extends 'portal_base.html' %}
+{% block title %}Package Review | TravelMate{% endblock %}
+
+{% block content %}
+{% set state = item.get('approvalStatus', 'draft') %}
+{% set days = item.get('itineraryDays', []) %}
+
+<div class="page-title">
+  <div>
+    <span class="eyebrow">PACKAGE REVIEW</span>
+    <h1>{{ item.get('title', item.get('packageTitle', 'Package')) }}</h1>
+    <p>{{ item.get('destination', item.get('destinationName', '')) }}{% if item.get('destinationArea') %} · {{ item.get('destinationArea') }}{% endif %}</p>
+  </div>
+  <a class="btn outline" href="{{ url_for('admin_fr13.packages') }}">Back to queue</a>
+</div>
+
+{% if item.get('heroImage', item.get('imageUrl')) %}
+  <img class="review-hero" src="{{ item.get('heroImage', item.get('imageUrl')) }}" alt="Package hero image">
+{% endif %}
+
 {% if item.get('galleryImages') %}
-<section class="card" style="margin-bottom:16px;">
+<section class="card" style="margin-bottom: 16px;">
   <span class="eyebrow">TOUR GALLERY</span>
-  <h3 style="margin:4px 0 10px;">Gallery Showcase ({{ item.get('galleryImages')|length }} photos)</h3>
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;">
+  <h3 style="margin: 4px 0 10px;">Gallery Showcase ({{ item.get('galleryImages')|length }} photos)</h3>
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px;">
     {% for g_img in item.get('galleryImages') %}
-      <a href="{{ g_img }}" target="_blank" rel="noopener" style="display:block;border-radius:6px;overflow:hidden;border:1px solid var(--border);aspect-ratio:4/3;">
-        <img src="{{ g_img }}" alt="Gallery photo {{ loop.index }}" style="width:100%;height:100%;object-fit:cover;">
+      <a href="{{ g_img }}" target="_blank" rel="noopener" style="display: block; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); aspect-ratio: 4/3;">
+        <img src="{{ g_img }}" alt="Gallery photo {{ loop.index }}" style="width: 100%; height: 100%; object-fit: cover;">
       </a>
     {% endfor %}
   </div>
 </section>
 {% endif %}
-<div class="grid g2 review-layout"><div>
-<section class="card"><div class="actions" style="justify-content:space-between">{% if state == 'approved' %}{% if item.get('availabilityStatus') == 'unavailable' %}<span class="status approved-unavailable">Approved (Unavailable)</span>{% else %}<span class="status approved">Published</span>{% endif %}{% elif state == 'suspended' %}<span class="status suspended">Suspended</span>{% elif state in ['pending', 'submitted'] %}<span class="status pending">Under review</span>{% elif state == 'rejected' %}<span class="status rejected">Needs changes</span>{% elif state == 'draft' %}<span class="status draft">Draft</span>{% elif state == 'archived' %}<span class="status archived">Archived</span>{% else %}<span class="status {{ state }}">{{ state|title }}</span>{% endif %}<strong>{{item.get('currency','MYR')}} {{'%.2f'|format(item.get('promotionalPrice') or item.get('adultPrice') or item.get('price') or 0)}} / {{'group' if item.get('priceBasis')=='per_group' else 'person'}}</strong></div><h3>Package summary</h3>{% if item.get('shortDescription') %}<p><strong>{{item.get('shortDescription')}}</strong></p>{% endif %}<p>{{item.get('fullDescription',item.get('description',''))}}</p><div class="grid g2"><p><strong>Duration</strong><br>{{item.get('durationDays',1)}} day(s){% if item.get('durationNights') is not none %}, {{item.get('durationNights')}} night(s){% endif %}</p><p><strong>Capacity</strong><br>{{item.get('minimumTravellers','—')}}–{{item.get('maximumTravellers',item.get('maxTravellers','—'))}} travellers</p></div></section>
-{% if days %}<section class="card"><h3>Day-by-day itinerary</h3>{% for day in days %}<article class="review-day"><strong>Day {{day.get('dayNumber',loop.index)}} · {{day.get('title','')}}</strong><p>{{day.get('description','')}}</p>{% if day.get('activities') %}<p><b>Activities:</b> {{day.get('activities')|join(', ')}}</p>{% endif %}{% if day.get('meals') %}<p><b>Meals:</b> {{day.get('meals')|join(', ')}}</p>{% endif %}{% if day.get('accommodation') %}<p><b>Stay:</b> {{day.get('accommodation')}}</p>{% endif %}{% if day.get('transportNotes') %}<p><b>Transport:</b> {{day.get('transportNotes')}}</p>{% endif %}</article>{% endfor %}</section>{% endif %}
-{% for field,label in [('highlights','Highlights'),('inclusions','Included'),('exclusions','Not included'),('whatToBring','What to bring')] %}{% if item.get(field) %}<section class="card"><h3>{{label}}</h3><ul>{% for value in item.get(field) %}<li>{{value}}</li>{% endfor %}</ul></section>{% endif %}{% endfor %}
-</div><div>
-<section class="card cream"><h3>Operator</h3><p><strong>{{item.get('operatorName','Tourism Operator')}}</strong></p>{% if item.get('operatorEmail') %}<p>{{item.get('operatorEmail')}}</p>{% endif %}</section>
-{% if state == 'suspended' %}
-<section class="card" style="border-left: 4px solid var(--danger); background: var(--danger-bg); margin-bottom: 16px;">
-  <div style="display: flex; align-items: center; gap: 8px; color: var(--danger); margin-bottom: 6px;">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-    <strong style="font-size: 15px;">Package Suspended &amp; Unpublished</strong>
+
+<div class="grid g2 review-layout">
+  <div>
+    <!-- Left Column: Package Details -->
+    <section class="card">
+      <div class="actions" style="justify-content: space-between; margin-bottom: 12px;">
+        {% if state == 'approved' %}
+          {% if item.get('availabilityStatus') == 'unavailable' %}
+            <span class="status approved-unavailable">Approved (Unavailable)</span>
+          {% else %}
+            <span class="status approved">Published</span>
+          {% endif %}
+        {% elif state == 'suspended' %}
+          <span class="status suspended">Suspended</span>
+        {% elif state in ['pending', 'submitted'] %}
+          <span class="status pending">Under review</span>
+        {% elif state == 'rejected' %}
+          <span class="status rejected">Needs changes</span>
+        {% elif state == 'draft' %}
+          <span class="status draft">Draft</span>
+        {% elif state == 'archived' %}
+          <span class="status archived">Archived</span>
+        {% else %}
+          <span class="status {{ state }}">{{ state|title }}</span>
+        {% endif %}
+        <strong>{{ item.get('currency', 'MYR') }} {{ '%.2f'|format(item.get('promotionalPrice') or item.get('adultPrice') or item.get('price') or 0) }} / {{ 'group' if item.get('priceBasis') == 'per_group' else 'person' }}</strong>
+      </div>
+      <h3>Package summary</h3>
+      {% if item.get('shortDescription') %}
+        <p><strong>{{ item.get('shortDescription') }}</strong></p>
+      {% endif %}
+      <p>{{ item.get('fullDescription', item.get('description', '')) }}</p>
+      <div class="grid g2" style="margin-top: 12px;">
+        <p>
+          <strong>Duration</strong><br>
+          {{ item.get('durationDays', 1) }} day(s){% if item.get('durationNights') is not none %}, {{ item.get('durationNights') }} night(s){% endif %}
+        </p>
+        <p>
+          <strong>Capacity</strong><br>
+          {{ item.get('minimumTravellers', '—') }}–{{ item.get('maximumTravellers', item.get('maxTravellers', '—')) }} travellers
+        </p>
+      </div>
+    </section>
+
+    {% if days %}
+    <section class="card">
+      <h3>Day-by-day itinerary</h3>
+      {% for day in days %}
+        <article class="review-day">
+          <strong>Day {{ day.get('dayNumber', loop.index) }} · {{ day.get('title', '') }}</strong>
+          <p>{{ day.get('description', '') }}</p>
+          {% if day.get('activities') %}
+            <p><b>Activities:</b> {{ day.get('activities')|join(', ') }}</p>
+          {% endif %}
+          {% if day.get('meals') %}
+            <p><b>Meals:</b> {{ day.get('meals')|join(', ') }}</p>
+          {% endif %}
+          {% if day.get('accommodation') %}
+            <p><b>Stay:</b> {{ day.get('accommodation') }}</p>
+          {% endif %}
+          {% if day.get('transportNotes') %}
+            <p><b>Transport:</b> {{ day.get('transportNotes') }}</p>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% for field, label in [('highlights','Highlights'), ('inclusions','Included'), ('exclusions','Not included'), ('whatToBring','What to bring')] %}
+      {% if item.get(field) %}
+        <section class="card">
+          <h3>{{ label }}</h3>
+          <ul>
+            {% for value in item.get(field) %}
+              <li>{{ value }}</li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endif %}
+    {% endfor %}
   </div>
-  <p style="margin: 6px 0; color: var(--ink);"><strong>Suspension Reason:</strong> {{ item.get('suspensionReason', 'Compliance or policy violation') }}</p>
-  <div style="font-size: 12px; color: var(--ink-secondary);">
-    Suspended by {{ item.get('suspendedByName', 'Administrator') }}{% if item.get('suspendedAt') %} on {{ item.get('suspendedAt')[:10] }}{% endif %}.
-    This package is currently blocked from search, mobile listings, and new bookings until the operator resolves these issues and resubmits for review.
+
+  <div>
+    <!-- Right Column: Operator, Moderation Decision, Actions -->
+    <section class="card cream">
+      <span class="eyebrow">PUBLISHER</span>
+      <h3 style="margin: 2px 0 6px;">Operator Details</h3>
+      <p style="margin: 0;"><strong>{{ item.get('operatorName', 'Tourism Operator') }}</strong></p>
+      {% if item.get('operatorEmail') %}
+        <p class="muted" style="margin: 2px 0 0; font-size: 13px;">{{ item.get('operatorEmail') }}</p>
+      {% endif %}
+      {% if item.get('operatorId') %}
+        <p class="muted" style="margin: 2px 0 0; font-size: 11px;">ID: <code>{{ item.get('operatorId') }}</code></p>
+      {% endif %}
+    </section>
+
+    {% if state == 'suspended' %}
+    <section class="card" style="border-left: 4px solid var(--danger); background: var(--danger-bg); margin-bottom: 16px;">
+      <div style="display: flex; align-items: center; gap: 8px; color: var(--danger); margin-bottom: 6px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <strong style="font-size: 15px;">Package Suspended &amp; Unpublished</strong>
+      </div>
+      <p style="margin: 6px 0; color: var(--ink);"><strong>Suspension Reason:</strong> {{ item.get('suspensionReason', 'Compliance or policy violation') }}</p>
+      <div style="font-size: 12px; color: var(--ink-secondary);">
+        Suspended by {{ item.get('suspendedByName', 'Administrator') }}{% if item.get('suspendedAt') %} on {{ item.get('suspendedAt')[:10] }}{% endif %}.
+        This package is currently blocked from search, mobile listings, and new bookings until the operator resolves these issues and resubmits for review.
+      </div>
+    </section>
+    {% endif %}
+
+    {% if item.get('reviewedAt') %}
+    <section class="card">
+      <h3>Review record</h3>
+      <p>{{ item.get('reviewedByName', 'Administrator') }} · {{ item.get('reviewedAt')[:10] }}</p>
+      {% if item.get('suspensionResolvedAt') %}
+        <p style="font-size: 12px; color: var(--success); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border);">
+          <strong>Suspension Resolved:</strong> Re-approved on {{ item.get('suspensionResolvedAt')[:10] }}{% if item.get('suspensionResolvedByName') %} by {{ item.get('suspensionResolvedByName') }}{% endif %}
+        </p>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if item.get('departureDates') or item.get('departureLocation') or item.get('meetingPoint') %}
+    <section class="card">
+      <h3>Departure</h3>
+      {% if item.get('departureDates') %}
+        <p><strong>Dates</strong><br>{{ item.get('departureDates')|join(', ') }}</p>
+      {% endif %}
+      {% if item.get('departureLocation') %}
+        <p><strong>Location</strong><br>{{ item.get('departureLocation') }}</p>
+      {% endif %}
+      {% if item.get('meetingPoint') %}
+        <p><strong>Meeting point</strong><br>{{ item.get('meetingPoint') }}</p>
+      {% endif %}
+      {% if item.get('departureNotes') %}
+        <p>{{ item.get('departureNotes') }}</p>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if item.get('accommodationName') or item.get('transportTypes') %}
+    <section class="card">
+      <h3>Stay and transport</h3>
+      {% if item.get('accommodationName') %}
+        <p>
+          <strong>{{ item.get('accommodationName') }}</strong>
+          {% if item.get('accommodationCategory') %} · {{ item.get('accommodationCategory') }}{% endif %}
+          {% if item.get('roomType') %}<br>{{ item.get('roomType') }}{% endif %}
+        </p>
+      {% endif %}
+      {% if item.get('transportTypes') %}
+        <p><strong>Transport</strong><br>{{ item.get('transportTypes')|join(', ') }}</p>
+      {% endif %}
+      {% if item.get('accommodationNotes') %}
+        <p>{{ item.get('accommodationNotes') }}</p>
+      {% endif %}
+      {% if item.get('transportNotes') %}
+        <p>{{ item.get('transportNotes') }}</p>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% for field, label in [('cancellationPolicy','Cancellation policy'), ('refundPolicy','Refund policy'), ('bookingTerms','Booking terms'), ('importantNotes','Important notes')] %}
+      {% if item.get(field) %}
+        <section class="card">
+          <h3>{{ label }}</h3>
+          <p>{{ item.get(field) }}</p>
+        </section>
+      {% endif %}
+    {% endfor %}
+
+    {% if state in ['pending', 'submitted'] %}
+      <form class="card review-decision" method="post" action="{{ url_for('admin_fr13.review_package', package_id=item.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <span class="eyebrow">MODERATION DECISION</span>
+        <h3 style="margin: 2px 0 10px;">Review decision</h3>
+        {% if item.get('availabilityStatus') == 'unavailable' %}
+          <div class="warning-callout" style="background: var(--warning-bg); border-left: 4px solid var(--warning); padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 14px; font-size: 13px; color: #78350F; line-height: 1.5;">
+            <strong>Notice:</strong> This package will be approved but will remain hidden from travellers because its availability is currently set to Unavailable. The operator must activate availability before it can appear in public discovery.
+          </div>
+        {% endif %}
+        <div class="field">
+          <label for="reviewCommentInput">Reason for changes</label>
+          <textarea id="reviewCommentInput" class="input" name="comment" placeholder="Required when requesting changes" rows="3"></textarea>
+        </div>
+        <div class="actions" style="margin-top: 12px;">
+          <button class="btn primary" name="decision" value="approved">{{ 'Approve package' if item.get('availabilityStatus') == 'unavailable' else 'Approve and publish' }}</button>
+          <button class="btn danger" name="decision" value="rejected">Request changes</button>
+        </div>
+      </form>
+    {% elif item.get('reviewReason', item.get('reviewComment')) and state != 'suspended' %}
+      <section class="review-feedback">
+        <strong>Review feedback</strong>
+        <p>{{ item.get('reviewReason', item.get('reviewComment')) }}</p>
+      </section>
+    {% endif %}
+
+    {% if state == 'approved' %}
+    <section class="card" style="border-left: 4px solid var(--danger);">
+      <span class="eyebrow" style="color: var(--danger);">ADMINISTRATIVE OVERRIDE</span>
+      <h3 style="margin: 2px 0 6px;">Administrative Actions</h3>
+      <p style="font-size: 13px; color: var(--ink-secondary); margin-bottom: 12px;">
+        Need to unpublish this package due to safety concerns, regulatory compliance, or operator policy violations?
+      </p>
+      <button class="btn danger" type="button" id="openSuspendModalBtn" aria-haspopup="dialog" aria-controls="suspendModal">
+        Suspend / Unpublish Package
+      </button>
+    </section>
+    {% endif %}
   </div>
-</section>
-{% endif %}
-{% if item.get('reviewedAt') %}
-<section class="card">
-  <h3>Review record</h3>
-  <p>{{item.get('reviewedByName','Administrator')}} · {{item.get('reviewedAt')[:10]}}</p>
-  {% if item.get('suspensionResolvedAt') %}
-    <p style="font-size: 12px; color: var(--success); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border);">
-      <strong>Suspension Resolved:</strong> Re-approved on {{ item.get('suspensionResolvedAt')[:10] }}{% if item.get('suspensionResolvedByName') %} by {{ item.get('suspensionResolvedByName') }}{% endif %}
-    </p>
-  {% endif %}
-</section>
-{% endif %}
-{% if item.get('departureDates') or item.get('departureLocation') or item.get('meetingPoint') %}<section class="card"><h3>Departure</h3>{% if item.get('departureDates') %}<p><strong>Dates</strong><br>{{item.get('departureDates')|join(', ')}}</p>{% endif %}{% if item.get('departureLocation') %}<p><strong>Location</strong><br>{{item.get('departureLocation')}}</p>{% endif %}{% if item.get('meetingPoint') %}<p><strong>Meeting point</strong><br>{{item.get('meetingPoint')}}</p>{% endif %}{% if item.get('departureNotes') %}<p>{{item.get('departureNotes')}}</p>{% endif %}</section>{% endif %}
-{% if item.get('accommodationName') or item.get('transportTypes') %}<section class="card"><h3>Stay and transport</h3>{% if item.get('accommodationName') %}<p><strong>{{item.get('accommodationName')}}</strong>{% if item.get('accommodationCategory') %} · {{item.get('accommodationCategory')}}{% endif %}{% if item.get('roomType') %}<br>{{item.get('roomType')}}{% endif %}</p>{% endif %}{% if item.get('transportTypes') %}<p><strong>Transport</strong><br>{{item.get('transportTypes')|join(', ')}}</p>{% endif %}{% if item.get('accommodationNotes') %}<p>{{item.get('accommodationNotes')}}</p>{% endif %}{% if item.get('transportNotes') %}<p>{{item.get('transportNotes')}}</p>{% endif %}</section>{% endif %}
-{% for field,label in [('cancellationPolicy','Cancellation policy'),('refundPolicy','Refund policy'),('bookingTerms','Booking terms'),('importantNotes','Important notes')] %}{% if item.get(field) %}<section class="card"><h3>{{label}}</h3><p>{{item.get(field)}}</p></section>{% endif %}{% endfor %}
-{% if state in ['pending','submitted'] %}<form class="card review-decision" method="post" action="{{url_for('admin_fr13.review_package',package_id=item.id)}}"><input type="hidden" name="csrf_token" value="{{csrf_token()}}"><h3>Review decision</h3>{% if item.get('availabilityStatus') == 'unavailable' %}<div class="warning-callout" style="background: var(--warning-bg); border-left: 4px solid var(--warning); padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 14px; font-size: 13px; color: #78350F; line-height: 1.5;"><strong>Notice:</strong> This package will be approved but will remain hidden from travellers because its availability is currently set to Unavailable. The operator must activate availability before it can appear in public discovery.</div>{% endif %}<div class="field"><label>Reason for changes</label><textarea class="input" name="comment" placeholder="Required when requesting changes"></textarea></div><div class="actions"><button class="btn primary" name="decision" value="approved">{{ 'Approve package' if item.get('availabilityStatus') == 'unavailable' else 'Approve and publish' }}</button><button class="btn danger" name="decision" value="rejected">Request changes</button></div></form>{% elif item.get('reviewReason',item.get('reviewComment')) and state != 'suspended' %}<section class="review-feedback"><strong>Review feedback</strong><p>{{item.get('reviewReason',item.get('reviewComment'))}}</p></section>{% endif %}
-{% if state == 'approved' %}
-<section class="card" style="border-left: 4px solid var(--danger);">
-  <h3>Administrative Actions</h3>
-  <p style="font-size: 13px; color: var(--ink-secondary); margin-bottom: 12px;">
-    Need to unpublish this package due to safety concerns, regulatory compliance, or operator policy violations?
-  </p>
-  <button class="btn danger" type="button" id="openSuspendModalBtn" aria-haspopup="dialog" aria-controls="suspendModal">
-    Suspend / Unpublish Package
-  </button>
-</section>
-{% endif %}
-</div></div>
+</div>
 
 {% if state == 'approved' %}
 <!-- Suspend Modal Dialog -->
@@ -192,5 +373,14 @@
 </script>
 {% endif %}
 
-<script>document.querySelector('.review-decision')?.addEventListener('submit',e=>{const reason=e.currentTarget.querySelector('[name=comment]');reason.required=e.submitter?.value==='rejected';if(reason.required&&!reason.value.trim()){e.preventDefault();reason.reportValidity();}});</script>
+<script>
+document.querySelector('.review-decision')?.addEventListener('submit', e => {
+  const reason = e.currentTarget.querySelector('[name=comment]');
+  reason.required = e.submitter?.value === 'rejected';
+  if (reason.required && !reason.value.trim()) {
+    e.preventDefault();
+    reason.reportValidity();
+  }
+});
+</script>
 {% endblock %}

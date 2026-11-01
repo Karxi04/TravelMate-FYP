@@ -1,6 +1,83 @@
-{% extends 'portal_base.html' %}{% block title %}Promotion reviews | TravelMate{% endblock %}{% block content %}
+{% extends 'portal_base.html' %}
+{% block title %}Promotion reviews | TravelMate{% endblock %}
+
+{% block content %}
 {% include '_admin_data_state.html' %}
-<div class="page-title"><div><span class="eyebrow">CONTENT SAFETY</span><h1>Promotion reviews</h1><p>Approve complete promotional content before it appears to travellers.</p></div></div>
-<form class="toolbar card" method="get"><div class="actions"><input class="input search-input" name="q" value="{{ query }}" placeholder="Search campaign, package or destination" aria-label="Search campaigns"><select class="input filter-input" name="status" aria-label="Filter campaigns"><option value="pending" {% if status=='pending' %}selected{% endif %}>Needs review</option><option value="all" {% if status=='all' %}selected{% endif %}>All statuses</option><option value="approved" {% if status=='approved' %}selected{% endif %}>Approved</option><option value="rejected" {% if status=='rejected' %}selected{% endif %}>Rejected</option></select><button class="btn primary">Filter</button></div></form>
-<div class="grid g2">{% for x in items %}<article class="card review-card"><div class="actions" style="justify-content:space-between"><span class="status {{ x.get('reviewStatus','pending') }}">{{ x.get('reviewStatus','pending') }}</span><small>{{ x.get('startDate','-') }} → {{ x.get('endDate','-') }}</small></div><h3>{{ x.get('campaignTitle','Untitled promotion') }}</h3><p><strong>{{ x.get('packageTitle','Package unavailable') }}</strong> · {{ x.get('destinationName','Destination unavailable') }}</p><p class="muted">{{ x.get('description','No description provided.') }}</p>{% if x.get('reviewComment') %}<p class="notice"><strong>Review note:</strong> {{ x.get('reviewComment') }}</p>{% endif %}<a class="btn outline" href="{{ url_for('admin_fr13.campaign_details', campaign_id=x.id) }}">Open review</a></article>{% else %}<div class="card cream empty-state"><strong>No campaigns need attention.</strong><span>Approved and rejected records remain available through the status filter.</span></div>{% endfor %}</div>
+<div class="page-title">
+  <div>
+    <span class="eyebrow">CONTENT SAFETY</span>
+    <h1>Promotion reviews</h1>
+    <p>Approve complete promotional content before it appears to travellers.</p>
+  </div>
+</div>
+
+<form class="toolbar card" method="get">
+  <div class="actions">
+    <input class="input search-input" name="q" value="{{ query }}" placeholder="Search campaign, package or destination" aria-label="Search campaigns">
+    <select class="input filter-input" name="status" aria-label="Filter campaigns">
+      <option value="pending" {% if status == 'pending' %}selected{% endif %}>Needs review</option>
+      <option value="all" {% if status == 'all' %}selected{% endif %}>All statuses</option>
+      <option value="approved" {% if status == 'approved' %}selected{% endif %}>Approved</option>
+      <option value="rejected" {% if status == 'rejected' %}selected{% endif %}>Rejected</option>
+    </select>
+    <button class="btn primary" type="submit">Filter</button>
+  </div>
+</form>
+
+<div class="grid g2">
+  {% for x in items %}
+    <article class="card review-card" style="display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <div class="actions" style="justify-content: space-between; margin-bottom: 10px;">
+          <span class="status {{ x.get('reviewStatus', 'pending') }}">{{ x.get('reviewStatus', 'pending') }}</span>
+          <span class="muted" style="font-size: 12px; font-weight: 500;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -1px; margin-right: 2px;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            {{ x.get('startDate', '-') }} → {{ x.get('endDate', '-') }}
+          </span>
+        </div>
+        <h3 style="margin: 4px 0 6px;">{{ x.get('campaignTitle', 'Untitled promotion') }}</h3>
+        <p style="margin: 0 0 8px; font-size: 13.5px;">
+          <strong>{{ x.get('packageTitle', 'Package unavailable') }}</strong> · <span class="muted">{{ x.get('destinationName', 'Destination unavailable') }}</span>
+        </p>
+        
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
+          {% if x.get('discountValue') and x.get('discountValue')|float > 0 %}
+            <span class="badge primary" style="font-size: 11px;">
+              {% if x.get('discountType') == 'fixed' or x.get('discountType') == 'fixed_amount' %}
+                RM {{ x.get('discountValue') }} OFF
+              {% else %}
+                {{ x.get('discountValue') }}% OFF
+              {% endif %}
+            </span>
+          {% else %}
+            <span class="badge neutral" style="font-size: 11px;">Announcement / Special</span>
+          {% endif %}
+          {% if x.get('promoCode') %}
+            <span class="badge warning" style="font-size: 11px; font-family: monospace;">CODE: {{ x.get('promoCode') }}</span>
+          {% endif %}
+        </div>
+
+        <p class="muted" style="font-size: 13px; line-height: 1.45; margin: 0 0 12px;">{{ x.get('description', 'No description provided.') }}</p>
+
+        {% if x.get('reviewComment') %}
+          <div class="notice" style="background: var(--warning-bg); border-left: 3px solid var(--warning); padding: 8px 12px; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12.5px;">
+            <strong>Review note:</strong> {{ x.get('reviewComment') }}
+          </div>
+        {% endif %}
+      </div>
+
+      <div style="padding-top: 12px; border-top: 1px solid var(--border-subtle); display: flex; justify-content: flex-end;">
+        <a class="btn outline btn-sm" href="{{ url_for('admin_fr13.campaign_details', campaign_id=x.id) }}">Open review</a>
+      </div>
+    </article>
+  {% else %}
+    <div class="card cream empty-state" style="grid-column: 1 / -1;">
+      <div class="empty-icon" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      </div>
+      <strong>No campaigns need attention.</strong>
+      <span>Approved and rejected records remain available through the status filter.</span>
+    </div>
+  {% endfor %}
+</div>
 {% endblock %}

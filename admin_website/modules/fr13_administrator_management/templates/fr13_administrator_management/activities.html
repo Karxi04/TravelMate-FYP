@@ -1,41 +1,160 @@
 {% extends 'portal_base.html' %}
 {% block title %}Activity Records | TravelMate{% endblock %}
+
 {% block content %}
 {% include '_admin_data_state.html' %}
-<div class="page-title"><div><h1>Activity Management</h1><p>Create and maintain activity records for destination planning.</p></div></div>
-<form class="card" method="post" action="{{ url_for('admin_fr13.create_activity') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="grid g2">
-    <div class="field"><label>Activity name</label><input class="input" name="activityName" required></div>
-    <div class="field"><label>Destination</label><input class="input" name="destinationName"></div>
-    <div class="field"><label>Category</label><input class="input" name="category"></div>
-    <div class="field"><label>Estimated cost (RM)</label><input class="input" name="estimatedCost" type="number" min="0" step="0.01" value="0"></div>
-    <div class="field"><label>Duration minutes</label><input class="input" name="recommendedDurationMinutes" type="number" min="30" step="15" value="90"></div>
-    <div class="field"><label>Status</label><select class="input" name="status"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+<div class="page-title">
+  <div>
+    <span class="eyebrow">DESTINATIONS &amp; ITINERARIES</span>
+    <h1>Activity Management</h1>
+    <p>Create and maintain activity records for destination planning and traveller recommendations.</p>
   </div>
-  <div class="field"><label>Description</label><textarea class="input" name="description" rows="3"></textarea></div>
-  <button class="btn primary">Add Activity</button>
+</div>
+
+<!-- Add Activity Card -->
+<form class="card" method="post" action="{{ url_for('admin_fr13.create_activity') }}" style="margin-bottom: 24px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <span class="eyebrow">NEW ACTIVITY</span>
+  <h3 style="margin: 2px 0 16px;">Add Activity Record</h3>
+  
+  <div class="grid g2">
+    <div class="field">
+      <label for="createActivityName">Activity name *</label>
+      <input id="createActivityName" class="input" name="activityName" required placeholder="e.g. Street Art Walking Tour">
+    </div>
+    <div class="field">
+      <label for="createActivityDest">Destination / Location</label>
+      <input id="createActivityDest" class="input" name="destinationName" placeholder="e.g. George Town Heritage Zone">
+    </div>
+    <div class="field">
+      <label for="createActivityCategory">Category</label>
+      <input id="createActivityCategory" class="input" name="category" placeholder="Sightseeing, Food &amp; Drink, Outdoor">
+    </div>
+    <div class="field">
+      <label for="createActivityCost">Estimated cost (RM)</label>
+      <input id="createActivityCost" class="input" name="estimatedCost" type="number" min="0" step="0.01" value="0">
+    </div>
+    <div class="field">
+      <label for="createActivityDuration">Recommended duration (minutes)</label>
+      <input id="createActivityDuration" class="input" name="recommendedDurationMinutes" type="number" min="30" step="15" value="90">
+    </div>
+    <div class="field">
+      <label for="createActivityStatus">Status</label>
+      <select id="createActivityStatus" class="input" name="status">
+        <option value="active">Active</option>
+        <option value="inactive">Inactive</option>
+      </select>
+    </div>
+  </div>
+  <div class="field" style="margin-top: 8px;">
+    <label for="createActivityDesc">Description</label>
+    <textarea id="createActivityDesc" class="input" name="description" rows="3" placeholder="Overview of the activity, timing notes, or visitor recommendations..."></textarea>
+  </div>
+  <div class="actions" style="margin-top: 14px;">
+    <button class="btn primary" type="submit">Add Activity</button>
+  </div>
 </form>
-<div class="table-wrap"><table><thead><tr><th>Activity</th><th>Category</th><th>Cost</th><th>Duration</th><th>Update</th></tr></thead><tbody>
-{% for x in items %}
-<tr>
-  <td><strong>{{ x.get('activityName','-') }}</strong><br><small>{{ x.get('destinationName','') }}</small></td>
-  <td>{{ x.get('category','-') }}</td>
-  <td>RM {{ x.get('estimatedCost',0) }}</td>
-  <td>{{ x.get('recommendedDurationMinutes',90) }} min</td>
-  <td>
-    <form class="actions" method="post" action="{{ url_for('admin_fr13.update_activity', activity_id=x.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input class="input" name="activityName" value="{{ x.get('activityName','') }}" required>
-      <input class="input" name="destinationName" value="{{ x.get('destinationName','') }}">
-      <input class="input" name="category" value="{{ x.get('category','') }}">
-      <input class="input" name="estimatedCost" type="number" min="0" step="0.01" value="{{ x.get('estimatedCost',0) }}">
-      <input class="input" name="recommendedDurationMinutes" type="number" min="30" step="15" value="{{ x.get('recommendedDurationMinutes',90) }}">
-      <input type="hidden" name="description" value="{{ x.get('description','') }}">
-      <select class="input" name="status"><option value="active" {% if x.get('status','active')=='active' %}selected{% endif %}>Active</option><option value="inactive" {% if x.get('status')=='inactive' %}selected{% endif %}>Inactive</option></select>
-      <button class="btn outline">Save</button>
-    </form>
-    <form method="post" action="{{ url_for('admin_fr13.delete_activity', activity_id=x.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn danger">Delete</button></form>
-  </td>
-</tr>
-{% else %}<tr><td colspan="5">No activity records yet.</td></tr>{% endfor %}
-</tbody></table></div>
+
+<!-- Activities Table -->
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Activity</th>
+        <th scope="col">Category</th>
+        <th scope="col">Estimated Cost</th>
+        <th scope="col">Duration</th>
+        <th scope="col" style="min-width: 220px;">Management</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for x in items %}
+      <tr>
+        <td>
+          <strong>{{ x.get('activityName', '-') }}</strong>
+          {% if x.get('destinationName') %}
+            <br>
+            <small class="muted">{{ x.get('destinationName', '') }}</small>
+          {% endif %}
+        </td>
+        <td>
+          <span class="badge neutral" style="font-size: 11.5px;">{{ x.get('category', 'Activity') }}</span>
+          <br>
+          <span class="status {{ x.get('status', 'active') }}" style="margin-top: 3px; font-size: 11px;">{{ x.get('status', 'active')|title }}</span>
+        </td>
+        <td>
+          <strong>RM {{ '%.2f'|format(x.get('estimatedCost', 0)|float) }}</strong>
+        </td>
+        <td>
+          {{ x.get('recommendedDurationMinutes', 90) }} min
+        </td>
+        <td>
+          <details class="table-inline-editor">
+            <summary class="btn outline btn-sm" style="cursor: pointer;">Edit / Update</summary>
+            
+            <div style="margin-top: 10px; padding: 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border); min-width: 280px;">
+              <form method="post" action="{{ url_for('admin_fr13.update_activity', activity_id=x.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                  <div class="field" style="margin-bottom: 0;">
+                    <label style="font-size: 11px; font-weight: 600;">Activity name</label>
+                    <input class="input" name="activityName" value="{{ x.get('activityName', '') }}" required style="padding: 4px 8px; font-size: 12px;">
+                  </div>
+                  <div class="field" style="margin-bottom: 0;">
+                    <label style="font-size: 11px; font-weight: 600;">Destination</label>
+                    <input class="input" name="destinationName" value="{{ x.get('destinationName', '') }}" style="padding: 4px 8px; font-size: 12px;">
+                  </div>
+                  <div class="field" style="margin-bottom: 0;">
+                    <label style="font-size: 11px; font-weight: 600;">Category</label>
+                    <input class="input" name="category" value="{{ x.get('category', '') }}" style="padding: 4px 8px; font-size: 12px;">
+                  </div>
+                  <div class="field" style="margin-bottom: 0;">
+                    <label style="font-size: 11px; font-weight: 600;">Cost (RM)</label>
+                    <input class="input" name="estimatedCost" type="number" min="0" step="0.01" value="{{ x.get('estimatedCost', 0) }}" style="padding: 4px 8px; font-size: 12px;">
+                  </div>
+                  <div class="field" style="margin-bottom: 0;">
+                    <label style="font-size: 11px; font-weight: 600;">Duration (min)</label>
+                    <input class="input" name="recommendedDurationMinutes" type="number" min="30" step="15" value="{{ x.get('recommendedDurationMinutes', 90) }}" style="padding: 4px 8px; font-size: 12px;">
+                  </div>
+                  <div class="field" style="margin-bottom: 0;">
+                    <label style="font-size: 11px; font-weight: 600;">Status</label>
+                    <select class="input" name="status" style="padding: 4px 8px; font-size: 12px;">
+                      <option value="active" {% if x.get('status', 'active') == 'active' %}selected{% endif %}>Active</option>
+                      <option value="inactive" {% if x.get('status') == 'inactive' %}selected{% endif %}>Inactive</option>
+                    </select>
+                  </div>
+                </div>
+
+                <input type="hidden" name="description" value="{{ x.get('description', '') }}">
+
+                <div class="actions" style="gap: 8px;">
+                  <button class="btn primary btn-sm" type="submit">Save Updates</button>
+                </div>
+              </form>
+
+              <form method="post" action="{{ url_for('admin_fr13.delete_activity', activity_id=x.id) }}" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border);" onsubmit="return confirm('Are you sure you want to delete activity {{ x.get('activityName', '') }}?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn danger btn-sm" type="submit">Delete Activity</button>
+              </form>
+            </div>
+          </details>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5">
+          <div class="empty-state">
+            <div class="empty-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <strong>No activity records yet.</strong>
+            <p>Add a new activity above to populate destination recommendations.</p>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}
