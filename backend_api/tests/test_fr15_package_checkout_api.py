@@ -65,7 +65,7 @@ def package_api(client, monkeypatch):
     identity = {"uid": "traveller-1", "role": "traveller"}
     memory.seed("users", "operator-1", {"role": "operator", "status": "active"})
 
-    def verify(token):
+    def verify(token, *args, **kwargs):
         if token == "invalid":
             raise ValueError("expired")
         return {"uid": token, "email": f"{token}@example.test"}

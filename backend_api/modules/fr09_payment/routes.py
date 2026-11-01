@@ -29,6 +29,7 @@ from services.transaction_reliability import (
     provider_idempotency_key,
 )
 from services.package_checkout_contract import (
+    build_initial_fulfillment_record,
     package_amount_minor_units,
     package_trip_compatible,
 )
@@ -652,6 +653,7 @@ def _independent_package_fulfillment(order, attempt):
     duration = int(snapshot.get('durationDays') or len(schedule) or 1)
     start = date.fromisoformat(start_text) if start_text else None
     end_text = (start + timedelta(days=duration - 1)).isoformat() if start else ''
+    initial_fulfillment_record = build_initial_fulfillment_record(snapshot, now=now)
     trip_record = {
         'id': trip_id, 'travellerId': traveller_id,
         'title': snapshot.get('title') or 'Purchased travel package',
@@ -665,7 +667,9 @@ def _independent_package_fulfillment(order, attempt):
         'operatorId': snapshot.get('operatorId'), 'packageAttemptId': attempt_id,
         'checkoutOrderId': order.get('id'), 'paidTotal': order.get('amount'),
         'paidTotalMinor': order.get('amountMinor'), 'currency': order.get('currency'),
+        'fulfillmentStatus': 'awaiting_operator_fulfillment',
         'supplierReservationStatus': 'not_created',
+        'fulfillmentRecord': deepcopy(initial_fulfillment_record),
         'budgetLimit': order.get('amount'),
         'budgetEstimate': {
             'total': order.get('amount'), 'currency': order.get('currency'),
@@ -678,10 +682,10 @@ def _independent_package_fulfillment(order, attempt):
         return {'fulfillmentStatus': 'fulfillment_failed', 'fulfillmentRetryRequired': True,
                 'fulfillmentError': 'The package Trip claim is inconsistent.'}
     updateRecord(PACKAGE_FULFILLMENT_COLLECTION, fulfillment_id, {
-        'status': 'fulfilled', 'updatedAt': utc_now_iso(),
+        'status': 'awaiting_operator_fulfillment', 'updatedAt': utc_now_iso(),
     })
-    return {'fulfillmentStatus': 'fulfilled', 'fulfillmentRetryRequired': False,
-            'fulfilledTripId': trip_id}
+    return {'fulfillmentStatus': 'awaiting_operator_fulfillment', 'fulfillmentRetryRequired': False,
+            'fulfilledTripId': trip_id, 'fulfillmentRecord': initial_fulfillment_record}
 
 
 def _fulfill_package_order(order):

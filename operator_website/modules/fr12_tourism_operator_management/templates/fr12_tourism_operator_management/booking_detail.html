@@ -27,38 +27,51 @@
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
   </div>
   <div class="booking-notice-content">
-    <strong>Authoritative Supplier Reservation Status: NOT CREATED</strong>
     {% set pay_status = (booking.paymentStatus or '')|lower %}
     {% set ord_status = (booking.orderStatus or '')|lower %}
     {% set ful_status = (booking.fulfillmentStatus or '')|lower %}
-    {% if pay_status in ['paid', 'succeeded'] and ful_status == 'fulfilled' %}
+    {% set sup_status = (booking.supplierReservationStatus or '')|lower %}
+    {% if sup_status == 'operator_attested' %}
+      <strong>Authoritative Supplier Reservation Status: OPERATOR ATTESTED</strong>
       <p>
-        This booking was recorded following verified payment in <strong>Stripe Test Mode</strong>. An independent <strong>Package Trip</strong> has been created in the traveller's mobile application. However, <strong>third-party supplier reservations are NOT created automatically</strong> by TravelMate. You must confirm hotel accommodation, docents, and transport with third-party providers manually.
+        All required third-party supplier arrangements for this package have been attested and confirmed by your organization. The linked Package Trip in the traveller's mobile application is marked <strong>Trip Ready</strong>.
       </p>
-    {% elif pay_status in ['paid', 'succeeded'] %}
+    {% elif sup_status == 'declined' or ful_status == 'fulfillment_declined' %}
+      <strong style="color: #991B1B;">Authoritative Supplier Reservation Status: FULFILLMENT DECLINED</strong>
       <p>
-        This booking was recorded following verified payment in <strong>Stripe Test Mode</strong>. Package Trip creation in the traveller's mobile application is currently <strong>in progress / pending fulfillment</strong>; an independent package trip has not yet been provisioned. In addition, <strong>third-party supplier reservations are NOT created automatically</strong> by TravelMate and require manual operator coordination.
-      </p>
-    {% elif pay_status == 'expired' or ord_status in ['expired', 'checkout_expired'] %}
-      <p>
-        This checkout session has <strong>expired</strong> without payment completion. No funds were collected, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Third-party supplier reservations are NOT created automatically and require no operator action.
-      </p>
-    {% elif pay_status in ['failed', 'payment_failed'] or ord_status in ['failed', 'checkout_failed'] %}
-      <p>
-        The payment attempt for this booking <strong>failed</strong>. No payment was collected, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Third-party supplier reservations are NOT created automatically and require no operator action.
-      </p>
-    {% elif pay_status in ['cancelled', 'payment_cancelled'] or ord_status in ['cancelled', 'checkout_cancelled'] %}
-      <p>
-        This checkout order was <strong>cancelled</strong>. No payment was processed, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Third-party supplier reservations are NOT created automatically and require no operator action.
-      </p>
-    {% elif pay_status in ['pending', 'payment_pending', 'unpaid'] %}
-      <p>
-        This booking is currently <strong>awaiting payment completion</strong> in <strong>Stripe Test Mode</strong>. No payment has been verified, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Furthermore, <strong>third-party supplier reservations are NOT created automatically</strong> by TravelMate and require manual operator coordination once payment is completed.
+        The operator has recorded that they are unable to fulfill this package order. Third-party supplier reservations will not be created.
       </p>
     {% else %}
-      <p>
-        This booking is in state <em>{{ pay_status or 'unrecorded' }}</em>. No verified payment has been confirmed, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Third-party supplier reservations are NOT created automatically by TravelMate.
-      </p>
+      <strong>Authoritative Supplier Reservation Status: NOT CREATED</strong>
+      {% if pay_status in ['paid', 'succeeded'] and ful_status in ['fulfilled', 'trip_ready'] %}
+        <p>
+          This booking was recorded following verified payment in <strong>Stripe Test Mode</strong>. An independent <strong>Package Trip</strong> has been created in the traveller's mobile application. However, <strong>third-party supplier reservations are NOT created automatically</strong> by TravelMate. You must confirm hotel accommodation, docents, and transport with third-party providers manually.
+        </p>
+      {% elif pay_status in ['paid', 'succeeded'] %}
+        <p>
+          This booking was recorded following verified payment in <strong>Stripe Test Mode</strong>. Package Trip creation in the traveller's mobile application is currently <strong>in progress / pending fulfillment</strong>; an independent package trip has not yet been provisioned. In addition, <strong>third-party supplier reservations are NOT created automatically</strong> by TravelMate and require manual operator coordination.
+        </p>
+      {% elif pay_status == 'expired' or ord_status in ['expired', 'checkout_expired'] %}
+        <p>
+          This checkout session has <strong>expired</strong> without payment completion. No funds were collected, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Third-party supplier reservations are NOT created automatically and require no operator action.
+        </p>
+      {% elif pay_status in ['failed', 'payment_failed'] or ord_status in ['failed', 'checkout_failed'] %}
+        <p>
+          The payment attempt for this booking <strong>failed</strong>. No payment was collected, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Third-party supplier reservations are NOT created automatically and require no operator action.
+        </p>
+      {% elif pay_status in ['cancelled', 'payment_cancelled'] or ord_status in ['cancelled', 'checkout_cancelled'] %}
+        <p>
+          This checkout order was <strong>cancelled</strong>. No payment was processed, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Third-party supplier reservations are NOT created automatically and require no operator action.
+        </p>
+      {% elif pay_status in ['pending', 'payment_pending', 'unpaid'] %}
+        <p>
+          This booking is currently <strong>awaiting payment completion</strong> in <strong>Stripe Test Mode</strong>. No payment has been verified, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Furthermore, <strong>third-party supplier reservations are NOT created automatically</strong> by TravelMate and require manual operator coordination once payment is completed.
+        </p>
+      {% else %}
+        <p>
+          This booking is in state <em>{{ pay_status or 'unrecorded' }}</em>. No verified payment has been confirmed, and <strong>no Package Trip has been created</strong> in the traveller's mobile application. Third-party supplier reservations are NOT created automatically by TravelMate.
+        </p>
+      {% endif %}
     {% endif %}
   </div>
 </div>
@@ -217,10 +230,18 @@
         <span>TravelMate Platform Fulfillment</span>
         <span>
           {% set ful_status = (booking.fulfillmentStatus or '')|lower %}
-          {% if ful_status == 'fulfilled' %}
+          {% if ful_status == 'trip_ready' %}
+            <span class="badge-fulfillment trip_ready">Trip Ready</span>
+          {% elif ful_status == 'fulfilled' %}
             <span class="badge-fulfillment fulfilled">Trip Created in App</span>
+          {% elif ful_status == 'partially_fulfilled' %}
+            <span class="badge-fulfillment pending">Partially Confirmed</span>
           {% elif ful_status in ['pending', 'fulfillment_pending'] %}
             <span class="badge-fulfillment pending">Fulfillment Pending</span>
+          {% elif ful_status == 'awaiting_operator_fulfillment' %}
+            <span class="badge-fulfillment pending">Awaiting Arrangements</span>
+          {% elif ful_status == 'fulfillment_declined' %}
+            <span class="badge-fulfillment declined">Declined</span>
           {% elif ful_status in ['not_created', 'none', 'unfulfilled', 'not_fulfilled'] or not booking.fulfillmentStatus %}
             <span class="badge-fulfillment fallback">Not Fulfilled</span>
           {% else %}
@@ -230,8 +251,15 @@
       </div>
       <div class="detail-row">
         <span>Third-Party Supplier Reservation</span>
-        <span class="badge-supplier unconfirmed">
-          ⚠️ Not Created (Operator Action Required)
+        <span>
+          {% set sup_status = (booking.supplierReservationStatus or '')|lower %}
+          {% if sup_status == 'operator_attested' %}
+            <span class="badge-supplier attested">✅ Operator Attested</span>
+          {% elif sup_status == 'declined' %}
+            <span class="badge-supplier declined">❌ Declined</span>
+          {% else %}
+            <span class="badge-supplier unconfirmed">⚠️ Not Created (Operator Action Required)</span>
+          {% endif %}
         </span>
       </div>
       <div style="margin-top: 14px; padding: 12px 14px; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.5; color: #92400E;">
@@ -247,5 +275,310 @@
       </div>
     </div>
   </div>
+</div>
+
+<!-- Section 2: Supplier Logistics & Service Arrangements -->
+{% set ful_rec = booking.fulfillmentRecord or {} %}
+{% set ful_services = ful_rec.services or {} %}
+{% set req_services = booking.requiredServices or {} %}
+{% set snap = booking.packageBrochure or booking.packageSnapshot or {} %}
+
+<div style="margin-top: 28px;">
+  <div style="margin-bottom: 16px;">
+    <span class="eyebrow">Supplier Operations</span>
+    <h2 style="margin: 4px 0 6px;">Supplier Arrangements & Logistics</h2>
+    <p class="muted" style="margin: 0; font-size: 14px;">
+      Manage external provider bookings based on your package brochure specifications. Attest actual reservation references so the platform can verify fulfillment provenance.
+    </p>
+  </div>
+
+  <div class="grid g3" style="align-items: stretch;">
+    <!-- 1. Accommodation Card -->
+    {% if req_services.accommodation and req_services.accommodation.required %}
+    {% set accom_svc = ful_services.accommodation or {} %}
+    {% set is_accom_confirmed = (accom_svc.status == 'confirmed') %}
+    <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <div class="card-heading" style="margin-bottom: 12px;">
+          <div>
+            <span class="eyebrow">Service Component</span>
+            <h3 style="font-size: 16px;">🏨 Accommodation</h3>
+          </div>
+          {% if is_accom_confirmed %}
+            <span class="badge-supplier attested">Attested</span>
+          {% else %}
+            <span class="badge-supplier unconfirmed">Required</span>
+          {% endif %}
+        </div>
+
+        <!-- Brochure specs (read-only from package) -->
+        <div style="background: var(--surface-secondary, #F8FAFC); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; margin-bottom: 14px; border: 1px solid var(--border, #E2E8F0);">
+          <div style="font-weight: 700; color: var(--ink); margin-bottom: 4px;">Brochure Specification</div>
+          <div><strong>Property:</strong> {{ req_services.accommodation.brochureName or snap.accommodation.accommodationName or 'Partner Hotel' }}</div>
+          <div><strong>Room:</strong> {{ req_services.accommodation.brochureRoomType or snap.accommodation.roomType or 'Standard Room' }}</div>
+          {% if req_services.accommodation.brochureNotes %}
+            <div style="margin-top: 2px; color: var(--ink-secondary);">{{ req_services.accommodation.brochureNotes }}</div>
+          {% endif %}
+        </div>
+
+        {% if is_accom_confirmed %}
+          <div class="detail-row" style="padding: 6px 0;">
+            <span style="font-size: 12px;">Supplier / Property</span>
+            <strong style="font-size: 13px;">{{ accom_svc.supplierName or '—' }}</strong>
+          </div>
+          <div class="detail-row" style="padding: 6px 0;">
+            <span style="font-size: 12px;">Reservation Reference</span>
+            <span style="font-family: ui-monospace, monospace; font-size: 12px; font-weight: 700; color: var(--primary);">{{ accom_svc.reference }}</span>
+          </div>
+          {% if accom_svc.notes %}
+            <div class="detail-row" style="padding: 6px 0;">
+              <span style="font-size: 12px;">Notes</span>
+              <span style="font-size: 12px; color: var(--ink-secondary);">{{ accom_svc.notes }}</span>
+            </div>
+          {% endif %}
+          <div style="font-size: 11px; color: var(--ink-muted); margin-top: 8px;">
+            Attested at {{ accom_svc.confirmedAt[:16]|replace('T', ' ') if accom_svc.confirmedAt else '—' }}
+          </div>
+        {% else %}
+          <p style="font-size: 12px; color: var(--ink-secondary); margin-bottom: 10px;">
+            Enter the confirmed reservation code with the hotel partner to attest this booking.
+          </p>
+        {% endif %}
+      </div>
+
+      {% if not is_accom_confirmed and booking.isPaid and booking.fulfillmentStatus != 'fulfillment_declined' %}
+      <form method="post" action="{{ url_for('operator_fr12.update_booking_fulfillment', order_reference=booking.orderReference) }}" style="margin-top: 14px;">
+        <input type="hidden" name="serviceType" value="accommodation">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div>
+            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Property / Supplier Name</label>
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="supplierName" value="{{ req_services.accommodation.brochureName or snap.accommodation.accommodationName or '' }}" placeholder="Hotel name">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Booking / Reference # *</label>
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="reference" placeholder="e.g. HTL-PEN-9821" required>
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Notes (Optional)</label>
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="notes" placeholder="Check-in or room notes">
+          </div>
+          <button class="btn primary btn-sm" type="submit" style="margin-top: 4px;">Save Accommodation</button>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- 2. Transportation Card -->
+    {% if req_services.transport and req_services.transport.required %}
+    {% set trans_svc = ful_services.transport or {} %}
+    {% set is_trans_confirmed = (trans_svc.status == 'confirmed') %}
+    <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <div class="card-heading" style="margin-bottom: 12px;">
+          <div>
+            <span class="eyebrow">Service Component</span>
+            <h3 style="font-size: 16px;">🚐 Transportation</h3>
+          </div>
+          {% if is_trans_confirmed %}
+            <span class="badge-supplier attested">Attested</span>
+          {% else %}
+            <span class="badge-supplier unconfirmed">Required</span>
+          {% endif %}
+        </div>
+
+        <!-- Brochure specs -->
+        <div style="background: var(--surface-secondary, #F8FAFC); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; margin-bottom: 14px; border: 1px solid var(--border, #E2E8F0);">
+          <div style="font-weight: 700; color: var(--ink); margin-bottom: 4px;">Brochure Specification</div>
+          <div><strong>Modes:</strong> {{ req_services.transport.brochureTypes|join(', ') if req_services.transport.brochureTypes else 'Ground Transit' }}</div>
+          {% if req_services.transport.brochureNotes %}
+            <div style="margin-top: 2px; color: var(--ink-secondary);">{{ req_services.transport.brochureNotes }}</div>
+          {% endif %}
+        </div>
+
+        {% if is_trans_confirmed %}
+          <div class="detail-row" style="padding: 6px 0;">
+            <span style="font-size: 12px;">Transit Provider</span>
+            <strong style="font-size: 13px;">{{ trans_svc.providerName or '—' }}</strong>
+          </div>
+          <div class="detail-row" style="padding: 6px 0;">
+            <span style="font-size: 12px;">Dispatch / Booking #</span>
+            <span style="font-family: ui-monospace, monospace; font-size: 12px; font-weight: 700; color: var(--primary);">{{ trans_svc.reference }}</span>
+          </div>
+          {% if trans_svc.notes %}
+            <div class="detail-row" style="padding: 6px 0;">
+              <span style="font-size: 12px;">Notes</span>
+              <span style="font-size: 12px; color: var(--ink-secondary);">{{ trans_svc.notes }}</span>
+            </div>
+          {% endif %}
+          <div style="font-size: 11px; color: var(--ink-muted); margin-top: 8px;">
+            Attested at {{ trans_svc.confirmedAt[:16]|replace('T', ' ') if trans_svc.confirmedAt else '—' }}
+          </div>
+        {% else %}
+          <p style="font-size: 12px; color: var(--ink-secondary); margin-bottom: 10px;">
+            Enter the vehicle dispatch or transit reservation number.
+          </p>
+        {% endif %}
+      </div>
+
+      {% if not is_trans_confirmed and booking.isPaid and booking.fulfillmentStatus != 'fulfillment_declined' %}
+      <form method="post" action="{{ url_for('operator_fr12.update_booking_fulfillment', order_reference=booking.orderReference) }}" style="margin-top: 14px;">
+        <input type="hidden" name="serviceType" value="transport">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div>
+            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Transport Fleet / Provider</label>
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="supplierName" value="{{ req_services.transport.brochureTypes|join(', ') if req_services.transport.brochureTypes else '' }}" placeholder="Transport provider">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Transit / Booking # *</label>
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="reference" placeholder="e.g. VAN-PEN-0412" required>
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Notes (Optional)</label>
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="notes" placeholder="Pickup point or vehicle notes">
+          </div>
+          <button class="btn primary btn-sm" type="submit" style="margin-top: 4px;">Save Transport</button>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- 3. Guide & Activities Card -->
+    {% if req_services.guideActivities and req_services.guideActivities.required %}
+    {% set guide_svc = ful_services.guideActivities or {} %}
+    {% set is_guide_confirmed = (guide_svc.status == 'confirmed') %}
+    <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <div class="card-heading" style="margin-bottom: 12px;">
+          <div>
+            <span class="eyebrow">Service Component</span>
+            <h3 style="font-size: 16px;">🎟️ Guide & Activities</h3>
+          </div>
+          {% if is_guide_confirmed %}
+            <span class="badge-supplier attested">Attested</span>
+          {% else %}
+            <span class="badge-supplier unconfirmed">Required</span>
+          {% endif %}
+        </div>
+
+        <!-- Brochure specs -->
+        <div style="background: var(--surface-secondary, #F8FAFC); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; margin-bottom: 14px; border: 1px solid var(--border, #E2E8F0);">
+          <div style="font-weight: 700; color: var(--ink); margin-bottom: 4px;">Brochure Inclusions</div>
+          {% if req_services.guideActivities.inclusions %}
+            <ul style="margin: 0; padding-left: 16px; font-size: 11px;">
+              {% for inc in req_services.guideActivities.inclusions[:3] %}
+                <li>{{ inc }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <div>Scheduled itinerary activities</div>
+          {% endif %}
+        </div>
+
+        {% if is_guide_confirmed %}
+          <div class="detail-row" style="padding: 6px 0;">
+            <span style="font-size: 12px;">Guide / Ticket Authority</span>
+            <strong style="font-size: 13px;">{{ guide_svc.guideOrActivity or '—' }}</strong>
+          </div>
+          <div class="detail-row" style="padding: 6px 0;">
+            <span style="font-size: 12px;">Docent ID / Ticket #</span>
+            <span style="font-family: ui-monospace, monospace; font-size: 12px; font-weight: 700; color: var(--primary);">{{ guide_svc.reference }}</span>
+          </div>
+          {% if guide_svc.notes %}
+            <div class="detail-row" style="padding: 6px 0;">
+              <span style="font-size: 12px;">Notes</span>
+              <span style="font-size: 12px; color: var(--ink-secondary);">{{ guide_svc.notes }}</span>
+            </div>
+          {% endif %}
+          <div style="font-size: 11px; color: var(--ink-muted); margin-top: 8px;">
+            Attested at {{ guide_svc.confirmedAt[:16]|replace('T', ' ') if guide_svc.confirmedAt else '—' }}
+          </div>
+        {% else %}
+          <p style="font-size: 12px; color: var(--ink-secondary); margin-bottom: 10px;">
+            Enter the licensed guide docent badge ID or entrance ticket reference.
+          </p>
+        {% endif %}
+      </div>
+
+      {% if not is_guide_confirmed and booking.isPaid and booking.fulfillmentStatus != 'fulfillment_declined' %}
+      <form method="post" action="{{ url_for('operator_fr12.update_booking_fulfillment', order_reference=booking.orderReference) }}" style="margin-top: 14px;">
+        <input type="hidden" name="serviceType" value="guideActivities">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div>
+            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Docent / Attraction Authority</label>
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="supplierName" value="{{ req_services.guideActivities.inclusions[0] if req_services.guideActivities.inclusions else '' }}" placeholder="Guide or attraction name">
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">License / Voucher # *</label>
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="reference" placeholder="e.g. MOTAC-G-4412" required>
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Notes (Optional)</label>
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="notes" placeholder="Meeting point or ticket notes">
+          </div>
+          <button class="btn primary btn-sm" type="submit" style="margin-top: 4px;">Save Guide/Ticket</button>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Section 3: Fulfillment Confirmation Gate & Actions -->
+<div class="card" style="margin-top: 24px; padding: 24px;">
+  <div class="card-heading" style="margin-bottom: 14px;">
+    <div>
+      <span class="eyebrow">Fulfillment Actions</span>
+      <h3 style="margin: 2px 0;">Fulfillment Confirmation & Readiness Gate</h3>
+    </div>
+  </div>
+
+  {% if booking.fulfillmentStatus == 'trip_ready' %}
+    <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: var(--radius-sm); color: #166534;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <div>
+        <strong style="font-size: 14px; display: block;">All Arrangements Confirmed — Booking is Trip Ready!</strong>
+        <span style="font-size: 12px;">Third-party supplier arrangements have been attested. The traveller's mobile itinerary is marked ready with operator-attested status.</span>
+      </div>
+    </div>
+  {% elif booking.fulfillmentStatus == 'fulfillment_declined' %}
+    <div style="padding: 14px 16px; background: #FEF2F2; border: 1px solid #FECACA; border-radius: var(--radius-sm); color: #991B1B;">
+      <strong style="font-size: 14px; display: block; margin-bottom: 4px;">❌ Fulfillment Declined by Operator</strong>
+      <div style="font-size: 13px;">Reason: <em>{{ ful_rec.declineReason or 'Fulfillment unavailable.' }}</em></div>
+      <div style="font-size: 11px; margin-top: 6px; color: #B91C1C;">Recorded at {{ ful_rec.declinedAt[:16]|replace('T', ' ') if ful_rec.declinedAt else '—' }}</div>
+    </div>
+  {% elif booking.isPaid %}
+    <p style="font-size: 13px; color: var(--ink-secondary); margin-bottom: 16px;">
+      Once all required supplier arrangements above have been attested with valid references, click <strong>Confirm Arrangements & Mark Trip Ready</strong>. If your organization is unable to fulfill this package, decline the fulfillment below with a mandatory explanation.
+    </p>
+
+    <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+      <form method="post" action="{{ url_for('operator_fr12.confirm_booking_fulfillment', order_reference=booking.orderReference) }}">
+        <button class="btn primary" type="submit" id="confirm-fulfillment-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Confirm Arrangements & Mark Trip Ready</span>
+        </button>
+      </form>
+
+      <details style="display: inline-block;">
+        <summary class="btn outline" style="color: var(--danger); border-color: var(--danger-border); cursor: pointer;">
+          Unable to Fulfill...
+        </summary>
+        <div style="margin-top: 12px; padding: 14px; background: #FFF5F5; border: 1px solid var(--danger-border); border-radius: var(--radius-sm); width: 340px;">
+          <form method="post" action="{{ url_for('operator_fr12.decline_booking_fulfillment', order_reference=booking.orderReference) }}">
+            <label style="font-size: 12px; font-weight: 600; color: var(--danger); display: block; margin-bottom: 6px;">Reason for declining fulfillment *</label>
+            <textarea class="input" name="reason" rows="2" placeholder="e.g. Hotel fully booked, no alternate dates (min 5 chars)" required minlength="5" style="width: 100%; font-size: 12px; resize: vertical;"></textarea>
+            <button class="btn primary" type="submit" style="background: var(--danger); border-color: var(--danger); margin-top: 8px; font-size: 12px; padding: 6px 12px;">Confirm Decline</button>
+          </form>
+        </div>
+      </details>
+    </div>
+  {% else %}
+    <p class="muted" style="font-size: 13px; margin: 0;">
+      Fulfillment actions will become available once the traveller completes payment.
+    </p>
+  {% endif %}
 </div>
 {% endblock %}

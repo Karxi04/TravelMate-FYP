@@ -10,6 +10,8 @@ PACKAGE_FULFILLMENT_STATES = {
     'checkout_pending', 'payment_pending', 'payment_verified',
     'fulfillment_pending', 'fulfilled', 'fulfillment_failed',
     'payment_failed', 'payment_cancelled',
+    'awaiting_operator_fulfillment', 'partially_fulfilled',
+    'trip_ready', 'fulfillment_declined',
 }
 MAX_GROUP_PARTICIPANTS = 50
 
@@ -257,7 +259,9 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None,
         'packageId': str(package.get('id') or ''), 'operatorId': str(package['operatorId']),
         'title': package.get('title') or package.get('packageTitle'),
         'destination': package.get('destination') or package.get('destinationName'),
-        'durationDays': package.get('durationDays'), 'departureDates': deepcopy(package.get('departureDates') or []),
+        'durationDays': package.get('durationDays'),
+        'durationNights': package.get('durationNights'),
+        'departureDates': deepcopy(package.get('departureDates') or []),
         'selectedDepartureDate': selected_departure,
         'itineraryDays': deepcopy(package.get('itineraryDays') or []),
         'inclusions': deepcopy(package.get('inclusions') or []), 'exclusions': deepcopy(package.get('exclusions') or []),
@@ -313,3 +317,137 @@ def create_package_attempt(claim, traveller_id, package, operator, idempotency_k
             'fulfillmentMode')):
         raise ValueError('Idempotency key is already bound to another package checkout.')
     return existing, created
+
+
+def derive_required_services(snapshot):
+    """
+    Dynamically determine required supplier services from package snapshot.
+    - Accommodation: durationNights > 0 or durationDays > 1 or hotel named/configured in brochure.
+    - Transport: transit modes or transport notes configured in brochure.
+    - Guide / Activities: guide/docent in inclusions, tickets/activities in inclusions or itinerary.
+    """
+    if not isinstance(snapshot, dict):
+        snapshot = {}
+
+    # 1. Accommodation
+    accom = snapshot.get('accommodation') or {}
+    if not isinstance(accom, dict):
+        accom = {}
+    accom_name = str(accom.get('accommodationName') or snapshot.get('accommodationName') or '').strip()
+    room_type = str(accom.get('roomType') or snapshot.get('roomType') or '').strip()
+    category = str(accom.get('accommodationCategory') or snapshot.get('accommodationCategory') or '').strip()
+    notes = str(accom.get('accommodationNotes') or snapshot.get('accommodationNotes') or '').strip()
+
+    nights_raw = snapshot.get('durationNights')
+    try:
+        nights = int(nights_raw) if nights_raw is not None else None
+    except (TypeError, ValueError):
+        nights = None
+
+    days_raw = snapshot.get('durationDays')
+    try:
+        days = int(days_raw) if days_raw is not None else None
+    except (TypeError, ValueError):
+        days = None
+
+    accom_required = False
+    if nights is not None and nights > 0:
+        accom_required = True
+    elif nights is None and days is not None and days > 1:
+        accom_required = True
+    elif bool(accom_name):
+        accom_required = True
+
+    # 2. Transportation
+    transport = snapshot.get('transport') or {}
+    if not isinstance(transport, dict):
+        transport = {}
+    types = transport.get('transportTypes') or snapshot.get('transportTypes') or []
+    if isinstance(types, str):
+        types = [t.strip() for t in types.split(',') if t.strip()]
+    elif not isinstance(types, list):
+        types = []
+    t_notes = str(transport.get('transportNotes') or snapshot.get('transportNotes') or '').strip()
+
+    transport_required = bool(types or t_notes)
+
+    # 3. Guide & Activities
+    inclusions = snapshot.get('inclusions') or []
+    if isinstance(inclusions, str):
+        inclusions = [i.strip() for i in inclusions.split('\n') if i.strip()]
+    elif not isinstance(inclusions, list):
+        inclusions = []
+    itinerary_days = snapshot.get('itineraryDays') or []
+
+    guide_keywords = ('guide', 'docent', 'leader', 'escort', 'ticket', 'entrance', 'admission', 'pass', 'tour', 'activity', 'cruise', 'boat')
+    has_guide_or_ticket = any(any(k in str(inc).lower() for k in guide_keywords) for inc in inclusions)
+    guide_required = bool(has_guide_or_ticket or (bool(inclusions) and len(inclusions) > 0) or bool(itinerary_days))
+
+    return {
+        'accommodation': {
+            'required': accom_required,
+            'brochureName': accom_name,
+            'brochureRoomType': room_type,
+            'brochureCategory': category,
+            'brochureNotes': notes,
+        },
+        'transport': {
+            'required': transport_required,
+            'brochureTypes': [str(t) for t in types],
+            'brochureNotes': t_notes,
+        },
+        'guideActivities': {
+            'required': guide_required,
+            'inclusions': [str(i) for i in inclusions],
+            'itineraryDaysCount': len(itinerary_days) if isinstance(itinerary_days, list) else 0,
+        },
+    }
+
+
+def build_initial_fulfillment_record(snapshot, now=None):
+    """Create the initial embedded fulfillmentRecord for checkout_orders."""
+    req = derive_required_services(snapshot)
+    timestamp = now or datetime.now(timezone.utc).isoformat()
+    return {
+        'status': 'awaiting_operator_fulfillment',
+        'requiredServices': req,
+        'services': {
+            'accommodation': {
+                'required': req['accommodation']['required'],
+                'status': 'unconfirmed' if req['accommodation']['required'] else 'not_required',
+                'supplierName': req['accommodation']['brochureName'],
+                'reference': '',
+                'notes': '',
+                'confirmedAt': None,
+                'confirmedBy': None,
+                'provenance': 'unconfirmed_manual' if req['accommodation']['required'] else 'not_applicable',
+            },
+            'transport': {
+                'required': req['transport']['required'],
+                'status': 'unconfirmed' if req['transport']['required'] else 'not_required',
+                'providerName': ', '.join(req['transport']['brochureTypes']) if req['transport']['brochureTypes'] else '',
+                'reference': '',
+                'notes': '',
+                'confirmedAt': None,
+                'confirmedBy': None,
+                'provenance': 'unconfirmed_manual' if req['transport']['required'] else 'not_applicable',
+            },
+            'guideActivities': {
+                'required': req['guideActivities']['required'],
+                'status': 'unconfirmed' if req['guideActivities']['required'] else 'not_required',
+                'guideOrActivity': ', '.join(req['guideActivities']['inclusions'][:3]) if req['guideActivities']['inclusions'] else '',
+                'reference': '',
+                'notes': '',
+                'confirmedAt': None,
+                'confirmedBy': None,
+                'provenance': 'unconfirmed_manual' if req['guideActivities']['required'] else 'not_applicable',
+            },
+        },
+        'declineReason': None,
+        'declinedAt': None,
+        'declinedBy': None,
+        'confirmedAt': None,
+        'confirmedBy': None,
+        'updatedAt': timestamp,
+    }
+

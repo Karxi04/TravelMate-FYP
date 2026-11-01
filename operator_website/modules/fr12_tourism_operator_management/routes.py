@@ -303,7 +303,11 @@ def bookings():
         elif status == "pending":
             items = [b for b in items if _is_pending_booking(b)]
         elif status == "fulfilled":
-            items = [b for b in items if str(b.get("fulfillmentStatus", "")).lower() == "fulfilled"]
+            items = [b for b in items if str(b.get("fulfillmentStatus", "")).lower() in {"fulfilled", "trip_ready"}]
+        elif status == "awaiting_fulfillment":
+            items = [b for b in items if str(b.get("fulfillmentStatus", "")).lower() in {"awaiting_operator_fulfillment", "partially_fulfilled"}]
+        elif status == "declined":
+            items = [b for b in items if str(b.get("fulfillmentStatus", "")).lower() == "fulfillment_declined"]
         elif status == "test":
             items = [b for b in items if b.get("testMode")]
 
@@ -322,8 +326,11 @@ def bookings():
         "total": len(all_items),
         "paid": sum(1 for b in all_items if _is_paid_booking(b)),
         "pending": sum(1 for b in all_items if _is_pending_booking(b)),
-        "fulfilled": sum(1 for b in all_items if str(b.get("fulfillmentStatus", "")).lower() == "fulfilled"),
-        "unconfirmed_supplier": sum(1 for b in all_items if b.get("supplierReservationStatus") == "not_created"),
+        "fulfilled": sum(1 for b in all_items if str(b.get("fulfillmentStatus", "")).lower() in {"fulfilled", "trip_ready"}),
+        "awaiting_fulfillment": sum(1 for b in all_items if str(b.get("fulfillmentStatus", "")).lower() in {"awaiting_operator_fulfillment", "partially_fulfilled"}),
+        "trip_ready": sum(1 for b in all_items if str(b.get("fulfillmentStatus", "")).lower() in {"trip_ready", "fulfilled"}),
+        "declined": sum(1 for b in all_items if str(b.get("fulfillmentStatus", "")).lower() == "fulfillment_declined"),
+        "unconfirmed_supplier": sum(1 for b in all_items if b.get("supplierReservationStatus") in {"not_created", "unconfirmed"}),
         "test_orders": sum(1 for b in all_items if b.get("testMode")),
         "total_revenue": sum(
             _safe_float(b.get("groupTotal"))
@@ -361,6 +368,62 @@ def booking_detail(order_reference):
         "fr12_tourism_operator_management/booking_detail.html",
         booking=item,
     )
+
+
+@bp.route("/bookings/<order_reference>/fulfillment", methods=["POST"])
+def update_booking_fulfillment(order_reference):
+    if not guard():
+        return redirect(url_for("operator_fr01.login"))
+    service_type = request.form.get("serviceType", "").strip()
+    reference = request.form.get("reference", "").strip()
+    supplier_name = request.form.get("supplierName", "").strip()
+    notes = request.form.get("notes", "").strip()
+
+    if not service_type or not reference:
+        flash("Service type and booking reference are required.", "error")
+        return redirect(url_for("operator_fr12.booking_detail", order_reference=order_reference))
+
+    payload = {
+        "serviceType": service_type,
+        "reference": reference,
+        "supplierName": supplier_name,
+        "notes": notes,
+    }
+    response = call_api("POST", f"/api/fr12/bookings/{order_reference}/fulfillment", json=payload)
+    if response.ok:
+        flash(f"{service_type.capitalize()} arrangement saved and attested.", "success")
+    else:
+        flash(_error(response, fallback="Failed to update arrangement."), "error")
+    return redirect(url_for("operator_fr12.booking_detail", order_reference=order_reference))
+
+
+@bp.route("/bookings/<order_reference>/confirm-fulfillment", methods=["POST"])
+def confirm_booking_fulfillment(order_reference):
+    if not guard():
+        return redirect(url_for("operator_fr01.login"))
+    response = call_api("POST", f"/api/fr12/bookings/{order_reference}/confirm-fulfillment")
+    if response.ok:
+        flash("All supplier arrangements confirmed! Booking is now Trip Ready.", "success")
+    else:
+        flash(_error(response, fallback="Failed to confirm fulfillment."), "error")
+    return redirect(url_for("operator_fr12.booking_detail", order_reference=order_reference))
+
+
+@bp.route("/bookings/<order_reference>/decline", methods=["POST"])
+def decline_booking_fulfillment(order_reference):
+    if not guard():
+        return redirect(url_for("operator_fr01.login"))
+    reason = request.form.get("reason", "").strip()
+    if len(reason) < 5:
+        flash("A detailed reason (at least 5 characters) is required to decline fulfillment.", "error")
+        return redirect(url_for("operator_fr12.booking_detail", order_reference=order_reference))
+    payload = {"reason": reason}
+    response = call_api("POST", f"/api/fr12/bookings/{order_reference}/decline", json=payload)
+    if response.ok:
+        flash("Fulfillment marked as unable to fulfill (declined).", "warning")
+    else:
+        flash(_error(response, fallback="Failed to decline fulfillment."), "error")
+    return redirect(url_for("operator_fr12.booking_detail", order_reference=order_reference))
 
 
 @bp.route("/packages", methods=["GET", "POST"])
