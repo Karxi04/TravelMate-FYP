@@ -1,1 +1,122 @@
-{% extends 'portal_base.html' %}{% block title %}Campaign review | TravelMate{% endblock %}{% block content %}<div class="page-title"><div><a class="back-link" href="{{ url_for('admin_fr13.campaigns') }}">← Promotion reviews</a><h1>{{ item.get('campaignTitle','Untitled promotion') }}</h1><p>{{ item.get('packageTitle','Package unavailable') }} · {{ item.get('destinationName','Destination unavailable') }}</p></div></div><div class="grid g2"><article class="card"><span class="eyebrow">CONTENT</span><dl class="detail-list"><dt>Period</dt><dd>{{ item.get('startDate','-') }} → {{ item.get('endDate','-') }}</dd><dt>Offer</dt><dd>{{ item.get('discountValue','-') }} {{ item.get('discountType','') }}</dd><dt>Description</dt><dd>{{ item.get('description','No description provided.') }}</dd><dt>Terms</dt><dd>{{ item.get('termsConditions','No additional terms.') }}</dd></dl></article><article class="card"><span class="eyebrow">DECISION</span><p>Current status: <span class="status {{ item.get('reviewStatus','pending') }}">{{ item.get('reviewStatus','pending') }}</span></p><form method="post" action="{{ url_for('admin_fr13.review_campaign', campaign_id=item.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="field"><label for="comment">Comment or rejection reason</label><textarea class="input" id="comment" name="comment" rows="5" placeholder="Required when rejecting"></textarea></div><div class="actions"><button class="btn primary" name="decision" value="approved">Approve & publish</button><button class="btn danger" name="decision" value="rejected">Reject</button></div></form></article></div>{% endblock %}
+{% extends 'portal_base.html' %}
+{% block title %}Campaign review | TravelMate{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <a class="back-link" href="{{ url_for('admin_fr13.campaigns') }}" style="display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--bluegrey); font-weight: 500; margin-bottom: 6px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      <span>Back to promotion reviews</span>
+    </a>
+    <span class="eyebrow">CAMPAIGN REVIEW</span>
+    <h1>{{ item.get('campaignTitle', 'Untitled promotion') }}</h1>
+    <p>{{ item.get('packageTitle', 'Package unavailable') }} · {{ item.get('destinationName', 'Destination unavailable') }}</p>
+  </div>
+</div>
+
+{% if item.get('bannerImageUrl') %}
+<div style="margin-bottom: 20px; border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); max-height: 320px;">
+  <img src="{{ item.get('bannerImageUrl') }}" alt="Campaign banner" style="width: 100%; height: 100%; object-fit: cover; max-height: 320px;">
+</div>
+{% endif %}
+
+<div class="grid g2">
+  <!-- Content Details -->
+  <article class="card">
+    <span class="eyebrow">CAMPAIGN SPECIFICATIONS</span>
+    <h3 style="margin: 2px 0 16px;">Promotional Details</h3>
+
+    <dl class="detail-list">
+      <dt>Period</dt>
+      <dd>
+        <strong>{{ item.get('startDate', '-') }}</strong> → <strong>{{ item.get('endDate', '-') }}</strong>
+      </dd>
+
+      <dt>Discount / Offer</dt>
+      <dd>
+        {% if item.get('discountValue') and item.get('discountValue')|float > 0 %}
+          <span class="badge primary">
+            {% if item.get('discountType') == 'fixed' or item.get('discountType') == 'fixed_amount' %}
+              RM {{ item.get('discountValue') }} Fixed Discount
+            {% else %}
+              {{ item.get('discountValue') }}% Percentage Discount
+            {% endif %}
+          </span>
+        {% else %}
+          <span class="badge neutral">Zero-discount / Special Announcement</span>
+        {% endif %}
+      </dd>
+
+      {% if item.get('promoCode') %}
+      <dt>Promo Code</dt>
+      <dd>
+        <code style="font-size: 14px; font-weight: 700; background: var(--canvas); padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border);">{{ item.get('promoCode') }}</code>
+      </dd>
+      {% endif %}
+
+      <dt>Parent Package</dt>
+      <dd>
+        <strong>{{ item.get('packageTitle', 'Package unavailable') }}</strong>
+        {% if item.get('packageId') %}
+          <div style="font-size: 11.5px; color: var(--ink-muted); margin-top: 2px;">
+            Package ID: <code>{{ item.get('packageId') }}</code>
+          </div>
+        {% endif %}
+      </dd>
+
+      <dt>Description</dt>
+      <dd>{{ item.get('description', 'No description provided.') }}</dd>
+
+      <dt>Terms</dt>
+      <dd>{{ item.get('termsConditions', 'No additional terms.') }}</dd>
+    </dl>
+  </article>
+
+  <!-- Decision Card -->
+  <article class="card review-decision">
+    <span class="eyebrow">MODERATION DECISION</span>
+    <h3 style="margin: 2px 0 12px;">Review Decision</h3>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 16px;">
+      <span style="font-size: 13px; font-weight: 600; color: var(--ink-secondary);">Current Status:</span>
+      <span class="status {{ item.get('reviewStatus', 'pending') }}">{{ item.get('reviewStatus', 'pending')|title }}</span>
+    </div>
+
+    {% if item.get('reviewComment') %}
+      <div style="background: var(--warning-bg); border-left: 3px solid var(--warning); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 12.5px;">
+        <strong>Previous Review Note:</strong>
+        <p style="margin: 4px 0 0;">{{ item.get('reviewComment') }}</p>
+      </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('admin_fr13.review_campaign', campaign_id=item.id) }}" id="reviewCampaignForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="field" style="margin-bottom: 16px;">
+        <label for="comment" style="display: flex; justify-content: space-between; font-weight: 600;">
+          <span>Comment or rejection reason</span>
+          <span class="muted" style="font-weight: 400; font-size: 11.5px;">Required when rejecting</span>
+        </label>
+        <textarea class="input" id="comment" name="comment" rows="4" placeholder="Detail any policy, date conflict, or content concerns..."></textarea>
+      </div>
+
+      <div class="actions" style="margin-top: 14px;">
+        <button class="btn primary" name="decision" value="approved" type="submit">Approve &amp; publish</button>
+        <button class="btn danger" name="decision" value="rejected" type="submit">Reject</button>
+      </div>
+    </form>
+  </article>
+</div>
+
+<script>
+document.getElementById('reviewCampaignForm')?.addEventListener('submit', function(e) {
+  const comment = document.getElementById('comment');
+  const isReject = e.submitter && e.submitter.value === 'rejected';
+  if (isReject && (!comment || !comment.value.trim())) {
+    e.preventDefault();
+    comment.focus();
+    alert('A rejection reason is required when rejecting a promotional campaign.');
+  }
+});
+</script>
+{% endblock %}

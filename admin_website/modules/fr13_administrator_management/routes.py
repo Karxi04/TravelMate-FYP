@@ -1,10 +1,23 @@
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response
+from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response, g
 from api_client import call_api
 
 bp = Blueprint("admin_fr13", __name__, template_folder="templates", url_prefix="/admin")
 
 def guard():
-    return bool(session.get("id_token"))
+    return bool(session.get("id_token")) and session.get('portal_role') in {'admin','administrator'}
+
+
+@bp.context_processor
+def data_state():
+    return {'backend_error':getattr(g,'admin_backend_error',False),
+            'data_limited':getattr(g,'admin_data_limited',False)}
+
+
+@bp.after_request
+def expired_session(response):
+    if getattr(g,'admin_auth_denied',False):
+        return redirect(url_for('admin_fr01.login'))
+    return response
 
 def _error(response, fallback="Request failed"):
     try:
@@ -41,7 +54,8 @@ def update_user(uid):
         return redirect(url_for("admin_fr01.login"))
     payload = {"role": request.form.get("role"), "status": request.form.get("status")}
     if request.form.get("verificationStatus"):
-        payload["verificationStatus"] = request.form.get("verificationStatus")
+        if payload['role'] in {'operator','tourism_operator'}:
+            payload["verificationStatus"] = request.form.get("verificationStatus")
     response = call_api("PUT", f"/api/fr13/users/{uid}", json=payload)
     flash("User account updated." if response.ok else _error(response), "success" if response.ok else "error")
     return redirect(url_for("admin_fr13.users"))

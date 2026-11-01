@@ -1,6 +1,108 @@
-{% extends 'portal_base.html' %}{% block title %}Package Review | TravelMate{% endblock %}{% block content %}
-<div class="page-title"><div><span class="eyebrow">PACKAGE MODERATION</span><h1>Tourism Package Queue</h1><p>Submitted packages are prioritised for review.</p></div></div>
-<form class="toolbar card" method="get"><div class="actions"><input class="input search-input" name="q" value="{{query}}" placeholder="Search title, destination or operator"><select class="input filter-input" name="status"><option value="all">All statuses</option>{% for value,label in [('pending','Under review'),('approved','Approved'),('suspended','Suspended'),('rejected','Needs changes'),('draft','Draft'),('archived','Archived')] %}<option value="{{value}}" {% if status==value %}selected{% endif %}>{{label}}</option>{% endfor %}</select><button class="btn primary">Apply filters</button></div></form>
-<div class="table-wrap"><table><thead><tr><th>Package</th><th>Operator</th><th>Destination</th><th>Submitted / reviewed</th><th>Price</th><th>Status</th><th></th></tr></thead><tbody>
-{% for x in items %}{% set state=x.get('approvalStatus','draft') %}<tr><td><strong>{{x.get('title',x.get('packageTitle','Package'))}}</strong><br><small>{{x.get('durationDays',1)}} day{% if x.get('durationDays',1)!=1 %}s{% endif %}</small></td><td>{{x.get('operatorName','Tourism Operator')}}</td><td>{{x.get('destination',x.get('destinationName',''))}}</td><td>{% if state == 'suspended' and x.get('suspendedAt') %}Suspended {{x.get('suspendedAt')[:10]}}{% elif x.get('submittedAt') %}Submitted {{x.get('submittedAt')[:10]}}{% endif %}{% if state != 'suspended' and x.get('reviewedAt') %}<br>Reviewed {{x.get('reviewedAt')[:10]}}{% endif %}{% if not x.get('submittedAt') and not x.get('reviewedAt') and not (state == 'suspended' and x.get('suspendedAt')) %}—{% endif %}</td><td>{{x.get('currency','MYR')}} {{'%.2f'|format(x.get('promotionalPrice') or x.get('adultPrice') or x.get('price') or 0)}}</td><td>{% if state == 'approved' %}{% if x.get('availabilityStatus') == 'unavailable' %}<span class="status approved-unavailable">Approved (Unavailable)</span>{% else %}<span class="status approved">Published</span>{% endif %}{% elif state == 'suspended' %}<span class="status suspended">Suspended</span>{% elif state in ['pending', 'submitted'] %}<span class="status pending">Under review</span>{% elif state == 'rejected' %}<span class="status rejected">Needs changes</span>{% elif state == 'draft' %}<span class="status draft">Draft</span>{% elif state == 'archived' %}<span class="status archived">Archived</span>{% else %}<span class="status {{state}}">{{state|title}}</span>{% endif %}</td><td><a class="btn outline" href="{{url_for('admin_fr13.package_details',package_id=x.id)}}">Review details</a></td></tr>{% else %}<tr><td colspan="7">No packages match this view.</td></tr>{% endfor %}
-</tbody></table></div>{% endblock %}
+{% extends 'portal_base.html' %}
+{% block title %}Package Review | TravelMate{% endblock %}
+
+{% block content %}
+{% include '_admin_data_state.html' %}
+<div class="page-title">
+  <div>
+    <span class="eyebrow">PACKAGE MODERATION</span>
+    <h1>Tourism Package Queue</h1>
+    <p>Submitted packages are prioritised for review.</p>
+  </div>
+</div>
+
+<form class="toolbar card" method="get">
+  <div class="actions">
+    <input class="input search-input" name="q" value="{{ query }}" placeholder="Search title, destination or operator" aria-label="Search packages">
+    <select class="input filter-input" name="status" aria-label="Filter packages by status">
+      <option value="all">All statuses</option>
+      {% for value, label in [('pending','Under review'), ('approved','Approved'), ('suspended','Suspended'), ('rejected','Needs changes'), ('draft','Draft'), ('archived','Archived')] %}
+        <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn primary" type="submit">Apply filters</button>
+  </div>
+</form>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Package</th>
+        <th scope="col">Operator</th>
+        <th scope="col">Destination</th>
+        <th scope="col">Submitted / reviewed</th>
+        <th scope="col">Price</th>
+        <th scope="col">Status</th>
+        <th scope="col"><span class="sr-only">Actions</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for x in items %}
+        {% set state = x.get('approvalStatus', 'draft') %}
+        <tr>
+          <td>
+            <strong>{{ x.get('title', x.get('packageTitle', 'Package')) }}</strong>
+            <br>
+            <small class="muted">{{ x.get('durationDays', 1) }} day{% if x.get('durationDays', 1) != 1 %}s{% endif %}{% if x.get('durationNights') is not none %}, {{ x.get('durationNights') }} night(s){% endif %}</small>
+          </td>
+          <td>{{ x.get('operatorName', 'Tourism Operator') }}</td>
+          <td>{{ x.get('destination', x.get('destinationName', '—')) }}</td>
+          <td>
+            {% if state == 'suspended' and x.get('suspendedAt') %}
+              <span style="color: var(--danger); font-weight: 600;">Suspended {{ x.get('suspendedAt')[:10] }}</span>
+            {% elif x.get('submittedAt') %}
+              Submitted {{ x.get('submittedAt')[:10] }}
+            {% endif %}
+            {% if state != 'suspended' and x.get('reviewedAt') %}
+              <br><small class="muted">Reviewed {{ x.get('reviewedAt')[:10] }}</small>
+            {% endif %}
+            {% if not x.get('submittedAt') and not x.get('reviewedAt') and not (state == 'suspended' and x.get('suspendedAt')) %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            <strong>{{ x.get('currency', 'MYR') }} {{ '%.2f'|format(x.get('promotionalPrice') or x.get('adultPrice') or x.get('price') or 0) }}</strong>
+          </td>
+          <td>
+            {% if state == 'approved' %}
+              {% if x.get('availabilityStatus') == 'unavailable' %}
+                <span class="status approved-unavailable">Approved (Unavailable)</span>
+              {% else %}
+                <span class="status approved">Published</span>
+              {% endif %}
+            {% elif state == 'suspended' %}
+              <span class="status suspended">Suspended</span>
+            {% elif state in ['pending', 'submitted'] %}
+              <span class="status pending">Under review</span>
+            {% elif state == 'rejected' %}
+              <span class="status rejected">Needs changes</span>
+            {% elif state == 'draft' %}
+              <span class="status draft">Draft</span>
+            {% elif state == 'archived' %}
+              <span class="status archived">Archived</span>
+            {% else %}
+              <span class="status {{ state }}">{{ state|title }}</span>
+            {% endif %}
+          </td>
+          <td style="text-align: right;">
+            <a class="btn outline btn-sm" href="{{ url_for('admin_fr13.package_details', package_id=x.id) }}">Review details</a>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="7">
+            <div class="empty-state">
+              <div class="empty-icon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+              </div>
+              <strong>No packages match this view.</strong>
+              <p>No operator packages found matching the selected filter criteria. Try choosing a different status filter.</p>
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

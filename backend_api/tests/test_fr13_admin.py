@@ -36,12 +36,13 @@ def test_admin_payment_history_filters_package_orders(client, mock_admin_auth):
         'packageSnapshot': {'title': 'Penang Heritage Escape'},
     }]
     with patch('modules.fr13_administrator_management.routes.retrieveRecord',
-               side_effect=lambda collection: orders if collection == 'checkout_orders' else []):
+               side_effect=lambda collection, **kwargs: orders if collection == 'checkout_orders' else []):
         response = client.get('/api/fr13/payments?product=package&q=heritage',
                               headers={'Authorization': 'Bearer valid_test_token'})
     assert response.status_code == 200
     assert response.get_json()['items'] == [{
-        **orders[0], 'productType': 'package', 'productTitle': 'Penang Heritage Escape'
+        **orders[0], 'productType': 'package', 'productTitle': 'Penang Heritage Escape',
+        'amount':None,'currency':'UNKNOWN','isPaid':True,
     }]
 
 def test_admin_review_package(client, mock_admin_auth):
@@ -50,10 +51,11 @@ def test_admin_review_package(client, mock_admin_auth):
         'packageTitle': 'Penang Sunset Cruise',
         'approvalStatus': 'pending'
     }
+    sample_pkg.update(destination='Penang',price=100,durationDays=1,description='A complete legacy package.')
     with patch('modules.fr13_administrator_management.routes.retrieveRecord') as mock_retrieve, \
          patch('modules.fr13_administrator_management.routes.updateRecord') as mock_update:
         mock_retrieve.return_value = sample_pkg
-        mock_update.side_effect = lambda coll, doc_id, data: {**sample_pkg, **data}
+        mock_update.side_effect = lambda coll, doc_id, data, **kwargs: {**sample_pkg, **data}
 
         # Approve package
         res = client.post(
@@ -140,7 +142,7 @@ def test_campaign_queue_filters_and_rejection_requires_reason(client, mock_admin
         {'id': 'camp-1', 'campaignTitle': 'Island offer', 'reviewStatus': 'pending', 'packageId': 'pkg-1'},
         {'id': 'camp-2', 'campaignTitle': 'Old offer', 'reviewStatus': 'approved', 'packageId': 'pkg-2'},
     ]
-    def retrieve(collection, doc_id=None, filters=None):
+    def retrieve(collection, doc_id=None, filters=None, limit=None):
         if collection == 'promotional_campaigns':
             if doc_id: return next((x for x in records if x['id'] == doc_id), None)
             return records

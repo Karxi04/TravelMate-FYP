@@ -8,6 +8,8 @@ bp = Blueprint("operator_fr12", __name__, template_folder="templates")
 
 @bp.before_request
 def verified_operator_gate():
+    if session.get("id_token") and session.get("incomplete_setup"):
+        return redirect(url_for("operator_fr01.complete_setup"))
     if session.get("id_token") and session.get("portal_role") and session.get("portal_role") not in {"admin", "administrator"}:
         if session.get("verification_status", "pending") not in {"approved", "verified"}:
             return redirect(url_for("operator_fr01.verification"))

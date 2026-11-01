@@ -1,6 +1,6 @@
 import time
 import requests
-from flask import session
+from flask import session, g
 from firebase_auth_rest import refresh_id_token
 from portal_security_config import backend_base_url
 
@@ -20,10 +20,28 @@ def _ensure_token():
 
 
 def call_api(method, path, **kwargs):
-    token = _ensure_token()
-    headers = kwargs.pop("headers", {})
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    headers.setdefault("Accept", "application/json")
-    url = backend_base_url() + path
-    return requests.request(method, url, headers=headers, timeout=60, **kwargs)
+    try:
+        token = _ensure_token()
+        headers = kwargs.pop("headers", {})
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        headers.setdefault("Accept", "application/json")
+        response = requests.request(method, backend_base_url() + path, headers=headers, timeout=60, **kwargs)
+        if response.status_code in (401,403):
+            session.clear()
+            g.admin_auth_denied=True
+        if not response.ok:
+            g.admin_backend_error=True
+        elif '/reports/export' not in path:
+            body=response.json()
+            if not isinstance(body,dict):raise ValueError('Invalid response')
+            report=body.get('report') or {}
+            g.admin_data_limited=getattr(g,'admin_data_limited',False) or bool(body.get('dataLimited') or report.get('dataLimited'))
+        return response
+    except (requests.RequestException,ValueError):
+        g.admin_backend_error=True
+        response=requests.Response()
+        response.status_code=503
+        response.headers['Content-Type']='application/json'
+        response._content=b'{"ok":false,"error":"Administrator service is temporarily unavailable. Please try again."}'
+        return response

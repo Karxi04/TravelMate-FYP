@@ -108,7 +108,7 @@ def test_admin_suspension_records_audit_without_changing_content_or_availability
     ), patch(
         'modules.fr13_administrator_management.routes.updateRecord',
     ) as update:
-        update.side_effect = lambda _collection, _key, changes: {**current, **changes}
+        update.side_effect = lambda _collection, _key, changes, **kwargs: {**current, **changes}
         response = client.post(
             '/api/fr13/packages/pkg-lifecycle/suspend', headers=AUTH,
             json={'reason': SUSPENSION_REASON},
@@ -256,7 +256,7 @@ def test_admin_reapproval_preserves_operator_availability_and_resolves_audit(
         return_value=pending,
     ), patch(
         'modules.fr13_administrator_management.routes.updateRecord',
-        side_effect=lambda _collection, _key, changes: {**pending, **changes},
+        side_effect=lambda _collection, _key, changes, **kwargs: {**pending, **changes},
     ):
         response = client.post(
             '/api/fr13/packages/pkg-lifecycle/review', headers=AUTH,

@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block title %}Complete Operator Setup — TravelMate{% endblock %}
+
+{% block body %}
+<div class="auth">
+  <section class="auth-art">
+    <div>
+      <div class="mark" aria-hidden="true">TM</div>
+      <div class="auth-brand-tag">Complete Your Registration</div>
+      <h1>Almost there.</h1>
+      <p>Your authentication account is verified. Complete your official business details to submit your Operator profile for administrator accreditation.</p>
+
+      <div class="auth-features">
+        <div class="auth-feature-item">
+          <div class="auth-feature-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div>
+            <strong>Official Verification</strong>
+            <span>Your business SSM registration and credentials are reviewed by Penang Tourism Administrators</span>
+          </div>
+        </div>
+
+        <div class="auth-feature-item">
+          <div class="auth-feature-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div>
+            <strong>Seamless Activation</strong>
+            <span>Once approved, publishing travel packages and running promotions will activate automatically</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-art-footer">
+      <span>Tourism Operator Setup</span>
+      <span>TravelMate • Penang Tourism</span>
+    </div>
+  </section>
+
+  <section class="auth-panel">
+    {% set p = form or profile or {} %}
+    <form class="auth-card" method="post" style="width: min(540px, 100%);">
+      <div class="auth-card-header">
+        <span class="auth-badge">Account Onboarding</span>
+        <h2>Complete business profile</h2>
+        <p class="muted">Enter your official business details to submit your Operator profile for verification.</p>
+      </div>
+
+      {% for c, m in get_flashed_messages(with_categories=true) %}
+        <div class="msg {{ c }}" role="alert">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>{{ m }}</span>
+        </div>
+      {% endfor %}
+
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="grid g2" style="gap: 0 16px;">
+        <div class="field">
+          <label for="name">Contact Person *</label>
+          <input id="name" class="input" name="name" type="text" value="{{ p.get('name', '') }}" placeholder="e.g. Sarah Tan" required>
+        </div>
+        <div class="field">
+          <label for="companyName">Organization Name *</label>
+          <input id="companyName" class="input" name="companyName" type="text" value="{{ p.get('companyName', '') }}" placeholder="e.g. Penang Heritage Tours" required>
+        </div>
+        <div class="field">
+          <label for="registrationNo">Registration Number (SSM) *</label>
+          <input id="registrationNo" class="input" name="registrationNo" type="text" value="{{ p.get('registrationNo', '') }}" placeholder="e.g. 202401012345" required>
+        </div>
+        <div class="field">
+          <label for="businessContact">Business Phone *</label>
+          <input id="businessContact" class="input" name="businessContact" type="tel" value="{{ p.get('businessContact', '') }}" placeholder="+60 12-345 6789" required>
+        </div>
+      </div>
+
+      <button class="btn primary full" type="submit" style="margin-top: 16px;">
+        <span>Submit for Verification</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </button>
+
+      <div class="auth-links" style="justify-content: center; margin-top: 20px;">
+        <span class="muted">Need to sign out?</span>
+        <a href="{{ url_for('operator_fr01.login') }}">Return to sign in</a>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

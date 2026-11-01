@@ -243,7 +243,7 @@ def test_operator_login_backend_timeout(client):
 
 
 def test_operator_login_missing_profile(client):
-    """Missing user profile reports error and clears session."""
+    """Missing user profile redirects to complete-setup for registration recovery."""
     mock_resp = MagicMock()
     mock_resp.ok = True
     mock_resp.status_code = 200
@@ -252,10 +252,11 @@ def test_operator_login_missing_profile(client):
     with _patch_operator(call_api_return=mock_resp):
         response = client.post("/", data={"email": "op@example.com", "password": "anyPassword123!"})
 
-        assert response.status_code == 200
-        assert b"User profile could not be found." in response.data
+        assert response.status_code == 302
+        assert "/complete-setup" in response.headers["Location"]
         with client.session_transaction() as sess:
-            assert sess.get("id_token") is None
+            assert sess.get("incomplete_setup") is True
+            assert sess.get("portal_role") == "operator"
 
 
 def test_operator_login_malformed_json(client):

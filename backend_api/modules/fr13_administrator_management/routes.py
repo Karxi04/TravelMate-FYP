@@ -1,6 +1,8 @@
 import csv, io
 from flask import send_file
-from flask import Blueprint, request, jsonify, g, Response
+from flask import Blueprint, request, jsonify, g, Response, abort, current_app
+from math import isfinite
+from werkzeug.exceptions import HTTPException
 from firebase_admin import auth
 from auth_utils import auth_required
 from utils import utc_now_iso
@@ -9,6 +11,7 @@ from sequence_contract.validators import (
     validateReportCriteria,
     validateAdminDestinationRecord,
     validateAdminActivityRecord,
+    validateCampaignDatesAndContent,
 )
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord, deleteRecord
 from sequence_contract.domain_functions import (
@@ -19,11 +22,67 @@ from sequence_contract.domain_functions import (
 from services.report_service import (
     export_system_report_pdf
 )
-from services.package_service import package_for_read
-from services.review_service import ReviewConflict, current_screen, review_revision
+from services.package_service import package_for_read, package_submission_error
+from services.review_service import ReviewConflict, current_screen, review_revision, published_review
+from services.public_content_projection import active_campaign, eligible_package
+from modules.fr12_tourism_operator_management.analytics_service import is_paid_order
 from firebase_service import get_db
 
 bp=Blueprint('fr13_admin',__name__,url_prefix='/api/fr13')
+RECORD_LIMIT = 500
+
+
+def _fail(message, status):
+    response = jsonify({'ok': False, 'error': message})
+    response.status_code = status
+    abort(response)
+
+
+def _payload():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        _fail('Request data must be an object', 400)
+    return data
+
+
+def _load(collection):
+    records = retrieveRecord(collection, limit=RECORD_LIMIT + 1) or []
+    g.admin_data_limited = getattr(g, 'admin_data_limited', False) or len(records) > RECORD_LIMIT
+    return records[:RECORD_LIMIT]
+
+
+def _save(collection, identity, updates, current):
+    saved = updateRecord(collection, identity, updates, expected=current)
+    if not saved:
+        _fail('The record changed or could not be saved. Refresh and try again.', 503)
+    return saved
+
+
+def _reconcile_moderation(collection,identity,current):
+    from services.public_content_projection import source_changed
+    # A prior source write may have succeeded before projection publication failed.
+    source_changed(collection,identity)
+    if retrieveRecord(collection,identity) != current:
+        raise ReviewConflict('This record changed. Refresh and try again.')
+
+
+@bp.errorhandler(Exception)
+def admin_failure(error):
+    if isinstance(error, HTTPException):
+        return error
+    if isinstance(error, ReviewConflict):
+        return jsonify({'ok': False, 'error': str(error)}), 409
+    current_app.logger.warning('Administrator operation failed (%s)', type(error).__name__)
+    return jsonify({'ok': False, 'error': 'Administrator service is temporarily unavailable. Please try again.'}), 503
+
+
+@bp.after_request
+def list_scope(response):
+    body = response.get_json(silent=True) if response.is_json else None
+    if isinstance(body, dict) and body.get('ok') and isinstance(body.get('items'), list):
+        body.update(dataLimited=getattr(g, 'admin_data_limited', False), recordLimit=RECORD_LIMIT)
+        response.set_data(current_app.json.dumps(body))
+    return response
 
 
 def _criteria():
@@ -51,9 +110,12 @@ FORBIDDEN_COMMERCE_KEYS = {
 
 
 def _sanitize_commerce_record(record):
-    if not isinstance(record, dict):
-        return record
-    return {k: v for k, v in record.items() if k not in FORBIDDEN_COMMERCE_KEYS}
+    if isinstance(record, list):
+        return [_sanitize_commerce_record(value) for value in record]
+    if isinstance(record, dict):
+        return {k: _sanitize_commerce_record(v) for k, v in record.items() if k not in FORBIDDEN_COMMERCE_KEYS
+                and k not in {'passwordHash', 'private_key', 'apiKey', 'api_key', 'refreshToken', 'idToken'}}
+    return record
 
 
 def _in_date_range(item, start, end, fields=('createdAt', 'updatedAt', 'submittedAt', 'reviewedAt', 'timestamp', 'date')):
@@ -62,7 +124,7 @@ def _in_date_range(item, start, end, fields=('createdAt', 'updatedAt', 'submitte
     values = [str(item.get(field) or '')[:10] for field in fields if item.get(field)]
     if not values:
         return False
-    return any((not start or value >= start) and (not end or value <= end) for value in values)
+    return (not start or values[0] >= start) and (not end or values[0] <= end)
 
 
 def _filter_records(items, criteria):
@@ -81,7 +143,8 @@ def _filter_records(items, criteria):
 
 def _float_or_zero(value):
     try:
-        return float(value or 0)
+        number = float(value or 0)
+        return number if isfinite(number) and number >= 0 else 0.0
     except (TypeError, ValueError):
         return 0.0
 
@@ -91,6 +154,24 @@ def _int_or_default(value, default):
         return int(float(value or default))
     except (TypeError, ValueError):
         return default
+
+
+def _validate_content(payload, activity=False):
+    for key, value in payload.items():
+        if key in {'title','destinationName','activityName','address','category','type','description','openingHours','status'}:
+            if not isinstance(value,str) or len(value) > (10000 if key == 'description' else 2000):
+                _fail('Content fields must contain valid text.',400)
+    if 'estimatedCost' in payload and _amount({'amount':payload['estimatedCost']}) is None:
+        _fail('Estimated cost must be a finite nonnegative amount.',400)
+    if activity and 'recommendedDurationMinutes' in payload:
+        value=payload['recommendedDurationMinutes']
+        try:
+            valid=not isinstance(value,bool) and float(value).is_integer() and 1 <= float(value) <= 1440
+        except (TypeError,ValueError,OverflowError):
+            valid=False
+        if not valid:_fail('Duration must be a whole number from 1 to 1440 minutes.',400)
+    if 'status' in payload and payload['status'] not in {'active','inactive'}:
+        _fail('Content status must be active or inactive.',400)
 
 
 def _normalise_destination_payload(payload):
@@ -130,7 +211,7 @@ def _records_for_type(report_type, collections):
     if report_type == 'feedback':
         return collections.get('feedback', [])
     if report_type == 'bookings':
-        return collections.get('hotel_bookings', [])
+        return collections.get('hotel_bookings', []) + collections.get('package_bookings', [])
     if report_type == 'payments':
         return collections.get('payment_records', [])
     return (
@@ -144,7 +225,7 @@ def _records_for_type(report_type, collections):
 @bp.get('/users')
 @auth_required(['admin'])
 def users():
-    items = retrieveRecord('users') or []
+    items = [_sanitize_commerce_record(item) for item in _load('users')]
     role = str(request.args.get('role') or '').strip().lower()
     status = str(request.args.get('status') or '').strip().lower()
     query = str(request.args.get('q') or '').strip().lower()
@@ -158,24 +239,30 @@ def users():
 @bp.put('/users/<uid>')
 @auth_required(['admin'])
 def update_user(uid):
-    payload=request.get_json(silent=True) or {}
+    payload=_payload()
+    if any(k in payload and not isinstance(payload[k],str) for k in ('role','status','verificationStatus')):
+        _fail('Invalid account action',400)
     if not validateAccountAction(payload):return jsonify({'ok':False,'error':'No valid account update supplied'}),400
     updates={k:v for k,v in payload.items() if k in {'role','status','verificationStatus'}}
     if uid == g.uid and (updates.get('role') not in (None, 'admin') or updates.get('status') == 'deactivated'):
         return jsonify({'ok':False,'error':'Administrators cannot disable or demote their own account'}), 409
+    current=retrieveRecord('users',uid)
+    if not current:return jsonify({'ok':False,'error':'User not found'}),404
+    if updates.get('verificationStatus') in {'approved','verified','rejected'} and updates.get('role',current.get('role')) not in {'operator','tourism_operator'}:
+        _fail('Business verification is only applicable to Operator accounts.',400)
     updates['updatedAt']=utc_now_iso()
     if 'status' in updates: auth.update_user(uid,disabled=updates['status']=='deactivated')
-    return jsonify({'ok':True,'user':updateRecord('users',uid,updates)})
+    return jsonify({'ok':True,'user':_sanitize_commerce_record(_save('users',uid,updates,current))})
 @bp.get('/packages/pending')
 @auth_required(['admin'])
 def pending_packages():
-    items=retrieveRecord('tourism_packages')
+    items=_load('tourism_packages')
     return jsonify({'ok':True,'items':[package_for_read(item) for item in items if item.get('approvalStatus') in {'pending','submitted'}]})
 
 @bp.get('/packages')
 @auth_required(['admin'])
 def review_packages():
-    items=retrieveRecord('tourism_packages')
+    items=_load('tourism_packages')
     status=str(request.args.get('status','all')).strip().lower()
     query=str(request.args.get('q','')).strip().lower()
     if status!='all':
@@ -194,18 +281,25 @@ def package_details(pid):
 @bp.post('/packages/<pid>/review')
 @auth_required(['admin'])
 def review_package(pid):
+    payload=_payload(); decision=payload.get('decision')
     current=retrieveRecord('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
+    if not isinstance(decision,str) or decision not in {'approved','rejected'}:return jsonify({'ok':False,'error':'decision must be approved or rejected'}),400
+    if not isinstance(payload.get('comment',''), str) or len(payload.get('comment','')) > 2000:_fail('Use a review note of at most 2000 characters.',400)
+    comment=payload.get('comment','').strip()
+    if current.get('approvalStatus') == decision and current.get('reviewComment','') == comment:
+        _reconcile_moderation('tourism_packages',pid,current)
+        return jsonify({'ok':True,'package':package_for_read(current),'idempotent':True})
     if current.get('approvalStatus') not in {'pending','submitted'}:return jsonify({'ok':False,'error':'Only submitted packages can be reviewed'}),409
-    payload=request.get_json(silent=True) or {}; decision=payload.get('decision')
-    if decision not in {'approved','rejected'}:return jsonify({'ok':False,'error':'decision must be approved or rejected'}),400
-    comment=str(payload.get('comment','')).strip()
     if decision=='rejected' and not comment:return jsonify({'ok':False,'error':'A rejection reason is required'}),400
+    if decision=='approved':
+        error=package_submission_error(current)
+        if error:return jsonify({'ok':False,'error':error}),400
     review=approve(current,comment) if decision=='approved' else reject(current,comment)
     updates={'approvalStatus':review['decision'],'reviewReason':review['reviewComment'],'reviewComment':review['reviewComment'],'reviewedBy':g.uid,'reviewedByName':(g.profile or {}).get('name','Administrator'),'reviewedAt':review['reviewedAt'],'updatedAt':utc_now_iso()}
     if decision == 'approved' and current.get('suspendedAt'):
         updates.update({'suspensionResolvedAt':updates['updatedAt'],'suspensionResolvedBy':g.uid,'suspensionResolvedByName':updates['reviewedByName']})
-    return jsonify({'ok':True,'package':updateRecord('tourism_packages',pid,updates)})
+    return jsonify({'ok':True,'package':_save('tourism_packages',pid,updates,current)})
 
 
 @bp.post('/packages/<pid>/suspend')
@@ -213,7 +307,7 @@ def review_package(pid):
 def suspend_package(pid):
     current=retrieveRecord('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
-    payload=request.get_json(silent=True) or {}
+    payload=_payload()
     reason=str(payload.get('reason') or '').strip()
     if len(reason) < 10:return jsonify({'ok':False,'error':'A meaningful suspension reason of at least 10 characters is required'}),400
     if len(reason) > 500:return jsonify({'ok':False,'error':'Suspension reason cannot exceed 500 characters'}),400
@@ -221,6 +315,7 @@ def suspend_package(pid):
     if status == 'suspended':
         if reason != str(current.get('suspensionReason') or '').strip():
             return jsonify({'ok':False,'error':'Package is already suspended with a different reason'}),409
+        _reconcile_moderation('tourism_packages',pid,current)
         return jsonify({'ok':True,'package':package_for_read(current),'status':'suspended','idempotent':True})
     if status != 'approved':
         return jsonify({'ok':False,'error':'Only approved packages can be suspended'}),409
@@ -233,7 +328,7 @@ def suspend_package(pid):
         'suspendedAt':now,
         'updatedAt':now,
     }
-    saved=updateRecord('tourism_packages',pid,updates)
+    saved=_save('tourism_packages',pid,updates,current)
     return jsonify({'ok':True,'package':package_for_read(saved),'status':'suspended','idempotent':False})
 @bp.get('/campaigns/pending')
 @auth_required(['admin'])
@@ -242,14 +337,16 @@ def pending_campaigns():
 
 def _campaign_view(item):
     item = dict(item)
-    package=retrieveRecord('tourism_packages',str(item.get('packageId') or '')) or {}
+    package_id=str(item.get('packageId') or '').strip()
+    package=retrieveRecord('tourism_packages',package_id) if package_id else None
+    if not isinstance(package,dict):package={}
     item['packageTitle']=package.get('packageTitle') or package.get('title') or '-'
     item['destinationName']=package.get('destinationName') or package.get('destination') or ''
     item['operatorName']=package.get('operatorName') or package.get('operatorDisplayName') or 'Tourism Operator'
     return item
 
 def campaign_records(pending_only=False):
-    items=retrieveRecord('promotional_campaigns') or []
+    items=_load('promotional_campaigns')
     if pending_only:
         items=[item for item in items if str(item.get('reviewStatus') or '').lower() in {'pending','submitted','under_review'}]
     status=str(request.args.get('status') or '').strip().lower()
@@ -274,19 +371,32 @@ def campaign_details(cid):
 @bp.post('/campaigns/<cid>/review')
 @auth_required(['admin'])
 def review_campaign(cid):
+    payload=_payload(); decision=payload.get('decision')
     current=retrieveRecord('promotional_campaigns',cid)
     if not current:return jsonify({'ok':False,'error':'Campaign not found'}),404
-    payload=request.get_json(silent=True) or {}; decision=payload.get('decision')
-    if decision not in {'approved','rejected'}:return jsonify({'ok':False,'error':'decision must be approved or rejected'}),400
-    comment=str(payload.get('comment','')).strip()
+    if not isinstance(decision,str) or decision not in {'approved','rejected'}:return jsonify({'ok':False,'error':'decision must be approved or rejected'}),400
+    if not isinstance(payload.get('comment',''),str) or len(payload.get('comment','')) > 2000:_fail('Use a review note of at most 2000 characters.',400)
+    comment=payload.get('comment','').strip()
     if decision=='rejected' and not comment:return jsonify({'ok':False,'error':'A rejection reason is required'}),400
+    if current.get('reviewStatus') == decision and current.get('reviewComment','') == comment:
+        _reconcile_moderation('promotional_campaigns',cid,current)
+        return jsonify({'ok':True,'campaign':current,'idempotent':True})
+    if current.get('reviewStatus') not in {'pending','submitted','under_review'}:
+        return jsonify({'ok':False,'error':'Only submitted campaigns can be reviewed'}),409
+    if decision=='approved':
+        if not validateCampaignDatesAndContent(current):_fail('Invalid campaign dates or content',400)
+        package_id=str(current.get('packageId') or '').strip()
+        package=retrieveRecord('tourism_packages',package_id) if package_id else None
+        if not package:_fail('Related package not found',404)
+        if not eligible_package(package) or not current.get('operatorId') or package.get('operatorId') != current['operatorId']:
+            _fail('Campaign requires an eligible package owned by its operator',409)
     review=approve(current,comment) if decision=='approved' else reject(current,comment); updates={'reviewStatus':review['decision'],'reviewComment':review['reviewComment'],'reviewReason':review['reviewComment'],'reviewedBy':g.uid,'reviewedAt':review['reviewedAt'],'updatedAt':utc_now_iso()}
     if decision=='approved':updates['campaignStatus']='approved'
-    return jsonify({'ok':True,'campaign':updateRecord('promotional_campaigns',cid,updates)})
+    return jsonify({'ok':True,'campaign':_save('promotional_campaigns',cid,updates,current)})
 @bp.get('/feedback')
 @auth_required(['admin'])
 def all_feedback():
-    items = retrieveRecord('feedback') or []
+    items = _load('feedback')
     items = [{**item, 'screening': current_screen(item), 'reviewRevision': review_revision(item)} for item in items]
     items.sort(key=lambda item: (item.get('moderationStatus') != 'pending_review', str(item.get('submittedAt') or '')))
     return jsonify({'ok': True, 'items': items})
@@ -347,13 +457,14 @@ def remove_feedback(fid):
 @bp.get('/destinations')
 @auth_required(['admin'])
 def destinations():
-    return jsonify({'ok': True, 'items': retrieveRecord('admin_destinations') or []})
+    return jsonify({'ok': True, 'items': _load('admin_destinations')})
 
 
 @bp.post('/destinations')
 @auth_required(['admin'])
 def create_destination():
-    payload = request.get_json(silent=True) or {}
+    payload = _payload()
+    _validate_content(payload)
     data = _normalise_destination_payload(payload)
     if not validateAdminDestinationRecord(data):
         return jsonify({'ok': False, 'error': 'Destination name is required'}), 400
@@ -364,11 +475,16 @@ def create_destination():
 @bp.put('/destinations/<did>')
 @auth_required(['admin'])
 def update_destination(did):
-    payload = request.get_json(silent=True) or {}
-    data = _normalise_destination_payload(payload)
-    if not validateAdminDestinationRecord(data):
+    payload = _payload()
+    current=retrieveRecord('admin_destinations',did)
+    if not current:_fail('Destination record not found',404)
+    _validate_content(payload)
+    merged={**current,**payload}
+    if 'destinationName' in payload and 'title' not in payload:merged['title']=payload['destinationName']
+    if not validateAdminDestinationRecord(merged):
         return jsonify({'ok': False, 'error': 'Destination name is required'}), 400
-    item = updateRecord('admin_destinations', did, data)
+    data={k:v for k,v in _normalise_destination_payload(merged).items() if k in payload or k=='updatedAt' or (k=='title' and 'destinationName' in payload)}
+    item = _save('admin_destinations', did, data, current)
     if not item:
         return jsonify({'ok': False, 'error': 'Destination record not found'}), 404
     return jsonify({'ok': True, 'destination': item})
@@ -385,13 +501,14 @@ def delete_destination(did):
 @bp.get('/activities')
 @auth_required(['admin'])
 def activities():
-    return jsonify({'ok': True, 'items': retrieveRecord('admin_activities') or []})
+    return jsonify({'ok': True, 'items': _load('admin_activities')})
 
 
 @bp.post('/activities')
 @auth_required(['admin'])
 def create_activity():
-    payload = request.get_json(silent=True) or {}
+    payload = _payload()
+    _validate_content(payload,activity=True)
     data = _normalise_activity_payload(payload)
     if not validateAdminActivityRecord(data):
         return jsonify({'ok': False, 'error': 'Activity name is required'}), 400
@@ -402,11 +519,16 @@ def create_activity():
 @bp.put('/activities/<aid>')
 @auth_required(['admin'])
 def update_activity(aid):
-    payload = request.get_json(silent=True) or {}
-    data = _normalise_activity_payload(payload)
-    if not validateAdminActivityRecord(data):
+    payload = _payload()
+    current=retrieveRecord('admin_activities',aid)
+    if not current:_fail('Activity record not found',404)
+    _validate_content(payload,activity=True)
+    merged={**current,**payload}
+    if 'title' in payload and 'activityName' not in payload:merged['activityName']=payload['title']
+    if not validateAdminActivityRecord(merged):
         return jsonify({'ok': False, 'error': 'Activity name is required'}), 400
-    item = updateRecord('admin_activities', aid, data)
+    data={k:v for k,v in _normalise_activity_payload(merged).items() if k in payload or k=='updatedAt' or (k=='activityName' and 'title' in payload)}
+    item = _save('admin_activities', aid, data, current)
     if not item:
         return jsonify({'ok': False, 'error': 'Activity record not found'}), 404
     return jsonify({'ok': True, 'activity': item})
@@ -429,16 +551,20 @@ def booking_records():
 
     items = []
     if booking_type in {'hotel', 'all'}:
-        hotel_bookings = retrieveRecord('hotel_bookings') or []
+        hotel_bookings = _load('hotel_bookings')
         for h in hotel_bookings:
             if not isinstance(h, dict):
                 continue
             sanitized_h = _sanitize_commerce_record(h)
             sanitized_h.setdefault('bookingType', 'hotel')
+            provider_result=h.get('providerResult') if isinstance(h.get('providerResult'),dict) else {}
+            provenance='simulation' if h.get('isSimulated') or h.get('bookingMode') == 'simulation' or h.get('source') == 'local' else (
+                'provider_sandbox' if h.get('sandbox') or provider_result.get('sandbox') or h.get('transactionMode') == 'provider_sandbox' else 'unverified')
+            sanitized_h.update(reservationProvenance=provenance,amount=_amount(h),currency=str(h.get('currency') or 'UNKNOWN').upper())
             items.append(sanitized_h)
 
     if booking_type in {'package', 'all'}:
-        checkout_orders = retrieveRecord('checkout_orders') or []
+        checkout_orders = _unified_payment_records(_load('checkout_orders'), [])
         for o in checkout_orders:
             if not isinstance(o, dict):
                 continue
@@ -446,8 +572,8 @@ def booking_records():
             if quote_type == 'package' or o.get('packageId') or o.get('attemptType') == 'package_checkout':
                 pkg_snapshot = o.get('packageSnapshot') if isinstance(o.get('packageSnapshot'), dict) else {}
                 title = pkg_snapshot.get('title') or pkg_snapshot.get('packageTitle') or o.get('packageTitle') or '-'
-                operator_id = pkg_snapshot.get('operatorId') or o.get('operatorId') or '-'
-                package_id = pkg_snapshot.get('packageId') or o.get('packageId') or '-'
+                operator_id = o.get('operatorId') or pkg_snapshot.get('operatorId') or '-'
+                package_id = o.get('packageId') or pkg_snapshot.get('packageId') or '-'
 
                 sanitized_order = _sanitize_commerce_record(o)
                 pkg_proj = {
@@ -463,9 +589,9 @@ def booking_records():
                     'fulfillmentStatus': o.get('fulfillmentStatus') or 'fulfillment_pending',
                     'supplierReservationStatus': 'not_created',
                     'supplierReservationDisclosure': 'Package Trip creation is platform-managed; no direct third-party supplier reservation has been booked.',
-                    'testMode': bool(o.get('testMode', True)),
-                    'amount': _float_or_zero(o.get('amount') or o.get('price')),
-                    'currency': str(o.get('currency') or 'MYR').upper(),
+                    'testMode': bool(o.get('testMode')),
+                    'amount': _amount(o),
+                    'currency': str(o.get('currency') or 'UNKNOWN').upper(),
                     'createdAt': o.get('createdAt') or '',
                 }
                 items.append(pkg_proj)
@@ -485,25 +611,48 @@ def booking_records():
     return jsonify({'ok': True, 'items': items})
 
 
+def _amount(record):
+    value=next((record[key] for key in ('amount','totalAmount','groupTotal','hotelCost','price') if record.get(key) is not None),None)
+    try:
+        amount=float(value)
+        return amount if not isinstance(value,bool) and isfinite(amount) and amount >= 0 else None
+    except (ValueError,TypeError,OverflowError):
+        return None
+
+
+def _settlements(record):
+    keys={('intent',str(record[k])) for k in ('stripePaymentIntentId',) if record.get(k)}
+    keys.update(('session',str(record[k])) for k in ('checkoutSessionId',) if record.get(k))
+    if str(record.get('transactionReference') or '').startswith('pi_'):
+        keys.add(('intent',record['transactionReference']))
+    return keys
+
+
 def _unified_payment_records(checkout_orders, payment_records):
     unique_orders = []
     seen_order_ids = set()
-    for o in (checkout_orders or []):
+    seen_settlements=set()
+    ordered=sorted((o for o in (checkout_orders or []) if isinstance(o,dict)),
+                   key=lambda o:(str(o.get('updatedAt') or o.get('createdAt') or ''),not is_paid_order(o)),reverse=True)
+    for o in ordered:
         if not isinstance(o, dict):
             continue
         oid = str(o.get('id') or '')
-        if oid and oid in seen_order_ids:
+        keys=_settlements(o)
+        if (oid and oid in seen_order_ids) or keys & seen_settlements:
             continue
+        seen_settlements.update(keys)
         if oid:
             seen_order_ids.add(oid)
         unique_orders.append(o)
 
-    known_order_ids = {str(o.get('id')) for o in unique_orders if o.get('id')}
+    known_order_ids = {str(o.get('id')) for o in (checkout_orders or []) if isinstance(o,dict) and o.get('id')}
     known_legacy_payment_ids = {str(o.get('legacyPaymentId')) for o in unique_orders if o.get('legacyPaymentId')}
 
     unique_payments = []
     seen_payment_ids = set()
-    for p in (payment_records or []):
+    for p in sorted((p for p in (payment_records or []) if isinstance(p,dict)),
+                    key=lambda p:(str(p.get('updatedAt') or p.get('createdAt') or ''),not is_paid_order(p)),reverse=True):
         if not isinstance(p, dict):
             continue
         pid = str(p.get('id') or '')
@@ -517,6 +666,10 @@ def _unified_payment_records(checkout_orders, payment_records):
             continue
         if pid in known_legacy_payment_ids:
             continue
+        keys=_settlements(p)
+        if keys & seen_settlements:
+            continue
+        seen_settlements.update(keys)
 
         unique_payments.append(p)
 
@@ -531,6 +684,7 @@ def _unified_payment_records(checkout_orders, payment_records):
         ) or o.get('bookingId') or o.get('orderTitle') or '-'
         sanitized['productType'] = o.get('quoteType') or 'package'
         sanitized['productTitle'] = pkg_title
+        sanitized.update(amount=_amount(o),currency=str(o.get('currency') or 'UNKNOWN').upper(),isPaid=is_paid_order(o))
         if o.get('provider') == 'stripe_checkout_test' or o.get('testMode') is True:
             sanitized['testMode'] = True
         elif o.get('testMode') is False:
@@ -541,6 +695,7 @@ def _unified_payment_records(checkout_orders, payment_records):
         sanitized = _sanitize_commerce_record(p)
         sanitized.setdefault('productType', 'legacy_payment')
         sanitized.setdefault('productTitle', p.get('bookingId') or p.get('itemTitle') or '-')
+        sanitized.update(amount=_amount(p),currency=str(p.get('currency') or 'UNKNOWN').upper(),isPaid=is_paid_order(p))
         if 'testMode' not in sanitized:
             if 'test' in str(p.get('provider') or '').lower() or str(p.get('transactionReference') or '').startswith('pi_sim_'):
                 sanitized['testMode'] = True
@@ -560,8 +715,9 @@ def payment_records():
     start_date = str(request.args.get('startDate') or '').strip()
     end_date = str(request.args.get('endDate') or '').strip()
 
-    checkout_orders = retrieveRecord('checkout_orders') or []
-    legacy_payments = retrieveRecord('payment_records') or []
+    if not validateReportCriteria({'startDate':start_date,'endDate':end_date}):_fail('Use a valid date range',400)
+    checkout_orders = _load('checkout_orders')
+    legacy_payments = _load('payment_records')
     items = _unified_payment_records(checkout_orders, legacy_payments)
 
     if status:
@@ -576,21 +732,27 @@ def payment_records():
             if query in ' '.join(str(item.get(key) or '') for key in ('id', 'travellerId', 'productType', 'productTitle', 'operatorId', 'transactionReference')).lower()
         ]
     items.sort(key=lambda item: str(item.get('createdAt') or ''), reverse=True)
-    return jsonify({'ok': True, 'items': items[:100]})
+    return jsonify({'ok': True, 'items': items})
 
 
 def _summary(criteria=None):
     criteria = criteria or {'reportType': 'system_summary'}
     if not validateReportCriteria(criteria):
         raise ValueError('Use a valid report type and date range')
-    users = retrieveRecord('users') or []
-    packages = retrieveRecord('tourism_packages') or []
-    campaigns = retrieveRecord('promotional_campaigns') or []
-    feedback = retrieveRecord('feedback') or []
-    hotel_bookings = retrieveRecord('hotel_bookings') or []
-    checkout_orders = retrieveRecord('checkout_orders') or []
-    legacy_payments = retrieveRecord('payment_records') or []
-    unified_payments = _unified_payment_records(checkout_orders, legacy_payments)
+    if criteria.get('reportType','system_summary') not in {'system_summary','users','packages','campaigns','feedback','bookings','payments'}:
+        raise ValueError('Use a valid report type')
+    users = _filter_records(_load('users'),criteria)
+    loaded_packages = _load('tourism_packages')
+    packages = _filter_records(loaded_packages,criteria)
+    campaigns = _filter_records(_load('promotional_campaigns'),criteria)
+    feedback = _filter_records(_load('feedback'),criteria)
+    hotel_bookings = _filter_records(_load('hotel_bookings'),criteria)
+    checkout_orders = _load('checkout_orders')
+    legacy_payments = _load('payment_records')
+    # Resolve canonical mirrors before filtering, so an out-of-range mirror cannot reappear.
+    unified_payments = _filter_records(_unified_payment_records(checkout_orders, legacy_payments),criteria)
+    checkout_orders = _filter_records(checkout_orders,criteria)
+    package_bookings = [item for item in unified_payments if item.get('productType') == 'package']
 
     collections = {
         'users': users,
@@ -598,6 +760,7 @@ def _summary(criteria=None):
         'campaigns': campaigns,
         'feedback': feedback,
         'hotel_bookings': hotel_bookings,
+        'package_bookings': package_bookings,
         'payment_records': unified_payments,
         'checkout_orders': checkout_orders,
     }
@@ -611,23 +774,24 @@ def _summary(criteria=None):
     deactivated_users = sum(1 for u in users if str(u.get('status', '')).lower() == 'deactivated')
 
     approved_pkgs = sum(1 for p in packages if str(p.get('approvalStatus', '')).lower() == 'approved')
-    pending_pkgs = sum(1 for p in packages if str(p.get('approvalStatus', '')).lower() in {'pending', 'pending_approval', 'under_review'})
+    pending_pkgs = sum(1 for p in packages if str(p.get('approvalStatus', '')).lower() in {'pending', 'submitted', 'pending_approval', 'under_review'})
     rejected_pkgs = sum(1 for p in packages if str(p.get('approvalStatus', '')).lower() == 'rejected')
     draft_pkgs = sum(1 for p in packages if str(p.get('approvalStatus', '')).lower() in {'', 'draft'})
 
     approved_camps = sum(1 for c in campaigns if str(c.get('reviewStatus', '')).lower() == 'approved')
-    pending_camps = sum(1 for c in campaigns if str(c.get('reviewStatus', '')).lower() in {'pending', 'pending_approval', 'under_review'})
+    pending_camps = sum(1 for c in campaigns if str(c.get('reviewStatus', '')).lower() in {'pending', 'submitted', 'pending_approval', 'under_review'})
     rejected_camps = sum(1 for c in campaigns if str(c.get('reviewStatus', '')).lower() == 'rejected')
-    active_camps = sum(1 for c in campaigns if str(c.get('campaignStatus', '')).lower() == 'active' or str(c.get('reviewStatus', '')).lower() == 'approved')
+    eligible_ids={p.get('id') for p in loaded_packages if eligible_package(p)}
+    active_camps = sum(1 for c in campaigns if active_campaign(c) and c.get('packageId') in eligible_ids)
 
-    visible_fb = sum(1 for f in feedback if str(f.get('feedbackStatus', 'visible')).lower() == 'visible')
+    visible_fb = sum(1 for f in feedback if published_review(f))
     pending_fb = sum(1 for f in feedback if str(f.get('moderationStatus', '')).lower() in {'pending', 'pending_review'})
     removed_fb = sum(1 for f in feedback if str(f.get('feedbackStatus', '')).lower() == 'removed' or str(f.get('moderationStatus', '')).lower() == 'removed')
 
     # Payment metrics across unified payments
     paid_payments = sum(
         1 for p in unified_payments
-        if str(p.get('paymentStatus') or p.get('status') or '').lower() == 'paid'
+        if is_paid_order(p)
     )
     pending_payments = sum(
         1 for p in unified_payments
@@ -645,15 +809,17 @@ def _summary(criteria=None):
         1 for p in unified_payments
         if p.get('testMode') is True or 'test' in str(p.get('provider') or '').lower() or str(p.get('transactionReference') or '').startswith('pi_sim_')
     )
-    total_paid_revenue = sum(
-        _float_or_zero(p.get('amount') or p.get('price'))
-        for p in unified_payments
-        if str(p.get('paymentStatus') or p.get('status') or '').lower() == 'paid'
-    )
+    paid_myr=[p for p in unified_payments if is_paid_order(p) and p.get('currency') == 'MYR']
+    total_paid_revenue = round(sum(_amount(p) for p in paid_myr if _amount(p) is not None),2)
+    test_paid_total=round(sum(_amount(p) for p in paid_myr if p.get('testMode') and _amount(p) is not None),2)
 
     generated_at = utc_now_iso()
 
     return {
+        'dataLimited':getattr(g,'admin_data_limited',False),
+        'recordLimit':RECORD_LIMIT,
+        'recordsLimited':len(scoped_records)>200,
+        'recordDisplayLimit':200,
         'generatedAt': generated_at,
         'criteria': criteria,
         'counts': {
@@ -661,6 +827,7 @@ def _summary(criteria=None):
             'tourism_packages': len(packages),
             'promotional_campaigns': len(campaigns),
             'hotel_bookings': len(hotel_bookings),
+            'package_bookings':len(package_bookings),
             'payment_records': len(unified_payments),
             'checkout_orders': len(checkout_orders),
             'feedback': len(feedback),
@@ -674,6 +841,8 @@ def _summary(criteria=None):
                 'administrators': administrators,
                 'active': active_users,
                 'deactivated': deactivated_users,
+                'pendingOperators':sum(1 for u in users if u.get('role') in {'operator','tourism_operator'} and u.get('verificationStatus','pending') == 'pending'),
+                'approvedOperators':sum(1 for u in users if u.get('role') in {'operator','tourism_operator'} and u.get('verificationStatus') in {'approved','verified'}),
             },
             'packages': {
                 'total': len(packages),
@@ -703,9 +872,12 @@ def _summary(criteria=None):
                 'expired': expired_payments,
                 'testMode': test_mode_payments,
                 'totalPaidRevenue': total_paid_revenue,
+                'testPaidTotal':test_paid_total,
+                'unpricedPaidOrders':sum(1 for p in paid_myr if _amount(p) is None),
+                'excludedCurrencyPaidOrders':sum(1 for p in unified_payments if is_paid_order(p) and p.get('currency') != 'MYR'),
             },
         },
-        'records': scoped_records[:200],
+        'records': _sanitize_commerce_record(scoped_records[:200]),
     }
 
 @bp.get("/reports/summary")
@@ -772,27 +944,31 @@ def export_report_csv():
         return jsonify({'ok': False, 'error': str(exc)}), 400
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['TravelMate Administrator System Report'])
-    writer.writerow(['Generated At', report.get('generatedAt', '')])
+    def row(values):
+        writer.writerow(["'"+str(v) if str(v).lstrip().startswith(('=','+','-','@','\t','\r')) else v for v in values])
+    row(['TravelMate Administrator System Report'])
+    row(['Generated At', report.get('generatedAt', '')])
     criteria = report.get('criteria', {})
-    writer.writerow(['Report Type', criteria.get('reportType', 'system_summary')])
-    writer.writerow(['Start Date', criteria.get('startDate', '')])
-    writer.writerow(['End Date', criteria.get('endDate', '')])
-    writer.writerow(['Filter', criteria.get('filter', '')])
-    writer.writerow([])
-    writer.writerow(['Metric', 'Value'])
+    row(['Report Type', criteria.get('reportType', 'system_summary')])
+    row(['Start Date', criteria.get('startDate', '')])
+    row(['End Date', criteria.get('endDate', '')])
+    row(['Filter', criteria.get('filter', '')])
+    row(['Source records limited',report.get('dataLimited',False)])
+    row(['Export rows limited',report.get('recordsLimited',False)])
+    row([])
+    row(['Metric', 'Value'])
     for key, value in report.get('counts', {}).items():
-        writer.writerow([key, value])
-    writer.writerow([])
-    writer.writerow(['Filtered Records'])
+        row([key, value])
+    row([])
+    row(['Filtered Records'])
     records = report.get('records') or []
     fieldnames = sorted({key for item in records for key in item.keys()})
     if fieldnames:
-        writer.writerow(fieldnames)
+        row(fieldnames)
         for item in records:
-            writer.writerow([item.get(field, '') for field in fieldnames])
+            row([item.get(field, '') for field in fieldnames])
     else:
-        writer.writerow(['No records matched the selected criteria'])
+        row(['No records matched the selected criteria'])
     return Response(
         output.getvalue(),
         mimetype='text/csv',

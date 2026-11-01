@@ -1,14 +1,17 @@
 {% extends 'portal_base.html' %}
 {% block title %}Booking Records | TravelMate{% endblock %}
+
 {% block content %}
+{% include '_admin_data_state.html' %}
 <div class="page-title">
   <div>
-    <h1>Booking Records</h1>
-    <p>Monitor platform booking records and traveller reservations across hotels and packages.</p>
+    <span class="eyebrow">COMMERCE &amp; FULFILLMENT</span>
+    <h1>Platform Booking Records</h1>
+    <p>Monitor platform booking records and traveller reservations across hotels and operator packages.</p>
   </div>
 </div>
 
-<div class="tabs" style="display: flex; gap: 8px; margin-bottom: 16px;">
+<div class="tabs" style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
   <a class="btn {% if booking_type == 'hotel' %}primary{% else %}outline{% endif %}" href="{{ url_for('admin_fr13.bookings', type='hotel') }}">Hotel Bookings</a>
   <a class="btn {% if booking_type == 'package' %}primary{% else %}outline{% endif %}" href="{{ url_for('admin_fr13.bookings', type='package') }}">Package Bookings (Platform)</a>
   <a class="btn {% if booking_type == 'all' %}primary{% else %}outline{% endif %}" href="{{ url_for('admin_fr13.bookings', type='all') }}">All Bookings</a>
@@ -19,32 +22,68 @@
   <table>
     <thead>
       <tr>
-        <th>Reference</th>
-        <th>Package</th>
-        <th>Operator</th>
-        <th>Traveller</th>
-        <th>Payment</th>
-        <th>Platform Fulfillment</th>
-        <th>Supplier Reservation</th>
-        <th>Amount</th>
-        <th>Created</th>
+        <th scope="col">Reference</th>
+        <th scope="col">Package</th>
+        <th scope="col">Operator</th>
+        <th scope="col">Traveller</th>
+        <th scope="col">Payment</th>
+        <th scope="col">Platform Fulfillment</th>
+        <th scope="col">Supplier Reservation</th>
+        <th scope="col">Amount</th>
+        <th scope="col">Created</th>
       </tr>
     </thead>
     <tbody>
       {% for x in items %}
       <tr>
-        <td><strong>{{ x.get('bookingReference', x.get('id','-')) }}</strong></td>
-        <td>{{ x.get('packageTitle','-') }}<br><small>ID: {{ x.get('packageId','-') }}</small></td>
-        <td>{{ x.get('operatorId','-') }}</td>
-        <td>{{ x.get('travellerId','-') }}</td>
-        <td><span class="status {{ x.get('paymentStatus','unpaid') }}">{{ x.get('paymentStatus','unpaid') }}</span></td>
-        <td><span class="status {{ x.get('fulfillmentStatus','pending') }}">{{ x.get('fulfillmentStatus','pending') }}</span></td>
-        <td><span class="badge warning" title="{{ x.get('supplierReservationDisclosure','') }}">⚠️ Not Created (Manual)</span></td>
-        <td>{{ x.get('currency','MYR') }} {{ '%.2f'|format(x.get('amount', 0)|float) }}</td>
-        <td>{{ x.get('createdAt','-') }}</td>
+        <td>
+          <code style="font-size: 13px; font-weight: 700; color: var(--ink);">{{ x.get('bookingReference', x.get('id', '-')) }}</code>
+        </td>
+        <td>
+          <strong>{{ x.get('packageTitle', '-') }}</strong>
+          <br>
+          <small class="muted">Package ID: <code>{{ x.get('packageId', '-') }}</code></small>
+        </td>
+        <td>
+          <span style="font-size: 12.5px;">{{ x.get('operatorId', '-') }}</span>
+        </td>
+        <td>
+          <span style="font-size: 12.5px;">{{ x.get('travellerId', '-') }}</span>
+        </td>
+        <td>
+          <span class="status {{ x.get('paymentStatus', 'unpaid') }}">{{ x.get('paymentStatus', 'unpaid')|title }}</span>
+        </td>
+        <td>
+          <span class="status {{ x.get('fulfillmentStatus', 'pending') }}">{{ x.get('fulfillmentStatus', 'pending')|title }}</span>
+        </td>
+        <td>
+          <span class="badge warning" title="{{ x.get('supplierReservationDisclosure', 'Platform order only. Direct supplier airline/hotel booking is not executed.') }}" style="font-size: 11px;">
+            ⚠️ Not Created (Manual)
+          </span>
+        </td>
+        <td>
+          {% if x.get('amount') is not none %}
+            <strong>{{ x.get('currency', 'UNKNOWN') }} {{ '%.2f'|format(x.get('amount')|float) }}</strong>
+          {% else %}
+            <span class="muted">Unavailable</span>
+          {% endif %}
+        </td>
+        <td>
+          <small class="muted">{{ x.get('createdAt', '-') }}</small>
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="9">No package booking records found.</td></tr>
+      <tr>
+        <td colspan="9">
+          <div class="empty-state">
+            <div class="empty-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            </div>
+            <strong>No package booking records found.</strong>
+            <p>Platform package reservations placed by travellers will appear in this ledger.</p>
+          </div>
+        </td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>
@@ -54,50 +93,77 @@
   <table>
     <thead>
       <tr>
-        <th>Type</th>
-        <th>Reference</th>
-        <th>Details</th>
-        <th>Traveller</th>
-        <th>Status</th>
-        <th>Supplier Reservation</th>
-        <th>Amount</th>
-        <th>Created</th>
+        <th scope="col">Type</th>
+        <th scope="col">Reference</th>
+        <th scope="col">Details</th>
+        <th scope="col">Traveller</th>
+        <th scope="col">Status</th>
+        <th scope="col">Supplier Reservation</th>
+        <th scope="col">Amount</th>
+        <th scope="col">Created</th>
       </tr>
     </thead>
     <tbody>
       {% for x in items %}
       {% set btype = x.get('bookingType', 'hotel') %}
       <tr>
-        <td><span class="badge neutral">{{ btype|upper }}</span></td>
-        <td><strong>{{ x.get('bookingReference', x.get('id','-')) }}</strong></td>
+        <td>
+          <span class="badge {% if btype == 'package' %}primary{% else %}neutral{% endif %}" style="font-size: 10.5px;">
+            {{ btype|upper }}
+          </span>
+        </td>
+        <td>
+          <code style="font-size: 13px; font-weight: 700; color: var(--ink);">{{ x.get('bookingReference', x.get('id', '-')) }}</code>
+        </td>
         <td>
           {% if btype == 'package' %}
-            {{ x.get('packageTitle','-') }}<br><small>Operator: {{ x.get('operatorId','-') }}</small>
+            <strong>{{ x.get('packageTitle', '-') }}</strong><br><small class="muted">Operator: {{ x.get('operatorId', '-') }}</small>
           {% else %}
             {% set hotel = x.get('selectedHotel', {}) %}
-            {{ hotel.get('name', x.get('hotelName','-')) }}<br><small>{{ hotel.get('roomName', x.get('roomType','')) }}</small>
-          {% endif %}
-        </td>
-        <td>{{ x.get('travellerId','-') }}</td>
-        <td>
-          {% if btype == 'package' %}
-            <span class="status {{ x.get('paymentStatus','unpaid') }}">{{ x.get('paymentStatus','unpaid') }}</span>
-          {% else %}
-            <span class="status {{ x.get('bookingStatus','confirmed') }}">{{ x.get('bookingStatus','confirmed') }}</span>
+            <strong>{{ hotel.get('name', x.get('hotelName', '-')) }}</strong><br><small class="muted">{{ hotel.get('roomName', x.get('roomType', 'Standard Room')) }}</small>
           {% endif %}
         </td>
         <td>
+          <span style="font-size: 12.5px;">{{ x.get('travellerId', '-') }}</span>
+        </td>
+        <td>
           {% if btype == 'package' %}
-            <span class="badge warning">⚠️ Not Created (Manual)</span>
+            <span class="status {{ x.get('paymentStatus', 'unpaid') }}">{{ x.get('paymentStatus', 'unpaid')|title }}</span>
           {% else %}
-            <span class="badge neutral">Test Mode</span>
+            <span class="status {{ x.get('bookingStatus', 'unknown') }}">{{ x.get('bookingStatus', 'unknown')|title }}</span>
           {% endif %}
         </td>
-        <td>RM {{ '%.2f'|format(x.get('amount', x.get('hotelCost', x.get('price', 0)))|float) }}</td>
-        <td>{{ x.get('createdAt','-') }}</td>
+        <td>
+          {% if btype == 'package' %}
+            <span class="badge warning" style="font-size: 11px;">⚠️ Not Created (Manual)</span>
+          {% else %}
+            <span class="badge neutral" style="font-size: 11px;">{{ x.get('reservationProvenance', 'unverified')|replace('_', ' ')|title }}</span>
+          {% endif %}
+        </td>
+        {% set amount = x.get('amount', x.get('hotelCost', x.get('price'))) %}
+        <td>
+          {% if amount is not none %}
+            <strong>{{ x.get('currency', 'UNKNOWN') }} {{ '%.2f'|format(amount|float) }}</strong>
+          {% else %}
+            <span class="muted">Unavailable</span>
+          {% endif %}
+        </td>
+        <td>
+          <small class="muted">{{ x.get('createdAt', '-') }}</small>
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="8">No booking records found.</td></tr>
+      <tr>
+        <td colspan="8">
+          <div class="empty-state">
+            <div class="empty-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </div>
+            <strong>No booking records found.</strong>
+            <p>Platform bookings across hotel and tourism packages will be displayed here.</p>
+          </div>
+        </td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>
@@ -107,27 +173,60 @@
   <table>
     <thead>
       <tr>
-        <th>Reference</th>
-        <th>Traveller</th>
-        <th>Hotel</th>
-        <th>Status</th>
-        <th>Amount</th>
-        <th>Created</th>
+        <th scope="col">Reference</th>
+        <th scope="col">Traveller</th>
+        <th scope="col">Hotel</th>
+        <th scope="col">Status</th>
+        <th scope="col">Amount</th>
+        <th scope="col">Created</th>
       </tr>
     </thead>
     <tbody>
       {% for x in items %}
       {% set hotel = x.get('selectedHotel', {}) %}
       <tr>
-        <td><strong>{{ x.get('bookingReference', x.get('id','-')) }}</strong><br><small>{{ x.get('source','-') }}</small></td>
-        <td>{{ x.get('travellerId','-') }}</td>
-        <td>{{ hotel.get('name', x.get('hotelName','-')) }}<br><small>{{ hotel.get('roomName', x.get('roomType','')) }}</small></td>
-        <td><span class="status {{ x.get('bookingStatus','confirmed') }}">{{ x.get('bookingStatus','confirmed') }}</span></td>
-        <td>RM {{ '%.2f'|format(x.get('hotelCost', x.get('price',0))|float) }}</td>
-        <td>{{ x.get('createdAt','-') }}</td>
+        <td>
+          <code style="font-size: 13px; font-weight: 700; color: var(--ink);">{{ x.get('bookingReference', x.get('id', '-')) }}</code>
+          <br>
+          <small class="muted">Source: {{ x.get('source', '-') }}</small>
+        </td>
+        <td>
+          <span style="font-size: 12.5px;">{{ x.get('travellerId', '-') }}</span>
+        </td>
+        <td>
+          <strong>{{ hotel.get('name', x.get('hotelName', '-')) }}</strong>
+          <br>
+          <small class="muted">{{ hotel.get('roomName', x.get('roomType', 'Standard Room')) }}</small>
+        </td>
+        <td>
+          <span class="status {{ x.get('bookingStatus', 'unknown') }}">{{ x.get('confirmationLabel') or x.get('bookingStatus', 'unknown')|title }}</span>
+          <br>
+          <small class="muted">{{ x.get('reservationProvenance', 'unverified')|replace('_', ' ') }}</small>
+        </td>
+        {% set amount = x.get('amount', x.get('hotelCost', x.get('price'))) %}
+        <td>
+          {% if amount is not none %}
+            <strong>{{ x.get('currency', 'UNKNOWN') }} {{ '%.2f'|format(amount|float) }}</strong>
+          {% else %}
+            <span class="muted">Unavailable</span>
+          {% endif %}
+        </td>
+        <td>
+          <small class="muted">{{ x.get('createdAt', '-') }}</small>
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="6">No booking records found.</td></tr>
+      <tr>
+        <td colspan="6">
+          <div class="empty-state">
+            <div class="empty-icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            </div>
+            <strong>No hotel booking records found.</strong>
+            <p>Hotel bookings made through traveller itineraries will appear in this table.</p>
+          </div>
+        </td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>
