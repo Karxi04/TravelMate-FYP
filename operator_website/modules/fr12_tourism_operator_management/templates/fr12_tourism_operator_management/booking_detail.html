@@ -348,6 +348,7 @@
 
       {% if not is_accom_confirmed and booking.isPaid and booking.fulfillmentStatus != 'fulfillment_declined' %}
       <form method="post" action="{{ url_for('operator_fr12.update_booking_fulfillment', order_reference=booking.orderReference) }}" style="margin-top: 14px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="serviceType" value="accommodation">
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <div>
@@ -423,6 +424,7 @@
 
       {% if not is_trans_confirmed and booking.isPaid and booking.fulfillmentStatus != 'fulfillment_declined' %}
       <form method="post" action="{{ url_for('operator_fr12.update_booking_fulfillment', order_reference=booking.orderReference) }}" style="margin-top: 14px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="serviceType" value="transport">
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <div>
@@ -503,6 +505,7 @@
 
       {% if not is_guide_confirmed and booking.isPaid and booking.fulfillmentStatus != 'fulfillment_declined' %}
       <form method="post" action="{{ url_for('operator_fr12.update_booking_fulfillment', order_reference=booking.orderReference) }}" style="margin-top: 14px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="serviceType" value="guideActivities">
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <div>
@@ -556,6 +559,7 @@
 
     <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
       <form method="post" action="{{ url_for('operator_fr12.confirm_booking_fulfillment', order_reference=booking.orderReference) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn primary" type="submit" id="confirm-fulfillment-btn">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><polyline points="20 6 9 17 4 12"/></svg>
           <span>Confirm Arrangements & Mark Trip Ready</span>
@@ -566,8 +570,9 @@
         <summary class="btn outline" style="color: var(--danger); border-color: var(--danger-border); cursor: pointer;">
           Unable to Fulfill...
         </summary>
-        <div style="margin-top: 12px; padding: 14px; background: #FFF5F5; border: 1px solid var(--danger-border); border-radius: var(--radius-sm); width: 340px;">
+        <div style="margin-top: 12px; padding: 14px; background: #FFF5F5; border: 1px solid var(--danger-border); border-radius: var(--radius-sm); max-width: 340px; width: 100%; box-sizing: border-box;">
           <form method="post" action="{{ url_for('operator_fr12.decline_booking_fulfillment', order_reference=booking.orderReference) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <label style="font-size: 12px; font-weight: 600; color: var(--danger); display: block; margin-bottom: 6px;">Reason for declining fulfillment *</label>
             <textarea class="input" name="reason" rows="2" placeholder="e.g. Hotel fully booked, no alternate dates (min 5 chars)" required minlength="5" style="width: 100%; font-size: 12px; resize: vertical;"></textarea>
             <button class="btn primary" type="submit" style="background: var(--danger); border-color: var(--danger); margin-top: 8px; font-size: 12px; padding: 6px 12px;">Confirm Decline</button>

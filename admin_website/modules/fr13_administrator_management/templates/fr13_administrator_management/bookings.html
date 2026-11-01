@@ -54,7 +54,7 @@
           <span class="status {{ x.get('paymentStatus', 'unpaid') }}">{{ x.get('paymentStatus', 'unpaid')|title }}</span>
         </td>
         <td>
-          <span class="status {{ x.get('fulfillmentStatus', 'pending') }}">{{ x.get('fulfillmentStatus', 'pending')|title }}</span>
+          <span class="status {{ x.get('fulfillmentStatus', 'pending') }}">{{ (x.get('fulfillmentStatus', 'pending') or '')|replace('_', ' ')|title }}</span>
         </td>
         <td>
           <span class="badge warning" title="{{ x.get('supplierReservationDisclosure', 'Platform order only. Direct supplier airline/hotel booking is not executed.') }}" style="font-size: 11px;">
