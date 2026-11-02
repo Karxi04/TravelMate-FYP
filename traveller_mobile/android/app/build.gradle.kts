@@ -3,12 +3,24 @@ import java.util.Base64
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
-    id("com.google.gms.google-services")
+    id("com.google.gms.google-services") apply false
     // END: FlutterFire Configuration
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+val startupDefines = (project.findProperty("dart-defines") as? String).orEmpty()
+    .split(",").filter { it.isNotBlank() }
+    .map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
+val emulatorBuild = startupDefines.contains("USE_FIREBASE_EMULATOR=true")
+if (startupDefines.any { it.startsWith("USE_FIREBASE_EMULATOR=") && it !in listOf("USE_FIREBASE_EMULATOR=true", "USE_FIREBASE_EMULATOR=false") }) {
+    throw GradleException("USE_FIREBASE_EMULATOR must be true or false.")
+}
+if (emulatorBuild && gradle.startParameter.taskNames.any { !it.contains("debug", ignoreCase = true) }) {
+    throw GradleException("Firebase Emulator builds must be explicitly debug builds.")
+}
+if (!emulatorBuild) apply(plugin = "com.google.gms.google-services")
 
 if (gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }) {
     val defines = (project.findProperty("dart-defines") as? String).orEmpty()
@@ -39,13 +51,22 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.travelmate_traveller"
+        applicationId = if (emulatorBuild) "org.travelmate.hermetic.travelmate_hermetic" else "com.example.travelmate_traveller"
+        buildConfigField("boolean", "USE_FIREBASE_EMULATOR", emulatorBuild.toString())
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    buildFeatures { buildConfig = true }
+    if (emulatorBuild) {
+        sourceSets.getByName("debug") {
+            manifest.srcFile("src/emulator/AndroidManifest.xml")
+            res.srcDir("src/emulator/res")
+        }
     }
 
     buildTypes {
