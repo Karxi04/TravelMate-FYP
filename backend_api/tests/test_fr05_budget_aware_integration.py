@@ -26,25 +26,44 @@ def candidates():
 
 
 @contextmanager
-def fixture(items=None, **changes):
+def fixture(items=None, *, new_trip=False, snapshot_problem=None, **changes):
     current = trip(**{'id': 'integration', 'travellerId': 'test_traveller_uid', 'activities': [],
                    'budgetLimit': 255, 'recommendationGenerationId': 'rec-integration', **changes})
     source = [{**item, 'title': item['activityName']} for item in (items if items is not None else candidates())]
     snapshot = {'recommendationGenerationId': 'rec-integration', 'travellerId': 'test_traveller_uid',
                 'requestedDestination': 'Penang', 'source': 'offline_fixture', 'recommendationResults': source,
                 'engine': {'weightedScoring': {'content': .60, 'collaborative': .30, 'popularity': .10}}}
+    if snapshot_problem == 'missing':
+        snapshot.clear()
+    elif snapshot_problem == 'foreign':
+        snapshot['travellerId'] = 'another_synthetic_traveller'
+    elif snapshot_problem == 'wrong_destination':
+        snapshot['requestedDestination'] = 'Melaka'
+    elif snapshot_problem == 'missing_scores':
+        for item in snapshot['recommendationResults']:
+            item.pop('score')
     initial, original_snapshot = deepcopy(current), deepcopy(snapshot)
+    created = not new_trip
 
     def retrieve(collection, document_id=None, **kwargs):
         if collection == 'itineraries':
-            return deepcopy(current)
+            return deepcopy(current) if created else None
         if collection == 'recommendation_snapshots':
             return deepcopy(snapshot)
         raise AssertionError('Unexpected read outside isolated generation fixtures')
 
     def persist(collection, document_id, values):
-        assert collection == 'itineraries' and document_id == 'integration'
+        assert collection == 'itineraries' and document_id == current['id']
         current.update(deepcopy(values))
+        return deepcopy(current)
+
+    def store(collection, values, document_id):
+        nonlocal created
+        assert new_trip and not created and collection == 'itineraries'
+        assert values['travellerId'] == 'test_traveller_uid'
+        current.clear()
+        current.update({**deepcopy(values), 'id': document_id})
+        created = True
         return deepcopy(current)
 
     def forbidden(*args, **kwargs):
@@ -52,7 +71,7 @@ def fixture(items=None, **changes):
 
     with patch.object(routes, 'retrieveRecord', side_effect=retrieve), \
          patch.object(routes, 'updateRecord', side_effect=persist) as writes, \
-         patch.object(routes, 'storeRecord', side_effect=forbidden), \
+         patch.object(routes, 'storeRecord', side_effect=store if new_trip else forbidden), \
          patch.object(routes, 'retrieveDestinationResults', side_effect=forbidden), \
          patch.object(routes, 'geocode', side_effect=forbidden), \
          patch.object(routes, 'retrieveSevenDayForecast', side_effect=forbidden), \
@@ -298,3 +317,251 @@ def test_generation_integration_benchmark(monkeypatch, capsys):
                 assert max(times) < 5000
     with capsys.disabled():
         print('\nFR05_FLAGGED_INTEGRATION_BENCHMARK=' + json.dumps(rows, sort_keys=True))
+
+
+def _personalised_payload(budget=500, travellers=1):
+    return {**trip(budgetLimit=budget, travellerCount=travellers),
+            'generationRequestId': 'budget-integration-request',
+            'recommendationGenerationId': 'rec-integration'}
+
+
+def _assert_schedule_fits(saved):
+    def clock(value):
+        hour, minute = map(int, value.split(':'))
+        return hour * 60 + minute
+    for day in saved['dailySchedule']:
+        previous = clock(day['planningWindow']['startTime'])
+        for item in day['activities']:
+            start, end = clock(item['scheduledStartTime']), clock(item['scheduledEndTime'])
+            assert start >= previous + item['travelDurationMinutes']
+            assert end - start == item['recommendedDurationMinutes']
+            assert end <= min(18 * 60, clock(day['planningWindow']['endTime']))
+            assert not (start < 810 and end > 750)
+            previous = end
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+@pytest.mark.parametrize('budget', [50, 500, 5000])
+def test_personalised_http_budget_acceptance_matrix(client, mock_traveller_auth, monkeypatch,
+                                                   record_property, enabled, budget):
+    monkeypatch.setenv(FLAG, str(enabled).lower())
+    items = [activity(f'ticket{i}', 100, 99-i, 'per_group') for i in range(5)]
+    with fixture(items, new_trip=True) as (current, snapshot, _, writes), \
+         patch.object(adapter, 'select_budget_aware_activities', wraps=adapter.select_budget_aware_activities) as selector:
+        response = client.post('/api/fr5/personalised-trips/generate', headers=HEADERS,
+                               json=_personalised_payload(budget))
+        assert response.status_code == 200, response.json
+        saved = response.json['itinerary']
+        assert saved == current and saved['status'] == 'planned'
+        assert saved['travellerId'] == 'test_traveller_uid'
+        assert writes.call_count == 1
+        assert selector.call_count == int(enabled)
+        assert len(saved['activities']) == ({50: 0, 500: 4, 5000: 5}[budget] if enabled else 5)
+        _assert_schedule_fits(saved)
+        if enabled:
+            selection = saved['budgetAwareSelection']
+            assert selection['enabled'] is True and selection['applied'] is True
+            assert saved['generationContext']['budgetAwareSelectionApplied'] is True
+            assert [item['score'] for item in selector.call_args.args[0]] == [99, 98, 97, 96, 95]
+            assert saved['budgetEstimate']['totalEstimatedCost'] == {50: 95, 500: 495, 5000: 595}[budget]
+            assert saved['budgetEstimate']['affordabilityStatus'] == ('over_budget' if budget == 50 else 'within_budget')
+        else:
+            assert 'budgetAwareSelection' not in saved
+            assert saved['budgetEstimate']['totalEstimatedCost'] == 595
+        snapshot_before = deepcopy(snapshot)
+        saved_before = deepcopy(saved)
+        retry = client.post('/api/fr5/personalised-trips/generate', headers=HEADERS,
+                            json=_personalised_payload(budget))
+        assert retry.status_code == 200 and retry.json['reused'] is True
+        assert retry.json['itinerary'] == saved_before
+        assert writes.call_count == 1 and selector.call_count == int(enabled)
+        assert snapshot == snapshot_before
+        refreshed = client.get(f"/api/fr5/itineraries/{saved['id']}/budget", headers=HEADERS)
+        assert refreshed.status_code == 200 and refreshed.json['budget'] == saved['budgetEstimate']
+        assert selector.call_count == int(enabled)
+        record_property('budget_acceptance', json.dumps({
+            'enabled': enabled, 'budget': budget, 'selectorCalls': selector.call_count,
+            'activities': [a['destinationId'] for a in saved['activities']],
+            'budgetEstimate': saved['budgetEstimate'], 'dailySchedule': saved['dailySchedule'],
+            'selection': saved.get('budgetAwareSelection'), 'retryPreserved': True}))
+
+
+@pytest.mark.parametrize('problem', ['missing', 'foreign', 'wrong_destination', 'missing_scores'])
+def test_personalised_snapshot_prerequisites(client, mock_traveller_auth, monkeypatch, problem):
+    monkeypatch.setenv(FLAG, 'true')
+    with fixture(new_trip=True, snapshot_problem=problem) as (_, _, _, writes), \
+         patch.object(routes, 'storeRecord', wraps=routes.storeRecord) as store, \
+         patch.object(adapter, 'select_budget_aware_activities', wraps=adapter.select_budget_aware_activities) as selector:
+        response = client.post('/api/fr5/personalised-trips/generate', headers=HEADERS,
+                               json=_personalised_payload())
+        selector.assert_not_called()
+        if problem == 'missing_scores':
+            assert response.status_code == 200
+            selection = response.json['itinerary']['budgetAwareSelection']
+            assert selection['applied'] is False
+            assert selection['reason'] == 'linked_recommendation_scores_required'
+        else:
+            assert response.status_code == 409, response.json
+            assert response.json['stage'] == 'snapshot_validation'
+            writes.assert_not_called()
+            store.assert_not_called()
+
+
+@pytest.mark.parametrize('count,expected_admission,expected_total', [(1, 45, 140), (4, 105, 380)])
+def test_personalised_group_costs(client, mock_traveller_auth, monkeypatch, count, expected_admission, expected_total):
+    monkeypatch.setenv(FLAG, 'true')
+    with fixture([activity('person', 20), activity('group', 25, 70, 'per_group')], new_trip=True), \
+         patch.object(adapter, 'select_budget_aware_activities', wraps=adapter.select_budget_aware_activities) as selector:
+        response = client.post('/api/fr5/personalised-trips/generate', headers=HEADERS,
+                               json=_personalised_payload(travellers=count))
+        assert response.status_code == 200, response.json
+        selector.assert_called_once()
+        saved = response.json['itinerary']
+        assert saved['budgetEstimate']['activities'] == expected_admission
+        assert saved['budgetEstimate']['totalEstimatedCost'] == expected_total
+        _assert_schedule_fits(saved)
+
+
+@pytest.mark.parametrize('unpriced', [False, True])
+def test_personalised_mixed_free_paid_and_insufficient_prices(client, mock_traveller_auth, monkeypatch, unpriced):
+    monkeypatch.setenv(FLAG, 'true')
+    items = [activity('free', 0, 80, 'per_group'), activity('paid', 100, 90, 'per_group')]
+    if unpriced:
+        items += [unknown('unresolved')]
+    with fixture(items, new_trip=True):
+        response = client.post('/api/fr5/personalised-trips/generate', headers=HEADERS,
+                               json=_personalised_payload())
+        assert response.status_code == 200, response.json
+        saved = response.json['itinerary']
+        selection = saved['budgetAwareSelection']
+        assert selection['applied'] is True
+        assert saved['budgetEstimate']['activities'] == 100
+        assert saved['budgetEstimate']['totalEstimatedCost'] == 195
+        assert saved['budgetEstimate']['affordabilityStatus'] == ('incomplete' if unpriced else 'within_budget')
+        assert saved['budgetEstimate']['completenessStatus'] == ('incomplete' if unpriced else 'complete')
+        free = next(a for a in saved['activities'] if a['destinationId'] == 'synthetic-free')
+        assert free['effectiveCost'] == 0 and free['costProvenance'] == 'verified_ticket'
+        if unpriced:
+            unresolved = next(a for a in saved['activities'] if a['destinationId'] == 'synthetic-unresolved')
+            assert unresolved['selectionGroupCost'] is None
+            assert selection['budget']['categoryTotals']['activities'] is None
+            assert 'activities' in saved['budgetEstimate']['pendingExpenseCategories']
+        _assert_schedule_fits(saved)
+        refreshed = client.get(f"/api/fr5/itineraries/{saved['id']}/budget", headers=HEADERS)
+        assert refreshed.status_code == 200 and refreshed.json['budget'] == saved['budgetEstimate']
+
+
+def test_disabled_regeneration_does_not_claim_previous_selector_execution(client, mock_traveller_auth, monkeypatch):
+    monkeypatch.setenv(FLAG, 'false')
+    with fixture() as (current, snapshot, _, _), \
+         patch.object(adapter, 'select_budget_aware_activities') as selector:
+        current['activities'] = [routes._activity_from_destination(snapshot['recommendationResults'][0], 0)]
+        current['budgetAwareSelection'] = {'enabled': True, 'applied': True, 'historical': 'old generation'}
+        before = deepcopy(current)
+        read = client.get('/api/fr5/itineraries/integration', headers=HEADERS)
+        assert read.status_code == 200 and read.json['itinerary'] == before
+        assert current == before
+        response = client.post(PATH, headers=HEADERS, json={})
+        assert response.status_code == 200, response.json
+        selector.assert_not_called()
+        selection = response.json['itinerary']['budgetAwareSelection']
+        assert selection['enabled'] is False and selection['applied'] is False
+        assert selection['reason'] == 'feature_disabled'
+        assert current['budgetAwareSelection'] == selection
+
+
+@pytest.mark.parametrize('budget,notice', [
+    (50, 'no fully affordable itinerary'),
+    (100, 'no feasible activities'),
+])
+def test_personalised_infeasible_budget_is_explicit(client, mock_traveller_auth, monkeypatch, budget, notice):
+    monkeypatch.setenv(FLAG, 'true')
+    with fixture([activity('costly', 100, 90, 'per_group')], new_trip=True):
+        response = client.post('/api/fr5/personalised-trips/generate', headers=HEADERS,
+                               json=_personalised_payload(budget))
+        assert response.status_code == 200, response.json
+        saved = response.json['itinerary']
+        assert saved['activities'] == []
+        assert saved['budgetAwareSelection']['schedulingStatus'] == 'no_activities_selected'
+        assert saved['budgetAwareSelection']['isProvisional'] is True
+        assert notice in saved['budgetEstimate']['attention'].lower()
+        assert any(notice in message.lower() for message in saved['budgetEstimate']['estimateLimitations'])
+        if budget == 50:
+            assert saved['budgetEstimate']['affordabilityStatus'] == 'over_budget'
+            assert saved['budgetEstimate']['overBy'] == 45
+        else:
+            assert saved['budgetEstimate']['affordabilityStatus'] == 'incomplete'
+            assert saved['budgetEstimate']['completenessStatus'] == 'incomplete'
+            assert 'within budget' not in saved['budgetEstimate']['comparison'].lower()
+        refreshed = client.get(f"/api/fr5/itineraries/{saved['id']}/budget", headers=HEADERS)
+        assert refreshed.status_code == 200
+        assert refreshed.json['budget'] == saved['budgetEstimate']
+
+
+def test_owned_selected_fixed_costs_overrun_remains_explicit_and_unchanged(client, mock_traveller_auth, monkeypatch):
+    monkeypatch.setenv(FLAG, 'true')
+    with fixture([activity('free', 0)], travellerCount=1, budgetLimit=500,
+                 travelMode='flight', accommodationChoice='paid_hotel',
+                 selectedFlight={'price': 300, 'currency': 'MYR', 'priceBasis': 'synthetic_group_total'},
+                 flightCost=300, flightCurrency='MYR', flightPriceBasis='synthetic_group_total',
+                 selectedHotel={'currency': 'MYR'}, hotelCost=200, hotelCurrency='MYR') as (current, _, initial, _):
+        response = client.post(PATH, headers=HEADERS, json={})
+        assert response.status_code == 200, response.json
+        saved = response.json['itinerary']
+        assert saved['activities'] == []
+        assert saved['budgetAwareSelection']['applied'] is True
+        assert saved['budgetEstimate']['totalEstimatedCost'] == 595
+        assert saved['budgetEstimate']['affordabilityStatus'] == 'over_budget'
+        assert 'no fully affordable itinerary' in saved['budgetEstimate']['attention']
+        for key in ('selectedFlight', 'selectedHotel', 'flightCost', 'hotelCost'):
+            assert current[key] == initial[key]
+
+
+@pytest.mark.parametrize('edit', ['fixed_cost', 'activities'])
+def test_budget_refresh_uses_current_costs_and_does_not_replay_stale_selection(client, mock_traveller_auth, monkeypatch, edit):
+    monkeypatch.setenv(FLAG, 'true')
+    with fixture([activity('costly', 100, 90, 'per_group')], new_trip=True) as (current, _, _, _):
+        response = client.post('/api/fr5/personalised-trips/generate', headers=HEADERS,
+                               json=_personalised_payload(50))
+        assert response.status_code == 200 and current['activities'] == []
+        # Synthetic persisted edits stand in for the existing manual-edit flows.
+        current['foodCost'] = 0
+        if edit == 'activities':
+            current['activities'] = [activity('manually-added-free', 0, 80, 'per_group')]
+        with patch.object(adapter, 'select_budget_aware_activities') as selector:
+            refreshed = client.get(f"/api/fr5/itineraries/{current['id']}/budget", headers=HEADERS)
+            assert refreshed.status_code == 200
+            selector.assert_not_called()
+        budget = refreshed.json['budget']
+        assert budget['totalEstimatedCost'] == 35
+        if edit == 'fixed_cost':
+            assert budget['status'] == 'incomplete'
+            assert 'no feasible activities' in budget['attention'].lower()
+            assert 'fixed costs exceed' not in budget['attention'].lower()
+        else:
+            assert budget['status'] == 'within_budget'
+            assert budget['attention'] == ''
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_personalised_real_endpoint_performance(client, mock_traveller_auth, monkeypatch, record_property, enabled):
+    monkeypatch.setenv(FLAG, str(enabled).lower())
+    items = [activity(f'perf{i}', i % 5, 100-i*2, 'per_group') for i in range(20)]
+    payload = {**_personalised_payload(2000), 'endDate': '2026-11-03'}
+    samples = []
+    with patch.object(adapter, 'select_budget_aware_activities', wraps=adapter.select_budget_aware_activities) as selector:
+        for _ in range(7):
+            with fixture(items, new_trip=True):
+                start = perf_counter()
+                response = client.post('/api/fr5/personalised-trips/generate', headers=HEADERS, json=payload)
+                samples.append((perf_counter() - start) * 1000)
+                assert response.status_code == 200, response.json
+                saved = response.json['itinerary']
+                assert saved['scheduledActivityCount'] == 20
+                _assert_schedule_fits(saved)
+        assert selector.call_count == (7 if enabled else 0)
+    record_property('endpoint_performance', json.dumps({
+        'enabled': enabled, 'candidates': 20, 'days': 3, 'samplesMs': samples,
+        'medianMs': median(samples), 'p95Ms': max(samples),
+        'selectorCalls': selector.call_count, 'scheduled': 20, 'excluded': 0,
+        'method': 'Flask test_client, mocked authentication/persistence/forecast, nearest-rank P95 of seven calls'}))

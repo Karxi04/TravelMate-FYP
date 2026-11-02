@@ -3053,6 +3053,18 @@ tr:hover td {
   color: #475569;
 }
 
+.badge-fulfillment.trip_ready {
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  color: #15803D;
+}
+
+.badge-fulfillment.declined {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  color: #B91C1C;
+}
+
 .badge-supplier {
   display: inline-flex;
   align-items: center;
@@ -3067,6 +3079,18 @@ tr:hover td {
   background: #FFF7ED;
   border: 1px solid #FFEDD5;
   color: #C2410C;
+}
+
+.badge-supplier.attested {
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  color: #15803D;
+}
+
+.badge-supplier.declined {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  color: #B91C1C;
 }
 
 .badge-legacy {

@@ -1,4 +1,5 @@
 import io
+from copy import deepcopy
 from flask import Blueprint, request, jsonify, g
 
 from auth_utils import auth_required
@@ -10,7 +11,8 @@ from sequence_contract.firebase_firestore import (
     retrieveRecord,
     storeRecord,
     updateRecord,
-    deleteRecord
+    deleteRecord,
+    commitPackageFulfillment,
 )
 
 from sequence_contract.domain_functions import (
@@ -25,7 +27,8 @@ from sequence_contract.domain_functions import (
 from firebase_service import get_db
 
 from flask import send_file
-from .analytics_service import generate_business_analytics, _safe_analytics_booking, unique_package_orders, RECORD_LIMIT
+from .analytics_service import generate_business_analytics, _safe_analytics_booking, unique_package_orders, RECORD_LIMIT, is_paid_order
+from services.package_checkout_contract import derive_required_services, build_initial_fulfillment_record
 from services.public_content_projection import eligible_package
 from services.report_service import export_operator_report
 from services.package_service import (
@@ -91,7 +94,7 @@ def packages():
 
 
 def _booking_projection(order):
-    return _safe_analytics_booking(order)
+    return _safe_analytics_booking(order, include_fulfillment=True)
 
 
 @bp.get('/bookings')
@@ -113,6 +116,152 @@ def package_booking_detail(order_reference):
     if not order or order.get('quoteType') != 'package' or (g.role != 'admin' and order.get('operatorId') != g.uid):
         return jsonify({'ok': False, 'error': 'Booking not found'}), 404
     return jsonify({'ok': True, 'booking': _booking_projection(order)})
+
+
+def _fulfillment_order(order_reference):
+    try:
+        order = retrieveRecord('checkout_orders', order_reference)
+    except Exception:
+        return None, (jsonify({'ok': False, 'error': 'Booking storage is temporarily unavailable'}), 503)
+    if not order or order.get('quoteType') != 'package':
+        return None, (jsonify({'ok': False, 'error': 'Booking not found'}), 404)
+    if g.role != 'admin' and order.get('operatorId') != g.uid:
+        return None, (jsonify({'ok': False, 'error': 'Booking not owned by this operator'}), 403)
+    snapshot = order.get('packageSnapshot')
+    if (not isinstance(snapshot, dict) or
+            (snapshot.get('operatorId') and snapshot['operatorId'] != order.get('operatorId')) or
+            (snapshot.get('packageId') and snapshot['packageId'] != order.get('packageId'))):
+        return None, (jsonify({'ok': False, 'error': 'Purchased package ownership is inconsistent'}), 409)
+    if not is_paid_order(order):
+        return None, (jsonify({'ok': False, 'error': 'Cannot update fulfillment for an unpaid booking'}), 400)
+    return order, None
+
+
+def _fulfillment_payload(fields):
+    payload = request.get_json(silent=True)
+    if payload is None and not request.data:
+        payload = {}
+    if not isinstance(payload, dict) or set(payload) - fields:
+        return None
+    if any(not isinstance(value, str) for value in payload.values()):
+        return None
+    return {key: value.strip() for key, value in payload.items()}
+
+
+def _save_fulfillment(order_reference, order, patch):
+    from services.review_service import ReviewConflict
+    try:
+        updated = commitPackageFulfillment(order_reference, order, patch)
+        if not updated:
+            raise RuntimeError('No persisted result')
+        return jsonify({'ok': True, 'booking': _booking_projection(updated)}), 200
+    except ReviewConflict:
+        return jsonify({'ok': False, 'error': 'Booking changed or linked Trip is unavailable. Refresh and try again.'}), 409
+    except Exception:
+        return jsonify({'ok': False, 'error': 'Booking storage is temporarily unavailable. Refresh before retrying.'}), 503
+
+
+def _fulfillment_record(order):
+    record = order.get('fulfillmentRecord')
+    if not isinstance(record, dict) or not isinstance(record.get('services'), dict):
+        record = build_initial_fulfillment_record(order['packageSnapshot'], now=order.get('createdAt'))
+    return deepcopy(record)
+
+
+@bp.post('/bookings/<order_reference>/fulfillment')
+@auth_required(['operator', 'admin'])
+def update_booking_fulfillment(order_reference):
+    order, error = _fulfillment_order(order_reference)
+    if error:
+        return error
+    if order.get('fulfillmentStatus') in {'trip_ready', 'fulfilled', 'fulfillment_declined'}:
+        return jsonify({'ok': False, 'error': 'Completed or declined arrangements cannot be changed here'}), 409
+    payload = _fulfillment_payload({'serviceType', 'reference', 'supplierName', 'providerName', 'guideOrActivity', 'notes'})
+    if payload is None:
+        return jsonify({'ok': False, 'error': 'Invalid attestation fields or value types'}), 400
+    service_type = payload.get('serviceType')
+    if service_type not in {'accommodation', 'transport', 'guideActivities'}:
+        return jsonify({'ok': False, 'error': 'Invalid serviceType'}), 400
+    reference = payload.get('reference', '')
+    name = payload.get('supplierName') or payload.get('providerName') or payload.get('guideOrActivity') or ''
+    notes = payload.get('notes', '')
+    if not reference or len(reference) > 200 or len(name) > 200 or len(notes) > 2000 or any(ord(c) < 32 for c in reference):
+        return jsonify({'ok': False, 'error': 'A valid reservation reference is required (maximum 200 characters).'}), 400
+    requirements = derive_required_services(order['packageSnapshot'])
+    if not requirements[service_type]['required'] or requirements[service_type].get('uncertain'):
+        return jsonify({'ok': False, 'error': 'This service is not a verified included package arrangement'}), 409
+    record = _fulfillment_record(order)
+    services = record.setdefault('services', {})
+    name_field = {'accommodation': 'supplierName', 'transport': 'providerName', 'guideActivities': 'guideOrActivity'}[service_type]
+    previous = services.get(service_type) or {}
+    if (previous.get('status') == 'confirmed' and previous.get('reference') == reference and
+            previous.get('notes', '') == notes and previous.get(name_field, '') == (name or previous.get(name_field, ''))):
+        return _save_fulfillment(order_reference, order, {})
+    now = utc_now_iso()
+    services[service_type] = {**previous, 'required': True, 'status': 'confirmed',
+        'reference': reference, name_field: name or previous.get(name_field, ''), 'notes': notes,
+        'confirmedAt': now, 'confirmedBy': g.uid, 'provenance': 'operator_attested'}
+    record.update({'status': 'partially_fulfilled', 'updatedAt': now, 'requiredServices': requirements})
+    return _save_fulfillment(order_reference, order, {
+        'fulfillmentRecord': record, 'fulfillmentStatus': 'partially_fulfilled',
+        'supplierReservationStatus': 'not_created', 'updatedAt': now})
+
+
+@bp.post('/bookings/<order_reference>/confirm-fulfillment')
+@auth_required(['operator', 'admin'])
+def confirm_booking_fulfillment(order_reference):
+    order, error = _fulfillment_order(order_reference)
+    if error:
+        return error
+    if _fulfillment_payload(set()) is None:
+        return jsonify({'ok': False, 'error': 'Confirmation does not accept booking field overrides'}), 400
+    if order.get('fulfillmentStatus') in {'fulfillment_declined', 'fulfilled'}:
+        return jsonify({'ok': False, 'error': 'Declined or legacy fulfilled arrangements require review'}), 409
+    if order.get('fulfillmentStatus') == 'trip_ready':
+        return _save_fulfillment(order_reference, order, {})
+    record = _fulfillment_record(order)
+    requirements = derive_required_services(order['packageSnapshot'])
+    if any(meta.get('uncertain') for meta in requirements.values()):
+        return jsonify({'ok': False, 'error': 'Purchased brochure does not reliably establish included services. Review is required.'}), 409
+    for key, meta in requirements.items():
+        service = (record.get('services') or {}).get(key) or {}
+        if meta['required'] and (service.get('status') != 'confirmed' or
+                not service.get('reference') or service.get('provenance') != 'operator_attested' or
+                not service.get('confirmedBy') or not service.get('confirmedAt')):
+            return jsonify({'ok': False, 'error': f'Cannot confirm fulfillment: {key} arrangements have not been attested.'}), 400
+    now = utc_now_iso()
+    record.update({'status': 'trip_ready', 'confirmedAt': now, 'confirmedBy': g.uid,
+                   'updatedAt': now, 'requiredServices': requirements})
+    # No supplier reservation is claimed when no supplier service was included.
+    supplier_status = 'operator_attested' if any(meta['required'] for meta in requirements.values()) else 'not_required'
+    return _save_fulfillment(order_reference, order, {
+        'fulfillmentStatus': 'trip_ready', 'supplierReservationStatus': supplier_status,
+        'fulfillmentRecord': record, 'updatedAt': now})
+
+
+@bp.post('/bookings/<order_reference>/decline')
+@auth_required(['operator', 'admin'])
+def decline_booking_fulfillment(order_reference):
+    order, error = _fulfillment_order(order_reference)
+    if error:
+        return error
+    if order.get('fulfillmentStatus') in {'trip_ready', 'fulfilled'}:
+        return jsonify({'ok': False, 'error': 'Cannot decline completed arrangements here'}), 409
+    payload = _fulfillment_payload({'reason'})
+    reason = payload.get('reason', '') if payload is not None else ''
+    if not 5 <= len(reason) <= 2000:
+        return jsonify({'ok': False, 'error': 'A detailed reason (at least 5 characters, maximum 2000) is required.'}), 400
+    if order.get('fulfillmentStatus') == 'fulfillment_declined':
+        if (order.get('fulfillmentRecord') or {}).get('declineReason') != reason:
+            return jsonify({'ok': False, 'error': 'Booking is already declined'}), 409
+        return _save_fulfillment(order_reference, order, {})
+    now = utc_now_iso()
+    record = _fulfillment_record(order)
+    record.update({'status': 'fulfillment_declined', 'declineReason': reason, 'declinedAt': now,
+                   'declinedBy': g.uid, 'updatedAt': now})
+    return _save_fulfillment(order_reference, order, {
+        'fulfillmentStatus': 'fulfillment_declined', 'supplierReservationStatus': 'declined',
+        'fulfillmentRecord': record, 'updatedAt': now})
 
 
 @bp.post('/packages')

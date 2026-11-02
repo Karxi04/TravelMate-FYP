@@ -699,6 +699,27 @@ void main() {
       expect(find.text('Order reference copied to clipboard'), findsOneWidget);
     });
 
+    for (final entry in {
+      'operator_attested': 'The operator has recorded supplier arrangements.',
+      'declined': 'The operator is unable to fulfill this booking.',
+      'not_required': 'No supplier reservations are required for the included services.',
+    }.entries) {
+      testWidgets('renders honest ${entry.key} supplier status', (tester) async {
+        tester.view.physicalSize = const Size(800, 2000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final trip = _mockVivoPenangPackageTrip(supplierStatus: entry.key);
+        await tester.pumpWidget(MaterialApp(home: PackageTripDetailsScreen(
+          tripId: trip['id'].toString(), initialTrip: trip,
+          api: _MockApi(packageTrip: trip, personalizedTrip: _mockPersonalizedTrip()),
+        )));
+        await tester.pumpAndSettle();
+        expect(find.textContaining(entry.value), findsOneWidget);
+        expect(find.textContaining('No external supplier reservation has been created.'), findsNothing);
+      });
+    }
+
     testWidgets('displays accurate supplier disclosure based on supplierReservationStatus', (tester) async {
       tester.view.physicalSize = const Size(800, 2000);
       tester.view.devicePixelRatio = 1.0;

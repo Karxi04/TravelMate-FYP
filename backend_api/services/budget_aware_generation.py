@@ -36,9 +36,21 @@ def generate_with_budget_selection(working, forecast, locations):
 
 def qualify_selection_budget(budget, selection):
     """Add uncertainty to shared accounting, never replace amounts or invent savings."""
+    budget = deepcopy(budget)
+    notice = None
+    if round(budget['knownEstimatedSubtotal'] - budget['activities'], 2) > budget['budgetLimit']:
+        notice = 'Known fixed costs exceed the total group budget; no fully affordable itinerary is possible with the current selections and estimates.'
+    elif selection['schedulingStatus'] == 'no_activities_selected':
+        notice = 'No feasible activities fit the current budget and constraints from the available candidates. A complete activity itinerary has not been established.'
+        budget['incomplete'] = True
+        budget['completenessStatus'] = 'incomplete'
+        if budget['affordabilityStatus'] != 'over_budget':
+            budget['affordabilityStatus'] = budget['status'] = 'incomplete'
+    if notice:
+        budget['attention'] = notice
+        budget['estimateLimitations'] = list(dict.fromkeys(budget['estimateLimitations'] + [notice]))
     if 'activities' not in selection['budget']['unresolvedExpenseCategories']:
         return budget
-    budget = deepcopy(budget)
     budget['pendingExpenseCategories'] = list(dict.fromkeys(budget['pendingExpenseCategories'] + ['activities']))
     budget['incomplete'] = True
     budget['completenessStatus'] = 'incomplete'

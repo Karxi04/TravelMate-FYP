@@ -576,6 +576,15 @@ def booking_records():
                 package_id = o.get('packageId') or pkg_snapshot.get('packageId') or '-'
 
                 sanitized_order = _sanitize_commerce_record(o)
+                supplier_status = str(o.get('supplierReservationStatus') or 'not_created').lower()
+                supplier_disclosure = {
+                    'operator_attested': 'Supplier arrangements recorded by the operator; not independently API verified by TravelMate.',
+                    'declined': 'Operator unable to fulfill; no refund is implied by this status.',
+                    'not_required': 'No supplier reservations required for the included services.',
+                }.get(supplier_status)
+                if supplier_disclosure is None:
+                    supplier_status = 'not_created'
+                    supplier_disclosure = 'Package Trip creation is platform-managed; no direct third-party supplier reservation has been booked.'
                 pkg_proj = {
                     **sanitized_order,
                     'bookingType': 'package',
@@ -587,8 +596,8 @@ def booking_records():
                     'paymentStatus': o.get('paymentStatus') or o.get('status') or 'unpaid',
                     'orderStatus': o.get('status') or 'checkout_pending',
                     'fulfillmentStatus': o.get('fulfillmentStatus') or 'fulfillment_pending',
-                    'supplierReservationStatus': 'not_created',
-                    'supplierReservationDisclosure': 'Package Trip creation is platform-managed; no direct third-party supplier reservation has been booked.',
+                    'supplierReservationStatus': supplier_status,
+                    'supplierReservationDisclosure': supplier_disclosure,
                     'testMode': bool(o.get('testMode')),
                     'amount': _amount(o),
                     'currency': str(o.get('currency') or 'UNKNOWN').upper(),

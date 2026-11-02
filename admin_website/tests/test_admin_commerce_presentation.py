@@ -38,6 +38,20 @@ def _patch_view_api(view_name, mock_fn):
     return patch.dict(fn_globals, {"call_api": mock_fn})
 
 
+@pytest.mark.parametrize('status,label', [('operator_attested','Operator Attested'),
+    ('declined','Fulfillment Declined'),('not_required','Not Required')])
+def test_supplier_attestation_disclosure_is_not_overwritten(auth_client,status,label):
+    response=MagicMock(ok=True)
+    response.json.return_value={'ok':True,'items':[{'id':'synthetic','bookingType':'package',
+        'supplierReservationStatus':status,'supplierReservationDisclosure':'Operator evidence, not API verified',
+        'amount':100,'currency':'MYR','fulfillmentStatus':'trip_ready'}]}
+    with _patch_view_api('admin_fr13.bookings',MagicMock(return_value=response)):
+        page=auth_client.get('/admin/bookings?type=package')
+    html=page.get_data(as_text=True)
+    assert page.status_code == 200 and label in html
+    assert 'Not Created (Manual)' not in html
+
+
 @pytest.mark.parametrize('page',['dashboard','users','packages','campaigns','feedback','destinations','activities','bookings','payments','reports'])
 def test_f4b_outage_is_visible_without_private_exception(auth_client,page):
     import requests

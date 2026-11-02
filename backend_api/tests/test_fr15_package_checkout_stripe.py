@@ -8,11 +8,14 @@ from test_fr15_package_checkout_api import AtomicMemory
 
 
 class PaymentMemory(AtomicMemory):
-    def update(self, collection, document_id, data):
+    def update(self, collection, document_id, data, expected=None):
         with self._lock:
             records = self.collections.setdefault(collection, {})
             if document_id not in records:
                 return None
+            if expected is not None and records[document_id] != expected:
+                from services.review_service import ReviewConflict
+                raise ReviewConflict('Changed')
             records[document_id] = {**records[document_id], **deepcopy(data)}
             return deepcopy(records[document_id])
 
@@ -31,7 +34,7 @@ def package_payment(client, monkeypatch):
             ))
         return SimpleNamespace(collection=lambda _name: SimpleNamespace(document=document))
 
-    monkeypatch.setattr('auth_utils.auth.verify_id_token', lambda token: {'uid': token})
+    monkeypatch.setattr('auth_utils.auth.verify_id_token', lambda token, *a, **k: {'uid': token})
     monkeypatch.setattr('auth_utils.get_db', database)
     monkeypatch.setattr('modules.fr09_payment.routes.retrieveRecord', memory.retrieve)
     monkeypatch.setattr('modules.fr09_payment.routes.claimRecord', memory.claim)
@@ -293,7 +296,7 @@ def test_paid_group_trip_creation_recovers_after_transient_persistence_failure(
         reconciled = client.get(f"/api/fr9/orders/{order['id']}/reconcile", headers=headers)
     assert reconciled.status_code == 200
     assert len(memory.collections['itineraries']) == 1
-    assert memory.retrieve('checkout_orders', order['id'])['fulfillmentStatus'] == 'fulfilled'
+    assert memory.retrieve('checkout_orders', order['id'])['fulfillmentStatus'] == 'awaiting_operator_fulfillment'
 
 
 @pytest.mark.parametrize('extra', [

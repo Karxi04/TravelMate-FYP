@@ -3,6 +3,7 @@ from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
+import re
 
 from services.public_content_projection import eligible_package
 
@@ -10,6 +11,8 @@ PACKAGE_FULFILLMENT_STATES = {
     'checkout_pending', 'payment_pending', 'payment_verified',
     'fulfillment_pending', 'fulfilled', 'fulfillment_failed',
     'payment_failed', 'payment_cancelled',
+    'awaiting_operator_fulfillment', 'partially_fulfilled',
+    'trip_ready', 'fulfillment_declined',
 }
 MAX_GROUP_PARTICIPANTS = 50
 
@@ -257,7 +260,9 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None,
         'packageId': str(package.get('id') or ''), 'operatorId': str(package['operatorId']),
         'title': package.get('title') or package.get('packageTitle'),
         'destination': package.get('destination') or package.get('destinationName'),
-        'durationDays': package.get('durationDays'), 'departureDates': deepcopy(package.get('departureDates') or []),
+        'durationDays': package.get('durationDays'),
+        'durationNights': package.get('durationNights'),
+        'departureDates': deepcopy(package.get('departureDates') or []),
         'selectedDepartureDate': selected_departure,
         'itineraryDays': deepcopy(package.get('itineraryDays') or []),
         'inclusions': deepcopy(package.get('inclusions') or []), 'exclusions': deepcopy(package.get('exclusions') or []),
@@ -313,3 +318,144 @@ def create_package_attempt(claim, traveller_id, package, operator, idempotency_k
             'fulfillmentMode')):
         raise ValueError('Idempotency key is already bound to another package checkout.')
     return existing, created
+
+
+def derive_required_services(snapshot):
+    """
+    Dynamically determine required supplier services from package snapshot.
+    Only explicit brochure commitments require supplier arrangements. Days,
+    nights and itinerary activities alone are not evidence of a reservation.
+    """
+    if not isinstance(snapshot, dict):
+        snapshot = {}
+
+    # 1. Accommodation
+    accom = snapshot.get('accommodation') or {}
+    if not isinstance(accom, dict):
+        accom = {}
+    accom_name = str(accom.get('accommodationName') or snapshot.get('accommodationName') or '').strip()
+    room_type = str(accom.get('roomType') or snapshot.get('roomType') or '').strip()
+    category = str(accom.get('accommodationCategory') or snapshot.get('accommodationCategory') or '').strip()
+    notes = str(accom.get('accommodationNotes') or snapshot.get('accommodationNotes') or '').strip()
+
+    accom_required = bool(accom_name)
+
+    # 2. Transportation
+    transport = snapshot.get('transport') or {}
+    if not isinstance(transport, dict):
+        transport = {}
+    types = transport.get('transportTypes') or snapshot.get('transportTypes') or []
+    if isinstance(types, str):
+        types = [t.strip() for t in types.split(',') if t.strip()]
+    elif not isinstance(types, list):
+        types = []
+    t_notes = str(transport.get('transportNotes') or snapshot.get('transportNotes') or '').strip()
+
+    # 3. Guide & Activities
+    inclusions = snapshot.get('inclusions') or []
+    if isinstance(inclusions, str):
+        inclusions = [i.strip() for i in inclusions.split('\n') if i.strip()]
+    elif not isinstance(inclusions, list):
+        inclusions = []
+    itinerary_days = snapshot.get('itineraryDays') or []
+
+    exclusions = snapshot.get('exclusions') or []
+    if isinstance(exclusions, str):
+        exclusions = exclusions.splitlines()
+    # Negative or self-arranged wording must not become an included service.
+    def promised(text):
+        return not re.search(r'\b(no|not included|excluded|own|self[- ]guided|self[- ]drive)\b', text, re.I)
+
+    clauses = [part.strip() for item in inclusions
+               for part in re.split(r'[.;,]|\b(?:and|but)\b', str(item), flags=re.I) if part.strip()]
+    included = [part for part in clauses if promised(part)]
+    excluded = ' '.join(str(i) for i in exclusions) if isinstance(exclusions, list) else ''
+    patterns = {
+        'accommodation': r'\b(accommodation|hotel|resort|lodging|overnight stay)\b',
+        'transport': r'\b(transport|transfer|shuttle|chartered|private (van|bus|car))\b',
+        'guideActivities': r'\b(guide|guided|docent|escort|tickets?|admission|entrance fee|park pass)\b',
+    }
+    positive = {key: any(re.search(pattern, text, re.I) for text in included)
+                for key, pattern in patterns.items()}
+    negative = {key: bool(re.search(pattern, excluded, re.I)) for key, pattern in patterns.items()}
+    transport_required = (any(promised(str(t)) and not re.search(r'\b(walk|walking|public)\b', str(t), re.I)
+                              for t in types) or positive['transport'])
+    accom_required = accom_required or positive['accommodation']
+    guide_required = positive['guideActivities']
+    # Missing legacy inclusion data or contradictory brochure terms need review,
+    # not a manufactured all-clear. Existing snapshots are never rewritten.
+    unknown = (not isinstance(snapshot.get('inclusions'), (list, str)) or
+               not isinstance(snapshot.get('accommodation'), dict) or
+               not isinstance(snapshot.get('transport'), dict))
+
+    return {
+        'accommodation': {
+            'required': accom_required and not negative['accommodation'],
+            'uncertain': unknown or (accom_required and negative['accommodation']),
+            'brochureName': accom_name,
+            'brochureRoomType': room_type,
+            'brochureCategory': category,
+            'brochureNotes': notes,
+        },
+        'transport': {
+            'required': transport_required and not negative['transport'],
+            'uncertain': unknown or (transport_required and negative['transport']) or bool(t_notes and not types and not positive['transport'] and not negative['transport']),
+            'brochureTypes': [str(t) for t in types],
+            'brochureNotes': t_notes,
+        },
+        'guideActivities': {
+            'required': guide_required and not negative['guideActivities'],
+            'uncertain': unknown or (guide_required and negative['guideActivities']),
+            'inclusions': [str(i) for i in inclusions],
+            'itineraryDaysCount': len(itinerary_days) if isinstance(itinerary_days, list) else 0,
+        },
+    }
+
+
+def build_initial_fulfillment_record(snapshot, now=None):
+    """Create the initial embedded fulfillmentRecord for checkout_orders."""
+    req = derive_required_services(snapshot)
+    timestamp = now or datetime.now(timezone.utc).isoformat()
+    return {
+        'status': 'awaiting_operator_fulfillment',
+        'requiredServices': req,
+        'services': {
+            'accommodation': {
+                'required': req['accommodation']['required'],
+                'status': 'unconfirmed' if req['accommodation']['required'] else 'not_required',
+                'supplierName': req['accommodation']['brochureName'],
+                'reference': '',
+                'notes': '',
+                'confirmedAt': None,
+                'confirmedBy': None,
+                'provenance': 'unconfirmed_manual' if req['accommodation']['required'] else 'not_applicable',
+            },
+            'transport': {
+                'required': req['transport']['required'],
+                'status': 'unconfirmed' if req['transport']['required'] else 'not_required',
+                'providerName': ', '.join(req['transport']['brochureTypes']) if req['transport']['brochureTypes'] else '',
+                'reference': '',
+                'notes': '',
+                'confirmedAt': None,
+                'confirmedBy': None,
+                'provenance': 'unconfirmed_manual' if req['transport']['required'] else 'not_applicable',
+            },
+            'guideActivities': {
+                'required': req['guideActivities']['required'],
+                'status': 'unconfirmed' if req['guideActivities']['required'] else 'not_required',
+                'guideOrActivity': ', '.join(req['guideActivities']['inclusions'][:3]) if req['guideActivities']['inclusions'] else '',
+                'reference': '',
+                'notes': '',
+                'confirmedAt': None,
+                'confirmedBy': None,
+                'provenance': 'unconfirmed_manual' if req['guideActivities']['required'] else 'not_applicable',
+            },
+        },
+        'declineReason': None,
+        'declinedAt': None,
+        'declinedBy': None,
+        'confirmedAt': None,
+        'confirmedBy': None,
+        'updatedAt': timestamp,
+    }
+

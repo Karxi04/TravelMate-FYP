@@ -55,7 +55,8 @@ def journey(app, client, monkeypatch):
             "role": role, "status": "active", "verificationStatus": "pending",
         }, uid)
 
-    def verify(token):
+    def verify(token, *, clock_skew_seconds):
+        assert clock_skew_seconds == 10
         assert token in {TRAVELLER, OPERATOR, ADMIN}
         return {"uid": token, "email": f"{token}@example.test"}
 
@@ -248,6 +249,32 @@ def test_actual_operator_login_requires_verification(client, journey, monkeypatc
         assert browser.get("/packages").status_code == 200
         assert browser.get("/packages/new").status_code == 200
         assert browser.get("/campaigns").status_code == 200
+
+
+@pytest.mark.parametrize("failure", ["invalid", "expired"])
+def test_firebase_verification_failure_remains_unauthorized(client, failure):
+    from firebase_admin import auth
+    error = (auth.ExpiredIdTokenError("Synthetic expired token", None) if failure == "expired"
+             else auth.InvalidIdTokenError("Synthetic invalid token"))
+    with patch("auth_utils.auth.verify_id_token", side_effect=error) as verify:
+        response = client.get("/api/fr1/me", headers=AUTH)
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "Invalid or expired Firebase ID token"
+    verify.assert_called_once_with(TRAVELLER, clock_skew_seconds=10)
+
+
+def test_operator_login_with_expired_backend_token_clears_session(client, journey, monkeypatch):
+    from firebase_admin import auth
+    with patch("auth_utils.auth.verify_id_token",
+               side_effect=auth.ExpiredIdTokenError("Synthetic expired token", None)) as verify:
+        browser, _token, response = portal_bridge(load_portal("operator", monkeypatch), client, OPERATOR)
+    # An authentication error renders login; valid-user redirect assertions stay intact.
+    assert response.status_code == 200
+    assert b"Authentication session expired or invalid" in response.data
+    with browser.session_transaction() as session:
+        assert not session.get("id_token")
+        assert not session.get("portal_role")
+    verify.assert_called_once_with(OPERATOR, clock_skew_seconds=10)
 
 
 def test_portal_admin_verification_package_campaign_and_traveller_publication(client, journey, monkeypatch):
@@ -524,7 +551,12 @@ def test_gemini_flask_route_does_not_reuse_another_travellers_session(client, jo
         "uid": "other-traveller", "email": "other@example.test", "name": "Other",
         "role": "traveller", "status": "active",
     }, "other-traveller")
-    monkeypatch.setattr("auth_utils.auth.verify_id_token", lambda token: {"uid": token})
+    def verify_session_user(token, *, clock_skew_seconds):
+        assert clock_skew_seconds == 10
+        assert token in {TRAVELLER, "other-traveller"}
+        return {"uid": token}
+
+    monkeypatch.setattr("auth_utils.auth.verify_id_token", verify_session_user)
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
     monkeypatch.setenv("FALLBACK_MODE", "false")
     with patch.object(gemini_service.genai, "Client") as sdk:

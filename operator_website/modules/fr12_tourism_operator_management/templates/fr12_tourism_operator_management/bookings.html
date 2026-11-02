@@ -91,8 +91,10 @@
     <select class="input filter-input" name="status" aria-label="Filter by booking status">
       <option value="all" {% if status == 'all' %}selected{% endif %}>All Bookings</option>
       <option value="paid" {% if status == 'paid' %}selected{% endif %}>Paid Orders</option>
+      <option value="awaiting_fulfillment" {% if status == 'awaiting_fulfillment' %}selected{% endif %}>Awaiting Arrangements</option>
+      <option value="fulfilled" {% if status == 'fulfilled' %}selected{% endif %}>Trip Ready / Fulfilled</option>
       <option value="pending" {% if status == 'pending' %}selected{% endif %}>Payment Pending</option>
-      <option value="fulfilled" {% if status == 'fulfilled' %}selected{% endif %}>Trip Fulfilled</option>
+      <option value="declined" {% if status == 'declined' %}selected{% endif %}>Fulfillment Declined</option>
       <option value="test" {% if status == 'test' %}selected{% endif %}>Stripe Test Mode Only</option>
     </select>
     <button class="btn outline" type="submit">
@@ -247,13 +249,23 @@
 
         <td>
           {% set ful_status = (item.fulfillmentStatus or '')|lower %}
-          {% if ful_status == 'fulfilled' %}
-            <span class="badge-fulfillment fulfilled">
+          {% if ful_status in ['trip_ready', 'fulfilled'] %}
+            <span class="badge-fulfillment trip_ready">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-              <span>Trip Created in App</span>
+              <span>{{ 'Trip Ready' if ful_status == 'trip_ready' else 'Trip Created in App' }}</span>
             </span>
-          {% elif ful_status in ['pending', 'fulfillment_pending'] %}
-            <span class="badge-fulfillment pending">Trip Pending</span>
+          {% elif ful_status == 'partially_fulfilled' %}
+            <span class="badge-fulfillment pending">
+              <span>Partially Confirmed</span>
+            </span>
+          {% elif ful_status in ['pending', 'fulfillment_pending', 'awaiting_operator_fulfillment'] %}
+            <span class="badge-fulfillment pending">
+              <span>Awaiting Arrangements</span>
+            </span>
+          {% elif ful_status == 'fulfillment_declined' %}
+            <span class="badge-fulfillment declined">
+              <span>Declined</span>
+            </span>
           {% elif ful_status in ['not_created', 'none', 'unfulfilled', 'not_fulfilled'] or not item.fulfillmentStatus %}
             <span class="badge-fulfillment fallback">Not Fulfilled</span>
           {% else %}
@@ -262,9 +274,20 @@
         </td>
 
         <td>
-          <span class="badge-supplier unconfirmed" title="Actual third-party supplier reservation must be coordinated manually by the operator">
-            ⚠️ Not Created (Manual)
-          </span>
+          {% set sup_status = (item.supplierReservationStatus or '')|lower %}
+          {% if sup_status == 'operator_attested' %}
+            <span class="badge-supplier attested" title="Supplier reservation confirmed and attested by operator">
+              ✅ Operator Attested
+            </span>
+          {% elif sup_status == 'declined' %}
+            <span class="badge-supplier declined" title="Supplier fulfillment declined by operator">
+              ❌ Declined
+            </span>
+          {% else %}
+            <span class="badge-supplier unconfirmed" title="Actual third-party supplier reservation must be coordinated manually by the operator">
+              ⚠️ Not Created (Manual)
+            </span>
+          {% endif %}
         </td>
 
         <td style="text-align: right;">

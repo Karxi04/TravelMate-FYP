@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from math import isfinite
 from services.public_content_projection import active_campaign, eligible_package
+from services.package_checkout_contract import derive_required_services, build_initial_fulfillment_record
 
 RECORD_LIMIT = 500
 
@@ -45,7 +46,7 @@ def _normalise(value):
     return str(value or "").strip().lower()
 
 
-def _safe_analytics_booking(order_data):
+def _safe_analytics_booking(order_data, include_fulfillment=False):
     """
     Project a raw checkout_orders document to an operator-safe analytics booking projection.
 
@@ -105,7 +106,28 @@ def _safe_analytics_booking(order_data):
         amt_val = None
     group_total = amt_val
 
-    return {
+    ful_record = order_data.get("fulfillmentRecord")
+    required_services = derive_required_services(snapshot)
+    if not ful_record and is_paid_order(order_data):
+        ful_record = build_initial_fulfillment_record(snapshot, now=order_data.get("createdAt"))
+
+    safe_snapshot = {
+        "packageId": package_id,
+        "title": package_title,
+        "destination": snapshot.get("destination") or snapshot.get("destinationName"),
+        "durationDays": snapshot.get("durationDays"),
+        "durationNights": snapshot.get("durationNights"),
+        "selectedDepartureDate": departure_date,
+        "accommodation": snapshot.get("accommodation") or {},
+        "transport": snapshot.get("transport") or {},
+        "inclusions": snapshot.get("inclusions") or [],
+        "exclusions": snapshot.get("exclusions") or [],
+        "itineraryDays": snapshot.get("itineraryDays") or [],
+        "priceBasis": snapshot.get("priceBasis"),
+        "taxIncluded": snapshot.get("taxIncluded"),
+    }
+
+    res = {
         "id": order_id,
         "orderReference": order_id,
         "packageId": package_id,
@@ -129,6 +151,11 @@ def _safe_analytics_booking(order_data):
         "createdAt": order_data.get("createdAt"),
         "updatedAt": order_data.get("updatedAt"),
     }
+    if include_fulfillment:
+        res["fulfillmentRecord"] = ful_record
+        res["requiredServices"] = required_services
+        res["packageBrochure"] = safe_snapshot
+    return res
 
 
 
@@ -269,11 +296,11 @@ def generate_business_analytics(db, operator_id):
 
     fulfilled_bookings = sum(
         1 for b in bookings
-        if _normalise(b.get("fulfillmentStatus")) == "fulfilled"
+        if _normalise(b.get("fulfillmentStatus")) in {"fulfilled", "trip_ready"}
     )
     pending_fulfillment_bookings = sum(
         1 for b in bookings
-        if _normalise(b.get("fulfillmentStatus")) in {"pending", "fulfillment_pending"}
+        if _normalise(b.get("fulfillmentStatus")) in {"pending", "fulfillment_pending", "awaiting_operator_fulfillment", "partially_fulfilled"}
     )
 
     # ==========================================================

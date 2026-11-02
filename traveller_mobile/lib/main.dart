@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import 'firebase_options.dart';
+import 'services/firebase_startup.dart';
 import 'theme/app_theme.dart';
 import 'modules/fr01_user_management/login_screen.dart';
 import 'modules/fr09_payment/checkout_return_screen.dart';
@@ -54,10 +53,7 @@ class _TravelMateAppState extends State<TravelMateApp> {
     if (!ApiService.forceStandalone) {
       ApiService.setBaseUrl(ApiService.baseUrl);
     }
-    await (widget.initialize ??
-        () => Firebase.initializeApp(
-              options: DefaultFirebaseOptions.currentPlatform,
-            ))();
+    await (widget.initialize ?? initializeTravelMateFirebase)();
   }
 
   void _retryInitialization() => setState(() => initialization = _initialize());
@@ -83,7 +79,8 @@ class _TravelMateAppState extends State<TravelMateApp> {
     }
     final navigator = navigatorKey.currentState;
     if (navigator == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _openCheckoutReturnIfReady());
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _openCheckoutReturnIfReady());
       return;
     }
     pendingCheckoutReturn = null;
@@ -111,8 +108,9 @@ class _TravelMateAppState extends State<TravelMateApp> {
           if (startup.hasError) {
             return Scaffold(
               body: AppErrorState(
-                message:
-                    'TravelMate could not start. Check the app configuration and try again.',
+                message: useFirebaseEmulator
+                    ? 'Emulator startup stopped: ${startup.error}'
+                    : 'TravelMate could not start. Check the app configuration and try again.',
                 retryLabel: 'Retry',
                 onRetry: _retryInitialization,
               ),
@@ -127,7 +125,8 @@ class _TravelMateAppState extends State<TravelMateApp> {
                 );
               }
               if (snapshot.data == null) return const LoginScreen();
-              WidgetsBinding.instance.addPostFrameCallback((_) => _openCheckoutReturnIfReady());
+              WidgetsBinding.instance
+                  .addPostFrameCallback((_) => _openCheckoutReturnIfReady());
               return const TravellerEntryGate();
             },
           );
