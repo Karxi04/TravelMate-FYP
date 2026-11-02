@@ -432,6 +432,9 @@ def _generate_itinerary_data(current, payload, snapshot=None):
         generated = generateItinerary(locations, forecast, working)
         if selection_enabled:
             generated['budgetAwareSelection'] = {'enabled': True, 'applied': False, 'reason': selection_skip_reason}
+        elif 'budgetAwareSelection' in working:
+            # An explicit regeneration must not claim the previous run's selection.
+            generated['budgetAwareSelection'] = {'enabled': False, 'applied': False, 'reason': 'feature_disabled'}
     generated['generationContext'] = {
         **generated.get('generationContext', {}),
         'destinationSource': generation_source,
@@ -800,6 +803,12 @@ def budget_comparison(iid):
         }
         return jsonify({'ok': True, 'budget': budget})
     budget = calculateBudget(current)
+    selection = current.get('budgetAwareSelection') or {}
+    if selection.get('applied') is True and (
+        {item.get('activityId') for item in current.get('activities', [])}
+        == {item.get('activityId') for item in selection.get('selectionRationale', [])}
+    ):
+        budget = qualify_selection_budget(budget, selection)
     budget['comparison'] = compareBudget(budget)
     updateRecord('itineraries', iid, {'budgetEstimate': budget})
     return jsonify({'ok': True, 'budget': budget})
