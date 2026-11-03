@@ -3,6 +3,112 @@
 
 {% block content %}
 {% include '_admin_data_state.html' %}
+
+<style>
+  .product-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .product-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: var(--radius-sm, 6px);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    color: var(--ink-secondary, #4b5563);
+    background: var(--canvas-subtle, #f3f4f6);
+    border: 1px solid var(--border, #e5e7eb);
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+  .product-tab:hover {
+    color: var(--ink, #111827);
+    border-color: var(--ink-muted, #9ca3af);
+  }
+  .product-tab.active {
+    color: #ffffff;
+    background: var(--primary, #0d6efd);
+    border-color: var(--primary, #0d6efd);
+  }
+  .payment-modal {
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: var(--radius-md, 8px);
+    padding: 0;
+    max-width: 540px;
+    width: 90vw;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.08);
+  }
+  .payment-modal::backdrop {
+    background: rgba(0, 0, 0, 0.45);
+  }
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+    background: var(--canvas-subtle, #f9fafb);
+  }
+  .modal-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--ink, #111827);
+  }
+  .modal-body {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .modal-detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed var(--border, #e5e7eb);
+    font-size: 13px;
+  }
+  .modal-detail-row:last-child {
+    border-bottom: none;
+  }
+  .modal-label {
+    color: var(--ink-muted, #6b7280);
+    font-weight: 500;
+    min-width: 140px;
+  }
+  .modal-notice {
+    margin-top: 10px;
+    padding: 12px;
+    border-radius: 6px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    font-size: 12px;
+    color: var(--ink-secondary, #475569);
+  }
+  .modal-notice strong {
+    display: block;
+    color: var(--ink, #0f172a);
+    margin-bottom: 4px;
+  }
+  .modal-notice p {
+    margin: 0;
+    line-height: 1.45;
+  }
+  .modal-footer {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border, #e5e7eb);
+    background: var(--canvas-subtle, #f9fafb);
+    display: flex;
+    justify-content: flex-end;
+  }
+</style>
+
 <div class="page-title">
   <div>
     <span class="eyebrow">COMMERCE &amp; SETTLEMENTS</span>
@@ -11,8 +117,46 @@
   </div>
 </div>
 
+<!-- Quick Product Filter Tabs -->
+<div class="product-tabs" role="tablist" aria-label="Product payment views">
+  <a class="product-tab {% if not product %}active{% endif %}" href="{{ url_for('admin_fr13.payments') }}">
+    <span>All Products</span>
+  </a>
+  <a class="product-tab {% if product == 'hotel' %}active{% endif %}" href="{{ url_for('admin_fr13.payments', product='hotel') }}">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="22.01"/><line x1="15" y1="22" x2="15" y2="22.01"/><line x1="9" y1="18" x2="9" y2="18.01"/><line x1="15" y1="18" x2="15" y2="18.01"/><line x1="9" y1="14" x2="9" y2="14.01"/><line x1="15" y1="14" x2="15" y2="14.01"/><line x1="9" y1="10" x2="9" y2="10.01"/><line x1="15" y1="10" x2="15" y2="10.01"/><line x1="9" y1="6" x2="9" y2="6.01"/><line x1="15" y1="6" x2="15" y2="6.01"/></svg>
+    <span>Hotel Payments</span>
+  </a>
+  <a class="product-tab {% if product == 'package' %}active{% endif %}" href="{{ url_for('admin_fr13.payments', product='package') }}">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+    <span>Package Payments</span>
+  </a>
+  <a class="product-tab {% if product == 'flight' %}active{% endif %}" href="{{ url_for('admin_fr13.payments', product='flight') }}">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.3c.4-.2.6-.6.5-1.1z"/></svg>
+    <span>Flight Payments</span>
+  </a>
+  <a class="product-tab {% if product == 'legacy_payment' %}active{% endif %}" href="{{ url_for('admin_fr13.payments', product='legacy_payment') }}">
+    <span>Legacy Payments</span>
+  </a>
+</div>
+
+<!-- Hotel Audit Banner (shown only when filtering for Hotel Payments) -->
+{% if product == 'hotel' %}
+<div class="card" style="border-left: 4px solid var(--primary, #0D6EFD); background: #f0f7ff; padding: 14px 18px; margin-bottom: 20px;" role="region" aria-label="Hotel Payment Audit Notice">
+  <div style="display: flex; gap: 12px; align-items: flex-start;">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary, #0D6EFD); flex-shrink: 0; margin-top: 2px;"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="22.01"/><line x1="15" y1="22" x2="15" y2="22.01"/><line x1="9" y1="18" x2="9" y2="18.01"/><line x1="15" y1="18" x2="15" y2="18.01"/><line x1="9" y1="14" x2="9" y2="14.01"/><line x1="15" y1="14" x2="15" y2="14.01"/><line x1="9" y1="10" x2="9" y2="10.01"/><line x1="15" y1="10" x2="15" y2="10.01"/><line x1="9" y1="6" x2="9" y2="6.01"/><line x1="15" y1="6" x2="15" y2="6.01"/></svg>
+    <div>
+      <strong style="color: var(--ink); font-size: 14px;">Hotel Payment Audit &amp; Third-Party Logistics Decoupling</strong>
+      <p style="margin: 4px 0 0; color: var(--ink-secondary); font-size: 13px; line-height: 1.5;">
+        Auditing standalone hotel transactions. <strong>Payment Status</strong> verifies checkout completion in Stripe Test Mode. <strong>Hotel Reservation Status</strong> indicates room fulfillment with external hospitality providers (NOT automated by TravelMate). A settled checkout does NOT guarantee room confirmation. Note: Package-bundled accommodation is audited under Packages, not standalone Hotel payments.
+      </p>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Filters Form -->
 <form method="get" class="filters card" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 14px 18px; margin-bottom: 20px;">
-  <input class="input" name="q" value="{{ q|default('') }}" placeholder="Order, traveller or package" aria-label="Search payment records" style="min-width: 200px; flex: 1;">
+  <input class="input" name="q" value="{{ q|default('') }}" placeholder="Order, traveller or reference" aria-label="Search payment records" style="min-width: 200px; flex: 1;">
   <select class="input" name="status" aria-label="Filter payments by status" style="min-width: 140px;">
     <option value="">All statuses</option>
     <option value="paid" {% if status == 'paid' %}selected{% endif %}>Paid</option>
@@ -32,45 +176,109 @@
   <input class="input" type="date" name="startDate" value="{{ startDate|default('') }}" title="Start Date" aria-label="Start date" style="min-width: 130px;">
   <input class="input" type="date" name="endDate" value="{{ endDate|default('') }}" title="End Date" aria-label="End date" style="min-width: 130px;">
   <button class="btn primary" type="submit">Filter</button>
+  {% if q or status or product or startDate or endDate %}
+    <a class="btn outline" href="{{ url_for('admin_fr13.payments') }}">Clear</a>
+  {% endif %}
 </form>
 
+<!-- Table of Payments -->
 <div class="table-wrap">
   <table>
     <thead>
       <tr>
         <th scope="col">Transaction</th>
-        <th scope="col">Product</th>
+        {% if product == 'hotel' %}
+          <th scope="col">Hotel Property</th>
+          <th scope="col">Stay Dates</th>
+        {% else %}
+          <th scope="col">Product</th>
+        {% endif %}
         <th scope="col">Traveller</th>
-        <th scope="col">Status</th>
+        <th scope="col">Payment Status</th>
+        {% if product == 'hotel' %}
+          <th scope="col">Hotel Reservation</th>
+        {% else %}
+          <th scope="col">Fulfillment</th>
+        {% endif %}
         <th scope="col">Amount</th>
         <th scope="col">Environment</th>
         <th scope="col">Created</th>
+        <th scope="col" style="text-align: right;">Action</th>
       </tr>
     </thead>
     <tbody>
       {% for x in items %}
+      {% set quote_snap = x.get('quoteSnapshot') or {} %}
+      {% set payment_state = x.get('status','unknown') if x.get('isPaid') is sameas false and x.get('paymentStatus') in ['paid','succeeded'] else x.get('paymentStatus', x.get('status','unknown')) %}
+      {% set sup_status = x.get('supplierBookingStatus') or x.get('fulfillmentStatus') or 'not_created' %}
       <tr>
         <td>
           <code style="font-size: 13px; font-weight: 700; color: var(--ink);">{{ x.get('transactionReference', x.get('id', '-')) }}</code>
           {% if x.get('cardBrand') or x.get('cardLast4') %}
             <br>
             <small class="muted">{{ x.get('cardBrand', 'Card') }} •••• {{ x.get('cardLast4', '') }}</small>
-          {% endif %}
-        </td>
-        <td>
-          <strong>{{ x.get('productType', x.get('bookingId', '-'))|replace('_', ' ')|title }}</strong>
-          {% if x.get('productTitle') and x.get('productTitle') != '-' %}
+          {% elif x.get('bookingId') and x.get('bookingId') != x.get('transactionReference') %}
             <br>
-            <small class="muted">{{ x.get('productTitle', '') }}</small>
+            <small class="muted">Booking: {{ x.get('bookingId') }}</small>
           {% endif %}
         </td>
+
+        {% if product == 'hotel' %}
+          <td>
+            {% if quote_snap.get('name') or quote_snap.get('hotelId') %}
+              <strong>{{ quote_snap.get('name') or quote_snap.get('hotelId') }}</strong>
+              {% if quote_snap.get('hotelId') and quote_snap.get('name') %}
+                <br><small class="muted">ID: {{ quote_snap.get('hotelId') }}</small>
+              {% endif %}
+            {% else %}
+              <span class="muted" style="font-style: italic;">Hotel information unavailable</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if quote_snap.get('checkIn') and quote_snap.get('checkOut') %}
+              <span style="font-size: 12.5px;">{{ quote_snap.get('checkIn') }} to {{ quote_snap.get('checkOut') }}</span>
+            {% elif x.get('checkInDate') %}
+              <span style="font-size: 12.5px;">{{ x.get('checkInDate') }}{% if x.get('checkOutDate') %} to {{ x.get('checkOutDate') }}{% endif %}</span>
+            {% else %}
+              <span class="muted" style="font-size: 12px; font-style: italic;">Stay dates not recorded</span>
+            {% endif %}
+          </td>
+        {% else %}
+          <td>
+            <strong>{{ x.get('productType', x.get('bookingId', '-'))|replace('_', ' ')|title }}</strong>
+            {% if x.get('productTitle') and x.get('productTitle') != '-' %}
+              <br>
+              <small class="muted">{{ x.get('productTitle', '') }}</small>
+            {% endif %}
+          </td>
+        {% endif %}
+
         <td>
           <span style="font-size: 12.5px;">{{ x.get('travellerId', '-') }}</span>
         </td>
-        {% set payment_state = x.get('status','unknown') if x.get('isPaid') is sameas false and x.get('paymentStatus') in ['paid','succeeded'] else x.get('paymentStatus', x.get('status','unknown')) %}
+
         <td>
           <span class="status {{ payment_state }}">{{ payment_state|title }}</span>
         </td>
+
+        <td>
+          {% if product == 'hotel' %}
+            {% if sup_status in ['not_created', 'unconfirmed', 'demo_only'] %}
+              <span class="badge warning" title="No third-party hotel room reservation confirmed">⚠️ Not Confirmed</span>
+            {% else %}
+              <span class="badge neutral">{{ sup_status|replace('_', ' ')|title }}</span>
+            {% endif %}
+          {% else %}
+            {% if sup_status in ['not_created', 'unconfirmed', 'demo_only'] %}
+              <span class="badge warning" title="Supplier reservation unconfirmed">⚠️ Not Confirmed</span>
+            {% elif sup_status in ['fulfilled', 'trip_ready'] %}
+              <span class="badge success">Confirmed</span>
+            {% else %}
+              <span class="badge neutral">{{ sup_status|replace('_', ' ')|title }}</span>
+            {% endif %}
+          {% endif %}
+        </td>
+
         <td>
           {% if x.get('amount') is not none %}
             <strong>{{ x.get('currency', 'UNKNOWN')|upper }} {{ '%.2f'|format(x.get('amount')|float) }}</strong>
@@ -78,6 +286,7 @@
             <span class="muted">Unavailable</span>
           {% endif %}
         </td>
+
         <td>
           {% if x.get('testMode') or 'test' in (x.get('provider', '')|string|lower) or (x.get('transactionReference', '')|string).startswith('pi_sim_') %}
             <span class="badge warning" style="font-size: 11px;">Stripe Test Mode</span>
@@ -85,19 +294,122 @@
             <span class="badge neutral" style="font-size: 11px;">Mode unverified</span>
           {% endif %}
         </td>
+
         <td>
           <small class="muted">{{ x.get('createdAt', '-') }}</small>
+        </td>
+
+        <td style="text-align: right;">
+          <button type="button" class="btn outline btn-sm" onclick="document.getElementById('modal-{{ loop.index }}').showModal()">View Details</button>
+
+          <!-- Accessible Read-Only Modal -->
+          <dialog id="modal-{{ loop.index }}" class="payment-modal" aria-labelledby="modal-title-{{ loop.index }}">
+            <div class="modal-header">
+              <h3 id="modal-title-{{ loop.index }}">Payment Transaction Details</h3>
+              <button type="button" class="btn outline btn-sm" onclick="document.getElementById('modal-{{ loop.index }}').close()" aria-label="Close modal">✕</button>
+            </div>
+            <div class="modal-body">
+              <div class="modal-detail-row">
+                <span class="modal-label">Transaction Reference:</span>
+                <strong style="font-family: ui-monospace, monospace; color: var(--ink);">{{ x.get('transactionReference', x.get('id', '-')) }}</strong>
+              </div>
+              <div class="modal-detail-row">
+                <span class="modal-label">Product Type:</span>
+                <span style="font-weight: 600;">{{ x.get('productType', '-')|replace('_', ' ')|title }}</span>
+              </div>
+              {% if x.get('productType') == 'hotel' or quote_snap %}
+              <div class="modal-detail-row">
+                <span class="modal-label">Hotel Property:</span>
+                <strong>{{ quote_snap.get('name') or quote_snap.get('hotelId') or 'Hotel information unavailable' }}</strong>
+              </div>
+              <div class="modal-detail-row">
+                <span class="modal-label">Hotel ID:</span>
+                <span>{{ quote_snap.get('hotelId') or 'Unavailable' }}</span>
+              </div>
+              <div class="modal-detail-row">
+                <span class="modal-label">Stay Dates:</span>
+                <span>
+                  {% if quote_snap.get('checkIn') and quote_snap.get('checkOut') %}
+                    {{ quote_snap.get('checkIn') }} to {{ quote_snap.get('checkOut') }}
+                  {% elif x.get('checkInDate') %}
+                    {{ x.get('checkInDate') }}{% if x.get('checkOutDate') %} to {{ x.get('checkOutDate') }}{% endif %}
+                  {% else %}
+                    Stay dates not recorded
+                  {% endif %}
+                </span>
+              </div>
+              {% endif %}
+              <div class="modal-detail-row">
+                <span class="modal-label">Traveller ID:</span>
+                <span>{{ x.get('travellerId', '-') }}</span>
+              </div>
+              <div class="modal-detail-row">
+                <span class="modal-label">Amount &amp; Currency:</span>
+                <strong style="color: var(--ink);">
+                  {% if x.get('amount') is not none %}
+                    {{ x.get('currency', 'MYR')|upper }} {{ '%.2f'|format(x.get('amount')|float) }}
+                  {% else %}
+                    Amount unavailable
+                  {% endif %}
+                </strong>
+              </div>
+              <div class="modal-detail-row">
+                <span class="modal-label">Payment Status:</span>
+                <span>
+                  <span class="status {{ payment_state }}">{{ payment_state|title }}</span>
+                  {% if x.get('testMode') or 'test' in (x.get('provider', '')|string|lower) %}
+                    (Stripe Test Mode)
+                  {% endif %}
+                </span>
+              </div>
+              <div class="modal-detail-row">
+                <span class="modal-label">Paid At:</span>
+                <span>
+                  {% if x.get('paidAt') %}
+                    {{ x.get('paidAt')[:19]|replace('T', ' ') }} UTC
+                  {% else %}
+                    <span class="muted" style="font-style: italic;">Payment date unavailable</span>
+                  {% endif %}
+                </span>
+              </div>
+              <div class="modal-detail-row">
+                <span class="modal-label">Hotel Reservation Status:</span>
+                <span class="badge warning">{{ x.get('supplierBookingStatus', 'not_created')|replace('_', ' ')|title }}</span>
+              </div>
+              <div class="modal-detail-row">
+                <span class="modal-label">Fulfillment Status:</span>
+                <span>{{ x.get('fulfillmentStatus', 'None')|replace('_', ' ')|title }}</span>
+              </div>
+              <div class="modal-detail-row">
+                <span class="modal-label">Record Created:</span>
+                <span class="muted">{{ x.get('createdAt', '-') }}</span>
+              </div>
+              <div class="modal-notice">
+                <strong>Read-Only Audit Interface</strong>
+                <p>All transaction and booking details are displayed in read-only audit mode. No payment alterations, refunds, or external hotel reservations can be created or executed from this view.</p>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn outline" onclick="document.getElementById('modal-{{ loop.index }}').close()">Close</button>
+            </div>
+          </dialog>
         </td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="7">
+        <td colspan="{% if product == 'hotel' %}10{% else %}9{% endif %}">
           <div class="empty-state">
             <div class="empty-icon" aria-hidden="true">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
             </div>
             <strong>No payment records found.</strong>
-            <p>Checkout sessions and transactions processed through the platform will appear here.</p>
+            <p>
+              {% if product == 'hotel' %}
+                No standalone hotel payments found matching current filters.
+              {% else %}
+                Checkout sessions and transactions processed through the platform will appear here.
+              {% endif %}
+            </p>
           </div>
         </td>
       </tr>

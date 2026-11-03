@@ -216,6 +216,16 @@
           {{ booking.orderStatus or '—' }}
         </span>
       </div>
+      <div class="detail-row">
+        <span>Paid At</span>
+        <span>
+          {% if booking.paidAt %}
+            <strong style="color: var(--ink); font-family: ui-monospace, monospace; font-size: 13px;">{{ booking.paidAt[:19]|replace('T', ' ') }} UTC</strong>
+          {% else %}
+            <span class="muted" style="font-style: italic;">Payment date unavailable</span>
+          {% endif %}
+        </span>
+      </div>
     </div>
 
     <!-- Fulfillment & Supplier Coordination Card -->

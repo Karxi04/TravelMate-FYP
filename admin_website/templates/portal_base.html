@@ -50,22 +50,6 @@
         </a>
 
         <div class="sidebar-nav-section">
-          <span class="sidebar-nav-title">Catalog</span>
-        </div>
-        <a href="{{ url_for('admin_fr13.destinations') }}" class="{% if request.endpoint in ['admin_fr13.destinations', 'admin_fr13.destination_details'] %}active{% endif %}">
-          <span class="nav-item-content">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-            <span>Destinations</span>
-          </span>
-        </a>
-        <a href="{{ url_for('admin_fr13.activities') }}" class="{% if request.endpoint in ['admin_fr13.activities', 'admin_fr13.activity_details'] %}active{% endif %}">
-          <span class="nav-item-content">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
-            <span>Activities</span>
-          </span>
-        </a>
-
-        <div class="sidebar-nav-section">
           <span class="sidebar-nav-title">System & Governance</span>
         </div>
         <a href="{{ url_for('admin_fr13.users') }}" class="{% if request.endpoint in ['admin_fr13.users', 'admin_fr13.update_user'] %}active{% endif %}">

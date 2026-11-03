@@ -1,0 +1,310 @@
+{% extends 'portal_base.html' %}
+{% block title %}Package Payments | TravelMate Operator{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <span class="eyebrow">Tourism Operator Management</span>
+    <h1>Package Payments &amp; Settlements</h1>
+    <p>Authoritative payment records for your booked tourism packages, settlement status, and Stripe test verification.</p>
+  </div>
+  <div class="actions">
+    <a class="btn outline" href="{{ url_for('operator_fr12.bookings') }}">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <span>View Bookings</span>
+    </a>
+  </div>
+</div>
+
+<!-- Honest System Disclosure Banners -->
+{% if data_limited %}
+<div class="notice-banner-limited" role="region" aria-label="Data Scope Notice">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <p class="muted">Showing up to 500 records. Historical data may be bounded. Totals cover loaded records only.</p>
+</div>
+{% endif %}
+
+<div class="booking-notice-card" role="region" aria-label="System Disclosures">
+  <div class="booking-notice-icon" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  </div>
+  <div class="booking-notice-content">
+    <strong>Stripe Test Environment &amp; Settlement Notice</strong>
+    <p>
+      Transactions in TravelMate are processed in <strong>Stripe Test Mode</strong>. A verified payment settlement indicates traveller checkout completion on TravelMate, but is <strong>strictly independent of third-party supplier logistics</strong> (hotel, transport, and tour guide coordination). Operators must confirm external supplier logistics directly.
+    </p>
+  </div>
+</div>
+
+<!-- Metrics Overview Ribbon -->
+{% if not backend_error %}
+<div class="grid g4 operator-stats" style="margin-bottom: 24px;">
+  <div class="metric-card accent-blue">
+    <div class="metric-card-top">
+      <span class="metric-label">Total Payments</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.total }}</div>
+    <div class="metric-help">All recorded package payments</div>
+  </div>
+
+  <div class="metric-card accent-green">
+    <div class="metric-card-top">
+      <span class="metric-label">Settled (Paid)</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.paid }}</div>
+    <div class="metric-help">
+      {% if summary.is_multi_currency %}
+        Multi-currency:
+        {% for curr, amt in summary.currency_revenues.items() %}
+          {{ curr }} {{ '%.2f'|format(amt) }}{% if not loop.last %}, {% endif %}
+        {% endfor %}
+      {% elif summary.currency_revenues %}
+        {{ summary.primary_currency }} {{ '%.2f'|format(summary.primary_revenue) }} settled
+      {% else %}
+        No settled revenue
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="metric-card accent-amber">
+    <div class="metric-card-top">
+      <span class="metric-label">Pending Payments</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.pending }}</div>
+    <div class="metric-help">Awaiting checkout completion</div>
+  </div>
+
+  <div class="metric-card accent-blue">
+    <div class="metric-card-top">
+      <span class="metric-label">Stripe Test Mode</span>
+      <div class="metric-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/></svg>
+      </div>
+    </div>
+    <div class="metric">{{ summary.test_orders }}</div>
+    <div class="metric-help">Simulated payment environment</div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Toolbar: Search and Filter -->
+<div class="toolbar">
+  <form class="actions" method="get">
+    <input class="input search-input" name="q" value="{{ query }}" placeholder="Search by payment reference, package, currency..." aria-label="Search package payments">
+    <select class="input filter-input" name="status" aria-label="Filter payments by status">
+      <option value="all" {% if status == 'all' %}selected{% endif %}>All Payments</option>
+      <option value="test_paid" {% if status == 'test_paid' %}selected{% endif %}>Test Paid Orders</option>
+      <option value="paid" {% if status == 'paid' %}selected{% endif %}>All Paid Orders</option>
+      <option value="pending" {% if status == 'pending' %}selected{% endif %}>Payment Pending</option>
+      <option value="failed" {% if status == 'failed' %}selected{% endif %}>Payment Failed</option>
+      <option value="cancelled" {% if status in ['cancelled', 'refunded'] %}selected{% endif %}>Cancelled / Refunded</option>
+      <option value="test" {% if status == 'test' %}selected{% endif %}>Stripe Test Mode Only</option>
+    </select>
+    <button class="btn outline" type="submit">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+      <span>Filter</span>
+    </button>
+    {% if query or status != 'all' %}
+      <a class="btn outline" href="{{ url_for('operator_fr12.payments') }}" style="color: var(--ink-muted);">Clear</a>
+    {% endif %}
+  </form>
+
+  <span class="muted" style="font-size: 13px; font-weight: 600;">
+    {{ items|length }} payment record{% if items|length != 1 %}s{% endif %} found
+  </span>
+</div>
+
+{% if backend_error %}
+<div class="card" style="text-align: center; padding: 36px 20px; border-color: var(--danger-border); background: #FFF5F5;">
+  <div style="font-weight: 700; color: var(--danger); font-size: 16px; margin-bottom: 8px;">Payment Service Unavailable</div>
+  <p style="color: var(--ink-secondary); font-size: 14px; max-width: 480px; margin: 0 auto 16px;">
+    The package payments service could not be reached. Please verify that the TravelMate backend API is running.
+  </p>
+  <a class="btn outline" href="{{ url_for('operator_fr12.payments') }}">Retry Request</a>
+</div>
+{% elif not items %}
+<div class="card empty-state">
+  <div class="empty-icon" aria-hidden="true">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+  </div>
+  <strong>No package payments found</strong>
+  <p>
+    {% if query or status != 'all' %}
+      No payments matched your filter criteria. Try resetting the filters.
+    {% else %}
+      When travellers book and pay for your published packages through the TravelMate mobile app, their payment records, settlement status, and timestamps will appear here.
+    {% endif %}
+  </p>
+  <div class="empty-actions">
+    {% if query or status != 'all' %}
+      <a class="btn outline" href="{{ url_for('operator_fr12.payments') }}">Reset Filters</a>
+    {% else %}
+      <a class="btn primary" href="{{ url_for('operator_fr12.packages') }}">View Package Catalog</a>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<section class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="min-width: 170px;">Payment Reference</th>
+        <th style="min-width: 220px;">Tourism Package</th>
+        <th style="min-width: 130px;">Amount</th>
+        <th style="min-width: 140px;">Payment Status</th>
+        <th style="min-width: 140px;">Environment</th>
+        <th style="min-width: 170px;">Paid Date</th>
+        <th style="min-width: 160px;">Package Fulfillment</th>
+        <th style="min-width: 160px;">Supplier Status</th>
+        <th style="min-width: 110px; text-align: right;">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td>
+          <div style="font-weight: 700; color: var(--ink); font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px;">
+            {{ item.orderReference or item.id or '—' }}
+          </div>
+          <div style="font-size: 11px; color: var(--ink-muted); margin-top: 3px;">
+            Quote: {{ item.quoteType|default('package')|title }}
+          </div>
+        </td>
+
+        <td>
+          <strong style="color: var(--ink); font-size: 14px; display: block;">
+            {{ item.packageTitle or 'Tourism Package' }}
+          </strong>
+          <span style="font-size: 11px; color: var(--ink-muted);">
+            ID: {{ item.packageId or '—' }}
+            {% if item.groupSize %} • {{ item.groupSize }} pax{% endif %}
+          </span>
+        </td>
+
+        <td>
+          {% if item.groupTotal is not none %}
+            <strong style="color: var(--ink); font-size: 14px;">
+              {{ item.currency or 'MYR' }} {{ '%.2f'|format(item.groupTotal|float) }}
+            </strong>
+          {% elif item.amount is not none %}
+            <strong style="color: var(--ink); font-size: 14px;">
+              {{ item.currency or 'MYR' }} {{ '%.2f'|format(item.amount|float) }}
+            </strong>
+          {% else %}
+            <span class="muted" style="font-style: italic;">Amount unavailable</span>
+          {% endif %}
+        </td>
+
+        <td>
+          {% set pay_status = (item.paymentStatus or 'unknown')|lower %}
+          {% set ord_status = (item.orderStatus or '')|lower %}
+          {% set is_pending = is_pending_booking(item) if is_pending_booking is defined else (pay_status in ['pending', 'payment_pending', 'unpaid'] and ord_status not in ['expired', 'checkout_expired', 'failed', 'checkout_failed', 'cancelled', 'checkout_cancelled', 'rejected'] and pay_status not in ['paid', 'succeeded', 'failed', 'payment_failed', 'expired', 'cancelled', 'refunded']) %}
+          {% if pay_status in ['paid', 'succeeded'] or item.isPaid %}
+            <span class="status approved">
+              {% if item.testMode %}Test Paid{% else %}Paid{% endif %}
+            </span>
+          {% elif is_pending %}
+            <span class="status pending">Payment Pending</span>
+          {% elif pay_status in ['failed', 'payment_failed'] or ord_status in ['failed', 'checkout_failed'] %}
+            <span class="status rejected">Failed</span>
+          {% elif pay_status in ['cancelled', 'payment_cancelled'] or ord_status in ['cancelled', 'checkout_cancelled'] %}
+            <span class="status rejected">Cancelled</span>
+          {% elif pay_status == 'refunded' or ord_status == 'refunded' %}
+            <span class="status rejected">Refunded</span>
+          {% elif pay_status == 'expired' or ord_status in ['expired', 'checkout_expired'] %}
+            <span class="status expired">Expired</span>
+          {% else %}
+            <span class="status draft">{{ pay_status|capitalize }}</span>
+          {% endif %}
+        </td>
+
+        <td>
+          {% if item.testMode %}
+            <span class="badge-test-mode" title="Processed in Stripe Test Mode">🧪 Stripe Test Mode</span>
+          {% else %}
+            <span class="badge neutral" style="font-size: 11px;">Mode unverified</span>
+          {% endif %}
+        </td>
+
+        <td>
+          {% if item.paidAt %}
+            <div style="font-weight: 600; color: var(--ink); font-size: 12px; font-family: ui-monospace, monospace;">
+              {{ item.paidAt[:19]|replace('T', ' ') }} UTC
+            </div>
+            <div style="font-size: 10.5px; color: var(--ink-muted); margin-top: 2px;">
+              Created: {{ item.createdAt[:10] if item.createdAt else '—' }}
+            </div>
+          {% else %}
+            <span class="muted" style="font-style: italic; font-size: 12px;">Payment date unavailable</span>
+            <div style="font-size: 10.5px; color: var(--ink-muted); margin-top: 2px;">
+              Created: {{ item.createdAt[:10] if item.createdAt else '—' }}
+            </div>
+          {% endif %}
+        </td>
+
+        <td>
+          {% set ful_status = (item.fulfillmentStatus or '')|lower %}
+          {% if ful_status in ['trip_ready', 'fulfilled'] %}
+            <span class="badge-fulfillment trip_ready">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>{{ 'Trip Ready' if ful_status == 'trip_ready' else 'Trip Created in App' }}</span>
+            </span>
+          {% elif ful_status == 'partially_fulfilled' %}
+            <span class="badge-fulfillment pending">
+              <span>Partially Confirmed</span>
+            </span>
+          {% elif ful_status in ['pending', 'fulfillment_pending', 'awaiting_operator_fulfillment'] %}
+            <span class="badge-fulfillment pending">
+              <span>Awaiting Arrangements</span>
+            </span>
+          {% elif ful_status == 'fulfillment_declined' %}
+            <span class="badge-fulfillment declined">
+              <span>Declined</span>
+            </span>
+          {% else %}
+            <span class="badge-fulfillment fallback">Not Fulfilled</span>
+          {% endif %}
+        </td>
+
+        <td>
+          {% set sup_status = (item.supplierReservationStatus or '')|lower %}
+          {% if sup_status == 'operator_attested' %}
+            <span class="badge-supplier attested" title="Supplier reservation confirmed and attested by operator">
+              ✅ Operator Attested
+            </span>
+          {% elif sup_status == 'declined' %}
+            <span class="badge-supplier declined" title="Supplier fulfillment declined by operator">
+              ❌ Declined
+            </span>
+          {% else %}
+            <span class="badge-supplier unconfirmed" title="Actual third-party supplier reservation must be coordinated manually by the operator">
+              ⚠️ Not Created (Manual)
+            </span>
+          {% endif %}
+        </td>
+
+        <td style="text-align: right;">
+          {% if item.orderReference %}
+            <a class="btn outline btn-sm" href="{{ url_for('operator_fr12.booking_detail', order_reference=item.orderReference) }}">
+              <span>View Booking</span>
+            </a>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}
