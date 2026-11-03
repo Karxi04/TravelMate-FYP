@@ -1,8 +1,36 @@
 import pytest
+from copy import deepcopy
+from contextlib import ExitStack
 from contextlib import contextmanager
 from unittest.mock import patch, MagicMock
 from modules.fr12_tourism_operator_management.analytics_service import generate_business_analytics
 from services.package_service import package_for_read
+
+
+@contextmanager
+def commerce_read_only_guard():
+    """Payment visibility must never mutate records or invoke a provider."""
+    with ExitStack() as stack:
+        forbidden = []
+        for path in (
+            'modules.fr12_tourism_operator_management.routes.storeRecord',
+            'modules.fr12_tourism_operator_management.routes.updateRecord',
+            'modules.fr12_tourism_operator_management.routes.deleteRecord',
+            'modules.fr12_tourism_operator_management.routes.commitPackageFulfillment',
+            'modules.fr13_administrator_management.routes.storeRecord',
+            'modules.fr13_administrator_management.routes.updateRecord',
+            'modules.fr13_administrator_management.routes.deleteRecord',
+            'sequence_contract.firebase_firestore.claimRecord',
+            'modules.fr09_payment.routes.createCheckoutSession',
+            'modules.fr09_payment.routes.retrieveCheckoutSession',
+            'modules.fr09_payment.routes._reconcile_checkout_order',
+            'modules.fr08_hotel_booking.routes.createBookingReference',
+            'requests.sessions.Session.request',
+        ):
+            forbidden.append(stack.enter_context(patch(path, side_effect=AssertionError('Read-only contract violation'))))
+        yield
+        for operation in forbidden:
+            operation.assert_not_called()
 
 
 @contextmanager
@@ -418,6 +446,86 @@ def test_f4a_profile_cannot_forge_privileges(client, mock_operator_auth):
     assert response.get_json()['profile']['role'] == 'operator'
     assert response.get_json()['profile']['verificationStatus'] == 'approved'
     assert not {'role', 'operatorId', 'verificationStatus'} & set(update.call_args.args[2])
+
+
+def _s1_package_order(**changes):
+    return {'id':'s1-order-owned','quoteType':'package','operatorId':'test_operator_uid',
+        'packageId':'s1-package','packageSnapshot':{'title':'Synthetic package','operatorId':'test_operator_uid',
+            'accommodation':{'accommodationName':'Included property'}},
+        'amount':250,'currency':'MYR','status':'paid','paymentStatus':'paid','testMode':True,
+        'paidAt':'2026-11-01T12:00:00+00:00','createdAt':'2026-11-01T11:00:00+00:00',
+        'updatedAt':'2026-11-02T12:00:00+00:00','fulfillmentStatus':'awaiting_operator_fulfillment',
+        'supplierReservationStatus':'not_created','travellerId':'private-traveller',
+        'checkoutUrl':'private-checkout','clientSecret':'private-client',
+        'stripePaymentIntentId':'private-intent-'+str(changes.get('id','s1-order-owned')),
+        **changes}
+
+
+@pytest.mark.parametrize('paid_at',[None,'2026-11-01T12:00:00+00:00'])
+def test_s1_operator_payment_timestamp_is_available_without_invented_fallback(client,mock_operator_auth,paid_at):
+    order=_s1_package_order(paidAt=paid_at);before=deepcopy(order)
+    with commerce_read_only_guard(),patch('modules.fr12_tourism_operator_management.routes.retrieveRecord',return_value=order):
+        response=client.get('/api/fr12/bookings/s1-order-owned',headers={'Authorization':'Bearer valid_test_token'})
+    assert response.status_code==200
+    booking=response.json['booking']
+    assert booking['paidAt']==paid_at
+    assert booking['createdAt']==order['createdAt'] and booking['updatedAt']==order['updatedAt']
+    assert booking['orderReference']==order['id'] and booking['packageId']=='s1-package'
+    assert booking['packageTitle']=='Synthetic package' and booking['amount']==250 and booking['currency']=='MYR'
+    assert booking['isPaid'] is True and booking['testMode'] is True
+    assert booking['fulfillmentStatus']=='awaiting_operator_fulfillment' and booking['supplierReservationStatus']=='not_created'
+    assert 'private-' not in response.get_data(as_text=True)
+    assert order==before
+
+
+def test_s1_operator_list_owner_filter_dedup_and_missing_values(client,mock_operator_auth):
+    orders=[_s1_package_order(),_s1_package_order(),
+            _s1_package_order(id='foreign',operatorId='other-operator'),
+            _s1_package_order(id='hotel',quoteType='hotel'),
+            _s1_package_order(id='unknown',amount=None,currency='',paidAt=None,paymentStatus='pending',status='checkout_pending')]
+    before=deepcopy(orders)
+    with commerce_read_only_guard(),patch('modules.fr12_tourism_operator_management.routes.retrieveRecord',return_value=orders) as read:
+        response=client.get('/api/fr12/bookings',headers={'Authorization':'Bearer valid_test_token'})
+    assert response.status_code==200 and response.json['ok'] is True
+    read.assert_called_once_with('checkout_orders',filters=[('operatorId','==','test_operator_uid')],limit=501)
+    items={item['id']:item for item in response.json['items']}
+    assert set(items)=={'s1-order-owned','unknown'}
+    assert items['unknown']['amount'] is None and items['unknown']['currency']=='UNKNOWN'
+    assert items['unknown']['paidAt'] is None and items['unknown']['isPaid'] is False
+    assert response.json['dataLimited'] is False and response.json['recordLimit']==500
+    assert 'private-' not in response.get_data(as_text=True) and orders==before
+
+
+@pytest.mark.parametrize('record',[None,{'id':'other','operatorId':'other-operator','quoteType':'package'},
+                                  {'id':'hotel','operatorId':'test_operator_uid','quoteType':'hotel'}])
+def test_s1_operator_detail_foreign_missing_and_wrong_product_are_404(client,mock_operator_auth,record):
+    with commerce_read_only_guard(),patch('modules.fr12_tourism_operator_management.routes.retrieveRecord',return_value=record):
+        response=client.get('/api/fr12/bookings/unknown',headers={'Authorization':'Bearer valid_test_token'})
+    assert response.status_code==404 and response.json=={'ok':False,'error':'Booking not found'}
+
+
+def test_s1_operator_empty_and_capped_list_are_explicit(client,mock_operator_auth):
+    with commerce_read_only_guard(),patch('modules.fr12_tourism_operator_management.routes.retrieveRecord',return_value=[]):
+        response=client.get('/api/fr12/bookings',headers={'Authorization':'Bearer valid_test_token'})
+    assert response.json=={'ok':True,'items':[],'dataLimited':False,'recordLimit':500}
+    orders=[_s1_package_order(id=f's1-{i}') for i in range(501)]
+    with commerce_read_only_guard(),patch('modules.fr12_tourism_operator_management.routes.retrieveRecord',return_value=orders):
+        response=client.get('/api/fr12/bookings',headers={'Authorization':'Bearer valid_test_token'})
+    assert len(response.json['items'])==500 and response.json['dataLimited'] is True
+
+
+@pytest.mark.parametrize('path',['/api/fr12/bookings','/api/fr12/bookings/owned'])
+def test_s1_operator_payments_require_token(client,path):
+    with commerce_read_only_guard(),patch('modules.fr12_tourism_operator_management.routes.retrieveRecord') as read:
+        response=client.get(path)
+    assert response.status_code==401;read.assert_not_called()
+
+
+@pytest.mark.parametrize('path',['/api/fr12/bookings','/api/fr12/bookings/owned'])
+def test_s1_operator_payments_forbid_traveller(client,mock_traveller_auth,path):
+    with commerce_read_only_guard(),patch('modules.fr12_tourism_operator_management.routes.retrieveRecord') as read:
+        response=client.get(path,headers={'Authorization':'Bearer valid_test_token'})
+    assert response.status_code==403;read.assert_not_called()
 
 
 def test_f4a_campaign_rejected_resubmission_validates_and_persists(client, mock_operator_auth):
