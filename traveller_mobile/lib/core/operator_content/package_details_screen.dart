@@ -1401,17 +1401,189 @@ class _TourismPackageDetailsScreenState
         _bullets('Transport', transport, Icons.directions_bus_outlined),
         _bullets('What to bring', widget.item['whatToBring'],
             Icons.backpack_outlined),
-        _textSection(
-          'Accommodation',
-          [
-            _text('accommodationName'),
-            _text('accommodationCategory'),
-            _text('roomType'),
-            _text('accommodationNotes'),
-          ].where((value) => value.isNotEmpty).join('\n'),
-          Icons.hotel_outlined,
-        ),
+        _buildAccommodationSection(),
       ],
+    );
+  }
+
+  Widget _buildAccommodationSection() {
+    final rawHotel = widget.item['accommodationHotel'] ??
+        (widget.item['accommodation'] is Map
+            ? (widget.item['accommodation'] as Map)['accommodationHotel']
+            : null);
+    final hotel = rawHotel is Map ? Map<String, dynamic>.from(rawHotel) : null;
+
+    if (hotel != null) {
+      final name = (hotel['name'] ?? _text('accommodationName')).toString().trim();
+      final address = [
+        hotel['address']?.toString().trim(),
+        hotel['city']?.toString().trim(),
+        hotel['country']?.toString().trim(),
+      ].where((e) => e != null && e.isNotEmpty).join(', ');
+      final rawStars = hotel['stars'];
+      final starsText = rawStars != null
+          ? '⭐ $rawStars-Star'
+          : 'Star classification not supplied';
+      final guestRating = hotel['guestRating'];
+      final mainPhoto = (hotel['mainPhoto'] ??
+              (hotel['imageUrls'] is List && (hotel['imageUrls'] as List).isNotEmpty
+                  ? (hotel['imageUrls'] as List).first
+                  : null))
+          ?.toString()
+          .trim();
+      final amenities = (hotel['amenities'] is List
+              ? (hotel['amenities'] as List)
+                  .map((e) => e.toString().trim())
+                  .where((e) => e.isNotEmpty)
+                  .toList()
+              : <String>[]);
+      final roomType = _text('roomType');
+      final notes = _text('accommodationNotes');
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+        child: InkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.hotel_outlined, size: 18, color: AppColors.primary),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(child: _heading('Accommodation')),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.successSoft,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'LiteAPI Verified',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.success,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              if (mainPhoto != null && mainPhoto.isNotEmpty) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    mainPhoto,
+                    height: 140,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+              ],
+              Text(
+                name.isNotEmpty ? name : 'Partner Hotel',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              if (address.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  address,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Text(
+                    starsText,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.warning,
+                    ),
+                  ),
+                  if (guestRating != null) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      'Guest Rating: $guestRating/10',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              if (amenities.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: amenities.take(5).map((a) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: AppColors.divider),
+                      ),
+                      child: Text(
+                        a,
+                        style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+              if (roomType.isNotEmpty || notes.isNotEmpty) ...[
+                const Divider(height: 20),
+                if (roomType.isNotEmpty) ...[
+                  Text(
+                    'Room Configuration: $roomType',
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 2),
+                ],
+                if (notes.isNotEmpty) ...[
+                  Text(
+                    notes,
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ],
+              ],
+              const SizedBox(height: 8),
+              const Text(
+                'Specifies package partner hotel. Does not constitute a room reservation.',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return _textSection(
+      'Accommodation',
+      [
+        _text('accommodationName'),
+        _text('accommodationCategory'),
+        _text('roomType'),
+        _text('accommodationNotes'),
+      ].where((value) => value.isNotEmpty).join('\n'),
+      Icons.hotel_outlined,
     );
   }
 

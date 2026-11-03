@@ -546,13 +546,150 @@
     </div>
   </div>
 
-  <!-- Accommodation & Transport Details -->
+  <!-- Accommodation & Ground Logistics -->
   <div class="form-subheading">
     <h3>Accommodation & Ground Logistics</h3>
-    <p>Specify hotel standards and transport vehicles for multi-day and full-day itineraries.</p>
+    <p>Specify verified partner hotel via LiteAPI or configure manual accommodation arrangements.</p>
   </div>
 
-  <div class="package-form-grid">
+  <!-- Hidden Persistence Controls for Hotel Selection -->
+  <input type="hidden" id="hotelSelectionAction" name="hotelSelectionAction" value="">
+  <input type="hidden" id="hotelSelectionProvider" name="hotelSelectionProvider" value="liteapi">
+  <input type="hidden" id="hotelSelectionId" name="hotelSelectionId" value="{{ p.get('accommodationHotel', {}).get('hotelId', '') if p.get('accommodationHotel') else '' }}">
+
+  <!-- Mode Switcher Tabs -->
+  <div class="hotel-mode-switcher" style="display: flex; gap: 10px; margin-bottom: 18px;">
+    <button type="button" id="tab-mode-hotel-api" class="btn {% if p.get('accommodationHotel') or not p.get('accommodationName') %}primary{% else %}outline{% endif %}" style="display: flex; align-items: center; gap: 8px;">
+      <span>🏨</span>
+      <span>Search Hotel API (LiteAPI)</span>
+    </button>
+    <button type="button" id="tab-mode-manual" class="btn {% if not p.get('accommodationHotel') and p.get('accommodationName') %}primary{% else %}outline{% endif %}" style="display: flex; align-items: center; gap: 8px;">
+      <span>✍️</span>
+      <span>Manual Accommodation</span>
+    </button>
+  </div>
+
+  <!-- MODE A: HOTEL API PICKER -->
+  <div id="hotel-api-container" style="{% if not p.get('accommodationHotel') and p.get('accommodationName') %}display: none;{% endif %} margin-bottom: 20px;">
+    <!-- Selected Hotel Card Preview (Shown if hotel is selected) -->
+    {% set current_hotel = p.get('accommodationHotel') %}
+    <div id="selected-hotel-card" class="card" style="{% if not current_hotel %}display: none;{% endif %} padding: 18px; border: 1.5px solid #34a853; background: #f6fdf8; border-radius: 10px; margin-bottom: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
+        <div style="display: flex; gap: 16px; align-items: flex-start;">
+          <img id="selected-hotel-photo" src="{{ current_hotel.get('mainPhoto') or '' if current_hotel else '' }}" alt="Selected Hotel" style="width: 100px; height: 80px; object-fit: cover; border-radius: 8px; background: #eee; {% if not current_hotel or not current_hotel.get('mainPhoto') %}display: none;{% endif %}">
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+              <span class="field-destination-badge" style="background: #e6f4ea; color: #137333; font-weight: 700; font-size: 11px;">Verified Partner (LiteAPI)</span>
+              <span id="selected-hotel-id-badge" class="muted" style="font-size: 11px; font-family: monospace;">ID: {{ current_hotel.get('hotelId', '') if current_hotel else '' }}</span>
+            </div>
+            <h4 id="selected-hotel-name" style="margin: 0 0 4px; font-size: 16px; font-weight: 700; color: var(--charcoal);">{{ current_hotel.get('name', '') if current_hotel else '' }}</h4>
+            <p id="selected-hotel-address" style="margin: 0 0 6px; font-size: 12.5px; color: var(--ink-secondary);">{{ current_hotel.get('address', '') if current_hotel else '' }}</p>
+            <div style="display: flex; gap: 12px; font-size: 12.5px; align-items: center;">
+              <span id="selected-hotel-stars" style="font-weight: 600; color: #e37400;">
+                {% if current_hotel and current_hotel.get('stars') is not none %}
+                  ⭐ {{ current_hotel.get('stars') }}-Star
+                {% else %}
+                  Star classification not supplied
+                {% endif %}
+              </span>
+              <span id="selected-hotel-rating" style="color: var(--ink-secondary);">
+                {% if current_hotel and current_hotel.get('guestRating') is not none %}
+                  Guest Rating: {{ current_hotel.get('guestRating') }}/10
+                {% endif %}
+              </span>
+            </div>
+            <div id="selected-hotel-amenities" style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;">
+              {% if current_hotel and current_hotel.get('amenities') %}
+                {% for am in current_hotel.get('amenities')[:5] %}
+                  <span style="font-size: 11px; background: #e8f0fe; color: #1a73e8; padding: 2px 8px; border-radius: 4px;">{{ am }}</span>
+                {% endfor %}
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
+          <button type="button" id="btn-change-hotel" class="btn outline sm" style="font-size: 12.5px;">Change Hotel</button>
+          <button type="button" id="btn-detach-hotel" class="btn danger outline sm" style="font-size: 12.5px;">Remove Hotel</button>
+        </div>
+      </div>
+      <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #d4edda; font-size: 11.5px; color: #285b37; display: flex; align-items: center; gap: 6px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span>Specifies package partner hotel. Does not constitute a room reservation.</span>
+      </div>
+    </div>
+
+    <!-- Search Box (Shown if no hotel selected or during change) -->
+    <div id="hotel-search-box" class="card" style="{% if current_hotel %}display: none;{% endif %} padding: 18px; border-radius: 10px; background: var(--canvas);">
+      <h4 style="margin: 0 0 12px; font-size: 14px; font-weight: 700; color: var(--charcoal);">
+        Search Hotel Partner Properties
+      </h4>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px;">
+        <div class="field" style="margin-bottom: 0;">
+          <label for="hotelSearchCountry" style="font-size: 12px; margin-bottom: 4px;">Country Code *</label>
+          <input id="hotelSearchCountry" class="input" value="MY" maxlength="2" placeholder="e.g. MY" style="text-transform: uppercase;">
+        </div>
+        <div class="field" style="margin-bottom: 0;">
+          <label for="hotelSearchCity" style="font-size: 12px; margin-bottom: 4px;">City / Area *</label>
+          <input id="hotelSearchCity" class="input" value="{{ p.get('destinationArea') or p.get('destination') or '' }}" placeholder="e.g. George Town or Penang">
+        </div>
+        <div class="field" style="margin-bottom: 0;">
+          <label for="hotelSearchName" style="font-size: 12px; margin-bottom: 4px;">Hotel Name (Optional)</label>
+          <input id="hotelSearchName" class="input" placeholder="e.g. Eastern & Oriental">
+        </div>
+        <div class="field" style="margin-bottom: 0;">
+          <label for="hotelSearchStars" style="font-size: 12px; margin-bottom: 4px;">Star Rating Filter</label>
+          <select id="hotelSearchStars" class="input">
+            <option value="">All Stars</option>
+            <option value="5">5-Star</option>
+            <option value="4.5">4.5-Star</option>
+            <option value="4">4-Star</option>
+            <option value="3.5">3.5-Star</option>
+            <option value="3">3-Star</option>
+          </select>
+        </div>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <button type="button" id="btn-search-hotels" class="btn primary" style="padding: 8px 18px; font-size: 13.5px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span>Search Properties</span>
+        </button>
+        <span class="muted" style="font-size: 12px;">Country code and city name are required.</span>
+      </div>
+
+      <!-- Search Loading Spinner -->
+      <div id="hotel-search-loading" style="display: none; padding: 20px; text-align: center; color: var(--ink-secondary);">
+        <div class="spinner" style="display: inline-block; width: 22px; height: 22px; border: 3px solid rgba(0,0,0,0.1); border-radius: 50%; border-top-color: var(--primary); animation: spin 1s ease-in-out infinite;"></div>
+        <div style="margin-top: 8px; font-size: 13px;">Searching LiteAPI hotel properties…</div>
+      </div>
+
+      <!-- Search Error Banner -->
+      <div id="hotel-search-error" style="display: none; margin-top: 14px; padding: 12px; background: #fde8e8; border: 1px solid #f8b4b4; border-radius: 8px; color: #9b1c1c; font-size: 13px;">
+        <span id="hotel-search-error-text">Failed to search hotels.</span>
+      </div>
+
+      <!-- Search Empty Notice -->
+      <div id="hotel-search-empty" style="display: none; margin-top: 14px; padding: 16px; background: #fff; border: 1px solid var(--border); border-radius: 8px; text-align: center; color: var(--ink-secondary); font-size: 13px;">
+        No matching properties found. Try refining your city or hotel name, or switch to Manual Accommodation.
+      </div>
+
+      <!-- Search Results Container -->
+      <div id="hotel-search-results" style="display: none; margin-top: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <span id="hotel-results-count" style="font-size: 13px; font-weight: 600; color: var(--charcoal);">Results</span>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" id="btn-hotel-prev" class="btn outline sm" style="font-size: 12px;" disabled>Previous</button>
+            <button type="button" id="btn-hotel-next" class="btn outline sm" style="font-size: 12px;" disabled>Next</button>
+          </div>
+        </div>
+        <div id="hotel-results-list" style="display: flex; flex-direction: column; gap: 10px;">
+          <!-- Dynamically populated cards -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODE B: MANUAL ACCOMMODATION -->
+  <div id="hotel-manual-container" class="package-form-grid" style="{% if p.get('accommodationHotel') or (not p.get('accommodationName') and not p.get('accommodationCategory')) %}display: none;{% endif %}">
     <div class="field">
       <label for="accommodationName">
         <span>Partner Hotel / Resort Name</span>
@@ -570,7 +707,9 @@
       <input id="accommodationCategory" class="input" name="accommodationCategory" value="{{ p.get('accommodationCategory', '') }}" placeholder="e.g. 5-Star Colonial Heritage Luxury">
       <span class="field-help">Classification of the hotel property.</span>
     </div>
+  </div>
 
+  <div class="package-form-grid">
     <div class="field">
       <label for="roomType">
         <span>Room Configuration</span>
@@ -989,13 +1128,27 @@
               <span>🏨</span>
               <span>Stay & Hotel Specifications</span>
             </h4>
+            {% set hotel = p.get('accommodationHotel') %}
             {% set nights = p.get('durationNights', 0)|int %}
             <div style="font-size: 13.5px; color: var(--ink-secondary); line-height: 1.6;" id="brochure-hotel-logistics">
               {% if nights == 0 %}
                 <span class="brochure-empty-text">Single-Day Excursion (No hotel stay required)</span>
+              {% elif hotel %}
+                <div style="margin-bottom: 6px;">
+                  <span class="field-destination-badge" style="background: #e6f4ea; color: #137333; font-weight: 700;">Verified Partner (LiteAPI)</span>
+                </div>
+                <strong>Lodging:</strong> <span id="brochure-hotel-text">{{ hotel.get('name') or p.get('accommodationName') or 'To be specified by operator' }}</span><br>
+                <strong>Star Rating:</strong> <span id="brochure-hotel-stars-text">{% if hotel.get('stars') is not none %}⭐ {{ hotel.get('stars') }}-Star{% else %}Star classification not supplied{% endif %}</span><br>
+                {% if hotel.get('guestRating') is not none %}
+                  <strong>Guest Rating:</strong> <span id="brochure-hotel-rating-text">{{ hotel.get('guestRating') }}/10</span><br>
+                {% endif %}
+                <strong>Room Type:</strong> <span id="brochure-hotel-room-text">{{ p.get('roomType') or 'To be specified' }}</span><br>
+                <div style="margin-top: 6px; font-size: 11.5px; color: var(--ink-muted); font-style: italic;">
+                  Specifies package partner hotel. Does not constitute a room reservation.
+                </div>
               {% else %}
                 <strong>Lodging:</strong> <span id="brochure-hotel-text">{{ p.get('accommodationName') or 'To be specified by operator' }}</span><br>
-                <strong>Category:</strong> <span id="brochure-hotel-cat-text">{{ p.get('accommodationCategory') or 'Standard' }}</span><br>
+                <strong>Category:</strong> <span id="brochure-hotel-cat-text">{{ p.get('accommodationCategory') or 'Not specified' }}</span><br>
                 <strong>Room Type:</strong> <span id="brochure-hotel-room-text">{{ p.get('roomType') or 'To be specified' }}</span>
               {% endif %}
             </div>
@@ -1699,10 +1852,25 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hotelBox) {
       if (nightsNum === 0) {
         hotelBox.innerHTML = '<span class="brochure-empty-text">Single-Day Excursion (No hotel stay required)</span>';
+      } else if (currentSelectedHotel) {
+        const starStr = currentSelectedHotel.stars != null ? `⭐ ${currentSelectedHotel.stars}-Star` : 'Star classification not supplied';
+        const ratingStr = currentSelectedHotel.guestRating != null ? `<br><strong>Guest Rating:</strong> <span>${currentSelectedHotel.guestRating}/10</span>` : '';
+        hotelBox.innerHTML = `
+          <div style="margin-bottom: 6px;">
+            <span class="field-destination-badge" style="background: #e6f4ea; color: #137333; font-weight: 700;">Verified Partner (LiteAPI)</span>
+          </div>
+          <strong>Lodging:</strong> <span id="brochure-hotel-text">${escapeHtml(currentSelectedHotel.name || hName || 'To be specified by operator')}</span><br>
+          <strong>Star Rating:</strong> <span id="brochure-hotel-stars-text">${escapeHtml(starStr)}</span>
+          ${ratingStr}<br>
+          <strong>Room Type:</strong> <span id="brochure-hotel-room-text">${escapeHtml(hRoom || 'To be specified')}</span><br>
+          <div style="margin-top: 6px; font-size: 11.5px; color: var(--ink-muted); font-style: italic;">
+            Specifies package partner hotel. Does not constitute a room reservation.
+          </div>
+        `;
       } else {
         hotelBox.innerHTML = `
           <strong>Lodging:</strong> <span id="brochure-hotel-text">${escapeHtml(hName || 'To be specified by operator')}</span><br>
-          <strong>Category:</strong> <span id="brochure-hotel-cat-text">${escapeHtml(hCat || 'Standard')}</span><br>
+          <strong>Category:</strong> <span id="brochure-hotel-cat-text">${escapeHtml(hCat || 'Not specified')}</span><br>
           <strong>Room Type:</strong> <span id="brochure-hotel-room-text">${escapeHtml(hRoom || 'To be specified')}</span>
         `;
       }
@@ -1816,6 +1984,314 @@ document.addEventListener('DOMContentLoaded', () => {
         goToStep(2);
         document.querySelector('#adultPrice')?.focus();
         return;
+      }
+    });
+  }
+
+  // 6. Hotel Picker & Management (LiteAPI Integration)
+  let currentSelectedHotel = {{ (p.get('accommodationHotel') or None)|tojson }};
+  let hotelSearchOffset = 0;
+  const hotelSearchLimit = 10;
+  let hotelSearchHasMore = false;
+
+  const tabModeApi = document.getElementById('tab-mode-hotel-api');
+  const tabModeManual = document.getElementById('tab-mode-manual');
+  const hotelApiContainer = document.getElementById('hotel-api-container');
+  const hotelManualContainer = document.getElementById('hotel-manual-container');
+  const selectedHotelCard = document.getElementById('selected-hotel-card');
+  const hotelSearchBox = document.getElementById('hotel-search-box');
+  const hotelSearchLoading = document.getElementById('hotel-search-loading');
+  const hotelSearchError = document.getElementById('hotel-search-error');
+  const hotelSearchErrorText = document.getElementById('hotel-search-error-text');
+  const hotelSearchEmpty = document.getElementById('hotel-search-empty');
+  const hotelSearchResults = document.getElementById('hotel-search-results');
+  const hotelResultsList = document.getElementById('hotel-results-list');
+  const hotelResultsCount = document.getElementById('hotel-results-count');
+  const btnHotelPrev = document.getElementById('btn-hotel-prev');
+  const btnHotelNext = document.getElementById('btn-hotel-next');
+  const btnSearchHotels = document.getElementById('btn-search-hotels');
+  const btnChangeHotel = document.getElementById('btn-change-hotel');
+  const btnDetachHotel = document.getElementById('btn-detach-hotel');
+  const hotelActionInput = document.getElementById('hotelSelectionAction');
+  const hotelIdInput = document.getElementById('hotelSelectionId');
+  const hotelProviderInput = document.getElementById('hotelSelectionProvider');
+  const accNameInput = document.getElementById('accommodationName');
+  const accCategoryInput = document.getElementById('accommodationCategory');
+
+  function renderSelectedHotelCard(hotel) {
+    if (!hotel) {
+      if (selectedHotelCard) selectedHotelCard.style.display = 'none';
+      return;
+    }
+    const nameEl = document.getElementById('selected-hotel-name');
+    const addrEl = document.getElementById('selected-hotel-address');
+    const starsEl = document.getElementById('selected-hotel-stars');
+    const ratingEl = document.getElementById('selected-hotel-rating');
+    const photoEl = document.getElementById('selected-hotel-photo');
+    const idBadge = document.getElementById('selected-hotel-id-badge');
+    const amenitiesEl = document.getElementById('selected-hotel-amenities');
+
+    if (nameEl) nameEl.textContent = hotel.name || '';
+    if (addrEl) {
+      const parts = [hotel.address, hotel.city, hotel.country].filter(Boolean);
+      addrEl.textContent = parts.join(', ');
+    }
+    if (starsEl) {
+      starsEl.textContent = hotel.stars != null ? `⭐ ${hotel.stars}-Star` : 'Star classification not supplied';
+    }
+    if (ratingEl) {
+      ratingEl.textContent = hotel.guestRating != null ? `Guest Rating: ${hotel.guestRating}/10` : '';
+    }
+    if (idBadge) {
+      idBadge.textContent = hotel.hotelId ? `ID: ${hotel.hotelId}` : '';
+    }
+    if (photoEl) {
+      if (hotel.mainPhoto) {
+        photoEl.src = hotel.mainPhoto;
+        photoEl.style.display = 'block';
+      } else {
+        photoEl.style.display = 'none';
+      }
+    }
+    if (amenitiesEl) {
+      const list = hotel.amenities || [];
+      amenitiesEl.innerHTML = list.slice(0, 5).map(a => `<span style="font-size: 11px; background: #e8f0fe; color: #1a73e8; padding: 2px 8px; border-radius: 4px;">${escapeHtml(a)}</span>`).join('');
+    }
+    if (selectedHotelCard) selectedHotelCard.style.display = 'block';
+  }
+
+  function switchToModeApi() {
+    if (tabModeApi) {
+      tabModeApi.classList.add('primary');
+      tabModeApi.classList.remove('outline');
+    }
+    if (tabModeManual) {
+      tabModeManual.classList.remove('primary');
+      tabModeManual.classList.add('outline');
+    }
+    if (hotelApiContainer) hotelApiContainer.style.display = 'block';
+    if (hotelManualContainer) hotelManualContainer.style.display = 'none';
+    if (currentSelectedHotel) {
+      if (selectedHotelCard) selectedHotelCard.style.display = 'block';
+      if (hotelSearchBox) hotelSearchBox.style.display = 'none';
+    } else {
+      if (selectedHotelCard) selectedHotelCard.style.display = 'none';
+      if (hotelSearchBox) hotelSearchBox.style.display = 'block';
+    }
+  }
+
+  function switchToModeManual() {
+    if (tabModeManual) {
+      tabModeManual.classList.add('primary');
+      tabModeManual.classList.remove('outline');
+    }
+    if (tabModeApi) {
+      tabModeApi.classList.remove('primary');
+      tabModeApi.classList.add('outline');
+    }
+    if (hotelApiContainer) hotelApiContainer.style.display = 'none';
+    if (hotelManualContainer) hotelManualContainer.style.display = 'grid';
+  }
+
+  if (tabModeApi) {
+    tabModeApi.addEventListener('click', () => {
+      switchToModeApi();
+    });
+  }
+
+  if (tabModeManual) {
+    tabModeManual.addEventListener('click', () => {
+      if (currentSelectedHotel) {
+        currentSelectedHotel = null;
+        if (hotelActionInput) hotelActionInput.value = 'detach';
+        if (hotelIdInput) hotelIdInput.value = '';
+        renderSelectedHotelCard(null);
+      }
+      switchToModeManual();
+      updateBrochurePreview();
+    });
+  }
+
+  if (btnChangeHotel) {
+    btnChangeHotel.addEventListener('click', () => {
+      if (hotelSearchBox) hotelSearchBox.style.display = 'block';
+    });
+  }
+
+  if (btnDetachHotel) {
+    btnDetachHotel.addEventListener('click', () => {
+      currentSelectedHotel = null;
+      if (hotelActionInput) hotelActionInput.value = 'detach';
+      if (hotelIdInput) hotelIdInput.value = '';
+      renderSelectedHotelCard(null);
+      switchToModeManual();
+      updateBrochurePreview();
+    });
+  }
+
+  async function executeHotelSearch() {
+    const country = (document.getElementById('hotelSearchCountry')?.value || '').trim();
+    const city = (document.getElementById('hotelSearchCity')?.value || '').trim();
+    const name = (document.getElementById('hotelSearchName')?.value || '').trim();
+    const stars = (document.getElementById('hotelSearchStars')?.value || '').trim();
+
+    if (!country || !city) {
+      if (hotelSearchError && hotelSearchErrorText) {
+        hotelSearchErrorText.textContent = 'Country Code (2 letters, e.g. MY) and City Name are required.';
+        hotelSearchError.style.display = 'block';
+      }
+      return;
+    }
+
+    if (hotelSearchLoading) hotelSearchLoading.style.display = 'block';
+    if (hotelSearchError) hotelSearchError.style.display = 'none';
+    if (hotelSearchEmpty) hotelSearchEmpty.style.display = 'none';
+    if (hotelSearchResults) hotelSearchResults.style.display = 'none';
+
+    const params = new URLSearchParams({
+      countryCode: country.toUpperCase(),
+      cityName: city,
+      limit: String(hotelSearchLimit),
+      offset: String(hotelSearchOffset),
+    });
+    if (name) params.append('hotelName', name);
+    if (stars) params.append('starRating', stars);
+
+    try {
+      const res = await fetch(`/hotels/search?${params.toString()}`);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        let errMsg = errJson.error || 'Failed to search hotel properties.';
+        if (res.status === 429) {
+          errMsg = 'Search rate limit reached. Please wait a moment before searching again.';
+        } else if (res.status === 401 || res.status === 403) {
+          errMsg = 'Operator authentication / verification required to search partner hotels.';
+        } else if (res.status === 502 || res.status === 503) {
+          errMsg = 'Hotel partner service is temporarily unavailable. You can use Manual Accommodation.';
+        }
+        if (hotelSearchError && hotelSearchErrorText) {
+          hotelSearchErrorText.textContent = errMsg;
+          hotelSearchError.style.display = 'block';
+        }
+        return;
+      }
+      const data = await res.json();
+      const items = data.items || [];
+      hotelSearchHasMore = data.hasMore !== false && items.length >= hotelSearchLimit;
+
+      if (items.length === 0) {
+        if (hotelSearchEmpty) hotelSearchEmpty.style.display = 'block';
+      } else {
+        if (hotelResultsList) {
+          hotelResultsList.innerHTML = items.map(item => {
+            const starText = item.stars != null ? `⭐ ${item.stars}-Star` : 'Star classification not supplied';
+            const ratingText = item.guestRating != null ? `Guest Rating: ${item.guestRating}/10` : '';
+            const photoSrc = item.mainPhoto || '';
+            const photoHtml = photoSrc
+              ? `<img src="${escapeHtml(photoSrc)}" alt="${escapeHtml(item.name || '')}" style="width: 80px; height: 65px; object-fit: cover; border-radius: 6px; background: #eee;">`
+              : `<div style="width: 80px; height: 65px; border-radius: 6px; background: #eee; display: flex; align-items: center; justify-content: center; color: #999; font-size: 20px;">🏨</div>`;
+            const amenitiesList = (item.amenities || []).slice(0, 3).map(a => `<span style="font-size: 10.5px; background: #f1f3f4; color: #3c4043; padding: 1px 6px; border-radius: 3px;">${escapeHtml(a)}</span>`).join('');
+            return `
+              <div class="card" style="padding: 12px; background: #fff; border: 1px solid var(--border); border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <div style="display: flex; gap: 12px; align-items: center;">
+                  ${photoHtml}
+                  <div>
+                    <h5 style="margin: 0 0 3px; font-size: 14px; font-weight: 700; color: var(--charcoal);">${escapeHtml(item.name || '')}</h5>
+                    <div style="font-size: 12px; color: var(--ink-secondary); margin-bottom: 4px;">${escapeHtml(item.address || item.city || '')}</div>
+                    <div style="display: flex; gap: 10px; font-size: 11.5px; align-items: center;">
+                      <span style="font-weight: 600; color: #e37400;">${escapeHtml(starText)}</span>
+                      ${ratingText ? `<span style="color: var(--ink-secondary);">${escapeHtml(ratingText)}</span>` : ''}
+                    </div>
+                    ${amenitiesList ? `<div style="display: flex; gap: 4px; margin-top: 4px;">${amenitiesList}</div>` : ''}
+                  </div>
+                </div>
+                <button type="button" class="btn primary sm btn-select-hotel-item" data-hotel-id="${escapeHtml(item.hotelId)}" style="font-size: 12px; padding: 6px 14px;">Select Hotel</button>
+              </div>
+            `;
+          }).join('');
+
+          hotelResultsList.querySelectorAll('.btn-select-hotel-item').forEach(b => {
+            b.addEventListener('click', () => {
+              selectHotelById(b.dataset.hotelId);
+            });
+          });
+        }
+
+        if (hotelResultsCount) {
+          hotelResultsCount.textContent = `Showing ${hotelSearchOffset + 1}–${hotelSearchOffset + items.length}`;
+        }
+        if (btnHotelPrev) btnHotelPrev.disabled = hotelSearchOffset === 0;
+        if (btnHotelNext) btnHotelNext.disabled = !hotelSearchHasMore;
+        if (hotelSearchResults) hotelSearchResults.style.display = 'block';
+      }
+    } catch (e) {
+      if (hotelSearchError && hotelSearchErrorText) {
+        hotelSearchErrorText.textContent = 'Connection error while contacting hotel service.';
+        hotelSearchError.style.display = 'block';
+      }
+    } finally {
+      if (hotelSearchLoading) hotelSearchLoading.style.display = 'none';
+    }
+  }
+
+  async function selectHotelById(hotelId) {
+    if (!hotelId) return;
+    if (hotelSearchLoading) hotelSearchLoading.style.display = 'block';
+    if (hotelSearchError) hotelSearchError.style.display = 'none';
+
+    try {
+      const res = await fetch(`/hotels/${encodeURIComponent(hotelId)}`);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        if (hotelSearchError && hotelSearchErrorText) {
+          hotelSearchErrorText.textContent = errJson.error || 'Failed to retrieve hotel details.';
+          hotelSearchError.style.display = 'block';
+        }
+        return;
+      }
+      const data = await res.json();
+      currentSelectedHotel = data.hotel;
+      if (hotelActionInput) hotelActionInput.value = 'select';
+      if (hotelIdInput) hotelIdInput.value = currentSelectedHotel.hotelId;
+      if (hotelProviderInput) hotelProviderInput.value = 'liteapi';
+      if (accNameInput) accNameInput.value = currentSelectedHotel.name || '';
+      if (accCategoryInput) accCategoryInput.value = currentSelectedHotel.stars != null ? `${currentSelectedHotel.stars}-Star` : '';
+
+      renderSelectedHotelCard(currentSelectedHotel);
+      if (hotelSearchBox) hotelSearchBox.style.display = 'none';
+      if (selectedHotelCard) selectedHotelCard.style.display = 'block';
+      updateBrochurePreview();
+    } catch (e) {
+      if (hotelSearchError && hotelSearchErrorText) {
+        hotelSearchErrorText.textContent = 'Connection error while selecting hotel.';
+        hotelSearchError.style.display = 'block';
+      }
+    } finally {
+      if (hotelSearchLoading) hotelSearchLoading.style.display = 'none';
+    }
+  }
+
+  if (btnSearchHotels) {
+    btnSearchHotels.addEventListener('click', () => {
+      hotelSearchOffset = 0;
+      executeHotelSearch();
+    });
+  }
+
+  if (btnHotelPrev) {
+    btnHotelPrev.addEventListener('click', () => {
+      if (hotelSearchOffset >= hotelSearchLimit) {
+        hotelSearchOffset -= hotelSearchLimit;
+        executeHotelSearch();
+      }
+    });
+  }
+
+  if (btnHotelNext) {
+    btnHotelNext.addEventListener('click', () => {
+      if (hotelSearchHasMore) {
+        hotelSearchOffset += hotelSearchLimit;
+        executeHotelSearch();
       }
     });
   }
