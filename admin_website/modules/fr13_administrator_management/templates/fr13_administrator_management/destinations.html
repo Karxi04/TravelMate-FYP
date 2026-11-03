@@ -1,58 +1,30 @@
 {% extends 'portal_base.html' %}
-{% block title %}Destination Records | TravelMate{% endblock %}
+{% block title %}Destination Records (Retired) | TravelMate{% endblock %}
 
 {% block content %}
 {% include '_admin_data_state.html' %}
 <div class="page-title">
   <div>
-    <span class="eyebrow">DESTINATIONS &amp; ATTRACTIONS</span>
-    <h1>Destination Management</h1>
-    <p>Create and maintain Penang destination records used across itinerary planning and tourism packages.</p>
+    <span class="eyebrow">DESTINATIONS &amp; ATTRACTIONS (RETIRED)</span>
+    <h1>Destination Directory (Read-Only)</h1>
+    <p>Historical destination catalog records preserved for recommendation algorithms, itinerary planning, and search queries.</p>
   </div>
 </div>
 
-<!-- Add Destination Card -->
-<form class="card" method="post" action="{{ url_for('admin_fr13.create_destination') }}" style="margin-bottom: 24px;">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <span class="eyebrow">NEW DESTINATION</span>
-  <h3 style="margin: 2px 0 16px;">Add Destination Record</h3>
-  
-  <div class="grid g2">
-    <div class="field">
-      <label for="createDestTitle">Destination name *</label>
-      <input id="createDestTitle" class="input" name="title" required placeholder="e.g. Penang Hill, Clan Jetties">
-    </div>
-    <div class="field">
-      <label for="createDestAddress">Address / Location</label>
-      <input id="createDestAddress" class="input" name="address" placeholder="e.g. Jalan Stesen Bukit Bendera, Air Itam">
-    </div>
-    <div class="field">
-      <label for="createDestCategory">Category</label>
-      <input id="createDestCategory" class="input" name="category" placeholder="Heritage, Food, Nature, Culture">
-    </div>
-    <div class="field">
-      <label for="createDestType">Type</label>
-      <input id="createDestType" class="input" name="type" placeholder="Museum, Attraction, Restaurant, Temple">
-    </div>
-    <div class="field">
-      <label for="createDestHours">Opening hours</label>
-      <input id="createDestHours" class="input" name="openingHours" placeholder="e.g. 09:00 - 18:00 (Daily)">
-    </div>
-    <div class="field">
-      <label for="createDestCost">Estimated cost (RM)</label>
-      <input id="createDestCost" class="input" name="estimatedCost" type="number" min="0" step="0.01" value="0">
+<!-- Retirement Notice Banner -->
+<div class="card" style="border-left: 4px solid var(--warning, #e67e22); background: #fdfaf6; padding: 18px 20px; margin-bottom: 24px;" role="region" aria-label="Catalog Management Retired Notice">
+  <div style="display: flex; gap: 14px; align-items: flex-start;">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--warning, #e67e22); flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <div>
+      <strong style="font-size: 15px; color: var(--ink);">Catalog Management Interface Retired</strong>
+      <p style="margin: 6px 0 0; color: var(--ink-secondary); font-size: 13.5px; line-height: 1.5;">
+        Direct destination catalog management has been retired from the Administrator Portal. Existing destination data is preserved in read-only mode for platform recommendation algorithms, search engines, and historical itineraries. Creating, updating, and deleting destination records through this portal interface is no longer supported.
+      </p>
     </div>
   </div>
-  <div class="field" style="margin-top: 8px;">
-    <label for="createDestDesc">Description</label>
-    <textarea id="createDestDesc" class="input" name="description" rows="3" placeholder="Overview of destination highlights and visitor details..."></textarea>
-  </div>
-  <div class="actions" style="margin-top: 14px;">
-    <button class="btn primary" type="submit">Add Destination</button>
-  </div>
-</form>
+</div>
 
-<!-- Destinations Table -->
+<!-- Destinations Table (Read-Only) -->
 <div class="table-wrap">
   <table>
     <thead>
@@ -61,7 +33,7 @@
         <th scope="col">Category &amp; Type</th>
         <th scope="col">Estimated Cost</th>
         <th scope="col">Status</th>
-        <th scope="col" style="min-width: 220px;">Management</th>
+        <th scope="col">Access Mode</th>
       </tr>
     </thead>
     <tbody>
@@ -91,61 +63,7 @@
           <span class="status {{ x.get('status', 'active') }}">{{ x.get('status', 'active')|title }}</span>
         </td>
         <td>
-          <details class="table-inline-editor">
-            <summary class="btn outline btn-sm" style="cursor: pointer;">Edit / Update</summary>
-            
-            <div style="margin-top: 10px; padding: 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border); min-width: 280px;">
-              <form method="post" action="{{ url_for('admin_fr13.update_destination', destination_id=x.id) }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
-                  <div class="field" style="margin-bottom: 0;">
-                    <label style="font-size: 11px; font-weight: 600;">Title</label>
-                    <input class="input" name="title" value="{{ x.get('title', '') }}" required style="padding: 4px 8px; font-size: 12px;">
-                  </div>
-                  <div class="field" style="margin-bottom: 0;">
-                    <label style="font-size: 11px; font-weight: 600;">Address</label>
-                    <input class="input" name="address" value="{{ x.get('address', '') }}" style="padding: 4px 8px; font-size: 12px;">
-                  </div>
-                  <div class="field" style="margin-bottom: 0;">
-                    <label style="font-size: 11px; font-weight: 600;">Category</label>
-                    <input class="input" name="category" value="{{ x.get('category', '') }}" style="padding: 4px 8px; font-size: 12px;">
-                  </div>
-                  <div class="field" style="margin-bottom: 0;">
-                    <label style="font-size: 11px; font-weight: 600;">Type</label>
-                    <input class="input" name="type" value="{{ x.get('type', '') }}" style="padding: 4px 8px; font-size: 12px;">
-                  </div>
-                  <div class="field" style="margin-bottom: 0;">
-                    <label style="font-size: 11px; font-weight: 600;">Hours</label>
-                    <input class="input" name="openingHours" value="{{ x.get('openingHours', '') }}" style="padding: 4px 8px; font-size: 12px;">
-                  </div>
-                  <div class="field" style="margin-bottom: 0;">
-                    <label style="font-size: 11px; font-weight: 600;">Cost (RM)</label>
-                    <input class="input" name="estimatedCost" type="number" min="0" step="0.01" value="{{ x.get('estimatedCost', 0) }}" style="padding: 4px 8px; font-size: 12px;">
-                  </div>
-                </div>
-
-                <div class="field" style="margin-bottom: 10px;">
-                  <label style="font-size: 11px; font-weight: 600;">Status</label>
-                  <select class="input" name="status" style="padding: 4px 8px; font-size: 12px; width: 100%;">
-                    <option value="active" {% if x.get('status', 'active') == 'active' %}selected{% endif %}>Active</option>
-                    <option value="inactive" {% if x.get('status') == 'inactive' %}selected{% endif %}>Inactive</option>
-                  </select>
-                </div>
-
-                <input type="hidden" name="description" value="{{ x.get('description', '') }}">
-
-                <div class="actions" style="gap: 8px;">
-                  <button class="btn primary btn-sm" type="submit">Save Updates</button>
-                </div>
-              </form>
-
-              <form method="post" action="{{ url_for('admin_fr13.delete_destination', destination_id=x.id) }}" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border);" onsubmit="return confirm('Are you sure you want to delete destination {{ x.get('title', '') }}?');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn danger btn-sm" type="submit">Delete Destination</button>
-              </form>
-            </div>
-          </details>
+          <span class="badge neutral" style="font-size: 11px;">Read-Only</span>
         </td>
       </tr>
       {% else %}
@@ -155,8 +73,8 @@
             <div class="empty-icon" aria-hidden="true">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
             </div>
-            <strong>No destination records yet.</strong>
-            <p>Add a new destination above to populate the platform destination directory.</p>
+            <strong>No destination records found.</strong>
+            <p>Underlying destination records preserved in the system will appear here in read-only mode.</p>
           </div>
         </td>
       </tr>

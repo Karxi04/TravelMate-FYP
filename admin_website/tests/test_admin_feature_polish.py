@@ -345,17 +345,20 @@ def test_destinations_and_activities_presentation(admin_client):
             }
         ]
     }
+    # Destinations (Retired Management UI)
     mock_dest = MagicMock(return_value=_mock_response(dest_data))
     with _patch_view_api("admin_fr13.destinations", mock_dest):
         resp = admin_client.get("/admin/destinations")
         assert resp.status_code == 200
         html = resp.data.decode("utf-8")
-        assert "Destination Management" in html
+        assert "Catalog Management Interface Retired" in html
+        assert "Destination Directory (Read-Only)" in html
         assert "Penang Hill" in html
-        assert "Edit / Update" in html
-        assert "Add Destination" in html
+        assert "Read-Only" in html
+        assert "Add Destination" not in html
+        assert "Edit / Update" not in html
 
-    # Activities
+    # Activities (Retired Management UI)
     act_data = {
         "items": [
             {
@@ -374,10 +377,13 @@ def test_destinations_and_activities_presentation(admin_client):
         resp = admin_client.get("/admin/activities")
         assert resp.status_code == 200
         html = resp.data.decode("utf-8")
-        assert "Activity Management" in html
+        assert "Catalog Management Interface Retired" in html
+        assert "Activity Directory (Read-Only)" in html
         assert "Funicular Railway Ride" in html
         assert "60 min" in html
-        assert "Add Activity" in html
+        assert "Read-Only" in html
+        assert "Add Activity" not in html
+        assert "Edit / Update" not in html
 
 
 # =========================================================================

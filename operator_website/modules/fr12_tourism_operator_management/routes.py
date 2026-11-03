@@ -426,6 +426,106 @@ def decline_booking_fulfillment(order_reference):
     return redirect(url_for("operator_fr12.booking_detail", order_reference=order_reference))
 
 
+@bp.route("/payments")
+@bp.route("/package-payments")
+def payments():
+    if not guard():
+        return redirect(url_for("operator_fr01.login"))
+    response = call_api("GET", "/api/fr12/bookings")
+    backend_error = not response.ok
+    if backend_error:
+        flash(_error(response, fallback="Unable to retrieve package payments from the server."), "error")
+        all_items = []
+        data_limited = False
+    else:
+        payload = response.json() or {}
+        all_items = payload.get("items", []) or []
+        data_limited = bool(payload.get("dataLimited", False))
+
+    query = request.args.get("q", "").strip().lower()
+    status = request.args.get("status", "all").strip().lower()
+
+    items = list(all_items)
+    if status != "all":
+        if status == "test_paid":
+            items = [b for b in items if _is_paid_booking(b) and b.get("testMode")]
+        elif status == "paid":
+            items = [b for b in items if _is_paid_booking(b)]
+        elif status == "pending":
+            items = [b for b in items if _is_pending_booking(b)]
+        elif status == "failed":
+            items = [
+                b for b in items
+                if str(b.get("paymentStatus") or "").lower() in {"failed", "payment_failed"}
+                or str(b.get("orderStatus") or "").lower() in {"failed", "checkout_failed"}
+            ]
+        elif status in {"cancelled", "refunded"}:
+            items = [
+                b for b in items
+                if str(b.get("paymentStatus") or "").lower() in {"cancelled", "payment_cancelled", "refunded"}
+                or str(b.get("orderStatus") or "").lower() in {"cancelled", "checkout_cancelled", "refunded"}
+            ]
+        elif status == "test":
+            items = [b for b in items if b.get("testMode")]
+
+    if query:
+        items = [
+            b for b in items
+            if query in " ".join([
+                str(b.get("orderReference") or ""),
+                str(b.get("id") or ""),
+                str(b.get("packageTitle") or ""),
+                str(b.get("packageId") or ""),
+                str(b.get("currency") or ""),
+                str(b.get("paymentStatus") or ""),
+            ]).lower()
+        ]
+
+    # Multi-currency safe revenue calculation (never aggregate differing currencies into one single sum)
+    currency_revenues = {}
+    for b in all_items:
+        if _is_paid_booking(b):
+            curr = str(b.get("currency") or "MYR").upper().strip()
+            val = b.get("groupTotal") if b.get("groupTotal") is not None else b.get("amount")
+            currency_revenues[curr] = currency_revenues.get(curr, 0.0) + _safe_float(val)
+
+    is_multi = len(currency_revenues) > 1
+    if len(currency_revenues) == 1:
+        primary_curr = next(iter(currency_revenues.keys()))
+        primary_rev = currency_revenues[primary_curr]
+    else:
+        primary_curr = "MYR"
+        primary_rev = currency_revenues.get("MYR", 0.0)
+
+    summary = {
+        "total": len(all_items),
+        "paid": sum(1 for b in all_items if _is_paid_booking(b)),
+        "pending": sum(1 for b in all_items if _is_pending_booking(b)),
+        "failed": sum(
+            1 for b in all_items
+            if str(b.get("paymentStatus") or "").lower() in {"failed", "payment_failed", "cancelled", "payment_cancelled"}
+            or str(b.get("orderStatus") or "").lower() in {"failed", "checkout_failed", "cancelled", "checkout_cancelled"}
+        ),
+        "test_orders": sum(1 for b in all_items if b.get("testMode")),
+        "currency_revenues": currency_revenues,
+        "is_multi_currency": is_multi,
+        "primary_currency": primary_curr,
+        "primary_revenue": primary_rev,
+    }
+
+    return render_template(
+        "fr12_tourism_operator_management/payments.html",
+        items=items,
+        total_items_count=len(all_items),
+        summary=summary,
+        status=status,
+        query=query,
+        backend_error=backend_error,
+        is_pending_booking=_is_pending_booking,
+        data_limited=data_limited,
+    )
+
+
 @bp.route("/packages", methods=["GET", "POST"])
 def packages():
     if not guard():

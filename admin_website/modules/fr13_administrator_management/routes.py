@@ -161,44 +161,21 @@ def destinations():
 def create_destination():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    payload = {
-        "title": request.form.get("title", ""),
-        "address": request.form.get("address", ""),
-        "category": request.form.get("category", ""),
-        "type": request.form.get("type", ""),
-        "description": request.form.get("description", ""),
-        "openingHours": request.form.get("openingHours", ""),
-        "estimatedCost": request.form.get("estimatedCost", "0"),
-        "status": request.form.get("status", "active"),
-    }
-    response = call_api("POST", "/api/fr13/destinations", json=payload)
-    flash("Destination record created." if response.ok else _error(response), "success" if response.ok else "error")
+    flash("Destination catalog management has been retired. Record creation is disabled.", "warning")
     return redirect(url_for("admin_fr13.destinations"))
 
 @bp.post("/destinations/<destination_id>/update")
 def update_destination(destination_id):
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    payload = {
-        "title": request.form.get("title", ""),
-        "address": request.form.get("address", ""),
-        "category": request.form.get("category", ""),
-        "type": request.form.get("type", ""),
-        "description": request.form.get("description", ""),
-        "openingHours": request.form.get("openingHours", ""),
-        "estimatedCost": request.form.get("estimatedCost", "0"),
-        "status": request.form.get("status", "active"),
-    }
-    response = call_api("PUT", f"/api/fr13/destinations/{destination_id}", json=payload)
-    flash("Destination record updated." if response.ok else _error(response), "success" if response.ok else "error")
+    flash("Destination catalog management has been retired. Record updates are disabled.", "warning")
     return redirect(url_for("admin_fr13.destinations"))
 
 @bp.post("/destinations/<destination_id>/delete")
 def delete_destination(destination_id):
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    response = call_api("DELETE", f"/api/fr13/destinations/{destination_id}")
-    flash("Destination record deleted." if response.ok else _error(response), "success" if response.ok else "error")
+    flash("Destination catalog management has been retired. Record deletion is disabled.", "warning")
     return redirect(url_for("admin_fr13.destinations"))
 
 @bp.route("/activities")
@@ -212,42 +189,22 @@ def activities():
 def create_activity():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    payload = {
-        "activityName": request.form.get("activityName", ""),
-        "destinationName": request.form.get("destinationName", ""),
-        "category": request.form.get("category", ""),
-        "description": request.form.get("description", ""),
-        "estimatedCost": request.form.get("estimatedCost", "0"),
-        "recommendedDurationMinutes": request.form.get("recommendedDurationMinutes", "90"),
-        "status": request.form.get("status", "active"),
-    }
-    response = call_api("POST", "/api/fr13/activities", json=payload)
-    flash("Activity record created." if response.ok else _error(response), "success" if response.ok else "error")
+    flash("Activity catalog management has been retired. Record creation is disabled.", "warning")
     return redirect(url_for("admin_fr13.activities"))
 
 @bp.post("/activities/<activity_id>/update")
 def update_activity(activity_id):
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    payload = {
-        "activityName": request.form.get("activityName", ""),
-        "destinationName": request.form.get("destinationName", ""),
-        "category": request.form.get("category", ""),
-        "description": request.form.get("description", ""),
-        "estimatedCost": request.form.get("estimatedCost", "0"),
-        "recommendedDurationMinutes": request.form.get("recommendedDurationMinutes", "90"),
-        "status": request.form.get("status", "active"),
-    }
-    response = call_api("PUT", f"/api/fr13/activities/{activity_id}", json=payload)
-    flash("Activity record updated." if response.ok else _error(response), "success" if response.ok else "error")
+    flash("Activity catalog management has been retired. Record updates are disabled.", "warning")
     return redirect(url_for("admin_fr13.activities"))
 
 @bp.post("/activities/<activity_id>/delete")
 def delete_activity(activity_id):
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    response = call_api("DELETE", f"/api/fr13/activities/{activity_id}")
-    flash("Activity record deleted." if response.ok else _error(response), "success" if response.ok else "error")
+    flash("Activity catalog management has been retired. Record deletion is disabled.", "warning")
+    return redirect(url_for("admin_fr13.activities"))
     return redirect(url_for("admin_fr13.activities"))
 
 @bp.route("/bookings")
@@ -279,9 +236,12 @@ def payments():
         if request.args.get(key, "").strip()
     }
     response = call_api("GET", "/api/fr13/payments", params=params)
+    data = response.json() if response.ok else {}
     return render_template(
         "fr13_administrator_management/payments.html",
-        items=response.json().get("items", []) if response.ok else [],
+        items=data.get("items", []) if response.ok else [],
+        backend_error=not response.ok,
+        data_limited=bool(data.get("dataLimited", False)),
         **params,
     )
 

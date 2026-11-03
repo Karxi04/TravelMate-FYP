@@ -94,7 +94,7 @@ def packages():
 
 
 def _booking_projection(order):
-    return _safe_analytics_booking(order, include_fulfillment=True)
+    return {**_safe_analytics_booking(order, include_fulfillment=True), 'paidAt': order.get('paidAt')}
 
 
 @bp.get('/bookings')

@@ -1,61 +1,30 @@
 {% extends 'portal_base.html' %}
-{% block title %}Activity Records | TravelMate{% endblock %}
+{% block title %}Activity Records (Retired) | TravelMate{% endblock %}
 
 {% block content %}
 {% include '_admin_data_state.html' %}
 <div class="page-title">
   <div>
-    <span class="eyebrow">DESTINATIONS &amp; ITINERARIES</span>
-    <h1>Activity Management</h1>
-    <p>Create and maintain activity records for destination planning and traveller recommendations.</p>
+    <span class="eyebrow">ACTIVITIES &amp; ITINERARIES (RETIRED)</span>
+    <h1>Activity Directory (Read-Only)</h1>
+    <p>Historical activity catalog records preserved for recommendation algorithms and itinerary planning.</p>
   </div>
 </div>
 
-<!-- Add Activity Card -->
-<form class="card" method="post" action="{{ url_for('admin_fr13.create_activity') }}" style="margin-bottom: 24px;">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <span class="eyebrow">NEW ACTIVITY</span>
-  <h3 style="margin: 2px 0 16px;">Add Activity Record</h3>
-  
-  <div class="grid g2">
-    <div class="field">
-      <label for="createActivityName">Activity name *</label>
-      <input id="createActivityName" class="input" name="activityName" required placeholder="e.g. Street Art Walking Tour">
-    </div>
-    <div class="field">
-      <label for="createActivityDest">Destination / Location</label>
-      <input id="createActivityDest" class="input" name="destinationName" placeholder="e.g. George Town Heritage Zone">
-    </div>
-    <div class="field">
-      <label for="createActivityCategory">Category</label>
-      <input id="createActivityCategory" class="input" name="category" placeholder="Sightseeing, Food &amp; Drink, Outdoor">
-    </div>
-    <div class="field">
-      <label for="createActivityCost">Estimated cost (RM)</label>
-      <input id="createActivityCost" class="input" name="estimatedCost" type="number" min="0" step="0.01" value="0">
-    </div>
-    <div class="field">
-      <label for="createActivityDuration">Recommended duration (minutes)</label>
-      <input id="createActivityDuration" class="input" name="recommendedDurationMinutes" type="number" min="30" step="15" value="90">
-    </div>
-    <div class="field">
-      <label for="createActivityStatus">Status</label>
-      <select id="createActivityStatus" class="input" name="status">
-        <option value="active">Active</option>
-        <option value="inactive">Inactive</option>
-      </select>
+<!-- Retirement Notice Banner -->
+<div class="card" style="border-left: 4px solid var(--warning, #e67e22); background: #fdfaf6; padding: 18px 20px; margin-bottom: 24px;" role="region" aria-label="Catalog Management Retired Notice">
+  <div style="display: flex; gap: 14px; align-items: flex-start;">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--warning, #e67e22); flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <div>
+      <strong style="font-size: 15px; color: var(--ink);">Catalog Management Interface Retired</strong>
+      <p style="margin: 6px 0 0; color: var(--ink-secondary); font-size: 13.5px; line-height: 1.5;">
+        Direct activity catalog management has been retired from the Administrator Portal. Existing activity data is preserved in read-only mode for platform recommendation algorithms and itinerary planning. Creating, updating, and deleting activity records through this portal interface is no longer supported.
+      </p>
     </div>
   </div>
-  <div class="field" style="margin-top: 8px;">
-    <label for="createActivityDesc">Description</label>
-    <textarea id="createActivityDesc" class="input" name="description" rows="3" placeholder="Overview of the activity, timing notes, or visitor recommendations..."></textarea>
-  </div>
-  <div class="actions" style="margin-top: 14px;">
-    <button class="btn primary" type="submit">Add Activity</button>
-  </div>
-</form>
+</div>
 
-<!-- Activities Table -->
+<!-- Activities Table (Read-Only) -->
 <div class="table-wrap">
   <table>
     <thead>
@@ -64,7 +33,7 @@
         <th scope="col">Category</th>
         <th scope="col">Estimated Cost</th>
         <th scope="col">Duration</th>
-        <th scope="col" style="min-width: 220px;">Management</th>
+        <th scope="col">Access Mode</th>
       </tr>
     </thead>
     <tbody>
@@ -89,56 +58,7 @@
           {{ x.get('recommendedDurationMinutes', 90) }} min
         </td>
         <td>
-          <details class="table-inline-editor">
-            <summary class="btn outline btn-sm" style="cursor: pointer;">Edit / Update</summary>
-            
-            <div style="margin-top: 10px; padding: 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border); min-width: 280px;">
-              <form method="post" action="{{ url_for('admin_fr13.update_activity', activity_id=x.id) }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
-                  <div class="field" style="margin-bottom: 0;">
-                    <label style="font-size: 11px; font-weight: 600;">Activity name</label>
-                    <input class="input" name="activityName" value="{{ x.get('activityName', '') }}" required style="padding: 4px 8px; font-size: 12px;">
-                  </div>
-                  <div class="field" style="margin-bottom: 0;">
-                    <label style="font-size: 11px; font-weight: 600;">Destination</label>
-                    <input class="input" name="destinationName" value="{{ x.get('destinationName', '') }}" style="padding: 4px 8px; font-size: 12px;">
-                  </div>
-                  <div class="field" style="margin-bottom: 0;">
-                    <label style="font-size: 11px; font-weight: 600;">Category</label>
-                    <input class="input" name="category" value="{{ x.get('category', '') }}" style="padding: 4px 8px; font-size: 12px;">
-                  </div>
-                  <div class="field" style="margin-bottom: 0;">
-                    <label style="font-size: 11px; font-weight: 600;">Cost (RM)</label>
-                    <input class="input" name="estimatedCost" type="number" min="0" step="0.01" value="{{ x.get('estimatedCost', 0) }}" style="padding: 4px 8px; font-size: 12px;">
-                  </div>
-                  <div class="field" style="margin-bottom: 0;">
-                    <label style="font-size: 11px; font-weight: 600;">Duration (min)</label>
-                    <input class="input" name="recommendedDurationMinutes" type="number" min="30" step="15" value="{{ x.get('recommendedDurationMinutes', 90) }}" style="padding: 4px 8px; font-size: 12px;">
-                  </div>
-                  <div class="field" style="margin-bottom: 0;">
-                    <label style="font-size: 11px; font-weight: 600;">Status</label>
-                    <select class="input" name="status" style="padding: 4px 8px; font-size: 12px;">
-                      <option value="active" {% if x.get('status', 'active') == 'active' %}selected{% endif %}>Active</option>
-                      <option value="inactive" {% if x.get('status') == 'inactive' %}selected{% endif %}>Inactive</option>
-                    </select>
-                  </div>
-                </div>
-
-                <input type="hidden" name="description" value="{{ x.get('description', '') }}">
-
-                <div class="actions" style="gap: 8px;">
-                  <button class="btn primary btn-sm" type="submit">Save Updates</button>
-                </div>
-              </form>
-
-              <form method="post" action="{{ url_for('admin_fr13.delete_activity', activity_id=x.id) }}" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border);" onsubmit="return confirm('Are you sure you want to delete activity {{ x.get('activityName', '') }}?');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn danger btn-sm" type="submit">Delete Activity</button>
-              </form>
-            </div>
-          </details>
+          <span class="badge neutral" style="font-size: 11px;">Read-Only</span>
         </td>
       </tr>
       {% else %}
@@ -146,10 +66,10 @@
         <td colspan="5">
           <div class="empty-state">
             <div class="empty-icon" aria-hidden="true">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
             </div>
-            <strong>No activity records yet.</strong>
-            <p>Add a new activity above to populate destination recommendations.</p>
+            <strong>No activity records found.</strong>
+            <p>Underlying activity records preserved in the system will appear here in read-only mode.</p>
           </div>
         </td>
       </tr>
