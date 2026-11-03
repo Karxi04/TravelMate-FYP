@@ -6,6 +6,7 @@ import hashlib
 import re
 
 from services.public_content_projection import eligible_package
+from services.operator_hotel_service import safe_hotel_snapshot
 
 PACKAGE_FULFILLMENT_STATES = {
     'checkout_pending', 'payment_pending', 'payment_verified',
@@ -255,6 +256,7 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None,
             original_price = None
 
     selected_departure = _departure_date(package, departure_date)
+    accommodation_hotel = safe_hotel_snapshot(package.get('accommodationHotel'))
     return {
         'contractVersion': 2,
         'packageId': str(package.get('id') or ''), 'operatorId': str(package['operatorId']),
@@ -266,7 +268,10 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None,
         'selectedDepartureDate': selected_departure,
         'itineraryDays': deepcopy(package.get('itineraryDays') or []),
         'inclusions': deepcopy(package.get('inclusions') or []), 'exclusions': deepcopy(package.get('exclusions') or []),
-        'accommodation': {k: package.get(k) for k in ('accommodationName', 'accommodationCategory', 'roomType', 'accommodationNotes')},
+        'accommodation': {
+            **{k: package.get(k) for k in ('accommodationName', 'accommodationCategory', 'roomType', 'accommodationNotes')},
+            **({'accommodationHotel': deepcopy(accommodation_hotel)} if accommodation_hotel is not None else {}),
+        },
         'transport': {k: package.get(k) for k in ('transportTypes', 'transportNotes')},
         'priceBasis': price_basis,
         'regularAdultUnitPrice': _json_money(regular_adult_price),

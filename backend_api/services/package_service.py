@@ -1,5 +1,6 @@
 from datetime import date
 from math import isfinite
+from services.operator_hotel_service import safe_hotel_snapshot
 
 
 PACKAGE_FIELDS = {
@@ -13,7 +14,7 @@ PACKAGE_FIELDS = {
     'departureDates', 'departureLocation', 'meetingPoint', 'departureNotes',
     'itineraryDays', 'highlights', 'inclusions', 'exclusions',
     'accommodationName', 'accommodationCategory', 'roomType',
-    'accommodationNotes', 'transportTypes', 'transportNotes',
+    'accommodationNotes', 'accommodationHotel', 'transportTypes', 'transportNotes',
     'cancellationPolicy', 'refundPolicy', 'bookingTerms', 'importantNotes',
     'whatToBring', 'availabilityStatus',
     'validFrom', 'validUntil',
@@ -133,6 +134,8 @@ def normalise_package(payload, existing=None):
         package['itineraryDays'] = _itinerary(raw.get('itineraryDays'))
     if 'schemaVersion' in raw:
         package['schemaVersion'] = _integer(raw.get('schemaVersion')) or 2
+    if 'accommodationHotel' in raw:
+        package['accommodationHotel'] = safe_hotel_snapshot(raw['accommodationHotel'])
     return package
 
 

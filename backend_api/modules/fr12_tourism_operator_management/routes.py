@@ -4,6 +4,9 @@ from flask import Blueprint, request, jsonify, g
 
 from auth_utils import auth_required
 from utils import utc_now_iso
+from request_rate_limit import rate_limit_response
+from services.operator_hotel_service import HotelDataError, resolve_package_hotel
+from services.review_service import ReviewConflict
 
 from sequence_contract.validators import validateCampaignDatesAndContent
 
@@ -264,6 +267,21 @@ def decline_booking_fulfillment(order_reference):
         'fulfillmentRecord': record, 'updatedAt': now})
 
 
+def _hotel_package_payload(payload, current=None):
+    if payload.get('hotelSelection') is not None:
+        if g.role != 'operator':
+            return None, (jsonify(ok=False,error='Verified Tourism Operator access is required.'),403)
+        limited = rate_limit_response('provider_search', g.uid)
+        if limited is not None:
+            return None, limited
+    try:
+        return resolve_package_hotel(payload, current), None
+    except HotelDataError as error:
+        response = jsonify(ok=False,error=str(error),code=error.code)
+        if error.status == 429:response.headers['Retry-After']='60'
+        return None, (response,error.status)
+
+
 @bp.post('/packages')
 @auth_required(['operator'])
 def create_package_route():
@@ -271,6 +289,8 @@ def create_package_route():
     if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Package data must be an object'}),400
     error=package_validation_error(payload)
     if error:return jsonify({'ok':False,'error':error}),400
+    payload, error = _hotel_package_payload(payload)
+    if error is not None:return error
     profile=retrieveRecord('users',g.uid) or {}
     package=normalise_package(payload)
     package.update({
@@ -278,7 +298,15 @@ def create_package_route():
         'operatorEmail':profile.get('businessEmail') or profile.get('email') or '',
         'operatorPhone':profile.get('businessContact') or profile.get('phoneNo') or profile.get('phone') or '',
     })
-    result=storeRecord('tourism_packages',createPackage(package,g.uid)); return jsonify({'ok':True,'id':result['id'],'package':package_for_read(result)}),201
+    if 'accommodationHotel' in package:
+        try:
+            result = storeRecord('tourism_packages', createPackage(package,g.uid))
+            if not result:raise RuntimeError('Package write failed')
+        except Exception:
+            return jsonify(ok=False,error='Package could not be saved. Reload and try again.'),503
+    else:
+        result=storeRecord('tourism_packages',createPackage(package,g.uid))
+    return jsonify({'ok':True,'id':result['id'],'package':package_for_read(result)}),201
 @bp.put('/packages/<pid>')
 @auth_required(['operator'])
 def update_package(pid):
@@ -289,10 +317,22 @@ def update_package(pid):
     if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Package data must be an object'}),400
     merged={**current, **payload}; error=package_validation_error(merged)
     if error:return jsonify({'ok':False,'error':error}),400
+    hotel_edit = 'hotelSelection' in payload or bool(current.get('accommodationHotel'))
+    payload, error = _hotel_package_payload(payload, current)
+    if error is not None:return error
     updates=normalise_package(payload,current)
     if current.get('approvalStatus')=='approved' and package_update_changes_reviewed_content(current,payload):
         updates.update({'approvalStatus':'draft','reviewReason':'','reviewComment':'','reviewedAt':'','reviewedBy':'','reviewedByName':'','submittedAt':''})
-    updates['updatedAt']=utc_now_iso(); return jsonify({'ok':True,'package':package_for_read(updateRecord('tourism_packages',pid,updates))})
+    updates['updatedAt']=utc_now_iso()
+    try:
+        saved = updateRecord('tourism_packages', pid, updates, **({'expected': current} if hotel_edit else {}))
+        if not saved:
+            return jsonify(ok=False,error='Package could not be saved. Reload and try again.'),503
+        return jsonify({'ok':True,'package':package_for_read(saved)})
+    except ReviewConflict:
+        return jsonify(ok=False,error='Package changed. Reload and try again.'),409
+    except Exception:
+        return jsonify(ok=False,error='Package could not be saved. Reload and try again.'),503
 @bp.delete('/packages/<pid>')
 @auth_required(['operator'])
 def delete_package(pid):
