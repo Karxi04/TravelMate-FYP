@@ -125,6 +125,51 @@ def commitPackageFulfillment(document_id, expected, patch):
     return commit(db.transaction())
 
 
+def transactPackingChecklist(trip_id, uid, transform):
+    """Recheck Trip/Checklist ownership and serialize edits without writing Trips."""
+    from google.cloud import firestore
+    from google.api_core.exceptions import Aborted, DeadlineExceeded
+    from random import uniform
+    from time import sleep
+    from services.packing_checklist_service import PackingError, checklist_id
+    db = get_db()
+    checklist_ref = db.collection('packing_checklists').document(checklist_id(uid, trip_id))
+    trip_ref = db.collection('itineraries').document(trip_id)
+    preferences_ref = db.collection('travel_preferences').document(uid)
+
+    @firestore.transactional
+    def commit(transaction):
+        trip_snap = trip_ref.get(transaction=transaction)
+        trip = trip_snap.to_dict() if trip_snap.exists else None
+        if not trip or trip.get('travellerId') != uid:
+            raise PackingError('Trip not found.', 404)
+        snapshot = checklist_ref.get(transaction=transaction)
+        current = {'id': snapshot.id, **(snapshot.to_dict() or {})} if snapshot.exists else None
+        if current and (current.get('travellerId') != uid or current.get('tripId') != trip_id):
+            raise PackingError('Checklist not found.', 404)
+        pref_snap = preferences_ref.get(transaction=transaction)
+        preferences = pref_snap.to_dict() if pref_snap.exists else None
+        if preferences and preferences.get('travellerId', uid) != uid:
+            preferences = None
+        updated, result = transform(current, trip, preferences)
+        if updated is not None and updated != current:
+            transaction.set(checklist_ref, {k: v for k, v in updated.items() if k != 'id'})
+        return result
+
+    for attempt in range(2):
+        try:
+            return commit(db.transaction(max_attempts=3))
+        except (Aborted, DeadlineExceeded, ValueError) as error:
+            # The SDK wraps exhausted Aborted retries in ValueError.
+            if isinstance(error, ValueError) and not isinstance(error.__cause__, (Aborted, DeadlineExceeded)):
+                raise
+            if attempt:
+                raise
+            # A new transaction rechecks ownership and revision after lock timeout.
+            # Even an ambiguous commit cannot repeat an edit at the same revision.
+            sleep(uniform(0.1, 0.4))
+
+
 def deleteRecord(collectionName, documentId, expected=None):
     """Exact sequence-diagram name for Firestore delete."""
     if collectionName == 'feedback' and expected is not None:
