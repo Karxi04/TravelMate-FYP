@@ -32,7 +32,7 @@ _PACKAGE_FIELDS = {
     'departureDates', 'departureLocation', 'meetingPoint', 'departureNotes',
     'itineraryDays', 'highlights', 'inclusions', 'exclusions',
     'accommodationName', 'accommodationCategory', 'roomType',
-    'accommodationNotes', 'transportTypes', 'transportNotes',
+    'accommodationNotes', 'accommodationHotel', 'transportTypes', 'transportNotes',
     'cancellationPolicy', 'refundPolicy', 'bookingTerms', 'importantNotes',
     'whatToBring', 'availabilityStatus', 'validFrom', 'validUntil',
     'createdAt', 'updatedAt',

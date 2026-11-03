@@ -171,24 +171,80 @@
     </section>
     {% endif %}
 
-    {% if item.get('accommodationName') or item.get('transportTypes') %}
+    {% set hotel = item.get('accommodationHotel') %}
+    {% if hotel or item.get('accommodationName') or item.get('transportTypes') %}
     <section class="card">
-      <h3>Stay and transport</h3>
-      {% if item.get('accommodationName') %}
+      {% if hotel %}
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px;">
+          <h3 style="margin: 0;">Verified Accommodation Partner</h3>
+          <span class="status approved" style="font-size: 11px;">LiteAPI Verified</span>
+        </div>
+
+        <div style="display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; background: #f9fbf9; border: 1px solid #e1efe2; border-radius: 8px; padding: 12px;">
+          {% if hotel.get('mainPhoto') %}
+            <img src="{{ hotel.get('mainPhoto') }}" alt="{{ hotel.get('name') }}" style="width: 90px; height: 75px; object-fit: cover; border-radius: 6px; flex-shrink: 0;">
+          {% endif %}
+          <div>
+            <strong style="font-size: 15px; color: var(--charcoal, #202124);">{{ hotel.get('name') }}</strong>
+            <p style="margin: 2px 0 6px; font-size: 12.5px; color: var(--ink-secondary, #5f6368);">
+              {{ [hotel.get('address'), hotel.get('city'), hotel.get('country')]|select|join(', ') }}
+            </p>
+            <div style="display: flex; gap: 12px; font-size: 12.5px; align-items: center; flex-wrap: wrap;">
+              <span style="font-weight: 600; color: #e37400;">
+                {% if hotel.get('stars') is not none %}
+                  ⭐ {{ hotel.get('stars') }}-Star
+                {% else %}
+                  Star classification not supplied
+                {% endif %}
+              </span>
+              {% if hotel.get('guestRating') is not none %}
+                <span style="color: var(--ink-secondary, #5f6368);">Guest Rating: {{ hotel.get('guestRating') }}/10</span>
+              {% endif %}
+            </div>
+            {% if hotel.get('amenities') %}
+              <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px;">
+                {% for am in hotel.get('amenities')[:6] %}
+                  <span style="font-size: 10.5px; background: #e8f0fe; color: #1a73e8; padding: 2px 6px; border-radius: 4px;">{{ am }}</span>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div style="margin-bottom: 12px; padding: 10px 12px; background: var(--canvas, #f8f9fa); border-radius: 6px;">
+          <strong style="font-size: 13px; color: var(--charcoal, #202124);">Operator Arrangement Details:</strong>
+          <p style="margin: 4px 0 0; font-size: 13px;">
+            <b>Room Configuration:</b> {{ item.get('roomType') or 'Not specified' }}<br>
+            {% if item.get('accommodationNotes') %}
+              <b>Guidelines & Notes:</b> {{ item.get('accommodationNotes') }}
+            {% endif %}
+          </p>
+        </div>
+
+        <p style="font-size: 11.5px; color: var(--ink-secondary, #5f6368); font-style: italic; margin-top: 0;">
+          Specifies package partner hotel. Does not constitute a room reservation.
+        </p>
+      {% elif item.get('accommodationName') %}
+        <h3>Stay</h3>
         <p>
           <strong>{{ item.get('accommodationName') }}</strong>
           {% if item.get('accommodationCategory') %} · {{ item.get('accommodationCategory') }}{% endif %}
           {% if item.get('roomType') %}<br>{{ item.get('roomType') }}{% endif %}
         </p>
+        {% if item.get('accommodationNotes') %}
+          <p>{{ item.get('accommodationNotes') }}</p>
+        {% endif %}
       {% endif %}
-      {% if item.get('transportTypes') %}
-        <p><strong>Transport</strong><br>{{ item.get('transportTypes')|join(', ') }}</p>
-      {% endif %}
-      {% if item.get('accommodationNotes') %}
-        <p>{{ item.get('accommodationNotes') }}</p>
-      {% endif %}
-      {% if item.get('transportNotes') %}
-        <p>{{ item.get('transportNotes') }}</p>
+
+      {% if item.get('transportTypes') or item.get('transportNotes') %}
+        <div style="{% if hotel or item.get('accommodationName') %}margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border);{% endif %}">
+          {% if item.get('transportTypes') %}
+            <p><strong>Transport</strong><br>{{ item.get('transportTypes')|join(', ') }}</p>
+          {% endif %}
+          {% if item.get('transportNotes') %}
+            <p>{{ item.get('transportNotes') }}</p>
+          {% endif %}
+        </div>
       {% endif %}
     </section>
     {% endif %}

@@ -68,6 +68,14 @@ def retrieveHotelContent(hotel_id):
     return _json_or_error(r)
 
 
+def retrieveHotelProperties(filters):
+    """Date-free property metadata; no rates, prebooking or reservations."""
+    response = requests.get(
+        f'{DATA_BASE}/data/hotels', params=filters, headers=_headers(), timeout=20,
+    )
+    return _json_or_error(response)
+
+
 def normalizeHotelContent(result, hotel_id=None):
     """Return an allowlisted property projection without raw provider fields."""
     result = result or {}

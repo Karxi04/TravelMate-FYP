@@ -9,9 +9,13 @@ bp = Blueprint("operator_fr12", __name__, template_folder="templates")
 @bp.before_request
 def verified_operator_gate():
     if session.get("id_token") and session.get("incomplete_setup"):
+        if request.path.startswith("/hotels") or request.path.endswith("/upload-image"):
+            return jsonify({"ok": False, "error": "Operator profile setup incomplete"}), 403
         return redirect(url_for("operator_fr01.complete_setup"))
     if session.get("id_token") and session.get("portal_role") and session.get("portal_role") not in {"admin", "administrator"}:
         if session.get("verification_status", "pending") not in {"approved", "verified"}:
+            if request.path.startswith("/hotels") or request.path.endswith("/upload-image"):
+                return jsonify({"ok": False, "error": "Your operator account is still awaiting administrator approval."}), 403
             return redirect(url_for("operator_fr01.verification"))
 
 
@@ -30,6 +34,11 @@ def _error(response, fallback="Request failed"):
         "Promotional campaign requires an approved package": "Choose one of your approved packages before creating a campaign.",
         "Campaign under administrator review cannot be edited": "This campaign is under review and cannot be edited yet.",
         "Campaign cannot be deleted in its current state": "This campaign cannot be deleted in its current publishing state.",
+        "Package is currently under review and cannot be edited.": "This package is currently under review and cannot be edited.",
+        "This package was modified by another user or review action. Please reload and review changes.": "This package was modified by another review action or user. Please reload the page to review the latest changes.",
+        "accommodationHotel is server-controlled. Submit hotelSelection instead.": "Accommodation hotel data is server-managed.",
+        "Clear hotelSelection before entering a different accommodation name.": "Clear the selected partner hotel before entering a different accommodation name.",
+        "Clear hotelSelection before overriding the provider star category.": "Clear the selected partner hotel before overriding the star rating.",
     }
     return replacements.get(text, text if text and text != fallback else "We couldn't complete that request. Try again.")
 
@@ -129,7 +138,7 @@ def _package_payload():
         }
         if any(v for key, v in day.items() if key != "dayNumber"):
             itinerary.append(day)
-    return {
+    payload = {
         "schemaVersion": 1 if legacy else 2,
         "title": (request.form.get("title") or request.form.get("packageTitle") or "").strip(),
         "shortDescription": request.form.get("shortDescription", "").strip(),
@@ -176,6 +185,15 @@ def _package_payload():
         "whatToBring": _items("whatToBring"),
         "availabilityStatus": request.form.get("availabilityStatus", "available"),
     }
+    hotel_action = (request.form.get("hotelSelectionAction") or "").strip().lower()
+    if hotel_action == "select":
+        hotel_id = (request.form.get("hotelSelectionId") or "").strip()
+        provider = (request.form.get("hotelSelectionProvider") or "liteapi").strip() or "liteapi"
+        if hotel_id:
+            payload["hotelSelection"] = {"provider": provider, "hotelId": hotel_id}
+    elif hotel_action == "detach":
+        payload["hotelSelection"] = None
+    return payload
 
 
 @bp.route("/dashboard")
@@ -560,9 +578,10 @@ def new_package():
     if request.method == "POST":
         payload = _package_payload()
         response = call_api("POST", "/api/fr12/packages", json=payload)
-        flash("Package saved as a draft." if response.ok else _error(response), "success" if response.ok else "error")
         if response.ok:
+            flash("Package saved as a draft.", "success")
             return redirect(url_for("operator_fr12.packages"))
+        flash(_error(response), "error")
         return render_template("fr12_tourism_operator_management/package_new.html", form=payload)
     return render_template("fr12_tourism_operator_management/package_new.html", form={})
 
@@ -573,7 +592,16 @@ def edit_package(package_id):
         return redirect(url_for("operator_fr01.login"))
     payload = _package_payload()
     response = call_api("PUT", f"/api/fr12/packages/{package_id}", json=payload)
-    flash("Package updated." if response.ok else _error(response), "success" if response.ok else "error")
+    if response.ok:
+        updated_pkg = response.json().get("package", {}) if response.status_code in {200, 201} else {}
+        if str(updated_pkg.get("approvalStatus", "")).lower() == "draft":
+            flash("Package updated. If this package was previously approved, any changes have returned it to Draft for administrator re-approval.", "info")
+        else:
+            flash("Package updated.", "success")
+    elif response.status_code == 409:
+        flash(_error(response, fallback="This package was modified or is currently under review. Please reload and review changes."), "error")
+    else:
+        flash(_error(response), "error")
     return redirect(url_for("operator_fr12.packages"))
 
 
@@ -713,9 +741,19 @@ def edit_package_page(package_id):
     if request.method == "POST":
         payload = _package_payload()
         response = call_api("PUT", f"/api/fr12/packages/{package_id}", json=payload)
-        flash("Package updated." if response.ok else _error(response), "success" if response.ok else "error")
         if response.ok:
+            updated_pkg = response.json().get("package", {}) if response.status_code in {200, 201} else {}
+            prev_status = str(item.get("approvalStatus", "")).lower()
+            new_status = str(updated_pkg.get("approvalStatus", "")).lower()
+            if prev_status == "approved" and new_status == "draft":
+                flash("Package updated. Changes to approved package details or accommodation require administrator re-approval; the package has returned to Draft status.", "info")
+            else:
+                flash("Package updated.", "success")
             return redirect(url_for("operator_fr12.packages"))
+        if response.status_code == 409:
+            flash(_error(response, fallback="This package was modified or is currently locked under review. Please reload and review before editing."), "error")
+        else:
+            flash(_error(response), "error")
         item = {**item, **payload}
     return render_template("fr12_tourism_operator_management/edit_package.html", item=item, form=item)
 
@@ -778,4 +816,45 @@ def upload_package_image_proxy():
             err = "Failed to upload image"
         return jsonify({"ok": False, "error": err}), response.status_code
     return jsonify(response.json()), response.status_code
+
+
+@bp.get("/hotels/search")
+def search_hotels_proxy():
+    if not guard():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    if session.get("portal_role") not in {"operator", "admin", "administrator"}:
+        return jsonify({"ok": False, "error": "Verified Tourism Operator access is required."}), 403
+    if session.get("verification_status", "pending") not in {"approved", "verified"}:
+        return jsonify({"ok": False, "error": "Your operator account is still awaiting administrator approval."}), 403
+    response = call_api("GET", "/api/fr12/hotels/search", params=request.args)
+    try:
+        data = response.json()
+    except Exception:
+        data = {"ok": False, "error": "Invalid response from hotel service"}
+    flask_res = jsonify(data)
+    flask_res.status_code = response.status_code
+    if "Retry-After" in response.headers:
+        flask_res.headers["Retry-After"] = response.headers["Retry-After"]
+    return flask_res
+
+
+@bp.get("/hotels/<hotel_id>")
+def hotel_detail_proxy(hotel_id):
+    if not guard():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    if session.get("portal_role") not in {"operator", "admin", "administrator"}:
+        return jsonify({"ok": False, "error": "Verified Tourism Operator access is required."}), 403
+    if session.get("verification_status", "pending") not in {"approved", "verified"}:
+        return jsonify({"ok": False, "error": "Your operator account is still awaiting administrator approval."}), 403
+    response = call_api("GET", f"/api/fr12/hotels/{hotel_id}")
+    try:
+        data = response.json()
+    except Exception:
+        data = {"ok": False, "error": "Invalid response from hotel service"}
+    flask_res = jsonify(data)
+    flask_res.status_code = response.status_code
+    if "Retry-After" in response.headers:
+        flask_res.headers["Retry-After"] = response.headers["Retry-After"]
+    return flask_res
+
 
