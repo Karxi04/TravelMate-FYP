@@ -28,7 +28,7 @@ class _PersonalizedPlanningScreenState
   final origin = TextEditingController();
   String travelMode = 'undecided';
   String accommodationChoice = 'undecided';
-  String carRentalChoice = 'undecided';
+  String carRentalChoice = 'not_required';
   late final TextEditingController startDate;
   late final TextEditingController endDate;
 
@@ -669,20 +669,6 @@ class _PersonalizedPlanningScreenState
         if (accommodationChoice == 'other')
           const Text(
               'Other accommodation costs are outside the current budget estimate.'),
-        const SizedBox(height: AppSpacing.sm),
-        _arrangementChoices(
-            'rental',
-            'Car rental at destination',
-            carRentalChoice,
-            const {
-              'undecided': 'Not decided',
-              'selected': 'Want to rent',
-              'not_required': 'Not needed',
-            },
-            (value) => carRentalChoice = value),
-        if (carRentalChoice == 'selected')
-          const Text(
-              'Rental intent only; no quote or reservation is attached. The current rental catalogue uses estimated rates.'),
       ],
     ));
   }

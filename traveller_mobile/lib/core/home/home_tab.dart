@@ -14,7 +14,7 @@ import '../../modules/fr05_smart_itinerary_budget_planner/trip_details_screen.da
 import '../../modules/fr05_smart_itinerary_budget_planner/trips_tab.dart';
 import '../../modules/fr06_weather_forecast/weather_screen.dart';
 import '../../modules/fr07_flight_search/flight_screen.dart';
-import '../../modules/fr08_hotel_booking/car_rental_screen.dart';
+import '../../modules/fr05_smart_itinerary_budget_planner/packing_trip_selector_screen.dart';
 import '../../modules/fr08_hotel_booking/hotel_screen.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
@@ -1034,10 +1034,9 @@ class _HomeTabState extends State<HomeTab> {
         initialCheckin: activeStartDate.isNotEmpty ? activeStartDate : null,
         initialCheckout: activeEndDate.isNotEmpty ? activeEndDate : null,
       )),
-      (Icons.directions_car_outlined, 'Car rentals', CarRentalScreen(
-        initialPickupLocation: activeDestination.isNotEmpty ? activeDestination : null,
-        initialPickupDate: activeStartDate.isNotEmpty ? activeStartDate : null,
-        initialDropoffDate: activeEndDate.isNotEmpty ? activeEndDate : null,
+      (Icons.checklist_rounded, 'Packing', PackingTripSelectorScreen(
+        api: widget.api,
+        initialTripId: (continuationTrip?['id'] ?? continuationTrip?['tripId'])?.toString(),
       )),
       (Icons.cloud_outlined, 'Weather', const WeatherScreen()),
     ];
