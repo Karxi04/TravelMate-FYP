@@ -1,4 +1,7 @@
+import logging
+import os
 import re
+from time import perf_counter
 from datetime import datetime, date
 from math import radians, sin, cos, sqrt, atan2, isfinite
 from utils import utc_now_iso
@@ -1612,6 +1615,98 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
     return itinerary
 
 
+def _route_distance(items):
+    """Open-path Haversine objective, excluding unmodelled depot/return legs."""
+    for item in items:
+        coord = _coord(item)
+        if (not coord or not all(isfinite(x) for x in coord)
+                or abs(coord[0]) > 90 or abs(coord[1]) > 180):
+            return None
+    return sum(_distance_km(a, b) for a, b in zip(items, items[1:]))
+
+
+def _improve_route(itinerary, forecast):
+    """Reorder fixed daily visit sets; reuse the authoritative scheduler for timing."""
+    logger = logging.getLogger(__name__)
+    deadline = perf_counter() + 0.250
+    trials = 0
+    daily = []
+    for day in itinerary['dailySchedule']:
+        best = day
+        items = day['activities']
+        ids = [item.get('activityId') for item in items]
+        if len(items) < 3:
+            daily.append(best)
+            continue
+        distance = _route_distance(items)
+        # Scalar provider times are not bound to endpoint pairs; never reuse them on a new leg.
+        if (distance is None or len(items) > 20 or not all(ids)
+                or len(set(ids)) != len(ids)
+                or any(item.get('travelTimeSource') in {'provider', 'confirmed'}
+                       or item.get('providerTravelDurationMinutes') not in (None, '') for item in items)):
+            logger.debug('FR05 route improvement skipped: invalid coordinates, IDs, size or unbound provider legs')
+            daily.append(best)
+            continue
+        seen = {tuple(ids)}
+        rain_pattern = [_indoor(item) for item in items] if day['weather'].get('heavyRainLikely') else None
+        # At most n nearest-neighbour starts and n-1 adjacent swaps, not permutations.
+        for attempt in range(2 * len(items) - 1):
+            if trials >= 64:
+                break
+            if perf_counter() >= deadline:
+                logger.info('FR05 route improvement fallback: time limit; original schedule retained')
+                return itinerary
+            if attempt < len(items):
+                pending = [item for index, item in enumerate(items) if index != attempt]
+                order = [items[attempt]]
+                while pending:
+                    nearest = min(range(len(pending)), key=lambda index: _distance_km(order[-1], pending[index]))
+                    order.append(pending.pop(nearest))
+            else:
+                order = list(best['activities'])
+                index = attempt - len(items)
+                order[index], order[index + 1] = order[index + 1], order[index]
+            proposed_ids = tuple(item['activityId'] for item in order)
+            if proposed_ids in seen:
+                continue
+            seen.add(proposed_ids)
+            if rain_pattern is not None and [_indoor(item) for item in order] != rain_pattern:
+                continue
+            proposed_distance = _route_distance(order)
+            if proposed_distance >= distance - 1e-6:
+                continue
+            trials += 1
+            trial = _constraint_plan({
+                **itinerary, 'startDate': day['dayDate'], 'endDate': day['dayDate'], 'tripDays': 1,
+                'activities': order, 'unscheduledSuggestions': [],
+            }, forecast, preserve_order=True, respect_day_assignments=False)
+            candidate = trial['dailySchedule'][0]
+            visits = candidate['activities']
+            # preserve_order can skip an infeasible head; require the exact proposed order/set.
+            if (tuple(item['activityId'] for item in visits) != proposed_ids
+                    or sum(item['travelDurationMinutes'] for item in visits) > sum(item['travelDurationMinutes'] for item in best['activities'])
+                    or visits[-1]['scheduledEndTime'] > best['activities'][-1]['scheduledEndTime']):
+                continue
+            best = {**candidate, 'dayNo': day['dayNo'], 'dayLabel': day['dayLabel']}
+            distance = proposed_distance
+        daily.append(best)
+    if perf_counter() >= deadline:
+        logger.info('FR05 route improvement fallback: time limit; original schedule retained')
+        return itinerary
+    if all(before is after for before, after in zip(itinerary['dailySchedule'], daily)):
+        logger.debug('FR05 route improvement: no feasible shorter ordering; original schedule retained')
+        return itinerary
+    activities = []
+    rebuilt = []
+    for day in daily:
+        visits = [{**item, 'dayNo': day['dayNo'], 'dayLabel': day['dayLabel'],
+                   'sequenceNo': len(activities) + index + 1} for index, item in enumerate(day['activities'])]
+        activities.extend(visits)
+        rebuilt.append({**day, 'activities': visits})
+    return {**itinerary, 'activities': activities, 'dailySchedule': rebuilt,
+            'totalScheduledMinutes': sum(day['estimatedMinutes'] for day in rebuilt)}
+
+
 def generateItinerary(locationTravelData, forecastData, itineraryInput=None):
     """Generate an explainable, constraint-aware heuristic itinerary."""
     base = dict(itineraryInput or {})
@@ -1637,7 +1732,10 @@ def generateItinerary(locationTravelData, forecastData, itineraryInput=None):
         'updatedAt': utc_now_iso(),
     }
     itinerary['generationContext']['planner'] = 'constraint_aware_heuristic'
-    return _constraint_plan(itinerary, forecastData, preserve_order=False, respect_day_assignments=False)
+    planned = _constraint_plan(itinerary, forecastData, preserve_order=False, respect_day_assignments=False)
+    if os.getenv('TRAVELMATE_ROUTE_IMPROVEMENT_ENABLED', 'false').strip().lower() == 'true':
+        return _improve_route(planned, forecastData)
+    return planned
 
 
 def recalculateItinerary(itinerary, preserveOrder=True, respectDayAssignments=True):
