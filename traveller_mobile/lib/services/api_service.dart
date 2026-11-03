@@ -106,6 +106,9 @@ class ApiException implements Exception {
       data['flightDates'] is List ? (data['flightDates'] as List) : null;
   List<dynamic>? get conflicts =>
       data['conflicts'] is List ? (data['conflicts'] as List) : null;
+  int? get currentRevision => data['currentRevision'] is int
+      ? data['currentRevision'] as int
+      : int.tryParse(data['currentRevision']?.toString() ?? '');
 
   @override
   String toString() => message;
@@ -229,6 +232,13 @@ class ApiService {
   }
 
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (isStandalone && path.contains('/packing-checklist')) {
+      throw const ApiException(
+        'Smart Packing Checklist requires an active TravelMate backend connection.',
+        503,
+        {'error': 'Standalone mode does not support packing checklists.'},
+      );
+    }
     // Cross-role shared data comes directly from Firebase in standalone mode so
     // Traveller can see Operator/Admin changes without USB or a local Flask server.
     if (isStandalone &&
@@ -252,6 +262,13 @@ class ApiService {
   }
 
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
+    if (isStandalone && path.contains('/packing-checklist')) {
+      throw const ApiException(
+        'Smart Packing Checklist requires an active TravelMate backend connection.',
+        503,
+        {'error': 'Standalone mode does not support packing checklists.'},
+      );
+    }
     final payload = body ?? <String, dynamic>{};
     if (isStandalone && path == '/api/fr10/feedback') {
       final result = await _shared.createReview(payload);
@@ -316,6 +333,35 @@ class ApiService {
       return _decode(response);
     } catch (e) {
       debugPrint('Backend DELETE failed ($path): $e');
+      rethrow;
+    }
+  }
+
+  Future<dynamic> patch(String path, [Map<String, dynamic>? body]) async {
+    final payload = body ?? <String, dynamic>{};
+    if (isStandalone) {
+      if (path.contains('/packing-checklist')) {
+        throw const ApiException(
+          'Smart Packing Checklist requires an active TravelMate backend connection.',
+          503,
+          {'error': 'Standalone mode does not support packing checklists.'},
+        );
+      }
+      throw UnimplementedError('Standalone mode does not support PATCH requests');
+    }
+    try {
+      final uri = Uri.parse('$baseUrl$path');
+      debugPrint('PATCH → $uri');
+      final response = await http
+          .patch(
+            uri,
+            headers: await _headers(),
+            body: jsonEncode(payload),
+          )
+          .timeout(RequestTimeouts.ordinaryRead);
+      return _decode(response);
+    } catch (e) {
+      debugPrint('Backend PATCH failed ($path): $e');
       rethrow;
     }
   }

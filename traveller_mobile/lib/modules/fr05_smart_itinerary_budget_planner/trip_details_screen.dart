@@ -17,7 +17,7 @@ import '../fr06_weather_forecast/weather_screen.dart';
 import '../fr07_flight_search/flight_screen.dart';
 import '../fr08_hotel_booking/hotel_screen.dart';
 import '../fr08_hotel_booking/hotel_details_screen.dart';
-import '../fr08_hotel_booking/car_rental_screen.dart';
+import 'packing_checklist_screen.dart';
 import '../fr09_payment/payment_history_screen.dart';
 
 class TripDetailsScreen extends StatefulWidget {
@@ -2353,15 +2353,17 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           },
         ),
         SecondaryButton(
-          label: 'Car rental',
-          icon: Icons.directions_car_outlined,
+          label: 'Packing checklist',
+          icon: Icons.checklist_rounded,
           onPressed: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => CarRentalScreen(
-                initialPickupLocation: (t['destinationArea'] ?? '').toString(),
-                initialPickupDate: (t['startDate'] ?? '').toString(),
-                initialDropoffDate: (t['endDate'] ?? '').toString(),
+              builder: (_) => PackingChecklistScreen(
+                tripId: (t['id'] ?? widget.tripId).toString(),
+                tripTitle: (t['title'] ?? 'Trip').toString(),
+                destination: (t['destinationArea'] ?? '').toString(),
+                durationDays: t['durationDays'] as int?,
+                api: api,
               ),
             ),
           ),
