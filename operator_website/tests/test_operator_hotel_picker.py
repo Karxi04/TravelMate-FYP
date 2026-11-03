@@ -355,8 +355,9 @@ def test_package_form_template_rendering_modes_and_preview(auth_client):
         html_edit = res_edit.get_data(as_text=True)
 
         assert "Muntri Heritage Villa" in html_edit
+        assert "Hotel Information from LiteAPI" in html_edit
         assert "Star classification not supplied" in html_edit
         assert "Guest Rating: 8.7/10" in html_edit
-        assert "Specifies package partner hotel. Does not constitute a room reservation." in html_edit
+        assert "Hotel information is provided for package planning. Selecting a property does not create or confirm a room reservation." in html_edit
         # Must not show legacy "Standard" fallback for category
         assert "Standard Hotel" not in html_edit

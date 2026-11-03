@@ -878,7 +878,7 @@ class _PackageTripDetailsScreenState extends State<PackageTripDetailsScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Partner Accommodation',
+                    'Accommodation Details',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -889,7 +889,7 @@ class _PackageTripDetailsScreenState extends State<PackageTripDetailsScreen> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: const Text(
-                    'LiteAPI Verified',
+                    'Hotel Information from LiteAPI',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -914,7 +914,7 @@ class _PackageTripDetailsScreenState extends State<PackageTripDetailsScreen> {
               const SizedBox(height: 10),
             ],
             Text(
-              name.isNotEmpty ? name : 'Partner Hotel',
+              name.isNotEmpty ? name : 'Selected Hotel',
               style: const TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
@@ -1000,7 +1000,7 @@ class _PackageTripDetailsScreenState extends State<PackageTripDetailsScreen> {
                 border: Border.all(color: AppColors.divider),
               ),
               child: Text(
-                'Specifies package partner hotel. External supplier reservation is managed separately by the operator (Status: $supplierStatus).',
+                'Hotel information is provided for package planning. Selecting a property does not create or confirm a room reservation. External supplier reservation is managed separately by the operator (Status: $supplierStatus).',
                 style: const TextStyle(
                   fontSize: 11,
                   fontStyle: FontStyle.italic,
