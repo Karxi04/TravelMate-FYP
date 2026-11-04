@@ -394,6 +394,41 @@ void main() {
       expect(find.text('Electronics'), findsOneWidget);
     });
 
+    testWidgets('Responsive layout renders without overflow at 320x640 compact resolution and 1080x2400 modern resolution', (tester) async {
+      final api = _MockPackingApi();
+
+      // Test 320x640 compact resolution
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(wrap(PackingChecklistScreen(
+        tripId: 'trip_penang_1',
+        tripTitle: 'Penang Cultural Holiday with Very Long Title for Stress Testing',
+        api: api,
+      )));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('0 of 3 Items Packed'), findsOneWidget);
+
+      // Test 1080x2400 modern resolution
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+      await tester.pumpWidget(wrap(PackingChecklistScreen(
+        tripId: 'trip_penang_1',
+        tripTitle: 'Penang Cultural Holiday with Very Long Title for Stress Testing',
+        api: api,
+      )));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('0 of 3 Items Packed'), findsOneWidget);
+    });
+
     testWidgets('Toggling item checkbox updates packed status and progress', (tester) async {
       final api = _MockPackingApi();
 

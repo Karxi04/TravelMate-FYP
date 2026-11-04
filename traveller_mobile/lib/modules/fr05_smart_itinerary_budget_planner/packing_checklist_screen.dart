@@ -791,10 +791,14 @@ class _PackingChecklistScreenState extends State<PackingChecklistScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Packing Progress: ${progress.packedItems} of ${progress.totalItems} Items Packed',
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              Expanded(
+                child: Text(
+                  'Packing Progress: ${progress.packedItems} of ${progress.totalItems} Items Packed',
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+              const SizedBox(width: AppSpacing.xs),
               Text(
                 '${progress.completionPercentage.toStringAsFixed(1)}%',
                 style: const TextStyle(
@@ -933,12 +937,16 @@ class _PackingChecklistScreenState extends State<PackingChecklistScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      cat.name,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                    Expanded(
+                      child: Text(
+                        cat.name,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
+                    const SizedBox(width: 8),
                     Text(
                       '${items.where((i) => i.isPacked).length}/${items.length}',
                       style: const TextStyle(
