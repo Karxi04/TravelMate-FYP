@@ -13,8 +13,15 @@ import 'trip_status_helper.dart';
 class TripsTab extends StatefulWidget {
   final ApiService? api;
   final DateTime? referenceDate;
+  final bool selectForActivity;
+  final String? initialDestination;
 
-  const TripsTab({super.key, this.api, this.referenceDate});
+  const TripsTab(
+      {super.key,
+      this.api,
+      this.referenceDate,
+      this.selectForActivity = false,
+      this.initialDestination});
 
   @override
   State<TripsTab> createState() => _TripsTabState();
@@ -194,8 +201,8 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
               Text(
                 'Plan your trip',
                 style: Theme.of(sheetContext).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ) ??
+                          fontWeight: FontWeight.w900,
+                        ) ??
                     const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 6),
@@ -298,7 +305,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
 
   Future<void> createTrip() async {
     final title = TextEditingController();
-    final destination = TextEditingController();
+    final destination = TextEditingController(text: widget.initialDestination);
     final firstDay = DateTime.now().add(const Duration(days: 14));
     final startDate = TextEditingController(text: _date(firstDay));
     final endDate = TextEditingController(
@@ -418,8 +425,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                           final startDt =
                               DateTime.tryParse(startDate.text.trim());
                           final endDt = DateTime.tryParse(endDate.text.trim());
-                          final count =
-                              int.tryParse(travellers.text.trim());
+                          final count = int.tryParse(travellers.text.trim());
                           final b = double.tryParse(budget.text.trim());
 
                           bool hasError = false;
@@ -446,8 +452,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                               hasError = true;
                             }
                             if (count == null || count < 1) {
-                              travellerError =
-                                  'At least 1 traveller required';
+                              travellerError = 'At least 1 traveller required';
                               hasError = true;
                             }
                             if (b == null || b < 0) {
@@ -476,8 +481,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.add_rounded),
-                  label: Text(
-                      isSubmitting ? 'Creating trip…' : 'Create trip'),
+                  label: Text(isSubmitting ? 'Creating trip…' : 'Create trip'),
                 ),
               ],
             ),
@@ -498,6 +502,13 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
               '')
           .toString();
       if (id.isNotEmpty) {
+        if (widget.selectForActivity) {
+          final trip = rawItinerary is Map
+              ? Map<String, dynamic>.from(rawItinerary)
+              : <String, dynamic>{...payload};
+          Navigator.pop(context, {...trip, 'id': id});
+          return;
+        }
         await Navigator.push(
             context,
             MaterialPageRoute(
@@ -572,13 +583,19 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
       .where(_isPackage)
       .toList();
 
-  List<Map<String, dynamic>> get _packages => TripStatusHelper.sortAndFilterTrips(
+  List<Map<String, dynamic>> get _packages =>
+      TripStatusHelper.sortAndFilterTrips(
         _allPackages,
         filter: selectedFilter,
         referenceDate: widget.referenceDate,
       );
 
   Future<void> openTrip(Map<String, dynamic> trip) async {
+    if (widget.selectForActivity) {
+      if (trip['tripType'] == 'package' || trip['packageTrip'] == true) return;
+      Navigator.pop(context, trip);
+      return;
+    }
     if (_isPackage(trip)) {
       await Navigator.push(
         context,
@@ -698,6 +715,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                 ),
                 ButtonSegment<int>(
                   value: 1,
+                  enabled: !widget.selectForActivity,
                   label: Text('Package Trips (${allPackages.length})'),
                   icon: const Icon(Icons.verified_rounded),
                 ),
@@ -744,8 +762,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
             if (selectedSegment == 0) ...[
               const TravelSectionHeader(
                 title: 'Your travel plans',
-                subtitle:
-                    'Select a trip to view or edit details.',
+                subtitle: 'Select a trip to view or edit details.',
               ),
               const SizedBox(height: 14),
               if (loading)
@@ -780,7 +797,8 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                   TripFilter.expired => const TravelEmptyState(
                       icon: Icons.history_toggle_off_rounded,
                       title: 'No expired trips',
-                      message: 'Completed trips whose travel dates have passed will appear here.',
+                      message:
+                          'Completed trips whose travel dates have passed will appear here.',
                     ),
                   TripFilter.all => const TravelEmptyState(
                       icon: Icons.luggage_outlined,
@@ -815,7 +833,8 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text((trip['title'] ?? 'Trip').toString(),
                                           maxLines: 2,
@@ -940,7 +959,8 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                 const TravelEmptyState(
                   icon: Icons.verified_outlined,
                   title: 'No purchased package trips',
-                  message: 'When you purchase a tourism package, your confirmed operator itinerary will appear here.',
+                  message:
+                      'When you purchase a tourism package, your confirmed operator itinerary will appear here.',
                 )
               else if (packages.isEmpty)
                 switch (selectedFilter) {
@@ -957,7 +977,8 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                   TripFilter.expired => const TravelEmptyState(
                       icon: Icons.history_toggle_off_rounded,
                       title: 'No expired package trips',
-                      message: 'Completed package trips whose travel dates have passed will appear here.',
+                      message:
+                          'Completed package trips whose travel dates have passed will appear here.',
                     ),
                   TripFilter.all => const TravelEmptyState(
                       icon: Icons.verified_outlined,
@@ -968,11 +989,18 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
               else
                 ...packages.map((trip) {
                   final snap = trip['packageSnapshot'] is Map
-                      ? Map<String, dynamic>.from(trip['packageSnapshot'] as Map)
+                      ? Map<String, dynamic>.from(
+                          trip['packageSnapshot'] as Map)
                       : <String, dynamic>{};
-                  final operatorName = (snap['operatorName'] ?? snap['operator'] ?? 'Tourism Operator').toString();
+                  final operatorName = (snap['operatorName'] ??
+                          snap['operator'] ??
+                          'Tourism Operator')
+                      .toString();
                   final paid = trip['paidTotal'] ?? snap['price'] ?? 0;
-                  final currency = (trip['currency'] ?? snap['currency'] ?? 'MYR').toString().toUpperCase();
+                  final currency =
+                      (trip['currency'] ?? snap['currency'] ?? 'MYR')
+                          .toString()
+                          .toUpperCase();
                   final duration = _tripDays(trip);
                   final pkgTemporal = TripStatusHelper.resolveStatus(
                     trip,
@@ -993,26 +1021,35 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        (snap['title'] ?? trip['title'] ?? 'Tourism Package').toString(),
+                                        (snap['title'] ??
+                                                trip['title'] ??
+                                                'Tourism Package')
+                                            .toString(),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                         style: Theme.of(context)
                                             .textTheme
                                             .titleLarge
-                                            ?.copyWith(fontWeight: FontWeight.w800),
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.w800),
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        (snap['destination'] ?? trip['destinationArea'] ?? '').toString(),
+                                        (snap['destination'] ??
+                                                trip['destinationArea'] ??
+                                                '')
+                                            .toString(),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: Theme.of(context)
                                             .textTheme
                                             .bodyMedium
-                                            ?.copyWith(color: AppColors.textSecondary),
+                                            ?.copyWith(
+                                                color: AppColors.textSecondary),
                                       ),
                                     ],
                                   ),
@@ -1025,7 +1062,8 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                               runSpacing: 8,
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
                                     color: AppColors.successSoft,
                                     borderRadius: BorderRadius.circular(6),
@@ -1033,7 +1071,8 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                                   child: const Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.verified_rounded, size: 14, color: AppColors.success),
+                                      Icon(Icons.verified_rounded,
+                                          size: 14, color: AppColors.success),
                                       SizedBox(width: 4),
                                       Text(
                                         'Purchased Package',
@@ -1048,13 +1087,15 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                                 ),
                                 if (pkgTemporal != null)
                                   StatusChip(
-                                    key: ValueKey('package-status-${trip['id']}'),
+                                    key: ValueKey(
+                                        'package-status-${trip['id']}'),
                                     text: pkgTemporal.label,
                                     icon: pkgTemporal.icon,
                                     tone: pkgTemporal.tone,
                                   ),
                                 TravelStatusPill(
-                                  text: '${_dateRange(trip)} · $duration ${duration == 1 ? 'day' : 'days'}',
+                                  text:
+                                      '${_dateRange(trip)} · $duration ${duration == 1 ? 'day' : 'days'}',
                                   icon: Icons.calendar_month_outlined,
                                 ),
                               ],
