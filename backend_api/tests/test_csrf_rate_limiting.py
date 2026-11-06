@@ -178,6 +178,10 @@ def test_all_portal_mutations_accept_valid_csrf(portal):
             response = client.post(path, data=post_data, content_type="multipart/form-data")
         else:
             response = client.post(path, data=post_data)
+        if path in {'/admin/destinations', '/admin/activities'} or path.startswith(('/admin/destinations/', '/admin/activities/')):
+            assert response.status_code == 302, path
+            api.assert_not_called()
+            continue
         assert response.status_code in {200, 302}, path
         assert api.called or auth.authenticateCredentials.called or auth.createUserAccount.called or \
             auth.sendPasswordResetEmail.called or auth.signOutUser.called, path

@@ -1015,6 +1015,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         MaterialPageRoute(
             builder: (_) => HotelScreen(
                   api: api,
+                  targetTripId: widget.tripId,
                   initialDestination: (t['destinationArea'] ?? '').toString(),
                   initialCheckin: (t['startDate'] ?? '').toString(),
                   initialCheckout: (t['endDate'] ?? '').toString(),
@@ -2340,6 +2341,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               MaterialPageRoute(
                 builder: (_) => HotelScreen(
                   api: api,
+                  targetTripId: widget.tripId,
                   initialDestination: (t['destinationArea'] ?? '').toString(),
                   initialCheckin: (t['startDate'] ?? '').toString(),
                   initialCheckout: (t['endDate'] ?? '').toString(),

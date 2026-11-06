@@ -1,0 +1,14 @@
+{
+  "source": "https://davidmegginson.github.io/ourairports-data/airports.csv",
+  "license": "Public domain",
+  "licenseUrl": "https://ourairports.com/data/",
+  "retrievedOn": "2026-11-05",
+  "lastModified": "Thu, 05 Nov 2026 02:54:20 GMT",
+  "sourceSha256": "55bd82106c8ac1c9559cf5879ae9b69eb9c6e748df01514632dd5fbbb9e8b474",
+  "sourceRows": 86337,
+  "included": 4008,
+  "malaysian": 34,
+  "selection": "Unique IATA code; land airport; scheduled_service=yes, plus 22 retained project airport codes",
+  "ambiguousCodesExcluded": [],
+  "availability": "Airport identity only; no provider availability or airline schedule assertion"
+}

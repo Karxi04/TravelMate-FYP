@@ -310,6 +310,8 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
               );
             }),
           ),
+          Text(ReviewContract.sentiment(rating)),
+          const Text('Reviews appear publicly after moderation. Ratings help recommendations through approved peer feedback.'),
           const SizedBox(height: 8),
           TextField(controller: comment, maxLines: 5, decoration: const InputDecoration(labelText: 'Tell other travellers about your experience', hintText: 'What did you like? What should other travellers know?')),
           const SizedBox(height: 12),

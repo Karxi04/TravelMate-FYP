@@ -37,6 +37,7 @@ Map<String, dynamic> _place({bool personalized = false}) => {
 class _ExploreApi extends ApiService {
   int searchCalls = 0;
   int favouriteCalls = 0;
+  final List<Map<String, dynamic>> favourites = [];
   int activityCalls = 0;
   bool failSearchOnce = false;
   bool emptySearch = false;
@@ -55,6 +56,7 @@ class _ExploreApi extends ApiService {
 
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (path == '/api/fr3/favourites') return {'items': favourites};
     if (path == '/api/fr3/destinations/search') {
       searchCalls += 1;
       final params = Map<String, String>.from(query ?? const {});
@@ -145,6 +147,7 @@ class _ExploreApi extends ApiService {
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
     if (path == '/api/fr3/favourites') {
       favouriteCalls += 1;
+      favourites.add({...body!, 'id': 'owner_${body["destinationId"]}'});
       return {'ok': true};
     }
     if (path == '/api/fr5/itineraries/trip_1/activities') {

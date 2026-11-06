@@ -426,7 +426,23 @@ def _merge_destination(cached, provider):
     cached = dict(cached or {})
     provider = dict(provider or {})
     merged = {**cached, **provider}
-    did = _destination_id(merged)
+    description = provider.get('description') or provider.get('editorial_summary')
+    if isinstance(description, dict):
+        description = description.get('overview') or description.get('snippet')
+    if not description:
+        description = provider.get('snippet')
+    if isinstance(description, str) and description.strip():
+        merged['description'] = description.strip()
+    highlights = []
+    about = provider.get('about')
+    if isinstance(about, dict):
+        for section, attributes in about.items():
+            if isinstance(attributes, dict):
+                highlights.extend(str(key) for key, value in attributes.items() if value is True)
+            elif isinstance(attributes, list):
+                highlights.extend(value for value in attributes if isinstance(value, str))
+    merged['highlights'] = list(dict.fromkeys(highlights))[:12] or cached.get('highlights', [])
+    did = cached.get('destinationId') or _destination_id(cached) or _destination_id(merged)
     if did:
         merged['destinationId'] = did
     return merged
@@ -454,6 +470,12 @@ def local_ratings():
 @auth_required(['traveller'])
 def search_destinations():
     q = request.args.get('q', '').strip()
+    try:
+        offset = int(request.args.get('offset', 0))
+        if offset < 0 or offset > 200 or offset % 20:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({'ok': False, 'error': 'Invalid results page.'}), 400
     location_param = request.args.get('location')
     location = (location_param or '').strip()
     filterOption = request.args.get('filter')
@@ -487,11 +509,8 @@ def search_destinations():
     }
     provider_unavailable = False
     try:
-        data = retrieveDestinationResults(
-            interpreted_query,
-            provider_location,
-            coordinates,
-        )
+        args = (interpreted_query, provider_location, coordinates)
+        data = retrieveDestinationResults(*args, start=offset) if offset else retrieveDestinationResults(*args)
     except Exception:
         if not _fallback_mode():
             return jsonify({
@@ -532,7 +551,7 @@ def search_destinations():
         for ad in admin_items:
             if isinstance(ad, dict) and ad.get('status', 'active') != 'archived':
                 text = _search_text(' '.join(str(ad.get(k, '')) for k in ['title', 'name', 'type', 'category', 'description', 'location', 'address', 'city', 'state']))
-                if _search_text(q) in text:
+                if offset == 0 and _search_text(q) in text:
                     did = _destination_id(ad)
                     if not any(_destination_id(r) == did for r in results):
                         results.insert(0, dict(ad))
@@ -548,7 +567,10 @@ def search_destinations():
         else sorted(results, key=lambda item: _relevance_rank(item, q))
     )
 
-    for item in results[:30]:
+    has_more = (bool((data.get('serpapi_pagination') or {}).get('next')) or len(_provider_results(data)) >= 20) if source == 'serpapi' else len(results) > offset + 20
+    if source == 'local':
+        results = results[offset:offset + 20]
+    for item in results:
         item.pop('_providerOrder', None)
         did = _destination_id(item)
         if did and not item.get('destinationId'):
@@ -561,6 +583,7 @@ def search_destinations():
         'source': source,
         'locationUsed': requested_scope.get('canonicalName') or provider_location,
         'providerUnavailable': provider_unavailable,
+        'nextOffset': offset + 20 if has_more and offset < 200 else None,
     })
 
 
@@ -686,9 +709,13 @@ def favourites():
     return jsonify(
         {
             'ok': True,
-            'items': retrieveRecord(
-                'favourites', filters=[('travellerId', '==', g.uid)]
-            ),
+            'items': [
+                {**item, 'id': f"{g.uid}_{item['destinationId']}".replace('/', '_')}
+                if item.get('destinationId') else item
+                for item in retrieveRecord(
+                    'favourites', filters=[('travellerId', '==', g.uid)]
+                )
+            ],
         }
     )
 
@@ -711,6 +738,7 @@ def save_favourite():
     doc_id = f'{g.uid}_{did}'.replace('/', '_')
     data = {
         **payload,
+        'id': doc_id,
         'travellerId': g.uid,
         'destinationId': did,
         'savedAt': utc_now_iso(),

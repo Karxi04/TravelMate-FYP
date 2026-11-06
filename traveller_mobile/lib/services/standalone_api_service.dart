@@ -10,6 +10,7 @@ import '../core/utils/malaysian_locality.dart';
 import '../core/utils/preference_learning.dart';
 import '../core/utils/recommendation_taxonomy.dart';
 import '../core/utils/constraint_itinerary_planner.dart';
+import '../core/utils/travel_dates.dart';
 
 /// Local-first implementation of the same REST contracts used by TravelMate.
 ///
@@ -3286,9 +3287,12 @@ class StandaloneApiService {
     return result;
   }
 
-  Future<dynamic> _createTrip(Map<String, dynamic> payload) async {
+  Future<dynamic> _createTrip(Map<String, dynamic> payload, {String? requestedId}) async {
     final trips = await _readList('itineraries');
-    final id = 'trip_${DateTime.now().millisecondsSinceEpoch}';
+    final id = requestedId ?? 'trip_${DateTime.now().millisecondsSinceEpoch}';
+    for (final existing in trips) {
+      if (existing['id'] == id) return {'ok': true, 'id': id, 'itinerary': existing};
+    }
     final activities = (payload['activities'] as List? ?? [])
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
@@ -5518,17 +5522,33 @@ class StandaloneApiService {
     List<Map<String, dynamic>> placeSuggestions = [];
     String reply;
 
-    final planningIntent =
+    final planningIntent = payload['guidedPlanning'] == true ||
         _hasPlanningIntent(message) || existingPlanning.isNotEmpty;
-    if (planningIntent) {
+    final question = _normaliseSearch(message);
+    final featureEnquiry = RegExp(r'^(?:what|how|will|is|can|tell me)\b').hasMatch(question) &&
+        RegExp(r'\b(?:weather|rains?|raining|hotels?|flights?|budget tips|save money)\b').hasMatch(question) && !RegExp(r'\b(?:plan|itinerary|change|adjust|update)\b').hasMatch(question);
+    if (featureEnquiry) {
+      reply = _assistantReply(message,prefs,latest);
+    } else if (planningIntent) {
       final planning =
           _advancePlanningConversation(message, prefs, existingPlanning);
       final state = Map<String, dynamic>.from(planning['state'] as Map);
       session['planningState'] = state;
-      if (planning['ready'] == true) {
-        plan = _buildPlanFromPlanningState(state, prefs);
-        reply = _tripPlanReply(plan, prefs);
-        session['planningState'] = <String, dynamic>{};
+      if (planning['showExisting'] == true) {
+        plan = Map<String,dynamic>.from(state['activePlan'] as Map);
+        reply = (state['savedPlans'] as Map? ?? const {})[plan['draftId']] == null
+            ? 'Here is your existing draft itinerary. Review the card before saving.'
+            : 'This itinerary was saved to Trips. Open Trips to revisit it.';
+      } else if (planning['ready'] == true) {
+        plan = _buildPlanFromPlanningState(state, prefs, cachedPlaces: await _readList('last_search_results'));
+        if (plan == null) {
+          state.remove('activePlan');
+          reply = 'I do not have enough verified, distinct attractions in ${state['destination']} to fill ${state['days']} days. No complete draft or trip has been created. Try a shorter trip or another Malaysian destination.';
+        } else {
+          plan['draftId'] = 'draft_${DateTime.now().microsecondsSinceEpoch}';
+          state['activePlan'] = plan;
+          reply = _tripPlanReply(plan, prefs);
+        }
       } else {
         reply = (planning['reply'] ?? '').toString();
       }
@@ -5565,6 +5585,8 @@ class StandaloneApiService {
       'source': 'travelmate',
       'createdAt': _now(),
       if (plan != null) 'tripPlan': plan,
+      if (plan != null && (session['planningState'] as Map?)?['savedPlans'] is Map && ((session['planningState'] as Map)['savedPlans'] as Map)[plan['draftId']] != null)
+        'savedTripId': ((session['planningState'] as Map)['savedPlans'] as Map)[plan['draftId']],
       if (placeSuggestions.isNotEmpty) 'placeSuggestions': placeSuggestions,
     };
 
@@ -5641,15 +5663,41 @@ class StandaloneApiService {
   ) {
     final q = _normaliseSearch(message);
     final state = <String, dynamic>{...existing};
-
-    final inferred = _inferLocationFromQuery(q);
-    if (inferred.isNotEmpty) state['destination'] = inferred.split(',').first;
+    final previous = jsonEncode({for(final key in ['destination','days','startDate','endDate','budget','travellerCount','interests','pace']) key:existing[key]});
+    state['interests'] ??= prefs['interests'];
+    state['pace'] ??= prefs['travelPace'];
+    final scope = MalaysianLocality.normalizeScope(message);
+    if (scope['resolved'] == true && scope['country'] == 'Malaysia' && scope['state'] != null) {
+      state['destination'] = scope['city'] ?? scope['state'];
+    }
 
     final dayMatch = RegExp(r'(\d+)\s*[- ]?day').firstMatch(q) ??
         RegExp(r'for\s+(\d+)\s+days').firstMatch(q);
     if (dayMatch != null) {
       state['days'] =
-          (int.tryParse(dayMatch.group(1) ?? '') ?? 3).clamp(1, 10).toInt();
+          (int.tryParse(dayMatch.group(1) ?? '') ?? 3).clamp(1, 14).toInt();
+    }
+    final nights = RegExp(r'\b(\d+)\s*nights?\b').firstMatch(q);
+    if (dayMatch == null && nights != null) state['days'] = (int.parse(nights[1]!) + 1).clamp(1,14);
+    String dateAcknowledgement = '';
+    try {
+      final range = parseTravelDateRange(message);
+      if (range != null) {
+        state['startDate'] = _date(range.$1); state['endDate'] = _date(range.$2);
+        state.remove('dateClarification');
+        dateAcknowledgement = 'Travel dates: ${state['startDate']} to ${state['endDate']} (${range.$2.difference(range.$1).inDays+1} calendar days, ${range.$2.difference(range.$1).inDays} nights). ';
+      } else if ((dayMatch != null || nights != null) && state.remove('dateClarification') != null) {
+        state.remove('startDate'); state.remove('endDate');
+      }
+      if (state['startDate'] != null && state['endDate'] != null) {
+        state['days'] = DateTime.parse(state['endDate']).difference(DateTime.parse(state['startDate'])).inDays+1;
+      }
+    } on FormatException catch (error) {
+      state['dateClarification'] = error.message;
+    }
+    if (state['dateClarification'] != null) {
+      state.remove('activePlan');
+      return {'ready':false,'state':state,'reply':state['dateClarification']};
     }
 
     final budgetMatch =
@@ -5658,6 +5706,15 @@ class StandaloneApiService {
                 .firstMatch(q);
     if (budgetMatch != null) {
       state['budget'] = double.tryParse(budgetMatch.group(1) ?? '');
+    }
+    final travellers = RegExp(r'\b(\d+)\s*(?:travellers?|travelers?|people|pax|persons?)\b').firstMatch(q);
+    if (travellers != null) state['travellerCount'] = int.parse(travellers[1]!).clamp(1,20);
+    final numeric = num.tryParse(message.trim());
+    final pending = state['guidedQuestion'];
+    if (numeric != null && numeric > 0) {
+      if (pending == 'budget') state['budget'] = numeric.toDouble();
+      if (pending == 'days' && numeric == numeric.round() && numeric <= 14) state['days'] = numeric.toInt();
+      if (pending == 'travellerCount' && numeric == numeric.round() && numeric <= 20) state['travellerCount'] = numeric.toInt();
     }
 
     const interestWords = <String, String>{
@@ -5685,6 +5742,7 @@ class StandaloneApiService {
     }
     if (requestedInterests.isNotEmpty)
       state['interests'] = requestedInterests.toList();
+    if (q.contains('no preference')) state['interestsConfirmed'] = true;
 
     if (q.contains('relaxed') || q.contains('slow pace'))
       state['pace'] = 'Relaxed';
@@ -5704,12 +5762,20 @@ class StandaloneApiService {
     if ((state['destination'] ?? '').toString().trim().isEmpty)
       missing.add('destination');
     if (state['days'] == null) missing.add('days');
-    if ((state['interests'] as List? ?? []).isEmpty) missing.add('interests');
+    if (state['startDate'] == null || state['endDate'] == null) missing.add('dates');
     if (state['budget'] == null) missing.add('budget');
+    if (state['travellerCount'] == null) missing.add('travellerCount');
+    if ((state['interests'] as List? ?? []).isEmpty && state['interestsConfirmed'] != true) missing.add('interests');
+    final current = jsonEncode({for(final key in ['destination','days','startDate','endDate','budget','travellerCount','interests','pace']) key:state[key]});
+    if (previous != current) state.remove('activePlan');
+    if (state['activePlan'] is Map && RegExp(r'\b(?:show (?:my |the )?(?:plan|itinerary|trip)|where (?:is |are )?(?:my |the )?trips?|can i see my trip)\b').hasMatch(q)) {
+      return {'ready':false,'showExisting':true,'state':state};
+    }
 
     if (missing.isEmpty) {
       state['pace'] ??= prefs['travelPace'] ?? 'Moderate';
       state['companions'] ??= 'Traveller';
+      state.remove('guidedQuestion');
       return {'ready': true, 'state': state, 'reply': ''};
     }
 
@@ -5717,25 +5783,18 @@ class StandaloneApiService {
     final intro = knownDestination.isEmpty
         ? 'I can build this with you instead of giving a fixed itinerary.'
         : 'I’ll plan for $knownDestination. I need a little more detail so the route matches you.';
-    final questions = <String>[];
-    if (missing.contains('destination'))
-      questions.add('Which city or destination are you travelling to?');
-    if (missing.contains('days'))
-      questions.add('How many days will the trip be?');
-    if (missing.contains('interests')) {
-      final saved = (prefs['interests'] as List? ?? []).join(', ');
-      questions.add(saved.isEmpty
-          ? 'What do you want most: food, culture, nature, shopping, history, nightlife or something else?'
-          : 'What should I focus on for this trip? Your saved interests are $saved, but you can choose something different.');
-    }
-    if (missing.contains('budget'))
-      questions.add('What is your approximate budget in RM?');
-
+    const questions = {'destination':'Which Malaysian destination would you like to explore?',
+      'days':'How many days would you like to travel, or what are your travel dates?',
+      'dates':'What are your travel dates? The duration is known, but calendar dates have not been chosen.',
+      'budget':'What is your total trip budget in MYR?',
+      'travellerCount':'How many travellers are joining the trip?',
+      'interests':'Which activities interest you? You can also say no preference.'};
+    state['guidedQuestion'] = missing.first;
     return {
       'ready': false,
       'state': state,
       'reply':
-          '$intro\n\n${questions.map((q) => '• $q').join('\n')}\n\nYou can answer everything in one message, for example: “3 days, food and culture, RM1200, relaxed pace”.',
+          '$dateAcknowledgement$intro\n\n${questions[missing.first]}',
     };
   }
 
@@ -5745,11 +5804,11 @@ class StandaloneApiService {
     return '${clean.substring(0, 34)}…';
   }
 
-  Map<String, dynamic> _buildPlanFromPlanningState(
+  Map<String, dynamic>? _buildPlanFromPlanningState(
     Map<String, dynamic> state,
-    Map<String, dynamic> prefs,
+    Map<String, dynamic> prefs, {List<Map<String,dynamic>> cachedPlaces = const []}
   ) {
-    final days = (int.tryParse('${state['days']}') ?? 3).clamp(1, 10).toInt();
+    final days = (int.tryParse('${state['days']}') ?? 3).clamp(1, 14).toInt();
     final destination = (state['destination'] ?? 'Penang').toString();
     final requested = (state['interests'] as List? ?? [])
         .map((e) => _normaliseSearch(e.toString()))
@@ -5759,22 +5818,11 @@ class StandaloneApiService {
         .map((e) => _normaliseSearch(e.toString()))
         .toSet();
     final targetInterests = requested.isEmpty ? saved : requested;
-    final destinationToken = _normaliseSearch(destination).split(' ').first;
-
-    final candidates = _destinations
-        .where((d) {
-          final addr = _normaliseSearch((d['address'] ?? '').toString());
-          if (destination.toLowerCase().contains('kuala lumpur')) {
-            return addr.contains('kuala lumpur') ||
-                addr.contains('gombak') ||
-                addr.contains('selangor');
-          }
-          if (destination.toLowerCase().contains('penang'))
-            return addr.contains('penang');
-          if (destination.toLowerCase().contains('langkawi'))
-            return addr.contains('langkawi');
-          return addr.contains(destinationToken);
-        })
+    final scope = MalaysianLocality.normalizeScope(destination);
+    final identities = <String>{};
+    final candidates = [..._destinations, ...cachedPlaces]
+        .where((d) => (MalaysianLocality.validateCandidate(d,scope)['geographicEligibility'] as Map)['eligible'] == true)
+        .where((d) => identities.add('${d['destinationId'] ?? d['place_id'] ?? d['title']}'))
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
 
@@ -5794,6 +5842,7 @@ class StandaloneApiService {
     }
 
     candidates.sort((a, b) => rank(b).compareTo(rank(a)));
+    if (candidates.length < days) return null;
 
     final requiredCount = min(days * 3, candidates.length);
     final selected = <Map<String, dynamic>>[];
@@ -5817,16 +5866,21 @@ class StandaloneApiService {
     const slots = ['09:00', '13:30', '17:30'];
     for (var i = 0; i < selected.length; i++) {
       final d = selected[i];
+      final dayNo = min(days,i*days~/selected.length+1);
+      final daySlot = activities.where((a)=>a['dayNo']==dayNo).length;
       activities.add({
         'activityName': d['title'],
         'destinationId': d['destinationId'],
         'address': d['address'] ?? '',
-        'dayNo': (i ~/ 3) + 1,
-        'timeSlot': slots[i % 3],
+        'dayNo': dayNo,
+        'timeSlot': slots[daySlot],
         'estimatedCost': d['estimatedCost'] ?? 0,
         'category': d['category'] ?? d['type'] ?? '',
         'indoor': d['indoor'] ?? false,
         'openingHours': d['openingHours'] ?? '',
+        if(d['recommendedDurationMinutes'] != null) 'recommendedDurationMinutes':d['recommendedDurationMinutes'],
+        if(d['travelBufferMinutes'] != null) 'travelBufferMinutes':d['travelBufferMinutes'],
+        if(d['description'] != null) 'description':d['description'],
       });
     }
 
@@ -5837,18 +5891,21 @@ class StandaloneApiService {
             : prefs['budgetRange']?.toString().toLowerCase() == 'premium'
                 ? 2200.0
                 : 1300.0);
-    final start = DateTime.now().add(const Duration(days: 14));
-    final end = start.add(Duration(days: days - 1));
+    final start = DateTime.parse(state['startDate']);
+    final end = DateTime.parse(state['endDate']);
     return {
       'title': '$days-Day $destination Trip',
       'destinationArea': destination,
       'startDate': _date(start),
       'endDate': _date(end),
-      'travellerCount': 1,
+      'travellerCount': state['travellerCount'],
+      'numberOfTravellers': state['travellerCount'],
+      'tripDays':days,'nights':days-1,'datesSource':'user',
       'budgetLimit': _money(budget),
       'activities': activities,
       'requestedInterests': targetInterests.map(_titleCase).toList(),
       'pace': state['pace'] ?? prefs['travelPace'] ?? 'Moderate',
+      'travelPersonality': prefs['travelPersonality'] ?? '',
       'companions': state['companions'] ?? 'Traveller',
       'status': 'generated',
     };
@@ -5889,6 +5946,18 @@ class StandaloneApiService {
     final raw = payload['plan'];
     if (raw is! Map) throw Exception('No trip plan is available to save.');
     final plan = Map<String, dynamic>.from(raw);
+    if (payload['sessionId'] != null) {
+      final sessions = await _readList('chat_sessions');
+      final index = sessions.indexWhere((s)=>s['id']==payload['sessionId']);
+      if(index<0) throw Exception('Chat session not found.');
+      final state=Map<String,dynamic>.from(sessions[index]['planningState'] as Map? ?? {});
+      if(payload['confirmed']!=true || state['dateClarification']!=null || state['activePlan'] is! Map || jsonEncode(state['activePlan'])!=jsonEncode(plan)) throw Exception('Confirm the current draft before saving. This draft may be out of date.');
+      final result=await _createTrip(plan,requestedId:'chat_${sessions[index]['id']}_${plan['draftId']}');
+      state['savedPlans']={...(state['savedPlans'] as Map? ?? {}),plan['draftId']:result['id']};
+      sessions[index]['planningState']=state;
+      await _writeList('chat_sessions',sessions);
+      return result;
+    }
     return _createTrip(plan);
   }
 

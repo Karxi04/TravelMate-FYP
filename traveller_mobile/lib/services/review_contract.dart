@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 class ReviewContract {
+  static String sentiment(int rating) => rating >= 4 ? 'Positive / good' : rating == 3 ? 'Neutral / moderate' : 'Negative / poor';
   static String identity(String uid, String destination) =>
       'review_${sha256.convert(utf8.encode('$uid\u0000${destination.trim()}'))}';
 

@@ -90,6 +90,7 @@ def normalizeHotelContent(result, hotel_id=None):
                   for item in photos[:8]
                   if isinstance(item, (str, dict)) and (isinstance(item, str) or item.get('url') or item.get('image'))]
     return {
+        'rooms': data.get('rooms') if isinstance(data.get('rooms'), list) else [],
         'hotelId': str(data.get('id') or data.get('hotelId') or hotel_id or ''),
         'name': data.get('name') or data.get('hotelName'),
         'description': data.get('description') or data.get('hotelDescription'),
@@ -401,7 +402,7 @@ def normalizeHotelOffers(result):
             photo = content.get('main_photo') or content.get('mainPhoto') or content.get('mainPhotoUrl') or ''
             stars = content.get('stars') or content.get('starRating') or content.get('star_rating') or 0
             rating = content.get('rating') or content.get('reviewScore') or group.get('rating') or 0
-            room_name = room.get('roomName') or room.get('name') or room.get('roomType') or rate.get('roomName') or 'Available room'
+            room_name = room.get('roomName') or room.get('name') or room.get('roomType') or rate.get('roomName') or rate.get('name') or 'Available room'
             board = rate.get('boardName') or rate.get('boardType') or room.get('boardName') or ''
             room_images = room.get('imageUrls') or room.get('images') or room.get('photos') or []
             if not isinstance(room_images, list):
@@ -442,8 +443,8 @@ def normalizeHotelOffers(result):
                 'offerId': offer_id,
                 'mainPhoto': photo,
                 # Optional provider fields remain absent when LiteAPI does not supply them.
-                'roomImageUrls': [str(image.get('url') if isinstance(image, dict) else image)
-                                  for image in room_images if image],
+                'roomImageUrls': _photo_urls(room_images),
+                'mappedRoomIds': list(dict.fromkeys(str(rate['mappedRoomId']) for rate in rates if isinstance(rate, dict) and rate.get('mappedRoomId') is not None)),
                 'bedType': room.get('bedType') or room.get('bed_type'),
                 'roomSize': room.get('roomSize') or room.get('size'),
                 'maxOccupancy': room.get('maxOccupancy') or room.get('maxGuests'),
@@ -484,3 +485,28 @@ def normalizeHotelOffers(result):
 search_rates = retrieveHotelOffers
 prebook = validateHotelOffer
 book = createBookingReference
+
+
+def _photo_urls(photos):
+    if not isinstance(photos, list):
+        return []
+    urls = []
+    for photo in photos[:12]:
+        url = photo.get('url') if isinstance(photo, dict) else photo
+        if isinstance(url, str) and url.startswith(('https://', 'http://')) and url not in urls:
+            urls.append(url)
+    return urls
+
+
+def attachRoomContent(offer, content):
+    """Join only one exact mapped room within the same provider property."""
+    if str(offer.get('hotelId')) != str(content.get('hotelId')):
+        return
+    ids = offer.get('mappedRoomIds') or []
+    if len(ids) != 1:
+        return
+    for room in content.get('rooms') or []:
+        if isinstance(room, dict) and str(room.get('id')) == str(ids[0]):
+            if not offer.get('roomImageUrls'):
+                offer['roomImageUrls'] = _photo_urls(room.get('photos'))
+            return

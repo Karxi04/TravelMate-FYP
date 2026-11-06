@@ -10,6 +10,7 @@ import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../fr10_feedback_rating/feedback_screen.dart';
 import 'destination_trip_actions.dart';
+import 'favourites_controller.dart';
 
 class DestinationDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> initialDestination;
@@ -35,7 +36,9 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   bool loading = true;
   bool saving = false;
   bool adding = false;
-  bool saved = false;
+  late final FavouritesController favourites;
+  bool get saved => favourites.contains(destinationId);
+  void _favouritesChanged() { if (mounted) setState(() {}); }
   bool showAllReviews = false;
   bool detailsFailed = false;
   bool reviewsFailed = false;
@@ -48,11 +51,14 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     super.initState();
     api = widget.api ?? ApiService();
     detail = Map<String, dynamic>.from(widget.initialDestination);
-    saved = detail['isFavourite'] == true || detail['isFavorite'] == true;
+    favourites = FavouritesController(api)..addListener(_favouritesChanged);
     Future.microtask(loadDetails);
   }
 
-  String get destinationId => DestinationUtils.resolveId(detail);
+  String get destinationId {
+    final id = DestinationUtils.resolveId(detail);
+    return id.isEmpty ? title : id;
+  }
   String get title => DestinationUtils.resolveName(detail);
   String get address =>
       (detail['address'] ?? detail['location'] ?? '').toString().trim();
@@ -147,18 +153,18 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     if (mounted) setState(() => loading = false);
   }
 
+  @override
+  void dispose() {
+    favourites.removeListener(_favouritesChanged);
+    favourites.dispose();
+    super.dispose();
+  }
+
   Future<void> saveFavourite() async {
-    if (saving || saved) return;
+    if (saving) return;
     setState(() => saving = true);
     try {
-      final payload = Map<String, dynamic>.from(detail);
-      payload['destinationId'] = destinationId;
-      await api.post('/api/fr3/favourites', payload);
-      if (!mounted) return;
-      setState(() => saved = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved to your destinations.')),
-      );
+      await favourites.toggle({...detail, 'destinationId': destinationId});
     } catch (error) {
       if (mounted) showError(context, error);
     } finally {
@@ -822,20 +828,20 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             color: AppColors.surface,
             border: Border(top: BorderSide(color: AppColors.divider)),
           ),
-          child: Row(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (favourites.error != null) TextButton(onPressed: favourites.load, child: Text(favourites.error!)),
+            Row(
             children: [
               Expanded(
                 child: Semantics(
                   key: const ValueKey('destination-save'),
                   button: true,
                   toggled: saved,
-                  label: saved ? 'Destination saved' : 'Save destination',
-                  child: SecondaryButton(
-                    label: saved ? 'Saved' : (saving ? 'Saving…' : 'Save'),
-                    icon: saved
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                    onPressed: saving || saved ? null : saveFavourite,
+                  label: saved ? 'Destination saved. Tap to remove favourite' : 'Save destination',
+                  child: OutlinedButton.icon(
+                    label: Text(saved ? 'Saved' : (saving ? 'Saving…' : 'Save')),
+                    icon: Icon(saved ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: saved ? Colors.red : null),
+                    onPressed: saving || !favourites.loaded || favourites.error != null ? null : saveFavourite,
                   ),
                 ),
               ),
@@ -851,6 +857,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
               ),
             ],
           ),
+          ]),
         ),
       ),
       body: RefreshIndicator(
@@ -873,12 +880,15 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
               const SizedBox(height: AppSpacing.lg),
               _personalContext(),
             ],
-            if (description.isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.lg),
-              const AppSectionHeader(title: 'About'),
-              const SizedBox(height: AppSpacing.sm),
-              InkCard(child: Text(description)),
-            ],
+            const SizedBox(height: AppSpacing.lg),
+            const AppSectionHeader(title: 'About'),
+            const SizedBox(height: AppSpacing.sm),
+            InkCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(description.isNotEmpty ? description : 'A detailed description is not available from this source.'),
+              if (category.isNotEmpty) Text('Category: $category'),
+              if (address.isNotEmpty) Text('Location: $address'),
+              for (final highlight in (detail['highlights'] as List? ?? []).whereType<String>()) Text('• $highlight'),
+            ])),
             const SizedBox(height: AppSpacing.lg),
             _visitInformation(),
             const SizedBox(height: AppSpacing.lg),

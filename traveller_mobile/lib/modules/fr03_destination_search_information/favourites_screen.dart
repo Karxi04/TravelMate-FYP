@@ -4,55 +4,54 @@ import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../../widgets/local_place_rating.dart';
 import 'destination_details_screen.dart';
+import 'favourites_controller.dart';
 
 class FavouritesScreen extends StatefulWidget {
-  const FavouritesScreen({super.key});
+  final ApiService? api;
+  const FavouritesScreen({super.key, this.api});
   @override
   State<FavouritesScreen> createState() => _FavouritesScreenState();
 }
 
 class _FavouritesScreenState extends State<FavouritesScreen> {
-  final api = ApiService();
-  List<dynamic> items = [];
-  bool loading = true;
-  String? loadError;
+  late final ApiService api;
+  late final FavouritesController favourites;
+  void _changed() { if (mounted) setState(() {}); }
 
-  Future<void> load() async {
-    if (mounted) setState(() { loading = true; loadError = null; });
+  Future<void> remove(Map<String, dynamic> item) async {
     try {
-      final data = await api.get('/api/fr3/favourites');
-      if (mounted) setState(() => items = data['items'] ?? []);
-    } catch (e) {
-      if (mounted) setState(() => loadError = 'We couldn’t load your saved places.');
-    } finally {
-      if (mounted) setState(() => loading = false);
-    }
-  }
-
-  Future<void> remove(String id) async {
-    try {
-      await api.delete('/api/fr3/favourites/$id');
-      await load();
-    } catch (e) {
-      if (mounted) showError(context, e);
+      await favourites.toggle(item);
+    } catch (error) {
+      if (mounted) showError(context, error);
     }
   }
 
   @override
-  void initState() { super.initState(); Future.microtask(load); }
+  void initState() {
+    super.initState();
+    api = widget.api ?? ApiService();
+    favourites = FavouritesController(api)..addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    favourites.removeListener(_changed);
+    favourites.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Favourite Destinations')),
       body: RefreshIndicator(
-        onRefresh: load,
+        onRefresh: favourites.load,
         child: ListView(padding: const EdgeInsets.all(18), children: [
-          if (loading) const AppLoadingState(message: 'Loading saved places…'),
-          if (!loading && loadError != null) AppErrorState(message: loadError!, onRetry: load),
-          if (!loading && loadError == null && items.isEmpty)
+          if (!favourites.loaded && favourites.error == null) const AppLoadingState(message: 'Loading saved places…'),
+          if (favourites.error != null) AppErrorState(message: favourites.error!, onRetry: favourites.load),
+          if (favourites.loaded && favourites.error == null && favourites.items.isEmpty)
             const TravelEmptyState(icon: Icons.favorite_border_rounded, title: 'No saved places yet', message: 'Save destinations from Explore to find them here.'),
-          ...items.map((raw) {
+          ...favourites.items.map((raw) {
             final item = Map<String, dynamic>.from(raw as Map);
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
@@ -68,6 +67,7 @@ class _FavouritesScreenState extends State<FavouritesScreen> {
                     MaterialPageRoute(
                       builder: (_) => DestinationDetailsScreen(
                         initialDestination: item,
+                        api: api,
                       ),
                     ),
                   ),
@@ -89,7 +89,7 @@ class _FavouritesScreenState extends State<FavouritesScreen> {
                   ),
                   trailing: IconButton(
                     tooltip: 'Remove favourite',
-                    onPressed: () => remove(item['id'].toString()),
+                    onPressed: favourites.busyIds.contains(item['destinationId']) || favourites.error != null ? null : () => remove(item),
                     icon: const Icon(Icons.delete_outline),
                   ),
                 )),

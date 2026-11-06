@@ -6,7 +6,8 @@ from flask import Blueprint, request, jsonify, g
 from auth_utils import auth_required
 from services.serpapi_service import retrieveFlightOptions, retrieveFlightReturns, retrieveFlightDetails, normalizeFlightResult
 from services.local_catalog import FLIGHTS
-from sequence_contract.validators import validateFlightSearchCriteria
+from sequence_contract.validators import flightSearchValidationError
+from services.flight_airports import resolve_airport
 from sequence_contract.domain_functions import applyFlightFilter, compareSelectedFlights, calculateBudget
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord
 from services.flight_itinerary_adjustment import flight_selection_change_patch
@@ -440,55 +441,7 @@ def _own_itinerary(iid):
     return data if data and data.get('travellerId') == g.uid else None
 
 
-CITY_TO_IATA = {
-    'KUALA LUMPUR': 'KUL',
-    'KL': 'KUL',
-    'KLIA': 'KUL',
-    'PENANG': 'PEN',
-    'GEORGETOWN': 'PEN',
-    'GEORGE TOWN': 'PEN',
-    'SINGAPORE': 'SIN',
-    'CHANGI': 'SIN',
-    'BANGKOK': 'BKK',
-    'SUVARNABHUMI': 'BKK',
-    'TOKYO': 'NRT',
-    'NARITA': 'NRT',
-    'HANEDA': 'HND',
-    'SEOUL': 'ICN',
-    'INCHEON': 'ICN',
-    'HONG KONG': 'HKG',
-    'HK': 'HKG',
-    'LANGKAWI': 'LGK',
-    'KOTA KINABALU': 'BKI',
-    'KUCHING': 'KCH',
-    'JOHOR BAHRU': 'JHB',
-    'JB': 'JHB',
-    'IPOH': 'IPH',
-    'MELAKA': 'MKZ',
-    'MALACCA': 'MKZ',
-    'LONDON': 'LHR',
-    'HEATHROW': 'LHR',
-    'SYDNEY': 'SYD',
-    'MELBOURNE': 'MEL',
-    'BALI': 'DPS',
-    'DENPASAR': 'DPS',
-    'JAKARTA': 'CGK',
-    'TAIPEI': 'TPE',
-    'OSAKA': 'KIX',
-    'DUBAI': 'DXB',
-}
-
-
-def _resolve_iata(val):
-    c = str(val or '').strip().upper()
-    if not c:
-        return c
-    if len(c) == 3 and c.isalpha():
-        return c
-    for k, v in CITY_TO_IATA.items():
-        if k == c or k in c or c in k:
-            return v
-    return c
+_resolve_iata = resolve_airport
 
 
 def _provider_route_matches(item, criteria):
@@ -512,8 +465,9 @@ def search_flights():
         'outbound_date': request.args.get('outbound_date', '').strip(),
         'return_date': request.args.get('return_date', '').strip() or None,
     }
-    if not validateFlightSearchCriteria(data):
-        return _flight_error('invalid_flight_search', 'Use different 3-letter airports and current or future flight dates', 400)
+    validation_error = flightSearchValidationError(data)
+    if validation_error:
+        return _flight_error('invalid_flight_search', validation_error, 400)
 
     return_date = data['return_date']
     currency = request.args.get('currency', 'MYR').strip().upper()

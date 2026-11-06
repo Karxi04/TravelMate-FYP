@@ -11,8 +11,8 @@ Map<String, dynamic> _plannedTrip(String id) => {
       'id': id,
       'title': 'My Personalised Penang Trip',
       'destinationArea': 'Penang, Malaysia',
-      'startDate': '2026-11-01',
-      'endDate': '2026-11-03',
+      'startDate': '2030-11-01',
+      'endDate': '2030-11-03',
       'tripDays': 3,
       'status': 'planned',
       'recommendationGenerationId': 'rec_widget_1',
@@ -235,7 +235,7 @@ void main() {
       (tester) async {
     final api = _FakeApiService();
     await _pumpPlanning(tester, api);
-    for (final field in ['travel-mode', 'accommodation', 'rental']) {
+    for (final field in ['travel-mode', 'accommodation']) {
       final chip = find.byKey(ValueKey('planning-$field-undecided'));
       await _scrollTo(tester, chip);
       expect(tester.widget<ChoiceChip>(chip).selected, isTrue);
@@ -245,7 +245,7 @@ void main() {
     expect(api.lastGenerationBody,
         containsPair('accommodationChoice', 'undecided'));
     expect(
-        api.lastGenerationBody, containsPair('carRentalChoice', 'undecided'));
+        api.lastGenerationBody, containsPair('carRentalChoice', 'not_required'));
     expect(api.lastGenerationBody!.containsKey('originLocation'), isFalse);
     expect(api.posts, ['/api/fr5/personalised-trips/generate']);
     expect(find.byType(TripDetailsScreen), findsOneWidget);
@@ -256,7 +256,7 @@ void main() {
       'A',
       'Bukit Mertajam, Penang',
       'George Town, Penang',
-      '2026-11-01',
+      '2030-11-01',
       'own_vehicle',
       'return_home',
       'not_required'
@@ -265,7 +265,7 @@ void main() {
       'B',
       'Penang',
       'Kuala Lumpur',
-      '2026-11-03',
+      '2030-11-03',
       'flight',
       'paid_hotel',
       'not_required'
@@ -274,7 +274,7 @@ void main() {
       'C',
       'Penang',
       'Kuala Lumpur',
-      '2026-11-03',
+      '2030-11-03',
       'own_vehicle',
       'staying_with_family',
       'undecided'
@@ -308,7 +308,7 @@ void main() {
       tester
           .widget<TextField>(_textField('planning-start-date'))
           .controller!
-          .text = '2026-11-01';
+          .text = '2030-11-01';
       tester
           .widget<TextField>(_textField('planning-end-date'))
           .controller!
@@ -322,7 +322,7 @@ void main() {
             findsOneWidget);
       }
       await _choose(tester, 'accommodation', scenario.$6);
-      await _choose(tester, 'rental', scenario.$7);
+
       await _scrollTo(tester, find.text('Your travel style'));
       expect(find.text('Explorer'), findsOneWidget);
       expect(find.text('Food'), findsOneWidget);
@@ -337,8 +337,8 @@ void main() {
       expect(payload['destinationName'], scenario.$3);
       expect(payload['travelMode'], scenario.$5);
       expect(payload['accommodationChoice'], scenario.$6);
-      expect(payload['carRentalChoice'], scenario.$7);
-      expect(payload['startDate'], '2026-11-01');
+      expect(payload['carRentalChoice'], 'not_required');
+      expect(payload['startDate'], '2030-11-01');
       expect(payload['endDate'], scenario.$4);
       expect(payload['travellerCount'], 2);
       expect(payload['budgetLimit'], 1500);
@@ -372,9 +372,9 @@ void main() {
     await _enter(tester, 'planning-origin', 'Kuching');
     await _choose(tester, 'travel-mode', 'public_transport');
     await _choose(tester, 'accommodation', 'other');
-    await _choose(tester, 'rental', 'selected');
+
     expect(
-        find.textContaining('rental catalogue uses estimated rates'), findsOneWidget);
+        find.byKey(const ValueKey('planning-rental-selected')), findsNothing);
     await _submit(tester);
     final firstRequest = api.lastGenerationBody!['generationRequestId'];
     await tester.pageBack();
@@ -391,8 +391,7 @@ void main() {
         'Kuching');
     for (final choice in [
       ('travel-mode', 'public_transport'),
-      ('accommodation', 'other'),
-      ('rental', 'selected')
+      ('accommodation', 'other')
     ]) {
       final chip = find.byKey(ValueKey('planning-${choice.$1}-${choice.$2}'));
       await _scrollTo(tester, chip);
@@ -406,7 +405,7 @@ void main() {
     expect(api.lastGenerationBody!['destinationArea'], 'Kuala Lumpur');
     expect(api.lastGenerationBody!['endDate'], '2026-12-31');
     expect(api.lastGenerationBody!['travelMode'], 'public_transport');
-    expect(api.lastGenerationBody!['carRentalChoice'], 'selected');
+    expect(api.lastGenerationBody!['carRentalChoice'], 'not_required');
   });
 
   testWidgets(
@@ -417,7 +416,7 @@ void main() {
     await _enter(tester, 'planning-origin', 'Johor Bahru');
     await _choose(tester, 'travel-mode', 'flight');
     await _choose(tester, 'accommodation', 'paid_hotel');
-    await _choose(tester, 'rental', 'not_required');
+
     await _submit(tester);
     await _scrollTo(tester, find.text('Retry this trip'));
     await tester.tap(find.text('Retry this trip'));
@@ -451,7 +450,7 @@ void main() {
     await _enter(tester, 'planning-origin', 'Bukit Mertajam, Penang');
     await _choose(tester, 'travel-mode', 'public_transport');
     await _choose(tester, 'accommodation', 'staying_with_family');
-    await _choose(tester, 'rental', 'selected');
+
     expect(tester.takeException(), isNull);
   });
 

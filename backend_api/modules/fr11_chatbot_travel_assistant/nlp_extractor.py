@@ -1,3 +1,4 @@
+from .travel_dates import parse_date_range
 import re
 import unicodedata
 from datetime import date, timedelta
@@ -174,6 +175,9 @@ def extract_duration(text, default=None):
     m_dn2 = re.search(r'\b(\d+)\s*days?\s*(?:and|&)?\s*\d+\s*nights?\b', q)
     if m_dn2:
         return max(1, min(14, int(m_dn2.group(1))))
+    nights = re.search(r'\b(\d+)\s*nights?\b', q)
+    if nights:
+        return max(1, min(14, int(nights.group(1)) + 1))
     if 'weekend' in q:
         return 2
     if 'one week' in q or 'a week' in q:
@@ -276,6 +280,9 @@ def extract_travellers(text, default=None):
 
 
 def extract_dates(text, duration_days=3, default_start=None, default_end=None):
+    explicit_range = parse_date_range(text)
+    if explicit_range:
+        return explicit_range
     q = text.lower()
     today = date.today()
 
@@ -668,6 +675,8 @@ def find_matching_catalog_destinations(destination_area, destination_state=None,
         geo = normalize_candidate_geography(d)
         addr = clean_text(d.get('address', ''))
         title = clean_text(d.get('title', ''))
+        if state_low and geo.get('state') and clean_text(geo['state']) != state_low:
+            continue
 
         # Exact city or locality match
         if geo.get('city') and clean_text(geo['city']) == area_low:
@@ -705,19 +714,34 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
     if not matching:
         return None, 'constraint_conflict'
 
-    days = max(1, min(7, int(days or 3)))
+    unique = {}
+    for candidate in matching:
+        key = candidate.get('destinationId') or candidate.get('place_id') or clean_text(candidate.get('title'))
+        if key:
+            unique.setdefault(key, candidate)
+    matching = list(unique.values())
+    requested = [clean_text(interest) for interest in (interests or [])]
+    matching.sort(key=lambda item: sum(interest in clean_text(f"{item.get('title', '')} {item.get('category', '')} {item.get('description', '')}") for interest in requested), reverse=True)
+
+    if start_date and end_date:
+        try:
+            start = date.fromisoformat(str(start_date)[:10]); end = date.fromisoformat(str(end_date)[:10])
+        except ValueError:
+            return None, 'invalid_dates'
+        days = (end - start).days + 1
+        if not 1 <= days <= 14:
+            return None, 'invalid_dates'
+    else:
+        days = max(1, min(14, int(days or 3)))
     time_slots = ['Morning (09:00 - 12:00)', 'Afternoon (13:30 - 16:30)', 'Evening (18:00 - 20:30)']
     activities = []
     activity_count = days * len(time_slots)
-    has_hard_constraints = bool(excluded_interests or excluded_activity_types or prefer_indoor)
-    scheduled = (
-        matching[:activity_count]
-        if has_hard_constraints
-        else [matching[idx % len(matching)] for idx in range(activity_count)]
-    )
+    scheduled = matching[:activity_count]
     for idx, d in enumerate(scheduled):
-        day_no = (idx // len(time_slots)) + 1
-        slot = time_slots[idx % len(time_slots)]
+        # Spread a limited verified catalogue across all days without repeating places.
+        day_no = min(days, idx * days // len(scheduled) + 1)
+        day_slot = sum(a['dayNo'] == day_no for a in activities)
+        slot = time_slots[day_slot]
         activities.append({
                 'activityId': f'A{len(activities) + 1}',
                 'activityName': d.get('title') or d.get('name') or f'Stop {len(activities) + 1}',
@@ -739,8 +763,8 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
                 'category': d.get('category') or d.get('type') or '',
                 'description': d.get('description', ''),
                 'indoor': bool(d.get('indoor', False)),
-                'recommendedDurationMinutes': int(d.get('recommendedDurationMinutes', 90) or 90),
-                'travelBufferMinutes': 15,
+                'recommendedDurationMinutes': int(d.get('recommendedDurationMinutes', 0) or 0),
+                'travelBufferMinutes': int(d.get('travelBufferMinutes', 0) or 0),
                 'scheduleNotes': [f"Recommended stop for Day {day_no}"],
         })
 
@@ -763,6 +787,10 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
         'endDate': e_date[:10],
         'budgetLimit': float(budget_limit or 1200.0),
         'numberOfTravellers': int(traveller_count or 1),
+        'tripDays': days,
+        'nights': days - 1,
+        'datesSource': 'user' if start_date and end_date else 'suggested',
+        'coverageStatus': 'complete' if len(scheduled) >= days else 'partial',
         'interests': list(interests or []),
         'excludedInterests': list(excluded_interests or []),
         'excludedActivityTypes': list(excluded_activity_types or []),
@@ -775,6 +803,8 @@ def validate_save_plan_payload(plan):
     """Enforce strict geographic and data integrity before saving to Firestore."""
     if not plan or not isinstance(plan, dict):
         return False, 'No trip plan is available to save.'
+    if plan.get('coverageStatus') == 'partial':
+        return False, 'This itinerary is incomplete. Choose a shorter trip or obtain more verified activities before saving.'
 
     dest = str(plan.get('destinationArea') or plan.get('destination') or '').strip()
     if not dest:
@@ -801,6 +831,11 @@ def validate_save_plan_payload(plan):
     end_str = str(plan.get('endDate') or '')[:10]
     if start_str and end_str and start_str > end_str:
         return False, f"Invalid travel dates: startDate '{start_str}' must be before or equal to endDate '{end_str}'."
+    if start_str or end_str:
+        try:
+            date.fromisoformat(start_str); date.fromisoformat(end_str)
+        except ValueError:
+            return False, 'Invalid calendar dates: provide both startDate and endDate.'
 
     limit = float(plan.get('budgetLimit') or 0.0)
     if limit <= 0:

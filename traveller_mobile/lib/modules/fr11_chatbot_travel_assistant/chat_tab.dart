@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import '../../widgets/local_place_rating.dart';
 
 import '../../services/api_service.dart';
@@ -30,6 +31,38 @@ class _ChatTabState extends State<ChatTab> {
   String? screenError;
   String? sendError;
   String? failedMessage;
+  Map<String, dynamic> planningState = {};
+  final Map<String, String> savedPlans = {};
+
+  String planKey(Map<String, dynamic> plan) =>
+      (plan['draftId'] ?? jsonEncode(plan)).toString();
+
+  bool stalePlan(Map<String, dynamic> plan) {
+    if (planningState['dateClarification'] != null) return true;
+    final active = planningState['activePlan'];
+    if (plan['draftId'] != null &&
+        (active is! Map || active['draftId'] != plan['draftId'])) return true;
+    return planningState['startDate'] != null &&
+        (planningState['startDate'] != plan['startDate'] ||
+            planningState['endDate'] != plan['endDate']);
+  }
+
+  void acceptPlanningState(Map<String, dynamic> session) {
+    planningState =
+        Map<String, dynamic>.from(session['planningState'] as Map? ?? {});
+    final saved = planningState['savedPlans'] as Map? ?? {};
+    savedPlans.clear();
+    for (final entry in saved.entries) {
+      savedPlans[entry.key.toString()] = entry.value.toString();
+    }
+  }
+
+  void openTrips() {
+    if (!AppShellNavigation.select(context, AppShellTab.trips)) {
+      Navigator.push(
+          context, MaterialPageRoute(builder: (_) => TripsTab(api: api)));
+    }
+  }
 
   final suggestions = const [
     'Plan things to do',
@@ -74,6 +107,8 @@ class _ChatTabState extends State<ChatTab> {
       setState(() {
         activeSessionId = session['id'].toString();
         messages = [];
+        planningState = {};
+        savedPlans.clear();
       });
       await loadSessions(openNewest: false);
       if (mounted && Navigator.canPop(context)) Navigator.pop(context);
@@ -90,6 +125,7 @@ class _ChatTabState extends State<ChatTab> {
       setState(() {
         activeSessionId = id;
         messages = session['messages'] as List? ?? [];
+        acceptPlanningState(session);
       });
     } catch (e) {
       if (mounted) showError(context, e);
@@ -144,6 +180,7 @@ class _ChatTabState extends State<ChatTab> {
     try {
       final data = await api.post('/api/fr11/chat', {
         'message': text,
+        'guidedPlanning': true,
         if (activeSessionId != null) 'sessionId': activeSessionId,
       });
       final session = data['session'];
@@ -152,7 +189,10 @@ class _ChatTabState extends State<ChatTab> {
         setState(() {
           activeSessionId = s['id'].toString();
           messages = s['messages'] as List? ?? [];
+          acceptPlanningState(s);
         });
+      } else if (data['item'] is Map && mounted) {
+        setState(() => messages = [...messages, data['item']]);
       }
       await loadSessions(openNewest: false);
     } catch (_) {
@@ -168,15 +208,51 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   Future<void> savePlan(Map<String, dynamic> plan) async {
+    if (busy || stalePlan(plan) || savedPlans.containsKey(planKey(plan)))
+      return;
+    setState(() => busy = true);
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+              title: const Text('Save this trip?'),
+              content: Text(
+                  '${plan['title'] ?? plan['destinationArea']}\n${plan['startDate'] ?? ''} to ${plan['endDate'] ?? ''}\nBudget: MYR ${plan['budgetLimit'] ?? '-'}\nReview the draft before saving. This does not book or pay for anything.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialog, false),
+                    child: const Text('Keep editing')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(dialog, true),
+                    child: const Text('Confirm save'))
+              ],
+            ));
+    if (confirmed != true || !mounted) {
+      if (mounted) setState(() => busy = false);
+      return;
+    }
     try {
-      final data = await api.post('/api/fr11/save-plan', {'plan': plan});
+      final data = await api.post('/api/fr11/save-plan', {
+        'plan': plan,
+        'confirmed': true,
+        if (activeSessionId != null && plan['draftId'] != null)
+          'sessionId': activeSessionId
+      });
       if (!mounted) return;
       final trip = data['itinerary'];
-      final title = trip is Map ? (trip['title'] ?? 'Trip').toString() : 'Trip';
+      if (data['ok'] == false ||
+          trip is! Map ||
+          (trip['id'] ?? data['id'] ?? '').toString().isEmpty)
+        throw StateError(
+            'The backend did not confirm a saved trip. Please retry.');
+      setState(() =>
+          savedPlans[planKey(plan)] = (trip['id'] ?? data['id']).toString());
+      final title = (trip['title'] ?? 'Trip').toString();
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('$title saved to Trips.')));
     } catch (e) {
       if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
@@ -434,10 +510,9 @@ class _ChatTabState extends State<ChatTab> {
                               style: const TextStyle(
                                   fontSize: 11, color: InkWashColors.mutedInk)),
                           const SizedBox(height: 5),
-                          Text(
-                              '${place['category'] ?? place['type'] ?? ''}',
+                          Text('${place['category'] ?? place['type'] ?? ''}',
                               style: const TextStyle(fontSize: 11)),
-                          LocalPlaceRating(place:place),
+                          LocalPlaceRating(place: place),
                           const SizedBox(height: 6),
                           Wrap(
                             spacing: 6,
@@ -476,6 +551,15 @@ class _ChatTabState extends State<ChatTab> {
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
     final days = <int, List<Map<String, dynamic>>>{};
+    final start = DateTime.tryParse('${plan['startDate']}');
+    final end = DateTime.tryParse('${plan['endDate']}');
+    final dayCount =
+        start != null && end != null ? end.difference(start).inDays + 1 : 0;
+    if (dayCount > 0 && dayCount <= 14) {
+      for (var day = 1; day <= dayCount; day++) {
+        days[day] = [];
+      }
+    }
     for (final a in activities) {
       final day = int.tryParse('${a['dayNo']}') ?? 1;
       days.putIfAbsent(day, () => []).add(a);
@@ -502,17 +586,41 @@ class _ChatTabState extends State<ChatTab> {
               '${plan['startDate'] ?? ''} → ${plan['endDate'] ?? ''} • Budget RM ${plan['budgetLimit'] ?? 0}',
               style:
                   const TextStyle(fontSize: 12, color: InkWashColors.mutedInk)),
+          Text(
+              '${plan['destinationArea'] ?? ''} • $dayCount days, ${dayCount > 0 ? dayCount - 1 : 0} nights • ${plan['numberOfTravellers'] ?? plan['travellerCount'] ?? 1} travellers',
+              style: const TextStyle(fontSize: 12)),
+          if ((plan['interests'] ?? plan['requestedInterests']) is List &&
+              ((plan['interests'] ?? plan['requestedInterests']) as List)
+                  .isNotEmpty)
+            Text(
+                'Interests: ${((plan['interests'] ?? plan['requestedInterests']) as List).join(', ')}',
+                style: const TextStyle(fontSize: 12)),
+          if ((plan['travelPace'] ?? plan['pace'] ?? '').toString().isNotEmpty)
+            Text('Pace: ${plan['travelPace'] ?? plan['pace']}',
+                style: const TextStyle(fontSize: 12)),
+          if ((plan['travelPersonality'] ?? '').toString().isNotEmpty)
+            Text('Travel style: ${plan['travelPersonality']}',
+                style: const TextStyle(fontSize: 12)),
+          if (stalePlan(plan))
+            const Text(
+                'Earlier draft — trip details have changed. Review the current plan before saving.'),
+          if (plan['coverageStatus'] == 'partial')
+            const Text(
+                'Incomplete preview — more verified activities are needed before saving.'),
           const SizedBox(height: 9),
           ...days.entries.map((entry) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: ExpansionTile(
+                  key: PageStorageKey('chat-${planKey(plan)}-day-${entry.key}'),
+                  tilePadding: EdgeInsets.zero,
+                  initiallyExpanded: entry.key == 1,
+                  title: Text(
+                      'Day ${entry.key}${start == null ? '' : ' — ${start.add(Duration(days: entry.key - 1)).toIso8601String().substring(0, 10)}'}',
+                      style: const TextStyle(fontWeight: FontWeight.w900)),
                   children: [
-                    Text(
-                        dayText(
-                            Map<String, dynamic>.from(entry.value.first as Map),
-                            entry.key),
-                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                    if (entry.value.isEmpty)
+                      const Text(
+                          'No verified activities scheduled for this day.'),
                     ...entry.value.map((a) {
                       final activity = Map<String, dynamic>.from(a as Map);
                       final duration = durationText(activity);
@@ -521,10 +629,18 @@ class _ChatTabState extends State<ChatTab> {
                           .join(' ');
                       return Padding(
                         padding: const EdgeInsets.only(top: 3),
-                        child: Text(
-                          '• ${timeText(activity)}  ${activity['activityName'] ?? ''}${duration.isNotEmpty ? ' • $duration' : ''}${notes.isNotEmpty ? ' • $notes' : ''}',
-                          style: const TextStyle(fontSize: 12),
-                        ),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                  '• ${timeText(activity)}  ${activity['activityName'] ?? ''}${duration.isNotEmpty ? ' • $duration' : ''}${notes.isNotEmpty ? ' • $notes' : ''}',
+                                  style: const TextStyle(fontSize: 12)),
+                              if ((activity['description'] ?? '')
+                                  .toString()
+                                  .isNotEmpty)
+                                Text(activity['description'].toString(),
+                                    style: const TextStyle(fontSize: 12)),
+                            ]),
                       );
                     }),
                   ],
@@ -534,9 +650,20 @@ class _ChatTabState extends State<ChatTab> {
           SizedBox(
               width: double.infinity,
               child: FilledButton.tonalIcon(
-                  onPressed: () => savePlan(plan),
+                  onPressed: savedPlans.containsKey(planKey(plan))
+                      ? openTrips
+                      : busy ||
+                              stalePlan(plan) ||
+                              activities.isEmpty ||
+                              plan['coverageStatus'] == 'partial'
+                          ? null
+                          : () => savePlan(plan),
                   icon: const Icon(Icons.bookmark_add_outlined),
-                  label: const Text('Save plan to Trips'))),
+                  label: Text(savedPlans.containsKey(planKey(plan))
+                      ? 'Open saved trip in Trips'
+                      : busy
+                          ? 'Save pending…'
+                          : 'Save plan to Trips'))),
         ],
       ),
     );
@@ -553,18 +680,6 @@ class _ChatTabState extends State<ChatTab> {
   void dispose() {
     message.dispose();
     super.dispose();
-  }
-
-  bool usesSavedGuidance(Map<String, dynamic> item) {
-    final source = (item['source'] ?? '').toString().toLowerCase();
-    return {
-      'fallback',
-      'cache',
-      'cached',
-      'local',
-      'standalone',
-      'travelmate-assistant',
-    }.contains(source);
   }
 
   @override
@@ -675,24 +790,6 @@ class _ChatTabState extends State<ChatTab> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text((item['reply'] ?? '').toString()),
-                                if (usesSavedGuidance(item)) ...[
-                                  const SizedBox(height: 10),
-                                  const StatusChip(
-                                    text: 'Using saved travel guidance',
-                                    icon: Icons.offline_bolt_outlined,
-                                    tone: AppStatusTone.warning,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Check live details before making bookings.',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(
-                                          color: AppColors.textSecondary,
-                                        ),
-                                  ),
-                                ],
                                 if (placeSuggestions.isNotEmpty)
                                   placeSuggestionsCard(placeSuggestions),
                                 if (plan is Map)

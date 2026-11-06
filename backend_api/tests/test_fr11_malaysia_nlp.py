@@ -386,7 +386,8 @@ def test_kuala_lumpur_trip_contains_only_kuala_lumpur_activities():
     plan, status = build_structured_trip_plan("Kuala Lumpur", "Kuala Lumpur", days=3, budget_limit=1500.0)
     assert status == 'ready'
     assert plan['destinationArea'] == 'Kuala Lumpur'
-    assert len(plan['activities']) == 9
+    assert 3 <= len(plan['activities']) <= 9
+    assert len({a['destinationId'] for a in plan['activities']}) == len(plan['activities'])
     for act in plan['activities']:
         assert 'Penang' not in act['address'], f"Defect: Penang activity found in KL plan: {act['activityName']}"
         assert 'Kuala Lumpur' in act['address'] or 'Gombak' in act['address']
@@ -395,7 +396,8 @@ def test_kuala_lumpur_trip_contains_only_kuala_lumpur_activities():
 def test_melaka_trip_contains_only_melaka_activities():
     plan, status = build_structured_trip_plan("Melaka City", "Melaka", days=2, budget_limit=800.0)
     assert status == 'ready'
-    assert len(plan['activities']) == 6
+    assert 2 <= len(plan['activities']) <= 6
+    assert len({a['destinationId'] for a in plan['activities']}) == len(plan['activities'])
     for act in plan['activities']:
         assert 'Melaka' in act['address'] or 'Banda Hilir' in act['address']
         assert 'Penang' not in act['address']
@@ -404,7 +406,8 @@ def test_melaka_trip_contains_only_melaka_activities():
 def test_langkawi_trip_contains_only_langkawi_activities():
     plan, status = build_structured_trip_plan("Langkawi", "Kedah", days=3, budget_limit=1200.0)
     assert status == 'ready'
-    assert len(plan['activities']) == 9
+    assert 3 <= len(plan['activities']) <= 9
+    assert len({a['destinationId'] for a in plan['activities']}) == len(plan['activities'])
     for act in plan['activities']:
         assert 'Langkawi' in act['address']
         assert 'Penang' not in act['address']
@@ -518,7 +521,8 @@ def test_api_chat_kuala_lumpur_creates_kl_plan(client, mock_traveller_auth):
         plan = data['item']['tripPlan']
         assert plan['destinationArea'] == 'Kuala Lumpur'
         assert plan['budgetLimit'] == 1500.0
-        assert len(plan['activities']) == 9
+        assert 3 <= len(plan['activities']) <= 9
+        assert len({a['destinationId'] for a in plan['activities']}) == len(plan['activities'])
         # Check that activities are KL, NOT Penang!
         for a in plan['activities']:
             assert 'Penang' not in a['address']

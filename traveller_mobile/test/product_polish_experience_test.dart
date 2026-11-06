@@ -231,30 +231,30 @@ void main() {
     expect(find.textContaining('HTTP 500'), findsNothing);
   });
 
-  testWidgets('Assistant clearly identifies saved fallback guidance',
+  testWidgets('Assistant keeps saved fallback guidance free of repeated helper blocks',
       (tester) async {
     await _pumpAtSize(
       tester,
       ChatTab(api: _ChatApi(existingFallback: true)),
     );
 
-    expect(find.text('Using saved travel guidance'), findsOneWidget);
+    expect(find.text('Using saved travel guidance'), findsNothing);
     expect(find.text('Check live details before making bookings.'),
-        findsOneWidget);
+        findsNothing);
     expect(find.textContaining('Gemini'), findsNothing);
   });
 
   testWidgets(
-      'Assistant clearly identifies backend travelmate-assistant fallback guidance',
+      'Assistant keeps backend guidance free of repeated helper blocks',
       (tester) async {
     await _pumpAtSize(
       tester,
       ChatTab(api: _ChatApi(customSource: 'travelmate-assistant')),
     );
 
-    expect(find.text('Using saved travel guidance'), findsOneWidget);
+    expect(find.text('Using saved travel guidance'), findsNothing);
     expect(find.text('Check live details before making bookings.'),
-        findsOneWidget);
+        findsNothing);
   });
 
   testWidgets(

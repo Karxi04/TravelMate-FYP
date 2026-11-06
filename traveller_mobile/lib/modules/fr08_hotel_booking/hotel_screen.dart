@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import 'hotel_details_screen.dart';
+import 'room_offer_photo.dart';
 import 'hotel_trip_attachment.dart';
 import '../fr09_payment/payment_history_screen.dart';
 import '../fr09_payment/payment_screen.dart';
@@ -37,6 +38,7 @@ class RoomOccupancyConfig {
 }
 
 class HotelScreen extends StatefulWidget {
+  final String? targetTripId;
   final String? initialDestination;
   final String? initialCheckin;
   final String? initialCheckout;
@@ -47,6 +49,7 @@ class HotelScreen extends StatefulWidget {
 
   const HotelScreen({
     super.key,
+    this.targetTripId,
     this.initialDestination,
     this.initialCheckin,
     this.initialCheckout,
@@ -61,6 +64,8 @@ class HotelScreen extends StatefulWidget {
 }
 
 class _HotelScreenState extends State<HotelScreen> {
+  final hotelName = TextEditingController();
+  int? nextHotelOffset;
   late final TextEditingController destination;
   late final TextEditingController checkin;
   late final TextEditingController checkout;
@@ -139,11 +144,12 @@ class _HotelScreenState extends State<HotelScreen> {
     return '';
   }
 
-  String _criteriaKey() => jsonEncode([destination.text.trim(), checkin.text.trim(),
+  String _criteriaKey() => jsonEncode([hotelName.text.trim(), destination.text.trim(), checkin.text.trim(),
     checkout.text.trim(), adults.text.trim(), children.text.trim(),
     rooms.map((room) => [room.adults, room.childAges]).toList(), refundableOnly, sort]);
 
   void _clearResults() {
+    nextHotelOffset = null;
     items = [];
     compareIds.clear();
     source = '';
@@ -272,10 +278,12 @@ class _HotelScreenState extends State<HotelScreen> {
     for (final controller in [destination, checkin, checkout, adults, children]) {
       controller.addListener(_invalidateResults);
     }
+    hotelName.addListener(_invalidateResults);
   }
 
   @override
   void dispose() {
+    hotelName.dispose();
     destination.dispose();
     checkin.dispose();
     checkout.dispose();
@@ -288,7 +296,8 @@ class _HotelScreenState extends State<HotelScreen> {
   String idOf(Map<String, dynamic> item) =>
       (item['offerId'] ?? item['hotelId'] ?? item['name'] ?? '').toString();
 
-  Future<void> search() async {
+  Future<void> search({bool loadMore = false}) async {
+    if (busy) return;
     final checkinDate = parseDate(checkin.text);
     final checkoutDate = parseDate(checkout.text);
     if (destination.text.trim().isEmpty) {
@@ -349,14 +358,19 @@ class _HotelScreenState extends State<HotelScreen> {
     }
 
     final requestedCriteria = _criteriaKey();
+    final previous = loadMore ? List<dynamic>.from(items) : <dynamic>[];
+    final offset = loadMore ? nextHotelOffset : 0;
+    if (offset == null) return;
     setState(() {
       busy = true;
-      _clearResults();
+      if (!loadMore) _clearResults();
       hasSearched = true;
       lastSearchedDestination = destination.text.trim();
     });
     try {
       final data = await api.post('/api/fr8/hotels/search', {
+        if (hotelName.text.trim().isNotEmpty) 'hotelName': hotelName.text.trim(),
+        'offset': offset, 'limit': 50,
         'destination': destination.text.trim(),
         'aiSearch': destination.text.trim(),
         'checkin': checkin.text.trim(),
@@ -375,8 +389,14 @@ class _HotelScreenState extends State<HotelScreen> {
       if (requestedCriteria != _criteriaKey()) return;
       setState(() {
         _quotedCriteria = requestedCriteria;
-        items = data['items'] ??
-            (data['result'] is Map ? data['result']['items'] ?? [] : []);
+        final incoming = data['items'] ?? (data['result'] is Map ? data['result']['items'] ?? [] : []);
+        final unique = <String, dynamic>{};
+        for (final raw in [...previous, ...incoming as List]) {
+          final item = Map<String, dynamic>.from(raw as Map);
+          unique['${item['hotelId']}_${item['offerId']}'] = item;
+        }
+        items = unique.values.toList();
+        nextHotelOffset = data['nextOffset'] as int?;
         source = (data['source'] ?? '').toString();
         sampleContentLimited = data['sampleContentLimited'] == true;
       });
@@ -417,6 +437,10 @@ class _HotelScreenState extends State<HotelScreen> {
   }
 
   Future<Map<String, dynamic>?> chooseItinerary() async {
+    if (widget.targetTripId != null) {
+      final data = await api.get('/api/fr5/itineraries/${Uri.encodeComponent(widget.targetTripId!)}');
+      return Map<String, dynamic>.from(data['itinerary'] as Map);
+    }
     final data = await api.get('/api/fr5/itineraries');
     final trips = data['items'] as List? ?? [];
     if (!mounted) return null;
@@ -750,7 +774,7 @@ class _HotelScreenState extends State<HotelScreen> {
                   contentPadding: EdgeInsets.zero,
                   value: attachToTrip,
                   title: const Text('Add hotel cost to itinerary budget'),
-                  onChanged: (v) => setDialogState(() => attachToTrip = v),
+                  onChanged: widget.targetTripId != null ? null : (v) => setDialogState(() => attachToTrip = v),
                 ),
                 Text(
                   prebookSource == 'liteapi'
@@ -777,8 +801,13 @@ class _HotelScreenState extends State<HotelScreen> {
 
     Map<String, dynamic>? itinerary;
     if (attachToTrip) {
-      itinerary = await chooseItinerary();
-      if (!mounted) return;
+      try {
+        itinerary = await chooseItinerary();
+      } catch (error) {
+        if (mounted) showError(context, error);
+        return;
+      }
+      if (!mounted || itinerary == null) return;
     }
 
     setState(() => busy = true);
@@ -989,6 +1018,15 @@ class _HotelScreenState extends State<HotelScreen> {
     }
   }
 
+  Widget _responsiveFields(List<Widget> fields) => LayoutBuilder(builder: (context, constraints) {
+    if (constraints.maxWidth < 520) {
+      return Column(children: fields.map((field) => Padding(
+        padding: const EdgeInsets.only(bottom: 12), child: field)).toList());
+    }
+    return Row(children: fields.map((field) => Expanded(child: Padding(
+      padding: const EdgeInsets.only(right: 8, bottom: 12), child: field))).toList());
+  });
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1050,58 +1088,32 @@ class _HotelScreenState extends State<HotelScreen> {
             ),
           ),
           const SizedBox(height: 9),
-          Row(children: [
-            Expanded(
-              child: TextField(
-                controller: checkin,
-                readOnly: true,
-                onTap: () => pickDate(checkin),
-                decoration: const InputDecoration(
-                    labelText: 'Check-in',
-                    prefixIcon: Icon(Icons.calendar_today_outlined)),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                controller: checkout,
-                readOnly: true,
-                onTap: () => pickDate(checkout,
-                    firstDate:
-                        parseDate(checkin.text)?.add(const Duration(days: 1))),
-                decoration: const InputDecoration(
-                    labelText: 'Check-out',
-                    prefixIcon: Icon(Icons.logout_rounded)),
-              ),
-            ),
+          TextField(controller: hotelName, decoration: const InputDecoration(
+            labelText: 'Hotel name (optional)', hintText: 'Find a hotel within this destination',
+            prefixIcon: Icon(Icons.hotel_outlined))),
+          const SizedBox(height: 12),
+          _responsiveFields([
+            TextField(controller: checkin, readOnly: true, onTap: () => pickDate(checkin),
+              decoration: const InputDecoration(labelText: 'Check-in', prefixIcon: Icon(Icons.login_rounded))),
+            TextField(controller: checkout, readOnly: true,
+              onTap: () => pickDate(checkout, firstDate: parseDate(checkin.text)?.add(const Duration(days: 1))),
+              decoration: const InputDecoration(labelText: 'Check-out', prefixIcon: Icon(Icons.logout_rounded))),
           ]),
           if (rooms.length == 1) ...[
-            Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: adults,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Adults'),
-                  onChanged: (val) {
-                    final a = int.tryParse(val) ?? 1;
-                    rooms[0].adults = a > 0 ? a : 1;
-                    syncTotals(fromAdultsController: true);
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: children,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Children'),
-                  onChanged: (val) {
-                    final c = int.tryParse(val) ?? 0;
-                    setRoomChildren(0, c >= 0 ? c : 0,
-                        fromChildrenController: true);
-                  },
-                ),
-              ),
+            _responsiveFields([
+              TextField(controller: adults, keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Adults'),
+                onChanged: (val) {
+                  final a = int.tryParse(val) ?? 1;
+                  rooms[0].adults = a > 0 ? a : 1;
+                  syncTotals(fromAdultsController: true);
+                }),
+              TextField(controller: children, keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Children'),
+                onChanged: (val) {
+                  final c = int.tryParse(val) ?? 0;
+                  setRoomChildren(0, c >= 0 ? c : 0, fromChildrenController: true);
+                }),
             ]),
             const SizedBox(height: 6),
             Text(
@@ -1152,8 +1164,9 @@ class _HotelScreenState extends State<HotelScreen> {
               ),
             ],
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
                   '1 Room · ${rooms[0].adults} Adult${rooms[0].adults != 1 ? 's' : ''}${rooms[0].childAges.isNotEmpty ? ' · ${rooms[0].childAges.length} Child${rooms[0].childAges.length != 1 ? 'ren' : ''}' : ''}',
@@ -1170,8 +1183,9 @@ class _HotelScreenState extends State<HotelScreen> {
           ] else ...[
             InkCard(
               color: InkWashColors.cream,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text(
                     '${rooms.length} Rooms · ${rooms.fold<int>(0, (sum, r) => sum + r.adults)} Adults${rooms.fold<int>(0, (sum, r) => sum + r.childAges.length) > 0 ? ' · ${rooms.fold<int>(0, (sum, r) => sum + r.childAges.length)} Child${rooms.fold<int>(0, (sum, r) => sum + r.childAges.length) != 1 ? 'ren' : ''}' : ''}',
@@ -1192,8 +1206,10 @@ class _HotelScreenState extends State<HotelScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
                       children: [
                         Text('Room ${i + 1}',
                             style: const TextStyle(
@@ -1410,6 +1426,9 @@ class _HotelScreenState extends State<HotelScreen> {
                       : 'No hotel offers match "$lastSearchedDestination" for the selected dates and guest count. Try adjusting your dates or destination.')
                   : 'Compare hotel offers and save stay details for your Trip. A saved record is not a room reservation.',
             ),
+          if (nextHotelOffset != null) OutlinedButton.icon(
+            onPressed: busy ? null : () => search(loadMore: true),
+            icon: const Icon(Icons.search), label: const Text('Search next hotel page')),
           ..._groupedHotels.map((group) {
             final propertyKey = (group['propertyKey'] ?? '').toString();
             final offers = (group['offers'] as List<Map<String, dynamic>>?) ?? const [];
@@ -1536,6 +1555,8 @@ class _HotelScreenState extends State<HotelScreen> {
                             _buildQuoteFreshnessPill(
                                 h['quoteExpiresAt'].toString()),
                         ]),
+                        const SizedBox(height: 8),
+                        RoomOfferPhoto(offer: h),
                         if (offers.length > 1) ...[
                           const SizedBox(height: 10),
                           Text('${offers.length} Room Options Available:',

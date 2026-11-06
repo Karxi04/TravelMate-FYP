@@ -13,6 +13,7 @@ import '../fr08_hotel_booking/hotel_screen.dart';
 import 'destination_details_screen.dart';
 import 'destination_trip_actions.dart';
 import 'favourites_screen.dart';
+import 'favourites_controller.dart';
 
 class ExploreTab extends StatefulWidget {
   final String initialQuery;
@@ -37,8 +38,9 @@ class _ExploreTabState extends State<ExploreTab> {
 
   List<Map<String, dynamic>> results = [];
   final Set<String> addingIds = {};
-  final Set<String> savingIds = {};
-  final Set<String> savedIds = {};
+  late final FavouritesController favourites;
+
+  void _favouritesChanged() { if (mounted) setState(() {}); }
   bool loading = false;
   bool hasSearched = false;
   String category = 'All';
@@ -48,6 +50,9 @@ class _ExploreTabState extends State<ExploreTab> {
   String? queryError;
   String? searchError;
   int searchVersion = 0;
+  int visibleLimit = 20;
+  int? nextOffset;
+  String? _resultCriteria;
   Timer? searchDebounce;
 
   final categories = const [
@@ -70,6 +75,7 @@ class _ExploreTabState extends State<ExploreTab> {
   void initState() {
     super.initState();
     api = widget.api ?? ApiService();
+    favourites = FavouritesController(api)..addListener(_favouritesChanged);
     query = TextEditingController(text: widget.initialQuery);
     location = TextEditingController(text: widget.initialLocation);
     if (widget.initialQuery.trim().isNotEmpty) Future.microtask(search);
@@ -77,6 +83,8 @@ class _ExploreTabState extends State<ExploreTab> {
 
   @override
   void dispose() {
+    favourites.removeListener(_favouritesChanged);
+    favourites.dispose();
     searchDebounce?.cancel();
     query.dispose();
     location.dispose();
@@ -97,7 +105,7 @@ class _ExploreTabState extends State<ExploreTab> {
     return value.split(',').first.trim();
   }
 
-  Future<void> search() async {
+  Future<void> search({bool loadMore = false}) async {
     searchDebounce?.cancel();
     final text = query.text.trim();
     if (text.isEmpty) {
@@ -105,7 +113,10 @@ class _ExploreTabState extends State<ExploreTab> {
           () => queryError = 'Enter a place, food, or activity to search.');
       return;
     }
+    if (loadMore && (_resultCriteria != '${query.text.trim()}|${location.text.trim()}|$category|$sort' || nextOffset == null)) return;
+    final requestedCriteria = '${query.text.trim()}|${location.text.trim()}|$category|$sort';
     final version = ++searchVersion;
+    final previous = loadMore ? List<Map<String, dynamic>>.from(results) : <Map<String, dynamic>>[];
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       loading = true;
@@ -119,18 +130,25 @@ class _ExploreTabState extends State<ExploreTab> {
     final params = <String, String>{
       'q': text,
       'location': requestedLocation,
+      if (loadMore) 'offset': '$nextOffset',
     };
     if (category != 'All') params['filter'] = category.toLowerCase();
     if (sort != 'relevance') params['sort'] = sort;
 
     try {
       final data = await api.get('/api/fr3/destinations/search', params);
-      if (!mounted || version != searchVersion) return;
+      if (!mounted || version != searchVersion || requestedCriteria != '${query.text.trim()}|${location.text.trim()}|$category|$sort') return;
       setState(() {
-        results = (data['results'] as List? ?? const [])
+        final incoming = (data['results'] as List? ?? const [])
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
             .toList();
+        final unique = <String, Map<String, dynamic>>{};
+        for (final item in [...previous, ...incoming]) { unique.putIfAbsent(DestinationUtils.resolveId(item), () => item); }
+        results = unique.values.toList();
+        if (loadMore) visibleLimit += 20;
+        nextOffset = data['nextOffset'] as int?;
+        _resultCriteria = requestedCriteria;
         locationUsed =
             (data['locationUsed'] ?? requestedLocation).toString().trim();
         resultSource = (data['source'] ?? '').toString();
@@ -174,22 +192,10 @@ class _ExploreTabState extends State<ExploreTab> {
   }
 
   Future<void> _saveDestination(Map<String, dynamic> item) async {
-    final id = DestinationUtils.resolveId(item);
-    if (id.isEmpty || savingIds.contains(id) || savedIds.contains(id)) return;
-    setState(() => savingIds.add(id));
     try {
-      final payload = Map<String, dynamic>.from(item);
-      payload['destinationId'] = id;
-      await api.post('/api/fr3/favourites', payload);
-      if (!mounted) return;
-      setState(() => savedIds.add(id));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved to your destinations.')),
-      );
+      await favourites.toggle(item);
     } catch (error) {
       if (mounted) showError(context, error);
-    } finally {
-      if (mounted) setState(() => savingIds.remove(id));
     }
   }
 
@@ -441,18 +447,28 @@ class _ExploreTabState extends State<ExploreTab> {
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
-        ...results.map(
+        DropdownButtonFormField<int>(key: ValueKey(visibleLimit), initialValue: visibleLimit,
+          decoration: const InputDecoration(labelText: 'Places to show'),
+          items: [const DropdownMenuItem(value: 10, child: Text('10 places')),
+            const DropdownMenuItem(value: 20, child: Text('20 places')), const DropdownMenuItem(value: 40, child: Text('40 places')),
+            if (![10,20,40].contains(visibleLimit)) DropdownMenuItem(value: visibleLimit, child: Text('$visibleLimit places'))],
+          onChanged: (value) { if (value != null) setState(() => visibleLimit = value); }),
+        if (results.length > visibleLimit || nextOffset != null) OutlinedButton(
+          onPressed: loading ? null : () {
+            if (results.length > visibleLimit) { setState(() => visibleLimit += 20); }
+            else { search(loadMore: true); }
+          }, child: Text(loading ? 'Loading...' : 'Load more places')),
+        ...results.take(visibleLimit).map(
           (item) => Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
             child: DestinationCard(
               destination: item,
               source: resultSource,
               onView: () => _viewResult(item),
-              saved: savedIds.contains(DestinationUtils.resolveId(item)),
-              onSave: _isArea(item) ||
-                      savingIds.contains(DestinationUtils.resolveId(item))
-                  ? null
-                  : () => _saveDestination(item),
+              saved: favourites.contains(DestinationUtils.resolveId(item)),
+              saveEnabled: favourites.loaded && favourites.error == null &&
+                  !favourites.busyIds.contains(DestinationUtils.resolveId(item)),
+              onSave: _isArea(item) ? null : () => _saveDestination(item),
               onAddToTrip: _isArea(item) ||
                       addingIds.contains(DestinationUtils.resolveId(item))
                   ? null
@@ -482,7 +498,7 @@ class _ExploreTabState extends State<ExploreTab> {
             tooltip: 'Saved destinations',
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const FavouritesScreen()),
+              MaterialPageRoute(builder: (_) => FavouritesScreen(api: api)),
             ),
             icon: const Icon(Icons.favorite_border_rounded),
           ),
@@ -490,7 +506,7 @@ class _ExploreTabState extends State<ExploreTab> {
       ),
       padding: EdgeInsets.zero,
       body: RefreshIndicator(
-        onRefresh: hasSearched ? search : () async {},
+        onRefresh: () async { await favourites.load(); if (hasSearched) await search(); },
         child: ListView(
           key: const ValueKey('explore-scroll'),
           padding: const EdgeInsets.fromLTRB(
@@ -509,6 +525,7 @@ class _ExploreTabState extends State<ExploreTab> {
             const SizedBox(height: AppSpacing.lg),
             _filters(),
             const SizedBox(height: AppSpacing.md),
+            if (favourites.error != null) AppErrorState(message: favourites.error!, onRetry: favourites.load),
             _resultState(),
           ],
         ),

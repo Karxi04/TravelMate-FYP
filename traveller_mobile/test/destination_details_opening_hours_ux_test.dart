@@ -599,6 +599,7 @@ void main() {
       };
 
       final api = _MockDetailsApi((path) => {
+            if (path == '/api/fr3/favourites') 'items': [{'id': 'owner_historic', 'destinationId': 'Sultan Abdul Samad Building'}],
             'ok': true,
             'destination': legacy,
             'source': 'cache',
