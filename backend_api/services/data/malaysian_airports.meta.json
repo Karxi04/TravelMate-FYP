@@ -1,0 +1,11 @@
+{
+  "source": "https://davidmegginson.github.io/ourairports-data/airports.csv",
+  "license": "Public domain",
+  "licenseUrl": "https://ourairports.com/data/",
+  "sourceSha256": "55bd82106c8ac1c9559cf5879ae9b69eb9c6e748df01514632dd5fbbb9e8b474",
+  "retrievedOn": "2026-11-05",
+  "reviewedOn": "2026-11-06",
+  "included": 34,
+  "scope": "Existing bundled Malaysian land-airport identities; region names mapped from source iso_region codes. Malaysian state and spelling search aliases are included.",
+  "availability": "Identity only; no route, fare or active service guarantee. Worldwide shared dataset is unchanged."
+}

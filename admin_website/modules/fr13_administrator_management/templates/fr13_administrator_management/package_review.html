@@ -176,8 +176,8 @@
     <section class="card">
       {% if hotel %}
         <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px;">
-          <h3 style="margin: 0;">Verified Accommodation Partner</h3>
-          <span class="status approved" style="font-size: 11px;">LiteAPI Verified</span>
+          <h3 style="margin: 0;">Accommodation Details</h3>
+          <span class="status approved" style="font-size: 11px;">Hotel Information from LiteAPI</span>
         </div>
 
         <div style="display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; background: #f9fbf9; border: 1px solid #e1efe2; border-radius: 8px; padding: 12px;">
@@ -222,7 +222,7 @@
         </div>
 
         <p style="font-size: 11.5px; color: var(--ink-secondary, #5f6368); font-style: italic; margin-top: 0;">
-          Specifies package partner hotel. Does not constitute a room reservation.
+          Hotel information is provided for package planning. Selecting a property does not create or confirm a room reservation.
         </p>
       {% elif item.get('accommodationName') %}
         <h3>Stay</h3>

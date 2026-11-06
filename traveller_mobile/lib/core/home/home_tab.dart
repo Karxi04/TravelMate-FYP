@@ -979,6 +979,7 @@ class _HomeTabState extends State<HomeTab> {
                 const SizedBox(height: AppSpacing.xxs),
                 Text(
                   destination,
+                  maxLines: 2, overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: AppColors.textSecondary,
                       ),
@@ -996,6 +997,7 @@ class _HomeTabState extends State<HomeTab> {
                 ],
                 if ((item['operatorName'] ?? '').toString().trim().isNotEmpty)
                   Text('by ${item['operatorName']}',
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: AppColors.textSecondary,
                           )),

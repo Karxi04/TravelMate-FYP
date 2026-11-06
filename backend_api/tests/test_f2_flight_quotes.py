@@ -431,15 +431,14 @@ def test_round_trip_without_provider_completed_price_is_rejected(client, mock_tr
     assert response.get_json()['code'] == 'flight_price_unavailable'
 
 
-def test_unconfirmed_airport_code_is_not_marked_verified(client, mock_traveller_auth):
+def test_unsupported_airport_code_is_rejected_before_provider(client, mock_traveller_auth):
     reset_flight_quotes()
-    with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [_outbound()]}):
-        response = client.get('/api/fr7/flights/search?departure_id=AAA&arrival_id=PEN&outbound_date=2027-02-10', headers={
+    with patch('modules.fr07_flight_search.routes.retrieveFlightOptions') as provider:
+        response = client.get('/api/fr7/flights/search?departure_id=ZZZ&arrival_id=PEN&outbound_date=2027-02-10', headers={
             'Authorization': 'Bearer valid_test_token'})
-    data = response.get_json()
-    assert response.status_code == 200
-    assert data['items'] == []
-    assert data['criteria']['airportValidationStatus'] == 'unverified_no_provider_result'
+    assert response.status_code == 400
+    assert response.get_json()['code'] == 'invalid_flight_search'
+    provider.assert_not_called()
 
 
 def test_airplane_field_and_recursive_token_sanitization():

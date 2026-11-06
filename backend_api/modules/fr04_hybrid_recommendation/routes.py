@@ -9,6 +9,7 @@ from utils import utc_now_iso
 from services.serpapi_service import retrieveDestinationResults
 from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
+from services.review_service import published_review
 from services.recommendation_taxonomy import candidate_concepts
 from services.preference_learning import (
     apply_explicit_feedback,
@@ -300,7 +301,7 @@ def generate():
     if not candidates:
         return jsonify({'ok': False, 'error': 'No recommendation candidates are available. Configure SerpApi or enable FALLBACK_MODE.'}), 502
 
-    collaborative = [x for x in retrieveRecord('feedback', limit=500) if str(x.get('feedbackStatus','visible')).lower() == 'visible']
+    collaborative = [x for x in retrieveRecord('feedback', limit=500) if published_review(x)]
     peer_profiles_raw = retrieveRecord('travel_preferences', limit=500)
     peer_profiles = {
         str(row.get('travellerId') or row.get('id') or ''): row

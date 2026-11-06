@@ -50,7 +50,7 @@ def memory(monkeypatch):
     monkeypatch.setattr('modules.fr10_feedback_rating.routes.updateRecord', update)
     monkeypatch.setattr('modules.fr10_feedback_rating.routes.deleteRecord', delete)
     monkeypatch.setattr('modules.fr13_administrator_management.routes.updateRecord', update)
-    monkeypatch.setattr('auth_utils.auth.verify_id_token', lambda token: {'uid': token})
+    monkeypatch.setattr('auth_utils.auth.verify_id_token', lambda token, **kwargs: {'uid': token})
     monkeypatch.setattr('auth_utils.get_db', lambda: SimpleNamespace(collection=lambda _: SimpleNamespace(
         document=lambda uid: SimpleNamespace(get=lambda: SimpleNamespace(exists=True, to_dict=lambda: get('users', uid))))))
     return records

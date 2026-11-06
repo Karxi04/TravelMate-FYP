@@ -213,17 +213,30 @@ def validateDestinationInput(value):
     return bool(str(value or '').strip())
 
 
-def validateFlightSearchCriteria(data):
+def flightSearchValidationError(data):
+    from services.flight_airports import MALAYSIAN_AIRPORTS
     departure = str(data.get('departure_id', '')).strip().upper()
     arrival = str(data.get('arrival_id', '')).strip().upper()
+    for label, code in [('origin', departure), ('destination', arrival)]:
+        if not code:
+            return f'Choose an {label} airport.' if label == 'origin' else 'Choose a destination airport.'
+        if code not in MALAYSIAN_AIRPORTS:
+            return f'Choose a supported Malaysian {label} airport from the location list.'
+    if departure == arrival:
+        return 'Origin and destination airports must be different.'
     outbound = _parse_iso_date(data.get('outbound_date'))
+    if not outbound or outbound < date.today():
+        return 'Choose a current or future departure date.'
     return_date = data.get('return_date')
-    inbound = _parse_iso_date(return_date) if return_date else None
-    if not (AIRPORT_RE.fullmatch(departure) and AIRPORT_RE.fullmatch(arrival) and outbound):
-        return False
-    if departure == arrival or outbound < date.today():
-        return False
-    return not inbound or inbound >= outbound
+    if return_date:
+        inbound = _parse_iso_date(return_date)
+        if not inbound or inbound < outbound:
+            return 'Return date must be valid and on or after departure.'
+    return None
+
+
+def validateFlightSearchCriteria(data):
+    return flightSearchValidationError(data) is None
 
 
 def validateSelectedFlight(flight):

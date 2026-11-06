@@ -1,4 +1,14 @@
 from unittest.mock import patch
+from datetime import date
+import pytest
+
+@pytest.fixture(autouse=True)
+def fixed_search_date(monkeypatch):
+    class SearchDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 11, 1)
+    monkeypatch.setattr("sequence_contract.validators.date", SearchDate)
 
 from modules.fr07_flight_search.routes import reset_flight_quotes
 

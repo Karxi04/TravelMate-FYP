@@ -71,7 +71,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Check verified badge
-      expect(find.text('LiteAPI Verified'), findsOneWidget);
+      expect(find.text('Hotel Information from LiteAPI'), findsOneWidget);
       // Check hotel name
       expect(find.text('Eastern & Oriental Hotel'), findsOneWidget);
       // Check address
@@ -84,7 +84,7 @@ void main() {
       expect(find.text('Room Configuration: Deluxe Heritage Suite'), findsOneWidget);
       // Check disclaimer
       expect(
-        find.text('Specifies package partner hotel. Does not constitute a room reservation.'),
+        find.text('Hotel information is provided for package planning. Selecting a property does not create or confirm a room reservation.'),
         findsOneWidget,
       );
     });
@@ -157,7 +157,7 @@ void main() {
       expect(find.text('Accommodation'), findsOneWidget);
       expect(find.textContaining('Strawberry Park Resort'), findsOneWidget);
       expect(find.textContaining('4-Star Resort'), findsOneWidget);
-      expect(find.text('LiteAPI Verified'), findsNothing);
+      expect(find.text('Hotel Information from LiteAPI'), findsNothing);
     });
   });
 
@@ -212,14 +212,14 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      expect(find.text('Partner Accommodation'), findsOneWidget);
-      expect(find.text('LiteAPI Verified'), findsOneWidget);
+      expect(find.text('Accommodation Details'), findsOneWidget);
+      expect(find.text('Hotel Information from LiteAPI'), findsOneWidget);
       expect(find.text('Eastern & Oriental Hotel'), findsOneWidget);
       expect(find.text('⭐ 5.0-Star'), findsOneWidget);
       expect(find.text('Guest Rating: 9.2/10'), findsOneWidget);
       expect(find.text('Room Configuration: Superior Heritage Suite'), findsOneWidget);
       expect(
-        find.textContaining('Specifies package partner hotel. External supplier reservation is managed separately by the operator (Status: operator_attested).'),
+        find.textContaining('Hotel information is provided for package planning. Selecting a property does not create or confirm a room reservation. External supplier reservation is managed separately by the operator (Status: operator_attested).'),
         findsOneWidget,
       );
     });

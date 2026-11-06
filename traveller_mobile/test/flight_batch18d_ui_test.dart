@@ -355,7 +355,7 @@ void main() {
     await state.search();
     await tester.pumpAndSettle();
     expect(api.getPaths, isEmpty);
-    expect(find.textContaining('Enter 3-letter airport codes'), findsOneWidget);
+    expect(find.text('Choose an origin airport.'), findsOneWidget);
   });
 
   testWidgets('F-B2 changed inputs discard an in-flight flight response', (tester) async {

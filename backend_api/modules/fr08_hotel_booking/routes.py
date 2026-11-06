@@ -8,6 +8,7 @@ from flask import Blueprint, request, jsonify, g
 from auth_utils import auth_required
 from utils import utc_now_iso
 from services.liteapi_service import (
+    attachRoomContent,
     search_places, retrieveHotelOffers, validateHotelOffer, createBookingReference,
     retrieveHotelContent, normalizeHotelContent, normalizeHotelOffers,
     normalizePrebookResult, ProviderMutationBlocked,
@@ -583,16 +584,31 @@ def hotels_search():
             'status': 'invalid_occupancy',
         }), 400
 
+    try:
+        limit = int(payload.get('limit', 50))
+        offset = int(payload.get('offset', 0))
+        max_rates = int(payload.get('maxRatesPerHotel', 3) or 3)
+        if not 1 <= limit <= 100 or not 0 <= offset <= 500 or not 1 <= max_rates <= 10:
+            raise ValueError
+        hotel_name = payload.get('hotelName', '')
+        if not isinstance(hotel_name, str) or len(hotel_name) > 150:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({'ok': False, 'error': 'Invalid hotel name or result page.'}), 400
+
     req = {
+        'limit': limit, 'offset': offset,
         'occupancies': occupancies,
         'currency': payload.get('currency') or 'MYR',
         'guestNationality': payload.get('guestNationality', 'MY'),
         'checkin': payload['checkin'],
         'checkout': payload['checkout'],
         'roomMapping': True,
-        'maxRatesPerHotel': int(payload.get('maxRatesPerHotel', 3) or 3),
+        'maxRatesPerHotel': max_rates,
         'includeHotelData': True,
     }
+    if hotel_name.strip():
+        req['hotelName'] = hotel_name.strip()
     local_place_id = str(payload.get('placeId') or '').strip()
     resolved_place_scope = ''
     if local_place_id.startswith('local_'):
@@ -639,8 +655,9 @@ def hotels_search():
             for item in items:
                 content = content_cache.get(str(item.get('hotelId') or ''), {})
                 for key, value in content.items():
-                    if value not in (None, '', []):
+                    if key != 'rooms' and value not in (None, '', []):
                         item.setdefault(key, value)
+                attachRoomContent(item, content)
     except Exception as exc:
         if not _sample_mode():
             return jsonify({'ok': False, 'error': _safe_provider_error(
@@ -658,6 +675,10 @@ def hotels_search():
         'refundable': payload.get('refundable'),
         'sort': payload.get('sort'),
     }
+    if source == 'local' and hotel_name.strip():
+        items = [item for item in items if hotel_name.casefold() in str(item.get('name', '')).casefold()]
+    if source == 'local':
+        items = items[offset:offset + limit]
     items = applyHotelFilter(items, filters)
     for item in items:
         item.update(provenance)
@@ -686,6 +707,8 @@ def hotels_search():
         'quoteRetrievedAt': provenance['quoteRetrievedAt'],
         'transactionMode': provenance['transactionMode'],
         'noResults': not items,
+        'nextOffset': offset + limit if source == 'liteapi' and offset + limit <= 500 else None,
+        'availabilityMessage': 'No matching rates were returned for this search. Try another name, location or stay date.' if not items else None,
         'destination': destination if destination else (payload.get('destination') or payload.get('aiSearch') or ''),
         'destinationScope': norm_scope,
         'sampleContentLimited': source == 'local' and not items,

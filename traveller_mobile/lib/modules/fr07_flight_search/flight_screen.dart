@@ -4,6 +4,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import 'flight_details_screen.dart';
+import 'flight_airport_catalog.dart';
 import 'flight_replacement_sheet.dart';
 
 class FlightScreen extends StatefulWidget {
@@ -85,7 +86,10 @@ class _FlightScreenState extends State<FlightScreen> {
   String dateText(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  DateTime? parseDate(String value) => DateTime.tryParse(value.trim());
+  DateTime? parseDate(String value) {
+    final parsed = DateTime.tryParse(value.trim());
+    return parsed != null && dateText(parsed) == value.trim() ? parsed : null;
+  }
 
   bool isQuoteExpired() {
     if (expiresAt == null || expiresAt!.isEmpty) return false;
@@ -139,6 +143,8 @@ class _FlightScreenState extends State<FlightScreen> {
 
   @override
   void dispose() {
+    fromFocus.dispose();
+    toFocus.dispose();
     from.dispose();
     to.dispose();
     travellers.dispose();
@@ -187,16 +193,37 @@ class _FlightScreenState extends State<FlightScreen> {
 
   String resolveIata(String input) {
     final cleaned = input.trim().toUpperCase();
-    if (cleaned.isEmpty) return cleaned;
-    if (cleaned.length == 3 && RegExp(r'^[A-Z]{3}$').hasMatch(cleaned)) {
-      return cleaned;
-    }
-    for (final entry in cityToIata.entries) {
-      if (cleaned.contains(entry.key) || entry.key.contains(cleaned)) {
-        return entry.value;
-      }
-    }
-    return cleaned;
+    return cityToIata[cleaned] ?? cleaned;
+  }
+
+  final fromFocus = FocusNode();
+  final toFocus = FocusNode();
+
+  Widget airportField(TextEditingController controller, FocusNode focus, String label) {
+    final codes = flightAirportLabels.keys;
+    String name(String code) => flightAirportLabels[code]!;
+    return LayoutBuilder(builder: (context, constraints) => RawAutocomplete<String>(
+      textEditingController: controller,
+      focusNode: focus,
+      optionsBuilder: (value) {
+        final query = value.text.trim().toUpperCase();
+        return codes.where((code) => code.contains(query) || name(code).toUpperCase().contains(query) || (flightAirportAliases[code] ?? '').toUpperCase().contains(query) ||
+            cityToIata.entries.any((e) => e.value == code && e.key.contains(query))).take(30);
+      },
+      fieldViewBuilder: (context, text, node, submit) => TextField(
+        controller: text, focusNode: node,
+        textCapitalization: TextCapitalization.characters,
+        decoration: InputDecoration(labelText: label, hintText: 'Search city or airport'),
+      ),
+      optionsViewBuilder: (context, select, options) => Align(
+        alignment: Alignment.topLeft,
+        child: Material(elevation: 4, child: SizedBox(width: constraints.maxWidth, height: 220,
+          child: ListView(padding: EdgeInsets.zero, children: options.map((code) => ListTile(
+            title: Text('${name(code)} ($code)'), onTap: () => select(code),
+          )).toList()),
+        )),
+      ),
+    ));
   }
 
   Future<void> search() async {
@@ -210,9 +237,16 @@ class _FlightScreenState extends State<FlightScreen> {
     final today = DateTime.now();
     final todayMidnight = DateTime(today.year, today.month, today.day);
 
-    if (departure.length != 3 || arrival.length != 3 || departure == arrival) {
-      showError(context,
-          'Enter 3-letter airport codes or supported city names (e.g. KUL, PEN, SIN) and ensure departure and arrival airports differ.');
+    if (departure.isEmpty || arrival.isEmpty) {
+      showError(context, departure.isEmpty ? 'Choose an origin airport.' : 'Choose a destination airport.');
+      return;
+    }
+    if (!flightAirportLabels.containsKey(departure) || !flightAirportLabels.containsKey(arrival)) {
+      showError(context, 'Choose a supported Malaysian airport from the location list.');
+      return;
+    }
+    if (departure == arrival) {
+      showError(context, 'Origin and destination airports must be different.');
       return;
     }
     if (outboundDate == null || outboundDate.isBefore(todayMidnight)) {
@@ -230,6 +264,7 @@ class _FlightScreenState extends State<FlightScreen> {
       return;
     }
 
+    FocusManager.instance.primaryFocus?.unfocus();
     final requestedCriteria = _criteriaKey();
     setState(() {
       busy = true;
@@ -947,20 +982,12 @@ class _FlightScreenState extends State<FlightScreen> {
           const SizedBox(height: 10),
           Row(children: [
             Expanded(
-                child: TextField(
-                    controller: from,
-                    textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(
-                        labelText: 'From', hintText: 'KUL'))),
+                child: airportField(from, fromFocus, 'From')),
             const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 5),
                 child: Icon(Icons.arrow_forward_rounded)),
             Expanded(
-                child: TextField(
-                    controller: to,
-                    textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(
-                        labelText: 'To', hintText: 'PEN'))),
+                child: airportField(to, toFocus, 'To')),
           ]),
           const SizedBox(height: 9),
           Row(children: [
@@ -977,6 +1004,7 @@ class _FlightScreenState extends State<FlightScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: DropdownButtonFormField<int>(
+                isExpanded: true,
                 initialValue: travelClass,
                 decoration: const InputDecoration(
                   labelText: 'Cabin class',
@@ -1117,11 +1145,12 @@ class _FlightScreenState extends State<FlightScreen> {
           ],
           const SizedBox(height: 18),
           if (items.isEmpty && !busy)
-            const TravelEmptyState(
+            TravelEmptyState(
                 icon: Icons.flight_takeoff_rounded,
-                title: 'Search for a flight',
-                message:
-                    'Results can be viewed, compared and attached to your itinerary budget.'),
+                title: _quotedCriteria != null ? 'No flights found' : 'Search for a flight',
+                message: _quotedCriteria != null
+                    ? 'No matching flights were returned. Try different airports or dates.'
+                    : 'Results can be viewed, compared and attached to your itinerary budget.'),
           ...items.map((raw) {
             final item = Map<String, dynamic>.from(raw as Map);
             final id = idOf(item);

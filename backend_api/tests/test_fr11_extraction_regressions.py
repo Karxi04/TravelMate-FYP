@@ -57,7 +57,7 @@ def test_swimming_exclusion_does_not_overstate_beach_taxonomy():
     ('message', 'expected_duration', 'expected_travellers'),
     [
         ('George Town for 2 days.', 2, None),
-        ('Penang for 3 nights.', None, None),
+        ('Penang for 3 nights.', 4, None),
         ('Plan a trip for 2 people.', None, 2),
         ('Book for 3 adults.', None, 3),
         ('There are 4 travellers.', None, 4),

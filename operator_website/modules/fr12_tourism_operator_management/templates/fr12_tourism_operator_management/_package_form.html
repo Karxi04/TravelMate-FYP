@@ -549,7 +549,7 @@
   <!-- Accommodation & Ground Logistics -->
   <div class="form-subheading">
     <h3>Accommodation & Ground Logistics</h3>
-    <p>Specify verified partner hotel via LiteAPI or configure manual accommodation arrangements.</p>
+    <p>Choose hotel information from LiteAPI or enter accommodation manually.</p>
   </div>
 
   <!-- Hidden Persistence Controls for Hotel Selection -->
@@ -579,7 +579,7 @@
           <img id="selected-hotel-photo" src="{{ current_hotel.get('mainPhoto') or '' if current_hotel else '' }}" alt="Selected Hotel" style="width: 100px; height: 80px; object-fit: cover; border-radius: 8px; background: #eee; {% if not current_hotel or not current_hotel.get('mainPhoto') %}display: none;{% endif %}">
           <div>
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-              <span class="field-destination-badge" style="background: #e6f4ea; color: #137333; font-weight: 700; font-size: 11px;">Verified Partner (LiteAPI)</span>
+              <span class="field-destination-badge" style="background: #e6f4ea; color: #137333; font-weight: 700; font-size: 11px;">Hotel Information from LiteAPI</span>
               <span id="selected-hotel-id-badge" class="muted" style="font-size: 11px; font-family: monospace;">ID: {{ current_hotel.get('hotelId', '') if current_hotel else '' }}</span>
             </div>
             <h4 id="selected-hotel-name" style="margin: 0 0 4px; font-size: 16px; font-weight: 700; color: var(--charcoal);">{{ current_hotel.get('name', '') if current_hotel else '' }}</h4>
@@ -614,14 +614,14 @@
       </div>
       <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #d4edda; font-size: 11.5px; color: #285b37; display: flex; align-items: center; gap: 6px;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-        <span>Specifies package partner hotel. Does not constitute a room reservation.</span>
+        <span>Hotel information is provided for package planning. Selecting a property does not create or confirm a room reservation.</span>
       </div>
     </div>
 
     <!-- Search Box (Shown if no hotel selected or during change) -->
     <div id="hotel-search-box" class="card" style="{% if current_hotel %}display: none;{% endif %} padding: 18px; border-radius: 10px; background: var(--canvas);">
       <h4 style="margin: 0 0 12px; font-size: 14px; font-weight: 700; color: var(--charcoal);">
-        Search Hotel Partner Properties
+        Search Hotels via LiteAPI
       </h4>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px;">
         <div class="field" style="margin-bottom: 0;">
@@ -692,7 +692,7 @@
   <div id="hotel-manual-container" class="package-form-grid" style="{% if p.get('accommodationHotel') or (not p.get('accommodationName') and not p.get('accommodationCategory')) %}display: none;{% endif %}">
     <div class="field">
       <label for="accommodationName">
-        <span>Partner Hotel / Resort Name</span>
+        <span>Hotel / Accommodation Name</span>
         <span class="field-destination-badge brochure">Stay Details</span>
       </label>
       <input id="accommodationName" class="input" name="accommodationName" value="{{ p.get('accommodationName', '') }}" placeholder="e.g. Eastern & Oriental Hotel / Shangri-La Rasa Sayang">
@@ -1135,7 +1135,7 @@
                 <span class="brochure-empty-text">Single-Day Excursion (No hotel stay required)</span>
               {% elif hotel %}
                 <div style="margin-bottom: 6px;">
-                  <span class="field-destination-badge" style="background: #e6f4ea; color: #137333; font-weight: 700;">Verified Partner (LiteAPI)</span>
+                  <span class="field-destination-badge" style="background: #e6f4ea; color: #137333; font-weight: 700;">Hotel Information from LiteAPI</span>
                 </div>
                 <strong>Lodging:</strong> <span id="brochure-hotel-text">{{ hotel.get('name') or p.get('accommodationName') or 'To be specified by operator' }}</span><br>
                 <strong>Star Rating:</strong> <span id="brochure-hotel-stars-text">{% if hotel.get('stars') is not none %}⭐ {{ hotel.get('stars') }}-Star{% else %}Star classification not supplied{% endif %}</span><br>
@@ -1144,7 +1144,7 @@
                 {% endif %}
                 <strong>Room Type:</strong> <span id="brochure-hotel-room-text">{{ p.get('roomType') or 'To be specified' }}</span><br>
                 <div style="margin-top: 6px; font-size: 11.5px; color: var(--ink-muted); font-style: italic;">
-                  Specifies package partner hotel. Does not constitute a room reservation.
+                  Hotel information is provided for package planning. Selecting a property does not create or confirm a room reservation.
                 </div>
               {% else %}
                 <strong>Lodging:</strong> <span id="brochure-hotel-text">{{ p.get('accommodationName') or 'To be specified by operator' }}</span><br>
@@ -1857,14 +1857,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const ratingStr = currentSelectedHotel.guestRating != null ? `<br><strong>Guest Rating:</strong> <span>${currentSelectedHotel.guestRating}/10</span>` : '';
         hotelBox.innerHTML = `
           <div style="margin-bottom: 6px;">
-            <span class="field-destination-badge" style="background: #e6f4ea; color: #137333; font-weight: 700;">Verified Partner (LiteAPI)</span>
+            <span class="field-destination-badge" style="background: #e6f4ea; color: #137333; font-weight: 700;">Hotel Information from LiteAPI</span>
           </div>
           <strong>Lodging:</strong> <span id="brochure-hotel-text">${escapeHtml(currentSelectedHotel.name || hName || 'To be specified by operator')}</span><br>
           <strong>Star Rating:</strong> <span id="brochure-hotel-stars-text">${escapeHtml(starStr)}</span>
           ${ratingStr}<br>
           <strong>Room Type:</strong> <span id="brochure-hotel-room-text">${escapeHtml(hRoom || 'To be specified')}</span><br>
           <div style="margin-top: 6px; font-size: 11.5px; color: var(--ink-muted); font-style: italic;">
-            Specifies package partner hotel. Does not constitute a room reservation.
+            Hotel information is provided for package planning. Selecting a property does not create or confirm a room reservation.
           </div>
         `;
       } else {
@@ -2165,9 +2165,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (res.status === 429) {
           errMsg = 'Search rate limit reached. Please wait a moment before searching again.';
         } else if (res.status === 401 || res.status === 403) {
-          errMsg = 'Operator authentication / verification required to search partner hotels.';
+          errMsg = 'Operator authentication / verification required to search hotels via LiteAPI.';
         } else if (res.status === 502 || res.status === 503) {
-          errMsg = 'Hotel partner service is temporarily unavailable. You can use Manual Accommodation.';
+          errMsg = 'Hotel search service is temporarily unavailable. You can use Manual Accommodation.';
         }
         if (hotelSearchError && hotelSearchErrorText) {
           hotelSearchErrorText.textContent = errMsg;

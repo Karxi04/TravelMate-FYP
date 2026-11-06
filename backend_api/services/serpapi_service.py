@@ -27,7 +27,7 @@ def _request(params):
     return data
 
 
-def retrieveDestinationResults(searchInput, location="Malaysia", coordinates=None):
+def retrieveDestinationResults(searchInput, location="Malaysia", coordinates=None, start=0):
     query = (searchInput or "").strip()
     loc = (location or "").strip()
     if loc and loc.lower() not in query.lower():
@@ -38,6 +38,8 @@ def retrieveDestinationResults(searchInput, location="Malaysia", coordinates=Non
         'hl': 'en',
         'gl': 'my',
     }
+    if start:
+        params['start'] = start
     coordinates = coordinates if isinstance(coordinates, dict) else {}
     latitude = coordinates.get('latitude')
     longitude = coordinates.get('longitude')

@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../modules/fr09_payment/payment_screen.dart';
@@ -12,6 +10,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import 'package_gallery_viewer.dart';
+import 'package_text_block.dart';
 
 class TourismPackageDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -41,7 +40,6 @@ class _TourismPackageDetailsScreenState
   int children = 0;
   String? selectedDepartureDate;
   int _selectedTab = 0;
-  bool _fullDescriptionExpanded = false;
   final TransactionAttemptLifecycle _checkoutIntent =
       TransactionAttemptLifecycle('package_checkout');
 
@@ -963,10 +961,14 @@ class _TourismPackageDetailsScreenState
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: InkCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: ExpansionTile(
+          key: PageStorageKey('package-list-$title'),
+          initiallyExpanded: values.length <= 5,
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: EdgeInsets.zero,
+          title: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          subtitle: values.length > 5 ? Text('${values.length} items') : null,
           children: [
-            _heading(title),
             ...values.map(
               (entry) => Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.xs),
@@ -976,10 +978,7 @@ class _TourismPackageDetailsScreenState
                     Icon(icon, size: 18, color: color ?? AppColors.primary),
                     const SizedBox(width: AppSpacing.xs),
                     Expanded(
-                      child: Text(
-                        entry,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
+                      child: PackageTextBlock(text: entry, collapsedLines: 3),
                     ),
                   ],
                 ),
@@ -1006,12 +1005,7 @@ class _TourismPackageDetailsScreenState
                 Expanded(child: _heading(title)),
               ],
             ),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    height: 1.45,
-                  ),
-            ),
+            PackageTextBlock(text: value),
           ],
         ),
       ),
@@ -1102,31 +1096,10 @@ class _TourismPackageDetailsScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _heading('Package overview'),
-                Text(
-                  _fullDescriptionExpanded || cleanIntro.length <= 260
-                      ? cleanIntro
-                      : '${cleanIntro.substring(0, math.min(cleanIntro.length, 260)).trim()}…',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        height: 1.45,
-                      ),
+                PackageTextBlock(
+                  text: description, preview: cleanIntro,
+                  expandLabel: 'Read full description',
                 ),
-                if (cleanIntro.length > 260) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  GestureDetector(
-                    onTap: () => setState(() =>
-                        _fullDescriptionExpanded = !_fullDescriptionExpanded),
-                    child: Text(
-                      _fullDescriptionExpanded
-                          ? 'Show less'
-                          : 'Read full description',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -1149,7 +1122,7 @@ class _TourismPackageDetailsScreenState
                           .trim()
                           .isNotEmpty) ...[
                         const SizedBox(height: AppSpacing.xxs),
-                        Text(campaign['description'].toString()),
+                        PackageTextBlock(text: campaign['description'].toString()),
                       ],
                       if ((campaign['promoCode'] ?? '')
                           .toString()
@@ -1227,20 +1200,23 @@ class _TourismPackageDetailsScreenState
             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
             child: InkCard(
               child: ExpansionTile(
-                initiallyExpanded: true,
+                key: PageStorageKey('package-day-$dayNumber'),
+                initiallyExpanded: _days.length <= 3 && description.length <= 300 && activities.length <= 4,
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: EdgeInsets.zero,
                 title: Text(
                   'Day $dayNumber · $title',
+                  maxLines: 2, overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 children: [
+                  if (title.isNotEmpty) PackageTextBlock(text: title, collapsedLines: 3),
                   if (description.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.xxs),
                     Align(
                       alignment: Alignment.centerLeft,
-                      child: Text(
-                        description,
+                      child: PackageTextBlock(
+                        text: description,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: AppColors.textSecondary,
                             ),
@@ -1266,7 +1242,7 @@ class _TourismPackageDetailsScreenState
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
+                            ConstrainedBox(constraints: const BoxConstraints(maxWidth: 104), child: Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 6,
                                 vertical: 2,
@@ -1293,14 +1269,15 @@ class _TourismPackageDetailsScreenState
                                       : AppColors.textSecondary,
                                 ),
                               ),
-                            ),
+                            )),
                             const SizedBox(width: AppSpacing.xs),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    act['name'] ?? 'Activity',
+                                  PackageTextBlock(
+                                    text: act['name'] ?? 'Activity',
+                                    collapsedLines: 2,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 13,
@@ -1308,8 +1285,8 @@ class _TourismPackageDetailsScreenState
                                   ),
                                   if (act['description'] != null &&
                                       act['description']!.isNotEmpty)
-                                    Text(
-                                      act['description']!,
+                                    PackageTextBlock(
+                                      text: act['description']!,
                                       style: TextStyle(
                                         fontSize: 12,
                                         color: AppColors.textSecondary,
@@ -1332,8 +1309,9 @@ class _TourismPackageDetailsScreenState
                             size: 16, color: AppColors.textSecondary),
                         const SizedBox(width: AppSpacing.xs),
                         Expanded(
-                          child: Text(
-                            'Meals: ${meals.join(', ')}',
+                          child: PackageTextBlock(
+                            text: 'Meals: ${meals.join(', ')}',
+                            collapsedLines: 3,
                             style: const TextStyle(fontSize: 13),
                           ),
                         ),
@@ -1349,8 +1327,9 @@ class _TourismPackageDetailsScreenState
                             size: 16, color: AppColors.textSecondary),
                         const SizedBox(width: AppSpacing.xs),
                         Expanded(
-                          child: Text(
-                            'Stay: $stay',
+                          child: PackageTextBlock(
+                            text: 'Stay: $stay',
+                            collapsedLines: 3,
                             style: const TextStyle(fontSize: 13),
                           ),
                         ),
@@ -1366,8 +1345,9 @@ class _TourismPackageDetailsScreenState
                             size: 16, color: AppColors.textSecondary),
                         const SizedBox(width: AppSpacing.xs),
                         Expanded(
-                          child: Text(
-                            'Transport: $transport',
+                          child: PackageTextBlock(
+                            text: 'Transport: $transport',
+                            collapsedLines: 3,
                             style: const TextStyle(fontSize: 13),
                           ),
                         ),
@@ -1458,7 +1438,7 @@ class _TourismPackageDetailsScreenState
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: const Text(
-                      'LiteAPI Verified',
+                      'Hotel Information from LiteAPI',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -1483,7 +1463,7 @@ class _TourismPackageDetailsScreenState
                 const SizedBox(height: AppSpacing.sm),
               ],
               Text(
-                name.isNotEmpty ? name : 'Partner Hotel',
+                name.isNotEmpty ? name : 'Selected Hotel',
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -1562,7 +1542,7 @@ class _TourismPackageDetailsScreenState
               ],
               const SizedBox(height: 8),
               const Text(
-                'Specifies package partner hotel. Does not constitute a room reservation.',
+                'Hotel information is provided for package planning. Selecting a property does not create or confirm a room reservation.',
                 style: TextStyle(
                   fontSize: 11,
                   fontStyle: FontStyle.italic,
@@ -1755,8 +1735,9 @@ class _TourismPackageDetailsScreenState
             icon: Icons.verified_outlined,
           ),
           const SizedBox(height: AppSpacing.xs),
-          Text(
-            title.isEmpty ? 'Tourism package' : title,
+          PackageTextBlock(
+            text: title.isEmpty ? 'Tourism package' : title,
+            collapsedLines: 2,
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),

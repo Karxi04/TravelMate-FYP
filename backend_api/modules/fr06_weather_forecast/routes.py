@@ -1,4 +1,5 @@
 import re
+import math
 from flask import Blueprint, request, jsonify
 from auth_utils import auth_required
 from services.open_meteo_service import geocode, retrieveCurrentWeather, retrieveSevenDayForecast
@@ -37,7 +38,7 @@ def location_search():
                                 'latitude': float(gps['latitude']),
                                 'longitude': float(gps['longitude']),
                                 'country': 'Malaysia',
-                                'admin1': p.get('city') or p.get('state') or 'Penang',
+                                'admin1': p.get('city') or p.get('state') or '',
                             }]
                         })
 
@@ -57,12 +58,19 @@ def location_search():
 
         return jsonify({'ok': True, 'results': results})
     except Exception as exc:
-        return jsonify({'ok': False, 'error': str(exc)}), 502
+        return jsonify({'ok': False, 'error': 'Location search is unavailable. Please try again.'}), 502
 @bp.get('/weather')
 @auth_required(['traveller'])
 def weather():
-    lat=request.args.get('latitude'); lon=request.args.get('longitude')
-    if not lat or not lon: return jsonify({'ok':False,'error':'latitude and longitude are required'}),400
-    coords={'latitude':lat,'longitude':lon}
-    try: return jsonify({'ok':True,'weather':retrieveSevenDayForecast(coords),'current':retrieveCurrentWeather(coords)})
-    except Exception as exc: return jsonify({'ok':False,'error':str(exc)}),502
+    lat = request.args.get('latitude'); lon = request.args.get('longitude')
+    try:
+        latitude, longitude = float(lat), float(lon)
+        if not (math.isfinite(latitude) and math.isfinite(longitude) and -90 <= latitude <= 90 and -180 <= longitude <= 180):
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({'ok': False, 'error': 'Choose a valid weather location.'}), 400
+    try:
+        forecast = retrieveSevenDayForecast({'latitude': lat, 'longitude': lon})
+        return jsonify({'ok': True, 'weather': forecast, 'current': forecast})
+    except Exception:
+        return jsonify({'ok': False, 'error': 'Weather provider is unavailable. Please try again.'}), 502

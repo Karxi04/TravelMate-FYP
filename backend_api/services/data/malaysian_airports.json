@@ -1,0 +1,243 @@
+{
+  "AOR": {
+    "name": "Sultan Abdul Halim Airport",
+    "city": "Alor Setar",
+    "country": "MY",
+    "state": "Kedah",
+    "region": "MY-02"
+  },
+  "BBN": {
+    "name": "Bario Airport",
+    "city": "Bario",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "BKI": {
+    "name": "Kota Kinabalu International Airport",
+    "city": "Kota Kinabalu",
+    "country": "MY",
+    "state": "Sabah",
+    "region": "MY-12"
+  },
+  "BKM": {
+    "name": "Bakalalan Airport",
+    "city": "Bakalalan",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "BTU": {
+    "name": "Bintulu Airport",
+    "city": "Bintulu",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "IPH": {
+    "name": "Sultan Azlan Shah Airport",
+    "city": "Ipoh",
+    "country": "MY",
+    "state": "Perak",
+    "region": "MY-08"
+  },
+  "JHB": {
+    "name": "Senai International Airport",
+    "city": "Johor Bahru",
+    "country": "MY",
+    "state": "Johor",
+    "region": "MY-01"
+  },
+  "KBR": {
+    "name": "Sultan Ismail Petra Airport",
+    "city": "Kota Bharu",
+    "country": "MY",
+    "state": "Kelantan",
+    "region": "MY-03"
+  },
+  "KCH": {
+    "name": "Kuching International Airport",
+    "city": "Kuching",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "KUA": {
+    "name": "Kuantan Airport",
+    "city": "Kuantan",
+    "country": "MY",
+    "state": "Pahang",
+    "region": "MY-06",
+    "aliases": [
+      "Sultan Haji Ahmad Shah"
+    ]
+  },
+  "KUD": {
+    "name": "Kudat Airport",
+    "city": "Kudat",
+    "country": "MY",
+    "state": "Sabah",
+    "region": "MY-12"
+  },
+  "KUL": {
+    "name": "Kuala Lumpur International Airport",
+    "city": "Sepang",
+    "country": "MY",
+    "state": "Selangor",
+    "region": "MY-10"
+  },
+  "LBP": {
+    "name": "Long Banga Airport",
+    "city": "Long Banga",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "LBU": {
+    "name": "Labuan Airport",
+    "city": "Labuan",
+    "country": "MY",
+    "state": "Labuan",
+    "region": "MY-15"
+  },
+  "LDU": {
+    "name": "Lahad Datu Airport",
+    "city": "Lahad Datu",
+    "country": "MY",
+    "state": "Sabah",
+    "region": "MY-12"
+  },
+  "LGK": {
+    "name": "Langkawi International Airport",
+    "city": "Langkawi",
+    "country": "MY",
+    "state": "Kedah",
+    "region": "MY-02"
+  },
+  "LGL": {
+    "name": "Long Lellang Airport",
+    "city": "Long Datih",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "LMN": {
+    "name": "Limbang Airport",
+    "city": "Limbang",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "LWY": {
+    "name": "Lawas Airport",
+    "city": "Lawas",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "MKM": {
+    "name": "Mukah Airport",
+    "city": "Mukah",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "MKZ": {
+    "name": "Malacca International Airport",
+    "city": "Malacca",
+    "country": "MY",
+    "state": "Melaka",
+    "region": "MY-04"
+  },
+  "MUR": {
+    "name": "Marudi Airport",
+    "city": "Marudi",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "MYY": {
+    "name": "Miri Airport",
+    "city": "Miri",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "MZV": {
+    "name": "Mulu Airport",
+    "city": "Mulu",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "ODN": {
+    "name": "Long Seridan Airport",
+    "city": "Long Seridan",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "PEN": {
+    "name": "Penang International Airport",
+    "city": "Penang",
+    "country": "MY",
+    "state": "Penang",
+    "region": "MY-07"
+  },
+  "PKG": {
+    "name": "Pulau Pangkor Airport",
+    "city": "Pangkor Island",
+    "country": "MY",
+    "state": "Perak",
+    "region": "MY-08"
+  },
+  "SBW": {
+    "name": "Sibu Airport",
+    "city": "Sibu",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "SDK": {
+    "name": "Sandakan Airport",
+    "city": "Sandakan",
+    "country": "MY",
+    "state": "Sabah",
+    "region": "MY-12"
+  },
+  "SZB": {
+    "name": "Sultan Abdul Aziz Shah International Airport",
+    "city": "Subang",
+    "country": "MY",
+    "state": "Selangor",
+    "region": "MY-10"
+  },
+  "TGG": {
+    "name": "Sultan Mahmud Airport",
+    "city": "Kuala Terengganu",
+    "country": "MY",
+    "state": "Terengganu",
+    "region": "MY-11"
+  },
+  "TMG": {
+    "name": "Tomanggong Airport",
+    "city": "Tomanggong",
+    "country": "MY",
+    "state": "Sabah",
+    "region": "MY-12"
+  },
+  "TOD": {
+    "name": "Tioman Airport",
+    "city": "Tioman Island",
+    "country": "MY",
+    "state": "Pahang",
+    "region": "MY-06"
+  },
+  "TWU": {
+    "name": "Tawau Airport",
+    "city": "Tawau",
+    "country": "MY",
+    "state": "Sabah",
+    "region": "MY-12"
+  }
+}

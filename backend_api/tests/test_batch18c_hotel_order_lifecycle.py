@@ -17,10 +17,14 @@ FUTURE = '2099-01-01T00:00:00+00:00'
 
 
 def _payment_patches(memory):
+    def update(collection, identity, data, expected=None):
+        if expected is not None:
+            assert memory.retrieve(collection, identity) == expected
+        return memory.update(collection, identity, data)
     return (
         patch('modules.fr09_payment.routes.claimRecord', side_effect=memory.claim),
         patch('modules.fr09_payment.routes.retrieveRecord', side_effect=memory.retrieve),
-        patch('modules.fr09_payment.routes.updateRecord', side_effect=memory.update),
+        patch('modules.fr09_payment.routes.updateRecord', side_effect=update),
     )
 
 
@@ -614,7 +618,8 @@ def test_19_package_checkout_remains_unchanged(client, mock_traveller_auth):
         'fulfillmentMode': 'legacy',
     })
     patches = _payment_patches(memory)
-    session = _stripe_session(order_id='order_pkg_19', payment_status='paid', amount_total=50000)
+    order_id = operation_document_id('checkout_order', 'test_traveller_uid', 'pkg_att_19')
+    session = _stripe_session('cs_pkg_19', order_id=order_id, payment_status='paid', amount_total=50000)
     with patches[0], patches[1], patches[2], \
             patch('modules.fr09_payment.routes.retrieveCheckoutSession', return_value=session):
         order_id = operation_document_id('checkout_order', 'test_traveller_uid', 'pkg_att_19')

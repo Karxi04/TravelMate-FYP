@@ -12,6 +12,7 @@ class DestinationCard extends StatelessWidget {
   final VoidCallback? onAddToTrip;
   final VoidCallback? onSave;
   final bool saved;
+  final bool saveEnabled;
   final String source;
   final bool compact;
 
@@ -22,6 +23,7 @@ class DestinationCard extends StatelessWidget {
     this.onAddToTrip,
     this.onSave,
     this.saved = false,
+    this.saveEnabled = true,
     this.source = '',
     this.compact = false,
   });
@@ -201,12 +203,13 @@ class DestinationCard extends StatelessWidget {
                               shape: const CircleBorder(),
                               child: IconButton(
                                 key: ValueKey('destination-save-$_id'),
-                                tooltip: saved ? 'Saved' : 'Save destination',
-                                onPressed: saved ? null : onSave,
+                                tooltip: saved ? 'Remove favourite' : 'Save destination',
+                                onPressed: saveEnabled ? onSave : null,
                                 icon: Icon(
                                   saved
                                       ? Icons.favorite_rounded
                                       : Icons.favorite_border_rounded,
+                                  color: saved ? Colors.red : null,
                                 ),
                               ),
                             ),

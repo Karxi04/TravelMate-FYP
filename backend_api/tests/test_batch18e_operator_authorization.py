@@ -81,7 +81,7 @@ def mock_multi_auth():
     with patch("auth_utils.auth.verify_id_token") as mock_verify, \
          patch("auth_utils.get_db") as mock_get_db:
 
-        def fake_verify(token):
+        def fake_verify(token, **kwargs):
             if token == 'valid_op_a_token':
                 return {'uid': UID_OP_A, 'email': 'op_a@test.com', 'name': 'Operator A'}
             if token == 'valid_op_b_token':

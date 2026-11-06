@@ -77,8 +77,8 @@ def test_admin_package_review_with_verified_hotel(auth_client):
         assert response.status_code == 200
         html = response.get_data(as_text=True)
 
-        assert "Verified Accommodation Partner" in html
-        assert "LiteAPI Verified" in html
+        assert "Accommodation Details" in html
+        assert "Hotel Information from LiteAPI" in html
         assert ("Eastern &amp; Oriental Hotel" in html) or ("Eastern & Oriental Hotel" in html)
         assert "10 Farquhar Street, George Town, MY" in html
         assert "⭐ 5.0-Star" in html
@@ -87,7 +87,7 @@ def test_admin_package_review_with_verified_hotel(auth_client):
         assert "Operator Arrangement Details:" in html
         assert "Deluxe Heritage Suite" in html
         assert "Early check-in upon request" in html
-        assert "Specifies package partner hotel. Does not constitute a room reservation." in html
+        assert "Hotel information is provided for package planning. Selecting a property does not create or confirm a room reservation." in html
 
 
 def test_admin_package_review_with_null_stars_hotel(auth_client):
@@ -116,7 +116,7 @@ def test_admin_package_review_with_null_stars_hotel(auth_client):
         assert response.status_code == 200
         html = response.get_data(as_text=True)
 
-        assert "Verified Accommodation Partner" in html
+        assert "Accommodation Details" in html
         assert "Star classification not supplied" in html
         assert "Guest Rating: 8.7/10" in html
         assert "Standard Hotel" not in html
@@ -143,4 +143,4 @@ def test_admin_package_review_legacy_package_without_hotel(auth_client):
         assert "Strawberry Park Resort" in html
         assert "4-Star Resort" in html
         assert "Standard Chalet" in html
-        assert "LiteAPI Verified" not in html
+        assert "Hotel Information from LiteAPI" not in html
