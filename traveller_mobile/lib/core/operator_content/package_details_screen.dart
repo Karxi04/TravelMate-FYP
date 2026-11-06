@@ -40,6 +40,7 @@ class _TourismPackageDetailsScreenState
   int children = 0;
   String? selectedDepartureDate;
   int _selectedTab = 0;
+  int? _selectedItineraryDayIndex;
   final TransactionAttemptLifecycle _checkoutIntent =
       TransactionAttemptLifecycle('package_checkout');
 
@@ -562,6 +563,13 @@ class _TourismPackageDetailsScreenState
         final location =
             (item['location'] ?? item['address'] ?? '').toString().trim();
         final description = (item['description'] ?? '').toString().trim();
+        final rawImage = (item['imageUrl'] ??
+                item['photoUrl'] ??
+                item['image'] ??
+                item['photo'] ??
+                '')
+            .toString()
+            .trim();
 
         if (name.isEmpty && description.isEmpty) continue;
 
@@ -572,6 +580,7 @@ class _TourismPackageDetailsScreenState
             'time': time.isNotEmpty ? time : match.group(1)!.trim(),
             'location': location.isNotEmpty ? location : null,
             'description': description.isNotEmpty ? description : null,
+            'image': rawImage.isNotEmpty ? rawImage : null,
           });
         } else {
           results.add({
@@ -579,6 +588,7 @@ class _TourismPackageDetailsScreenState
             'time': time.isNotEmpty ? time : null,
             'location': location.isNotEmpty ? location : null,
             'description': description.isNotEmpty ? description : null,
+            'image': rawImage.isNotEmpty ? rawImage : null,
           });
         }
       } else if (item is String) {
@@ -958,6 +968,8 @@ class _TourismPackageDetailsScreenState
       {Color? color}) {
     final values = _list(value);
     if (values.isEmpty) return const SizedBox.shrink();
+    final themeColor = color ?? AppColors.primary;
+    final isPositive = color == AppColors.success;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: InkCard(
@@ -966,16 +978,38 @@ class _TourismPackageDetailsScreenState
           initiallyExpanded: values.length <= 5,
           tilePadding: EdgeInsets.zero,
           childrenPadding: EdgeInsets.zero,
-          title: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-          subtitle: values.length > 5 ? Text('${values.length} items') : null,
+          leading: Container(
+            padding: const EdgeInsets.all(AppSpacing.xs),
+            decoration: BoxDecoration(
+              color: isPositive
+                  ? AppColors.successSoft
+                  : (color != null
+                      ? color.withValues(alpha: 0.12)
+                      : AppColors.primarySoft),
+              borderRadius: BorderRadius.circular(AppRadii.small),
+            ),
+            child: Icon(icon, size: 20, color: themeColor),
+          ),
+          title: Text(
+            title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
+          subtitle: values.length > 5
+              ? Text('${values.length} items',
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 12))
+              : null,
           children: [
+            const SizedBox(height: AppSpacing.xs),
             ...values.map(
               (entry) => Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(icon, size: 18, color: color ?? AppColors.primary),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Icon(icon, size: 16, color: themeColor),
+                    ),
                     const SizedBox(width: AppSpacing.xs),
                     Expanded(
                       child: PackageTextBlock(text: entry, collapsedLines: 3),
@@ -1000,12 +1034,295 @@ class _TourismPackageDetailsScreenState
           children: [
             Row(
               children: [
-                Icon(icon, size: 18, color: AppColors.primary),
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(AppRadii.small),
+                  ),
+                  child: Icon(icon, size: 18, color: AppColors.primary),
+                ),
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(child: _heading(title)),
               ],
             ),
+            const SizedBox(height: AppSpacing.xxs),
             PackageTextBlock(text: value),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOperatorCard() {
+    final name = _text('operatorName');
+    final phone = _text('operatorPhone');
+    final email = _text('operatorEmail');
+    if (name.isEmpty) return const SizedBox.shrink();
+
+    final isVerified = widget.item['isVerifiedOperator'] == true ||
+        widget.item['operatorVerified'] == true;
+    final licenseNumber = (widget.item['licenseNumber'] ??
+            widget.item['operatorLicense'] ??
+            widget.item['motacLicense'] ??
+            '')
+        .toString()
+        .trim();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: InkCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(AppRadii.small),
+                  ),
+                  child: const Icon(Icons.storefront_outlined,
+                      size: 20, color: AppColors.primary),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _heading('Tourism Operator'),
+                      Text(
+                        licenseNumber.isNotEmpty
+                            ? 'License: $licenseNumber'
+                            : 'Tour Operator & Travel Agency',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isVerified)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.successSoft,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.verified, size: 12, color: AppColors.success),
+                        SizedBox(width: 4),
+                        Text(
+                          'Verified',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.success,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const Divider(height: 20),
+            Text(
+              name,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            if (phone.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(Icons.phone_outlined,
+                      size: 14, color: AppColors.textSecondary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      phone,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (email.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.email_outlined,
+                      size: 14, color: AppColors.textSecondary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      email,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReviewsSection() {
+    final rawReviews = widget.item['reviews'];
+    final reviews = rawReviews is List
+        ? rawReviews
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
+        : <Map<String, dynamic>>[];
+    final rating =
+        _number(widget.item['rating'] ?? widget.item['averageRating']);
+    final reviewCount =
+        _number(widget.item['reviewCount'] ?? reviews.length)?.toInt();
+
+    if (reviews.isEmpty && rating == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: InkCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppColors.warningSoft,
+                    borderRadius: BorderRadius.circular(AppRadii.small),
+                  ),
+                  child: const Icon(Icons.star_rounded,
+                      size: 20, color: AppColors.warning),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(child: _heading('Traveller Reviews')),
+                if (rating != null)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.warningSoft,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.star, size: 13, color: AppColors.warning),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${rating.toStringAsFixed(1)}${reviewCount != null ? ' ($reviewCount)' : ''}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.warning,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            if (reviews.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.sm),
+              ...reviews.take(3).map((r) {
+                final author = (r['author'] ??
+                        r['userName'] ??
+                        r['user'] ??
+                        'Traveller')
+                    .toString();
+                final comment =
+                    (r['comment'] ?? r['text'] ?? r['review'] ?? '').toString();
+                final userRating = _number(r['rating']);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                  child: Container(
+                    padding: const EdgeInsets.all(AppSpacing.xs),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(AppRadii.small),
+                      border: Border.all(color: AppColors.divider),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 12,
+                              backgroundColor: AppColors.primarySoft,
+                              child: Text(
+                                author.isNotEmpty
+                                    ? author[0].toUpperCase()
+                                    : 'T',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primaryStrong,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                            Expanded(
+                              child: Text(
+                                author,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            if (userRating != null)
+                              Row(
+                                children: List.generate(
+                                  5,
+                                  (i) => Icon(
+                                    i < userRating
+                                        ? Icons.star
+                                        : Icons.star_border,
+                                    size: 13,
+                                    color: AppColors.warning,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        if (comment.isNotEmpty) ...[
+                          const SizedBox(height: AppSpacing.xxs),
+                          PackageTextBlock(
+                            text: comment,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
           ],
         ),
       ),
@@ -1090,6 +1407,8 @@ class _TourismPackageDetailsScreenState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_text('operatorName').isNotEmpty)
+          _buildOperatorCard(),
         if (cleanIntro.isNotEmpty)
           InkCard(
             child: Column(
@@ -1156,16 +1475,7 @@ class _TourismPackageDetailsScreenState
             ].join('\n'),
             Icons.event_available_outlined,
           ),
-        if (_text('operatorName').isNotEmpty)
-          _textSection(
-            'Tourism Operator',
-            [
-              _text('operatorName'),
-              _text('operatorPhone'),
-              _text('operatorEmail'),
-            ].where((value) => value.isNotEmpty).join('\n'),
-            Icons.storefront_outlined,
-          ),
+        _buildReviewsSection(),
       ],
     );
   }
@@ -1183,11 +1493,46 @@ class _TourismPackageDetailsScreenState
       );
     }
 
+    final displayedDays = _selectedItineraryDayIndex == null
+        ? _days
+        : (_selectedItineraryDayIndex! < _days.length
+            ? [_days[_selectedItineraryDayIndex!]]
+            : _days);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _heading('Day-by-day itinerary'),
-        ..._days.map((day) {
+        if (_days.length > 1) ...[
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                ChoiceChip(
+                  label: const Text('All Days'),
+                  selected: _selectedItineraryDayIndex == null,
+                  onSelected: (_) =>
+                      setState(() => _selectedItineraryDayIndex = null),
+                ),
+                const SizedBox(width: 6),
+                ...List.generate(_days.length, (idx) {
+                  final dayNum = _days[idx]['dayNumber'] ?? idx + 1;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text('Day $dayNum'),
+                      selected: _selectedItineraryDayIndex == idx,
+                      onSelected: (_) =>
+                          setState(() => _selectedItineraryDayIndex = idx),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        ...displayedDays.map((day) {
           final dayNumber = day['dayNumber'] ?? _days.indexOf(day) + 1;
           final activities = _extractActivities(day['activities']);
           final meals = _list(day['meals']);
@@ -1195,6 +1540,7 @@ class _TourismPackageDetailsScreenState
           final description = (day['description'] ?? '').toString().trim();
           final stay = (day['accommodation'] ?? '').toString().trim();
           final transport = (day['transportNotes'] ?? '').toString().trim();
+          final hasAnyTimes = activities.any((a) => (a['time'] ?? '').isNotEmpty);
 
           return Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -1234,71 +1580,163 @@ class _TourismPackageDetailsScreenState
                             ),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    ...activities.map(
-                      (act) => Padding(
-                        padding: const EdgeInsets.symmetric(
-                            vertical: AppSpacing.xxs),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ConstrainedBox(constraints: const BoxConstraints(maxWidth: 104), child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: act['time'] != null
-                                    ? AppColors.primarySoft
-                                    : AppColors.surface,
-                                borderRadius:
-                                    BorderRadius.circular(AppRadii.small),
-                                border: Border.all(
-                                  color: act['time'] != null
-                                      ? AppColors.primary
-                                      : AppColors.divider,
-                                ),
-                              ),
-                              child: Text(
-                                act['time'] ?? 'Time not specified',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: act['time'] != null
-                                      ? AppColors.primaryStrong
-                                      : AppColors.textSecondary,
-                                ),
-                              ),
-                            )),
-                            const SizedBox(width: AppSpacing.xs),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  PackageTextBlock(
-                                    text: act['name'] ?? 'Activity',
-                                    collapsedLines: 2,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  if (act['description'] != null &&
-                                      act['description']!.isNotEmpty)
-                                    PackageTextBlock(
-                                      text: act['description']!,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                ],
+                    const SizedBox(height: AppSpacing.xs),
+                    ...List.generate(activities.length, (index) {
+                      final act = activities[index];
+                      final isLastActivity = index == activities.length - 1;
+                      final time = act['time'];
+                      final name = act['name'] ?? 'Activity';
+                      final actDescription = act['description'];
+                      final location = act['location'];
+                      final image = act['image'];
+                      final hasTime = time != null && time.isNotEmpty;
+
+                      final leftWidth = hasAnyTimes ? 54.0 : 28.0;
+
+                      return Stack(
+                        children: [
+                          if (!isLastActivity)
+                            Positioned(
+                              left: leftWidth + 8.0 + 4.0,
+                              top: 14.0,
+                              bottom: 0.0,
+                              child: Container(
+                                width: 2.0,
+                                color: AppColors.divider,
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
+                          Padding(
+                            padding: EdgeInsets.only(
+                                bottom: isLastActivity ? 4 : 12),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Left column: Time or Step Number
+                                SizedBox(
+                                  width: leftWidth,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      hasTime
+                                          ? time
+                                          : (!hasAnyTimes ? '${index + 1}' : ''),
+                                      textAlign: TextAlign.right,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: hasTime
+                                            ? AppColors.primaryStrong
+                                            : AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                // Timeline marker dot
+                                Container(
+                                  margin: const EdgeInsets.only(top: 4),
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: hasTime
+                                        ? AppColors.primary
+                                        : AppColors.surface,
+                                    border: Border.all(
+                                      color: hasTime
+                                          ? AppColors.primaryStrong
+                                          : AppColors.divider,
+                                      width: 2,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // Right column: Activity details card
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.all(AppSpacing.xs),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surfaceElevated,
+                                      borderRadius:
+                                          BorderRadius.circular(AppRadii.small),
+                                      border: Border.all(color: AppColors.divider),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        // Bold activity title
+                                        PackageTextBlock(
+                                          text: name,
+                                          collapsedLines: 2,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 13.5,
+                                            color: AppColors.textPrimary,
+                                          ),
+                                        ),
+                                        if (location != null &&
+                                            location.isNotEmpty) ...[
+                                          const SizedBox(height: 3),
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                  Icons.location_on_outlined,
+                                                  size: 13,
+                                                  color:
+                                                      AppColors.textSecondary),
+                                              const SizedBox(width: 3),
+                                              Expanded(
+                                                child: Text(
+                                                  location,
+                                                  style: const TextStyle(
+                                                    fontSize: 11.5,
+                                                    color: AppColors
+                                                        .textSecondary,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                        if (actDescription != null &&
+                                            actDescription.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          PackageTextBlock(
+                                            text: actDescription,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.textSecondary,
+                                              height: 1.4,
+                                            ),
+                                          ),
+                                        ],
+                                        if (image != null &&
+                                            image.isNotEmpty) ...[
+                                          const SizedBox(height: 6),
+                                          ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                            child: Image.network(
+                                              image,
+                                              height: 100,
+                                              width: double.infinity,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) =>
+                                                  const SizedBox.shrink(),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    }),
                   ],
                   if (meals.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.xs),
@@ -1649,7 +2087,7 @@ class _TourismPackageDetailsScreenState
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final isNarrow = constraints.maxWidth < 360 ||
+              final isNarrow = constraints.maxWidth < 480 ||
                   MediaQuery.textScalerOf(context).scale(14) > 16;
               final priceColumn = Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1730,10 +2168,12 @@ class _TourismPackageDetailsScreenState
             fallbackHeroUrl: hero,
           ),
           const SizedBox(height: AppSpacing.md),
-          const TravelStatusPill(
-            text: 'VERIFIED OPERATOR PACKAGE',
-            icon: Icons.verified_outlined,
-          ),
+          if ((widget.item['status'] ?? widget.item['approvalStatus']) ==
+              'approved')
+            const TravelStatusPill(
+              text: 'Approved Package',
+              icon: Icons.check_circle_outline,
+            ),
           const SizedBox(height: AppSpacing.xs),
           PackageTextBlock(
             text: title.isEmpty ? 'Tourism package' : title,

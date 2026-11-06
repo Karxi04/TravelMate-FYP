@@ -120,11 +120,13 @@ void main() {
     final api = AllApi(); await frame(tester, ChatTab(api: api), width: 430);
     final dynamic state = tester.state(find.byType(ChatTab)); await state.send('Plan my trip'); await tester.pumpAndSettle();
     expect(api.bodies.first['guidedPlanning'], isTrue);
-    final cancel = state.savePlan({'title': 'Draft', 'destinationArea': 'Penang'}); await tester.pumpAndSettle();
+    final plan = {'title': 'Draft', 'destinationArea': 'Penang', 'startDate': '2030-12-12', 'endDate': '2030-12-12',
+      'budgetLimit': 100, 'activities': [{'destinationId': 'place', 'activityName': 'Selected place', 'dayNo': 1}]};
+    final cancel = state.savePlan(plan); await tester.pumpAndSettle();
     expect(api.posts.where((p) => p.endsWith('save-plan')), isEmpty);
     await tester.tap(find.text('Keep editing')); await tester.pumpAndSettle(); await cancel;
     expect(api.posts.where((p) => p.endsWith('save-plan')), isEmpty);
-    final save = state.savePlan({'title': 'Draft', 'destinationArea': 'Penang'}); await tester.pumpAndSettle();
+    final save = state.savePlan(plan); await tester.pumpAndSettle();
     await tester.tap(find.text('Confirm save')); await tester.pumpAndSettle(); await save;
     expect(api.posts.where((p) => p.endsWith('save-plan')).length, 1); expect(api.bodies.last['confirmed'], isTrue);
   });

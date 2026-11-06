@@ -7,8 +7,14 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../../core/navigation/app_shell_navigation.dart';
+import '../../core/operator_content/package_details_screen.dart';
 import '../fr03_destination_search_information/destination_details_screen.dart';
+import '../fr03_destination_search_information/destination_trip_actions.dart';
 import '../fr05_smart_itinerary_budget_planner/trips_tab.dart';
+import '../fr05_smart_itinerary_budget_planner/packing_trip_selector_screen.dart';
+import '../fr06_weather_forecast/weather_screen.dart';
+import '../fr07_flight_search/flight_screen.dart';
+import '../fr08_hotel_booking/hotel_screen.dart';
 
 class ChatTab extends StatefulWidget {
   final ApiService? api;
@@ -21,6 +27,7 @@ class ChatTab extends StatefulWidget {
 
 class _ChatTabState extends State<ChatTab> {
   final message = TextEditingController();
+  final scaffoldKey = GlobalKey<ScaffoldState>();
   late final ApiService api;
 
   List<dynamic> sessions = [];
@@ -33,6 +40,44 @@ class _ChatTabState extends State<ChatTab> {
   String? failedMessage;
   Map<String, dynamic> planningState = {};
   final Map<String, String> savedPlans = {};
+  final Set<String> openingPackageIds = {};
+  final Set<String> addingPlaceIds = {};
+  String? savingPlanKey;
+
+  String packageId(Map<String, dynamic> package) =>
+      (package['packageId'] ?? package['id'] ?? '').toString().trim();
+
+  Future<void> openPackageDetails(Map<String, dynamic> recommendation) async {
+    final id = packageId(recommendation);
+    if (id.isEmpty || openingPackageIds.isNotEmpty) return;
+    openingPackageIds.add(id);
+    setState(() {});
+    try {
+      final data = await api.get('/api/public/tourism-packages');
+      if (data['ok'] == false)
+        throw StateError('Package information is unavailable.');
+      final matches = (data['items'] as List? ?? const [])
+          .whereType<Map>()
+          .where((item) => item['id']?.toString() == id)
+          .toList();
+      if (matches.length != 1) {
+        throw const ApiException(
+            'This package is no longer available. Please choose another recommendation.',
+            404, {});
+      }
+      if (!mounted) return;
+      await Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => TourismPackageDetailsScreen(
+                  item: Map<String, dynamic>.from(matches.single), api: api)));
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      openingPackageIds.remove(id);
+      if (mounted) setState(() {});
+    }
+  }
 
   String planKey(Map<String, dynamic> plan) =>
       (plan['draftId'] ?? jsonEncode(plan)).toString();
@@ -99,6 +144,8 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   Future<void> newChat() async {
+    if (busy) return;
+    setState(() => busy = true);
     try {
       final data =
           await api.post('/api/fr11/sessions', {'title': 'New travel chat'});
@@ -109,15 +156,21 @@ class _ChatTabState extends State<ChatTab> {
         messages = [];
         planningState = {};
         savedPlans.clear();
+        sendError = null;
+        failedMessage = null;
       });
       await loadSessions(openNewest: false);
-      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+      scaffoldKey.currentState?.closeDrawer();
     } catch (e) {
       if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
   Future<void> openSession(String id) async {
+    if (busy) return;
+    setState(() => busy = true);
     try {
       final data = await api.get('/api/fr11/sessions/$id');
       final session = Map<String, dynamic>.from(data['session'] as Map);
@@ -126,13 +179,18 @@ class _ChatTabState extends State<ChatTab> {
         activeSessionId = id;
         messages = session['messages'] as List? ?? [];
         acceptPlanningState(session);
+        sendError = null;
+        failedMessage = null;
       });
     } catch (e) {
       if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
   Future<void> deleteSession(String id) async {
+    if (busy) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -155,15 +213,22 @@ class _ChatTabState extends State<ChatTab> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    setState(() => busy = true);
     try {
       await api.delete('/api/fr11/sessions/$id');
       if (activeSessionId == id) {
         activeSessionId = null;
         messages = [];
+        planningState = {};
+        savedPlans.clear();
+        sendError = null;
+        failedMessage = null;
       }
-      await loadSessions();
+      await loadSessions(openNewest: false);
     } catch (e) {
       if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
@@ -208,9 +273,15 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   Future<void> savePlan(Map<String, dynamic> plan) async {
-    if (busy || stalePlan(plan) || savedPlans.containsKey(planKey(plan)))
-      return;
-    setState(() => busy = true);
+    if (busy ||
+        stalePlan(plan) ||
+        savedPlans.containsKey(planKey(plan)) ||
+        plan['coverageStatus'] == 'partial' ||
+        (plan['activities'] as List? ?? []).isEmpty) return;
+    setState(() {
+      busy = true;
+      savingPlanKey = planKey(plan);
+    });
     final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialog) => AlertDialog(
@@ -227,7 +298,11 @@ class _ChatTabState extends State<ChatTab> {
               ],
             ));
     if (confirmed != true || !mounted) {
-      if (mounted) setState(() => busy = false);
+      if (mounted)
+        setState(() {
+          busy = false;
+          savingPlanKey = null;
+        });
       return;
     }
     try {
@@ -252,7 +327,11 @@ class _ChatTabState extends State<ChatTab> {
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted)
+        setState(() {
+          busy = false;
+          savingPlanKey = null;
+        });
     }
   }
 
@@ -280,7 +359,7 @@ class _ChatTabState extends State<ChatTab> {
                           style: TextStyle(
                               fontSize: 21, fontWeight: FontWeight.w900))),
                   IconButton(
-                      onPressed: newChat,
+                      onPressed: busy ? null : newChat,
                       icon: const Icon(Icons.add_comment_outlined),
                       tooltip: 'New chat'),
                 ],
@@ -291,7 +370,7 @@ class _ChatTabState extends State<ChatTab> {
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                    onPressed: newChat,
+                    onPressed: busy ? null : newChat,
                     icon: const Icon(Icons.add_rounded),
                     label: const Text('New chat')),
               ),
@@ -322,6 +401,7 @@ class _ChatTabState extends State<ChatTab> {
                                 final selected =
                                     s['id'].toString() == activeSessionId;
                                 return ListTile(
+                                  enabled: !busy,
                                   selected: selected,
                                   leading: Icon(selected
                                       ? Icons.chat_bubble_rounded
@@ -337,6 +417,7 @@ class _ChatTabState extends State<ChatTab> {
                                           .first,
                                       style: const TextStyle(fontSize: 11)),
                                   trailing: PopupMenuButton<String>(
+                                    enabled: !busy,
                                     onSelected: (value) {
                                       if (value == 'delete')
                                         deleteSession(s['id'].toString());
@@ -361,9 +442,12 @@ class _ChatTabState extends State<ChatTab> {
     );
   }
 
-  String destinationId(Map<String, dynamic> item) =>
-      (item['destinationId'] ?? item['place_id'] ?? item['title'] ?? '')
-          .toString();
+  String destinationId(Map<String, dynamic> item) => (item['destinationId'] ??
+          item['place_id'] ??
+          item['id'] ??
+          item['title'] ??
+          '')
+      .toString();
 
   String dayText(Map<String, dynamic> activity, dynamic fallbackDay) {
     final label = (activity['dayLabel'] ?? '').toString();
@@ -392,85 +476,379 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   Future<void> addPlaceToTrip(Map<String, dynamic> item) async {
+    final id = destinationId(item);
+    if (addingPlaceIds.isNotEmpty) return;
+    addingPlaceIds.add(id);
+    setState(() {});
     try {
-      final data = await api.get('/api/fr5/itineraries');
-      final trips = data['items'] as List? ?? [];
-      if (!mounted) return;
-      if (trips.isEmpty) {
-        final go = await showDialog<bool>(
+      await addDestinationToTrip(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Create a trip first'),
-            content: const Text(
-                'Create a trip, then add this place from the assistant.'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel')),
-              FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Go to Trips')),
-            ],
-          ),
-        );
-        if (go == true && mounted) {
-          final switched =
-              AppShellNavigation.select(context, AppShellTab.trips);
-          if (!switched) {
-            Navigator.push(
-                context, MaterialPageRoute(builder: (_) => const TripsTab()));
-          }
-        }
-        return;
-      }
-      final selected = await showModalBottomSheet<Map<String, dynamic>>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+          api: api,
+          destination: item,
+          resumeAfterCreation: true);
+    } finally {
+      addingPlaceIds.remove(id);
+      if (mounted) setState(() {});
+    }
+  }
+
+  Widget _buildThinkingOrError() {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      child: busy
+          ? const Align(
+              key: ValueKey('assistant-thinking'),
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: StatusChip(
+                  text: 'TravelMate is thinking…',
+                  icon: Icons.auto_awesome_outlined,
+                  tone: AppStatusTone.info,
+                ),
+              ),
+            )
+          : sendError != null
+              ? AppErrorState(
+                  key: const ValueKey('assistant-send-error'),
+                  title: 'Message not sent',
+                  message: sendError!,
+                  retryLabel: 'Retry message',
+                  onRetry:
+                      failedMessage == null ? null : () => send(failedMessage),
+                )
+              : const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildCuratedPromptCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String tag,
+    required VoidCallback? onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        key: ValueKey('chat-prompt-$title'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+        child: InkCard(
+          padding: const EdgeInsets.all(12),
+          child: Row(
             children: [
-              const Text('Add to which trip?',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 8),
-              ...trips.map((raw) {
-                final trip = Map<String, dynamic>.from(raw as Map);
-                return ListTile(
-                  leading: const CircleAvatar(
-                      backgroundColor: InkWashColors.cream,
-                      child: Icon(Icons.luggage_outlined)),
-                  title: Text((trip['title'] ?? 'Trip').toString()),
-                  subtitle: Text((trip['destinationArea'] ?? '').toString()),
-                  onTap: () => Navigator.pop(context, trip),
-                );
-              }),
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(AppRadii.small),
+                ),
+                child: Icon(icon, size: 20, color: AppColors.primaryStrong),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceElevated,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: AppColors.divider),
+                          ),
+                          child: Text(
+                            tag,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 13,
+                color: AppColors.disabled,
+              ),
             ],
           ),
         ),
-      );
-      if (selected == null) return;
-      await api.post('/api/fr5/itineraries/${selected['id']}/activities', {
-        'activityName': item['title'] ?? item['name'] ?? 'Place',
-        'destinationId': destinationId(item),
-        'address': item['address'] ?? '',
-        'estimatedCost': item['estimatedCost'] ?? 0,
-        'gps_coordinates':
-            item['gps_coordinates'] ?? item['gpsCoordinates'] ?? {},
-        'type': item['type'] ?? item['category'] ?? '',
-        'category': item['category'] ?? item['type'] ?? '',
-        'description': item['description'] ?? '',
-        'indoor': item['indoor'] ?? false,
-        'openingHours': item['openingHours'] ?? '',
-        'recommendedDurationMinutes': item['recommendedDurationMinutes'] ?? 90,
-        'dayNo': 1,
-      });
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Added to ${selected['title'] ?? 'trip'}')));
-    } catch (e) {
-      if (mounted) showError(context, e);
-    }
+      ),
+    );
+  }
+
+  Widget _buildMicroToolPill({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        key: ValueKey('chat-tool-$label'),
+        onTap: busy ? null : onTap,
+        borderRadius: BorderRadius.circular(AppRadii.small),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadii.small),
+            border: Border.all(color: AppColors.divider),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget packageRecommendationsCard(List<dynamic> rawPackages) {
+    final packages = rawPackages
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    if (packages.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.card_travel_outlined,
+                    size: 14, color: AppColors.primaryStrong),
+              ),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'Recommended Tourism Packages',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.5,
+                    color: AppColors.primaryStrong,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...packages.map((pkg) {
+            final title =
+                (pkg['title'] ?? pkg['packageTitle'] ?? 'Tourism Package')
+                    .toString();
+            final destination = (pkg['destination'] ??
+                    pkg['destinationName'] ??
+                    pkg['destinationArea'] ??
+                    '')
+                .toString();
+            final operatorName = (pkg['operatorName'] ?? '').toString();
+            final price = pkg['adultPrice'] ?? pkg['price'];
+            final currency = (pkg['currency'] ?? 'MYR').toString();
+            final durationDays = pkg['durationDays'];
+            final durationText = durationDays != null
+                ? '$durationDays ${durationDays == 1 ? 'day' : 'days'}'
+                : '';
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: InkCard(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              if (destination.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.location_on_outlined,
+                                        size: 13,
+                                        color: AppColors.textSecondary),
+                                    const SizedBox(width: 3),
+                                    Expanded(
+                                      child: Text(
+                                        destination,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        if (price != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.primarySoft,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '$currency $price',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                                color: AppColors.primaryStrong,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        if (durationText.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceElevated,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: AppColors.divider),
+                            ),
+                            child: Text(
+                              durationText,
+                              style: const TextStyle(
+                                  fontSize: 11, color: AppColors.textSecondary),
+                            ),
+                          ),
+                        if (operatorName.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceElevated,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: AppColors.divider),
+                            ),
+                            child: Text(
+                              'by $operatorName',
+                              style: const TextStyle(
+                                  fontSize: 11, color: AppColors.textSecondary),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonalIcon(
+                        key: ValueKey('chat-package-${packageId(pkg)}'),
+                        onPressed: packageId(pkg).isEmpty ||
+                                openingPackageIds.isNotEmpty
+                            ? null
+                            : () => openPackageDetails(pkg),
+                        icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+                        label: Text(openingPackageIds.contains(packageId(pkg))
+                            ? 'Opening package…'
+                            : 'View Package Details'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdvisoryCard(String text) {
+    if (text.trim().isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.warningSoft,
+        borderRadius: BorderRadius.circular(AppRadii.small),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, size: 16, color: AppColors.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 12, color: InkWashColors.ink),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget placeSuggestionsCard(List<Map<String, dynamic>> places) {
@@ -518,16 +896,23 @@ class _ChatTabState extends State<ChatTab> {
                             spacing: 6,
                             children: [
                               TextButton(
+                                key: ValueKey(
+                                    'chat-place-details-${destinationId(place)}'),
                                 onPressed: () => Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                         builder: (_) =>
                                             DestinationDetailsScreen(
-                                                initialDestination: place))),
+                                                initialDestination: place,
+                                                api: api))),
                                 child: const Text('Details'),
                               ),
                               TextButton(
-                                  onPressed: () => addPlaceToTrip(place),
+                                  key: ValueKey(
+                                      'chat-add-place-${destinationId(place)}'),
+                                  onPressed: addingPlaceIds.isNotEmpty
+                                      ? null
+                                      : () => addPlaceToTrip(place),
                                   child: const Text('Add to trip')),
                             ],
                           ),
@@ -661,7 +1046,7 @@ class _ChatTabState extends State<ChatTab> {
                   icon: const Icon(Icons.bookmark_add_outlined),
                   label: Text(savedPlans.containsKey(planKey(plan))
                       ? 'Open saved trip in Trips'
-                      : busy
+                      : savingPlanKey == planKey(plan)
                           ? 'Save pending…'
                           : 'Save plan to Trips'))),
         ],
@@ -685,6 +1070,7 @@ class _ChatTabState extends State<ChatTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: scaffoldKey,
       drawer: historyDrawer(),
       appBar: AppBar(
         title: const Column(
@@ -700,7 +1086,7 @@ class _ChatTabState extends State<ChatTab> {
         ),
         actions: [
           IconButton(
-              onPressed: newChat,
+              onPressed: busy ? null : newChat,
               icon: const Icon(Icons.add_comment_outlined),
               tooltip: 'New chat')
         ],
@@ -721,18 +1107,29 @@ class _ChatTabState extends State<ChatTab> {
                 else if (messages.isEmpty) ...[
                   InkCard(
                     color: InkWashColors.cream,
-                    child: const Column(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.auto_awesome_rounded,
-                            color: InkWashColors.blueGrey, size: 31),
-                        SizedBox(height: 9),
-                        Text('How can I help with your trip?',
+                        Container(
+                          padding: const EdgeInsets.all(AppSpacing.xs),
+                          decoration: BoxDecoration(
+                            color: AppColors.primarySoft,
+                            borderRadius: BorderRadius.circular(AppRadii.small),
+                          ),
+                          child: const Icon(Icons.auto_awesome_rounded,
+                              color: InkWashColors.blueGrey, size: 28),
+                        ),
+                        const SizedBox(height: 9),
+                        const Text('How can I help with your trip?',
                             style: TextStyle(
                                 fontSize: 20, fontWeight: FontWeight.w900)),
-                        SizedBox(height: 5),
-                        Text(
-                            'Ask for ideas, itinerary changes, budget help or weather-friendly alternatives.'),
+                        const SizedBox(height: 5),
+                        const Text(
+                            'Ask for ideas, itinerary changes, budget help or weather-friendly alternatives.',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
+                                height: 1.4)),
                       ],
                     ),
                   ),
@@ -746,6 +1143,104 @@ class _ChatTabState extends State<ChatTab> {
                             onPressed: busy ? null : () => send(item)))
                         .toList(),
                   ),
+                  _buildThinkingOrError(),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Curated planning prompts',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildCuratedPromptCard(
+                    icon: Icons.explore_outlined,
+                    title: 'Plan a 3-day cultural trip',
+                    subtitle: 'Heritage sites, local street food & temples',
+                    tag: 'Itinerary',
+                    onTap:
+                        busy ? null : () => send('Plan a 3-day cultural trip'),
+                  ),
+                  _buildCuratedPromptCard(
+                    icon: Icons.account_balance_wallet_outlined,
+                    title: 'Vacation on RM1,500 budget',
+                    subtitle: 'Smart budget breakdown for your trip',
+                    tag: 'Budget',
+                    onTap:
+                        busy ? null : () => send('Vacation on RM1,500 budget'),
+                  ),
+                  _buildCuratedPromptCard(
+                    icon: Icons.umbrella_outlined,
+                    title: 'What should I do if it rains?',
+                    subtitle: 'Museums, aquariums & indoor experiences',
+                    tag: 'Weather',
+                    onTap: busy
+                        ? null
+                        : () => send('What should I do if it rains?'),
+                  ),
+                  _buildCuratedPromptCard(
+                    icon: Icons.tune_rounded,
+                    title: 'Adjust my itinerary',
+                    subtitle: 'Pace changes, rest days & relaxed flow',
+                    tag: 'Planning',
+                    onTap: busy ? null : () => send('Adjust my itinerary'),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Travel tools',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _buildMicroToolPill(
+                          icon: Icons.flight_takeoff_rounded,
+                          label: 'Flights',
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => FlightScreen(api: api))),
+                        ),
+                        _buildMicroToolPill(
+                          icon: Icons.hotel_rounded,
+                          label: 'Hotels',
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => HotelScreen(api: api))),
+                        ),
+                        _buildMicroToolPill(
+                          icon: Icons.checklist_rounded,
+                          label: 'Packing',
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      PackingTripSelectorScreen(api: api))),
+                        ),
+                        _buildMicroToolPill(
+                          icon: Icons.cloud_outlined,
+                          label: 'Weather',
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => WeatherScreen(api: api))),
+                        ),
+                        _buildMicroToolPill(
+                          icon: Icons.luggage_outlined,
+                          label: 'Trips',
+                          onTap: openTrips,
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 16),
                 ],
                 if (!loadingSessions && screenError == null)
@@ -757,19 +1252,51 @@ class _ChatTabState extends State<ChatTab> {
                             .whereType<Map>()
                             .map((e) => Map<String, dynamic>.from(e))
                             .toList();
+                    final rawPackages = item['packages'] ??
+                        (item['package'] != null ? [item['package']] : null);
+                    final packages = rawPackages is List
+                        ? rawPackages
+                            .whereType<Map>()
+                            .map((e) => Map<String, dynamic>.from(e))
+                            .toList()
+                        : <Map<String, dynamic>>[];
+                    final advisory =
+                        (item['weatherAdvice'] ?? item['advisory'] ?? '')
+                            .toString();
+
                     return [
                       Align(
                         alignment: Alignment.centerRight,
                         child: Semantics(
                           label: 'Your message',
                           child: Container(
-                            margin: const EdgeInsets.only(bottom: 8, left: 52),
-                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 10, left: 48),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
                             decoration: BoxDecoration(
-                                color: InkWashColors.blueGrey,
-                                borderRadius: BorderRadius.circular(17)),
-                            child: Text((item['message'] ?? '').toString(),
-                                style: const TextStyle(color: Colors.white)),
+                              color: InkWashColors.blueGrey,
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(18),
+                                topRight: Radius.circular(4),
+                                bottomLeft: Radius.circular(18),
+                                bottomRight: Radius.circular(18),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              (item['message'] ?? '').toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                height: 1.45,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -779,21 +1306,75 @@ class _ChatTabState extends State<ChatTab> {
                           label: 'TravelMate response',
                           child: Container(
                             margin:
-                                const EdgeInsets.only(bottom: 14, right: 28),
-                            padding: const EdgeInsets.all(13),
+                                const EdgeInsets.only(bottom: 16, right: 28),
+                            padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(17),
-                                border:
-                                    Border.all(color: const Color(0xFFE3E3DE))),
+                              color: Colors.white,
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(4),
+                                topRight: Radius.circular(18),
+                                bottomLeft: Radius.circular(18),
+                                bottomRight: Radius.circular(18),
+                              ),
+                              border:
+                                  Border.all(color: const Color(0xFFE3E3DE)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text((item['reply'] ?? '').toString()),
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(3),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primarySoft,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Icon(
+                                        Icons.auto_awesome,
+                                        size: 13,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    const Expanded(
+                                      child: Text(
+                                        'TravelMate Assistant',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.primaryStrong,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  (item['reply'] ?? '').toString(),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    height: 1.5,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
                                 if (placeSuggestions.isNotEmpty)
                                   placeSuggestionsCard(placeSuggestions),
                                 if (plan is Map)
                                   planCard(Map<String, dynamic>.from(plan)),
+                                if (packages.isNotEmpty)
+                                  packageRecommendationsCard(packages),
+                                if (advisory.isNotEmpty)
+                                  _buildAdvisoryCard(advisory),
                               ],
                             ),
                           ),
@@ -801,33 +1382,7 @@ class _ChatTabState extends State<ChatTab> {
                       ),
                     ];
                   }),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  child: busy
-                      ? const Align(
-                          key: ValueKey('assistant-thinking'),
-                          alignment: Alignment.centerLeft,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: StatusChip(
-                              text: 'TravelMate is thinking…',
-                              icon: Icons.auto_awesome_outlined,
-                              tone: AppStatusTone.info,
-                            ),
-                          ),
-                        )
-                      : sendError != null
-                          ? AppErrorState(
-                              key: const ValueKey('assistant-send-error'),
-                              title: 'Message not sent',
-                              message: sendError!,
-                              retryLabel: 'Retry message',
-                              onRetry: failedMessage == null
-                                  ? null
-                                  : () => send(failedMessage),
-                            )
-                          : const SizedBox.shrink(),
-                ),
+                if (messages.isNotEmpty) _buildThinkingOrError(),
               ],
             ),
           ),

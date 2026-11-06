@@ -13,15 +13,20 @@ Future<bool> addDestinationToTrip({
   required BuildContext context,
   required ApiService api,
   required Map<String, dynamic> destination,
+  bool resumeAfterCreation = false,
 }) async {
   try {
     final data = await api.get('/api/fr5/itineraries');
     final trips = (data['items'] as List? ?? const [])
         .whereType<Map>()
         .map((trip) => Map<String, dynamic>.from(trip))
+        .where((trip) =>
+            !resumeAfterCreation ||
+            (trip['tripType'] != 'package' && trip['packageTrip'] != true))
         .toList();
 
     if (!context.mounted) return false;
+    Map<String, dynamic>? selected;
     if (trips.isEmpty) {
       final openTrips = await showDialog<bool>(
         context: context,
@@ -43,18 +48,33 @@ Future<bool> addDestinationToTrip({
         ),
       );
       if (openTrips == true && context.mounted) {
-        final switched = AppShellNavigation.select(context, AppShellTab.trips);
-        if (!switched) {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const TripsTab()),
-          );
+        if (resumeAfterCreation) {
+          selected = await Navigator.push<Map<String, dynamic>>(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => TripsTab(
+                      api: api,
+                      selectForActivity: true,
+                      initialDestination: (destination['city'] ??
+                              destination['state'] ??
+                              destination['address'] ??
+                              '')
+                          .toString())));
+        } else {
+          final switched =
+              AppShellNavigation.select(context, AppShellTab.trips);
+          if (!switched) {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => TripsTab(api: api)),
+            );
+          }
         }
       }
-      return false;
+      if (!resumeAfterCreation || selected == null) return false;
     }
 
-    final selected = await showModalBottomSheet<Map<String, dynamic>>(
+    selected ??= await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
@@ -102,6 +122,7 @@ Future<bool> addDestinationToTrip({
     );
 
     if (selected == null) return false;
+    if (!context.mounted) return false;
     final chosenDay = await promptTripDaySelection(
       context: context,
       trip: selected,
@@ -115,7 +136,15 @@ Future<bool> addDestinationToTrip({
     payload['activityName'] = DestinationUtils.resolveName(destination);
     payload['destinationId'] = DestinationUtils.resolveId(destination);
 
-    await api.post('/api/fr5/itineraries/${selected['id']}/activities', payload);
+    final response = await api.post(
+        '/api/fr5/itineraries/${selected['id']}/activities', payload);
+    if (response is Map && response['ok'] == false) {
+      throw ApiException(
+          (response['error'] ?? 'The place was not added. Please retry.')
+              .toString(),
+          400,
+          Map<String, dynamic>.from(response));
+    }
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
