@@ -481,7 +481,7 @@ def build_initial_fulfillment_record(snapshot, now=None):
             'transport': {
                 'required': req['transport']['required'],
                 'status': 'unconfirmed' if req['transport']['required'] else 'not_required',
-                'providerName': ', '.join(req['transport']['brochureTypes']) if req['transport']['brochureTypes'] else '',
+                'providerName': '',
                 'reference': '',
                 'notes': '',
                 'confirmedAt': None,
@@ -506,4 +506,43 @@ def build_initial_fulfillment_record(snapshot, now=None):
         'confirmedBy': None,
         'updatedAt': timestamp,
     }
+
+
+def fulfillment_readiness(order, requirements, record, paid):
+    """Explain the same attestation conditions enforced by the readiness action."""
+    labels = {'accommodation': 'Accommodation', 'transport': 'Transportation', 'guideActivities': 'Guide / Activities'}
+    blockers, components = [], []
+    if not paid:
+        blockers.append('Awaiting traveller payment.')
+    state = order.get('fulfillmentStatus')
+    if state == 'fulfillment_declined':
+        blockers.append('Unable to Fulfil has been recorded; readiness cannot be changed here.')
+    elif state == 'fulfilled':
+        blockers.append('This legacy fulfilled order requires review before arrangements can be changed.')
+    if set(requirements) != set(labels):
+        blockers.append('Purchased service requirements are unavailable; review is required.')
+    for key, meta in requirements.items():
+        label = labels.get(key, key)
+        service = (record.get('services') or {}).get(key) or {}
+        missing = []
+        if meta.get('uncertain'):
+            missing.append(f'{label}: purchased brochure requires review.')
+        if meta.get('required'):
+            if not str(service.get('reference') or '').strip():
+                missing.append(f'{label} booking reference is missing.')
+            if key == 'transport' and not str(service.get('providerName') or '').strip():
+                missing.append('Actual transport provider / fleet is missing.')
+            if (service.get('status') != 'confirmed' or service.get('provenance') != 'operator_attested'
+                    or not service.get('confirmedBy') or not service.get('confirmedAt')):
+                missing.append(f'{label} arrangements have not been attested by the operator.')
+        blockers.extend(missing)
+        components.append({'key': key, 'label': label, 'required': bool(meta.get('required')),
+                           'complete': not missing, 'uncertain': bool(meta.get('uncertain')), 'missing': missing})
+    already_ready = state == 'trip_ready'
+    if already_ready:
+        blockers = ['Already Ready for Traveller.' if all(c['complete'] for c in components) else 'Already Ready for Traveller. Some historical supplier details are incomplete; records have been preserved.']
+    return {'canMarkReady': not blockers and not already_ready, 'blockers': blockers,
+            'requirementsReliable': set(requirements) == set(labels) and not any(meta.get('uncertain') for meta in requirements.values()),
+            'components': components, 'requiredCount': sum(c['required'] for c in components),
+            'completedCount': sum(c['required'] and c['complete'] for c in components)}
 

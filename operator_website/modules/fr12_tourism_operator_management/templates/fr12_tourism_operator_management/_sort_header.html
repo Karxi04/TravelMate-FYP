@@ -1,0 +1,5 @@
+{% macro sort_header(key, label) %}
+<th scope="col" aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort_column == key else 'none' }}">
+  <a href="{{ sort_links[key] }}" aria-label="Sort by {{ label }}">{{ label }} <span aria-hidden="true">{{ ('↑' if direction == 'asc' else '↓') if sort_column == key else '↕' }}</span></a>
+</th>
+{% endmacro %}

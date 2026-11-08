@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from math import isfinite
 from services.commerce_money import record_money, public_pricing_breakdown
 from services.public_content_projection import active_campaign, eligible_package
-from services.package_checkout_contract import derive_required_services, build_initial_fulfillment_record
+from services.package_checkout_contract import derive_required_services, build_initial_fulfillment_record, fulfillment_readiness
 
 RECORD_LIMIT = 500
 
@@ -153,6 +153,7 @@ def _safe_analytics_booking(order_data, include_fulfillment=False):
         "updatedAt": order_data.get("updatedAt"),
     }
     if include_fulfillment:
+        res["readiness"] = fulfillment_readiness(order_data, required_services, ful_record or {}, is_paid_order(order_data))
         res["pricingBreakdown"] = public_pricing_breakdown(snapshot.get("pricingBreakdown"))
         res["packageTripId"] = order_data.get("fulfilledTripId")
         res["fulfillmentRecord"] = ful_record
@@ -177,6 +178,7 @@ def generate_business_analytics(db, operator_id):
     # ==========================================================
 
     packages, packages_limited = _records(db, 'tourism_packages', operator_id)
+    packages = [package for package in packages if not package.get('deletedAt')]
 
     total_packages = len(packages)
 

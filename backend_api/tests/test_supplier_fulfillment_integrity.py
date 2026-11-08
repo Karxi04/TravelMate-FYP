@@ -104,7 +104,7 @@ def memory_flow(monkeypatch):
 def attest_all(client):
     for key in ('accommodation', 'transport', 'guideActivities'):
         result = client.post('/api/fr12/bookings/ord-sample-1/fulfillment', headers=AUTH_HEADER,
-                             json={'serviceType': key, 'reference': 'R-' + key})
+                             json={'serviceType': key, 'reference': 'R-' + key, 'providerName':'Synthetic Fleet'})
         assert result.status_code == 200
 
 
@@ -162,7 +162,7 @@ def test_concurrent_attestations_have_one_cas_winner(app, mock_operator_auth, me
     def request(key):
         with app.test_client() as client:
             return client.post('/api/fr12/bookings/ord-sample-1/fulfillment', headers=AUTH_HEADER,
-                               json={'serviceType': key, 'reference': 'R-' + key}).status_code
+                               json={'serviceType': key, 'reference': 'R-' + key, 'providerName':'Synthetic Fleet'}).status_code
     with ThreadPoolExecutor(2) as pool:
         assert sorted(pool.map(request, ('accommodation', 'transport'))) == [200, 409]
     saved = memory_flow['ord-sample-1']

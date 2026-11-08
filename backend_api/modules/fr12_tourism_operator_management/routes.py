@@ -7,6 +7,7 @@ from utils import utc_now_iso
 from request_rate_limit import rate_limit_response
 from services.operator_hotel_service import HotelDataError, resolve_package_hotel
 from services.review_service import ReviewConflict
+from services.operator_package_lifecycle import deletion_blocker, lifecycle_patch
 
 from sequence_contract.validators import validateCampaignDatesAndContent
 
@@ -31,7 +32,7 @@ from firebase_service import get_db
 
 from flask import send_file
 from .analytics_service import generate_business_analytics, _safe_analytics_booking, unique_package_orders, RECORD_LIMIT, is_paid_order
-from services.package_checkout_contract import derive_required_services, build_initial_fulfillment_record
+from services.package_checkout_contract import derive_required_services, build_initial_fulfillment_record, fulfillment_readiness
 from services.public_content_projection import eligible_package
 from services.report_service import export_operator_report
 from services.package_service import (
@@ -86,14 +87,15 @@ PROTECTED_CAMPAIGN_FIELDS = {
 bp=Blueprint('fr12_operator',__name__,url_prefix='/api/fr12')
 
 def _own(collection,id):
-    data=retrieveRecord(collection,id); return data if data and data.get('operatorId')==g.uid else None
+    data=retrieveRecord(collection,id)
+    return data if data and data.get('operatorId')==g.uid and not (collection == 'tourism_packages' and data.get('deletedAt')) else None
 @bp.get('/packages')
 @auth_required(['operator'])
 def packages():
     items = retrieveRecord('tourism_packages', filters=[('operatorId', '==', g.uid)])
     if not items and g.role == 'admin':
         items = retrieveRecord('tourism_packages')
-    return jsonify({'ok': True, 'items': [package_for_read(item) for item in items]})
+    return jsonify({'ok': True, 'items': [package_for_read(item) for item in items if not item.get('deletedAt')]})
 
 
 def _booking_projection(order):
@@ -187,6 +189,8 @@ def update_booking_fulfillment(order_reference):
         return jsonify({'ok': False, 'error': 'Invalid serviceType'}), 400
     reference = payload.get('reference', '')
     name = payload.get('supplierName') or payload.get('providerName') or payload.get('guideOrActivity') or ''
+    if service_type == 'transport' and not name:
+        return jsonify(ok=False,error='Enter the actual transport provider or internal fleet.'),400
     notes = payload.get('notes', '')
     if not reference or len(reference) > 200 or len(name) > 200 or len(notes) > 2000 or any(ord(c) < 32 for c in reference):
         return jsonify({'ok': False, 'error': 'A valid reservation reference is required (maximum 200 characters).'}), 400
@@ -226,12 +230,9 @@ def confirm_booking_fulfillment(order_reference):
     requirements = derive_required_services(order['packageSnapshot'])
     if any(meta.get('uncertain') for meta in requirements.values()):
         return jsonify({'ok': False, 'error': 'Purchased brochure does not reliably establish included services. Review is required.'}), 409
-    for key, meta in requirements.items():
-        service = (record.get('services') or {}).get(key) or {}
-        if meta['required'] and (service.get('status') != 'confirmed' or
-                not service.get('reference') or service.get('provenance') != 'operator_attested' or
-                not service.get('confirmedBy') or not service.get('confirmedAt')):
-            return jsonify({'ok': False, 'error': f'Cannot confirm fulfillment: {key} arrangements have not been attested.'}), 400
+    readiness = fulfillment_readiness(order, requirements, record, True)
+    if not readiness['canMarkReady']:
+        return jsonify(ok=False,error='Cannot confirm fulfillment: arrangements have not been attested. ' + ' '.join(readiness['blockers'])),400
     now = utc_now_iso()
     record.update({'status': 'trip_ready', 'confirmedAt': now, 'confirmedBy': g.uid,
                    'updatedAt': now, 'requiredServices': requirements})
@@ -312,7 +313,7 @@ def create_package_route():
 def update_package(pid):
     current=_own('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
-    if current.get('approvalStatus') in {'pending','submitted','archived'}:return jsonify({'ok':False,'error':'Package cannot be edited in its current state'}),409
+    if current.get('approvalStatus') in {'pending','submitted'}:return jsonify({'ok':False,'error':'Package cannot be edited in its current state'}),409
     payload=request.get_json(silent=True) or {}
     if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Package data must be an object'}),400
     merged={**current, **payload}; error=package_validation_error(merged)
@@ -321,11 +322,14 @@ def update_package(pid):
     payload, error = _hotel_package_payload(payload, current)
     if error is not None:return error
     updates=normalise_package(payload,current)
+    if current.get('approvalStatus') == 'archived':
+        updates.update(lifecycle_patch(current, g.uid, 'edited_archived', 'archived'))
+        updates['archiveRequiresReview'] = bool(current.get('archiveRequiresReview') or package_update_changes_reviewed_content(current, payload))
     if current.get('approvalStatus')=='approved' and package_update_changes_reviewed_content(current,payload):
         updates.update({'approvalStatus':'draft','reviewReason':'','reviewComment':'','reviewedAt':'','reviewedBy':'','reviewedByName':'','submittedAt':''})
     updates['updatedAt']=utc_now_iso()
     try:
-        saved = updateRecord('tourism_packages', pid, updates, **({'expected': current} if hotel_edit else {}))
+        saved = updateRecord('tourism_packages', pid, updates, **({'expected': current} if hotel_edit or current.get('approvalStatus') == 'archived' else {}))
         if not saved:
             return jsonify(ok=False,error='Package could not be saved. Reload and try again.'),503
         return jsonify({'ok':True,'package':package_for_read(saved)})
@@ -336,12 +340,24 @@ def update_package(pid):
 @bp.delete('/packages/<pid>')
 @auth_required(['operator'])
 def delete_package(pid):
-    current=_own('tourism_packages',pid)
-    if not current:return jsonify({'ok':False,'error':'Package not found'}),404
-    if current.get('approvalStatus') in {'pending','submitted','approved','suspended'}:return jsonify({'ok':False,'error':'Submitted, approved or suspended packages cannot be deleted'}),409
-    if retrieveRecord('checkout_orders', filters=[('packageId', '==', pid)], limit=1):
-        return jsonify({'ok': False, 'error': 'Packages with order history must be archived, not deleted.'}), 409
-    deleteRecord('tourism_packages',pid); return jsonify({'ok':True})
+    current=retrieveRecord('tourism_packages',pid)
+    if not current or current.get('operatorId') != g.uid:return jsonify({'ok':False,'error':'Package not found'}),404
+    if current.get('deletedAt'):return jsonify(ok=True, idempotent=True)
+    if current.get('approvalStatus') not in {'draft','rejected','archived'}:
+        return jsonify({'ok':False,'error':'Submitted, approved or suspended packages cannot be deleted'}),409
+    try:
+        blocker = deletion_blocker(retrieveRecord, pid)
+        if blocker:return jsonify(ok=False, error=blocker),409
+        patch = lifecycle_patch(current, g.uid, 'deleted', 'archived')
+        patch.update(deletedAt=patch['updatedAt'], deletedBy=g.uid)
+        # A retained tombstone also protects a late in-flight checkout and approval audit metadata.
+        saved = updateRecord('tourism_packages', pid, patch, expected=current)
+        if not saved:raise RuntimeError('Package not saved')
+    except ReviewConflict:
+        return jsonify(ok=False,error='Package changed. Reload before deleting.'),409
+    except Exception:
+        return jsonify(ok=False,error='Package dependencies could not be verified or deletion could not be saved. Try again later.'),503
+    return jsonify(ok=True, deletionMode='soft_delete')
 @bp.post('/packages/<pid>/submit')
 @auth_required(['operator'])
 def submit_package(pid):
@@ -358,7 +374,39 @@ def archive_package(pid):
     current=_own('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
     if current.get('approvalStatus') in {'pending','submitted','suspended'}:return jsonify({'ok':False,'error':'A package under review or suspension cannot be archived'}),409
-    return jsonify({'ok':True,'package':updateRecord('tourism_packages',pid,{'approvalStatus':'archived','updatedAt':utc_now_iso()})})
+    if current.get('approvalStatus') == 'archived':return jsonify(ok=True,package=package_for_read(current),idempotent=True)
+    patch = lifecycle_patch(current, g.uid, 'archived', 'archived')
+    patch.update(archivedAt=patch['updatedAt'], archivedBy=g.uid)
+    return _save_package_transition(pid, current, patch)
+
+
+def _save_package_transition(pid, current, patch):
+    try:
+        saved = updateRecord('tourism_packages', pid, patch, expected=current)
+        if not saved:raise RuntimeError('Package not saved')
+        return jsonify(ok=True, package=package_for_read(saved))
+    except ReviewConflict:
+        return jsonify(ok=False,error='Package changed. Reload and try again.'),409
+    except Exception:
+        return jsonify(ok=False,error='Package changes could not be saved. Try again later.'),503
+
+
+@bp.post('/packages/<pid>/restore')
+@auth_required(['operator'])
+def restore_package(pid):
+    current = _own('tourism_packages', pid)
+    if not current:return jsonify(ok=False,error='Package not found'),404
+    if current.get('approvalStatus') != 'archived':
+        if current.get('approvalStatus') == 'draft' and current.get('restoredAt'):
+            return jsonify(ok=True,package=package_for_read(current),idempotent=True)
+        return jsonify(ok=False,error='Only archived packages can be restored.'),409
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):return jsonify(ok=False,error='Restore data must be an object.'),400
+    if 'expectedUpdatedAt' in payload and payload['expectedUpdatedAt'] != current.get('updatedAt'):
+        return jsonify(ok=False,error='Package changed. Reload before restoring.'),409
+    patch = lifecycle_patch(current, g.uid, 'restored', 'draft')
+    patch.update(restoredAt=patch['updatedAt'], restoredBy=g.uid)
+    return _save_package_transition(pid, current, patch)
 @bp.get('/campaigns')
 @auth_required(['operator'])
 def campaigns():return jsonify({'ok':True,'items':retrieveRecord('promotional_campaigns',filters=[('operatorId','==',g.uid)])})

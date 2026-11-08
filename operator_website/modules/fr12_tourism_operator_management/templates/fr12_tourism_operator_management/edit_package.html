@@ -5,7 +5,7 @@
 <div class="page-title">
   <div>
     <span class="eyebrow">Package Editor</span>
-    <h1>Edit Tourism Package</h1>
+    <h1>{{ 'View' if read_only else 'Edit' }} Tourism Package</h1>
     <p>Update itinerary details, pricing, or media. If this package was previously approved, saving edits returns it to draft for review.</p>
   </div>
   <a class="btn outline" href="{{ url_for('operator_fr12.packages') }}">
@@ -36,7 +36,11 @@
   </div>
 {% endif %}
 
-<form class="card package-editor" method="post">
+{% if item.get('approvalStatus') == 'archived' %}<p class="notice-banner-limited">This package remains Archived while editing. Restore it as Draft and submit it for administrator review before publication.</p>{% endif %}
+{% if read_only %}<style>.package-view .builder-step-panel{display:block!important}.package-view .builder-stepper,.package-view button{display:none!important}.package-view fieldset{border:0;padding:0;min-width:0}.package-view input:disabled,.package-view textarea:disabled,.package-view select:disabled{opacity:1;color:var(--ink)}</style>{% endif %}
+<form class="card package-editor {{ 'package-view' if read_only else '' }}" method="post">
+  {% if read_only %}<fieldset disabled aria-label="Read-only package details">{% endif %}
   {% include 'fr12_tourism_operator_management/_package_form.html' %}
+  {% if read_only %}</fieldset>{% endif %}
 </form>
 {% endblock %}

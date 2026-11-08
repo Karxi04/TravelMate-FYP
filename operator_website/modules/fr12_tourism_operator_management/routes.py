@@ -2,6 +2,7 @@ from datetime import date, datetime, timezone, timedelta
 from math import isfinite
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response, jsonify
 from api_client import call_api
+from .table_controls import CATALOG_COLUMNS, BOOKING_COLUMNS, sort_records, departure_date, number
 
 bp = Blueprint("operator_fr12", __name__, template_folder="templates")
 
@@ -299,6 +300,35 @@ def _is_pending_booking(b):
     return pay in {"pending", "payment_pending", "unpaid"}
 
 
+def _sorting(columns, values, default):
+    column = request.args.get('sort', default)
+    if column not in columns:column = default
+    direction = request.args.get('direction', 'desc' if column in {'updated', 'created'} else 'asc')
+    if direction not in {'asc', 'desc'}:direction = 'asc'
+    links = {key: url_for(request.endpoint, **{**values, 'sort': key,
+             'direction': 'desc' if column == key and direction == 'asc' else 'asc'}) for key in columns}
+    return column, direction, links
+
+
+def _departure_summary(items):
+    paid = [item for item in items if _is_paid_booking(item)]
+    result = {'bookings':len(items), 'paid':len(paid), 'pending':sum(_is_pending_booking(item) for item in items),
+              'travellers':0, 'adults':0, 'children':0, 'unknown_parties':0,
+              'ready':sum(item.get('fulfillmentStatus') == 'trip_ready' for item in paid),
+              'arrangements_pending':sum(item.get('fulfillmentStatus') not in {'trip_ready','fulfillment_declined'} for item in paid)}
+    for item in paid:
+        adults, children, total = (number(item.get(key)) for key in ('adults','children','groupSize'))
+        adults = adults if adults is not None and adults.is_integer() else None
+        children = children if children is not None and children.is_integer() else None
+        total = total if total is not None and total.is_integer() else None
+        if total is None and adults is not None and children is not None:total = adults + children
+        result['travellers'] += int(total or 0)
+        result['adults'] += int(adults or 0)
+        result['children'] += int(children or 0)
+        result['unknown_parties'] += int(None in (adults, children, total))
+    return result
+
+
 @bp.route("/bookings")
 def bookings():
     if not guard():
@@ -313,8 +343,33 @@ def bookings():
 
     query = request.args.get("q", "").strip().lower()
     status = request.args.get("status", "all").strip().lower()
-
-    items = list(all_items)
+    package_id = request.args.get('package', '').strip()
+    departure = request.args.get('departure', '').strip()
+    start_date, end_date = request.args.get('from', '').strip(), request.args.get('to', '').strip()
+    catalog_response = call_api('GET', '/api/fr12/packages')
+    catalog = catalog_response.json().get('items', []) if catalog_response.ok else []
+    package_options = {str(item.get('id')): item.get('title') or item.get('packageTitle') or str(item.get('id'))
+                       for item in catalog if item.get('id')}
+    for item in all_items:
+        if item.get('packageId'):
+            package_options.setdefault(str(item['packageId']), item.get('packageTitle') or str(item['packageId']))
+    package_options = sorted(package_options.items(), key=lambda pair:(str(pair[1]).casefold(), pair[0]))
+    package_items = [item for item in all_items if not package_id or str(item.get('packageId')) == package_id]
+    departure_options = sorted({departure_date(item.get('departureDate')) for item in package_items} - {None})
+    if request.args.get('previous_package', package_id) != package_id and departure not in departure_options:
+        departure = ''
+    filter_error = None
+    if any(value and departure_date(value) is None for value in (start_date, end_date)):
+        filter_error = 'Enter valid departure range dates (YYYY-MM-DD).'
+    elif start_date and end_date and start_date > end_date:
+        filter_error = 'Departure range end must not precede its start.'
+    elif departure and departure != 'missing' and departure_date(departure) is None:
+        filter_error = 'Select a valid departure date.'
+    items = [] if filter_error else [item for item in package_items
+        if (not departure or (departure == 'missing' and departure_date(item.get('departureDate')) is None)
+            or departure == departure_date(item.get('departureDate')))
+        and (not start_date or (departure_date(item.get('departureDate')) or '') >= start_date)
+        and (not end_date or (departure_date(item.get('departureDate')) is not None and departure_date(item.get('departureDate')) <= end_date))]
     if status != "all":
         if status == "paid":
             items = [b for b in items if _is_paid_booking(b)]
@@ -340,6 +395,11 @@ def bookings():
             ]).lower()
         ]
 
+    filter_values = {'q':query, 'status':status, 'package':package_id, 'departure':departure, 'from':start_date, 'to':end_date}
+    sort_column, direction, sort_links = _sorting(BOOKING_COLUMNS, filter_values, 'created')
+    items = sort_records(items, sort_column, direction)
+    selection_summary = _departure_summary(items)
+
     summary = {
         "total": len(all_items),
         "paid": sum(1 for b in all_items if _is_paid_booking(b)),
@@ -361,6 +421,10 @@ def bookings():
         "fr12_tourism_operator_management/bookings.html",
         items=items,
         total_items_count=len(all_items),
+        package_options=package_options, departure_options=departure_options, package_id=package_id,
+        departure=departure, start_date=start_date, end_date=end_date, filter_error=filter_error,
+        selection_summary=selection_summary, sort_column=sort_column, direction=direction, sort_links=sort_links,
+
         summary=summary,
         status=status,
         query=query,
@@ -394,7 +458,8 @@ def update_booking_fulfillment(order_reference):
         return redirect(url_for("operator_fr01.login"))
     service_type = request.form.get("serviceType", "").strip()
     reference = request.form.get("reference", "").strip()
-    supplier_name = request.form.get("supplierName", "").strip()
+    name_field = 'providerName' if service_type == 'transport' else 'supplierName'
+    supplier_name = request.form.get(name_field, request.form.get('supplierName', '')).strip()
     notes = request.form.get("notes", "").strip()
 
     if not service_type or not reference:
@@ -404,7 +469,7 @@ def update_booking_fulfillment(order_reference):
     payload = {
         "serviceType": service_type,
         "reference": reference,
-        "supplierName": supplier_name,
+        name_field: supplier_name,
         "notes": notes,
     }
     response = call_api("POST", f"/api/fr12/bookings/{order_reference}/fulfillment", json=payload)
@@ -421,7 +486,7 @@ def confirm_booking_fulfillment(order_reference):
         return redirect(url_for("operator_fr01.login"))
     response = call_api("POST", f"/api/fr12/bookings/{order_reference}/confirm-fulfillment")
     if response.ok:
-        flash("All supplier arrangements confirmed! Booking is now Trip Ready.", "success")
+        flash("Operator arrangements recorded. Package Trip is now Ready for Traveller.", "success")
     else:
         flash(_error(response, fallback="Failed to confirm fulfillment."), "error")
     return redirect(url_for("operator_fr12.booking_detail", order_reference=order_reference))
@@ -568,7 +633,10 @@ def packages():
         return render_template("fr12_tourism_operator_management/package_new.html", form=payload)
     for item in items:
         item["displayStatus"] = str(item.get("approvalStatus", "draft") or "draft").lower()
-    return render_template("fr12_tourism_operator_management/packages.html", items=items, status=status, query=query)
+    sort_column, direction, sort_links = _sorting(CATALOG_COLUMNS, {'q':query, 'status':status}, 'updated')
+    items = sort_records(items, sort_column, direction, catalog=True)
+    return render_template("fr12_tourism_operator_management/packages.html", items=items, status=status, query=query,
+                           sort_column=sort_column, direction=direction, sort_links=sort_links)
 
 
 @bp.route("/packages/new", methods=["GET", "POST"])
@@ -630,6 +698,17 @@ def archive_package(package_id):
     response = call_api("POST", f"/api/fr12/packages/{package_id}/archive")
     flash("Package archived." if response.ok else _error(response), "success" if response.ok else "error")
     return redirect(url_for("operator_fr12.packages"))
+
+
+@bp.post('/packages/<package_id>/restore')
+def restore_package(package_id):
+    if not guard():return redirect(url_for('operator_fr01.login'))
+    revision = request.form.get('expectedUpdatedAt')
+    response = call_api('POST', f'/api/fr12/packages/{package_id}/restore',
+                        json={'expectedUpdatedAt':revision} if revision else {})
+    flash('Package restored as Draft. Submit it for administrator approval before publication.' if response.ok else _error(response),
+          'success' if response.ok else 'error')
+    return redirect(url_for('operator_fr12.packages', status='draft' if response.ok else 'archived'))
 
 
 @bp.route("/campaigns", methods=["GET", "POST"])
@@ -738,6 +817,8 @@ def edit_package_page(package_id):
     if item is None:
         flash("Package not found.", "error")
         return redirect(url_for("operator_fr12.packages"))
+    read_only = request.args.get('view') == '1'
+    if read_only and request.method == 'POST':return 'This package view is read-only.',405
     if request.method == "POST":
         payload = _package_payload()
         response = call_api("PUT", f"/api/fr12/packages/{package_id}", json=payload)
@@ -755,7 +836,7 @@ def edit_package_page(package_id):
         else:
             flash(_error(response), "error")
         item = {**item, **payload}
-    return render_template("fr12_tourism_operator_management/edit_package.html", item=item, form=item)
+    return render_template("fr12_tourism_operator_management/edit_package.html", item=item, form=item, read_only=read_only)
 
 
 @bp.route("/campaigns/<campaign_id>/edit-page", methods=["GET", "POST"])

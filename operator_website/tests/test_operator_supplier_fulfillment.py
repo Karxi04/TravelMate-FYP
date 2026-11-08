@@ -219,6 +219,7 @@ def test_readiness_action_requires_complete_attestation(auth_client, ready, unce
         if ready:
             service.update(status='confirmed',reference='supplier-ref',provenance='operator_attested',confirmedBy='op',confirmedAt='2026-11-08T10:00:00Z')
     booking['requiredServices']['accommodation']['uncertain'] = uncertain
+    booking['readiness'] = {'canMarkReady':not disabled, 'blockers':[] if not disabled else ['Required supplier records are incomplete.'], 'components':[], 'requiredCount':3, 'completedCount':3 if ready else 0, 'requirementsReliable':not uncertain}
     response = MagicMock(ok=True)
     response.json.return_value = {'ok':True,'booking':booking}
     with patch.dict(app.view_functions['operator_fr12.booking_detail'].__globals__, {'call_api':lambda *a, **kw:response}):

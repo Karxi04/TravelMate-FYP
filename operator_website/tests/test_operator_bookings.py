@@ -221,13 +221,14 @@ def test_operator_booking_detail_view(auth_client):
         res = auth_client.get("/bookings/order-heritage-101")
         assert res.status_code == 200
         html = res.get_data(as_text=True)
-        assert "Booking Reference #order-heritage-101" in html
+        assert "order-heritage-101" in html
+        assert 'aria-label="Copy Reference"' in html
         assert "George Town UNESCO Heritage" in html
         assert "3 travellers (pax)" in html
         assert "2 Adults" in html
         assert "1 Child" in html
         assert "MYR 1075.50" in html
-        assert "FYP demonstration environment" in html
+        assert "FYP demonstration environment" not in html
         assert "Order status summary" in html
         assert "Reservation Not Created" in html
         assert "Read-Only Governance" in html
@@ -277,7 +278,7 @@ def test_f4a_booking_metrics_reject_terminal_paid_and_non_myr_totals(auth_client
     with patch.dict(app.view_functions['operator_fr12.bookings'].__globals__, {'call_api': lambda *a, **k: response}):
         result = auth_client.get('/bookings')
     assert 'MYR 100.00 total paid' in result.get_data(as_text=True)
-    assert 'Totals cover the loaded records only' in result.get_data(as_text=True)
+    assert 'Sorting, filters and totals cover the loaded records only' in result.get_data(as_text=True)
 
 
 def test_operator_booking_detail_not_found_redirects(auth_client):

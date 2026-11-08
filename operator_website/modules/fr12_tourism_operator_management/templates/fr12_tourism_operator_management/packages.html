@@ -2,6 +2,7 @@
 {% block title %}Packages Catalog | TravelMate{% endblock %}
 
 {% block content %}
+{% from 'fr12_tourism_operator_management/_sort_header.html' import sort_header with context %}
 <div class="page-title">
   <div>
     <span class="eyebrow">Tourism Package Management</span>
@@ -17,6 +18,7 @@
 <!-- Toolbar: Search and Filter -->
 <div class="toolbar">
   <form class="actions" method="get">
+    <input type="hidden" name="sort" value="{{ sort_column }}"><input type="hidden" name="direction" value="{{ direction }}">
     <div style="position: relative; display: flex; align-items: center;">
       <input class="input search-input" name="q" value="{{ query }}" placeholder="Search title or destination...">
     </div>
@@ -45,19 +47,19 @@
   <table>
     <thead>
       <tr>
-        <th style="min-width: 280px;">Package</th>
-        <th style="min-width: 150px;">Destination</th>
-        <th style="min-width: 100px;">Duration</th>
-        <th style="min-width: 130px;">Price</th>
-        <th style="min-width: 110px;">Status</th>
-        <th style="min-width: 100px;">Updated</th>
+        {{ sort_header('title', 'Package') }}
+        {{ sort_header('destination', 'Destination') }}
+        {{ sort_header('duration', 'Duration') }}
+        {{ sort_header('price', 'Price') }}
+        {{ sort_header('status', 'Status') }}
+        {{ sort_header('updated', 'Updated') }}
         <th style="min-width: 220px; text-align: right;">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for item in items %}
         {% set state = item.get('displayStatus', item.get('approvalStatus', 'draft'))|lower %}
-        <tr>
+        <tr data-package-id="{{ item.id }}">
           <td>
             <strong style="color: var(--ink); font-size: 14px;">{{ item.get('title', item.get('packageTitle', 'Package')) }}</strong>
             {% if item.get('shortDescription') or item.get('description') %}
@@ -126,19 +128,20 @@
 
           <td style="text-align: right;">
             <div class="actions" style="justify-content: flex-end; gap: 6px;">
-              {% if state not in ['pending', 'submitted', 'archived'] %}
+              <a class="btn outline btn-sm" href="{{ url_for('operator_fr12.edit_package_page', package_id=item.id, view='1') }}">View</a>
+              {% if state not in ['pending', 'submitted'] %}
                 <a class="btn outline btn-sm" href="{{ url_for('operator_fr12.edit_package_page', package_id=item.id) }}" title="Edit package">Edit</a>
               {% endif %}
 
               {% if state in ['draft', 'rejected', 'suspended'] %}
-                <form method="post" action="/packages/{{ item.id }}/submit" style="display: inline-block; margin: 0;">
+                <form data-once method="post" action="/packages/{{ item.id }}/submit" style="display: inline-block; margin: 0;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button class="btn primary btn-sm" type="submit">{{ 'Resubmit' if state in ['rejected', 'suspended'] else 'Submit' }}</button>
                 </form>
               {% endif %}
 
-              {% if state in ['draft', 'rejected'] %}
-                <form method="post" action="/packages/{{ item.id }}/delete" onsubmit="return confirm('Delete this package draft permanently?')" style="display: inline-block; margin: 0;">
+              {% if state in ['draft', 'rejected', 'archived'] %}
+                <form data-once method="post" action="/packages/{{ item.id }}/delete" onsubmit="return confirm('Delete this package from the catalog? Existing bookings, payment history and campaigns will block deletion.')" style="display: inline-block; margin: 0;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button class="btn danger btn-sm" type="submit">Delete</button>
                 </form>
@@ -146,8 +149,16 @@
                 <span class="muted" style="font-size: 12px; font-weight: 500;">Awaiting Review</span>
               {% endif %}
 
+              {% if state == 'archived' %}
+                <form method="post" action="{{ url_for('operator_fr12.restore_package', package_id=item.id) }}" onsubmit="return confirm('Restore as Draft for administrator review?')" data-once>
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="expectedUpdatedAt" value="{{ item.get('updatedAt') or '' }}">
+                  <button class="btn primary btn-sm" type="submit">Restore</button>
+                </form>
+                <small class="muted">Restore to Draft, then submit for review.</small>
+              {% endif %}
               {% if state in ['draft', 'rejected', 'approved'] %}
-                <form method="post" action="/packages/{{ item.id }}/archive" onsubmit="return confirm('Archive this package?')" style="display: inline-block; margin: 0;">
+                <form data-once method="post" action="/packages/{{ item.id }}/archive" onsubmit="return confirm('Archive this package?')" style="display: inline-block; margin: 0;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button class="btn outline btn-sm" type="submit">Archive</button>
                 </form>
@@ -172,4 +183,11 @@
     </tbody>
   </table>
 </section>
+<script>
+document.querySelectorAll('form[data-once]').forEach(form=>form.addEventListener('submit',event=>{
+  if(event.defaultPrevented)return;
+  if(form.dataset.submitting==='true'){event.preventDefault();return;}
+  form.dataset.submitting='true';form.querySelectorAll('button[type="submit"]').forEach(button=>button.disabled=true);
+}));
+</script>
 {% endblock %}

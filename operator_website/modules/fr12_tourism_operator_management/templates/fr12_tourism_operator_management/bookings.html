@@ -2,7 +2,11 @@
 {% block title %}Package Bookings | TravelMate Operator{% endblock %}
 
 {% block content %}
+{% from 'fr12_tourism_operator_management/_sort_header.html' import sort_header with context %}
 <style>.table-wrap table{width:100%;table-layout:fixed}.table-wrap td,.detail-row strong,.eyebrow{overflow-wrap:anywhere;white-space:normal;min-width:0}.table-wrap th{min-width:0!important}.table-wrap code{white-space:normal;overflow-wrap:anywhere}.table-wrap{overflow-x:auto}@media(max-width:850px){.table-wrap table{min-width:850px}}</style>
+<style>
+.booking-filter-form{flex:1;min-width:0;align-items:flex-end}.booking-filter-form label{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 160px}.booking-filter-form .input{width:100%;max-width:100%;min-width:0;box-sizing:border-box}.booking-filter-form>div{flex:1 1 180px;min-width:0}.booking-filter-form>select{flex:1 1 160px;max-width:220px}
+</style>
 <div class="page-title">
   <div>
     <span class="eyebrow">Tourism Operator Management</span>
@@ -21,7 +25,7 @@
 {% if data_limited %}
 <div class="notice-banner-limited" role="region" aria-label="Data Scope Notice">
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <p class="muted">Showing up to 500 records. Totals cover the loaded records only.</p>
+  <p class="muted">Showing up to 500 records. Sorting, filters and totals cover the loaded records only.</p>
 </div>
 {% endif %}
 <!-- Metrics Overview Ribbon -->
@@ -75,7 +79,22 @@
 <!-- Toolbar: Search and Filter -->
 {% endif %}
 <div class="toolbar">
-  <form class="actions" method="get">
+  <form class="actions booking-filter-form" method="get">
+    <input type="hidden" name="sort" value="{{ sort_column }}"><input type="hidden" name="direction" value="{{ direction }}">
+    <input type="hidden" name="previous_package" value="{{ package_id }}">
+    <label>Package <select class="input" name="package" aria-label="Filter by package" onchange="this.form.requestSubmit()">
+      <option value="">All Packages</option>
+      {% for id, title in package_options %}<option value="{{ id }}" {% if package_id == id %}selected{% endif %}>{{ title }}</option>{% endfor %}
+    </select></label>
+    <label>Departure <select class="input" name="departure" aria-label="Filter by departure">
+      <option value="">All Dates</option>
+      {% for value in departure_options %}<option value="{{ value }}" {% if departure == value %}selected{% endif %}>{{ value }}</option>{% endfor %}
+      <option value="missing" {% if departure == 'missing' %}selected{% endif %}>Missing departure date</option>
+      {% if departure and departure != 'missing' and departure not in departure_options %}<option value="{{ departure }}" selected>No bookings on {{ departure }}</option>{% endif %}
+    </select></label>
+    <label>From <input class="input" type="date" name="from" value="{{ start_date }}"></label>
+    <label>To <input class="input" type="date" name="to" value="{{ end_date }}"></label>
+
     <input class="input search-input" name="q" value="{{ query }}" placeholder="Search by order ref, package, date...">
     <select class="input filter-input" name="status" aria-label="Filter by booking status">
       <option value="all" {% if status == 'all' %}selected{% endif %}>All Bookings</option>
@@ -90,8 +109,8 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
       <span>Filter</span>
     </button>
-    {% if query or status != 'all' %}
-      <a class="btn outline" href="{{ url_for('operator_fr12.bookings') }}" style="color: var(--ink-muted);">Clear</a>
+    {% if query or status != 'all' or package_id or departure or start_date or end_date %}
+      <a class="btn outline" href="{{ url_for('operator_fr12.bookings') }}" style="color: var(--ink-muted);">Clear Filters</a>
     {% endif %}
   </form>
 
@@ -100,6 +119,19 @@
   </span>
 </div>
 
+{% if filter_error %}<p role="alert" class="review-feedback">{{ filter_error }}</p>{% endif %}
+{% if not backend_error %}
+<section class="card" aria-label="Filtered departure summary" style="margin-bottom:20px">
+  <h3>{{ dict(package_options).get(package_id, 'Package unavailable') if package_id else 'All Packages' }}{% if departure %} · {{ departure if departure != 'missing' else 'Missing departure date' }}{% endif %}</h3>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:12px">
+    {% for key, label in [('bookings','Bookings'),('paid','Paid bookings'),('pending','Pending bookings'),('travellers','Travellers'),('adults','Adults'),('children','Children'),('arrangements_pending','Arrangements pending'),('ready','Ready arrangements')] %}
+      <div><small class="muted">{{ label }}</small><strong style="display:block;font-size:20px" data-summary="{{ key }}">{{ selection_summary[key] }}</strong></div>
+    {% endfor %}
+  </div>
+  <p class="muted">Booking counts include all matching records. Traveller, adult, child and arrangement totals include paid orders only; expired, cancelled and failed orders are excluded.</p>
+  {% if selection_summary.unknown_parties %}<small class="muted">{{ selection_summary.unknown_parties }} paid order(s) have incomplete party details; only recorded counts are included.</small>{% endif %}
+</section>
+{% endif %}
 {% if backend_error %}
 <div class="card" style="text-align: center; padding: 36px 20px; border-color: var(--danger-border); background: #FFF5F5;">
   <div style="font-weight: 700; color: var(--danger); font-size: 16px; margin-bottom: 8px;">Backend Service Unavailable</div>
@@ -115,14 +147,14 @@
   </div>
   <strong>No package bookings found</strong>
   <p>
-    {% if query or status != 'all' %}
+    {% if query or status != 'all' or package_id or departure or start_date or end_date %}
       No bookings matched your filter criteria. Try resetting the filters.
     {% else %}
       When travellers book your published Penang packages through the TravelMate mobile app, their orders will appear here.
     {% endif %}
   </p>
   <div class="empty-actions">
-    {% if query or status != 'all' %}
+    {% if query or status != 'all' or package_id or departure or start_date or end_date %}
       <a class="btn outline" href="{{ url_for('operator_fr12.bookings') }}">Reset Filters</a>
     {% else %}
       <a class="btn primary" href="{{ url_for('operator_fr12.packages') }}">Manage Package Catalog</a>
@@ -134,20 +166,21 @@
   <table>
     <thead>
       <tr>
-        <th style="min-width: 170px;">Order Reference</th>
-        <th style="min-width: 240px;">Package Excursion</th>
-        <th style="min-width: 130px;">Departure</th>
-        <th style="min-width: 150px;">Party Breakdown</th>
-        <th style="min-width: 120px;">Amount</th>
-        <th style="min-width: 130px;">Payment Status</th>
-        <th style="min-width: 140px;">In-App Fulfillment</th>
-        <th style="min-width: 160px;">Supplier Status</th>
-        <th style="min-width: 110px; text-align: right;">Action</th>
+        {{ sort_header('reference', 'Order Reference') }}
+        {{ sort_header('package', 'Package Excursion') }}
+        {{ sort_header('departure', 'Departure') }}
+        {{ sort_header('party', 'Party Breakdown') }}
+        {{ sort_header('amount', 'Amount') }}
+        {{ sort_header('payment', 'Payment Status') }}
+        {{ sort_header('fulfillment', 'In-App Fulfillment') }}
+        {{ sort_header('supplier', 'Supplier Status') }}
+        {{ sort_header('created', 'Created') }}
+        <th style="text-align:right">Action</th>
       </tr>
     </thead>
     <tbody>
       {% for item in items %}
-      <tr>
+      <tr data-order-reference="{{ item.orderReference or item.id }}">
         <td>
           <div style="font-weight: 700; color: var(--ink); font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px;">
             {{ item.orderReference }}
@@ -251,6 +284,7 @@
             <span class="badge-supplier attested" title="Supplier reservation confirmed and attested by operator">
               ✅ Arrangements Recorded (Operator)
             </span>
+          {% elif sup_status == 'not_required' %}<span class="badge-supplier">Not Required</span>
           {% elif sup_status == 'declined' %}
             <span class="badge-supplier declined" title="Supplier fulfillment declined by operator">
               ❌ Declined
@@ -262,6 +296,7 @@
           {% endif %}
         </td>
 
+        <td>{{ (item.get('createdAt') or '—')[:19]|replace('T',' ') }}</td>
         <td style="text-align: right;">
           <a class="btn outline btn-sm" href="{{ url_for('operator_fr12.booking_detail', order_reference=item.orderReference) }}">
             <span>Details</span>
