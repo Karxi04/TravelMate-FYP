@@ -3,6 +3,16 @@
 
 {% block content %}
 <style>.table-wrap table{width:100%;table-layout:fixed}.table-wrap td,.detail-row strong,.eyebrow{overflow-wrap:anywhere;white-space:normal;min-width:0}.table-wrap th{min-width:0!important}.table-wrap code{white-space:normal;overflow-wrap:anywhere}.table-wrap{overflow-x:auto}@media(max-width:850px){.table-wrap table{min-width:850px}}</style>
+<style>
+.order-status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-bottom:18px}
+.order-status-grid .status-tile{padding:12px;border:1px solid var(--line,var(--border));border-radius:8px;min-width:0}
+.order-status-grid .status-tile span{display:block;font-size:12px;color:var(--ink-muted);margin-bottom:5px}
+.order-status-grid .status-tile strong,.order-reference code{overflow-wrap:anywhere;white-space:normal}
+.order-reference{display:flex;align-items:flex-start;gap:10px;max-width:850px;margin:10px 0 18px}.order-reference code{flex:1;min-width:0;font-size:12px}
+.fulfillment-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:20px;align-items:stretch}
+.fulfillment-grid>div{min-width:0;overflow-wrap:anywhere}.fulfillment-grid .input{width:100%;min-width:0;box-sizing:border-box}.fulfillment-grid form button{align-self:flex-start}
+@media(max-width:600px){.order-reference{flex-direction:column}.order-status-grid{grid-template-columns:1fr 1fr}}
+</style>
 <div class="page-title">
   <div>
     <div style="margin-bottom: 8px;">
@@ -11,22 +21,23 @@
         <span>Back to Bookings</span>
       </a>
     </div>
-    <span class="eyebrow">Booking Reference #{{ booking.orderReference }}</span>
+    <span class="eyebrow">Package Booking</span>
     <h1>Order Details & Party Breakdown</h1>
     <p>Sanitized read-only projection of traveller package order and platform fulfillment.</p>
   </div>
 </div>
 
+<div class="order-reference"><code>{{ booking.orderReference }}</code><button type="button" class="btn outline btn-sm" aria-label="Copy Reference" onclick="if(navigator.clipboard){navigator.clipboard.writeText(this.previousElementSibling.textContent.trim()).then(()=>this.textContent='Copied').catch(()=>this.textContent='Select reference to copy')}else{const range=document.createRange();range.selectNodeContents(this.previousElementSibling);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);this.textContent='Reference selected - copy'}">Copy Reference</button></div>
 {% set pay_status = (booking.paymentStatus or '')|lower %}
 {% set ord_status = (booking.orderStatus or '')|lower %}
 {% set ful_status = (booking.fulfillmentStatus or '')|lower %}
 {% set sup_status = (booking.supplierReservationStatus or '')|lower %}
-<section class="card" aria-label="Order status summary">
-  <div class="detail-row"><span>Payment</span><strong>{{ pay_status|payment_label(ord_status) }}</strong></div>
-  <div class="detail-row"><span>Platform order</span><strong>{{ ord_status|replace('_',' ')|title }}</strong></div>
-  <div class="detail-row"><span>Package Trip</span><strong>{{ 'Created in App' if booking.packageTripId else 'Not Created' }}</strong></div>
-  <div class="detail-row"><span>Operator readiness</span><strong>{{ 'Ready for Traveller' if ful_status == 'trip_ready' else 'Unable to Fulfil' if ful_status == 'fulfillment_declined' else 'Awaiting Arrangements' }}</strong></div>
-  <div class="detail-row"><span>External suppliers</span><strong>{{ 'Arrangements Recorded (Operator)' if sup_status == 'operator_attested' else 'Unable to Fulfil' if sup_status == 'declined' else 'Not Required' if sup_status == 'not_required' else 'Reservation Not Created' }}</strong></div>
+<section class="order-status-grid" aria-label="Order status summary">
+  <div class="status-tile"><span>Payment</span><strong>{{ pay_status|payment_label(ord_status) }}</strong></div>
+  <div class="status-tile"><span>Platform order</span><strong>{{ ord_status|replace('_',' ')|title }}</strong></div>
+  <div class="status-tile"><span>Package Trip</span><strong>{{ 'Created in App' if booking.packageTripId else 'Not Created' }}</strong></div>
+  <div class="status-tile"><span>Operator readiness</span><strong>{{ 'Ready for Traveller' if ful_status == 'trip_ready' else 'Unable to Fulfil' if ful_status == 'fulfillment_declined' else 'Awaiting Arrangements' }}</strong></div>
+  <div class="status-tile"><span>External suppliers</span><strong>{{ 'Arrangements Recorded (Operator)' if sup_status == 'operator_attested' else 'Unable to Fulfil' if sup_status == 'declined' else 'Not Required' if sup_status == 'not_required' else 'Reservation Not Created' }}</strong></div>
   {% if sup_status == 'operator_attested' %}<p class="muted">Operator-provided references; not independently verified by TravelMate.</p>{% endif %}
 </section>
 
@@ -240,18 +251,33 @@
 {% set ful_rec = booking.fulfillmentRecord or {} %}
 {% set ful_services = ful_rec.services or {} %}
 {% set req_services = booking.requiredServices or {} %}
+{% set readiness = booking.get('readiness') or {'canMarkReady':false,'blockers':['Readiness details are unavailable. Reload this order.'],'components':[],'requiredCount':0,'completedCount':0,'requirementsReliable':false} %}
+<section class="card" aria-label="Fulfilment progress" style="margin:20px 0">
+  <h2>Package Fulfilment</h2>
+  <p>Payment: <strong>{{ pay_status|payment_label(ord_status) }}</strong> ·
+    {% if not readiness.requirementsReliable %}Supplier requirements need review
+    {% elif readiness.requiredCount == 0 %}No external arrangements required
+    {% else %}{{ readiness.completedCount }} / {{ readiness.requiredCount }} required arrangements complete{% endif %}
+  </p>
+  {% for component in readiness.components %}
+    <div style="margin:8px 0"><strong>{{ component.label }}</strong>: {{ 'Review required' if component.uncertain else 'Required — Arrangement recorded' if component.required and component.complete else 'Required — Missing arrangement' if component.required else 'Not required' }}</div>
+  {% endfor %}
+  {% if readiness.canMarkReady %}<p role="status">All required arrangements are recorded.</p>{% else %}
+    <ul role="status">{% for reason in readiness.blockers %}<li>{{ reason }}</li>{% endfor %}</ul>
+  {% endif %}
+</section>
+
 {% set snap = booking.packageBrochure or booking.packageSnapshot or {} %}
 
 <div style="margin-top: 28px;">
   <div style="margin-bottom: 16px;">
-    <span class="eyebrow">Package Fulfilment</span>
-    <h2 style="margin: 4px 0 6px;">Supplier Arrangements & Logistics</h2>
+    <h3 style="margin: 4px 0 6px;">Supplier Arrangements</h3>
     <p class="muted" style="margin: 0; font-size: 14px;">
-      Manage external provider bookings based on your package brochure specifications. Attest actual reservation references so the platform can verify fulfillment provenance.
+      Record the supplier arrangements promised by the purchased package. References are provided by your organization.
     </p>
   </div>
 
-  <div class="grid g3" style="align-items: stretch;">
+  <div class="fulfillment-grid">
     <!-- 1. Accommodation Card -->
     {% if req_services.accommodation and req_services.accommodation.required %}
     {% set accom_svc = ful_services.accommodation or {} %}
@@ -273,8 +299,8 @@
         <!-- Brochure specs (read-only from package) -->
         <div style="background: var(--surface-secondary, #F8FAFC); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; margin-bottom: 14px; border: 1px solid var(--border, #E2E8F0);">
           <div style="font-weight: 700; color: var(--ink); margin-bottom: 4px;">Brochure Specification</div>
-          <div><strong>Property:</strong> {{ req_services.accommodation.brochureName or snap.accommodation.accommodationName or 'Partner Hotel' }}</div>
-          <div><strong>Room:</strong> {{ req_services.accommodation.brochureRoomType or snap.accommodation.roomType or 'Standard Room' }}</div>
+          <div><strong>Property:</strong> {{ req_services.accommodation.brochureName or 'Not specified in purchased brochure' }}</div>
+          <div><strong>Room:</strong> {{ req_services.accommodation.brochureRoomType or 'Not specified in purchased brochure' }}</div>
           {% if req_services.accommodation.brochureNotes %}
             <div style="margin-top: 2px; color: var(--ink-secondary);">{{ req_services.accommodation.brochureNotes }}</div>
           {% endif %}
@@ -305,14 +331,14 @@
         {% endif %}
       </div>
 
-      {% if not is_accom_confirmed and booking.isPaid and booking.fulfillmentStatus != 'fulfillment_declined' %}
+      {% if not is_accom_confirmed and booking.isPaid and not req_services.accommodation.uncertain and booking.fulfillmentStatus not in ['trip_ready','fulfilled','fulfillment_declined'] %}
       <form method="post" action="{{ url_for('operator_fr12.update_booking_fulfillment', order_reference=booking.orderReference) }}" style="margin-top: 14px;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="serviceType" value="accommodation">
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <div>
             <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Property / Supplier Name</label>
-            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="supplierName" value="{{ req_services.accommodation.brochureName or snap.accommodation.accommodationName or '' }}" placeholder="Hotel name">
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="supplierName" value="{{ req_services.accommodation.brochureName or '' }}" placeholder="Hotel name">
           </div>
           <div>
             <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Booking / Reference # *</label>
@@ -350,7 +376,7 @@
         <!-- Brochure specs -->
         <div style="background: var(--surface-secondary, #F8FAFC); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; margin-bottom: 14px; border: 1px solid var(--border, #E2E8F0);">
           <div style="font-weight: 700; color: var(--ink); margin-bottom: 4px;">Brochure Specification</div>
-          <div><strong>Modes:</strong> {{ req_services.transport.brochureTypes|join(', ') if req_services.transport.brochureTypes else 'Ground Transit' }}</div>
+          <div><strong>Read-only Brochure Specification:</strong></div><div><strong>Modes:</strong> {{ req_services.transport.brochureTypes|join(', ') if req_services.transport.brochureTypes else 'Ground Transit' }}</div>
           {% if req_services.transport.brochureNotes %}
             <div style="margin-top: 2px; color: var(--ink-secondary);">{{ req_services.transport.brochureNotes }}</div>
           {% endif %}
@@ -381,22 +407,22 @@
         {% endif %}
       </div>
 
-      {% if not is_trans_confirmed and booking.isPaid and booking.fulfillmentStatus != 'fulfillment_declined' %}
+      {% if booking.isPaid and not req_services.transport.uncertain and booking.fulfillmentStatus not in ['trip_ready','fulfilled','fulfillment_declined'] %}
       <form method="post" action="{{ url_for('operator_fr12.update_booking_fulfillment', order_reference=booking.orderReference) }}" style="margin-top: 14px;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="serviceType" value="transport">
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <div>
-            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Transport Fleet / Provider</label>
-            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="supplierName" value="{{ req_services.transport.brochureTypes|join(', ') if req_services.transport.brochureTypes else '' }}" placeholder="Transport provider">
+            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Actual Transport Provider / Fleet *</label>
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="providerName" value="{{ trans_svc.providerName if is_trans_confirmed and trans_svc.provenance == 'operator_attested' else '' }}" placeholder="Actual provider or internal fleet" maxlength="200" required>
           </div>
           <div>
-            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Transit / Booking # *</label>
-            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="reference" placeholder="e.g. VAN-PEN-0412" required>
+            <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Transit / Booking Reference *</label>
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="reference" value="{{ trans_svc.reference or '' }}" placeholder="Booking or dispatch reference" maxlength="200" required>
           </div>
           <div>
             <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Notes (Optional)</label>
-            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="notes" placeholder="Pickup point or vehicle notes">
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="notes" value="{{ trans_svc.notes or '' }}" placeholder="Pickup point or vehicle notes" maxlength="2000">
           </div>
           <button class="btn primary btn-sm" type="submit" style="margin-top: 4px;">Save Transport</button>
         </div>
@@ -462,7 +488,7 @@
         {% endif %}
       </div>
 
-      {% if not is_guide_confirmed and booking.isPaid and booking.fulfillmentStatus != 'fulfillment_declined' %}
+      {% if not is_guide_confirmed and booking.isPaid and not req_services.guideActivities.uncertain and booking.fulfillmentStatus not in ['trip_ready','fulfilled','fulfillment_declined'] %}
       <form method="post" action="{{ url_for('operator_fr12.update_booking_fulfillment', order_reference=booking.orderReference) }}" style="margin-top: 14px;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="serviceType" value="guideActivities">
@@ -488,13 +514,6 @@
   </div>
 </div>
 
-{% set readiness = namespace(ready=booking.isPaid and req_services|length == 3 and booking.fulfillmentStatus != 'fulfilled') %}
-{% for key, requirement in req_services.items() %}
-  {% set service = ful_services.get(key, {}) %}
-  {% if requirement.get('uncertain') or (requirement.get('required') and (service.get('status') != 'confirmed' or not service.get('reference') or service.get('provenance') != 'operator_attested' or not service.get('confirmedBy') or not service.get('confirmedAt'))) %}
-    {% set readiness.ready = false %}
-  {% endif %}
-{% endfor %}
 <!-- Section 3: Fulfillment Confirmation Gate & Actions -->
 <div class="card" style="margin-top: 24px; padding: 24px;">
   <div class="card-heading" style="margin-bottom: 14px;">
@@ -526,7 +545,7 @@
     <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
       <form method="post" action="{{ url_for('operator_fr12.confirm_booking_fulfillment', order_reference=booking.orderReference) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn primary" type="submit" id="confirm-fulfillment-btn" {% if not readiness.ready %}disabled title="Record all required supplier references before marking arrangements ready"{% endif %}>
+        <button class="btn primary" type="submit" id="confirm-fulfillment-btn" {% if not readiness.canMarkReady %}disabled title="Record all required supplier references before marking arrangements ready"{% endif %}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><polyline points="20 6 9 17 4 12"/></svg>
           <span>Mark Arrangements Ready</span>
         </button>

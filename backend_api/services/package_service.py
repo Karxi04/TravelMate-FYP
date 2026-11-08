@@ -1,6 +1,6 @@
 from datetime import date
 from math import isfinite
-from services.operator_hotel_service import safe_hotel_snapshot
+from services.operator_hotel_service import safe_hotel_snapshot, safe_room_snapshot
 
 
 PACKAGE_FIELDS = {
@@ -15,6 +15,7 @@ PACKAGE_FIELDS = {
     'itineraryDays', 'highlights', 'inclusions', 'exclusions',
     'accommodationName', 'accommodationCategory', 'roomType',
     'accommodationNotes', 'accommodationHotel', 'transportTypes', 'transportNotes',
+    'accommodationRoom', 'accommodationIncluded', 'transportIncluded', 'guideActivitiesIncluded',
     'cancellationPolicy', 'refundPolicy', 'bookingTerms', 'importantNotes',
     'whatToBring', 'availabilityStatus',
     'validFrom', 'validUntil',
@@ -136,6 +137,9 @@ def normalise_package(payload, existing=None):
         package['schemaVersion'] = _integer(raw.get('schemaVersion')) or 2
     if 'accommodationHotel' in raw:
         package['accommodationHotel'] = safe_hotel_snapshot(raw['accommodationHotel'])
+    if 'accommodationRoom' in raw:
+        hotel = package.get('accommodationHotel') or {}
+        package['accommodationRoom'] = safe_room_snapshot(raw['accommodationRoom'], hotel.get('hotelId'))
     return package
 
 
@@ -165,6 +169,9 @@ def _valid_date(value):
 
 def package_validation_error(data):
     raw = data or {}
+    for key in ('accommodationIncluded', 'transportIncluded', 'guideActivitiesIncluded'):
+        if key in raw and not isinstance(raw[key], bool):
+            return f'{key} must be true or false.'
     for key, maximum in [('title', 200), ('packageTitle', 200), ('destination', 500),
                          ('destinationName', 500), ('shortDescription', 1000),
                          ('fullDescription', 10000), ('description', 10000), ('currency', 3)]:
@@ -258,4 +265,15 @@ def package_submission_error(data):
         return 'A full package description is required before submission.'
     if package.get('schemaVersion') == 2 and not package.get('itineraryDays'):
         return 'Add at least one itinerary day before submission.'
+    if package.get('accommodationIncluded') is True:
+        if not _text(package.get('accommodationName')) or _text(package.get('accommodationName')).lower() in {'none', 'n/a', 'not included'}:
+            return 'Specify the accommodation promised in this package.'
+        if not _text(package.get('roomType')):
+            return 'Specify Room Configuration for the included room or entire property.'
+    if any(key in package for key in ('accommodationIncluded', 'transportIncluded', 'guideActivitiesIncluded')):
+        from services.package_checkout_contract import derive_required_services
+        requirements = derive_required_services(package)
+        for key, meta in requirements.items():
+            if key + 'Included' in package and meta['uncertain']:
+                return f'{key}: inclusion choice conflicts with the package brochure. Review inclusions and exclusions.'
     return None

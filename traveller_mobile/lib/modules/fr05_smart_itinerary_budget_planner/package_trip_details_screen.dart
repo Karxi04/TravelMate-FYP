@@ -496,7 +496,9 @@ class _PackageTripDetailsScreenState extends State<PackageTripDetailsScreen> {
             const SizedBox(height: 16),
 
           // 3b. Partner Accommodation Card
-          if (hotel != null || accName.isNotEmpty) ...[
+          if (snap['accommodationIncluded'] == false)
+            const Text('Accommodation not included'),
+          if (snap['accommodationIncluded'] != false && (hotel != null || accName.isNotEmpty)) ...[
             _buildAccommodationCard(
               hotel: hotel,
               accommodationName: accName,

@@ -99,6 +99,29 @@ def safe_hotel_snapshot(value):
             'source': 'liteapi_property_content', 'retrievedAt': stamp, 'reservationStatus': 'not_created'}
 
 
+def safe_room_snapshot(value, hotel_id):
+    if not valid_hotel_id(hotel_id) or not isinstance(value, dict) or value.get('hotelId') != hotel_id:
+        return None
+    room_id = str(value.get('id') or '')
+    name = _text(value.get('roomName'))
+    if isinstance(value.get('id'), bool) or not valid_hotel_id(room_id) or not name:
+        return None
+    beds = []
+    raw_beds = value.get('bedTypes') if isinstance(value.get('bedTypes'), list) else []
+    for bed in raw_beds[:12]:
+        if isinstance(bed, dict) and _text(bed.get('bedType')):
+            beds.append({'bedType': _text(bed['bedType']), 'quantity': _number(bed.get('quantity'), 100),
+                         'bedSize': _text(bed.get('bedSize'))})
+    photos = value.get('photos') if isinstance(value.get('photos'), list) else []
+    return {'id': room_id, 'hotelId': hotel_id, 'roomName': name,
+            'description': _text(value.get('description'), 1500), 'bedTypes': beds,
+            'bedRelation': value.get('bedRelation') if value.get('bedRelation') in {'AND', 'OR', 'NONE', 'COMPLEX'} else None,
+            **{key: _number(value.get(key), 100) for key in ('maxAdults', 'maxChildren', 'maxOccupancy')},
+            'roomAmenities': _amenities(value.get('roomAmenities')),
+            'photos': [url for photo in photos[:8] if (url := _image(photo.get('url') if isinstance(photo, dict) else photo))],
+            'source': 'liteapi_room_content', 'reservationStatus': 'not_created', 'availabilityChecked': False}
+
+
 def _normalize(raw, expected_id=None):
     if not isinstance(raw, dict):
         raise HotelDataError('Hotel provider returned invalid metadata.', 502, 'hotel_provider_response')
@@ -211,30 +234,64 @@ def hotel_detail(hotel_id):
         if len(raw) != 1:
             raise HotelDataError('Hotel provider returned ambiguous hotel metadata.', 502, 'hotel_provider_response')
         raw = raw[0]
-    return _normalize(raw, hotel_id)
+    hotel = _normalize(raw, hotel_id)
+    rooms = raw.get('rooms') if isinstance(raw.get('rooms'), list) else []
+    hotel['rooms'] = []
+    for raw_room in rooms[:100]:
+        if isinstance(raw_room, dict):
+            # The enclosing detail response owns identity when the room omits hotelId.
+            room = safe_room_snapshot({'hotelId': hotel_id, **raw_room}, hotel_id)
+            if room and not any(saved['id'] == room['id'] for saved in hotel['rooms']):
+                hotel['rooms'].append(room)
+    return hotel
 
 
 def resolve_package_hotel(payload, existing=None):
     """Only provider+ID are client inputs; all authoritative facts are re-fetched."""
-    if 'accommodationHotel' in payload:
+    if 'accommodationHotel' in payload or 'accommodationRoom' in payload:
         raise HotelDataError('accommodationHotel is server-controlled. Submit hotelSelection instead.')
     updated = dict(payload)
+    room_present = 'roomSelection' in updated
+    room_selection = updated.pop('roomSelection', None)
+    old_hotel = safe_hotel_snapshot((existing or {}).get('accommodationHotel'))
+    hotel = old_hotel
     if 'hotelSelection' not in payload:
-        hotel = safe_hotel_snapshot((existing or {}).get('accommodationHotel'))
         if hotel:
             if 'accommodationName' in payload and payload['accommodationName'] != hotel['name']:
                 raise HotelDataError('Clear hotelSelection before entering a different accommodation name.')
             if hotel['stars'] is not None and 'accommodationCategory' in payload and payload['accommodationCategory'] != f"{hotel['stars']:g}-Star":
                 raise HotelDataError('Clear hotelSelection before overriding the provider star category.')
-        return updated
-    selection = updated.pop('hotelSelection')
-    if selection is None:
-        updated['accommodationHotel'] = None
-        return updated
-    if (not isinstance(selection, dict) or set(selection) != {'provider', 'hotelId'}
-            or selection.get('provider') != 'liteapi' or not valid_hotel_id(selection.get('hotelId'))):
-        raise HotelDataError('Select a LiteAPI hotel using only provider and hotelId.')
-    hotel = hotel_detail(selection['hotelId'])
-    updated.update(accommodationHotel=hotel, accommodationName=hotel['name'],
-                   accommodationCategory=f"{hotel['stars']:g}-Star" if hotel['stars'] is not None else '')
+    else:
+        selection = updated.pop('hotelSelection')
+        if selection is None:
+            hotel = None
+            updated.update(accommodationHotel=None, accommodationRoom=None)
+            if (existing or {}).get('accommodationRoom') and 'roomType' not in payload:
+                updated['roomType'] = ''
+        else:
+            if (not isinstance(selection, dict) or set(selection) != {'provider', 'hotelId'}
+                    or selection.get('provider') != 'liteapi' or not valid_hotel_id(selection.get('hotelId'))):
+                raise HotelDataError('Select a LiteAPI hotel using only provider and hotelId.')
+            hotel = hotel_detail(selection['hotelId'])
+            updated.update(accommodationHotel=safe_hotel_snapshot(hotel), accommodationName=hotel['name'],
+                           accommodationCategory=f"{hotel['stars']:g}-Star" if hotel['stars'] is not None else '')
+            if not old_hotel or old_hotel['hotelId'] != hotel['hotelId']:
+                updated['accommodationRoom'] = None
+                if (existing or {}).get('accommodationRoom') and 'roomType' not in payload:
+                    updated['roomType'] = ''
+    if room_present and room_selection is None:
+        updated['accommodationRoom'] = None
+    elif room_present:
+        if (not hotel or not isinstance(room_selection, dict) or set(room_selection) != {'hotelId', 'roomId'}
+                or room_selection.get('hotelId') != hotel['hotelId']
+                or not valid_hotel_id(room_selection.get('roomId'))):
+            raise HotelDataError('Select a room belonging to the selected hotel.')
+        if 'rooms' not in hotel:
+            hotel = hotel_detail(hotel['hotelId'])
+        room = next((room for room in hotel.get('rooms', []) if room['id'] == room_selection['roomId']), None)
+        if room is None:
+            raise HotelDataError('Room details are no longer available. Use manual Room Configuration instead.')
+        updated['accommodationRoom'] = room
+        if not str(updated.get('roomType') or '').strip():
+            updated['roomType'] = room['roomName']
     return updated

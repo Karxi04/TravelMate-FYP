@@ -305,7 +305,7 @@ def test_package_v2_ownership_approved_edit_and_archive(client, mock_operator_au
     }
     with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=approved), \
          patch('modules.fr12_tourism_operator_management.routes.updateRecord') as update:
-        update.side_effect = lambda collection, document_id, data: {**approved, **data}
+        update.side_effect = lambda collection, document_id, data, **kwargs: {**approved, **data}
         edited = client.put('/api/fr12/packages/pkg_v2', headers={'Authorization': 'Bearer valid_test_token'},
                             json={'adultPrice': 120})
         assert edited.status_code == 200
@@ -323,11 +323,14 @@ def test_package_v2_ownership_approved_edit_and_archive(client, mock_operator_au
 
     draft = {**approved, 'approvalStatus': 'draft'}
     with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=lambda collection, *_a, **_k: draft if collection == 'tourism_packages' else []), \
-         patch('modules.fr12_tourism_operator_management.routes.deleteRecord') as delete:
+         patch('modules.fr12_tourism_operator_management.routes.deleteRecord') as delete, \
+         patch('modules.fr12_tourism_operator_management.routes.updateRecord', return_value={**draft, 'deletedAt':'synthetic-time'}) as retire:
         removed = client.delete('/api/fr12/packages/pkg_v2',
                                 headers={'Authorization': 'Bearer valid_test_token'})
     assert removed.status_code == 200
-    delete.assert_called_once_with('tourism_packages', 'pkg_v2')
+    delete.assert_not_called()
+    assert retire.call_args.args[2]['deletedBy'] == 'test_operator_uid'
+    assert retire.call_args.kwargs['expected'] == draft
 
 
 def test_legacy_package_remains_readable_with_v2_aliases():

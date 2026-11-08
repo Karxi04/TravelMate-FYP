@@ -122,7 +122,7 @@
       {% endfor %}
 
       {% block content %}{% endblock %}
-      {% if request.endpoint in ['operator_fr12.payments', 'operator_fr12.bookings', 'operator_fr12.booking_detail'] %}
+      {% if request.endpoint in ['operator_fr12.payments', 'operator_fr12.bookings'] %}
       <footer class="muted" style="margin-top:24px;font-size:12px">FYP demonstration environment. Payments use Stripe Test Mode; supplier reservations require separate confirmation.</footer>
       {% endif %}
     </main>

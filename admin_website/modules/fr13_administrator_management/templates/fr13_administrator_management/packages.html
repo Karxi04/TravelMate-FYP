@@ -16,7 +16,7 @@
     <input class="input search-input" name="q" value="{{ query }}" placeholder="Search title, destination or operator" aria-label="Search packages">
     <select class="input filter-input" name="status" aria-label="Filter packages by status">
       <option value="all">All statuses</option>
-      {% for value, label in [('pending','Under review'), ('approved','Approved'), ('suspended','Suspended'), ('rejected','Needs changes'), ('draft','Draft'), ('archived','Archived')] %}
+      {% for value, label in [('pending','Under review'), ('approved','Approved'), ('suspended','Suspended'), ('rejected','Needs changes')] %}
         <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>

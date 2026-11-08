@@ -33,6 +33,7 @@ _PACKAGE_FIELDS = {
     'itineraryDays', 'highlights', 'inclusions', 'exclusions',
     'accommodationName', 'accommodationCategory', 'roomType',
     'accommodationNotes', 'accommodationHotel', 'transportTypes', 'transportNotes',
+    'accommodationRoom', 'accommodationIncluded', 'transportIncluded', 'guideActivitiesIncluded',
     'cancellationPolicy', 'refundPolicy', 'bookingTerms', 'importantNotes',
     'whatToBring', 'availabilityStatus', 'validFrom', 'validUntil',
     'createdAt', 'updatedAt',

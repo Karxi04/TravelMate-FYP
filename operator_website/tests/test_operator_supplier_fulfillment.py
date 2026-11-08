@@ -219,6 +219,7 @@ def test_readiness_action_requires_complete_attestation(auth_client, ready, unce
         if ready:
             service.update(status='confirmed',reference='supplier-ref',provenance='operator_attested',confirmedBy='op',confirmedAt='2026-11-08T10:00:00Z')
     booking['requiredServices']['accommodation']['uncertain'] = uncertain
+    booking['readiness'] = {'canMarkReady':not disabled, 'blockers':[] if not disabled else ['Required supplier records are incomplete.'], 'components':[], 'requiredCount':3, 'completedCount':3 if ready else 0, 'requirementsReliable':not uncertain}
     response = MagicMock(ok=True)
     response.json.return_value = {'ok':True,'booking':booking}
     with patch.dict(app.view_functions['operator_fr12.booking_detail'].__globals__, {'call_api':lambda *a, **kw:response}):
@@ -226,3 +227,25 @@ def test_readiness_action_requires_complete_attestation(auth_client, ready, unce
     assert page.status_code == 200
     button = re.search(r'<button[^>]*id="confirm-fulfillment-btn"[^>]*>', page.get_data(as_text=True)).group(0)
     assert ('disabled' in button) is disabled
+
+
+@pytest.mark.parametrize('reliable,count,complete,message', [
+    (False,0,0,'Supplier requirements need review'),
+    (True,0,0,'No external arrangements required'),
+    (True,1,0,'0 / 1 required arrangements complete'),
+    (True,3,0,'0 / 3 required arrangements complete'),
+    (True,3,3,'3 / 3 required arrangements complete'),
+])
+def test_fulfillment_summary_matches_backend_requirement_state(auth_client,reliable,count,complete,message):
+    from copy import deepcopy
+    booking = deepcopy(SAMPLE_BOOKING)
+    booking['readiness'] = {'canMarkReady':reliable and complete == count,'blockers':[],
+        'components':[{'label':'Accommodation','required':count > 0,'complete':complete > 0,'uncertain':not reliable}],
+        'requirementsReliable':reliable,'requiredCount':count,'completedCount':complete}
+    response = MagicMock(ok=True)
+    response.json.return_value = {'ok':True,'booking':booking}
+    with patch.dict(app.view_functions['operator_fr12.booking_detail'].__globals__,{'call_api':lambda *a,**kw:response}):
+        page = auth_client.get('/bookings/ord-penang-fulfillment')
+    html = page.get_data(as_text=True)
+    assert page.status_code == 200 and message in html
+    assert '0 / 0' not in html and 'required records complete' not in html

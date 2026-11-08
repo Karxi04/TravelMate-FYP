@@ -254,6 +254,7 @@ def test_confirmation_gate_succeeds_when_all_required_attested(client, mock_oper
         ful['services'][k].update({
             'status': 'confirmed',
             'reference': f'REF-{k.upper()}-001',
+            'providerName': 'Synthetic Fleet',
             'provenance': 'operator_attested',
             'confirmedBy': 'test_operator_uid',
             'confirmedAt': now,

@@ -1848,6 +1848,14 @@ class _TourismPackageDetailsScreenState
             Icons.remove_circle_outline,
             color: AppColors.textSecondary),
         _bullets('Meals', meals, Icons.restaurant_outlined),
+        if (widget.item['transportIncluded'] is bool)
+          Text(widget.item['transportIncluded'] == true
+              ? 'Operator-arranged transportation included'
+              : 'Operator-arranged transportation not included'),
+        if (widget.item['guideActivitiesIncluded'] is bool)
+          Text(widget.item['guideActivitiesIncluded'] == true
+              ? 'Guide / reserved activities included'
+              : 'Guide / reserved activities not included'),
         _bullets('Transport', transport, Icons.directions_bus_outlined),
         _bullets('What to bring', widget.item['whatToBring'],
             Icons.backpack_outlined),
@@ -1857,6 +1865,10 @@ class _TourismPackageDetailsScreenState
   }
 
   Widget _buildAccommodationSection() {
+    if (widget.item['accommodationIncluded'] == false) {
+      return _bullets('Accommodation', ['Accommodation not included'],
+          Icons.hotel_outlined);
+    }
     final rawHotel = widget.item['accommodationHotel'] ??
         (widget.item['accommodation'] is Map
             ? (widget.item['accommodation'] as Map)['accommodationHotel']
