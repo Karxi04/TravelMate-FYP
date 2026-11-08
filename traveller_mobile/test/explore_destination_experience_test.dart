@@ -218,7 +218,7 @@ void main() {
     final api = _ExploreApi();
     await _pumpExplore(tester, api);
 
-    expect(find.text('Explore Penang'), findsOneWidget);
+    expect(find.text('Explore Malaysia'), findsOneWidget);
     expect(find.text('Search places, food, attractions…'), findsOneWidget);
     expect(find.text('Interests'), findsOneWidget);
     expect(find.text('Find somewhere memorable'), findsOneWidget);

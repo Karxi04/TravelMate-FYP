@@ -46,6 +46,9 @@ class _HomeApi extends ApiService {
   bool failNextRecommendationLoad;
   int generationCalls = 0;
   int addedActivities = 0;
+  bool emptyQualified = false;
+  bool staleRecommendations = false;
+  String? generatedArea;
   final List<Map<String, dynamic>> tripItems;
 
   _HomeApi({
@@ -80,7 +83,10 @@ class _HomeApi extends ApiService {
         }
         return {
           'ok': true,
-          'recommendations': [_recommendation()],
+          'recommendationGenerationId':'rec_hidden_123',
+          'stale':staleRecommendations,
+          'snapshot':{'requestedDestination':'Penang'},
+          'recommendations': emptyQualified ? [] : [_recommendation()],
           'source': 'fallback',
         };
       case '/api/public/tourism-packages':
@@ -103,8 +109,10 @@ class _HomeApi extends ApiService {
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
     if (path == '/api/fr4/recommendations/generate') {
       generationCalls += 1;
+      generatedArea = body?['destinationArea'];
       return {
         'ok': true,
+        'recommendationGenerationId':'rec_hidden_123',
         'recommendations': [_recommendation()],
         'source': 'fallback',
       };
@@ -153,6 +161,14 @@ Future<void> _showOnHome(WidgetTester tester, Finder target) async {
 }
 
 void main() {
+  testWidgets('stale saved recommendations regenerate in their selected Malaysian scope', (tester) async {
+    final api = _HomeApi()..staleRecommendations = true;
+    await _settleHome(tester, api);
+    await tester.pumpAndSettle();
+    expect(api.generationCalls, 1);
+    expect(api.generatedArea, 'Penang');
+  });
+
   testWidgets('recommendation card shows match and factual reasons only',
       (tester) async {
     await tester.pumpWidget(
@@ -283,5 +299,13 @@ void main() {
 
     expect(selected, AppShellTab.trips);
     expect(find.byType(HomeTab), findsOneWidget);
+  });
+
+  testWidgets('qualified empty snapshot stays empty without repeated generation',(tester) async {
+    final api=_HomeApi()..emptyQualified=true;
+    await _settleHome(tester,api);
+    expect(api.generationCalls,0);
+    await _showOnHome(tester,find.text('Adjust match'));
+    expect(find.text('No places meet your minimum match'),findsOneWidget);
   });
 }

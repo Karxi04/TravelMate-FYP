@@ -11,6 +11,7 @@ from google.genai import errors
 
 from services.malaysian_locality import normalize_destination_scope, validate_candidate
 from services import gemini_service
+from services.campaign_schedule import malaysia_today
 from test_csrf_rate_limiting import csrf_token, load_portal
 from test_fr08_fr09_hotels_payments import MemoryPersistence
 
@@ -27,6 +28,12 @@ PREFERENCES = {
 
 
 class JourneyMemory(MemoryPersistence):
+    def learning(self,uid,transform):
+        updated,event,changed=transform(self.retrieve('learned_preference_profiles',uid))
+        if event is not None:
+            self.store('learned_preference_profiles',updated,uid)
+            self.store('recommendation_feedback_events',event,event['feedbackEventId'])
+        return updated,event,changed
     def update(self, collection, document_id, data, expected=None):
         if expected is not None and self.retrieve(collection,document_id) != expected:
             from services.review_service import ReviewConflict
@@ -77,6 +84,7 @@ def journey(app, client, monkeypatch):
             "retrieveRecord": memory.retrieve, "storeRecord": memory.store,
             "updateRecord": memory.update, "deleteRecord": memory.delete,
             "claimRecord": memory.claim,
+            "transactPreferenceLearning": memory.learning,
         }.items():
             if hasattr(module, name):
                 monkeypatch.setattr(module, name, handler)
@@ -183,7 +191,8 @@ def test_complete_traveller_journey_and_explicit_learning_refresh(client, journe
     assert journey.retrieve("travel_preferences", TRAVELLER) == original_preferences
     unchanged = client.get("/api/fr4/recommendations", headers=AUTH).get_json()
     assert unchanged["recommendationGenerationId"] == generation_id
-    assert unchanged["recommendations"] == first["recommendations"]
+    assert unchanged['stale'] and unchanged['recommendations']==[]
+    assert journey.retrieve('recommendation_snapshots',generation_id)==original_snapshot
 
     refreshed = client.post("/api/fr4/recommendations/generate", headers=AUTH, json={"destinationArea": "Penang"})
     assert refreshed.status_code == 200
@@ -192,7 +201,7 @@ def test_complete_traveller_journey_and_explicit_learning_refresh(client, journe
     assert refreshed["snapshot"]["preferenceProfileVersion"] != first["snapshot"]["preferenceProfileVersion"]
     before = {row["destinationId"]: row for row in first["recommendations"]}
     after = {row["destinationId"]: row for row in refreshed["recommendations"]}
-    assert after["shopping"]["score"] < before["shopping"]["score"]
+    assert 'shopping' not in after and 'shopping' in before
     assert after["food"]["score"] >= before["food"]["score"]
     assert refreshed["recommendations"][0]["destinationId"] == "food"
     assert journey.retrieve("recommendation_snapshots", generation_id) == original_snapshot
@@ -330,7 +339,7 @@ def test_portal_admin_verification_package_campaign_and_traveller_publication(cl
     assert admin.post(f"/admin/packages/{package_id}/review", data={"csrf_token": admin_token, "decision": "approved"}).status_code == 302
     assert journey.retrieve("tourism_packages", package_id)["approvalStatus"] == "approved"
     campaign = {"campaignTitle": "Isolated test campaign", "packageId": package_id,
-                "description": "Test fixture only", "startDate": "2020-01-01", "endDate": "2099-12-31"}
+                "description": "Test fixture only", "startDate": malaysia_today().isoformat(), "endDate": "2099-12-31"}
     assert operator.post("/campaigns", data={**campaign, "csrf_token": operator_token}).status_code == 302
     campaign_id = journey.retrieve("promotional_campaigns")[0]["id"]
     assert operator.post(f"/campaigns/{campaign_id}/submit", data={"csrf_token": operator_token}).status_code == 302
@@ -503,7 +512,13 @@ def test_gemini_flask_route_preserves_context_and_session(client, journey, monke
     register_profile(client)
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
     monkeypatch.setenv("FALLBACK_MODE", "false")
-    with patch.object(gemini_service.genai, "Client") as sdk:
+    # Keep provider-context assertions independent of changing local catalogue coverage.
+    with patch.object(gemini_service.genai, "Client") as sdk, patch(
+        'modules.fr11_chatbot_travel_assistant.routes.DESTINATIONS', [
+            {'destinationId':f'isolated_context_{i}','title':f'Isolated context stop {i}',
+             'address':'Kota Kinabalu, Sabah, Malaysia','category':'Culture',
+             'recommendedDurationMinutes':60} for i in range(4)]
+    ):
         sdk.return_value.models.generate_content.side_effect = [
             SimpleNamespace(text="First Gemini reply"),
             SimpleNamespace(text="Second Gemini reply"),

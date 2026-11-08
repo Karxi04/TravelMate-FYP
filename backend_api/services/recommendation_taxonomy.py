@@ -13,17 +13,17 @@ CONCEPT_TERMS = {
     'food': {
         'food', 'local food', 'local cuisine', 'cuisine', 'restaurant',
         'hawker', 'street food', 'cafe', 'coffee shop', 'food market',
-        'food court', 'culinary',
+        'food court', 'culinary', 'restaurants',
     },
     'culture': {
         'culture', 'local culture', 'heritage', 'history', 'historical',
         'museum', 'temple', 'mosque', 'church', 'architecture',
-        'historic site', 'religion', 'religious', 'art', 'gallery',
+        'historic site', 'religion', 'religious', 'art', 'gallery', 'cultural', 'museums',
     },
     'nature': {
         'nature', 'park', 'beach', 'garden', 'botanic', 'botanical',
         'forest', 'hiking', 'outdoor', 'scenery', 'scenic', 'wildlife',
-        'hill', 'waterfall',
+        'hill', 'waterfall', 'parks', 'gardens',
     },
     'shopping': {
         'shopping', 'mall', 'market', 'retail', 'bazaar', 'night market',
@@ -31,7 +31,7 @@ CONCEPT_TERMS = {
     },
     'adventure': {
         'adventure', 'hiking', 'watersport', 'water sport',
-        'outdoor activity', 'cycling', 'theme park', 'climbing', 'kayak',
+        'outdoor activity', 'outdoor activities', 'cycling', 'theme park', 'climbing', 'kayak', 'watersports', 'theme parks',
     },
     'leisure': {
         'leisure', 'entertainment', 'nightlife', 'spa', 'relaxation',

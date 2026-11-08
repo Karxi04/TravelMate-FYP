@@ -23,7 +23,7 @@ class ExploreTab extends StatefulWidget {
   const ExploreTab({
     super.key,
     this.initialQuery = '',
-    this.initialLocation = 'Penang',
+    this.initialLocation = 'Malaysia',
     this.api,
   });
 
@@ -65,7 +65,7 @@ class _ExploreTabState extends State<ExploreTab> {
   ];
 
   final suggestions = const [
-    'Penang attractions',
+    'Malaysia attractions',
     'Local food',
     'Heritage places',
     'Nature escapes',

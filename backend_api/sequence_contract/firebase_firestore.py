@@ -58,6 +58,28 @@ def claimRecord(collectionName, documentId, data):
         return ({"id": snap.id, **(snap.to_dict() or {})}, False)
 
 
+def transactPreferenceLearning(uid, transform):
+    """Commit the adaptive state and its audit event together, retrying stale reads."""
+    from google.cloud import firestore
+    db = get_db()
+    profile = db.collection('learned_preference_profiles').document(uid)
+
+    @firestore.transactional
+    def commit(transaction):
+        snapshot = profile.get(transaction=transaction)
+        current = snapshot.to_dict() if snapshot.exists else None
+        if current and (current.get('travellerId', uid) != uid or current.get('userId',uid) != uid):
+            raise ValueError('Preference learning profile is unavailable.')
+        updated, event, changed = transform(current)
+        if event is not None:
+            transaction.set(profile, updated)
+            audit = db.collection('recommendation_feedback_events').document(event['feedbackEventId'])
+            transaction.create(audit, event)
+        return updated, event, changed
+
+    return commit(db.transaction())
+
+
 def updateRecord(collectionName, documentId, data, expected=None):
     """Exact sequence-diagram name for Firestore update."""
     if collectionName == 'feedback' and expected is not None:

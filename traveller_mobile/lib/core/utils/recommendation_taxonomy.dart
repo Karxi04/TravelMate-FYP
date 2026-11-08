@@ -19,6 +19,7 @@ class RecommendationTaxonomy {
       'food market',
       'food court',
       'culinary',
+      'restaurants',
     },
     'culture': {
       'culture',
@@ -36,6 +37,7 @@ class RecommendationTaxonomy {
       'religious',
       'art',
       'gallery',
+      'cultural', 'museums',
     },
     'nature': {
       'nature',
@@ -52,6 +54,7 @@ class RecommendationTaxonomy {
       'wildlife',
       'hill',
       'waterfall',
+      'parks', 'gardens',
     },
     'shopping': {
       'shopping',
@@ -69,6 +72,7 @@ class RecommendationTaxonomy {
       'watersport',
       'water sport',
       'outdoor activity',
+      'outdoor activities', 'watersports', 'theme parks',
       'cycling',
       'theme park',
       'climbing',
@@ -233,8 +237,10 @@ class RecommendationTaxonomy {
 }
 
 class RecommendationScoring {
-  static double _number(dynamic value, [double fallback = 0]) =>
-      double.tryParse((value ?? '').toString()) ?? fallback;
+  static double _number(dynamic value, [double fallback = 0]) {
+    final number = double.tryParse((value ?? '').toString());
+    return number != null && number.isFinite ? number : fallback;
+  }
 
   static double _round2(double value) => (value * 100).roundToDouble() / 100;
 
@@ -516,15 +522,15 @@ class RecommendationScoring {
       item['title'],
       item['name'],
       item['type'],
+      item['category'],
+      if (item['categories'] is List) ...(item['categories'] as List),
+      if (item['tags'] is List) ...(item['tags'] as List),
     ]);
     final primaryMatch =
         primaryConcepts.intersection(interestConcepts).isNotEmpty;
-    final matchedGroupCount = interestGroups
-        .where((group) => group.intersection(destinationConcepts).isNotEmpty)
-        .length;
-    final baseInterestScore = interestGroups.isEmpty
+    final baseInterestScore = interestConcepts.isEmpty
         ? .55
-        : (matchedGroupCount / interestGroups.length) *
+        : (matchedConcepts.length / max(1, destinationConcepts.length)) *
             (primaryMatch ? 1.0 : .80);
     final learnedAffinities = Map<String, dynamic>.from(
       preferences['learnedAffinities'] as Map? ?? const {},
@@ -580,18 +586,18 @@ class RecommendationScoring {
       'interests': {
         'score': _round2(interestScore * 100),
         'baseScore': _round2(baseInterestScore * 100),
-        'learnedAdjustment': _round2(learnedAdjustment * 100),
+        'learnedAdjustment': _round2((interestScore - baseInterestScore) * 100),
         'applied': interestConcepts.isNotEmpty,
         'matched': matched,
         'learnedPositive': RecommendationTaxonomy.displayConcepts(
           matchedLearnedAffinities.entries
-              .where((entry) => entry.value >= .10)
+              .where((entry) => entry.value >= .10 && interestScore > baseInterestScore)
               .map((entry) => entry.key)
               .toSet(),
         ),
         'learnedNegative': RecommendationTaxonomy.displayConcepts(
           matchedLearnedAffinities.entries
-              .where((entry) => entry.value <= -.10)
+              .where((entry) => entry.value <= -.10 && interestScore < baseInterestScore)
               .map((entry) => entry.key)
               .toSet(),
         ),
@@ -613,13 +619,13 @@ class RecommendationScoring {
     };
     final collaborative = _collaborativeScore(
         item, feedback, peerPreferences, preferences, currentUserId);
-    final explicitPopularity = _number(item['popularity'], -1);
-    final rating = _number(item['rating']).clamp(0, 5).toDouble();
+    final unverifiedLocal = item['ratingSource']=='unverified_local_catalog';
+    final rating = unverifiedLocal ? 0.0 : _number(item['rating']).clamp(0, 5).toDouble();
     final reviews = max(0, _number(item['reviews']));
-    final popularity = explicitPopularity >= 0
-        ? explicitPopularity.clamp(0, 100).toDouble()
-        : min(100.0, rating / 5 * 80 + min(20.0, reviews / 500));
-    final finalScore = weightedScore(content, collaborative.score, popularity)
+    final popularity = rating > 0
+        ? min(100.0, rating / 5 * 80 + min(20.0, reviews / 500))
+        : 50.0;
+    final finalScore = weightedScore(_round2(content), _round2(collaborative.score), _round2(popularity))
         .clamp(0, 100)
         .toDouble();
     item.addAll({
@@ -634,6 +640,7 @@ class RecommendationScoring {
       'collaborativeRatingCount': collaborative.count,
       'collaborativeSource': collaborative.source,
       'popularityScore': _round2(popularity),
+      'popularitySource': unverifiedLocal ? 'neutral_unverified_local_catalog' : rating > 0 ? 'provider_rating_review_count' : 'neutral_missing_rating',
       'score': _round2(finalScore),
       'finalScore': _round2(finalScore),
       'scoreBreakdown': {
@@ -663,6 +670,9 @@ class RecommendationScoring {
     int limit = 12,
   }) {
     final scored = candidates
+        .where((item) => (preferences['destinationFeedback'] as Map?)?[_destinationId(item)] != 'not_for_me')
+        .where((item) => RecommendationTaxonomy.candidateConcepts(item).intersection(
+          RecommendationTaxonomy.conceptsFor(preferences['excludedInterests'])).isEmpty)
         .map((candidate) => scoreCandidate(
               candidate: candidate,
               preferences: preferences,

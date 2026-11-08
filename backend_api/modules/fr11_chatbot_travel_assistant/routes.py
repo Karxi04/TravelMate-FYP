@@ -7,6 +7,8 @@ from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, de
 from sequence_contract.domain_functions import createItinerary, calculateBudget
 from services.activity_pricing import pricing_snapshot
 from services.local_catalog import DESTINATIONS
+from services.preference_learning import effective_preference_profile
+from services.review_service import published_review
 from .nlp_extractor import (
     extract_geographic_entities,
     extract_duration,
@@ -115,13 +117,14 @@ def _sorted_sessions():
 
 
 def _context(session=None):
-    preference = retrieveRecord('travel_preferences', g.uid) or {}
+    preference = effective_preference_profile(retrieveRecord('travel_preferences', g.uid) or {}, retrieveRecord('learned_preference_profiles', g.uid))
     itineraries = retrieveRecord('itineraries', filters=[('travellerId', '==', g.uid)], limit=5) or []
     latest = itineraries[-1] if itineraries else {}
     base_context = (
         f"Traveller preferences: personality={preference.get('travelPersonality')}, "
         f"interests={preference.get('interests')}, budget={preference.get('budgetRange')}, "
         f"pace={preference.get('travelPace')}, purpose={preference.get('travelPurpose')}.\n"
+        f"Learned concept affinities (bounded; questionnaire unchanged): {preference.get('learnedAffinities')}.\n"
         f"Current/latest itinerary: title={latest.get('title')}, destination={latest.get('destinationArea')}, "
         f"budgetLimit={latest.get('budgetLimit')}, budgetEstimate={latest.get('budgetEstimate')}, "
         f"activities={[x.get('activityName') for x in latest.get('activities', [])[:8]]}."
@@ -285,7 +288,7 @@ def chat():
         return jsonify({'ok': False, 'error': 'Chat session limit reached. Start a new chat session to continue.'}), 429
 
     planning_state = dict(session.get('planningState') or {})
-    previous_requirements = {key: planning_state.get(key) for key in ('destinationArea', 'startDate', 'endDate', 'tripDays', 'budgetLimit', 'travellerCount', 'interests', 'excludedInterests', 'excludedActivityTypes', 'preferIndoor')}
+    previous_requirements = {key: planning_state.get(key) for key in ('destinationArea', 'startDate', 'endDate', 'tripDays', 'budgetLimit', 'travellerCount', 'interests', 'excludedInterests', 'excludedActivityTypes', 'preferIndoor', 'travelPace', 'budgetRange', 'avoidCrowds')}
 
     # Extract NLP requirements from user message
     geo = extract_geographic_entities(message)
@@ -316,6 +319,14 @@ def chat():
     ex_ints = extract_excluded_interests(message, planning_state.get('excludedInterests'))
     ex_types = extract_excluded_activity_types(message, planning_state.get('excludedActivityTypes'))
     indoor_pref = extract_indoor_preference(message, planning_state.get('preferIndoor'))
+    if re.search(r'\b(relaxing|relaxed|slow[- ]paced|easy pace)\b', message, re.I):
+        planning_state['travelPace'] = 'relaxed'
+    if re.search(r'\b(active pace|busy pace|packed trip)\b', message, re.I):
+        planning_state['travelPace'] = 'active'
+    if re.search(r'\b(affordable|low[- ]cost|cheap)\b', message, re.I):
+        planning_state['budgetRange'] = 'Budget'
+    if re.search(r"\b(avoid|don't want|do not want|no)\b.{0,20}\bcrowd", message, re.I):
+        planning_state['avoidCrowds'] = True
     day_pref = extract_day_specific(message)
     detailed_intent = classify_detailed_intent(message, planning_state)
 
@@ -441,6 +452,8 @@ def chat():
     )
     if road_trip_unsupported:
         response = {'reply': _unsupported_road_trip_reply(planning_state), 'source': 'travelmate-assistant'}
+    elif re.search(r'\bmore (?:places )?like this\b', message, re.I):
+        response = {'reply':'Choose More like this on a specific For You destination card so the selected place can be identified. Casual chat does not overwrite your saved questionnaire.', 'source':'travelmate-assistant'}
     elif existing_plan:
         response = {'reply': 'Here is your existing itinerary. Review the day-by-day card below.', 'source': 'travelmate-assistant'}
     elif guided_ready:
@@ -527,8 +540,16 @@ def chat():
             excluded_activity_types=ex_types_val,
             prefer_indoor=indoor_val,
             catalog=catalog,
+            preference_profile={**effective_preference_profile(retrieveRecord('travel_preferences', g.uid) or {},
+                retrieveRecord('learned_preference_profiles', g.uid)),
+                **{key:planning_state[key] for key in ('travelPace','travelPersonality','budgetRange') if key in planning_state}},
+            collaborative_data=[row for row in (retrieveRecord('feedback',limit=500) or []) if isinstance(row,dict) and published_review(row)],
+            peer_preferences={str(row.get('travellerId') or row.get('id')):row for row in (retrieveRecord('travel_preferences',limit=500) or []) if isinstance(row,dict)},
+            current_traveller_id=g.uid,
         )
         if plan and plan_status == 'ready':
+            if planning_state.get('avoidCrowds'):
+                plan['planningLimitations'] = ['Verified crowd-level data is unavailable; quieter conditions cannot be guaranteed.']
             plan['travelPace'] = planning_state.get('travelPace', '')
             plan['travelPersonality'] = planning_state.get('travelPersonality', '')
             plan['draftId'] = _plan_id(plan)
@@ -536,8 +557,10 @@ def chat():
             planning_state['activePlan'] = plan
             if plan.get('coverageStatus') == 'partial':
                 reply = item['reply'] = 'This is an incomplete itinerary preview: some days have no verified activities. Choose a shorter trip or another destination before saving. No trip has been created.'
+                source = item['source'] = 'travelmate-assistant'
         elif plan_status in {'coverage_gap', 'insufficient_activities'}:
             reply = item['reply'] = f'I do not have enough verified, distinct attractions in {dest_for_planning} to fill {dur_val} itinerary days. No complete draft or trip has been created. Try a shorter trip or another Malaysian destination.'
+            source = item['source'] = 'travelmate-assistant'
             item['dataCoverage'] = {
                 'status': 'coverage_gap',
                 'destinationArea': dest_for_planning,

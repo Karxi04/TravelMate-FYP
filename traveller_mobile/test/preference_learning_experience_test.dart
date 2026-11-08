@@ -20,6 +20,7 @@ Map<String, dynamic> _place({
       'rating': 4.5,
       'reviews': 200,
       'popularity': 80,
+      'finalScore': 82,
       'recommendationSource': 'cache',
     };
 
@@ -146,7 +147,7 @@ void main() {
     final feedbackButton = find.byKey(
       const ValueKey('recommendation-feedback-food_place'),
     );
-    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.ensureVisible(feedbackButton);
     await tester.pumpAndSettle();
     await tester.tap(feedbackButton);
     await tester.pumpAndSettle();
@@ -262,6 +263,9 @@ class _LearningApi extends ApiService {
 
   @override
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
+    if (path == '/api/fr4/recommendations/generate') {
+      return {'ok':true,'recommendationGenerationId':'rec_updated','recommendations':[_place()],'source':'cache'};
+    }
     if (path == '/api/fr4/preference-feedback') {
       lastFeedback = body;
       return {'ok': true};

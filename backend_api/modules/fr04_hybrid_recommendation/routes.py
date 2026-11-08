@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from uuid import uuid4
+from math import isfinite
 from flask import Blueprint, jsonify, g, request
 from auth_utils import auth_required
 from utils import utc_now_iso
@@ -24,7 +25,7 @@ from services.malaysian_locality import (
     normalize_destination_scope,
     validate_candidate,
 )
-from sequence_contract.firebase_firestore import retrieveRecord, storeRecord
+from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, transactPreferenceLearning
 from sequence_contract.domain_functions import (
     prepareRecommendationInput,
     applyContentBasedFiltering,
@@ -72,6 +73,10 @@ def _preference_version(preference, learned_profile=None):
     return effective_profile_version(base_version, learned_profile)
 
 
+def _profile_fingerprint(preference):
+    return hashlib.sha256(json.dumps(preference,sort_keys=True,separators=(',', ':'),default=str).encode()).hexdigest()
+
+
 def _destination_id(item):
     return str(
         (item or {}).get('destinationId')
@@ -117,14 +122,15 @@ def get_preference_feedback():
 @auth_required(['traveller'])
 def submit_preference_feedback():
     payload = request.get_json(silent=True) or {}
+    if not isinstance(payload,dict):
+        return jsonify(ok=False,error='Use a JSON object.'),400
     item, error, status = _feedback_destination(payload, g.uid)
     if item is None:
         return jsonify({'ok': False, 'error': error}), status
     concepts = canonical_concepts(
         item.get('destinationConcepts') or candidate_concepts(item))
-    current = retrieveRecord('learned_preference_profiles', g.uid)
     try:
-        updated, event, changed = apply_explicit_feedback(
+        updated, event, changed = transactPreferenceLearning(g.uid, lambda current: apply_explicit_feedback(
             current,
             user_id=g.uid,
             destination_id=_destination_id(item),
@@ -134,14 +140,11 @@ def submit_preference_feedback():
                 'recommendationGenerationId', ''),
             source_context=payload.get(
                 'sourceContext', 'recommendation_card'),
-        )
+        ))
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 400
-    if changed:
-        storeRecord('learned_preference_profiles', updated, g.uid, merge=True)
-        storeRecord(
-            'recommendation_feedback_events', event,
-            event['feedbackEventId'])
+    except Exception:
+        return jsonify(ok=False,error='Feedback could not be saved. Please retry.'),503
     return jsonify({
         'ok': True,
         'changed': changed,
@@ -154,13 +157,10 @@ def submit_preference_feedback():
 @bp.delete('/preference-feedback')
 @auth_required(['traveller'])
 def reset_preference_feedback():
-    current = retrieveRecord('learned_preference_profiles', g.uid)
-    reset, event, had_learning = reset_learning_profile(
-        current, user_id=g.uid)
-    storeRecord('learned_preference_profiles', reset, g.uid, merge=True)
-    storeRecord(
-        'recommendation_feedback_events', event,
-        event['feedbackEventId'])
+    try:
+        reset, event, had_learning = transactPreferenceLearning(g.uid, lambda current: reset_learning_profile(current, user_id=g.uid))
+    except Exception:
+        return jsonify(ok=False,error='Preference learning could not be reset. Please retry.'),503
     return jsonify({
         'ok': True,
         'changed': had_learning,
@@ -168,7 +168,7 @@ def reset_preference_feedback():
     })
 
 
-def _provider_destinations(query, location):
+def _provider_destinations(query, location, start=0):
     scope = location if isinstance(location, dict) else normalize_destination_scope(location)
     result = retrieveDestinationResults(
         query,
@@ -177,6 +177,7 @@ def _provider_destinations(query, location):
             'latitude': scope.get('latitude'),
             'longitude': scope.get('longitude'),
         },
+        **({'start': start} if start else {}),
     )
     items = list(result.get('local_results', []) or [])
     normalized = []
@@ -194,6 +195,8 @@ def _provider_destinations(query, location):
         if not did:
             continue
         item['destinationId'] = did
+        if 'rating' in item:
+            item['ratingSource'] = 'provider'
         item['category'] = item.get('category') or item.get('type') or ''
         item['description'] = item.get('description') or item.get('type') or item.get('address') or ''
         normalized.append(item)
@@ -228,6 +231,38 @@ def _snapshot_response_view(record):
     return {**record, 'recommendationResults': safe_results}
 
 
+def _page(record, options):
+    try:
+        if any(isinstance(options.get(key),bool) for key in ('minimumMatchScore','offset','limit')):
+            raise ValueError
+        minimum = float(options.get('minimumMatchScore', 0))
+        offset = int(options.get('offset', 0))
+        limit = int(options.get('limit', 12))
+        if any(isinstance(options.get(key),float) and not options[key].is_integer() for key in ('offset','limit')):
+            raise ValueError
+        if not 0 <= minimum <= 100 or not 0 <= offset <= 200 or not 1 <= limit <= 50:
+            raise ValueError
+    except (ValueError, TypeError, OverflowError):
+        return None
+    view = _snapshot_response_view(record)
+    all_items = view['recommendationResults']
+    qualified = []
+    for item in all_items:
+        try:
+            score = float(item.get('finalScore') if item.get('finalScore') is not None else item.get('score') or 0)
+            if isfinite(score) and 0 <= score <= 100 and score >= minimum:
+                qualified.append(item)
+        except (ValueError,TypeError,OverflowError):
+            continue
+    end = offset + limit
+    return {**view, 'recommendationResults': qualified[offset:end], 'pagination': {
+        'minimumMatchScore': minimum, 'offset': offset, 'limit': limit,
+        'candidateCount': len(all_items), 'qualifiedCount': len(qualified),
+        'nextOffset': end if end < len(qualified) else None,
+        'hasMore': end < len(qualified), 'providerHasMore': bool(record.get('providerHasMore')),
+    }}
+
+
 @bp.post('/recommendations/generate')
 @auth_required(['traveller'])
 def generate():
@@ -238,6 +273,10 @@ def generate():
     learned_profile = retrieveRecord('learned_preference_profiles', g.uid)
     effective_pref = effective_preference_profile(pref, learned_profile)
     payload = request.get_json(silent=True) or {}
+    if not isinstance(payload,dict):
+        return jsonify(ok=False,error='Use a JSON object.'),400
+    if _page({}, payload) is None:
+        return jsonify(ok=False, error='Invalid recommendation threshold or page.'), 400
     destination_area = str(payload.get('destinationArea') or payload.get('location') or 'Malaysia').strip()
     destination_scope = normalize_destination_scope(destination_area)
     if not destination_scope.get('resolved'):
@@ -247,22 +286,34 @@ def generate():
         }), 400
     search_query = str(payload.get('query') or '').strip()
     if not search_query:
-        interests = pref.get('interests') or []
-        interest_text = ' '.join(str(x) for x in interests[:3])
-        search_query = f"{interest_text} tourist attractions".strip()
+        search_query = 'tourist attractions'
 
     candidates = []
     source = 'cache'
+    previous_id = str(payload.get('previousGenerationId') or '')
+    previous = retrieveRecord('recommendation_snapshots', previous_id) if previous_id else None
+    if previous_id and (not previous or previous.get('travellerId') != g.uid or
+                        (previous.get('canonicalDestinationScope') or {}).get('scopeKey') != destination_scope['scopeKey']):
+        return jsonify(ok=False, error='Recommendation snapshot not found for this destination.'), 404
+    provider_offset = int((previous or {}).get('providerNextOffset') or 0)
+    expand = payload.get('expandCandidates') is True
+    if previous:
+        candidates = _filter_for_destination(previous.get('recommendationResults') or [], destination_scope)
+        source = previous.get('source', 'cache')
+    provider_has_more = bool((previous or {}).get('providerHasMore'))
 
     # Prefer live destination information when SerpApi is configured.
-    if os.getenv('SERPAPI_KEY', '').strip():
+    if os.getenv('SERPAPI_KEY', '').strip() and (not previous or (expand and provider_has_more and provider_offset < 60)):
         try:
-            candidates = _filter_for_destination(
-                _provider_destinations(search_query, destination_scope),
+            discovered = _provider_destinations(search_query, destination_scope, provider_offset)
+            candidates += _filter_for_destination(
+                discovered,
                 destination_scope,
             )
             source = 'live_provider'
-            for item in candidates[:30]:
+            provider_offset += 20
+            provider_has_more = len(discovered) >= 20 and provider_offset < 60
+            for item in _filter_for_destination(discovered, destination_scope)[:20]:
                 did = str(item.get('destinationId') or '')
                 if did:
                     storeRecord('destination_cache', {
@@ -274,25 +325,31 @@ def generate():
                         'cachedAt': utc_now_iso(),
                     }, did, merge=True)
         except Exception:
-            candidates = []
+            # Keep an existing snapshot useful when a later provider page fails.
+            if expand:
+                return jsonify(ok=False, error='Additional destinations could not be loaded. Your current results are preserved.'), 502
 
-    if not candidates:
+    if not previous:
         cached = retrieveRecord(
             'destination_cache',
-            filters=[('canonicalDestinationScope', '==', destination_scope['scopeKey'])],
+            filters=[] if destination_scope['scopeKey'] == 'my' else [('canonicalDestinationScope', '==', destination_scope['scopeKey'])],
             limit=150,
         )
+        if not cached and destination_scope.get('state'):
+            cached = retrieveRecord('destination_cache', filters=[('normalizedGeography.state','==',destination_scope['state'])], limit=150)
+        if not cached and destination_scope['scopeKey'] != 'my':
+            # Older seed/cache records predate scope fields; geography still gates every row.
+            cached = retrieveRecord('destination_cache',limit=150)
         if cached:
-            candidates = _filter_for_destination(cached, destination_scope)
-            source = 'cache'
+            candidates += _filter_for_destination(cached, destination_scope)
 
     if not candidates and _fallback_mode():
-        fallback_candidates = [dict(x) for x in DESTINATIONS]
+        fallback_candidates = [{**x,'ratingSource':'unverified_local_catalog'} for x in DESTINATIONS]
         try:
             admin_items = retrieveRecord('admin_destinations') or []
             for ad in admin_items:
                 if isinstance(ad, dict) and ad.get('status', 'active') != 'archived':
-                    fallback_candidates.append(dict(ad))
+                    fallback_candidates.append({**ad,'ratingSource':'unverified_local_catalog'})
         except Exception:
             pass
         candidates = _filter_for_destination(fallback_candidates, destination_scope)
@@ -300,6 +357,10 @@ def generate():
 
     if not candidates:
         return jsonify({'ok': False, 'error': 'No recommendation candidates are available. Configure SerpApi or enable FALLBACK_MODE.'}), 502
+
+    local_ids = {_destination_id(item) for item in DESTINATIONS}
+    candidates = [{**item,'ratingSource':'unverified_local_catalog'} if
+                  _destination_id(item) in local_ids and item.get('ratingSource') != 'provider' else item for item in candidates]
 
     collaborative = [x for x in retrieveRecord('feedback', limit=500) if published_review(x)]
     peer_profiles_raw = retrieveRecord('travel_preferences', limit=500)
@@ -324,7 +385,7 @@ def generate():
     ranked_candidates = diversifyRecommendations(
         rankRecommendations(unique_candidates),
         pref,
-        limit=12,
+        limit=150,
     )
     final_candidates, rejected_final = filter_candidates(
         ranked_candidates,
@@ -336,12 +397,7 @@ def generate():
             len(rejected_final),
             destination_scope['scopeKey'],
         )
-    ranked = [_snapshot_item(item, source) for item in final_candidates[:12]]
-    if not ranked:
-        return jsonify({
-            'ok': False,
-            'error': 'No geographically eligible recommendation candidates are available',
-        }), 502
+    ranked = [_snapshot_item(item, source) for item in final_candidates[:150]]
 
     generation_id = uuid4().hex
     record = {
@@ -354,7 +410,10 @@ def generate():
         'canonicalDestinationScope': destination_scope,
         'preferenceProfileVersion': _preference_version(
             pref, learned_profile),
+        'preferenceFingerprint': _profile_fingerprint(pref),
         'source': source,
+        'providerHasMore': provider_has_more,
+        'providerNextOffset': provider_offset,
         'engine': {
             'contentBasedFiltering': True,
             'collaborativeFiltering': True,
@@ -369,7 +428,7 @@ def generate():
     }
     storeRecord('recommendation_snapshots', record, generation_id)
 
-    response_record = _snapshot_response_view(record)
+    response_record = _page(record, payload)
     return jsonify({
         'ok': True,
         'recommendationGenerationId': generation_id,
@@ -377,6 +436,7 @@ def generate():
         'recommendations': response_record['recommendationResults'],
         'source': source,
         'engine': record['engine'],
+        'pagination': response_record['pagination'],
     })
 
 
@@ -403,7 +463,16 @@ def get_recommendations():
             ]
         snapshots.sort(key=lambda item: str(item.get('generatedAt') or ''), reverse=True)
         record = snapshots[0] if snapshots else {}
-    response_record = _snapshot_response_view(record)
+    preference = retrieveRecord('travel_preferences', g.uid)
+    learned = retrieveRecord('learned_preference_profiles', g.uid)
+    stale = bool(record and isinstance(preference, dict) and isinstance(preference.get('interests'), list)
+                 and (record.get('preferenceProfileVersion') != _preference_version(preference, learned)
+                      or record.get('preferenceFingerprint') != _profile_fingerprint(preference)))
+    response_record = _page(record, request.args)
+    if response_record is None:
+        return jsonify(ok=False, error='Invalid recommendation threshold or page.'), 400
+    if stale:
+        response_record['recommendationResults'] = []
     return jsonify({
         'ok': True,
         'recommendationGenerationId': response_record.get('recommendationGenerationId', ''),
@@ -412,4 +481,26 @@ def get_recommendations():
         'recommendations': response_record.get('recommendationResults', []),
         'source': response_record.get('source', ''),
         'engine': response_record.get('engine', {}),
+        'pagination': response_record['pagination'],
+        'stale': stale,
     })
+
+
+@bp.get('/settings')
+@auth_required(['traveller'])
+def recommendation_settings():
+    settings = retrieveRecord('recommendation_settings', g.uid) or {}
+    return jsonify(ok=True, minimumMatchScore=settings.get('minimumMatchScore', 70))
+
+
+@bp.put('/settings')
+@auth_required(['traveller'])
+def save_recommendation_settings():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload,dict):
+        return jsonify(ok=False,error='Use a JSON object.'),400
+    value = payload.get('minimumMatchScore')
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 40 <= value <= 90:
+        return jsonify(ok=False, error='Choose a minimum match between 40 and 90.'), 400
+    storeRecord('recommendation_settings', {'travellerId':g.uid, 'minimumMatchScore':value, 'updatedAt':utc_now_iso()}, g.uid)
+    return jsonify(ok=True, minimumMatchScore=value)
