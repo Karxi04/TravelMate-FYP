@@ -267,5 +267,46 @@ void main() {
       expect(find.text('Room Configuration: Garden View Deluxe'), findsOneWidget);
       expect(find.text('LiteAPI Verified'), findsNothing);
     });
+
+    testWidgets('explicitly excluded accommodation hides a suggested property', (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(_wrap(TourismPackageDetailsScreen(item: {
+        'id': 'not-included', 'title': 'Self-guided visit',
+        'accommodationIncluded': false, 'transportIncluded': false,
+        'guideActivitiesIncluded': false,
+        'accommodationHotel': {'name': 'Suggested Property'},
+      }, api: _MockApi())));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text("What's Included"));
+      await tester.pumpAndSettle();
+      expect(find.text('Accommodation not included'), findsOneWidget);
+      expect(find.text('Suggested Property'), findsNothing);
+      expect(find.text('Operator-arranged transportation not included'), findsOneWidget);
+      expect(find.text('Guide / reserved activities not included'), findsOneWidget);
+    });
+
+    testWidgets('purchased exclusion hides suggested accommodation on the saved trip', (tester) async {
+      tester.view.physicalSize = const Size(800, 3000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final trip = <String, dynamic>{
+        'id': 'excluded-stay', 'title': 'Self-guided visit', 'tripDays': 1,
+        'packageTrip': true, 'tripType': 'package', 'paidTotal': 100,
+        'currency': 'MYR', 'packageSnapshot': {
+          'accommodationIncluded': false,
+          'accommodation': {'accommodationName': 'Suggested Property'},
+        },
+      };
+      await tester.pumpWidget(_wrap(PackageTripDetailsScreen(
+        tripId: 'excluded-stay', initialTrip: trip, api: _MockApi(trip: trip),
+      )));
+      await tester.pumpAndSettle();
+      expect(find.text('Accommodation not included'), findsOneWidget);
+      expect(find.text('Suggested Property'), findsNothing);
+    });
   });
 }

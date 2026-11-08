@@ -331,7 +331,7 @@ def test_new_attempt_is_server_owned_and_retry_preserves_hotel_and_historical_or
                                json={'packageId':'s4-package','idempotencyKey':'s4-synthetic-attempt'})
         assert response.status_code == 200
         original_attempt = deepcopy(response.json['attempt'])
-        assert original_attempt['packageSnapshot']['accommodation']['accommodationHotel'] == hotel
+        assert original_attempt['packageSnapshot']['accommodation']['accommodationHotel'] == hotels.safe_hotel_snapshot(hotel)
         assert original_attempt['paymentStatus'] == 'payment_pending' and original_attempt['fulfillmentStatus'] == 'fulfillment_pending'
         memory.collections['tourism_packages']['s4-package']['accommodationHotel']['name']='Changed later'
         retry = client.post('/api/fr15/package-checkout-attempts',headers=AUTH,

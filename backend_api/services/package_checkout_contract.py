@@ -7,7 +7,7 @@ import re
 
 from services.public_content_projection import eligible_package, active_campaign
 from services.campaign_schedule import malaysia_today
-from services.operator_hotel_service import safe_hotel_snapshot
+from services.operator_hotel_service import safe_hotel_snapshot, safe_room_snapshot
 
 PACKAGE_FULFILLMENT_STATES = {
     'checkout_pending', 'payment_pending', 'payment_verified',
@@ -306,12 +306,15 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None,
         'departureDates': deepcopy(package.get('departureDates') or []),
         'selectedDepartureDate': selected_departure,
         'itineraryDays': deepcopy(package.get('itineraryDays') or []),
-        'inclusions': deepcopy(package.get('inclusions') or []), 'exclusions': deepcopy(package.get('exclusions') or []),
-        'accommodation': {
+        **({'inclusions': deepcopy(package['inclusions'])} if 'inclusions' in package else {}),
+        'exclusions': deepcopy(package.get('exclusions') or []),
+        **{key: package[key] for key in ('accommodationIncluded', 'transportIncluded', 'guideActivitiesIncluded') if key in package},
+        **({'accommodation': {
             **{k: package.get(k) for k in ('accommodationName', 'accommodationCategory', 'roomType', 'accommodationNotes')},
             **({'accommodationHotel': deepcopy(accommodation_hotel)} if accommodation_hotel is not None else {}),
-        },
-        'transport': {k: package.get(k) for k in ('transportTypes', 'transportNotes')},
+            **({'accommodationRoom': safe_room_snapshot(package['accommodationRoom'], (accommodation_hotel or {}).get('hotelId'))} if package.get('accommodationRoom') else {}),
+        }} if any(k in package for k in ('accommodationName', 'accommodationCategory', 'roomType', 'accommodationNotes', 'accommodationHotel')) else {}),
+        **({'transport': {k: package.get(k) for k in ('transportTypes', 'transportNotes')}} if any(k in package for k in ('transportTypes', 'transportNotes')) else {}),
         'priceBasis': price_basis,
         'regularAdultUnitPrice': _json_money(regular_adult_price),
         'adultUnitPrice': _json_money(effective_adult_price),
@@ -386,7 +389,8 @@ def derive_required_services(snapshot):
     category = str(accom.get('accommodationCategory') or snapshot.get('accommodationCategory') or '').strip()
     notes = str(accom.get('accommodationNotes') or snapshot.get('accommodationNotes') or '').strip()
 
-    accom_required = bool(accom_name)
+    absent = r'^(none|no|n/?a|not included|not applicable)$'
+    accom_required = bool(accom_name and not re.fullmatch(absent, accom_name, re.I))
 
     # 2. Transportation
     transport = snapshot.get('transport') or {}
@@ -412,48 +416,84 @@ def derive_required_services(snapshot):
         exclusions = exclusions.splitlines()
     # Negative or self-arranged wording must not become an included service.
     def promised(text):
-        return not re.search(r'\b(no|not included|excluded|own|self[- ]guided|self[- ]drive)\b', text, re.I)
+        return not re.search(r'\b(no|not included|excluded|own|optional|suggested|suggestions?|self[- ]guided|self[- ]drive|public transport(?:ation)?)\b', text, re.I)
+
+    accom_required = accom_required and promised(accom_name)
 
     clauses = [part.strip() for item in inclusions
                for part in re.split(r'[.;,]|\b(?:and|but)\b', str(item), flags=re.I) if part.strip()]
     included = [part for part in clauses if promised(part)]
     excluded = ' '.join(str(i) for i in exclusions) if isinstance(exclusions, list) else ''
     patterns = {
-        'accommodation': r'\b(accommodation|hotel|resort|lodging|overnight stay)\b',
+        'accommodation': r'\b(accommodation|hotel|resort|homestay|apartment|entire (house|property)|lodging|overnight stay)\b',
         'transport': r'\b(transport|transfer|shuttle|chartered|private (van|bus|car))\b',
-        'guideActivities': r'\b(guide|guided|docent|escort|tickets?|admission|entrance fee|park pass)\b',
+        'guideActivities': r'\b(guide|guided|docent|escort|tickets?|admission|entrance fee|park pass|paid activit(?:y|ies)|reserved activit(?:y|ies))\b',
     }
     positive = {key: any(re.search(pattern, text, re.I) for text in included)
                 for key, pattern in patterns.items()}
+    positive['guideActivities'] = any(re.search(patterns['guideActivities'], text, re.I) and not
+        (re.search(r'\bfree\b', text, re.I) and not re.search(r'\b(reserved|guide|guided|docent|escort)\b', text, re.I)) for text in included)
     negative = {key: bool(re.search(pattern, excluded, re.I)) for key, pattern in patterns.items()}
-    transport_required = (any(promised(str(t)) and not re.search(r'\b(walk|walking|public)\b', str(t), re.I)
+    for key, pattern in patterns.items():
+        negative[key] |= any(re.search(pattern, text, re.I) and
+                             re.search(r'\b(no|not included|excluded)\b', text, re.I) for text in clauses)
+    if positive['guideActivities'] and negative['guideActivities']:
+        excluded_clauses = [excluded] + [text for text in clauses if re.search(r'\b(no|not included|excluded)\b', text, re.I)]
+        subtypes = [r'\b(guide|guided|docent|escort)\b', r'\b(tickets?|admission|entrance fee|park pass)\b', r'\bactivit(?:y|ies)\b']
+        negative['guideActivities'] = any(any(re.search(p, text, re.I) for text in included) and
+                                           any(re.search(p, text, re.I) for text in excluded_clauses) for p in subtypes)
+    transport_required = (any(promised(str(t)) and not re.fullmatch(absent, str(t).strip(), re.I)
+                              and not re.search(r'\b(walk|walking|public)\b', str(t), re.I)
                               for t in types) or positive['transport'])
     accom_required = accom_required or positive['accommodation']
     guide_required = positive['guideActivities']
-    # Missing legacy inclusion data or contradictory brochure terms need review,
-    # not a manufactured all-clear. Existing snapshots are never rewritten.
-    unknown = (not isinstance(snapshot.get('inclusions'), (list, str)) or
-               not isinstance(snapshot.get('accommodation'), dict) or
-               not isinstance(snapshot.get('transport'), dict))
+    # Resolve each component independently, always from the purchased snapshot.
+    known_inclusions = isinstance(snapshot.get('inclusions'), (list, str))
+    legacy_required = {'accommodation': accom_required, 'transport': transport_required,
+                       'guideActivities': guide_required}
+    known_structure = {
+        'accommodation': isinstance(snapshot.get('accommodation'), dict) or 'accommodationName' in snapshot,
+        'transport': isinstance(snapshot.get('transport'), dict) or 'transportTypes' in snapshot,
+        'guideActivities': known_inclusions,
+    }
+    states = {}
+    for key in patterns:
+        explicit = snapshot.get(key + 'Included')
+        required = legacy_required[key]
+        # Property discovery alone does not establish a promised stay.
+        selected_property_only = (key == 'accommodation' and
+                                  (accom.get('accommodationHotel') or snapshot.get('accommodationHotel'))
+                                  and not positive[key])
+        if isinstance(explicit, bool):
+            uncertain = (explicit and negative[key]) or (not explicit and positive[key])
+            required = explicit
+        else:
+            uncertain = ((required and negative[key]) or selected_property_only or
+                         not (required or negative[key] or (known_inclusions and known_structure[key])))
+            if key + 'Included' in snapshot:
+                uncertain = True
+            if key == 'transport' and t_notes and not types and not positive[key] and not negative[key]:
+                uncertain = True
+        states[key] = {'required': bool(required and not uncertain), 'uncertain': bool(uncertain),
+                       'reviewReason': ('Purchased inclusion and exclusion information conflicts.' if
+                                        ((required and negative[key]) or (explicit is False and positive[key])) else
+                                        'Purchased snapshot does not establish whether this component is included.') if uncertain else ''}
 
     return {
         'accommodation': {
-            'required': accom_required and not negative['accommodation'],
-            'uncertain': unknown or (accom_required and negative['accommodation']),
+            **states['accommodation'],
             'brochureName': accom_name,
             'brochureRoomType': room_type,
             'brochureCategory': category,
             'brochureNotes': notes,
         },
         'transport': {
-            'required': transport_required and not negative['transport'],
-            'uncertain': unknown or (transport_required and negative['transport']) or bool(t_notes and not types and not positive['transport'] and not negative['transport']),
+            **states['transport'],
             'brochureTypes': [str(t) for t in types],
             'brochureNotes': t_notes,
         },
         'guideActivities': {
-            'required': guide_required and not negative['guideActivities'],
-            'uncertain': unknown or (guide_required and negative['guideActivities']),
+            **states['guideActivities'],
             'inclusions': [str(i) for i in inclusions],
             'itineraryDaysCount': len(itinerary_days) if isinstance(itinerary_days, list) else 0,
         },
@@ -526,7 +566,7 @@ def fulfillment_readiness(order, requirements, record, paid):
         service = (record.get('services') or {}).get(key) or {}
         missing = []
         if meta.get('uncertain'):
-            missing.append(f'{label}: purchased brochure requires review.')
+            missing.append(f"{label}: {meta.get('reviewReason') or 'Purchased brochure requires review.'}")
         if meta.get('required'):
             if not str(service.get('reference') or '').strip():
                 missing.append(f'{label} booking reference is missing.')

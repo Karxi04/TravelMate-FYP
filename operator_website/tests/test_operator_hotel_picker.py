@@ -252,6 +252,23 @@ def test_package_edit_with_hotel_selection_detach(auth_client):
         assert payload.get("accommodationName") == "Local Heritage Homestay"
 
 
+def test_room_and_inclusion_form_posts_only_pointers_and_explicit_choices(auth_client):
+    api = MagicMock(return_value=_mock_res({'ok':True,'package':{'id':'room-test','approvalStatus':'draft'}}))
+    with _patch_op_api(api):
+        response = auth_client.post('/packages/room-test/edit',data={
+            'title':'Room test','destination':'Penang','durationDays':'2','adultPrice':'100',
+            'accommodationIncluded':'true','transportIncluded':'false','guideActivitiesIncluded':'false',
+            'roomSelectionAction':'select','roomSelectionId':'123','roomHotelId':'lp_synthetic',
+            'roomType':'Entire studio','accommodationRoom':'forged',
+        })
+    assert response.status_code == 302
+    payload = api.call_args_list[0].kwargs['json']
+    assert payload['roomSelection'] == {'hotelId':'lp_synthetic','roomId':'123'}
+    assert payload['accommodationIncluded'] is True
+    assert payload['transportIncluded'] is payload['guideActivitiesIncluded'] is False
+    assert payload['roomType'] == 'Entire studio' and 'accommodationRoom' not in payload
+
+
 def test_package_edit_with_hotel_selection_keep(auth_client):
     form_data = {
         "title": "Penang Heritage Tour Untouched Hotel",

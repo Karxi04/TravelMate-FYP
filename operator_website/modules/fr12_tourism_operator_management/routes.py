@@ -194,6 +194,16 @@ def _package_payload():
             payload["hotelSelection"] = {"provider": provider, "hotelId": hotel_id}
     elif hotel_action == "detach":
         payload["hotelSelection"] = None
+    for key in ("accommodationIncluded", "transportIncluded", "guideActivitiesIncluded"):
+        value = request.form.get(key)
+        if value in {"true", "false"}:
+            payload[key] = value == "true"
+    room_action = request.form.get("roomSelectionAction")
+    if room_action == "select":
+        payload["roomSelection"] = {"hotelId": request.form.get("roomHotelId", ""),
+                                    "roomId": request.form.get("roomSelectionId", "")}
+    elif room_action == "clear":
+        payload["roomSelection"] = None
     return payload
 
 

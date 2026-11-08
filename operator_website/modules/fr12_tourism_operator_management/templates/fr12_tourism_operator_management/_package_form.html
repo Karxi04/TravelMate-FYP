@@ -526,6 +526,19 @@
     </span>
   </div>
 
+<div class="package-form-grid">
+  {% for key, label in [('accommodationIncluded','Accommodation included'), ('transportIncluded','Operator-arranged transportation included'), ('guideActivitiesIncluded','Guide / reserved tickets or activities included')] %}
+  <div class="field">
+    <label for="{{ key }}">{{ label }}</label>
+    <select id="{{ key }}" name="{{ key }}" class="input">
+      <option value="">Unspecified — review the package promise</option>
+      <option value="true" {% if p.get(key) is sameas true %}selected{% endif %}>Included — supplier arrangement required</option>
+      <option value="false" {% if p.get(key) is sameas false %}selected{% endif %}>Not included</option>
+    </select>
+  </div>
+  {% endfor %}
+  <p class="field-help">Confirm what travellers purchase. Walking guidance, optional transfers and free self-guided visits do not require supplier arrangements. These choices do not alter past purchases.</p>
+</div>
   <div class="package-form-grid">
     <div class="field">
       <label for="highlights">
@@ -696,7 +709,7 @@
         <span class="field-destination-badge brochure">Stay Details</span>
       </label>
       <input id="accommodationName" class="input" name="accommodationName" value="{{ p.get('accommodationName', '') }}" placeholder="e.g. Eastern & Oriental Hotel / Shangri-La Rasa Sayang">
-      <span class="field-help">Leave blank or enter 'None' for single-day tours without overnight stay.</span>
+      <span class="field-help">Describe the promised hotel, homestay or entire property. Property selection does not reserve accommodation.</span>
     </div>
 
     <div class="field">
@@ -717,6 +730,13 @@
       </label>
       <input id="roomType" class="input" name="roomType" value="{{ p.get('roomType', '') }}" placeholder="e.g. Heritage Suite / Deluxe Twin Sharing">
       <span class="field-help">Bedding and room layout offered in this package.</span>
+      <label for="providerRoom">Provider room type (optional)</label>
+      <select id="providerRoom" class="input"><option value="">Manual / entire-property configuration</option></select>
+      <p id="providerRoomStatus" class="field-help" role="status"></p>
+      <p id="providerRoomDetails" class="field-help"></p>
+      <input type="hidden" id="roomSelectionAction" name="roomSelectionAction" value="">
+      <input type="hidden" id="roomSelectionId" name="roomSelectionId" value="">
+      <input type="hidden" id="roomHotelId" name="roomHotelId" value="">
     </div>
 
     <div class="field">
@@ -1226,6 +1246,7 @@
 <!-- =========================================================================
      PROGRESSIVE ENHANCEMENT JAVASCRIPT
      ========================================================================= -->
+<script src="{{ url_for('static', filename='js/package_rooms.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   // 1. Wizard Stepper Navigation (6 Steps)
@@ -1850,7 +1871,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const hRoom = document.querySelector('#roomType')?.value.trim();
     const hotelBox = document.querySelector('#brochure-hotel-logistics');
     if (hotelBox) {
-      if (nightsNum === 0) {
+      if (document.getElementById('accommodationIncluded')?.value === 'false') {
+        hotelBox.innerHTML = '<span class="brochure-empty-text">Accommodation not included</span>';
+      } else if (nightsNum === 0 && document.getElementById('accommodationIncluded')?.value !== 'true') {
         hotelBox.innerHTML = '<span class="brochure-empty-text">Single-Day Excursion (No hotel stay required)</span>';
       } else if (currentSelectedHotel) {
         const starStr = currentSelectedHotel.stars != null ? `⭐ ${currentSelectedHotel.stars}-Star` : 'Star classification not supplied';
@@ -1953,6 +1976,21 @@ document.addEventListener('DOMContentLoaded', () => {
         fixBtn.onclick = () => goToStep(2);
       }
       return false;
+    } else if (['accommodationIncluded', 'transportIncluded', 'guideActivitiesIncluded'].some(id => !document.getElementById(id)?.value)) {
+      if (banner && msg && fixBtn) {
+        banner.classList.add('active');
+        msg.textContent = 'Confirm whether accommodation, operator-arranged transportation and guide / reserved activities are included in Step 3.';
+        fixBtn.onclick = () => goToStep(3);
+      }
+      return false;
+    } else if (document.getElementById('accommodationIncluded')?.value === 'true' &&
+               (!document.getElementById('accommodationName')?.value.trim() || !document.getElementById('roomType')?.value.trim())) {
+      if (banner && msg && fixBtn) {
+        banner.classList.add('active');
+        msg.textContent = 'Specify the promised accommodation and Room Configuration for the included room or entire property.';
+        fixBtn.onclick = () => goToStep(3);
+      }
+      return false;
     } else {
       if (banner) banner.classList.remove('active');
       return true;
@@ -1985,11 +2023,23 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelector('#adultPrice')?.focus();
         return;
       }
+      if (!validateRequiredFields()) {
+        e.preventDefault();
+        goToStep(3);
+      }
     });
   }
 
   // 6. Hotel Picker & Management (LiteAPI Integration)
   let currentSelectedHotel = {{ (p.get('accommodationHotel') or None)|tojson }};
+  let hotelSelectionRequest = 0;
+  const roomPicker = TravelMateRoomPicker(document, {{ (p.get('accommodationRoom') or None)|tojson }}, () => updateBrochurePreview());
+  if (currentSelectedHotel) {
+    const initialHotelId = currentSelectedHotel.hotelId;
+    fetch(`/hotels/${encodeURIComponent(initialHotelId)}`).then(res => res.ok ? res.json() : Promise.reject())
+      .then(data => { if (currentSelectedHotel?.hotelId === initialHotelId) roomPicker.setHotel(data.hotel, false); })
+      .catch(() => { if (currentSelectedHotel?.hotelId === initialHotelId) roomPicker.setHotel(currentSelectedHotel, false); });
+  } else roomPicker.setHotel(null, false);
   let hotelSearchOffset = 0;
   const hotelSearchLimit = 10;
   let hotelSearchHasMore = false;
@@ -2103,6 +2153,8 @@ document.addEventListener('DOMContentLoaded', () => {
     tabModeManual.addEventListener('click', () => {
       if (currentSelectedHotel) {
         currentSelectedHotel = null;
+        hotelSelectionRequest++;
+        roomPicker.setHotel(null, true);
         if (hotelActionInput) hotelActionInput.value = 'detach';
         if (hotelIdInput) hotelIdInput.value = '';
         renderSelectedHotelCard(null);
@@ -2121,6 +2173,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnDetachHotel) {
     btnDetachHotel.addEventListener('click', () => {
       currentSelectedHotel = null;
+      hotelSelectionRequest++;
+      roomPicker.setHotel(null, true);
       if (hotelActionInput) hotelActionInput.value = 'detach';
       if (hotelIdInput) hotelIdInput.value = '';
       renderSelectedHotelCard(null);
@@ -2236,6 +2290,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function selectHotelById(hotelId) {
     if (!hotelId) return;
+    const selectionRequest = ++hotelSelectionRequest;
     if (hotelSearchLoading) hotelSearchLoading.style.display = 'block';
     if (hotelSearchError) hotelSearchError.style.display = 'none';
 
@@ -2250,6 +2305,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       const data = await res.json();
+      if (selectionRequest !== hotelSelectionRequest) return;
+      roomPicker.setHotel(data.hotel, currentSelectedHotel?.hotelId !== data.hotel.hotelId);
       currentSelectedHotel = data.hotel;
       if (hotelActionInput) hotelActionInput.value = 'select';
       if (hotelIdInput) hotelIdInput.value = currentSelectedHotel.hotelId;

@@ -257,13 +257,13 @@ def update_user(uid):
 @bp.get('/packages/pending')
 @auth_required(['admin'])
 def pending_packages():
-    items=_load('tourism_packages')
+    items=_review_queue()
     return jsonify({'ok':True,'items':[package_for_read(item) for item in items if item.get('approvalStatus') in {'pending','submitted'}]})
 
 @bp.get('/packages')
 @auth_required(['admin'])
 def review_packages():
-    items=_load('tourism_packages')
+    items=_review_queue()
     status=str(request.args.get('status','all')).strip().lower()
     query=str(request.args.get('q','')).strip().lower()
     if status!='all':
@@ -272,6 +272,13 @@ def review_packages():
     if query:items=[item for item in items if query in ' '.join(str(item.get(field) or '') for field in ('title','packageTitle','destination','destinationName','operatorName')).lower()]
     items.sort(key=lambda item:(item.get('approvalStatus') not in {'pending','submitted'},str(item.get('submittedAt') or item.get('updatedAt') or '')))
     return jsonify({'ok':True,'items':[package_for_read(item) for item in items]})
+
+
+def _review_queue():
+    # approvalStatus is the current lifecycle; reviewedAt/By retain past decisions.
+    return [item for item in _load('tourism_packages') if not item.get('deletedAt')
+            and str(item.get('approvalStatus') or '').lower()
+            in {'pending', 'submitted', 'approved', 'rejected', 'suspended'}]
 
 @bp.get('/packages/<pid>')
 @auth_required(['admin'])
@@ -285,6 +292,8 @@ def review_package(pid):
     payload=_payload(); decision=payload.get('decision')
     current=retrieveRecord('tourism_packages',pid)
     if not current:return jsonify({'ok':False,'error':'Package not found'}),404
+    if current.get('deletedAt') or str(current.get('approvalStatus') or '').lower() in {'draft','archived'}:
+        return jsonify({'ok':False,'error':'Draft and archived packages must be submitted by the operator before review.'}),409
     if not isinstance(decision,str) or decision not in {'approved','rejected'}:return jsonify({'ok':False,'error':'decision must be approved or rejected'}),400
     if not isinstance(payload.get('comment',''), str) or len(payload.get('comment','')) > 2000:_fail('Use a review note of at most 2000 characters.',400)
     comment=payload.get('comment','').strip()

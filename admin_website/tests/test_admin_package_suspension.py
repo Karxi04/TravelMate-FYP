@@ -60,6 +60,8 @@ def test_scenario_01_admin_packages_filter_has_suspended(auth_client):
         html = res.get_data(as_text=True)
         assert '<option value="suspended"' in html
         assert 'Suspended</option>' in html
+        assert '<option value="draft"' not in html
+        assert '<option value="archived"' not in html
 
 
 def test_scenario_02_admin_packages_list_displays_suspended_badge(auth_client):

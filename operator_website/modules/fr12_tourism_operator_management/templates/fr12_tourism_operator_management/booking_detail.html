@@ -254,10 +254,13 @@
 {% set readiness = booking.get('readiness') or {'canMarkReady':false,'blockers':['Readiness details are unavailable. Reload this order.'],'components':[],'requiredCount':0,'completedCount':0,'requirementsReliable':false} %}
 <section class="card" aria-label="Fulfilment progress" style="margin:20px 0">
   <h2>Package Fulfilment</h2>
-  <p>Payment: <strong>{{ pay_status|payment_label(ord_status) }}</strong> · {{ readiness.completedCount }} / {{ readiness.requiredCount }} required records complete</p>
-  {% if readiness.requiredCount == 0 and readiness.requirementsReliable %}<p>No external supplier services are required by this purchased package.</p>{% endif %}
+  <p>Payment: <strong>{{ pay_status|payment_label(ord_status) }}</strong> ·
+    {% if not readiness.requirementsReliable %}Supplier requirements need review
+    {% elif readiness.requiredCount == 0 %}No external arrangements required
+    {% else %}{{ readiness.completedCount }} / {{ readiness.requiredCount }} required arrangements complete{% endif %}
+  </p>
   {% for component in readiness.components %}
-    <div style="margin:8px 0"><strong>{{ component.label }}</strong>: {{ 'Review required' if component.uncertain else 'Recorded' if component.required and component.complete else 'Missing records' if component.required else 'Not required' }}</div>
+    <div style="margin:8px 0"><strong>{{ component.label }}</strong>: {{ 'Review required' if component.uncertain else 'Required — Arrangement recorded' if component.required and component.complete else 'Required — Missing arrangement' if component.required else 'Not required' }}</div>
   {% endfor %}
   {% if readiness.canMarkReady %}<p role="status">All required arrangements are recorded.</p>{% else %}
     <ul role="status">{% for reason in readiness.blockers %}<li>{{ reason }}</li>{% endfor %}</ul>
@@ -296,8 +299,8 @@
         <!-- Brochure specs (read-only from package) -->
         <div style="background: var(--surface-secondary, #F8FAFC); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; margin-bottom: 14px; border: 1px solid var(--border, #E2E8F0);">
           <div style="font-weight: 700; color: var(--ink); margin-bottom: 4px;">Brochure Specification</div>
-          <div><strong>Property:</strong> {{ req_services.accommodation.brochureName or snap.accommodation.accommodationName or 'Partner Hotel' }}</div>
-          <div><strong>Room:</strong> {{ req_services.accommodation.brochureRoomType or snap.accommodation.roomType or 'Standard Room' }}</div>
+          <div><strong>Property:</strong> {{ req_services.accommodation.brochureName or 'Not specified in purchased brochure' }}</div>
+          <div><strong>Room:</strong> {{ req_services.accommodation.brochureRoomType or 'Not specified in purchased brochure' }}</div>
           {% if req_services.accommodation.brochureNotes %}
             <div style="margin-top: 2px; color: var(--ink-secondary);">{{ req_services.accommodation.brochureNotes }}</div>
           {% endif %}
@@ -335,7 +338,7 @@
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <div>
             <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Property / Supplier Name</label>
-            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="supplierName" value="{{ req_services.accommodation.brochureName or snap.accommodation.accommodationName or '' }}" placeholder="Hotel name">
+            <input class="input" style="padding: 6px 10px; font-size: 12px;" name="supplierName" value="{{ req_services.accommodation.brochureName or '' }}" placeholder="Hotel name">
           </div>
           <div>
             <label style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 2px;">Booking / Reference # *</label>
