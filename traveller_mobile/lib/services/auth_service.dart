@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'api_service.dart';
+import 'android_push_service.dart';
 
 class AuthService {
   final FirebaseAuth? _authOverride;
@@ -177,5 +178,8 @@ class AuthService {
     await sendPasswordResetEmail(email);
   }
 
-  Future<void> logout() => signOutUser();
+  Future<void> logout() async {
+    await AndroidPushService.instance.beforeLogout();
+    await signOutUser();
+  }
 }

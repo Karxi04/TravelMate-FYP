@@ -14,13 +14,20 @@ val startupDefines = (project.findProperty("dart-defines") as? String).orEmpty()
     .split(",").filter { it.isNotBlank() }
     .map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
 val emulatorBuild = startupDefines.contains("USE_FIREBASE_EMULATOR=true")
+val pushTestBuild = startupDefines.contains("PUSH_TEST_BUILD=true")
+if (startupDefines.any { it.startsWith("PUSH_TEST_BUILD=") && it !in listOf("PUSH_TEST_BUILD=true", "PUSH_TEST_BUILD=false") }) {
+    throw GradleException("PUSH_TEST_BUILD must be true or false.")
+}
+if (pushTestBuild && (emulatorBuild || gradle.startParameter.taskNames.any { !it.contains("debug", ignoreCase = true) })) {
+    throw GradleException("Push test builds require Android debug without Firebase emulators.")
+}
 if (startupDefines.any { it.startsWith("USE_FIREBASE_EMULATOR=") && it !in listOf("USE_FIREBASE_EMULATOR=true", "USE_FIREBASE_EMULATOR=false") }) {
     throw GradleException("USE_FIREBASE_EMULATOR must be true or false.")
 }
 if (emulatorBuild && gradle.startParameter.taskNames.any { !it.contains("debug", ignoreCase = true) }) {
     throw GradleException("Firebase Emulator builds must be explicitly debug builds.")
 }
-if (!emulatorBuild) apply(plugin = "com.google.gms.google-services")
+if (!emulatorBuild && !pushTestBuild) apply(plugin = "com.google.gms.google-services")
 
 if (gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }) {
     val defines = (project.findProperty("dart-defines") as? String).orEmpty()
@@ -51,7 +58,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = if (emulatorBuild) "org.travelmate.hermetic.travelmate_hermetic" else "com.example.travelmate_traveller"
+        applicationId = if (emulatorBuild || pushTestBuild) "org.travelmate.hermetic.travelmate_hermetic" else "com.example.travelmate_traveller"
         buildConfigField("boolean", "USE_FIREBASE_EMULATOR", emulatorBuild.toString())
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.

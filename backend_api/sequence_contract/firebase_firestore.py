@@ -3,6 +3,36 @@ from utils import doc_to_dict
 from google.api_core.exceptions import AlreadyExists, FailedPrecondition, NotFound
 
 
+def _notify_committed(collection, document_id, record):
+    if collection not in {'checkout_orders', 'payment_records'}:
+        return
+    # Delivery failure cannot roll back an already committed financial operation.
+    try:
+        from services.notification_delivery import capture_committed_order
+        capture_committed_order({**(record or {}), 'id': document_id})
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning('Committed notification deferred to worker.')
+
+
+def transactNotificationRecord(collection, document_id, transform):
+    if collection not in {'notification_devices', 'notification_outbox', 'notification_deliveries', 'notification_worker_state'}:
+        raise ValueError('Unsupported notification collection')
+    from google.cloud import firestore
+    db = get_db()
+    ref = db.collection(collection).document(document_id)
+
+    @firestore.transactional
+    def commit(transaction):
+        snap = ref.get(transaction=transaction)
+        current = snap.to_dict() if snap.exists else None
+        updated = transform(current)
+        if updated is not None:
+            transaction.set(ref, updated)
+        return updated
+    return commit(db.transaction())
+
+
 def _public_projection_changed(collection_name, document_id, source):
     if collection_name not in {'tourism_packages', 'promotional_campaigns', 'feedback'}:
         return
@@ -39,6 +69,7 @@ def storeRecord(collectionName, data, documentId=None, merge=False):
     ref.set(data, merge=merge)
     result = {"id": ref.id, **data}
     _public_projection_changed(collectionName, ref.id, result)
+    _notify_committed(collectionName, ref.id, result)
     return result
 
 
@@ -105,6 +136,7 @@ def updateRecord(collectionName, documentId, data, expected=None):
             raise ReviewConflict('This record changed. Refresh and try again.') from error
     result = retrieveRecord(collectionName, documentId)
     _public_projection_changed(collectionName, documentId, result)
+    _notify_committed(collectionName, documentId, result)
     return result
 
 
@@ -144,7 +176,9 @@ def commitPackageFulfillment(document_id, expected, patch):
             transaction.update(trip_ref, mirror)
         return {**current, **patch}
 
-    return commit(db.transaction())
+    result = commit(db.transaction())
+    _notify_committed('checkout_orders', document_id, result)
+    return result
 
 
 def transactPackingChecklist(trip_id, uid, transform):

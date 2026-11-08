@@ -53,6 +53,7 @@ def derive_events(uid, orders, trips, checklists=None, forecasts=None, now=None)
         events[nid] = {'id':nid, 'travellerId':uid, 'category':category, 'sourceEventId':nid,
                        'title':title, 'message':message, 'target':target, 'createdAt':now.isoformat(),
                        'occurredAt':occurred_at, 'read':False}
+        if category == 'weather': events[nid]['forecastDate'] = source[1]
     for order in orders:
         if order.get('travellerId') != uid or order.get('isSimulated') or order.get('bookingMode') == 'simulation':
             continue
@@ -68,7 +69,7 @@ def derive_events(uid, orders, trips, checklists=None, forecasts=None, now=None)
             state = terminal
         if state in {'paid','failed','cancelled','expired','refunded'}:
             add('payment', [oid,state], 'Payment status updated', f'Your recorded payment status is {state}.',
-                {'screen':'payments','orderId':oid}, order.get('paidAt') or order.get('updatedAt'))
+                {'screen':'payments','orderId':oid}, (order.get('paidAt') if state == 'paid' else None) or order.get('updatedAt'))
         record = order.get('fulfillmentRecord') or {}
         trip_id = str(order.get('fulfilledTripId') or '')
         if state == 'paid' and order.get('fulfillmentStatus') == 'trip_ready' and record.get('status') == 'trip_ready' and record.get('confirmedBy') and record.get('confirmedAt') and trip_id in owned_trip_ids:
@@ -116,4 +117,8 @@ def derive_events(uid, orders, trips, checklists=None, forecasts=None, now=None)
             if concern:
                 add('weather', [tid,forecast_day.isoformat(),concern], 'Trip forecast advisory',
                     f'The Open-Meteo forecast for {forecast_day.isoformat()} indicates possible {concern}. Review your plans. This is a forecast advisory, not an official severe-weather alert.', target)
+    for event in events.values():
+        tid = event['target'].get('tripId')
+        source_trip = next((t for t in trips if str(t.get('id')) == tid),None)
+        if source_trip: event['tripStartDate'] = source_trip.get('startDate')
     return list(events.values())

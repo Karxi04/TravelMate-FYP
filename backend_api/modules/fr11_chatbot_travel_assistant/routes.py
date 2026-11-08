@@ -319,11 +319,11 @@ def chat():
     ex_ints = extract_excluded_interests(message, planning_state.get('excludedInterests'))
     ex_types = extract_excluded_activity_types(message, planning_state.get('excludedActivityTypes'))
     indoor_pref = extract_indoor_preference(message, planning_state.get('preferIndoor'))
-    if re.search(r'\b(relaxing|relaxed|slow[- ]paced|easy pace)\b', message, re.I):
+    if re.search(r'\b(relaxing|relaxed|slow[- ]paced|easy pace|take it easy|leisurely|not rushed)\b', message, re.I):
         planning_state['travelPace'] = 'relaxed'
     if re.search(r'\b(active pace|busy pace|packed trip)\b', message, re.I):
         planning_state['travelPace'] = 'active'
-    if re.search(r'\b(affordable|low[- ]cost|cheap)\b', message, re.I):
+    if re.search(r'\b(affordable|low[- ]cost|cheap|inexpensive|budget[- ]friendly|on a budget|tight budget)\b', message, re.I):
         planning_state['budgetRange'] = 'Budget'
     if re.search(r"\b(avoid|don't want|do not want|no)\b.{0,20}\bcrowd", message, re.I):
         planning_state['avoidCrowds'] = True
@@ -521,7 +521,23 @@ def chat():
         indoor_val = planning_state.get('preferIndoor', False)
 
         catalog = DESTINATIONS
-        if not find_matching_catalog_destinations(dest_for_planning, dest_state_for_planning) and os.getenv('SERPAPI_KEY', '').strip():
+        from services.malaysian_locality import normalize_destination_scope
+        scope = normalize_destination_scope(dest_for_planning)
+        cached = retrieveRecord('destination_cache',filters=[('canonicalDestinationScope','==',scope.get('scopeKey'))],limit=150) or []
+        if cached:
+            # Existing provider cache avoids another live search; exact identities retain specific pricing.
+            from services.activity_pricing import PRICING_FIELDS
+            by_id = {str(d.get('destinationId') or d.get('place_id')):{**d,'ratingSource':'unverified_local_catalog'} for d in DESTINATIONS}
+            for candidate in cached:
+                key = str(candidate.get('destinationId') or candidate.get('place_id') or '')
+                if not key: continue
+                base = by_id.get(key,{})
+                merged = {**base,**{k:v for k,v in candidate.items() if v not in (None,'',[],{})}}
+                if base.get('pricingUnit') or 'unitPrice' in base:
+                    merged.update({k:base[k] for k in PRICING_FIELDS if k in base})
+                by_id[key] = merged
+            catalog = list(by_id.values())
+        if not find_matching_catalog_destinations(dest_for_planning, dest_state_for_planning,catalog) and os.getenv('SERPAPI_KEY', '').strip():
             try:
                 result = retrieveDestinationResults(f'tourist attractions {dest_for_planning}', dest_for_planning)
                 catalog = result.get('local_results') or []

@@ -8,6 +8,8 @@ import 'modules/fr09_payment/checkout_return_screen.dart';
 import 'core/onboarding/traveller_entry_gate.dart';
 import 'services/api_service.dart';
 import 'widgets/travel_widgets.dart';
+import 'services/android_push_service.dart';
+import 'modules/traveller_notifications/notification_center.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +31,7 @@ class _TravelMateAppState extends State<TravelMateApp> {
   final checkoutReturnChannel = CheckoutReturnChannel();
   final handledReturnOrders = <String>{};
   CheckoutReturnLink? pendingCheckoutReturn;
+  String? pendingNotification;
 
   @override
   void initState() {
@@ -54,6 +57,30 @@ class _TravelMateAppState extends State<TravelMateApp> {
       ApiService.setBaseUrl(ApiService.baseUrl);
     }
     await (widget.initialize ?? initializeTravelMateFirebase)();
+    try {
+      await AndroidPushService.instance.start((id) {
+        pendingNotification=id;
+        _openPushIfReady();
+      });
+    } catch (_) { /* Push availability must not block login or planning. */ }
+  }
+
+  Future<void> _openPushIfReady() async {
+    final id=pendingNotification;
+    if(id==null)return;
+    final user=FirebaseAuth.instance.currentUser;
+    final navigator=navigatorKey.currentState;
+    if(user==null || navigator==null)return;
+    pendingNotification=null;
+    try {
+      final api=ApiService();
+      final result=await api.get('$notificationPath/$id');
+      if(!mounted || FirebaseAuth.instance.currentUser?.uid!=user.uid)return;
+      final screen=notificationDestination(result['item']['target'] as Map,api);
+      if(screen==null)return;
+      await api.patch('$notificationPath/$id',{'read':true});
+      if(mounted && FirebaseAuth.instance.currentUser?.uid==user.uid)navigator.push(MaterialPageRoute(builder:(_) => screen));
+    } catch (_) { /* Expired/foreign notifications never open private records. */ }
   }
 
   void _retryInitialization() => setState(() => initialization = _initialize());
@@ -127,6 +154,7 @@ class _TravelMateAppState extends State<TravelMateApp> {
               if (snapshot.data == null) return const LoginScreen();
               WidgetsBinding.instance
                   .addPostFrameCallback((_) => _openCheckoutReturnIfReady());
+              WidgetsBinding.instance.addPostFrameCallback((_) => _openPushIfReady());
               return const TravellerEntryGate();
             },
           );

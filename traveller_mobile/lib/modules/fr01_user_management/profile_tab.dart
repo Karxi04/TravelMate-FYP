@@ -150,7 +150,11 @@ class _ProfileTabState extends State<ProfileTab> {
       ),
     );
     if (confirmed != true) return;
-    await (widget.onSignOut?.call() ?? AuthService().logout());
+    try {
+      await (widget.onSignOut?.call() ?? AuthService().logout());
+    } catch (_) {
+      if (mounted) showError(context,'Sign out could not finish. Reconnect and retry so this phone can be unregistered securely.');
+    }
   }
 
   Future<void> editProfile() async {

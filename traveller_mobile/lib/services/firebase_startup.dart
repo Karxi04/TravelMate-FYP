@@ -108,6 +108,19 @@ Future<void> initializeTravelMateFirebase() async {
   if (!{'true', 'false'}.contains(rawFlag))
     throw StateError('USE_FIREBASE_EMULATOR must be true or false.');
   if (!useFirebaseEmulator) {
+    if (const bool.fromEnvironment('PUSH_TEST_BUILD')) {
+      const project = String.fromEnvironment('PUSH_TEST_FIREBASE_PROJECT_ID');
+      const appId = String.fromEnvironment('PUSH_TEST_FIREBASE_APP_ID');
+      const apiKey = String.fromEnvironment('PUSH_TEST_FIREBASE_API_KEY');
+      const sender = String.fromEnvironment('PUSH_TEST_FIREBASE_SENDER_ID');
+      if (kReleaseMode || project.isEmpty || project.startsWith('demo-') ||
+          project == DefaultFirebaseOptions.currentPlatform.projectId ||
+          appId.isEmpty || apiKey.isEmpty || sender.isEmpty) {
+        throw StateError('Push test requires explicit non-production Firebase Android configuration.');
+      }
+      await Firebase.initializeApp(options:const FirebaseOptions(projectId:project,appId:appId,apiKey:apiKey,messagingSenderId:sender));
+      return;
+    }
     await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform);
     return;

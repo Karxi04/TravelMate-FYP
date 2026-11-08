@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/android_push_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/travel_widgets.dart';
@@ -172,7 +174,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 padding: AppSpacing.page,
                 children: [
                   const Text(
-                      'Checked when you open or refresh TravelMate. Background push delivery is not enabled.'),
+                'Inbox checked when you open or refresh TravelMate. Android push also requires permission and a configured backend.'),
+                  if (AndroidPushService.instance.supported)
+                    TextButton.icon(icon:const Icon(Icons.notifications_active_outlined),label:const Text('Android notification settings'),onPressed:() async {
+                      final enable=await showDialog<bool>(context:context,builder:(dialogContext) => AlertDialog(
+                        title:const Text('Android notifications'),content:const Text('Allow TravelMate to notify you about recorded payments, package updates and upcoming trips. You can keep using the inbox and planning if you decline. If Android already denied permission, enable it in system app settings.'),
+                        actions:[TextButton(onPressed:() => Navigator.pop(dialogContext,false),child:const Text('Not now')),TextButton(onPressed:() => Navigator.pop(dialogContext,true),child:const Text('Continue'))]));
+                      if(enable!=true)return;
+                      try { await AndroidPushService.instance.synchronize(FirebaseAuth.instance.currentUser?.uid,requestPermission:true); }
+                      catch(e) { if(context.mounted)showError(context,'Android push could not be enabled. Your inbox is still available.'); }
+                    }),
                   if (notice.isNotEmpty)
                     Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),

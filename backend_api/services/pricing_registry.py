@@ -25,6 +25,7 @@ REGISTRY = (
         'unitPrice': 0.0, 'pricingUnit': 'per_person', 'currency': 'MYR',
         'applicability': 'applicable', 'eligibility': 'all_visitors',
         'priceSourceUrl': 'https://botanicalgardens.penang.gov.my/index.php/hubungi-kami/soalan-lazim-faq',
+        'verifiedAt': '2026-11-08', 'openingHours': '06:30-19:30',
         'limitations': 'General entry only. Official tram availability statements conflict; availability and optional charges are not established.',
     },
     {
@@ -178,7 +179,8 @@ def enrich_candidate_pricing(candidate):
         'venueId', 'googlePlaceId', 'ticketProductId', 'ticketProduct', 'unitPrice',
         'pricingUnit', 'currency', 'applicability', 'eligibility', 'priceSourceUrl', 'limitations',
     )}
-    evidence.update({'priceVerifiedAt': CHECKED_AT, 'researchBatch': 'F3-P1A-R',
+    checked_at = record.get('verifiedAt',CHECKED_AT)
+    evidence.update({'priceVerifiedAt': checked_at, 'researchBatch': 'F3-P1A-R',
                      'identityEvidence': 'provider_cache_continuity_only' if record['googlePlaceId'] else 'unverified',
                      'matchedBy': 'known_id_and_exact_alias_and_coordinates' if identities else 'exact_alias_and_coordinates'})
     item['pricingEvidence'] = evidence
@@ -186,5 +188,8 @@ def enrich_candidate_pricing(candidate):
         item.update({'pricingUnit': record['pricingUnit'], 'unitPrice': record['unitPrice'],
                      'estimatedCost': record['unitPrice'], 'costCategory': 'admission',
                      'costProvenance': 'verified_ticket', 'priceSourceUrl': record['priceSourceUrl'],
-                     'priceVerifiedAt': CHECKED_AT, 'overlapsAllowance': False})
+                     'priceVerifiedAt': checked_at, 'overlapsAllowance': False})
+    if record.get('openingHours') and not item.get('openingHours') and not item.get('opening_hours'):
+        item.update({'openingHours':record['openingHours'],'openingHoursSourceUrl':record['priceSourceUrl'],
+                     'openingHoursVerifiedAt':checked_at})
     return item
