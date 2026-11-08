@@ -170,7 +170,11 @@ def test_package_payments_renders_successfully(auth_client):
         assert "TM-ORD-101" in html
         assert "Penang Heritage &amp; Coastal Escape" in html
         assert "MYR 1250.00" in html
-        assert "Test Paid" in html
+        assert "Test Paid" not in html
+        assert "Paid" in html
+        assert ">Environment<" not in html
+        assert "overflow-wrap:anywhere" in html
+        assert "Copy reference" in html
         assert "Stripe Test Mode" in html
         assert "Trip Ready" in html
 
@@ -336,3 +340,13 @@ def test_booking_detail_renders_paid_at(auth_client):
         html = resp.data.decode("utf-8")
         assert "Paid At" in html
         assert "Payment date unavailable" in html
+
+
+@pytest.mark.parametrize('order_status,label', [('checkout_failed','Failed'),('checkout_expired','Expired'),('checkout_cancelled','Cancelled')])
+def test_terminal_order_is_not_presented_as_paid(auth_client, order_status, label):
+    response = _mock_response({'ok':True,'items':[{'id':'terminal-ref','orderReference':'terminal-ref','paymentStatus':'paid','orderStatus':order_status,'isPaid':False,'amount':100,'currency':'MYR'}]})
+    with _patch_view_api('operator_fr12.payments', MagicMock(return_value=response)):
+        page = auth_client.get('/payments')
+    html = page.get_data(as_text=True)
+    assert page.status_code == 200 and f'>{label}</span>' in html
+    assert 'class="status approved">Paid</span>' not in html

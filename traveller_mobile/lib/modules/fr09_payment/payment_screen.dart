@@ -18,6 +18,7 @@ import 'payment_status.dart';
 class PaymentScreen extends StatefulWidget {
   final String initialBookingReference;
   final double? initialAmount;
+  final Map<String, dynamic>? pricingBreakdown;
   final String quoteType;
   final String quoteId;
   final String offerId;
@@ -33,6 +34,7 @@ class PaymentScreen extends StatefulWidget {
     super.key,
     this.initialBookingReference = '',
     this.initialAmount,
+    this.pricingBreakdown,
     this.quoteType = '',
     this.quoteId = '',
     this.offerId = '',
@@ -520,6 +522,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       _packageRestartIntent.startNewAttempt();
       final restartResponse = await api.post('/api/fr15/package-checkout-attempts', {
         'packageId': packageId,
+        'promoCode': (snapshot['requestedPromoCode'] ?? '').toString(),
         if (departureDate != null && departureDate.isNotEmpty)
           'departureDate': departureDate,
         'participants': {
@@ -738,6 +741,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
 
     final displayAmount = authoritativeAmount;
+    final pricing = snapshot?['pricingBreakdown'] is Map
+        ? Map<String, dynamic>.from(snapshot!['pricingBreakdown'])
+        : widget.pricingBreakdown;
 
     final currentAction = checkoutAction;
     final bool isFlight = widget.quoteType == 'flight';
@@ -970,6 +976,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                   ],
                 ),
+                if (isPackage && pricing != null) ...[
+                  const SizedBox(height: 8),
+                  for (final entry in const {
+                    'originalSubtotal': 'Original package subtotal',
+                    'promotionDiscount': 'Promotion discount',
+                    'finalPayable': 'Final payable'
+                  }.entries)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Text(
+                          '${entry.value}: ${entry.key == 'promotionDiscount' ? '-' : ''}${pricing['currency']} ${(num.tryParse('${pricing[entry.key]}') ?? 0).toStringAsFixed(2)}'),
+                    ),
+                ],
                 if (widget.initialBookingReference.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(

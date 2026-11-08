@@ -270,8 +270,8 @@ def test_operator_campaign_requires_approved_package(client, mock_operator_auth)
             json={
                 'campaignTitle': 'Early Bird Promo',
                 'description': 'Special discount for holiday season',
-                'startDate': '2026-10-01',
-                'endDate': '2026-10-15',
+                'startDate': '2030-10-01',
+                'endDate': '2030-10-15',
                 'packageId': 'pkg_draft'
             }
         )

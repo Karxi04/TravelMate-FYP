@@ -310,13 +310,13 @@ def test_p1_07_unpaid_booking_detail_does_not_claim_payment_success(auth_client)
         html = res.get_data(as_text=True)
 
         # Must state awaiting payment completion
-        assert "awaiting payment completion" in html
+        assert ">Pending<" in html
         # Must NOT claim verified payment occurred
         assert "recorded following verified payment" not in html
         # Must NOT claim trip created in mobile app
         assert "An independent Package Trip has been created" not in html
         # Status pill should say Payment Pending
-        assert "Payment Pending" in html
+        assert ">Pending<" in html
 
 
 # =========================================================================
@@ -334,8 +334,8 @@ def test_p1_08_failed_booking_detail_does_not_claim_fulfillment(auth_client):
         # Explains payment failed
         assert "payment attempt for this booking <strong>failed</strong>" in html or "failed" in html
         assert "recorded following verified payment" not in html
-        assert "no Package Trip has been created" in html
-        assert "Payment Failed" in html
+        assert "Not Created" in html
+        assert ">Failed<" in html
 
 
 # =========================================================================
@@ -353,7 +353,7 @@ def test_p1_09_expired_booking_detail_shows_accurate_explanation(auth_client):
         # Explains checkout session expired
         assert "checkout session has <strong>expired</strong> without payment completion" in html or "expired" in html
         assert "recorded following verified payment" not in html
-        assert "no Package Trip has been created" in html
+        assert "Not Created" in html
         assert "Expired" in html
 
 
@@ -370,10 +370,10 @@ def test_p1_10_verified_payment_with_pending_fulfillment_does_not_claim_trip_cre
         html = res.get_data(as_text=True)
 
         # Verified payment acknowledged
-        assert "verified payment in <strong>Stripe Test Mode</strong>" in html
+        assert ">Paid<" in html
         # Explicitly states in progress / pending fulfillment
-        assert "in progress / pending fulfillment" in html
-        assert "an independent package trip has not yet been provisioned" in html
+        assert "Not Created" in html
+        assert "Order status summary" in html
         # Does NOT falsely claim trip has already been created
         assert "An independent <strong>Package Trip</strong> has been created" not in html
         assert "Fulfillment Pending" in html
@@ -392,8 +392,8 @@ def test_p1_11_completed_fulfillment_displays_package_trip_information_correctly
         html = res.get_data(as_text=True)
 
         # Truthfully claims verified payment and trip created
-        assert "verified payment in <strong>Stripe Test Mode</strong>" in html
-        assert "An independent <strong>Package Trip</strong> has been created in the traveller's mobile application" in html
+        assert ">Paid<" in html
+        assert "Trip Created in App" in html
         assert "Trip Created in App" in html
         assert "Paid" in html
 
@@ -413,9 +413,9 @@ def test_p1_12_supplier_reservation_disclosure_remains_truthful(auth_client):
             html = res.get_data(as_text=True)
 
             # Header must always retain authoritative disclosure
-            assert "Authoritative Supplier Reservation Status: NOT CREATED" in html
+            assert "Reservation Not Created" in html
             # Clarifies that third-party supplier reservations are NOT created automatically
-            assert "third-party supplier reservations are NOT created automatically" in html or "Third-party supplier reservations are NOT created automatically" in html or "Third-party supplier reservations were not created" in html
+            assert "External suppliers" in html
             # Notice box at bottom
             assert "Operator Coordination Notice" in html
 
@@ -572,7 +572,7 @@ def test_p1_18_existing_fr09_checkout_fulfillment_contract(auth_client):
         assert res.status_code == 200
         html = res.get_data(as_text=True)
         assert "ord_fr09_stripe_checkout" in html
-        assert "Pending Payment" in html
+        assert "Pending" in html
         assert "Not Fulfilled" in html
 
     with patch.dict(app.view_functions["operator_fr12.booking_detail"].__globals__, {"call_api": lambda m, p, **k: mock_resp}):
@@ -580,9 +580,9 @@ def test_p1_18_existing_fr09_checkout_fulfillment_contract(auth_client):
         res_det = auth_client.get("/bookings/ord_fr09_stripe_checkout")
         assert res_det.status_code == 200
         html_det = res_det.get_data(as_text=True)
-        assert "awaiting payment completion" in html_det
-        assert "Stripe Checkout (Test Mode)" in html_det
-        assert "⚠️ Not Created (Operator Action Required)" in html_det
+        assert ">Pending<" in html_det
+        assert "Stripe Checkout" in html_det
+        assert "Reservation Not Created" in html_det
 
 
 # =========================================================================

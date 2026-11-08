@@ -155,9 +155,10 @@ def test_admin_hotel_payments_audit_banner_and_tabs(auth_client):
         assert "Flight Payments" in html
         assert "All Products" in html
         # Hotel Audit Banner
-        assert "Hotel Payment Audit &amp; Third-Party Logistics Decoupling" in html
-        assert "Auditing standalone hotel transactions" in html
-        assert "NOT automated by TravelMate" in html
+        assert "Hotel Payment Audit &amp; Third-Party Logistics Decoupling" not in html
+        assert ">Environment<" not in html
+        assert "Copy reference" in html
+        assert "Hotel Reservation" in html
 
 
 def test_admin_hotel_payments_property_and_stay_dates(auth_client):

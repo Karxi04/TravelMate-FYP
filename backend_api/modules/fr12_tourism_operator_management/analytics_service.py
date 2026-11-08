@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from math import isfinite
+from services.commerce_money import record_money, public_pricing_breakdown
 from services.public_content_projection import active_campaign, eligible_package
 from services.package_checkout_contract import derive_required_services, build_initial_fulfillment_record
 
@@ -145,13 +146,15 @@ def _safe_analytics_booking(order_data, include_fulfillment=False):
         "fulfillmentStatus": order_data.get("fulfillmentStatus"),
         "amount": amt_val,
         "groupTotal": group_total,
-        "currency": str(order_data.get("currency") or "Unknown").strip().upper(),
+        "currency": record_money(order_data)[1],
         "supplierReservationStatus": order_data.get("supplierReservationStatus") or "not_created",
         "testMode": bool(order_data.get("provider") == "stripe_checkout_test" or order_data.get("testMode")),
         "createdAt": order_data.get("createdAt"),
         "updatedAt": order_data.get("updatedAt"),
     }
     if include_fulfillment:
+        res["pricingBreakdown"] = public_pricing_breakdown(snapshot.get("pricingBreakdown"))
+        res["packageTripId"] = order_data.get("fulfilledTripId")
         res["fulfillmentRecord"] = ful_record
         res["requiredServices"] = required_services
         res["packageBrochure"] = safe_snapshot

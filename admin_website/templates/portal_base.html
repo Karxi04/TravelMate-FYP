@@ -130,6 +130,9 @@
       {% endfor %}
 
       {% block content %}{% endblock %}
+      {% if request.endpoint in ['admin_fr13.payments', 'admin_fr13.bookings'] %}
+      <footer class="muted" style="margin-top:24px;font-size:12px">FYP demonstration environment. Payments use Stripe Test Mode; supplier reservations require separate confirmation.</footer>
+      {% endif %}
     </main>
   </section>
 </div>

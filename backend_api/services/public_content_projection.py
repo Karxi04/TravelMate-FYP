@@ -118,9 +118,14 @@ def active_campaign(source, today=None):
     source = source or {}
     if not campaign_publication_eligible(source):
         return False
-    today = today or date.today().isoformat()
-    start, end = str(source.get('startDate') or ''), str(source.get('endDate') or '')
-    return not (start and today < start) and not (end and today > end)
+    from services.campaign_schedule import malaysia_today
+    try:
+        reference = date.fromisoformat(today) if isinstance(today, str) else today or malaysia_today()
+        start = date.fromisoformat(source.get('startDate', ''))
+        end = date.fromisoformat(source.get('endDate', ''))
+        return start <= reference <= end
+    except (ValueError, TypeError):
+        return False
 
 
 def campaign_publication_eligible(source):

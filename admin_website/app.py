@@ -14,6 +14,8 @@ from modules.fr13_administrator_management import bp as fr13
 
 load_dotenv()
 app = Flask(__name__)
+from portal_commerce import register_commerce_presentation
+register_commerce_presentation(app)
 configure_portal_app(app, "travelmate_admin_session", "admin")
 app.register_blueprint(fr01)
 app.register_blueprint(fr13)

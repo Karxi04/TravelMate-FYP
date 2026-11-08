@@ -640,8 +640,8 @@ class _PackageTripDetailsScreenState extends State<PackageTripDetailsScreen> {
     required String supplierStatus,
   }) {
     final basisLabel = priceBasis == 'per_group' ? 'Per Group' : 'Per Person';
-    final isConfirmedSupplier = const {'confirmed', 'operator_attested'}
-        .contains(supplierStatus.trim().toLowerCase());
+    final isConfirmedSupplier =
+        supplierStatus.trim().toLowerCase() == 'confirmed';
     final supplierMessage = switch (supplierStatus.trim().toLowerCase()) {
       'confirmed' => 'Reservation confirmed by operator.',
       'operator_attested' =>
@@ -651,101 +651,97 @@ class _PackageTripDetailsScreenState extends State<PackageTripDetailsScreen> {
       'not_required' =>
         'The operator has marked this Package Trip ready. No supplier reservations are required for the included services.',
       _ =>
-        'Test payment recorded. Your Package Trip is available in TravelMate. No external supplier reservation has been created.',
+        'Your Package Trip is available in TravelMate. No external supplier reservation has been created.',
     };
 
-    return InkCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.receipt_long_outlined, color: AppColors.primaryStrong, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Booking & Payment Summary',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
-          const Divider(height: 20),
-          _buildOrderReferenceTile(orderId),
-          _summaryRow(
-            'Participants',
-            '$adults ${adults == 1 ? 'Adult' : 'Adults'}${children > 0 ? ', $children ${children == 1 ? 'Child' : 'Children'}' : ''}',
-          ),
-          const SizedBox(height: 4),
-          _summaryRow('Pricing Basis', basisLabel),
-          const SizedBox(height: 4),
-          _summaryRow(
-            'Total Paid',
-            '$currency ${_formatMoney(paidAmount)}',
-            valueStyle: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.success),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: isConfirmedSupplier ? AppColors.successSoft : AppColors.surfaceElevated,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: isConfirmedSupplier ? AppColors.success.withValues(alpha: 0.4) : AppColors.divider,
-              ),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      InkCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Icon(
-                  isConfirmedSupplier ? Icons.verified_rounded : Icons.info_outline_rounded,
-                  size: 16,
-                  color: isConfirmedSupplier ? AppColors.success : AppColors.textSecondary,
-                ),
+                const Icon(Icons.receipt_long_outlined,
+                    color: AppColors.primaryStrong, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    supplierMessage,
-                    style: TextStyle(
-                      color: isConfirmedSupplier ? AppColors.success : AppColors.textPrimary,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 12,
-                      height: 1.35,
-                    ),
+                    'Payment Details',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppColors.infoSoft,
-              borderRadius: BorderRadius.circular(8),
+            const Divider(height: 20),
+            _buildOrderReferenceTile(orderId),
+            _summaryRow(
+              'Participants',
+              '$adults ${adults == 1 ? 'Adult' : 'Adults'}${children > 0 ? ', $children ${children == 1 ? 'Child' : 'Children'}' : ''}',
             ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.info_outline_rounded, size: 16, color: AppColors.info),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Stripe Test Mode: This booking was processed in Stripe Test Mode. No real charges were incurred.',
-                    style: TextStyle(
-                      color: AppColors.info,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      height: 1.3,
-                    ),
-                  ),
-                ),
-              ],
+            const SizedBox(height: 4),
+            _summaryRow('Pricing Basis', basisLabel),
+            _summaryRow('Payment Status',
+                trip?['paidTotal'] != null ? 'Paid' : 'Pending'),
+            const SizedBox(height: 4),
+            _summaryRow(
+              'Package amount',
+              '$currency ${_formatMoney(paidAmount)}',
+              valueStyle: const TextStyle(
+                  fontWeight: FontWeight.w800, color: AppColors.success),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    );
+      const SizedBox(height: 12),
+      Text('Supplier Arrangements',
+          style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: 8),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isConfirmedSupplier
+              ? AppColors.successSoft
+              : AppColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isConfirmedSupplier
+                ? AppColors.success.withValues(alpha: 0.4)
+                : AppColors.divider,
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              isConfirmedSupplier
+                  ? Icons.verified_rounded
+                  : Icons.info_outline_rounded,
+              size: 16,
+              color: isConfirmedSupplier
+                  ? AppColors.success
+                  : AppColors.textSecondary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                supplierMessage,
+                style: TextStyle(
+                  color: isConfirmedSupplier
+                      ? AppColors.success
+                      : AppColors.textPrimary,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ]);
   }
 
   Widget _summaryRow(String label, String value, {TextStyle? valueStyle}) {

@@ -13,6 +13,7 @@ from flask import Blueprint, request, jsonify, g, current_app, Response
 
 from auth_utils import auth_required
 from utils import utc_now_iso
+from services.commerce_money import record_money, public_pricing_breakdown
 from services.stripe_service import (
     createPaymentSession,
     createCheckoutSession,
@@ -291,13 +292,14 @@ def _payment_history_item(record, source):
         booking_type = str(record.get('bookingType') or 'legacy_payment').strip().lower()
         payment_status = normalizePaymentStatus(record.get('paymentStatus'))
         order_status = None
+    currency = record_money(record)[1]
     item = {
         'id': record.get('id'),
         'orderReference': record.get('id'),
         'bookingType': booking_type,
         'timestamp': timestamp,
         'amount': record.get('amount'),
-        'currency': str(record.get('currency') or '').upper() or None,
+        'currency': None if currency == 'UNKNOWN' else currency,
         'paymentStatus': payment_status,
         'orderStatus': order_status,
         'testMode': test_mode,
@@ -309,6 +311,9 @@ def _payment_history_item(record, source):
     }
     if source == 'checkout_order':
         item['checkoutAction'] = _checkout_action(record)
+        if booking_type == 'package' and (record.get('packageSnapshot') or {}).get('pricingBreakdown'):
+            item['pricingBreakdown'] = public_pricing_breakdown((record.get('packageSnapshot') or {}).get('pricingBreakdown'))
+            item['promoCode'] = (record.get('packageSnapshot') or {}).get('requestedPromoCode', '')
         if booking_type == 'hotel':
             item['fulfillmentStatus'] = record.get('fulfillmentStatus') or (
                 'demo_only' if payment_status == 'paid' else 'not_started'
@@ -769,6 +774,7 @@ def create_package_checkout_session(attempt_id):
         'packageAttemptId': attempt_id, 'quoteType': 'package',
         'packageId': snapshot.get('packageId'), 'operatorId': snapshot.get('operatorId'),
         'packageSnapshot': snapshot, 'amount': minor_units / 100,
+        'pricingBreakdown': snapshot.get('pricingBreakdown'),
         'amountMinor': minor_units, 'currency': 'MYR', 'taxIncluded': snapshot.get('taxIncluded'),
         'taxNotes': snapshot.get('taxNotes'), 'status': 'checkout_pending',
         'participants': snapshot.get('participants'), 'groupSize': snapshot.get('groupSize'),

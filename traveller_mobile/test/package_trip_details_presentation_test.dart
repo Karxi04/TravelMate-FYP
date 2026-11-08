@@ -311,13 +311,16 @@ void main() {
       expect(find.textContaining('Penang Heritage Tours Sdn Bhd'), findsAtLeastNWidgets(1));
 
       // Booking Summary
-      expect(find.text('Booking & Payment Summary'), findsOneWidget);
+      expect(find.text('Payment Details'), findsOneWidget);
       expect(find.text('order_stripe_rec_777'), findsOneWidget);
       expect(find.text('2 Adults'), findsOneWidget);
       expect(find.text('Per Person'), findsOneWidget);
       expect(find.text('MYR 1598.00'), findsOneWidget);
-      expect(find.textContaining('Stripe Test Mode'), findsOneWidget);
-      expect(find.textContaining('Test payment recorded'), findsOneWidget);
+      expect(find.textContaining('Stripe Test Mode'), findsNothing);
+      expect(
+          find.textContaining(
+              'No external supplier reservation has been created'),
+          findsOneWidget);
 
       // Meeting point
       expect(find.textContaining('Arrival Hall (Gate 3)'), findsOneWidget);
@@ -421,7 +424,7 @@ void main() {
       // Verify that PackageTripDetailsScreen was instantiated and rendered instead of smart planner
       expect(find.byType(PackageTripDetailsScreen), findsOneWidget);
       expect(find.text('Package Trip Details'), findsOneWidget);
-      expect(find.text('Booking & Payment Summary'), findsOneWidget);
+      expect(find.text('Payment Details'), findsOneWidget);
       // Ensure Smart Itinerary recalculate button is NOT present
       expect(find.text('Recalculate'), findsNothing);
     });
@@ -621,9 +624,13 @@ void main() {
         if (error is FlutterError) {
           debugPrint(error.toStringDeep());
         }
-        expect(error, isNull, reason: 'Must not overflow at ${width}px with 1.5x scale');
-        expect(find.text('Booking & Payment Summary'), findsOneWidget);
-        expect(find.text('package_checkout_order_9c1873a15d5a59a24959f7470b3b7a5278f9e675'), findsOneWidget);
+        expect(error, isNull,
+            reason: 'Must not overflow at ${width}px with 1.5x scale');
+        expect(find.text('Payment Details'), findsOneWidget);
+        expect(
+            find.text(
+                'package_checkout_order_9c1873a15d5a59a24959f7470b3b7a5278f9e675'),
+            findsOneWidget);
       }
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
@@ -743,7 +750,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.textContaining('Test payment recorded. Your Package Trip is available in TravelMate. No external supplier reservation has been created.'),
+        find.textContaining(
+            'Your Package Trip is available in TravelMate. No external supplier reservation has been created.'),
         findsOneWidget,
       );
 

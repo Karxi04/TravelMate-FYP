@@ -691,4 +691,62 @@ void main() {
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
   });
+
+  testWidgets(
+      'Promo code reaches backend and discounted quote is reviewed before payment',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = _PackageDetailsApi()
+      ..checkoutEnabled = true
+      ..mockAttempt = {
+        'id': 'promoted',
+        'amount': 85,
+        'pricingBreakdown': {
+          'originalSubtotal': 100,
+          'promotionDiscount': 15,
+          'finalPayable': 85,
+          'currency': 'MYR'
+        }
+      };
+    await tester.pumpWidget(MaterialApp(
+        home: TourismPackageDetailsScreen(item: _checkoutPackage, api: api)));
+    await tester.pumpAndSettle();
+    await _openBookingSheet(tester);
+    await tester.enterText(
+        find.byKey(const ValueKey('package-promo-code')), 'SAVE15');
+    await tester.tap(find.byKey(const ValueKey('package-checkout-btn')));
+    await tester.pumpAndSettle();
+    expect(api.postedPayload!['promoCode'], 'SAVE15');
+    expect(api.postedPayload!.containsKey('amount'), isFalse);
+    expect(find.text('Review updated package amount'), findsOneWidget);
+    await tester.tap(find.text('Review Checkout'));
+    await tester.pumpAndSettle();
+    expect(find.text('Original package subtotal: MYR 100.00'), findsOneWidget);
+    expect(find.text('Promotion discount: -MYR 15.00'), findsOneWidget);
+    expect(find.text('Final payable: MYR 85.00'), findsOneWidget);
+    expect(api.postedPayloads, hasLength(1));
+  });
+
+  testWidgets('Cancelling updated quote never opens payment', (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = _PackageDetailsApi()
+      ..checkoutEnabled = true
+      ..mockAttempt = {'id': 'changed', 'amount': 110};
+    await tester.pumpWidget(MaterialApp(
+        home: TourismPackageDetailsScreen(item: _checkoutPackage, api: api)));
+    await tester.pumpAndSettle();
+    await _openBookingSheet(tester);
+    await tester.tap(find.byKey(const ValueKey('package-checkout-btn')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Review Payment'), findsNothing);
+    expect(api.postedPayloads, hasLength(1));
+  });
 }

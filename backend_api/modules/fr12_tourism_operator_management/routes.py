@@ -365,11 +365,14 @@ def campaigns():return jsonify({'ok':True,'items':retrieveRecord('promotional_ca
 @bp.post('/campaigns')
 @auth_required(['operator'])
 def create_campaign_route():
+    from services.campaign_schedule import campaign_schedule_error
     payload=request.get_json(silent=True) or {}
     if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Campaign data must be an object'}),400
     disallowed = [k for k in payload if k in PROTECTED_CAMPAIGN_FIELDS]
     if disallowed:
         return jsonify({'ok':False,'error':f'Field "{disallowed[0]}" is protected and cannot be supplied by operator'}),400
+    schedule_error = campaign_schedule_error(payload, new=True)
+    if schedule_error:return jsonify({'ok': False, 'error': schedule_error}), 400
     if not validateCampaignDatesAndContent(payload):return jsonify({'ok':False,'error':'Invalid campaign dates or content'}),400
     pid=str(payload.get('packageId','')).strip()
     if pid:
@@ -383,6 +386,7 @@ def create_campaign_route():
 @bp.put('/campaigns/<cid>')
 @auth_required(['operator'])
 def update_campaign(cid):
+    from services.campaign_schedule import campaign_schedule_error
     current=_own('promotional_campaigns',cid)
     if not current:return jsonify({'ok':False,'error':'Campaign not found'}),404
     if current.get('reviewStatus') in {'pending','submitted','under_review'}:return jsonify({'ok':False,'error':'Campaign under administrator review cannot be edited'}),409
@@ -397,6 +401,8 @@ def update_campaign(cid):
     if not updates:
         return jsonify({'ok':False,'error':'No editable content fields provided'}),400
     merged = {**current, **updates}
+    schedule_error = campaign_schedule_error(merged, previous=current)
+    if schedule_error:return jsonify({'ok': False, 'error': schedule_error}), 400
     if not validateCampaignDatesAndContent(merged):return jsonify({'ok':False,'error':'Invalid campaign dates or content'}),400
     if 'packageId' in updates:
         pid=str(updates.get('packageId','')).strip()
@@ -429,6 +435,7 @@ def delete_campaign(cid):
 @bp.post('/campaigns/<cid>/submit')
 @auth_required(['operator'])
 def submit_campaign(cid):
+    from services.campaign_schedule import campaign_schedule_error
     current = _own(
         'promotional_campaigns',
         cid
@@ -442,6 +449,8 @@ def submit_campaign(cid):
 
     if current.get('reviewStatus', 'draft') not in {'draft', 'rejected'}:
         return jsonify({'ok': False, 'error': 'Only draft or rejected campaigns can be submitted.'}), 409
+    schedule_error = campaign_schedule_error(current, publishing=True)
+    if schedule_error:return jsonify({'ok': False, 'error': schedule_error}), 400
     if not validateCampaignDatesAndContent(current):
         return jsonify({'ok': False, 'error': 'Invalid campaign dates or content'}), 400
     package = _own('tourism_packages', str(current.get('packageId') or '').strip())

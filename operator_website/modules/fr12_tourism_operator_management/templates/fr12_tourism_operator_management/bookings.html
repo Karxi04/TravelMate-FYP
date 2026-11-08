@@ -2,6 +2,7 @@
 {% block title %}Package Bookings | TravelMate Operator{% endblock %}
 
 {% block content %}
+<style>.table-wrap table{width:100%;table-layout:fixed}.table-wrap td,.detail-row strong,.eyebrow{overflow-wrap:anywhere;white-space:normal;min-width:0}.table-wrap th{min-width:0!important}.table-wrap code{white-space:normal;overflow-wrap:anywhere}.table-wrap{overflow-x:auto}@media(max-width:850px){.table-wrap table{min-width:850px}}</style>
 <div class="page-title">
   <div>
     <span class="eyebrow">Tourism Operator Management</span>
@@ -23,18 +24,6 @@
   <p class="muted">Showing up to 500 records. Totals cover the loaded records only.</p>
 </div>
 {% endif %}
-<div class="booking-notice-card" role="region" aria-label="System Disclosures">
-  <div class="booking-notice-icon" aria-hidden="true">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-  </div>
-  <div class="booking-notice-content">
-    <strong>Stripe Test Environment & Supplier Logistics Notice</strong>
-    <p>
-      Transactions in TravelMate are processed in <strong>Stripe Test Mode</strong>. While package orders automatically fulfill an independent <strong>Package Trip</strong> inside the traveller's mobile app, <strong>third-party supplier reservations</strong> (hotel rooms, ferry/van transfers, docent fees) are <strong>NOT automatically booked with external providers</strong>. Operators must confirm external supplier logistics directly.
-    </p>
-  </div>
-</div>
-
 <!-- Metrics Overview Ribbon -->
 {% if not backend_error %}
 <div class="grid g4 operator-stats" style="margin-bottom: 24px;">
@@ -94,7 +83,7 @@
       <option value="awaiting_fulfillment" {% if status == 'awaiting_fulfillment' %}selected{% endif %}>Awaiting Arrangements</option>
       <option value="fulfilled" {% if status == 'fulfilled' %}selected{% endif %}>Trip Ready / Fulfilled</option>
       <option value="pending" {% if status == 'pending' %}selected{% endif %}>Payment Pending</option>
-      <option value="declined" {% if status == 'declined' %}selected{% endif %}>Fulfillment Declined</option>
+      <option value="declined" {% if status == 'declined' %}selected{% endif %}>Unable to Fulfil</option>
       <option value="test" {% if status == 'test' %}selected{% endif %}>Stripe Test Mode Only</option>
     </select>
     <button class="btn outline" type="submit">
@@ -170,9 +159,6 @@
               Date unrecorded
             {% endif %}
           </div>
-          {% if item.testMode %}
-            <span class="badge-test-mode" title="Processed in Stripe Test Mode">🧪 Stripe Test</span>
-          {% endif %}
         </td>
 
         <td>
@@ -217,9 +203,9 @@
         </td>
 
         <td>
-          {% if item.groupTotal is not none %}
+          {% if item.get('groupTotal') is not none %}
             <strong style="color: var(--ink); font-size: 14px;">
-              {{ item.currency or 'MYR' }} {{ '%.2f'|format(item.groupTotal|float) }}
+              {{ item.currency or 'UNKNOWN' }} {{ '%.2f'|format(item.groupTotal|float) }}
             </strong>
           {% else %}
             <span class="muted">—</span>
@@ -229,22 +215,8 @@
         <td>
           {% set pay_status = (item.paymentStatus or 'unknown')|lower %}
           {% set ord_status = (item.orderStatus or '')|lower %}
-          {% set is_pending = is_pending_booking(item) if is_pending_booking is defined else (pay_status in ['pending', 'payment_pending', 'unpaid'] and ord_status not in ['expired', 'checkout_expired', 'failed', 'checkout_failed', 'cancelled', 'checkout_cancelled', 'rejected'] and pay_status not in ['paid', 'succeeded', 'failed', 'payment_failed', 'expired', 'cancelled', 'refunded']) %}
-          {% if pay_status == 'paid' %}
-            <span class="status approved">
-              Paid{% if item.testMode %} (Test){% endif %}
-            </span>
-          {% elif is_pending %}
-            <span class="status pending">Pending Payment</span>
-          {% elif pay_status == 'expired' or ord_status in ['expired', 'checkout_expired'] %}
-            <span class="status expired">Expired</span>
-          {% elif pay_status in ['failed', 'payment_failed'] or ord_status in ['failed', 'checkout_failed'] %}
-            <span class="status rejected">Failed</span>
-          {% elif pay_status in ['cancelled'] or ord_status in ['cancelled', 'checkout_cancelled'] %}
-            <span class="status rejected">Cancelled</span>
-          {% else %}
-            <span class="status draft">{{ pay_status|capitalize }}</span>
-          {% endif %}
+          {% set label = pay_status|payment_label(ord_status) %}
+          <span class="status {{ 'approved' if label == 'Paid' else 'pending' if label == 'Pending' else 'expired' if label == 'Expired' else 'rejected' }}">{{ label }}</span>
         </td>
 
         <td>
@@ -277,7 +249,7 @@
           {% set sup_status = (item.supplierReservationStatus or '')|lower %}
           {% if sup_status == 'operator_attested' %}
             <span class="badge-supplier attested" title="Supplier reservation confirmed and attested by operator">
-              ✅ Operator Attested
+              ✅ Arrangements Recorded (Operator)
             </span>
           {% elif sup_status == 'declined' %}
             <span class="badge-supplier declined" title="Supplier fulfillment declined by operator">
@@ -285,7 +257,7 @@
             </span>
           {% else %}
             <span class="badge-supplier unconfirmed" title="Actual third-party supplier reservation must be coordinated manually by the operator">
-              ⚠️ Not Created (Manual)
+              ⚠️ Reservation Not Created
             </span>
           {% endif %}
         </td>
