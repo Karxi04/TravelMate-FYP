@@ -340,6 +340,7 @@ class ApiService {
   Future<dynamic> patch(String path, [Map<String, dynamic>? body]) async {
     final payload = body ?? <String, dynamic>{};
     if (isStandalone) {
+      if (path.startsWith('/api/traveller/notifications/')) return _standalone.put(path,payload);
       if (path.contains('/packing-checklist')) {
         throw const ApiException(
           'Smart Packing Checklist requires an active TravelMate backend connection.',

@@ -1,5 +1,7 @@
 from copy import deepcopy
 from unittest.mock import patch
+import pytest
+
 
 from services.preference_learning import (
     AFFINITY_MAX,
@@ -52,6 +54,18 @@ def _score(candidate, learned=None):
     collaborative = applyCollaborativeFiltering(
         content, [], peerPreferences={}, currentPreference=BASE_PROFILE)
     return calculateRecommendationScore(collaborative)[0]
+
+
+@pytest.fixture(autouse=True)
+def atomic_learning_store(monkeypatch):
+    from modules.fr04_hybrid_recommendation import routes
+    def commit(uid, transform):
+        updated,event,changed=transform(routes.retrieveRecord('learned_preference_profiles',uid))
+        if event is not None:
+            routes.storeRecord('learned_preference_profiles',updated,uid,merge=True)
+            routes.storeRecord('recommendation_feedback_events',event,event['feedbackEventId'])
+        return updated,event,changed
+    monkeypatch.setattr(routes,'transactPreferenceLearning',commit)
 
 
 def test_new_user_has_no_learned_preference_and_base_is_unchanged():

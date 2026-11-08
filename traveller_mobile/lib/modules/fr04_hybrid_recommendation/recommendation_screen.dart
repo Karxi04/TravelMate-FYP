@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
+import '../../core/utils/recommendation_page.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/recommendation_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../fr03_destination_search_information/destination_details_screen.dart';
+import '../fr02_travel_preference/preferences_screen.dart';
 
 class RecommendationScreen extends StatefulWidget {
   final String initialDestination;
@@ -13,7 +15,7 @@ class RecommendationScreen extends StatefulWidget {
 
   const RecommendationScreen({
     super.key,
-    this.initialDestination = 'Penang, Malaysia',
+    this.initialDestination = 'Malaysia',
     this.api,
   });
 
@@ -32,6 +34,11 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   final Set<String> feedbackInFlight = {};
   String recommendationGenerationId = '';
   String? errorMessage;
+  double minimumMatch = 70;
+  Map<String, dynamic> pagination = {};
+  int requestVersion = 0;
+  String generatedDestination = '';
+  bool loadingMore = false;
 
   @override
   void initState() {
@@ -51,6 +58,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       error.toString().replaceFirst('Exception: ', '');
 
   Future<void> loadExisting() async {
+    final version = ++requestVersion;
     if (mounted) {
       setState(() {
         busy = true;
@@ -59,12 +67,22 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     }
 
     Object? recommendationError;
+    bool stale = false;
     try {
-      final data = await api.get('/api/fr4/recommendations');
-      if (mounted && data is Map) {
+      final settings = await api.get('/api/fr4/settings');
+      final value = double.tryParse('${settings['minimumMatchScore']}');
+      if (mounted && version == requestVersion && value != null && value >= 40 && value <= 90) setState(() => minimumMatch = value);
+    } catch (_) { /* The initial testing default remains 70 when settings cannot load. */ }
+    try {
+      final data = await api.get('/api/fr4/recommendations', {'minimumMatchScore':'$minimumMatch'});
+      if (mounted && version == requestVersion && data is Map) {
+        stale = data['stale'] == true;
         setState(() {
           items = data['recommendations'] as List? ?? [];
           source = (data['source'] ?? '').toString();
+          pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
+          generatedDestination = (data['snapshot']?['requestedDestination'] ?? widget.initialDestination).toString();
+          destination.text = generatedDestination;
           recommendationGenerationId = (data['recommendationGenerationId'] ??
                   data['snapshot']?['recommendationGenerationId'] ??
                   '')
@@ -77,7 +95,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
 
     try {
       final prefData = await api.get('/api/fr2/preferences');
-      if (mounted && prefData is Map && prefData['preferences'] is Map) {
+      if (mounted && version == requestVersion && prefData is Map && prefData['preferences'] is Map) {
         setState(() {
           preferences = Map<String, dynamic>.from(
             prefData['preferences'] as Map,
@@ -90,7 +108,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
 
     try {
       final learning = await api.get('/api/fr4/preference-feedback');
-      if (mounted && learning is Map && learning['learning'] is Map) {
+      if (mounted && version == requestVersion && learning is Map && learning['learning'] is Map) {
         final current = Map<String, dynamic>.from(
           learning['learning']['currentFeedback'] as Map? ?? const {},
         );
@@ -104,16 +122,18 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       // Feedback controls remain optional if preference learning is unavailable.
     }
 
-    if (!mounted) return;
+    if (!mounted || version != requestVersion) return;
     setState(() {
       busy = false;
       if (recommendationError != null) {
         errorMessage = _errorText(recommendationError);
       }
     });
+    if (recommendationError == null && (stale || recommendationGenerationId.isEmpty) && preferences.isNotEmpty) await generate(reuseCandidates:stale);
   }
 
-  Future<void> generate() async {
+  Future<void> generate({bool reuseCandidates = false, bool expand = false}) async {
+    final version = ++requestVersion;
     final requestedArea = destination.text.trim();
     if (requestedArea.isEmpty) {
       setState(() => errorMessage = 'Enter a destination area first.');
@@ -122,26 +142,67 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
 
     setState(() {
       busy = true;
+      loadingMore = false;
       errorMessage = null;
     });
     try {
       final data = await api.post('/api/fr4/recommendations/generate', {
         'destinationArea': requestedArea,
+        'minimumMatchScore': minimumMatch,
+        if ((reuseCandidates || expand) && generatedDestination == requestedArea && recommendationGenerationId.isNotEmpty)
+          'previousGenerationId': recommendationGenerationId,
+        if (expand) 'expandCandidates': true,
       });
-      if (!mounted || data is! Map) return;
+      if (!mounted || version != requestVersion || data is! Map) return;
       setState(() {
         items = data['recommendations'] as List? ?? [];
         source = (data['source'] ?? '').toString();
+        pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
+        generatedDestination = requestedArea;
         recommendationGenerationId = (data['recommendationGenerationId'] ??
                 data['snapshot']?['recommendationGenerationId'] ??
                 '')
             .toString();
       });
     } catch (error) {
-      if (mounted) setState(() => errorMessage = _errorText(error));
+      if (mounted && version == requestVersion) setState(() => errorMessage = _errorText(error));
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted && version == requestVersion) setState(() => busy = false);
     }
+  }
+
+  Future<void> loadPage({bool reset = false}) async {
+    if (loadingMore || recommendationGenerationId.isEmpty) return;
+    final version = ++requestVersion;
+    setState(() { loadingMore = true; errorMessage = null; });
+    try {
+      final data = await api.get('/api/fr4/recommendations', {
+        'generationId': recommendationGenerationId, 'minimumMatchScore':'$minimumMatch',
+        'offset': reset ? '0' : '${pagination['nextOffset'] ?? 0}',
+      });
+      if (!mounted || version != requestVersion) return;
+      if (data['stale'] == true) { await generate(reuseCandidates:true); return; }
+      setState(() {
+        final received = data['recommendations'] as List? ?? [];
+        final seen = reset ? <String>{} : items.whereType<Map>().map((item) => _destinationId(Map<String,dynamic>.from(item))).toSet();
+        items = [if (!reset) ...items, ...received.whereType<Map>().where((item) => seen.add(_destinationId(Map<String,dynamic>.from(item))))];
+        pagination = Map<String,dynamic>.from(data['pagination'] as Map? ?? {});
+      });
+    } catch (error) {
+      if (mounted && version == requestVersion) setState(() => errorMessage = _errorText(error));
+    } finally {
+      if (mounted && version == requestVersion) setState(() => loadingMore = false);
+    }
+  }
+
+  Future<void> changeThreshold(double value) async {
+    ++requestVersion;
+    setState(() { minimumMatch = value; loadingMore = false; });
+    try { await api.put('/api/fr4/settings', {'minimumMatchScore':value}); }
+    catch (error) { if (mounted) showError(context, 'Minimum match could not be saved: ${_errorText(error)}'); }
+    if (!mounted) return;
+    if (recommendationGenerationId.isNotEmpty) await loadPage(reset:true);
+    else await generate();
   }
 
   String _destinationId(Map<String, dynamic> item) => (item['destinationId'] ??
@@ -157,7 +218,8 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     String feedbackType,
   ) async {
     final id = _destinationId(item);
-    if (id.isEmpty || feedbackInFlight.contains(id)) return;
+    if (id.isEmpty || feedbackInFlight.isNotEmpty) return;
+    ++requestVersion;
     setState(() => feedbackInFlight.add(id));
     try {
       final data = await api.post('/api/fr4/preference-feedback', {
@@ -173,6 +235,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       }
       if (!mounted) return;
       setState(() => feedbackByDestination[id] = feedbackType);
+      await generate(reuseCandidates:true);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -324,6 +387,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final qualified = items.whereType<Map>().where((item) => recommendationQualifies(item,minimumMatch)).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('For you')),
       body: RefreshIndicator(
@@ -346,10 +410,25 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
               label: 'Destination area',
               hint: 'e.g. Penang, Malaysia',
               prefixIcon: Icons.location_on_outlined,
+              onChanged: (value) {
+                if (value.trim() != generatedDestination) {
+                  ++requestVersion;
+                  setState(() { items=[]; pagination={}; recommendationGenerationId=''; busy=false; loadingMore=false; });
+                }
+              },
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => busy ? null : generate(),
             ),
             const SizedBox(height: AppSpacing.sm),
+            Text('Minimum match: ${minimumMatch.round()}/100'),
+            Slider(value: minimumMatch, min:40, max:90, divisions:10,
+              label:'${minimumMatch.round()}/100',
+              onChanged: busy ? null : (value) => setState(() => minimumMatch = value),
+              onChangeEnd: changeThreshold),
+            TertiaryButton(label:'Change preferences', onPressed: () async {
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => PreferencesScreen(api:widget.api)));
+              if (mounted) await loadExisting();
+            }),
             PrimaryButton(
               label: busy ? 'Refreshing recommendations' : 'Refresh for you',
               icon: Icons.auto_awesome_rounded,
@@ -378,22 +457,22 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
               ),
             ],
             const SizedBox(height: AppSpacing.xl),
-            if (busy && items.isEmpty)
+            if (busy && qualified.isEmpty)
               const AppLoadingState(message: 'Loading recommendations…')
-            else if (errorMessage != null && items.isEmpty)
+            else if (errorMessage != null && qualified.isEmpty)
               AppErrorState(message: errorMessage!, onRetry: loadExisting)
-            else if (items.isEmpty)
+            else if (qualified.isEmpty)
               TravelEmptyState(
                 icon: Icons.auto_awesome_outlined,
-                title: 'No recommendations yet',
+                title: 'No places meet this minimum match',
                 message:
-                    'Enter a destination area and refresh to find places matched to your travel style.',
-                actionLabel: 'Refresh for you',
-                onAction: generate,
+                    'No available destinations meet ${minimumMatch.round()}/100. Lower the minimum explicitly, change preferences, or search another Malaysian destination.',
+                actionLabel: minimumMatch > 40 ? 'Lower minimum match' : 'Refresh for you',
+                onAction: minimumMatch > 40 ? () => changeThreshold((minimumMatch - 10).clamp(40,90)) : generate,
               )
             else
-              ...items.map((raw) {
-                final item = Map<String, dynamic>.from(raw as Map);
+              ...qualified.map((raw) {
+                final item = Map<String, dynamic>.from(raw);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.md),
                   child: RecommendationCard(
@@ -418,6 +497,10 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
                   ),
                 );
               }),
+            if (pagination['hasMore'] == true)
+              PrimaryButton(label:'Load more matching places', loading:loadingMore, onPressed:() => loadPage()),
+            if (pagination['hasMore'] != true && pagination['providerHasMore'] == true)
+              PrimaryButton(label:'Discover more places', loading:busy, onPressed:() => generate(expand:true)),
           ],
         ),
       ),

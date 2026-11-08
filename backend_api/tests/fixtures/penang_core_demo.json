@@ -1,0 +1,187 @@
+{
+  "scope": "ISOLATED OFFLINE TEST FIXTURE ONLY - never seed public reviews or production data",
+  "sourceChecked": "2026-11-08",
+  "metadataNotes": "Real attraction names and locality from official tourism sources; category terms are transparent demonstration annotations. No provider ratings, review counts, admission prices, hours or invented descriptions. Missing popularity uses an explicitly neutral baseline. Planner times remain assumptions.",
+  "profiles": {
+    "A": {
+      "travellerId": "demo_A",
+      "interests": [
+        "Culture",
+        "History",
+        "Photography"
+      ],
+      "travelType": "Culture",
+      "budgetRange": "Moderate",
+      "travelPace": "Relaxed",
+      "preferenceProfileVersion": "demo_base_A"
+    },
+    "B": {
+      "travellerId": "demo_B",
+      "interests": [
+        "Nature",
+        "Hiking",
+        "Outdoor activities"
+      ],
+      "travelType": "Nature",
+      "budgetRange": "Moderate",
+      "travelPace": "Active",
+      "preferenceProfileVersion": "demo_base_B"
+    },
+    "C": {
+      "travellerId": "demo_C",
+      "interests": [
+        "Food",
+        "Shopping",
+        "Leisure"
+      ],
+      "travelType": "Food",
+      "budgetRange": "Budget to moderate",
+      "travelPace": "Relaxed",
+      "preferenceProfileVersion": "demo_base_C"
+    }
+  },
+  "actions": {
+    "A": {
+      "like": "demo_penang_george_town",
+      "dislike": "demo_penang_armenian"
+    },
+    "B": {
+      "like": "demo_penang_hill",
+      "dislike": "demo_penang_national_park"
+    },
+    "C": {
+      "like": "demo_penang_wonderfood",
+      "dislike": "demo_penang_gurney_food"
+    }
+  },
+  "candidates": [
+    {
+      "destinationId": "demo_penang_george_town",
+      "title": "George Town UNESCO World Heritage Site",
+      "address": "Penang, Malaysia",
+      "category": "Culture History Photography Shopping",
+      "sourceUrl": "https://www.mypenang.gov.my/uploads/downloads/PTM-ENG2026-1.pdf",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_peranakan",
+      "title": "Pinang Peranakan Mansion",
+      "address": "Penang, Malaysia",
+      "category": "Culture History",
+      "sourceUrl": "https://www.mypenang.gov.my/uploads/downloads/PTM-ENG2026-1.pdf",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_kek_lok_si",
+      "title": "Kek Lok Si Temple",
+      "address": "Penang, Malaysia",
+      "category": "Culture Photography",
+      "sourceUrl": "https://www.mypenang.gov.my/uploads/downloads/PTM-ENG2026-1.pdf",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_chew_jetty",
+      "title": "Chew Jetty",
+      "address": "Penang, Malaysia",
+      "category": "Culture History Photography",
+      "sourceUrl": "https://www.mypenang.gov.my/uploads/downloads/PTM-ENG2026-1.pdf",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_wonderfood",
+      "title": "Wonderfood Museum Penang",
+      "address": "Penang, Malaysia",
+      "category": "Food Culture Family",
+      "sourceUrl": "https://www.mypenang.gov.my/uploads/downloads/PTM-ENG2026-1.pdf",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_hill",
+      "title": "Penang Hill",
+      "address": "Penang, Malaysia",
+      "category": "Nature Photography",
+      "sourceUrl": "https://penanghill.gov.my/index.php/en/attractions",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_gardens",
+      "title": "Penang Botanic Gardens",
+      "address": "Penang, Malaysia",
+      "category": "Nature Leisure",
+      "sourceUrl": "https://www.mypenang.gov.my/uploads/downloads/PTM-ENG2026-1.pdf",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_national_park",
+      "title": "Penang National Park",
+      "address": "Penang, Malaysia",
+      "category": "Nature Adventure Hiking",
+      "sourceUrl": "https://www.mypenang.gov.my/uploads/downloads/PTM-ENG2026-1.pdf",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_escape",
+      "title": "ESCAPE Penang",
+      "address": "Penang, Malaysia",
+      "category": "Adventure Family Leisure",
+      "sourceUrl": "https://www.mypenang.gov.my/page.php?cTab=e96608&id=NG5nNkd1SnhmdVVJdUgyS1M3cjhnUT09&subid=ZklkekFLMTVjeWdWVUJxTlFHdUYxdz09&subtext=attractions-1",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_beach",
+      "title": "Batu Ferringhi Beach",
+      "address": "Penang, Malaysia",
+      "category": "Nature Leisure Photography",
+      "sourceUrl": "https://www.mypenang.gov.my/uploads/downloads/PTM-ENG2026-1.pdf",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_gurney_plaza",
+      "title": "Gurney Plaza",
+      "address": "Penang, Malaysia",
+      "category": "Shopping Leisure",
+      "sourceUrl": "https://www.mypenang.gov.my/uploads/downloads/PTM-ENG2026-1.pdf",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_gurney_food",
+      "title": "Gurney Drive Hawker Centre",
+      "address": "Penang, Malaysia",
+      "category": "Food Social",
+      "sourceUrl": "https://mypenang.gov.my/culture-heritage/directory/?a_filter=G&lg=en",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_spice",
+      "title": "Tropical Spice Garden",
+      "address": "Penang, Malaysia",
+      "category": "Nature Food",
+      "sourceUrl": "https://www.mypenang.gov.my/page.php?cTab=e96608&id=NG5nNkd1SnhmdVVJdUgyS1M3cjhnUT09&subid=ZklkekFLMTVjeWdWVUJxTlFHdUYxdz09&subtext=attractions-1",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_street_art",
+      "title": "George Town Street Art",
+      "address": "Penang, Malaysia",
+      "category": "Culture Photography",
+      "sourceUrl": "https://www.mypenang.gov.my/uploads/downloads/PTM-ENG2026-1.pdf",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_armenian",
+      "title": "Armenian Street",
+      "address": "Penang, Malaysia",
+      "category": "Culture Shopping",
+      "sourceUrl": "https://www.mypenang.gov.my/uploads/downloads/PTM-ENG2026-1.pdf",
+      "recommendationSource": "isolated_verified_place_fixture"
+    },
+    {
+      "destinationId": "demo_penang_entopia",
+      "title": "Entopia by Penang Butterfly Farm",
+      "address": "Penang, Malaysia",
+      "category": "Nature Family Education",
+      "sourceUrl": "https://www.mypenang.gov.my/page.php?cTab=e96608&id=NG5nNkd1SnhmdVVJdUgyS1M3cjhnUT09&subid=ZklkekFLMTVjeWdWVUJxTlFHdUYxdz09&subtext=attractions-1",
+      "recommendationSource": "isolated_verified_place_fixture"
+    }
+  ]
+}

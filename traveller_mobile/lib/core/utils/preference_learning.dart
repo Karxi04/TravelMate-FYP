@@ -102,9 +102,9 @@ class PreferenceLearning {
       throw ArgumentError('destinationId is required');
     }
     final concepts = canonicalConcepts(destinationConcepts);
-    if (concepts.isEmpty) {
+    if (concepts.isEmpty && feedbackType!='not_for_me') {
       throw ArgumentError(
-          'At least one supported destination concept is required');
+          'Reliable interest information is unavailable for this place. Try another place or adjust your preferences.');
     }
     final profile = Map<String, dynamic>.from(
       current ?? emptyProfile(userId, now: now),
@@ -209,6 +209,8 @@ class PreferenceLearning {
         'learnedEvidence': Map<String, dynamic>.from(
           learned?['evidence'] as Map? ?? const {},
         ),
+        'destinationFeedback': {for(final entry in (learned?['feedbackByDestination'] as Map? ?? {}).entries)
+          entry.key: (entry.value as Map)['feedbackType']},
       };
 
   static String effectiveVersion(

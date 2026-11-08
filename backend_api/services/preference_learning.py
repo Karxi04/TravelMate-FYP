@@ -88,8 +88,8 @@ def apply_explicit_feedback(profile, *, user_id, destination_id,
     if not destination_id:
         raise ValueError('destinationId is required')
     concepts = canonical_concepts(destination_concepts)
-    if not concepts:
-        raise ValueError('At least one supported destination concept is required')
+    if not concepts and feedback_type != 'not_for_me':
+        raise ValueError('Reliable interest information is unavailable for this place. Try another place or adjust your preferences.')
 
     timestamp = now or utc_now_iso()
     updated = deepcopy(profile or empty_learning_profile(user_id, timestamp))
@@ -173,6 +173,8 @@ def effective_preference_profile(base_profile, learned_profile):
         (learned_profile or {}).get('affinities') or {})
     effective['learnedEvidence'] = deepcopy(
         (learned_profile or {}).get('evidence') or {})
+    effective['destinationFeedback'] = {did:state.get('feedbackType') for did,state in
+        (learned_profile or {}).get('feedbackByDestination', {}).items()}
     return effective
 
 

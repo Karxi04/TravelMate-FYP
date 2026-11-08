@@ -325,7 +325,7 @@ def extract_dates(text, duration_days=3, default_start=None, default_end=None):
     return default_start, default_end
 
 
-NEGATION_CUES = r'\b(?:not|no|never|don\'?t|dont|do\s+not|exclude|excluding|excluded|avoid|avoiding|without|skip|skipping|remove|drop|dislike|hate)\b'
+NEGATION_CUES = r'\b(?:not|no|never|don\'?t|dont|do\s+not|instead\s+of|rather\s+than|exclude|excluding|excluded|avoid|avoiding|without|skip|skipping|remove|drop|dislike|hate)\b'
 
 INTEREST_MAPPING = {
     'Food': ['food', 'culinary', 'eat', 'hawker', 'dining', 'cuisine', 'seafood'],
@@ -699,9 +699,12 @@ def find_matching_catalog_destinations(destination_area, destination_state=None,
 def build_structured_trip_plan(destination_area, destination_state=None, days=3, budget_limit=1200.0,
                                traveller_count=1, start_date=None, end_date=None, interests=None,
                                excluded_interests=None, excluded_activity_types=None,
-                               prefer_indoor=False, catalog=None):
+                               prefer_indoor=False, catalog=None, preference_profile=None,
+                               collaborative_data=None, peer_preferences=None, current_traveller_id=None):
     """Build a structured trip plan from authentic catalog activities, or report coverage gap."""
     matching = find_matching_catalog_destinations(destination_area, destination_state, catalog)
+    if catalog is None or catalog is DESTINATIONS:
+        matching = [{**item,'ratingSource':'unverified_local_catalog'} for item in matching]
     if not matching:
         return None, 'coverage_gap'
 
@@ -720,8 +723,17 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
         if key:
             unique.setdefault(key, candidate)
     matching = list(unique.values())
-    requested = [clean_text(interest) for interest in (interests or [])]
-    matching.sort(key=lambda item: sum(interest in clean_text(f"{item.get('title', '')} {item.get('category', '')} {item.get('description', '')}") for interest in requested), reverse=True)
+    from sequence_contract.domain_functions import (applyContentBasedFiltering, applyCollaborativeFiltering,
+        calculateRecommendationScore, rankRecommendations, recalculateItinerary, calculateBudget)
+    from services.recommendation_taxonomy import normalize_pace
+    profile = {**(preference_profile or {}), 'interests': list(interests or (preference_profile or {}).get('interests') or []),
+               'excludedInterests': list(excluded_interests or [])}
+    matching = rankRecommendations(calculateRecommendationScore(applyCollaborativeFiltering(
+        applyContentBasedFiltering({'preferenceProfile':profile, 'destinationData':matching}),
+        collaborative_data, peerPreferences=peer_preferences, currentPreference=profile,
+        currentTravellerId=current_traveller_id)))
+    if not matching:
+        return None, 'constraint_conflict'
 
     if start_date and end_date:
         try:
@@ -735,7 +747,7 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
         days = max(1, min(14, int(days or 3)))
     time_slots = ['Morning (09:00 - 12:00)', 'Afternoon (13:30 - 16:30)', 'Evening (18:00 - 20:30)']
     activities = []
-    activity_count = days * len(time_slots)
+    activity_count = days * (2 if normalize_pace(profile.get('travelPace')) == 'relaxed' else len(time_slots))
     scheduled = matching[:activity_count]
     for idx, d in enumerate(scheduled):
         # Spread a limited verified catalogue across all days without repeating places.
@@ -763,6 +775,7 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
                 'category': d.get('category') or d.get('type') or '',
                 'description': d.get('description', ''),
                 'indoor': bool(d.get('indoor', False)),
+                **{key:d[key] for key in ('score','finalScore','contentScore','collaborativeScore','popularityScore','matchedInterests','recommendationReason') if key in d},
                 'recommendedDurationMinutes': int(d.get('recommendedDurationMinutes', 0) or 0),
                 'travelBufferMinutes': int(d.get('travelBufferMinutes', 0) or 0),
                 'scheduleNotes': [f"Recommended stop for Day {day_no}"],
@@ -778,7 +791,7 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
     else:
         e_date = end_date
 
-    return {
+    plan = {
         'title': f"{days}-Day {destination_area} Itinerary Plan",
         'destinationArea': destination_area,
         'destinationState': destination_state or '',
@@ -795,8 +808,13 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
         'excludedInterests': list(excluded_interests or []),
         'excludedActivityTypes': list(excluded_activity_types or []),
         'preferIndoor': bool(prefer_indoor),
+        'travelPace': profile.get('travelPace', ''),
         'activities': activities,
-    }, 'ready'
+    }
+    generated = recalculateItinerary({**plan, 'status':'generated'})
+    generated['budgetEstimate'] = calculateBudget(generated)
+    generated['coverageStatus'] = 'complete' if len({a.get('dayNo') for a in generated['activities']}) >= days else 'partial'
+    return generated, 'ready'
 
 
 def validate_save_plan_payload(plan):

@@ -9,6 +9,8 @@ import 'api_service.dart';
 import '../core/utils/malaysian_locality.dart';
 import '../core/utils/preference_learning.dart';
 import '../core/utils/recommendation_taxonomy.dart';
+import '../core/utils/recommendation_page.dart';
+import '../core/utils/traveller_notifications.dart';
 import '../core/utils/constraint_itinerary_planner.dart';
 import '../core/utils/travel_dates.dart';
 
@@ -21,6 +23,77 @@ class StandaloneApiService {
   final Map<String, String>? memoryStore;
   SharedPreferencesAsync? _prefsInstance;
   final Map<String, Map<String, dynamic>> _flightAdjustmentPreviews = {};
+  Future<void> _notificationWork = Future.value();
+  static final Map<String,Future<void>> _learningWork = {};
+  static int _learningSequence = 0;
+
+  Future<dynamic> _learningAction(Future<dynamic> Function() action) {
+    final uid=_uid;
+    final next=(_learningWork[uid] ?? Future<void>.value()).then((_) {
+      if(_uid!=uid || uid=='guest') throw StateError('Sign in again before changing recommendation feedback.');
+      return action();
+    });
+    _learningWork[uid]=next.then<void>((_) {},onError:(Object _,StackTrace __) {});
+    return next;
+  }
+
+  Future<dynamic> _notificationAction(Future<dynamic> Function() action) {
+    final next = _notificationWork.then((_) => action());
+    _notificationWork = next.then<void>((_) {}, onError:(Object _, StackTrace __) {});
+    return next;
+  }
+
+  Future<dynamic> _localNotifications() async {
+    final uid = _uid;
+    if (uid == 'guest') throw StateError('Sign in to view notifications.');
+    final trips = await _readList('itineraries');
+    final cache = await _readMap('notification_weather_cache') ?? {};
+    final forecasts = <String,Map<String,dynamic>>{};
+    final now = DateTime.now().toUtc();
+    final myt = now.add(const Duration(hours:8));
+    final today = DateTime.utc(myt.year,myt.month,myt.day);
+    var requests = 0;
+    for (final trip in trips) {
+      if (trip['travellerId'] != uid) continue;
+      final date = notificationTripStart(trip);
+      if (date == null || date.difference(today).inDays < 0 || date.difference(today).inDays > 6) continue;
+      if (['cancelled','canceled','archived','deleted'].contains(trip['status']) || trip['fulfillmentStatus']=='fulfillment_declined') continue;
+      final coords = trip['destinationCoordinates'] ?? trip['gps_coordinates'] ??
+          ((trip['activities'] as List? ?? []).whereType<Map>().map((a) => a['gps_coordinates']).whereType<Map>().firstOrNull);
+      if (coords is! Map || coords['latitude'] is! num || coords['longitude'] is! num) continue;
+      final latitude = coords['latitude'] as num;
+      final longitude = coords['longitude'] as num;
+      if (!latitude.isFinite || !longitude.isFinite || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) continue;
+      final tid = '${trip['id']}';
+      final key = jsonEncode([tid,coords['latitude'],coords['longitude']]);
+      var stored = Map<String,dynamic>.from(cache[key] as Map? ?? {});
+      final checked = DateTime.tryParse('${stored['checkedAt']}');
+      if ((checked == null || now.difference(checked).inHours >= 6) && requests < 3) {
+        requests++;
+        stored = {'checkedAt':now.toIso8601String(),'forecast':<String,dynamic>{}};
+        try {
+          final result = await _weather({'latitude':'${coords['latitude']}','longitude':'${coords['longitude']}'});
+          // Existing offline weather placeholders must never create advisories.
+          if (result['source'] == 'open_meteo' && result['weather'] is Map) stored['forecast'] = result['weather'];
+        } catch (_) {}
+        cache[key] = stored;
+      }
+      forecasts[tid] = Map<String,dynamic>.from(stored['forecast'] as Map? ?? {});
+    }
+    final items = await _readList('traveller_notifications');
+    final ids = items.map((item) => item['id']).toSet();
+    for (final event in localTripNotifications(uid,trips,forecasts,now)) {
+      if (ids.add(event['id'])) items.add(event);
+    }
+    if (_uid != uid) throw StateError('Account changed. Refresh notifications.');
+    await _writeMap('notification_weather_cache',cache);
+    await _writeList('traveller_notifications',items);
+    final owned = items.where((item) => item['travellerId']==uid).toList()
+      ..sort((a,b) => '${b['createdAt']}'.compareTo('${a['createdAt']}'));
+    return {'ok':true,'items':owned,'unreadCount':owned.where((item) => item['read']!=true).length,
+      'evaluation':'on_open_or_refresh','unavailableCategories':['payment','arrangements_ready','packing'],
+      'notice':'Standalone mode provides local trip and real-forecast reminders. Payment, operator readiness and Smart Packing notifications require the authenticated backend.'};
+  }
 
   StandaloneApiService({this.uidOverride, this.memoryStore});
 
@@ -32,6 +105,10 @@ class StandaloneApiService {
   String _key(String name) => 'travelmate_${_uid}_$name';
 
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (path == '/api/traveller/notifications') return _notificationAction(_localNotifications);
+    if (path == '/api/fr4/settings') {
+      return {'ok': true, 'minimumMatchScore': (await _readMap('recommendation_settings'))?['minimumMatchScore'] ?? 70};
+    }
     if (path == '/api/fr1/me') return _getProfile();
     if (path == '/api/fr2/preferences') {
       return {'ok': true, 'preferences': await _readMap('preferences')};
@@ -66,6 +143,7 @@ class StandaloneApiService {
       return _destinationDetails(id);
     }
     if (path == '/api/fr4/recommendations') {
+      final uid=_uid;
       final snapshots = await _readList('recommendation_snapshots');
       final generationId = (query?['generationId'] ?? '').trim();
       final destinationArea = (query?['destinationArea'] ?? '').trim();
@@ -97,14 +175,22 @@ class StandaloneApiService {
             .toList();
         safeSnapshot = {...snapshot, 'recommendationResults': safeResults};
       }
+      final preferences = await _readMap('preferences') ?? {};
+      final learned = await _readMap('learned_preference_profile');
+      final version = PreferenceLearning.effectiveVersion(
+        (preferences['preferenceProfileVersion'] ?? preferences['updatedAt'] ?? 'local_profile_legacy').toString(), learned);
+      final stale = safeSnapshot != null && safeSnapshot['preferenceProfileVersion'] != version;
+      final page = recommendationPage(safeSnapshot ?? {}, query ?? {});
+      if(_uid!=uid) throw StateError('Account changed. Refresh recommendations.');
       return {
         'ok': true,
         'recommendationGenerationId':
             safeSnapshot?['recommendationGenerationId'] ?? '',
         'recommendation': safeSnapshot ?? <String, dynamic>{},
-        'snapshot': safeSnapshot ?? <String, dynamic>{},
+        'snapshot': page,
         'recommendations':
-            safeSnapshot?['recommendationResults'] ?? <Map<String, dynamic>>[],
+            stale ? <Map<String, dynamic>>[] : page['recommendationResults'],
+        'pagination': page['pagination'], 'stale': stale,
         'source': safeSnapshot?['source'] ?? '',
         'engine': safeSnapshot?['engine'] ?? _engineInfo,
       };
@@ -229,10 +315,10 @@ class StandaloneApiService {
     if (path == '/api/fr1/profile') return _saveProfile(payload);
     if (path == '/api/fr3/favourites') return _saveFavourite(payload);
     if (path == '/api/fr4/recommendations/generate') {
-      return _generateRecommendations(payload);
+      return _learningAction(() => _generateRecommendations(payload));
     }
     if (path == '/api/fr4/preference-feedback') {
-      return _submitPreferenceFeedback(payload);
+      return _learningAction(() => _submitPreferenceFeedback(payload));
     }
     if (path == '/api/fr5/personalised-trips/generate') {
       return _generatePersonalisedTrip(payload);
@@ -356,6 +442,24 @@ class StandaloneApiService {
   }
 
   Future<dynamic> put(String path, [Map<String, dynamic>? body]) async {
+    if (path.startsWith('/api/traveller/notifications/')) return _notificationAction(() async {
+      final uid = _uid;
+      if (uid == 'guest' || body == null || body.length != 1 || body['read'] is! bool) throw ArgumentError('Use an authenticated read boolean.');
+      final id = Uri.decodeComponent(path.split('/').last);
+      final items = await _readList('traveller_notifications');
+      final index = items.indexWhere((item) => item['id']==id && item['travellerId']==uid);
+      if (index < 0) throw StateError('Notification not found.');
+      items[index] = {...items[index],'read':body['read'],'readAt':body['read']==true ? _now() : null};
+      if (_uid != uid) throw StateError('Account changed.');
+      await _writeList('traveller_notifications',items);
+      return {'ok':true};
+    });
+    if (path == '/api/fr4/settings') {
+      final value = body?['minimumMatchScore'];
+      if (value is! num || !value.isFinite || value < 40 || value > 90) throw ArgumentError('Choose a minimum match between 40 and 90.');
+      await _writeMap('recommendation_settings', {'minimumMatchScore': value});
+      return {'ok': true, 'minimumMatchScore': value};
+    }
     final payload = body ?? <String, dynamic>{};
     if (path == '/api/fr1/me') return _updateProfile(payload);
     if (path == '/api/fr2/preferences') return _savePreferences(payload);
@@ -385,7 +489,7 @@ class StandaloneApiService {
 
   Future<dynamic> delete(String path) async {
     if (path == '/api/fr4/preference-feedback') {
-      return _resetPreferenceFeedback();
+      return _learningAction(_resetPreferenceFeedback);
     }
     if (path.startsWith('/api/fr11/sessions/')) {
       final id = path.split('/').last;
@@ -2921,6 +3025,7 @@ class StandaloneApiService {
   }
 
   Future<dynamic> _generateRecommendations(Map<String, dynamic> payload) async {
+    final uid=_uid;
     final preferences = await _readMap('preferences') ?? {};
     final learnedProfile = await _readMap('learned_preference_profile');
     final effectivePreferences =
@@ -2945,9 +3050,13 @@ class StandaloneApiService {
     final purpose = (preferences['travelPurpose'] ?? '').toString();
     final personality = (preferences['travelPersonality'] ?? '').toString();
     final eligibleCandidates = <Map<String, dynamic>>[];
-    for (final raw in _destinations) {
+    final savedSearch = await _readList('last_search_results');
+    final pool = [..._destinations.map((item) => {...item,'ratingSource':'unverified_local_catalog'}),
+      ...savedSearch.map((item) => item['source']=='openstreetmap' ? item : {...item,'ratingSource':'unverified_local_catalog'})];
+    final recommendationSource = savedSearch.any((item) => item['source']=='openstreetmap') ? 'cache' : 'fallback';
+    for (final raw in pool) {
       final candidate = MalaysianLocality.validateCandidate(
-          Map<String, dynamic>.from(raw), destinationScope);
+          Map<String,dynamic>.from(raw), destinationScope);
       if (candidate['geographicEligibility']?['eligible'] != true) continue;
       eligibleCandidates.add(Map<String, dynamic>.from(candidate));
     }
@@ -2962,17 +3071,17 @@ class StandaloneApiService {
       preferences: effectivePreferences,
       feedback: feedback,
       currentUserId: _uid,
-      limit: 12,
+      limit: 150,
     );
     final top = scored
-        .map((item) => {...item, 'recommendationSource': 'fallback'})
+        .map((item) => {...item, 'recommendationSource': item['source']=='openstreetmap' ? 'cache' : 'fallback'})
         .map((item) =>
             MalaysianLocality.validateCandidate(item, destinationScope))
         .where((item) => item['geographicEligibility']?['eligible'] == true)
         .toList();
     final generatedAt = _now();
     final generationId =
-        'local_rec_${DateTime.now().microsecondsSinceEpoch}_${_uid.hashCode.abs()}';
+        'local_rec_${DateTime.now().microsecondsSinceEpoch}_${++_learningSequence}_${uid.hashCode.abs()}';
     final snapshot = <String, dynamic>{
       'recommendationGenerationId': generationId,
       'userId': _uid,
@@ -2988,19 +3097,22 @@ class StandaloneApiService {
         learnedProfile,
       ),
       'generatedAt': generatedAt,
-      'source': 'fallback',
+      'source': recommendationSource,
       'engine': _engineInfo,
       'recommendationResults': top,
     };
     final snapshots = await _readList('recommendation_snapshots');
     snapshots.insert(0, snapshot);
+    if(_uid!=uid) throw StateError('Account changed. Refresh recommendations.');
     await _writeList('recommendation_snapshots', snapshots);
+    final page = recommendationPage(snapshot, payload);
     return {
       'ok': true,
       'recommendationGenerationId': generationId,
-      'snapshot': snapshot,
-      'recommendations': top,
-      'source': 'fallback',
+      'snapshot': page,
+      'recommendations': page['recommendationResults'],
+      'pagination': page['pagination'],
+      'source': recommendationSource,
       'engine': _engineInfo,
       'profileUsed': {
         'interests': interests,
@@ -3016,6 +3128,7 @@ class StandaloneApiService {
   Future<dynamic> _submitPreferenceFeedback(
     Map<String, dynamic> payload,
   ) async {
+    final uid=_uid;
     final destinationId = (payload['destinationId'] ?? '').toString().trim();
     final feedbackType = (payload['feedbackType'] ?? '').toString().trim();
     final generationId =
@@ -3070,10 +3183,10 @@ class StandaloneApiService {
           payload['destinationConcepts'] ??
           RecommendationTaxonomy.candidateConcepts(payload);
       final now = _now();
-      final eventId = 'local_feedback_${DateTime.now().microsecondsSinceEpoch}';
+      final eventId = 'local_feedback_${DateTime.now().microsecondsSinceEpoch}_${++_learningSequence}';
       final update = PreferenceLearning.applyFeedback(
         await _readMap('learned_preference_profile'),
-        userId: _uid,
+        userId: uid,
         destinationId: destinationId,
         feedbackType: feedbackType,
         destinationConcepts: concepts,
@@ -3082,10 +3195,12 @@ class StandaloneApiService {
         now: now,
         eventId: eventId,
       );
+      if(_uid!=uid) throw StateError('Account changed. Retry your feedback.');
       if (update.changed) {
         await _writeMap('learned_preference_profile', update.profile);
         final events = await _readList('recommendation_feedback_events');
         events.insert(0, Map<String, dynamic>.from(update.event!));
+        if(_uid!=uid) throw StateError('Account changed.');
         await _writeList('recommendation_feedback_events', events);
       }
       return {
@@ -3102,17 +3217,20 @@ class StandaloneApiService {
   }
 
   Future<dynamic> _resetPreferenceFeedback() async {
+    final uid=_uid;
     final now = _now();
-    final eventId = 'local_reset_${DateTime.now().microsecondsSinceEpoch}';
+    final eventId = 'local_reset_${DateTime.now().microsecondsSinceEpoch}_${++_learningSequence}';
     final update = PreferenceLearning.reset(
       await _readMap('learned_preference_profile'),
-      userId: _uid,
+      userId: uid,
       now: now,
       eventId: eventId,
     );
+    if(_uid!=uid) throw StateError('Account changed. Retry your feedback reset.');
     await _writeMap('learned_preference_profile', update.profile);
     final events = await _readList('recommendation_feedback_events');
     events.insert(0, Map<String, dynamic>.from(update.event!));
+    if(_uid!=uid) throw StateError('Account changed.');
     await _writeList('recommendation_feedback_events', events);
     return {
       'ok': true,
@@ -5511,7 +5629,7 @@ class StandaloneApiService {
       sessions = await _readList('chat_sessions');
     }
 
-    final prefs = await _readMap('preferences') ?? {};
+    final prefs = PreferenceLearning.effectiveProfile(await _readMap('preferences') ?? {}, await _readMap('learned_preference_profile'));
     final trips = await _readList('itineraries');
     final latest = trips.isEmpty ? <String, dynamic>{} : trips.first;
     final existingPlanning = session['planningState'] is Map
@@ -5663,7 +5781,7 @@ class StandaloneApiService {
   ) {
     final q = _normaliseSearch(message);
     final state = <String, dynamic>{...existing};
-    final previous = jsonEncode({for(final key in ['destination','days','startDate','endDate','budget','travellerCount','interests','pace']) key:existing[key]});
+    final previous = jsonEncode({for(final key in ['destination','days','startDate','endDate','budget','travellerCount','interests','pace','excludedInterests','excludedActivityTypes','budgetRange','avoidCrowds']) key:existing[key]});
     state['interests'] ??= prefs['interests'];
     state['pace'] ??= prefs['travelPace'];
     final scope = MalaysianLocality.normalizeScope(message);
@@ -5731,20 +5849,34 @@ class StandaloneApiService {
       'photo': 'Photography',
       'photography': 'Photography',
       'museum': 'History',
+      'mall': 'Shopping',
       'nightlife': 'Nightlife',
       'beach': 'Nature',
       'family': 'Family',
       'architecture': 'Architecture',
     };
     final requestedInterests = <String>{};
+    final excluded = <String>{...(state['excludedInterests'] as List? ?? []).map((v) => v.toString())};
+    final excludedTypes = <String>{...(state['excludedActivityTypes'] as List? ?? []).map((v) => v.toString())};
     for (final entry in interestWords.entries) {
-      if (q.contains(entry.key)) requestedInterests.add(entry.value);
+      for (final match in RegExp('\\b${RegExp.escape(entry.key)}${['museum','mall'].contains(entry.key) ? 's?' : ''}\\b', caseSensitive:false).allMatches(message)) {
+        final preceding = message.substring(max(0,match.start-60),match.start).split(RegExp(r'[,.!?;]|\bbut\b')).last;
+        final negative = RegExp(r"\b(not|no|don't|do not|avoid|without|instead of|rather than)\b[\w\s]{0,45}$",caseSensitive:false).hasMatch(preceding);
+        final narrow = entry.key=='museum' ? 'Museum' : entry.key=='mall' ||
+          (entry.key=='shopping' && RegExp(r'^\s+malls?\b',caseSensitive:false).hasMatch(message.substring(match.end))) ? 'Shopping Mall' : null;
+        if (negative) { if(narrow!=null) excludedTypes.add(narrow); else excluded.add(entry.value); }
+        else { requestedInterests.add(entry.value); excluded.remove(entry.value); if(narrow!=null) excludedTypes.remove(narrow); }
+      }
     }
+    state['excludedInterests'] = excluded.toList();
+    state['excludedActivityTypes'] = excludedTypes.toList();
+    if (RegExp(r'\b(affordable|cheap|low.cost)\b').hasMatch(q)) state['budgetRange'] = 'Budget';
+    if (RegExp(r'\b(avoid|do not want|don t want|no)\b.{0,20}\bcrowd').hasMatch(q)) state['avoidCrowds'] = true;
     if (requestedInterests.isNotEmpty)
       state['interests'] = requestedInterests.toList();
     if (q.contains('no preference')) state['interestsConfirmed'] = true;
 
-    if (q.contains('relaxed') || q.contains('slow pace'))
+    if (q.contains('relaxed') || q.contains('relaxing') || q.contains('slow pace'))
       state['pace'] = 'Relaxed';
     if (q.contains('packed') || q.contains('many places') || q.contains('busy'))
       state['pace'] = 'Packed';
@@ -5766,7 +5898,7 @@ class StandaloneApiService {
     if (state['budget'] == null) missing.add('budget');
     if (state['travellerCount'] == null) missing.add('travellerCount');
     if ((state['interests'] as List? ?? []).isEmpty && state['interestsConfirmed'] != true) missing.add('interests');
-    final current = jsonEncode({for(final key in ['destination','days','startDate','endDate','budget','travellerCount','interests','pace']) key:state[key]});
+    final current = jsonEncode({for(final key in ['destination','days','startDate','endDate','budget','travellerCount','interests','pace','excludedInterests','excludedActivityTypes','budgetRange','avoidCrowds']) key:state[key]});
     if (previous != current) state.remove('activePlan');
     if (state['activePlan'] is Map && RegExp(r'\b(?:show (?:my |the )?(?:plan|itinerary|trip)|where (?:is |are )?(?:my |the )?trips?|can i see my trip)\b').hasMatch(q)) {
       return {'ready':false,'showExisting':true,'state':state};
@@ -5820,31 +5952,31 @@ class StandaloneApiService {
     final targetInterests = requested.isEmpty ? saved : requested;
     final scope = MalaysianLocality.normalizeScope(destination);
     final identities = <String>{};
-    final candidates = [..._destinations, ...cachedPlaces]
+    final candidates = [..._destinations.map((item) => {...item,'ratingSource':'unverified_local_catalog'}), ...cachedPlaces]
         .where((d) => (MalaysianLocality.validateCandidate(d,scope)['geographicEligibility'] as Map)['eligible'] == true)
         .where((d) => identities.add('${d['destinationId'] ?? d['place_id'] ?? d['title']}'))
+        .where((item) {
+          final text='${item['type']} ${item['category']} ${item['title']}'.toLowerCase();
+          final excluded=state['excludedActivityTypes'] as List? ?? [];
+          return !(excluded.contains('Museum') && RegExp(r'\bmuseums?\b').hasMatch(text)) &&
+                 !(excluded.contains('Shopping Mall') && RegExp(r'\bmalls?\b').hasMatch(text));
+        })
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
 
-    int rank(Map<String, dynamic> x) {
-      final ints = (x['interests'] as List? ?? [])
-          .map((e) => _normaliseSearch(e.toString()))
-          .toSet();
-      final keywords = (x['keywords'] as List? ?? [])
-          .map((e) => _normaliseSearch(e.toString()))
-          .join(' ');
-      var score = ints.intersection(targetInterests).length * 120;
-      for (final interest in targetInterests) {
-        if (keywords.contains(interest)) score += 35;
-      }
-      score += _num(x['popularity']).round();
-      return score;
-    }
-
-    candidates.sort((a, b) => rank(b).compareTo(rank(a)));
+    final ranked = RecommendationScoring.rankCandidates(
+      candidates: candidates, preferences: {...prefs,
+        'interests': targetInterests.toList(),
+        'excludedInterests': state['excludedInterests'] ?? [],
+        'travelPace': state['pace'] ?? prefs['travelPace'],
+        if (state['budgetRange'] != null) 'budgetRange':state['budgetRange'],
+      }, currentUserId:_uid, limit:150);
+    candidates
+      ..clear()
+      ..addAll(ranked);
     if (candidates.length < days) return null;
-
-    final requiredCount = min(days * 3, candidates.length);
+    final relaxed = RecommendationTaxonomy.normalizePace(state['pace'] ?? prefs['travelPace']) == 'relaxed';
+    final requiredCount = min(days * (relaxed ? 2 : 3), candidates.length);
     final selected = <Map<String, dynamic>>[];
     final categoryCounts = <String, int>{};
     for (final item in candidates) {
@@ -5869,7 +6001,10 @@ class StandaloneApiService {
       final dayNo = min(days,i*days~/selected.length+1);
       final daySlot = activities.where((a)=>a['dayNo']==dayNo).length;
       activities.add({
+        'activityId':'chat_activity_$i',
         'activityName': d['title'],
+        if (d['gps_coordinates'] != null) 'gps_coordinates':d['gps_coordinates'],
+        for (final key in ['score','contentScore','collaborativeScore','popularityScore','matchedInterests','recommendationReason']) if(d[key]!=null) key:d[key],
         'destinationId': d['destinationId'],
         'address': d['address'] ?? '',
         'dayNo': dayNo,
@@ -5893,7 +6028,7 @@ class StandaloneApiService {
                 : 1300.0);
     final start = DateTime.parse(state['startDate']);
     final end = DateTime.parse(state['endDate']);
-    return {
+    final plan = <String,dynamic>{
       'title': '$days-Day $destination Trip',
       'destinationArea': destination,
       'startDate': _date(start),
@@ -5908,7 +6043,9 @@ class StandaloneApiService {
       'travelPersonality': prefs['travelPersonality'] ?? '',
       'companions': state['companions'] ?? 'Traveller',
       'status': 'generated',
+      if(state['avoidCrowds']==true) 'planningLimitations':['Verified crowd-level data is unavailable; quieter conditions cannot be guaranteed.'],
     };
+    return planConstraintAwareItinerary(plan, preserveOrder:true, respectDayAssignments:true);
   }
 
   String _tripPlanReply(Map<String, dynamic> plan, Map<String, dynamic> prefs) {

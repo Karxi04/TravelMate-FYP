@@ -17,6 +17,8 @@ import '../../modules/fr07_flight_search/flight_screen.dart';
 import '../../modules/fr05_smart_itinerary_budget_planner/packing_trip_selector_screen.dart';
 import '../../modules/fr08_hotel_booking/hotel_screen.dart';
 import '../../services/api_service.dart';
+import '../utils/recommendation_page.dart';
+import '../../modules/traveller_notifications/notification_center.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/recommendation_card.dart';
@@ -48,6 +50,10 @@ class _HomeTabState extends State<HomeTab> {
   bool loadingForYou = true;
   bool loadingSharedContent = true;
   bool _recommendationRequestInFlight = false;
+  bool _recommendationRefreshPending = false;
+  int _recommendationVersion = 0;
+  double minimumMatch = 70;
+  String recommendationArea = 'Malaysia';
   bool _sharedContentRequestInFlight = false;
   String? coreError;
   String? recommendationError;
@@ -55,6 +61,7 @@ class _HomeTabState extends State<HomeTab> {
   String recommendationGenerationId = '';
   Map<String, String> feedbackByDestination = {};
   final Set<String> feedbackInFlight = {};
+  int notificationRefresh=0;
 
   @override
   void initState() {
@@ -120,6 +127,7 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Future<void> refreshHome() async {
+    if(mounted) setState(() => notificationRefresh++);
     await Future.wait([
       _loadCoreData(),
       loadRecommendations(),
@@ -128,8 +136,12 @@ class _HomeTabState extends State<HomeTab> {
     ]);
   }
 
-  Future<void> loadRecommendations({bool regenerate = false}) async {
-    if (_recommendationRequestInFlight) return;
+  Future<void> loadRecommendations({bool regenerate = false, bool reuseCandidates = false}) async {
+    if (_recommendationRequestInFlight) {
+      if (regenerate) { _recommendationRefreshPending = true; ++_recommendationVersion; }
+      return;
+    }
+    final version = ++_recommendationVersion;
     _recommendationRequestInFlight = true;
     if (mounted) {
       setState(() {
@@ -139,23 +151,34 @@ class _HomeTabState extends State<HomeTab> {
     }
 
     try {
+      try {
+        final settings = await api.get('/api/fr4/settings');
+        final value = double.tryParse('${settings['minimumMatchScore']}');
+        if (value != null && value >= 40 && value <= 90) minimumMatch = value;
+      } catch (_) {}
       dynamic data;
       if (regenerate) {
         data = await api.post('/api/fr4/recommendations/generate', {
-          'destinationArea': 'Malaysia',
+          'destinationArea': recommendationArea, 'minimumMatchScore':minimumMatch,
+          if (reuseCandidates && recommendationGenerationId.isNotEmpty) 'previousGenerationId':recommendationGenerationId,
         });
       } else {
-        data = await api.get('/api/fr4/recommendations');
-        final existing = data is Map ? data['recommendations'] as List? : null;
-        if ((existing == null || existing.isEmpty) && preferences != null) {
+        data = await api.get('/api/fr4/recommendations', {'minimumMatchScore':'$minimumMatch'});
+        if (data is Map && version == _recommendationVersion) {
+          recommendationArea = (data['snapshot']?['requestedDestination'] ?? recommendationArea).toString();
+        }
+        final needsGeneration = data is! Map || data['stale'] == true ||
+            '${data['recommendationGenerationId'] ?? ''}'.isEmpty;
+        if (needsGeneration && preferences != null) {
           data = await api.post('/api/fr4/recommendations/generate', {
-            'destinationArea': 'Malaysia',
+            'destinationArea': recommendationArea, 'minimumMatchScore':minimumMatch,
           });
         }
       }
-      if (!mounted || data is! Map) return;
+      if (!mounted || version != _recommendationVersion || data is! Map) return;
       setState(() {
-        recommendations = data['recommendations'] as List? ?? [];
+        recommendations = (data['recommendations'] as List? ?? []).whereType<Map>().where((item) => recommendationQualifies(item,minimumMatch)).toList();
+        recommendationArea = (data['snapshot']?['requestedDestination'] ?? recommendationArea).toString();
         recommendationSource = (data['source'] ?? '').toString();
         recommendationGenerationId = (data['recommendationGenerationId'] ??
                 data['snapshot']?['recommendationGenerationId'] ??
@@ -166,10 +189,10 @@ class _HomeTabState extends State<HomeTab> {
       if (regenerate) {
         try {
           final existing = await api.get('/api/fr4/recommendations');
-          if (mounted && existing is Map) {
+          if (mounted && version == _recommendationVersion && existing is Map) {
             final cached = existing['recommendations'] as List? ?? [];
             setState(() {
-              if (cached.isNotEmpty) recommendations = cached;
+              if (cached.isNotEmpty) recommendations = cached.whereType<Map>().where((item) => recommendationQualifies(item,minimumMatch)).toList();
               recommendationSource = (existing['source'] ?? '').toString();
               recommendationGenerationId =
                   (existing['recommendationGenerationId'] ??
@@ -184,10 +207,14 @@ class _HomeTabState extends State<HomeTab> {
           }
         } catch (_) {}
       }
-      if (mounted) setState(() => recommendationError = _message(error));
+      if (mounted && version == _recommendationVersion) setState(() => recommendationError = _message(error));
     } finally {
       _recommendationRequestInFlight = false;
       if (mounted) setState(() => loadingForYou = false);
+      if (mounted && _recommendationRefreshPending) {
+        _recommendationRefreshPending = false;
+        await loadRecommendations(regenerate:true);
+      }
     }
   }
 
@@ -351,7 +378,7 @@ class _HomeTabState extends State<HomeTab> {
     String feedbackType,
   ) async {
     final id = destinationId(item);
-    if (id.isEmpty || feedbackInFlight.contains(id)) return;
+    if (id.isEmpty || feedbackInFlight.isNotEmpty) return;
     setState(() => feedbackInFlight.add(id));
     try {
       final data = await api.post('/api/fr4/preference-feedback', {
@@ -367,6 +394,7 @@ class _HomeTabState extends State<HomeTab> {
       }
       if (!mounted) return;
       setState(() => feedbackByDestination[id] = feedbackType);
+      await loadRecommendations(regenerate:true, reuseCandidates:true);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -674,10 +702,8 @@ class _HomeTabState extends State<HomeTab> {
         AppSectionHeader(
           title: 'For you',
           subtitle: 'Places selected from your travel style',
-          actionLabel: recommendations.isEmpty ? null : 'See all',
-          onAction: recommendations.isEmpty
-              ? null
-              : () => open(RecommendationScreen(api: widget.api)),
+          actionLabel: recommendations.isEmpty ? 'Adjust match' : 'See all',
+          onAction: () => open(RecommendationScreen(api: widget.api)),
         ),
         const SizedBox(height: AppSpacing.xs),
         Align(
@@ -708,9 +734,9 @@ class _HomeTabState extends State<HomeTab> {
         else if (recommendations.isEmpty)
           TravelEmptyState(
             icon: Icons.auto_awesome_outlined,
-            title: 'No recommendations yet',
+            title: 'No places meet your minimum match',
             message:
-                'Refresh after setting your travel style to find places matched to you.',
+                'No available places meet ${minimumMatch.round()}/100. Open Adjust match to lower it explicitly or change your preferences.',
             actionLabel: 'Adjust preferences',
             onAction: () => open(
               const PreferencesScreen(),
@@ -1185,6 +1211,7 @@ class _HomeTabState extends State<HomeTab> {
                       ],
                     ),
                   ),
+                  NotificationBell(api:api,refreshToken:notificationRefresh),
                   CircleAvatar(
                     radius: 23,
                     backgroundColor: InkWashColors.cream,

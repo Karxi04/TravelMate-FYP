@@ -430,8 +430,9 @@ class RecommendationCard extends StatelessWidget {
                   title: 'Destination popularity (10% weight)',
                   scoreText:
                       '${(breakdown['popularity'] as num?)?.round() ?? '-'}/100',
-                  description:
-                      'Based on public ratings and review coverage across all visitors.',
+                  description: '${recommendation['popularitySource']}'.startsWith('neutral_')
+                      ? 'Verified provider popularity evidence is unavailable. A neutral 50/100 baseline is used; no business rating is invented.'
+                      : 'Based on public ratings and review coverage across all visitors.',
                 ),
               ] else ...[
                 Container(
