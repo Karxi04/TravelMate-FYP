@@ -2,11 +2,12 @@
 {% block title %}Package Payments | TravelMate Operator{% endblock %}
 
 {% block content %}
+<style>.table-wrap table{width:100%;table-layout:fixed}.table-wrap td,.detail-row strong,.eyebrow{overflow-wrap:anywhere;white-space:normal;min-width:0}.table-wrap th{min-width:0!important}.table-wrap code{white-space:normal;overflow-wrap:anywhere}.table-wrap{overflow-x:auto}@media(max-width:850px){.table-wrap table{min-width:850px}}</style>
 <div class="page-title">
   <div>
     <span class="eyebrow">Tourism Operator Management</span>
     <h1>Package Payments &amp; Settlements</h1>
-    <p>Authoritative payment records for your booked tourism packages, settlement status, and Stripe test verification.</p>
+    <p>Authoritative payment records for your booked tourism packages, amounts and payment status.</p>
   </div>
   <div class="actions">
     <a class="btn outline" href="{{ url_for('operator_fr12.bookings') }}">
@@ -23,18 +24,6 @@
   <p class="muted">Showing up to 500 records. Historical data may be bounded. Totals cover loaded records only.</p>
 </div>
 {% endif %}
-
-<div class="booking-notice-card" role="region" aria-label="System Disclosures">
-  <div class="booking-notice-icon" aria-hidden="true">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-  </div>
-  <div class="booking-notice-content">
-    <strong>Stripe Test Environment &amp; Settlement Notice</strong>
-    <p>
-      Transactions in TravelMate are processed in <strong>Stripe Test Mode</strong>. A verified payment settlement indicates traveller checkout completion on TravelMate, but is <strong>strictly independent of third-party supplier logistics</strong> (hotel, transport, and tour guide coordination). Operators must confirm external supplier logistics directly.
-    </p>
-  </div>
-</div>
 
 <!-- Metrics Overview Ribbon -->
 {% if not backend_error %}
@@ -83,16 +72,7 @@
     <div class="metric-help">Awaiting checkout completion</div>
   </div>
 
-  <div class="metric-card accent-blue">
-    <div class="metric-card-top">
-      <span class="metric-label">Stripe Test Mode</span>
-      <div class="metric-card-icon" aria-hidden="true">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/></svg>
-      </div>
-    </div>
-    <div class="metric">{{ summary.test_orders }}</div>
-    <div class="metric-help">Simulated payment environment</div>
-  </div>
+
 </div>
 {% endif %}
 
@@ -102,9 +82,9 @@
     <input class="input search-input" name="q" value="{{ query }}" placeholder="Search by payment reference, package, currency..." aria-label="Search package payments">
     <select class="input filter-input" name="status" aria-label="Filter payments by status">
       <option value="all" {% if status == 'all' %}selected{% endif %}>All Payments</option>
-      <option value="test_paid" {% if status == 'test_paid' %}selected{% endif %}>Test Paid Orders</option>
+      <option value="test_paid" {% if status == 'test_paid' %}selected{% endif %}>Paid Orders (test environment)</option>
       <option value="paid" {% if status == 'paid' %}selected{% endif %}>All Paid Orders</option>
-      <option value="pending" {% if status == 'pending' %}selected{% endif %}>Payment Pending</option>
+      <option value="pending" {% if status == 'pending' %}selected{% endif %}>Pending</option>
       <option value="failed" {% if status == 'failed' %}selected{% endif %}>Payment Failed</option>
       <option value="cancelled" {% if status in ['cancelled', 'refunded'] %}selected{% endif %}>Cancelled / Refunded</option>
       <option value="test" {% if status == 'test' %}selected{% endif %}>Stripe Test Mode Only</option>
@@ -161,7 +141,6 @@
         <th style="min-width: 220px;">Tourism Package</th>
         <th style="min-width: 130px;">Amount</th>
         <th style="min-width: 140px;">Payment Status</th>
-        <th style="min-width: 140px;">Environment</th>
         <th style="min-width: 170px;">Paid Date</th>
         <th style="min-width: 160px;">Package Fulfillment</th>
         <th style="min-width: 160px;">Supplier Status</th>
@@ -174,7 +153,7 @@
         <td>
           <div style="font-weight: 700; color: var(--ink); font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px;">
             {{ item.orderReference or item.id or '—' }}
-          </div>
+          </div><button type="button" class="btn outline btn-sm" onclick="if(navigator.clipboard){navigator.clipboard.writeText(this.previousElementSibling.textContent.trim()).then(()=>this.textContent='Copied').catch(()=>this.textContent='Select reference to copy')}else{const range=document.createRange();range.selectNodeContents(this.previousElementSibling);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);this.textContent='Reference selected - copy'}">Copy reference</button>
           <div style="font-size: 11px; color: var(--ink-muted); margin-top: 3px;">
             Quote: {{ item.quoteType|default('package')|title }}
           </div>
@@ -191,13 +170,13 @@
         </td>
 
         <td>
-          {% if item.groupTotal is not none %}
+          {% if item.get('groupTotal') is not none %}
             <strong style="color: var(--ink); font-size: 14px;">
-              {{ item.currency or 'MYR' }} {{ '%.2f'|format(item.groupTotal|float) }}
+              {{ item.currency or 'UNKNOWN' }} {{ '%.2f'|format(item.groupTotal|float) }}
             </strong>
-          {% elif item.amount is not none %}
+          {% elif item.get('amount') is not none %}
             <strong style="color: var(--ink); font-size: 14px;">
-              {{ item.currency or 'MYR' }} {{ '%.2f'|format(item.amount|float) }}
+              {{ item.currency or 'UNKNOWN' }} {{ '%.2f'|format(item.amount|float) }}
             </strong>
           {% else %}
             <span class="muted" style="font-style: italic;">Amount unavailable</span>
@@ -207,32 +186,8 @@
         <td>
           {% set pay_status = (item.paymentStatus or 'unknown')|lower %}
           {% set ord_status = (item.orderStatus or '')|lower %}
-          {% set is_pending = is_pending_booking(item) if is_pending_booking is defined else (pay_status in ['pending', 'payment_pending', 'unpaid'] and ord_status not in ['expired', 'checkout_expired', 'failed', 'checkout_failed', 'cancelled', 'checkout_cancelled', 'rejected'] and pay_status not in ['paid', 'succeeded', 'failed', 'payment_failed', 'expired', 'cancelled', 'refunded']) %}
-          {% if pay_status in ['paid', 'succeeded'] or item.isPaid %}
-            <span class="status approved">
-              {% if item.testMode %}Test Paid{% else %}Paid{% endif %}
-            </span>
-          {% elif is_pending %}
-            <span class="status pending">Payment Pending</span>
-          {% elif pay_status in ['failed', 'payment_failed'] or ord_status in ['failed', 'checkout_failed'] %}
-            <span class="status rejected">Failed</span>
-          {% elif pay_status in ['cancelled', 'payment_cancelled'] or ord_status in ['cancelled', 'checkout_cancelled'] %}
-            <span class="status rejected">Cancelled</span>
-          {% elif pay_status == 'refunded' or ord_status == 'refunded' %}
-            <span class="status rejected">Refunded</span>
-          {% elif pay_status == 'expired' or ord_status in ['expired', 'checkout_expired'] %}
-            <span class="status expired">Expired</span>
-          {% else %}
-            <span class="status draft">{{ pay_status|capitalize }}</span>
-          {% endif %}
-        </td>
-
-        <td>
-          {% if item.testMode %}
-            <span class="badge-test-mode" title="Processed in Stripe Test Mode">🧪 Stripe Test Mode</span>
-          {% else %}
-            <span class="badge neutral" style="font-size: 11px;">Mode unverified</span>
-          {% endif %}
+          {% set label = pay_status|payment_label(ord_status) %}
+          <span class="status {{ 'approved' if label == 'Paid' else 'pending' if label == 'Pending' else 'expired' if label == 'Expired' else 'rejected' }}">{{ label }}</span>
         </td>
 
         <td>

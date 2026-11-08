@@ -5,7 +5,8 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import re
 
-from services.public_content_projection import eligible_package
+from services.public_content_projection import eligible_package, active_campaign
+from services.campaign_schedule import malaysia_today
 from services.operator_hotel_service import safe_hotel_snapshot
 
 PACKAGE_FULFILLMENT_STATES = {
@@ -35,7 +36,7 @@ def _money(value, label):
         amount = Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError(f'Package has no authoritative {label}.')
-    if amount < 0:
+    if not amount.is_finite() or amount < 0:
         raise ValueError(f'Package has no authoritative {label}.')
     return amount
 
@@ -141,14 +142,13 @@ def _parse_iso_date(value):
 def _resolve_reference_date(now=None):
     """
     Authoritative promotion date evaluation:
-    - If now is supplied as a date, datetime or ISO string, its date is used.
+    - A supplied instant is evaluated on the Malaysia calendar; date-only values stay dates.
     - Otherwise, default to the current calendar date in Malaysia Standard Time (UTC+8).
     """
-    if now is not None:
-        parsed = _parse_iso_date(now)
-        if parsed:
-            return parsed
-    return datetime.now(MYT_TIMEZONE).date()
+    try:
+        return malaysia_today(now)
+    except (ValueError, TypeError):
+        return datetime.now(MYT_TIMEZONE).date()
 
 
 def is_package_promotion_active(package, now_ref=None):
@@ -171,14 +171,14 @@ def is_package_promotion_active(package, now_ref=None):
         promo_price = Decimal(str(promo_raw)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError, ValueError):
         return False
-    if promo_price <= 0:
+    if not promo_price.is_finite() or promo_price <= 0:
         return False
 
     regular_raw = package.get('adultPrice', package.get('price'))
     if regular_raw not in (None, ''):
         try:
             regular_price = Decimal(str(regular_raw)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            if promo_price >= regular_price:
+            if not regular_price.is_finite() or promo_price >= regular_price:
                 return False
         except (InvalidOperation, TypeError, ValueError):
             return False
@@ -201,7 +201,7 @@ def is_package_promotion_active(package, now_ref=None):
 
 
 def prepare_package_snapshot(package, operator, quantity=1, now=None,
-                             participants=None, departure_date=None):
+                             participants=None, departure_date=None, campaigns=None, promo_code=''):
     if not eligible_package(package):
         raise ValueError('Package is not approved and available for checkout.')
     if not package.get('operatorId') or not operator:
@@ -244,6 +244,45 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None,
         else:
             total = regular_adult_price
 
+    subtotal = (regular_adult_price * group['adults'] + (child_price or Decimal('0')) * group['children']
+                if price_basis == 'per_person' else regular_adult_price)
+    promotion = {'source': 'package_price'} if total < subtotal else {}
+    supplied_code = str(promo_code or '').strip().upper()
+    matched_code = not supplied_code
+    # One best discount on the original subtotal; never stack with brochure pricing.
+    for campaign in sorted(campaigns or [], key=lambda c: str(c.get('id') or '')):
+        if (str(campaign.get('packageId') or '') != str(package.get('id') or '') or
+                campaign.get('operatorId') != package['operatorId'] or
+                not active_campaign(campaign, malaysia_today(now))):
+            continue
+        required_code = str(campaign.get('promoCode') or '').strip().upper()
+        if required_code and required_code != supplied_code:
+            continue
+        try:
+            value = Decimal(str(campaign.get('discountValue')))
+            kind = campaign.get('discountType')
+            if not value.is_finite() or value <= 0 or kind not in {'percentage', 'fixed'}:
+                continue
+            if kind == 'percentage' and value > 100:
+                continue
+            discount = (subtotal * value / 100 if kind == 'percentage' else value).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            payable = subtotal - discount
+        except (InvalidOperation, ValueError, TypeError):
+            continue
+        if payable <= 0:
+            raise ValueError('This promotion leaves no positive payable amount. Free package checkout is not supported; contact the operator.')
+        if required_code == supplied_code:
+            matched_code = True
+        if payable < total:
+            total = payable
+            effective_adult_price = regular_adult_price
+            promotional_price = None
+            promotion = {k: campaign.get(k) for k in ('id', 'campaignTitle', 'discountType', 'discountValue')}
+            promotion.update(source='campaign', promoCode=required_code)
+    if not matched_code:
+        raise ValueError('Promo code is not valid for this package and date.')
+    breakdown = {'originalSubtotal': _json_money(subtotal), 'promotionDiscount': _json_money(subtotal - total),
+                 'finalPayable': _json_money(total), 'currency': currency, 'promotion': promotion}
     if total <= 0:
         raise ValueError('Package has no authoritative payable price.')
 
@@ -277,10 +316,12 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None,
         'regularAdultUnitPrice': _json_money(regular_adult_price),
         'adultUnitPrice': _json_money(effective_adult_price),
         'childUnitPrice': None if child_price is None else _json_money(child_price),
-        'isPromotionEligible': is_promo_active,
+        'isPromotionEligible': bool(promotion),
         'promotionalUnitPrice': _json_money(promotional_price) if promotional_price is not None else None,
         'originalPrice': _json_money(original_price) if original_price is not None else None,
         'participants': group, 'groupSize': group['total'],
+        'pricingBreakdown': breakdown,
+        'requestedPromoCode': supplied_code,
         'price': _json_money(total), 'amountMinor': int(total * 100),
         'currency': currency, 'taxIncluded': package.get('taxIncluded'), 'taxNotes': package.get('taxNotes'),
         'revision': package.get('updatedAt') or package.get('createdAt'),
@@ -290,14 +331,14 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None,
 
 def create_package_attempt(claim, traveller_id, package, operator, idempotency_key,
                            intended_trip=None, quantity=1, now=None,
-                           participants=None, departure_date=None):
+                           participants=None, departure_date=None, campaigns=None, promo_code=''):
     """Atomically claim a future-payment attempt; never creates a checkout session."""
     if not idempotency_key:
         raise ValueError('An idempotency key is required.')
     if intended_trip is not None and intended_trip.get('travellerId') != traveller_id:
         raise ValueError('The intended trip is not owned by this traveller.')
     snapshot = prepare_package_snapshot(
-        package, operator, quantity, now, participants, departure_date
+        package, operator, quantity, now, participants, departure_date, campaigns, promo_code
     )
     if not package_trip_compatible(snapshot, intended_trip):
         raise ValueError('Package destination is incompatible with the intended trip.')
@@ -311,6 +352,8 @@ def create_package_attempt(claim, traveller_id, package, operator, idempotency_k
         'taxIncluded': snapshot['taxIncluded'], 'taxNotes': snapshot['taxNotes'],
         'packageRevision': snapshot['revision'], 'quantity': quantity,
         'participants': snapshot['participants'], 'groupSize': snapshot['groupSize'],
+        'promoCode': str(promo_code or '').strip().upper(),
+        'pricingBreakdown': snapshot['pricingBreakdown'],
         'selectedDepartureDate': snapshot['selectedDepartureDate'],
         'fulfillmentMode': 'independent_package_trip',
         'checkoutStatus': 'checkout_pending', 'paymentStatus': 'payment_pending',
@@ -318,9 +361,9 @@ def create_package_attempt(claim, traveller_id, package, operator, idempotency_k
         'updatedAt': snapshot['snapshotCreatedAt'],
     }
     existing, created = claim('package_checkout_attempts', attempt_id, record)
-    if not created and any(existing.get(field) != record.get(field) for field in (
+    if not created and (any(existing.get(field) != record.get(field) for field in (
             'packageId', 'packageRevision', 'participants', 'selectedDepartureDate',
-            'fulfillmentMode')):
+            'fulfillmentMode')) or str(existing.get('promoCode') or '') != record['promoCode']):
         raise ValueError('Idempotency key is already bound to another package checkout.')
     return existing, created
 

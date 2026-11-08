@@ -38,8 +38,8 @@ def _patch_view_api(view_name, mock_fn):
     return patch.dict(fn_globals, {"call_api": mock_fn})
 
 
-@pytest.mark.parametrize('status,label', [('operator_attested','Operator Attested'),
-    ('declined','Fulfillment Declined'),('not_required','Not Required')])
+@pytest.mark.parametrize('status,label', [('operator_attested','Arrangements Recorded (Operator)'),
+    ('declined','Unable to Fulfil'),('not_required','Not Required')])
 def test_supplier_attestation_disclosure_is_not_overwritten(auth_client,status,label):
     response=MagicMock(ok=True)
     response.json.return_value={'ok':True,'items':[{'id':'synthetic','bookingType':'package',
@@ -107,7 +107,7 @@ def test_f4b_unknown_payment_is_not_free_or_live(auth_client):
     with _patch_view_api('admin_fr13.payments',MagicMock(return_value=response)):
         page=auth_client.get('/admin/payments')
     html=page.get_data(as_text=True)
-    assert 'Unavailable' in html and 'Mode unverified' in html and '>Live</span>' not in html
+    assert 'Unavailable' in html and '>Environment<' not in html and '>Live</span>' not in html
 
 
 def test_admin_payments_renders_filters_and_test_mode_badge(auth_client):
@@ -179,7 +179,7 @@ def test_admin_bookings_renders_package_tab_and_supplier_disclosure(auth_client)
         html = res.data.decode("utf-8")
         assert "Package Bookings (Platform)" in html
         assert "Penang Heritage Tour" in html
-        assert "Not Created (Manual)" in html
+        assert "Reservation Not Created" in html
         assert "420.00" in html
 
 

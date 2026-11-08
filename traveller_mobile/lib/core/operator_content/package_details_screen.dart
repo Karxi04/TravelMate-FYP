@@ -35,6 +35,7 @@ class _TourismPackageDetailsScreenState
     extends State<TourismPackageDetailsScreen> {
   late final ApiService api;
   bool submitting = false;
+  String promoCode = '';
   bool consumerPaymentsAvailable = false;
   int adults = 1;
   int children = 0;
@@ -304,6 +305,7 @@ class _TourismPackageDetailsScreenState
       if (!await _resolveExistingPurchase()) return;
       final response = await api.post('/api/fr15/package-checkout-attempts', {
         'packageId': packageId,
+        'promoCode': promoCode,
         'participants': {'adults': adults, 'children': children},
         if (selectedDepartureDate != null)
           'departureDate': selectedDepartureDate,
@@ -324,10 +326,24 @@ class _TourismPackageDetailsScreenState
             'Server did not return an authoritative payable total.');
       }
       if ((serverAmount - clientTotal).abs() > 0.01) {
-        throw Exception(
-          'Checkout price mismatch: server quote is $_currency ${_money(serverAmount)}, '
-          'but estimate was $_currency ${_money(clientTotal)}. Please refresh and try again.',
+        if (!mounted) return;
+        final accepted = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Review updated package amount'),
+            content: Text(
+                'The current server quote is $_currency ${_money(serverAmount)}. Review the price breakdown before payment.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Review Checkout')),
+            ],
+          ),
         );
+        if (accepted != true) return;
       }
 
       if (!mounted) return;
@@ -337,6 +353,9 @@ class _TourismPackageDetailsScreenState
           builder: (_) => PaymentScreen(
             packageAttemptId: attemptId,
             initialAmount: serverAmount,
+            pricingBreakdown: attempt['pricingBreakdown'] is Map
+                ? Map<String, dynamic>.from(attempt['pricingBreakdown'])
+                : null,
             api: api,
           ),
         ),
@@ -888,6 +907,19 @@ class _TourismPackageDetailsScreenState
                                 ],
                                 const SizedBox(height: AppSpacing.xs),
                               ],
+                              TextFormField(
+                                initialValue: promoCode,
+                                key: const ValueKey('package-promo-code'),
+                                decoration: const InputDecoration(
+                                    labelText: 'Promo code (optional)'),
+                                textCapitalization:
+                                    TextCapitalization.characters,
+                                onChanged: (value) {
+                                  promoCode = value.trim();
+                                  _checkoutIntent.startNewAttempt();
+                                },
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
                               Text(
                                 _groupTotal == null
                                     ? 'Group total unavailable'

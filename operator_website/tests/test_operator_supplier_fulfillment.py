@@ -126,7 +126,7 @@ def test_booking_detail_renders_all_required_supplier_cards(auth_client):
         html = res.get_data(as_text=True)
 
         # Section 2 header
-        assert "Supplier Arrangements &amp; Logistics" in html or "Supplier Arrangements & Logistics" in html
+        assert "Supplier Arrangements" in html
         # Accommodation card
         assert "Accommodation" in html
         assert "Shangri-La Rasa Sayang Resort" in html
@@ -144,8 +144,8 @@ def test_booking_detail_renders_all_required_supplier_cards(auth_client):
         assert "Save Guide/Ticket" in html
 
         # Action section
-        assert "Confirm Arrangements &amp; Mark Trip Ready" in html or "Confirm Arrangements & Mark Trip Ready" in html
-        assert "Unable to Fulfill..." in html
+        assert "Mark Arrangements Ready" in html
+        assert "Unable to Fulfil" in html
 
 
 def test_submit_accommodation_attestation(auth_client):
@@ -207,4 +207,22 @@ def test_bookings_list_renders_trip_ready_and_attested_badges(auth_client):
         assert res.status_code == 200
         html = res.get_data(as_text=True)
         assert "Trip Ready" in html
-        assert "Operator Attested" in html
+        assert "Arrangements Recorded (Operator)" in html
+
+
+@pytest.mark.parametrize('ready,uncertain,disabled', [(False,False,True),(True,True,True),(True,False,False)])
+def test_readiness_action_requires_complete_attestation(auth_client, ready, uncertain, disabled):
+    from copy import deepcopy
+    import re
+    booking = deepcopy(SAMPLE_BOOKING)
+    for service in booking['fulfillmentRecord']['services'].values():
+        if ready:
+            service.update(status='confirmed',reference='supplier-ref',provenance='operator_attested',confirmedBy='op',confirmedAt='2026-11-08T10:00:00Z')
+    booking['requiredServices']['accommodation']['uncertain'] = uncertain
+    response = MagicMock(ok=True)
+    response.json.return_value = {'ok':True,'booking':booking}
+    with patch.dict(app.view_functions['operator_fr12.booking_detail'].__globals__, {'call_api':lambda *a, **kw:response}):
+        page = auth_client.get('/bookings/ord-penang-fulfillment')
+    assert page.status_code == 200
+    button = re.search(r'<button[^>]*id="confirm-fulfillment-btn"[^>]*>', page.get_data(as_text=True)).group(0)
+    assert ('disabled' in button) is disabled

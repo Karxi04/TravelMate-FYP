@@ -24,7 +24,9 @@ def create_attempt():
         attempt, created = create_package_attempt(claimRecord, g.uid, package or {},
             retrieveRecord('users', (package or {}).get('operatorId')) or {},
             str(payload.get('idempotencyKey') or ''), trip, payload.get('quantity', 1),
-            participants=participants, departure_date=payload.get('departureDate'))
+            participants=participants, departure_date=payload.get('departureDate'),
+            campaigns=retrieveRecord('promotional_campaigns', filters=[('packageId', '==', str(payload.get('packageId') or ''))]),
+            promo_code=payload.get('promoCode', ''))
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 409
     except Exception:

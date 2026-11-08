@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/modules/fr01_user_management/profile_tab.dart';
@@ -268,7 +269,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Continue Payment'), findsNothing);
     expect(find.text('Restart Payment'), findsNothing);
-    expect(find.textContaining('Stripe'), findsWidgets);
+    expect(find.text('Package amount'), findsOneWidget);
     expect(api.postCount, 0);
     expect(api.paymentItems.single, samplePackagePayment);
   });
@@ -315,8 +316,8 @@ void main() {
 
     expect(find.text('Package — Penang Heritage & Hills Escape'), findsOneWidget);
     expect(find.text('MYR 3346.00'), findsOneWidget);
-    expect(find.text('Paid (Stripe Test)'), findsOneWidget);
-    expect(find.text('Test Mode'), findsOneWidget);
+    expect(find.text('Paid'), findsOneWidget);
+    expect(find.text('Test Mode'), findsNothing);
   });
 
   testWidgets('2. Paid Flight and Hotel payments displayed when supported', (tester) async {
@@ -337,7 +338,7 @@ void main() {
 
     expect(find.text('Legacy Payment Booking'), findsOneWidget);
     expect(find.text('MYR 80.00'), findsOneWidget);
-    expect(find.text('Paid (Stripe Test)'), findsOneWidget);
+    expect(find.text('Paid'), findsOneWidget);
   });
 
   testWidgets('4. Pending/unpaid payment is marked Pending and NOT marked Paid', (tester) async {
@@ -428,21 +429,25 @@ void main() {
     expect(find.textContaining('sign in again'), findsOneWidget);
   });
 
-  testWidgets('10. Test Mode clearly disclosed on card and in detail sheet', (tester) async {
+  testWidgets(
+      '10. Ordinary cards and detail sheet omit repeated environment notices',
+      (tester) async {
     final api = _MockPaymentApi(items: [samplePackagePayment]);
     await tester.pumpWidget(buildTestWidget(PaymentHistoryScreen(api: api)));
     await tester.pumpAndSettle();
 
     // On card
-    expect(find.text('Test Mode'), findsOneWidget);
+    expect(find.text('Test Mode'), findsNothing);
 
     // Tap to open detail bottom sheet
     await tester.tap(find.byKey(const ValueKey('payment-item-order-pkg-101')));
     await tester.pumpAndSettle();
 
     expect(find.text('Payment Details'), findsOneWidget);
-    expect(find.text('Stripe Test Mode'), findsOneWidget);
-    expect(find.textContaining('Stripe Test Mode. No real financial transaction'), findsOneWidget);
+    expect(find.text('Stripe Test Mode'), findsNothing);
+    expect(
+        find.textContaining('Stripe Test Mode. No real financial transaction'),
+        findsNothing);
   });
 
   testWidgets('11. Long Order Reference does not overflow and can be copied in details', (tester) async {
@@ -472,6 +477,19 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Payment Details'), findsOneWidget);
     expect(find.byIcon(Icons.copy_rounded), findsOneWidget);
+    String? copied;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData')
+        copied = (call.arguments as Map)['text'] as String;
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null));
+    await tester.tap(find.byTooltip('Copy Reference'));
+    await tester.pump();
+    expect(copied, longRefPayment['orderReference']);
   });
 
   testWidgets('12. Checkout Test entry is removed from ProfileTab; only Payment history remains', (tester) async {
@@ -552,5 +570,59 @@ void main() {
     expect(find.text('Restart Payment'), findsNothing);
     expect(api.postCount, 0);
     expect(api.paymentItems.single['orderStatus'], sampleExpiredPackagePayment['orderStatus']);
+  });
+
+  for (final scenario in const {
+    'paid': 'Paid',
+    'pending': 'Pending',
+    'failed': 'Failed',
+    'cancelled': 'Cancelled',
+    'expired': 'Expired'
+  }.entries) {
+    testWidgets(
+        'Concise ${scenario.value} remains correct after opening details',
+        (tester) async {
+      final item = {
+        ...samplePackagePayment,
+        'paymentStatus': scenario.key,
+        'orderStatus': scenario.key
+      };
+      final api = _MockPaymentApi(items: [item]);
+      await tester.pumpWidget(buildTestWidget(PaymentHistoryScreen(api: api),
+          size: const Size(320, 800)));
+      await tester.pumpAndSettle();
+      await tester
+          .tap(find.byKey(const ValueKey('payment-item-order-pkg-101')));
+      await tester.pumpAndSettle();
+      expect(find.text(scenario.value), findsWidgets);
+      expect(find.text('Package amount'), findsOneWidget);
+      expect(find.text('Stripe Test Mode'), findsNothing);
+      expect(find.text('Continue Payment'), findsNothing);
+      expect(tester.takeException(), isNull);
+      expect(api.paymentItems.single['paymentStatus'], scenario.key);
+    });
+  }
+
+  for (final scenario in const {'checkout_failed':'Failed', 'checkout_expired':'Expired', 'checkout_cancelled':'Cancelled'}.entries) {
+    testWidgets('Historical ${scenario.key} cannot appear Paid or resumable', (tester) async {
+      final item = {...samplePackagePayment, 'orderStatus':scenario.key};
+      final api = _MockPaymentApi(items:[item])..checkoutEnabled = true;
+      await tester.pumpWidget(buildTestWidget(PaymentHistoryScreen(api:api)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('payment-item-order-pkg-101')));
+      await tester.pumpAndSettle();
+      expect(find.text(scenario.value), findsWidgets);
+      expect(find.text('Paid'), findsNothing);
+      expect(find.text('Continue Payment'), findsNothing);
+      expect(api.paymentItems.single['paymentStatus'], 'paid');
+    });
+  }
+
+  testWidgets('Missing currency is never displayed as MYR', (tester) async {
+    final api = _MockPaymentApi(items:[{...samplePackagePayment, 'currency':null}]);
+    await tester.pumpWidget(buildTestWidget(PaymentHistoryScreen(api:api)));
+    await tester.pumpAndSettle();
+    expect(find.text('UNKNOWN 3346.00'), findsOneWidget);
+    expect(find.text('MYR 3346.00'), findsNothing);
   });
 }

@@ -2,6 +2,7 @@
 {% block title %}Payment Records | TravelMate{% endblock %}
 
 {% block content %}
+<style>.table-wrap table{width:100%;table-layout:fixed}.table-wrap td,.detail-row strong,.eyebrow{overflow-wrap:anywhere;white-space:normal;min-width:0}.table-wrap th{min-width:0!important}.table-wrap code{white-space:normal;overflow-wrap:anywhere}.table-wrap{overflow-x:auto}@media(max-width:850px){.table-wrap table{min-width:850px}}</style>
 {% include '_admin_data_state.html' %}
 
 <style>
@@ -139,21 +140,6 @@
   </a>
 </div>
 
-<!-- Hotel Audit Banner (shown only when filtering for Hotel Payments) -->
-{% if product == 'hotel' %}
-<div class="card" style="border-left: 4px solid var(--primary, #0D6EFD); background: #f0f7ff; padding: 14px 18px; margin-bottom: 20px;" role="region" aria-label="Hotel Payment Audit Notice">
-  <div style="display: flex; gap: 12px; align-items: flex-start;">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary, #0D6EFD); flex-shrink: 0; margin-top: 2px;"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="22.01"/><line x1="15" y1="22" x2="15" y2="22.01"/><line x1="9" y1="18" x2="9" y2="18.01"/><line x1="15" y1="18" x2="15" y2="18.01"/><line x1="9" y1="14" x2="9" y2="14.01"/><line x1="15" y1="14" x2="15" y2="14.01"/><line x1="9" y1="10" x2="9" y2="10.01"/><line x1="15" y1="10" x2="15" y2="10.01"/><line x1="9" y1="6" x2="9" y2="6.01"/><line x1="15" y1="6" x2="15" y2="6.01"/></svg>
-    <div>
-      <strong style="color: var(--ink); font-size: 14px;">Hotel Payment Audit &amp; Third-Party Logistics Decoupling</strong>
-      <p style="margin: 4px 0 0; color: var(--ink-secondary); font-size: 13px; line-height: 1.5;">
-        Auditing standalone hotel transactions. <strong>Payment Status</strong> verifies checkout completion in Stripe Test Mode. <strong>Hotel Reservation Status</strong> indicates room fulfillment with external hospitality providers (NOT automated by TravelMate). A settled checkout does NOT guarantee room confirmation. Note: Package-bundled accommodation is audited under Packages, not standalone Hotel payments.
-      </p>
-    </div>
-  </div>
-</div>
-{% endif %}
-
 <!-- Filters Form -->
 <form method="get" class="filters card" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 14px 18px; margin-bottom: 20px;">
   <input class="input" name="q" value="{{ q|default('') }}" placeholder="Order, traveller or reference" aria-label="Search payment records" style="min-width: 200px; flex: 1;">
@@ -201,7 +187,6 @@
           <th scope="col">Fulfillment</th>
         {% endif %}
         <th scope="col">Amount</th>
-        <th scope="col">Environment</th>
         <th scope="col">Created</th>
         <th scope="col" style="text-align: right;">Action</th>
       </tr>
@@ -213,7 +198,7 @@
       {% set sup_status = x.get('supplierBookingStatus') or x.get('fulfillmentStatus') or 'not_created' %}
       <tr>
         <td>
-          <code style="font-size: 13px; font-weight: 700; color: var(--ink);">{{ x.get('transactionReference', x.get('id', '-')) }}</code>
+          <code style="font-size: 13px; font-weight: 700; color: var(--ink);">{{ x.get('transactionReference', x.get('id', '-')) }}</code><button type="button" class="btn outline btn-sm" onclick="if(navigator.clipboard){navigator.clipboard.writeText(this.previousElementSibling.textContent.trim()).then(()=>this.textContent='Copied').catch(()=>this.textContent='Select reference to copy')}else{const range=document.createRange();range.selectNodeContents(this.previousElementSibling);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);this.textContent='Reference selected - copy'}">Copy reference</button>
           {% if x.get('cardBrand') or x.get('cardLast4') %}
             <br>
             <small class="muted">{{ x.get('cardBrand', 'Card') }} •••• {{ x.get('cardLast4', '') }}</small>
@@ -258,7 +243,7 @@
         </td>
 
         <td>
-          <span class="status {{ payment_state }}">{{ payment_state|title }}</span>
+          <span class="status {{ payment_state }}">{{ payment_state|payment_label(x.get('status','')) }}</span>
         </td>
 
         <td>
@@ -272,7 +257,7 @@
             {% if sup_status in ['not_created', 'unconfirmed', 'demo_only'] %}
               <span class="badge warning" title="Supplier reservation unconfirmed">⚠️ Not Confirmed</span>
             {% elif sup_status in ['fulfilled', 'trip_ready'] %}
-              <span class="badge success">Confirmed</span>
+              <span class="badge success">Trip Created in App</span>
             {% else %}
               <span class="badge neutral">{{ sup_status|replace('_', ' ')|title }}</span>
             {% endif %}
@@ -284,14 +269,6 @@
             <strong>{{ x.get('currency', 'UNKNOWN')|upper }} {{ '%.2f'|format(x.get('amount')|float) }}</strong>
           {% else %}
             <span class="muted">Unavailable</span>
-          {% endif %}
-        </td>
-
-        <td>
-          {% if x.get('testMode') or 'test' in (x.get('provider', '')|string|lower) or (x.get('transactionReference', '')|string).startswith('pi_sim_') %}
-            <span class="badge warning" style="font-size: 11px;">Stripe Test Mode</span>
-          {% else %}
-            <span class="badge neutral" style="font-size: 11px;">Mode unverified</span>
           {% endif %}
         </td>
 
@@ -347,7 +324,7 @@
                 <span class="modal-label">Amount &amp; Currency:</span>
                 <strong style="color: var(--ink);">
                   {% if x.get('amount') is not none %}
-                    {{ x.get('currency', 'MYR')|upper }} {{ '%.2f'|format(x.get('amount')|float) }}
+                    {{ (x.get('currency') or 'UNKNOWN')|upper }} {{ '%.2f'|format(x.get('amount')|float) }}
                   {% else %}
                     Amount unavailable
                   {% endif %}
@@ -356,7 +333,7 @@
               <div class="modal-detail-row">
                 <span class="modal-label">Payment Status:</span>
                 <span>
-                  <span class="status {{ payment_state }}">{{ payment_state|title }}</span>
+                  <span class="status {{ payment_state }}">{{ payment_state|payment_label(x.get('status','')) }}</span>
                   {% if x.get('testMode') or 'test' in (x.get('provider', '')|string|lower) %}
                     (Stripe Test Mode)
                   {% endif %}

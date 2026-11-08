@@ -19,6 +19,7 @@ from sequence_contract.domain_functions import (
     reject
 )
 
+from services.commerce_money import record_money as _record_money, record_amount as _amount
 from services.report_service import (
     export_system_report_pdf
 )
@@ -371,6 +372,7 @@ def campaign_details(cid):
 @bp.post('/campaigns/<cid>/review')
 @auth_required(['admin'])
 def review_campaign(cid):
+    from services.campaign_schedule import campaign_schedule_error
     payload=_payload(); decision=payload.get('decision')
     current=retrieveRecord('promotional_campaigns',cid)
     if not current:return jsonify({'ok':False,'error':'Campaign not found'}),404
@@ -384,6 +386,8 @@ def review_campaign(cid):
     if current.get('reviewStatus') not in {'pending','submitted','under_review'}:
         return jsonify({'ok':False,'error':'Only submitted campaigns can be reviewed'}),409
     if decision=='approved':
+        schedule_error = campaign_schedule_error(current, publishing=True)
+        if schedule_error:_fail(schedule_error,400)
         if not validateCampaignDatesAndContent(current):_fail('Invalid campaign dates or content',400)
         package_id=str(current.get('packageId') or '').strip()
         package=retrieveRecord('tourism_packages',package_id) if package_id else None
@@ -552,6 +556,7 @@ def booking_records():
     items = []
     if booking_type in {'hotel', 'all'}:
         hotel_bookings = _load('hotel_bookings')
+        linked_orders = {str(o.get('id')): o for o in _load('checkout_orders') if isinstance(o, dict)}
         for h in hotel_bookings:
             if not isinstance(h, dict):
                 continue
@@ -560,7 +565,20 @@ def booking_records():
             provider_result=h.get('providerResult') if isinstance(h.get('providerResult'),dict) else {}
             provenance='simulation' if h.get('isSimulated') or h.get('bookingMode') == 'simulation' or h.get('source') == 'local' else (
                 'provider_sandbox' if h.get('sandbox') or provider_result.get('sandbox') or h.get('transactionMode') == 'provider_sandbox' else 'unverified')
-            sanitized_h.update(reservationProvenance=provenance,amount=_amount(h),currency=str(h.get('currency') or 'UNKNOWN').upper())
+            if (provenance == 'unverified' and h.get('source') == 'liteapi' and h.get('providerMutationCalled') is True
+                    and h.get('bookingStatus') == 'confirmed' and h.get('bookingReference')
+                    and h['bookingReference'] in [provider_result.get(k) for k in ('bookingId', 'id', 'hotelConfirmationCode')]):
+                provenance = 'provider_recorded'
+            amount, currency = _record_money(h, linked_orders)
+            sanitized_h.update(reservationProvenance=provenance, amount=amount, currency=currency)
+            if provenance == 'simulation':
+                sanitized_h['confirmationLabel'] = 'Hotel Details Saved'
+            elif provenance == 'provider_sandbox':
+                sanitized_h['confirmationLabel'] = 'Provider Sandbox Record'
+            elif provenance == 'provider_recorded':
+                sanitized_h['confirmationLabel'] = 'Provider Confirmation Recorded'
+            elif provenance == 'unverified':
+                sanitized_h['confirmationLabel'] = 'Reservation Not Confirmed'
             items.append(sanitized_h)
 
     if booking_type in {'package', 'all'}:
@@ -618,15 +636,6 @@ def booking_records():
 
     items.sort(key=lambda item: str(item.get('createdAt') or ''), reverse=True)
     return jsonify({'ok': True, 'items': items})
-
-
-def _amount(record):
-    value=next((record[key] for key in ('amount','totalAmount','groupTotal','hotelCost','price') if record.get(key) is not None),None)
-    try:
-        amount=float(value)
-        return amount if not isinstance(value,bool) and isfinite(amount) and amount >= 0 else None
-    except (ValueError,TypeError,OverflowError):
-        return None
 
 
 def _settlements(record):
@@ -693,7 +702,8 @@ def _unified_payment_records(checkout_orders, payment_records):
         ) or o.get('bookingId') or o.get('orderTitle') or '-'
         sanitized['productType'] = o.get('quoteType') or 'package'
         sanitized['productTitle'] = pkg_title
-        sanitized.update(amount=_amount(o),currency=str(o.get('currency') or 'UNKNOWN').upper(),isPaid=is_paid_order(o))
+        amount, currency = _record_money(o)
+        sanitized.update(amount=amount,currency=currency,isPaid=is_paid_order(o))
         if o.get('provider') == 'stripe_checkout_test' or o.get('testMode') is True:
             sanitized['testMode'] = True
         elif o.get('testMode') is False:
@@ -704,7 +714,8 @@ def _unified_payment_records(checkout_orders, payment_records):
         sanitized = _sanitize_commerce_record(p)
         sanitized.setdefault('productType', 'legacy_payment')
         sanitized.setdefault('productTitle', p.get('bookingId') or p.get('itemTitle') or '-')
-        sanitized.update(amount=_amount(p),currency=str(p.get('currency') or 'UNKNOWN').upper(),isPaid=is_paid_order(p))
+        amount, currency = _record_money(p)
+        sanitized.update(amount=amount,currency=currency,isPaid=is_paid_order(p))
         if 'testMode' not in sanitized:
             if 'test' in str(p.get('provider') or '').lower() or str(p.get('transactionReference') or '').startswith('pi_sim_'):
                 sanitized['testMode'] = True

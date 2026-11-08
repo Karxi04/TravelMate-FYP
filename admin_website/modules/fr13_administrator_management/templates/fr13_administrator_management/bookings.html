@@ -2,6 +2,7 @@
 {% block title %}Booking Records | TravelMate{% endblock %}
 
 {% block content %}
+<style>.table-wrap table{width:100%;table-layout:fixed}.table-wrap td,.detail-row strong,.eyebrow{overflow-wrap:anywhere;white-space:normal;min-width:0}.table-wrap th{min-width:0!important}.table-wrap code{white-space:normal;overflow-wrap:anywhere}.table-wrap{overflow-x:auto}@media(max-width:850px){.table-wrap table{min-width:850px}}</style>
 {% include '_admin_data_state.html' %}
 <div class="page-title">
   <div>
@@ -51,7 +52,7 @@
           <span style="font-size: 12.5px;">{{ x.get('travellerId', '-') }}</span>
         </td>
         <td>
-          <span class="status {{ x.get('paymentStatus', 'unpaid') }}">{{ x.get('paymentStatus', 'unpaid')|title }}</span>
+          <span class="status {{ x.get('paymentStatus', 'unpaid') }}">{{ x.get('paymentStatus', 'unpaid')|payment_label(x.get('orderStatus','')) }}</span>
         </td>
         <td>
           <span class="status {{ x.get('fulfillmentStatus', 'pending') }}">{{ (x.get('fulfillmentStatus', 'pending') or '')|replace('_', ' ')|title }}</span>
@@ -59,10 +60,10 @@
         <td>
           <span class="badge warning" title="{{ x.get('supplierReservationDisclosure', 'Platform order only. Direct supplier airline/hotel booking is not executed.') }}" style="font-size: 11px;">
             {% set supplier_status = x.get('supplierReservationStatus', 'not_created') %}
-            {% if supplier_status == 'operator_attested' %}Operator Attested
-            {% elif supplier_status == 'declined' %}Fulfillment Declined
+            {% if supplier_status == 'operator_attested' %}Arrangements Recorded (Operator)
+            {% elif supplier_status == 'declined' %}Unable to Fulfil
             {% elif supplier_status == 'not_required' %}Not Required
-            {% else %}⚠️ Not Created (Manual){% endif %}
+            {% else %}⚠️ Reservation Not Created{% endif %}
           </span>
         </td>
         <td>
@@ -132,16 +133,16 @@
         </td>
         <td>
           {% if btype == 'package' %}
-            <span class="status {{ x.get('paymentStatus', 'unpaid') }}">{{ x.get('paymentStatus', 'unpaid')|title }}</span>
+            <span class="status {{ x.get('paymentStatus', 'unpaid') }}">{{ x.get('paymentStatus', 'unpaid')|payment_label(x.get('orderStatus','')) }}</span>
           {% else %}
-            <span class="status {{ x.get('bookingStatus', 'unknown') }}">{{ x.get('bookingStatus', 'unknown')|title }}</span>
+            <span class="status {{ x.get('bookingStatus', 'unknown') }}">{{ x.get('confirmationLabel') or x.get('bookingStatus', 'unknown')|title }}</span>
           {% endif %}
         </td>
         <td>
           {% if btype == 'package' %}
-            <span class="badge warning" style="font-size: 11px;">⚠️ Not Created (Manual)</span>
+            <span class="badge warning" style="font-size: 11px;">⚠️ Reservation Not Created</span>
           {% else %}
-            <span class="badge neutral" style="font-size: 11px;">{{ x.get('reservationProvenance', 'unverified')|replace('_', ' ')|title }}</span>
+            <span class="badge neutral" style="font-size: 11px;">{{ 'Hotel Details Saved' if x.get('reservationProvenance') == 'simulation' else x.get('reservationProvenance', 'unverified')|replace('_', ' ')|title }}</span>
           {% endif %}
         </td>
         {% set amount = x.get('amount', x.get('hotelCost', x.get('price'))) %}
@@ -205,7 +206,7 @@
         <td>
           <span class="status {{ x.get('bookingStatus', 'unknown') }}">{{ x.get('confirmationLabel') or x.get('bookingStatus', 'unknown')|title }}</span>
           <br>
-          <small class="muted">{{ x.get('reservationProvenance', 'unverified')|replace('_', ' ') }}</small>
+          <small class="muted">{{ 'Planning Reference' if x.get('reservationProvenance') == 'simulation' else x.get('reservationProvenance', 'unverified')|replace('_', ' ') }}</small>
         </td>
         {% set amount = x.get('amount', x.get('hotelCost', x.get('price'))) %}
         <td>

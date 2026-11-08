@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from math import isfinite
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response, jsonify
 from api_client import call_api
@@ -95,9 +95,9 @@ def _campaign_payload():
 
 def _campaign_state(item):
     status = str(item.get("reviewStatus", "draft") or "draft").lower()
-    if status == "approved" and item.get("endDate") and str(item["endDate"]) < date.today().isoformat():
+    if status == "approved" and item.get("endDate") and str(item["endDate"]) < datetime.now(timezone(timedelta(hours=8))).date().isoformat():
         return "expired"
-    if status == 'approved' and item.get('startDate') and str(item['startDate']) > date.today().isoformat():
+    if status == 'approved' and item.get('startDate') and str(item['startDate']) > datetime.now(timezone(timedelta(hours=8))).date().isoformat():
         return 'scheduled'
     return status
 

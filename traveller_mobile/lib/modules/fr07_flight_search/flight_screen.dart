@@ -1135,7 +1135,7 @@ class _FlightScreenState extends State<FlightScreen> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Flight planning estimate — provider caching may apply. Price and availability are not guaranteed.',
+                      'Flight planning estimate — price and availability may change. Save to Trips, then book directly with the airline or provider. TravelMate cannot issue tickets.',
                       style: TextStyle(
                           fontSize: 12, color: InkWashColors.mutedInk),
                     ),

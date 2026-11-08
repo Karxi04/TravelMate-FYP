@@ -14,6 +14,8 @@ from modules.fr12_tourism_operator_management.routes import bp as fr12
 
 load_dotenv()
 app = Flask(__name__)
+from portal_commerce import register_commerce_presentation
+register_commerce_presentation(app)
 configure_portal_app(app, "travelmate_operator_session", "operator")
 app.register_blueprint(fr01)
 app.register_blueprint(fr12)

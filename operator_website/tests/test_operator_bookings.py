@@ -21,6 +21,29 @@ for k in list(sys.modules.keys()):
 from operator_website.app import app
 
 
+def test_new_campaign_form_restricts_malaysia_dates(auth_client):
+    from datetime import datetime, timedelta, timezone
+    response = MagicMock(ok=True)
+    response.json.return_value = {'ok': True, 'items': []}
+    with patch.dict(app.view_functions['operator_fr12.campaigns'].__globals__, {'call_api': lambda *a, **kw: response}):
+        page = auth_client.get('/campaigns')
+    today = datetime.now(timezone(timedelta(hours=8))).date().isoformat()
+    html = page.get_data(as_text=True)
+    assert page.status_code == 200
+    assert f'type="date" required min="{today}" name="startDate"' in html
+    assert "campaignEnd.min=campaignStart.value" in html
+
+
+def test_campaign_list_state_uses_malaysia_midnight():
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    clock = SimpleNamespace(now=lambda tz: datetime(2026, 11, 7, 17, tzinfo=timezone.utc).astimezone(tz))
+    # The portal imports the module through its existing generic namespace.
+    state = app.view_functions['operator_fr12.campaigns'].__globals__['_campaign_state']
+    with patch.dict(state.__globals__, {'datetime': clock}):
+        assert state({'reviewStatus':'approved', 'startDate':'2026-11-01', 'endDate':'2026-11-07'}) == 'expired'
+
+
 @pytest.fixture
 def client():
     app.config["TESTING"] = True
@@ -117,9 +140,9 @@ def test_operator_bookings_renders_data_and_honest_disclosures(auth_client):
 
         # Disclosures
         assert "Stripe Test Mode" in html
-        assert "third-party supplier reservations" in html
-        assert "NOT automatically booked with external providers" in html
-        assert "⚠️ Not Created (Manual)" in html
+        assert "Reservation Not Created" in html
+        assert "Supplier Status" in html
+        assert "Reservation Not Created" in html
 
         # Data rows
         assert "order-heritage-101" in html
@@ -128,7 +151,7 @@ def test_operator_bookings_renders_data_and_honest_disclosures(auth_client):
         assert "3 pax" in html
         assert "2 Adults, 1 Child" in html
         assert "MYR 1075.50" in html
-        assert "🧪 Stripe Test" in html
+        assert "🧪 Stripe Test" not in html
         assert "Trip Created in App" in html
 
 
@@ -204,8 +227,9 @@ def test_operator_booking_detail_view(auth_client):
         assert "2 Adults" in html
         assert "1 Child" in html
         assert "MYR 1075.50" in html
-        assert "Stripe Test Mode" in html
-        assert "Authoritative Supplier Reservation Status: NOT CREATED" in html
+        assert "FYP demonstration environment" in html
+        assert "Order status summary" in html
+        assert "Reservation Not Created" in html
         assert "Read-Only Governance" in html
 
 

@@ -53,12 +53,12 @@
 
         <div class="field">
           <label for="startDate">Campaign Start Date</label>
-          <input id="startDate" class="input" type="date" name="startDate" value="{{ p.get('startDate', '') }}">
+          <input id="startDate" class="input" type="date" required min="{{ malaysia_today }}" name="startDate" value="{{ p.get('startDate', '') }}">
         </div>
 
         <div class="field">
           <label for="endDate">Campaign End Date</label>
-          <input id="endDate" class="input" type="date" name="endDate" value="{{ p.get('endDate', '') }}">
+          <input id="endDate" class="input" type="date" required min="{{ p.get('startDate') or malaysia_today }}" name="endDate" value="{{ p.get('endDate', '') }}">
         </div>
 
         <div class="field">
@@ -228,4 +228,10 @@
     </tbody>
   </table>
 </section>
+<script>
+const campaignStart=document.getElementById('startDate'),campaignEnd=document.getElementById('endDate');
+const originalStart=campaignStart.value;
+campaignStart.addEventListener('change',()=>{campaignStart.min='{{ malaysia_today }}';campaignEnd.min=campaignStart.value||'{{ malaysia_today }}';campaignStart.setCustomValidity('');});
+campaignEnd.addEventListener('change',()=>{if(campaignStart.value!==originalStart){campaignStart.min='{{ malaysia_today }}';}campaignEnd.min=campaignStart.value||'{{ malaysia_today }}';});
+</script>
 {% endblock %}

@@ -254,6 +254,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
             : <String, dynamic>{};
         final response = await api.post('/api/fr15/package-checkout-attempts', {
           'packageId': item['packageId'],
+          'promoCode': item['promoCode'] ?? '',
           'departureDate': item['departureDate'],
           'participants': {
             'adults': participants['adults'],
@@ -276,6 +277,9 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
           MaterialPageRoute(
             builder: (_) => PaymentScreen(
               packageAttemptId: attemptId,
+              pricingBreakdown: attempt['pricingBreakdown'] is Map
+                  ? Map<String, dynamic>.from(attempt['pricingBreakdown'])
+                  : null,
               initialAmount: amount.toDouble(),
               api: api,
             ),
@@ -377,7 +381,8 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
 
   String _formatAmount(dynamic amount, dynamic currency) {
     if (amount == null) return '—';
-    final curr = (currency ?? 'MYR').toString().toUpperCase();
+    final recordedCurrency = (currency ?? '').toString().trim().toUpperCase();
+    final curr = recordedCurrency.isEmpty ? 'UNKNOWN' : recordedCurrency;
     if (amount is num) {
       return '$curr ${amount.toStringAsFixed(2)}';
     }
@@ -388,11 +393,25 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
     return '$curr $amount';
   }
 
-  (String label, AppStatusTone tone, IconData icon) _resolveStatus(Map<String, dynamic> item) {
-    final paymentStatus = (item['paymentStatus'] ?? '').toString().trim().toLowerCase();
-    final orderStatus = (item['orderStatus'] ?? '').toString().trim().toLowerCase();
-    final bookingType = (item['bookingType'] ?? '').toString().trim().toLowerCase();
-    final isHotel = bookingType == 'hotel';
+  (String label, AppStatusTone tone, IconData icon) _resolveStatus(
+      Map<String, dynamic> item) {
+    final paymentStatus =
+        (item['paymentStatus'] ?? '').toString().trim().toLowerCase();
+    final orderStatus =
+        (item['orderStatus'] ?? '').toString().trim().toLowerCase();
+
+    if (paymentStatus == 'refunded' || orderStatus == 'refunded') {
+      return ('Refunded', AppStatusTone.neutral, Icons.undo_rounded);
+    }
+    if (const {'failed', 'checkout_failed', 'rejected'}.contains(orderStatus)) {
+      return ('Failed', AppStatusTone.error, Icons.error_outline_rounded);
+    }
+    if (const {'expired', 'checkout_expired'}.contains(orderStatus)) {
+      return ('Expired', AppStatusTone.neutral, Icons.timer_off_outlined);
+    }
+    if (const {'cancelled', 'canceled', 'checkout_cancelled'}.contains(orderStatus)) {
+      return ('Cancelled', AppStatusTone.neutral, Icons.cancel_outlined);
+    }
 
     // Paid / Succeeded
     if (paymentStatus == 'paid' ||
@@ -400,7 +419,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
         paymentStatus == 'successful' ||
         paymentStatus == 'completed') {
       return (
-        isTestPaymentRecord(item) || isHotel ? 'Paid (Stripe Test)' : 'Paid',
+        'Paid',
         AppStatusTone.success,
         Icons.check_circle_rounded,
       );
@@ -414,7 +433,9 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
     }
 
     // Cancelled / Expired
-    if (orderStatus == 'expired') {
+    if (paymentStatus == 'expired' ||
+        orderStatus == 'expired' ||
+        orderStatus == 'checkout_expired') {
       return ('Expired', AppStatusTone.neutral, Icons.timer_off_outlined);
     }
     if (paymentStatus == 'cancelled' ||
@@ -454,15 +475,30 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
       return ('Confirmed', AppStatusTone.success, Icons.hotel_rounded, 'Confirmed with supplier');
     }
     if (fulfillmentStatus == 'demo_only') {
-      return ('Test Mode — No Room Reserved', AppStatusTone.neutral, Icons.info_outline_rounded, 'No supplier reservation created');
+      return (
+        'Reservation Not Created',
+        AppStatusTone.neutral,
+        Icons.info_outline_rounded,
+        'No supplier reservation created'
+      );
     }
     if (fulfillmentStatus == 'not_started' || (!isPaid && fulfillmentStatus == null)) {
       return ('Not Created', AppStatusTone.neutral, Icons.pause_circle_outline, 'No supplier reservation created');
     }
     if (isPaid && (fulfillmentStatus == null || fulfillmentStatus.isEmpty)) {
-      return ('Supplier reservation not verified', AppStatusTone.neutral, Icons.help_outline_rounded, 'Supplier reservation not verified');
+      return (
+        'Reservation Not Confirmed',
+        AppStatusTone.neutral,
+        Icons.help_outline_rounded,
+        'Reservation Not Confirmed'
+      );
     }
-    return ('Supplier reservation not verified', AppStatusTone.neutral, Icons.help_outline_rounded, 'Supplier reservation not verified');
+    return (
+      'Reservation Not Confirmed',
+      AppStatusTone.neutral,
+      Icons.help_outline_rounded,
+      'Reservation Not Confirmed'
+    );
   }
 
   String _formatOccupanciesSummary(dynamic raw) {
@@ -490,10 +526,8 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
     final date = _formatDate((item['timestamp'] ?? item['createdAt'] ?? item['updatedAt'] ?? '').toString());
     final amount = _formatAmount(item['amount'], item['currency']);
     final (statusLabel, statusTone, statusIcon) = _resolveStatus(item);
-    final isTestMode = item['testMode'] == true ||
-        (item['paymentProvider'] ?? '').toString().contains('sim') ||
-        isSimulatedPayment(item);
-    final provider = (item['paymentProvider'] ?? item['provider'] ?? 'Stripe').toString();
+    final provider =
+        (item['paymentProvider'] ?? item['provider'] ?? 'Stripe').toString();
     final cardBrand = (item['cardBrand'] ?? '').toString();
     final cardLast4 = (item['cardLast4'] ?? '').toString();
     final relatedTripId = (item['relatedTripId'] ?? '').toString();
@@ -567,12 +601,6 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                           tone: hotelReservation.$2,
                           icon: hotelReservation.$3,
                         ),
-                      ] else if (isTestMode) ...[
-                        const StatusChip(
-                          text: 'Stripe Test Mode',
-                          tone: AppStatusTone.neutral,
-                          icon: Icons.science_outlined,
-                        ),
                       ],
                     ],
                   ),
@@ -581,7 +609,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                   const SizedBox(height: AppSpacing.sm),
                   _detailRow(
                     sheetContext,
-                    'Amount',
+                    bookingType == 'package' ? 'Package amount' : 'Amount',
                     amount,
                     isEmphasized: true,
                   ),
@@ -677,47 +705,6 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                     _detailRow(sheetContext, 'Booking Reference', relatedBookingId),
                   ],
                   const SizedBox(height: AppSpacing.md),
-                  if (isHotel)
-                    InkCard(
-                      color: InkWashColors.cream,
-                      padding: const EdgeInsets.all(AppSpacing.sm),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.info_outline_rounded, size: 18, color: InkWashColors.blueGrey),
-                          const SizedBox(width: AppSpacing.xs),
-                          Expanded(
-                            child: Text(
-                              item['demoDisclosure']?.toString() ??
-                                  'This is a test payment in Stripe Test Mode. No real charges were incurred, and no room has been reserved with the hotel.',
-                              style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
-                                    color: AppColors.textSecondary,
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else if (isTestMode)
-                    InkCard(
-                      color: InkWashColors.cream,
-                      padding: const EdgeInsets.all(AppSpacing.sm),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.info_outline_rounded, size: 18, color: InkWashColors.blueGrey),
-                          const SizedBox(width: AppSpacing.xs),
-                          Expanded(
-                            child: Text(
-                              'This payment was processed in Stripe Test Mode. No real financial transaction was executed.',
-                              style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
-                                    color: AppColors.textSecondary,
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   if (isHotel && orderRef.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.md),
                     SizedBox(
@@ -930,10 +917,8 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
         final date = _formatShortDate((item['timestamp'] ?? item['createdAt'] ?? item['updatedAt'] ?? '').toString());
         final amount = _formatAmount(item['amount'], item['currency']);
         final (statusLabel, statusTone, statusIcon) = _resolveStatus(item);
-        final isTestMode = item['testMode'] == true ||
-            (item['paymentProvider'] ?? '').toString().contains('sim') ||
-            isSimulatedPayment(item);
-        final orderRef = (item['orderReference'] ?? item['id'] ?? '').toString();
+        final orderRef =
+            (item['orderReference'] ?? item['id'] ?? '').toString();
 
         return Padding(
           padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -946,138 +931,130 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                 child: InkCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: InkWashColors.paleBlue,
-                          child: Icon(
-                            _iconForBookingType(bookingType),
-                            color: InkWashColors.blueGrey,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: InkWashColors.paleBlue,
+                            child: Icon(
+                              _iconForBookingType(bookingType),
+                              color: InkWashColors.blueGrey,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleSmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  date,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: AppColors.textSecondary,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                title,
-                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w800,
+                                amount,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                      color: AppColors.textPrimary,
                                     ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(height: 3),
-                              Text(
-                                date,
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: AppColors.textSecondary,
-                                    ),
+                              const SizedBox(height: 4),
+                              StatusChip(
+                                text: statusLabel,
+                                tone: statusTone,
+                                icon: statusIcon,
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                        ],
+                      ),
+                      if (isHotel && hotelReservation != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Wrap(
                           children: [
-                            Text(
-                              amount,
-                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w900,
-                                    color: AppColors.textPrimary,
-                                  ),
-                            ),
-                            const SizedBox(height: 4),
                             StatusChip(
-                              text: statusLabel,
-                              tone: statusTone,
-                              icon: statusIcon,
+                              text: hotelReservation.$1,
+                              tone: hotelReservation.$2,
+                              icon: hotelReservation.$3,
                             ),
                           ],
                         ),
                       ],
-                    ),
-                    if (isHotel && hotelReservation != null) ...[
-                      const SizedBox(height: AppSpacing.xs),
-                      Wrap(
-                        children: [
-                          StatusChip(
-                            text: hotelReservation.$1,
-                            tone: hotelReservation.$2,
-                            icon: hotelReservation.$3,
-                          ),
-                        ],
-                      ),
-                    ],
-                    if (isTestMode || orderRef.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.xs),
-                      Row(
-                        children: [
-                          if (isTestMode)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AppColors.surfaceElevated,
-                                borderRadius: BorderRadius.circular(AppRadii.pill),
-                                border: Border.all(color: AppColors.divider),
+                      if (orderRef.isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Row(
+                          children: [
+                            if (orderRef.isNotEmpty)
+                              Expanded(
+                                child: Text(
+                                  'Ref: $orderRef',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 11,
+                                      ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.science_outlined, size: 11, color: AppColors.textSecondary),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    'Test Mode',
-                                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                          color: AppColors.textSecondary,
-                                          fontSize: 10,
-                                        ),
+                          ],
+                        ),
+                      ],
+                      if (isHotel &&
+                          (item['checkin'] != null ||
+                              item['hotelName'] != null)) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          [
+                            if (item['hotelName'] != null)
+                              item['hotelName'].toString(),
+                            if (item['checkin'] != null &&
+                                item['checkout'] != null)
+                              '${_formatShortDate(item['checkin']?.toString())} – ${_formatShortDate(item['checkout']?.toString())}',
+                          ].join(' · '),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 11,
                                   ),
-                                ],
-                              ),
-                            ),
-                          if (isTestMode && orderRef.isNotEmpty)
-                            const SizedBox(width: 6),
-                          if (orderRef.isNotEmpty)
-                            Expanded(
-                              child: Text(
-                                'Ref: $orderRef',
-                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                      color: AppColors.textSecondary,
-                                      fontSize: 11,
-                                    ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                        ],
-                      ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ],
-                    if (isHotel && (item['checkin'] != null || item['hotelName'] != null)) ...[
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        [
-                          if (item['hotelName'] != null) item['hotelName'].toString(),
-                          if (item['checkin'] != null && item['checkout'] != null)
-                            '${_formatShortDate(item['checkin']?.toString())} – ${_formatShortDate(item['checkout']?.toString())}',
-                        ].join(' · '),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
-                              fontSize: 11,
-                            ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
           ),
         );
       },

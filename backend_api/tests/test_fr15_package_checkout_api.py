@@ -126,7 +126,8 @@ def test_route_creates_server_owned_pending_attempt_without_provider_side_effect
     assert "intendedTripId" not in attempt
     assert attempt["paymentStatus"] == "payment_pending"
     assert attempt["fulfillmentStatus"] == "fulfillment_pending"
-    assert set(memory.collections) == {"users", "tourism_packages", "package_checkout_attempts"}
+    assert set(memory.collections) == {"users", "tourism_packages", "package_checkout_attempts", "promotional_campaigns"}
+    assert memory.collections['promotional_campaigns'] == {}
     create_session.assert_not_called()
 
 

@@ -618,7 +618,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Search flights'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Flight planning estimate — provider caching may apply. Price and availability are not guaranteed.'), findsOneWidget);
+    expect(find.text('Flight planning estimate — price and availability may change. Save to Trips, then book directly with the airline or provider. TravelMate cannot issue tickets.'), findsOneWidget);
   });
 
   // 10. Provider cached result is not labelled guaranteed live
