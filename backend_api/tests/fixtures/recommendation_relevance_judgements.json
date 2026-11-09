@@ -1,0 +1,210 @@
+{
+  "purpose": "Frozen engineering relevance judgements for audit, not provider truth or independently validated user ground truth. Owner review pending.",
+  "candidateFixtureSha256": "1ddeca9f55211e6affd67a613c549c0a05799001eff67c1720cbc80e8ee75474",
+  "grading": {
+    "0": "Outside this profile main interests",
+    "1": "Plausible secondary match",
+    "2": "Clear primary match"
+  },
+  "metricDefinition": "Precision@k counts grade >= 1; also report primary-only precision (grade 2), nDCG with gain 2^grade-1, and threshold coverage. Sixteen curated candidates cannot establish population accuracy.",
+  "profiles": {
+    "A": {
+      "demo_penang_george_town": {
+        "grade": 2,
+        "reason": "Historic district and photography"
+      },
+      "demo_penang_peranakan": {
+        "grade": 2,
+        "reason": "Heritage mansion"
+      },
+      "demo_penang_kek_lok_si": {
+        "grade": 2,
+        "reason": "Cultural architecture and photography"
+      },
+      "demo_penang_chew_jetty": {
+        "grade": 2,
+        "reason": "Living heritage and waterfront photography"
+      },
+      "demo_penang_wonderfood": {
+        "grade": 1,
+        "reason": "Cultural museum with food focus"
+      },
+      "demo_penang_hill": {
+        "grade": 1,
+        "reason": "Scenic photography secondary fit"
+      },
+      "demo_penang_gardens": {
+        "grade": 1,
+        "reason": "Garden photography secondary fit"
+      },
+      "demo_penang_national_park": {
+        "grade": 1,
+        "reason": "Landscape photography secondary fit"
+      },
+      "demo_penang_escape": {
+        "grade": 0,
+        "reason": "Adventure park outside main interests"
+      },
+      "demo_penang_beach": {
+        "grade": 1,
+        "reason": "Coastal photography secondary fit"
+      },
+      "demo_penang_gurney_plaza": {
+        "grade": 0,
+        "reason": "Retail outside main interests"
+      },
+      "demo_penang_gurney_food": {
+        "grade": 0,
+        "reason": "Dining outside main interests"
+      },
+      "demo_penang_spice": {
+        "grade": 0,
+        "reason": "Botanical/food focus outside main interests"
+      },
+      "demo_penang_street_art": {
+        "grade": 2,
+        "reason": "Street art and photography"
+      },
+      "demo_penang_armenian": {
+        "grade": 2,
+        "reason": "Historic street and architecture"
+      },
+      "demo_penang_entopia": {
+        "grade": 1,
+        "reason": "Nature photography secondary fit"
+      }
+    },
+    "B": {
+      "demo_penang_george_town": {
+        "grade": 0,
+        "reason": "Urban heritage outside main interests"
+      },
+      "demo_penang_peranakan": {
+        "grade": 0,
+        "reason": "Heritage interior outside main interests"
+      },
+      "demo_penang_kek_lok_si": {
+        "grade": 0,
+        "reason": "Temple outside main interests"
+      },
+      "demo_penang_chew_jetty": {
+        "grade": 0,
+        "reason": "Heritage jetty outside main interests"
+      },
+      "demo_penang_wonderfood": {
+        "grade": 0,
+        "reason": "Food museum outside main interests"
+      },
+      "demo_penang_hill": {
+        "grade": 2,
+        "reason": "Hill/outdoor setting"
+      },
+      "demo_penang_gardens": {
+        "grade": 2,
+        "reason": "Botanic outdoor garden"
+      },
+      "demo_penang_national_park": {
+        "grade": 2,
+        "reason": "National park and hiking"
+      },
+      "demo_penang_escape": {
+        "grade": 1,
+        "reason": "Outdoor adventure secondary fit"
+      },
+      "demo_penang_beach": {
+        "grade": 2,
+        "reason": "Beach/outdoor setting"
+      },
+      "demo_penang_gurney_plaza": {
+        "grade": 0,
+        "reason": "Indoor retail outside main interests"
+      },
+      "demo_penang_gurney_food": {
+        "grade": 0,
+        "reason": "Dining outside main interests"
+      },
+      "demo_penang_spice": {
+        "grade": 2,
+        "reason": "Outdoor botanical garden"
+      },
+      "demo_penang_street_art": {
+        "grade": 0,
+        "reason": "Urban art outside main interests"
+      },
+      "demo_penang_armenian": {
+        "grade": 0,
+        "reason": "Urban shopping/heritage outside main interests"
+      },
+      "demo_penang_entopia": {
+        "grade": 2,
+        "reason": "Nature and wildlife"
+      }
+    },
+    "C": {
+      "demo_penang_george_town": {
+        "grade": 1,
+        "reason": "District shopping secondary fit"
+      },
+      "demo_penang_peranakan": {
+        "grade": 0,
+        "reason": "Heritage interior outside main interests"
+      },
+      "demo_penang_kek_lok_si": {
+        "grade": 0,
+        "reason": "Temple outside main interests"
+      },
+      "demo_penang_chew_jetty": {
+        "grade": 0,
+        "reason": "Heritage jetty outside main interests"
+      },
+      "demo_penang_wonderfood": {
+        "grade": 2,
+        "reason": "Food-themed leisure museum"
+      },
+      "demo_penang_hill": {
+        "grade": 1,
+        "reason": "Scenic leisure secondary fit"
+      },
+      "demo_penang_gardens": {
+        "grade": 2,
+        "reason": "Garden leisure"
+      },
+      "demo_penang_national_park": {
+        "grade": 0,
+        "reason": "Hiking outside main interests"
+      },
+      "demo_penang_escape": {
+        "grade": 1,
+        "reason": "Leisure park but adventure emphasis"
+      },
+      "demo_penang_beach": {
+        "grade": 2,
+        "reason": "Beach leisure"
+      },
+      "demo_penang_gurney_plaza": {
+        "grade": 2,
+        "reason": "Shopping and leisure"
+      },
+      "demo_penang_gurney_food": {
+        "grade": 2,
+        "reason": "Hawker food"
+      },
+      "demo_penang_spice": {
+        "grade": 2,
+        "reason": "Food and garden leisure"
+      },
+      "demo_penang_street_art": {
+        "grade": 0,
+        "reason": "Street art outside main interests"
+      },
+      "demo_penang_armenian": {
+        "grade": 1,
+        "reason": "Street shopping secondary fit"
+      },
+      "demo_penang_entopia": {
+        "grade": 0,
+        "reason": "Nature focus outside main interests"
+      }
+    }
+  }
+}

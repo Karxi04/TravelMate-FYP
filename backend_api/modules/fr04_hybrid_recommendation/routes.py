@@ -233,6 +233,8 @@ def _snapshot_response_view(record):
 
 def _page(record, options):
     try:
+        basis = options.get('scoreBasis') or 'hybrid_v1'
+        if basis not in {'hybrid_v1','personal_v2'}:raise ValueError
         if any(isinstance(options.get(key),bool) for key in ('minimumMatchScore','offset','limit')):
             raise ValueError
         minimum = float(options.get('minimumMatchScore', 0))
@@ -249,14 +251,14 @@ def _page(record, options):
     qualified = []
     for item in all_items:
         try:
-            score = float(item.get('finalScore') if item.get('finalScore') is not None else item.get('score') or 0)
+            score = float(item.get('personalSuitabilityScore') if basis=='personal_v2' else item.get('finalScore') if item.get('finalScore') is not None else item.get('score') or 0)
             if isfinite(score) and 0 <= score <= 100 and score >= minimum:
                 qualified.append(item)
         except (ValueError,TypeError,OverflowError):
             continue
     end = offset + limit
     return {**view, 'recommendationResults': qualified[offset:end], 'pagination': {
-        'minimumMatchScore': minimum, 'offset': offset, 'limit': limit,
+        'minimumMatchScore': minimum, 'scoreBasis':basis, 'offset': offset, 'limit': limit,
         'candidateCount': len(all_items), 'qualifiedCount': len(qualified),
         'nextOffset': end if end < len(qualified) else None,
         'hasMore': end < len(qualified), 'providerHasMore': bool(record.get('providerHasMore')),
@@ -337,9 +339,9 @@ def generate():
         )
         if not cached and destination_scope.get('state'):
             cached = retrieveRecord('destination_cache', filters=[('normalizedGeography.state','==',destination_scope['state'])], limit=150)
-        if not cached and destination_scope['scopeKey'] != 'my':
+        if len(cached or []) < 150 and destination_scope['scopeKey'] != 'my':
             # Older seed/cache records predate scope fields; geography still gates every row.
-            cached = retrieveRecord('destination_cache',limit=150)
+            cached = list(cached or []) + list(retrieveRecord('destination_cache',limit=150) or [])
         if cached:
             candidates += _filter_for_destination(cached, destination_scope)
 
@@ -412,9 +414,11 @@ def generate():
             pref, learned_profile),
         'preferenceFingerprint': _profile_fingerprint(pref),
         'source': source,
+        'scoreBasis':payload.get('scoreBasis') or 'hybrid_v1',
         'providerHasMore': provider_has_more,
         'providerNextOffset': provider_offset,
         'engine': {
+            'scoringVersion':'relevance_v2',
             'contentBasedFiltering': True,
             'collaborativeFiltering': True,
             'weightedScoring': {'content': 0.60, 'collaborative': 0.30, 'popularity': 0.10},
@@ -468,6 +472,8 @@ def get_recommendations():
     stale = bool(record and isinstance(preference, dict) and isinstance(preference.get('interests'), list)
                  and (record.get('preferenceProfileVersion') != _preference_version(preference, learned)
                       or record.get('preferenceFingerprint') != _profile_fingerprint(preference)))
+    if request.args.get('scoreBasis')=='personal_v2' and any(item.get('scoringVersion')!='relevance_v2' for item in record.get('recommendationResults',[])):
+        stale = True
     response_record = _page(record, request.args)
     if response_record is None:
         return jsonify(ok=False, error='Invalid recommendation threshold or page.'), 400
@@ -490,7 +496,8 @@ def get_recommendations():
 @auth_required(['traveller'])
 def recommendation_settings():
     settings = retrieveRecord('recommendation_settings', g.uid) or {}
-    return jsonify(ok=True, minimumMatchScore=settings.get('minimumMatchScore', 70))
+    return jsonify(ok=True, minimumMatchScore=settings.get('minimumMatchScore', 70),
+                   scoreBasis=settings.get('scoreBasis') or ('hybrid_v1' if 'minimumMatchScore' in settings else 'personal_v2'))
 
 
 @bp.put('/settings')
@@ -500,7 +507,11 @@ def save_recommendation_settings():
     if not isinstance(payload,dict):
         return jsonify(ok=False,error='Use a JSON object.'),400
     value = payload.get('minimumMatchScore')
+    previous=retrieveRecord('recommendation_settings',g.uid) or {}
+    basis=payload.get('scoreBasis') or previous.get('scoreBasis') or 'hybrid_v1'
+    if basis not in {'hybrid_v1','personal_v2'}:
+        return jsonify(ok=False,error='Choose personal match or legacy hybrid ranking.'),400
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not 40 <= value <= 90:
         return jsonify(ok=False, error='Choose a minimum match between 40 and 90.'), 400
-    storeRecord('recommendation_settings', {'travellerId':g.uid, 'minimumMatchScore':value, 'updatedAt':utc_now_iso()}, g.uid)
-    return jsonify(ok=True, minimumMatchScore=value)
+    storeRecord('recommendation_settings', {'travellerId':g.uid, 'minimumMatchScore':value,'scoreBasis':basis, 'updatedAt':utc_now_iso()}, g.uid)
+    return jsonify(ok=True, minimumMatchScore=value,scoreBasis=basis)

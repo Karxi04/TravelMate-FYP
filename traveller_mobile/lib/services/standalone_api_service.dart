@@ -107,7 +107,10 @@ class StandaloneApiService {
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
     if (path == '/api/traveller/notifications') return _notificationAction(_localNotifications);
     if (path == '/api/fr4/settings') {
-      return {'ok': true, 'minimumMatchScore': (await _readMap('recommendation_settings'))?['minimumMatchScore'] ?? 70};
+      final uid = _uid;
+      final settings = await _readMap('recommendation_settings') ?? {};
+      if (_uid != uid) throw StateError('Account changed. Refresh settings.');
+      return {'ok': true, 'minimumMatchScore': settings['minimumMatchScore'] ?? 70, 'scoreBasis':settings['scoreBasis'] ?? (settings.containsKey('minimumMatchScore') ? 'hybrid_v1' : 'personal_v2')};
     }
     if (path == '/api/fr1/me') return _getProfile();
     if (path == '/api/fr2/preferences') {
@@ -179,7 +182,8 @@ class StandaloneApiService {
       final learned = await _readMap('learned_preference_profile');
       final version = PreferenceLearning.effectiveVersion(
         (preferences['preferenceProfileVersion'] ?? preferences['updatedAt'] ?? 'local_profile_legacy').toString(), learned);
-      final stale = safeSnapshot != null && safeSnapshot['preferenceProfileVersion'] != version;
+      final stale = safeSnapshot != null && (safeSnapshot['preferenceProfileVersion'] != version ||
+          (query?['scoreBasis']=='personal_v2' && (safeSnapshot['recommendationResults'] as List? ?? []).whereType<Map>().any((item)=>item['scoringVersion']!='relevance_v2')));
       final page = recommendationPage(safeSnapshot ?? {}, query ?? {});
       if(_uid!=uid) throw StateError('Account changed. Refresh recommendations.');
       return {
@@ -457,8 +461,13 @@ class StandaloneApiService {
     if (path == '/api/fr4/settings') {
       final value = body?['minimumMatchScore'];
       if (value is! num || !value.isFinite || value < 40 || value > 90) throw ArgumentError('Choose a minimum match between 40 and 90.');
-      await _writeMap('recommendation_settings', {'minimumMatchScore': value});
-      return {'ok': true, 'minimumMatchScore': value};
+      final uid = _uid;
+      final previous = await _readMap('recommendation_settings') ?? {};
+      final basis = body?['scoreBasis'] ?? previous['scoreBasis'] ?? 'hybrid_v1';
+      if (!['hybrid_v1','personal_v2'].contains(basis)) throw ArgumentError('Choose personal match or legacy hybrid ranking.');
+      if (_uid != uid) throw StateError('Account changed. Refresh settings.');
+      await _writeMap('recommendation_settings', {'minimumMatchScore': value,'scoreBasis':basis});
+      return {'ok': true, 'minimumMatchScore': value,'scoreBasis':basis};
     }
     final payload = body ?? <String, dynamic>{};
     if (path == '/api/fr1/me') return _updateProfile(payload);
@@ -2409,6 +2418,7 @@ class StandaloneApiService {
   ];
 
   Map<String, dynamic> get _engineInfo => {
+        'scoringVersion':'relevance_v2',
         'contentBasedFiltering': true,
         'collaborativeFiltering': true,
         'weightedScoring': {
@@ -3059,7 +3069,11 @@ class StandaloneApiService {
     final personality = (preferences['travelPersonality'] ?? '').toString();
     final eligibleCandidates = <Map<String, dynamic>>[];
     final savedSearch = await _readList('last_search_results');
-    final pool = [..._destinations.map((item) => {...item,'ratingSource':'unverified_local_catalog'}),
+    final previousId = (payload['previousGenerationId'] ?? '').toString();
+    final previousRows = previousId.isEmpty ? <Map<String,dynamic>>[] : (await _readList('recommendation_snapshots')).where((row)=>row['recommendationGenerationId']==previousId && row['travellerId']==uid && row['canonicalDestinationScope']?['scopeKey']==destinationScope['scopeKey']).toList();
+    if (previousId.isNotEmpty && previousRows.isEmpty) throw StateError('Recommendation snapshot not found for this destination.');
+    final previousCandidates = previousRows.isEmpty ? <Map<String,dynamic>>[] : (previousRows.first['recommendationResults'] as List? ?? []).whereType<Map>().map((row)=>Map<String,dynamic>.from(row)).toList();
+    final pool = [...previousCandidates, ..._destinations.map((item) => {...item,'ratingSource':'unverified_local_catalog'}),
       ...savedSearch.map((item) => item['source']=='openstreetmap' ? item : {...item,'ratingSource':'unverified_local_catalog'})];
     final recommendationSource = savedSearch.any((item) => item['source']=='openstreetmap') ? 'cache' : 'fallback';
     for (final raw in pool) {
@@ -3106,6 +3120,7 @@ class StandaloneApiService {
       ),
       'generatedAt': generatedAt,
       'source': recommendationSource,
+      'scoreBasis':payload['scoreBasis'] ?? 'hybrid_v1',
       'engine': _engineInfo,
       'recommendationResults': top,
     };
@@ -3121,6 +3136,7 @@ class StandaloneApiService {
       'recommendations': page['recommendationResults'],
       'pagination': page['pagination'],
       'source': recommendationSource,
+      'scoreBasis':payload['scoreBasis'] ?? 'hybrid_v1',
       'engine': _engineInfo,
       'profileUsed': {
         'interests': interests,

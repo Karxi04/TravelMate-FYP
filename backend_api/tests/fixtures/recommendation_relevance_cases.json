@@ -1,0 +1,607 @@
+{
+  "scoringVersion": "relevance_v2",
+  "scope": "Offline contract edge cases; fabricated test identities, never production places",
+  "cases": [
+    {
+      "label": "sparse_primary",
+      "candidate": {
+        "destinationId": "case_sparse_primary",
+        "title": "Heritage museum",
+        "category": "Culture Shopping"
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [
+          "culture",
+          "shopping"
+        ],
+        "contentScore": 79.63,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 67.78,
+        "personalSuitabilityScore": 90.18,
+        "evidenceConfidence": 0.778,
+        "interestEvidenceSource": "primary_metadata"
+      }
+    },
+    {
+      "label": "sparse_unknown",
+      "candidate": {
+        "destinationId": "case_sparse_unknown",
+        "title": "A venue"
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [],
+        "contentScore": 23.25,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 33.95,
+        "personalSuitabilityScore": null,
+        "evidenceConfidence": 0.0,
+        "interestEvidenceSource": "none"
+      }
+    },
+    {
+      "label": "generic_marketing",
+      "candidate": {
+        "destinationId": "case_generic_marketing",
+        "title": "A venue",
+        "description": "Family social leisure culture food and shopping."
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [],
+        "contentScore": 23.25,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 33.95,
+        "personalSuitabilityScore": null,
+        "evidenceConfidence": 0.0,
+        "interestEvidenceSource": "none"
+      }
+    },
+    {
+      "label": "nearby_not_offer",
+      "candidate": {
+        "destinationId": "case_nearby_not_offer",
+        "title": "A venue",
+        "description": "Near a museum and waterfall."
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [],
+        "contentScore": 23.25,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 33.95,
+        "personalSuitabilityScore": null,
+        "evidenceConfidence": 0.0,
+        "interestEvidenceSource": "none"
+      }
+    },
+    {
+      "label": "genuine_description",
+      "candidate": {
+        "destinationId": "case_genuine_description",
+        "title": "A venue",
+        "description": "Explore the botanical gardens and waterfall."
+      },
+      "preferences": {
+        "interests": [
+          "Nature"
+        ],
+        "travelType": "Nature"
+      },
+      "expected": {
+        "destinationConcepts": [
+          "nature"
+        ],
+        "contentScore": 75.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 65.3,
+        "personalSuitabilityScore": 84.29,
+        "evidenceConfidence": 1.0,
+        "interestEvidenceSource": "description"
+      }
+    },
+    {
+      "label": "destination_type",
+      "candidate": {
+        "destinationId": "case_destination_type",
+        "title": "A venue",
+        "destinationType": "Hiking trail"
+      },
+      "preferences": {
+        "interests": [
+          "Outdoor activities"
+        ]
+      },
+      "expected": {
+        "destinationConcepts": [
+          "adventure",
+          "nature"
+        ],
+        "contentScore": 80.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 68.3,
+        "personalSuitabilityScore": 100.0,
+        "evidenceConfidence": 1.0,
+        "interestEvidenceSource": "primary_metadata"
+      }
+    },
+    {
+      "label": "labelled_categories",
+      "candidate": {
+        "destinationId": "case_labelled_categories",
+        "title": "A venue",
+        "categories": [
+          {
+            "name": "Art gallery"
+          }
+        ]
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [
+          "culture"
+        ],
+        "contentScore": 86.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 71.9,
+        "personalSuitabilityScore": 100.0,
+        "evidenceConfidence": 0.778,
+        "interestEvidenceSource": "primary_metadata"
+      }
+    },
+    {
+      "label": "unlabelled_object",
+      "candidate": {
+        "destinationId": "case_unlabelled_object",
+        "title": "A venue",
+        "categories": [
+          {
+            "privateNote": "museum"
+          }
+        ]
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [],
+        "contentScore": 23.25,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 33.95,
+        "personalSuitabilityScore": null,
+        "evidenceConfidence": 0.0,
+        "interestEvidenceSource": "none"
+      }
+    },
+    {
+      "label": "accent",
+      "candidate": {
+        "destinationId": "case_accent",
+        "title": "Caf\u00e9"
+      },
+      "preferences": {
+        "interests": [
+          "Food"
+        ]
+      },
+      "expected": {
+        "destinationConcepts": [
+          "food"
+        ],
+        "contentScore": 80.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 68.3,
+        "personalSuitabilityScore": 100.0,
+        "evidenceConfidence": 1.0,
+        "interestEvidenceSource": "primary_metadata"
+      }
+    },
+    {
+      "label": "combining_accent",
+      "candidate": {
+        "destinationId": "case_combining_accent",
+        "title": "Cafe\u0301"
+      },
+      "preferences": {
+        "interests": [
+          "Food"
+        ]
+      },
+      "expected": {
+        "destinationConcepts": [
+          "food"
+        ],
+        "contentScore": 80.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 68.3,
+        "personalSuitabilityScore": 100.0,
+        "evidenceConfidence": 1.0,
+        "interestEvidenceSource": "primary_metadata"
+      }
+    },
+    {
+      "label": "theme_park",
+      "candidate": {
+        "destinationId": "case_theme_park",
+        "title": "Theme Park"
+      },
+      "preferences": {
+        "interests": [
+          "Nature"
+        ],
+        "travelType": "Nature"
+      },
+      "expected": {
+        "destinationConcepts": [
+          "adventure",
+          "family",
+          "leisure"
+        ],
+        "contentScore": 16.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 29.9,
+        "personalSuitabilityScore": 0.0,
+        "evidenceConfidence": 1.0,
+        "interestEvidenceSource": "none"
+      }
+    },
+    {
+      "label": "known_bad_budget_pace",
+      "candidate": {
+        "destinationId": "case_known_bad_budget_pace",
+        "title": "Heritage museum",
+        "pace": "Active",
+        "budgetLevel": "Premium"
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [
+          "culture"
+        ],
+        "contentScore": 85.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 71.3,
+        "personalSuitabilityScore": 88.89,
+        "evidenceConfidence": 1.0,
+        "interestEvidenceSource": "primary_metadata"
+      }
+    },
+    {
+      "label": "positive",
+      "candidate": {
+        "destinationId": "case_positive",
+        "title": "Heritage museum",
+        "category": "Culture Shopping"
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate",
+        "learnedAffinities": {
+          "culture": 0.15
+        }
+      },
+      "expected": {
+        "destinationConcepts": [
+          "culture",
+          "shopping"
+        ],
+        "contentScore": 82.1,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 69.26,
+        "personalSuitabilityScore": 93.71,
+        "evidenceConfidence": 0.778,
+        "interestEvidenceSource": "primary_metadata"
+      }
+    },
+    {
+      "label": "negative",
+      "candidate": {
+        "destinationId": "case_negative",
+        "title": "Shopping mall"
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate",
+        "learnedAffinities": {
+          "shopping": -0.12
+        }
+      },
+      "expected": {
+        "destinationConcepts": [
+          "shopping"
+        ],
+        "contentScore": 14.52,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 28.71,
+        "personalSuitabilityScore": 0.0,
+        "evidenceConfidence": 0.778,
+        "interestEvidenceSource": "none"
+      }
+    },
+    {
+      "label": "invalid_rating_0",
+      "candidate": {
+        "destinationId": "case_invalid_rating_0",
+        "title": "Heritage museum",
+        "rating": 99
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [
+          "culture"
+        ],
+        "contentScore": 86.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 71.9,
+        "personalSuitabilityScore": 100.0,
+        "evidenceConfidence": 0.778,
+        "interestEvidenceSource": "primary_metadata"
+      }
+    },
+    {
+      "label": "invalid_rating_1",
+      "candidate": {
+        "destinationId": "case_invalid_rating_1",
+        "title": "Heritage museum",
+        "rating": -2
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [
+          "culture"
+        ],
+        "contentScore": 86.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 71.9,
+        "personalSuitabilityScore": 100.0,
+        "evidenceConfidence": 0.778,
+        "interestEvidenceSource": "primary_metadata"
+      }
+    },
+    {
+      "label": "invalid_rating_2",
+      "candidate": {
+        "destinationId": "case_invalid_rating_2",
+        "title": "Heritage museum",
+        "rating": true
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [
+          "culture"
+        ],
+        "contentScore": 86.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 71.9,
+        "personalSuitabilityScore": 100.0,
+        "evidenceConfidence": 0.778,
+        "interestEvidenceSource": "primary_metadata"
+      }
+    },
+    {
+      "label": "invalid_rating_3",
+      "candidate": {
+        "destinationId": "case_invalid_rating_3",
+        "title": "Heritage museum",
+        "rating": "not rated"
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [
+          "culture"
+        ],
+        "contentScore": 86.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 71.9,
+        "personalSuitabilityScore": 100.0,
+        "evidenceConfidence": 0.778,
+        "interestEvidenceSource": "primary_metadata"
+      }
+    },
+    {
+      "label": "unknown_interest_with_secondary",
+      "candidate": {
+        "destinationId": "case_unknown_interest_with_secondary",
+        "title": "A venue",
+        "pace": "Relaxed",
+        "budgetLevel": "Moderate"
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture",
+        "travelPace": "Relaxed",
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [],
+        "contentScore": 32.25,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 39.35,
+        "personalSuitabilityScore": null,
+        "evidenceConfidence": 0.222,
+        "interestEvidenceSource": "none"
+      }
+    },
+    {
+      "label": "unsupported_interest",
+      "candidate": {
+        "destinationId": "case_unsupported_interest",
+        "title": "A venue",
+        "budgetLevel": "Moderate"
+      },
+      "preferences": {
+        "interests": [
+          "Unmapped interest"
+        ],
+        "budgetRange": "Moderate"
+      },
+      "expected": {
+        "destinationConcepts": [],
+        "contentScore": 60.25,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 56.15,
+        "personalSuitabilityScore": null,
+        "evidenceConfidence": 1.0,
+        "interestEvidenceSource": "none"
+      }
+    },
+    {
+      "label": "not_crowded",
+      "candidate": {
+        "destinationId": "case_not_crowded",
+        "title": "A venue",
+        "description": "A museum that is not crowded."
+      },
+      "preferences": {
+        "interests": [
+          "Culture"
+        ],
+        "travelType": "Culture"
+      },
+      "expected": {
+        "destinationConcepts": [
+          "culture"
+        ],
+        "contentScore": 75.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 65.3,
+        "personalSuitabilityScore": 84.29,
+        "evidenceConfidence": 1.0,
+        "interestEvidenceSource": "description"
+      }
+    },
+    {
+      "label": "specific_negation",
+      "candidate": {
+        "destinationId": "case_specific_negation",
+        "title": "A venue",
+        "description": "Not a museum but a botanical garden."
+      },
+      "preferences": {
+        "interests": [
+          "Nature"
+        ],
+        "travelType": "Nature"
+      },
+      "expected": {
+        "destinationConcepts": [
+          "nature"
+        ],
+        "contentScore": 75.5,
+        "collaborativeScore": 50.0,
+        "popularityScore": 50.0,
+        "finalScore": 65.3,
+        "personalSuitabilityScore": 84.29,
+        "evidenceConfidence": 1.0,
+        "interestEvidenceSource": "description"
+      }
+    }
+  ]
+}

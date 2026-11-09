@@ -68,7 +68,7 @@ def test_shared_mobile_parity_golden_matches_current_python_engine():
             golden['feedback'], golden['peers'], profile, profile['travellerId']))
         for row in rows:
             expected = next(item for item in case['expected'] if item['destinationId'] == row['destinationId'])
-            for key in ('contentScore', 'collaborativeScore', 'popularityScore', 'finalScore'):
+            for key in ('contentScore', 'collaborativeScore', 'popularityScore', 'finalScore','personalSuitabilityScore','evidenceConfidence'):
                 assert row[key] == pytest.approx(expected[key], abs=.011)
 
 

@@ -130,13 +130,15 @@ class RecommendationTaxonomy {
     'social': 'Social experiences',
   };
 
-  static String normalizePhrase(dynamic value) => (value ?? '')
-      .toString()
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-      .trim();
+  static String normalizePhrase(dynamic value) {
+    var phrase = (value ?? '').toString().toLowerCase();
+    const accents = {'[àáâãäå]':'a','[èéêë]':'e','[ìíîï]':'i','[òóôõö]':'o','[ùúûü]':'u','[çč]':'c','ñ':'n','[ýÿ]':'y','š':'s','ž':'z'};
+    for (final entry in accents.entries) { phrase = phrase.replaceAll(RegExp(entry.key), entry.value); }
+    return phrase.replaceAll(RegExp(r'[\u0300-\u036f]'), '').replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+  }
 
   static Iterable<dynamic> _values(dynamic value) {
+    if (value is Map) return ['name','title','value'].where((key)=>value[key]!=null).map((key)=>value[key]);
     if (value is Iterable && value is! String) return value;
     return normalizePhrase(value).isEmpty ? const [] : [value];
   }
@@ -144,11 +146,13 @@ class RecommendationTaxonomy {
   static Set<String> conceptsFor(dynamic value) {
     final concepts = <String>{};
     for (final entry in _values(value)) {
+      if (entry is Map) { concepts.addAll(conceptsFor(_values(entry).toList())); continue; }
       final phrase = normalizePhrase(entry);
       final padded = ' $phrase ';
       for (final group in conceptTerms.entries) {
+        final searchable = group.key == 'nature' ? padded.replaceAll(RegExp(r'\b(theme parks?|car parks?)\b'), '') : padded;
         if (group.value
-            .any((term) => padded.contains(' ${normalizePhrase(term)} '))) {
+            .any((term) => searchable.contains(' ${normalizePhrase(term)} '))) {
           concepts.add(group.key);
         }
       }
@@ -156,7 +160,7 @@ class RecommendationTaxonomy {
     return concepts;
   }
 
-  static Set<String> candidateConcepts(Map<String, dynamic> item) {
+  static Set<String> primaryConcepts(Map<String, dynamic> item) {
     final values = <dynamic>[];
     for (final field in const [
       'interests',
@@ -167,11 +171,26 @@ class RecommendationTaxonomy {
       'subtype',
       'title',
       'name',
-      'description',
+      'destinationType', 'types',
     ]) {
       values.addAll(_values(item[field]));
     }
     return conceptsFor(values);
+  }
+
+  static Set<String> candidateConcepts(Map<String, dynamic> item) {
+    final concepts = primaryConcepts(item);
+    const generic = {'food','culture','history','nature','outdoor','leisure','relaxed','social','family',
+      'children','kids','shopping','photo','art','education','educational','scenic','scenery','park','market'};
+    for (final clause in (item['description'] ?? '').toString().split(RegExp(r'[.;!?]'))) {
+      if (RegExp(r'\b(near|nearby|close to|walking distance)\b', caseSensitive:false).hasMatch(clause)) continue;
+      final phrase = ' ${normalizePhrase(clause)} ';
+      for (final group in conceptTerms.entries) {
+        final searchable = group.key == 'nature' ? phrase.replaceAll(RegExp(r'\b(theme parks?|car parks?)\b'), '') : phrase;
+        if (group.value.difference(generic).any((term) => RegExp(r'\b'+RegExp.escape(normalizePhrase(term))+r'\b').allMatches(searchable).any((match)=>!RegExp(r'\b(no|not|without)(?: an?| any| actual| real)?\s*$').hasMatch(searchable.substring(0,match.start))))) concepts.add(group.key);
+      }
+    }
+    return concepts;
   }
 
   static List<String> displayConcepts(Iterable<String> concepts) {
@@ -392,10 +411,17 @@ class RecommendationScoring {
     final currentInterests =
         RecommendationTaxonomy.conceptsFor(currentPreference['interests']);
     final values = <({double rating, double similarity})>[];
-    for (final row in feedback) {
+    final seenRatings = <String>{};
+    final ordered = List<Map<String,dynamic>>.from(feedback)..sort((a,b) {
+      final time = '${b['updatedAt'] ?? b['createdAt'] ?? ''}'.compareTo('${a['updatedAt'] ?? a['createdAt'] ?? ''}');
+      return time != 0 ? time : '${b['id'] ?? ''}'.compareTo('${a['id'] ?? ''}');
+    });
+    for (final row in ordered) {
       if ((row['destinationId'] ?? '').toString() != destinationId) continue;
       final uid = (row['travellerId'] ?? '').toString();
       if (uid.isEmpty || uid == currentUserId) continue;
+      final rating = _number(row['rating']);
+      if (rating < 1 || rating > 5 || !seenRatings.add(uid)) continue;
       final peer = peerPreferences[uid];
       if (peer == null) continue;
       final peerInterests =
@@ -417,7 +443,7 @@ class RecommendationScoring {
                   RecommendationTaxonomy.normalizePersonality);
       if (similarity < .25) continue;
       values.add((
-        rating: _number(row['rating']).clamp(0, 5).toDouble(),
+        rating: rating,
         similarity: similarity,
       ));
     }
@@ -518,20 +544,9 @@ class RecommendationScoring {
     final typeConcepts =
         RecommendationTaxonomy.conceptsFor(preferences['travelType']);
     final matchedConcepts = interestConcepts.intersection(destinationConcepts);
-    final primaryConcepts = RecommendationTaxonomy.conceptsFor([
-      item['title'],
-      item['name'],
-      item['type'],
-      item['category'],
-      if (item['categories'] is List) ...(item['categories'] as List),
-      if (item['tags'] is List) ...(item['tags'] as List),
-    ]);
-    final primaryMatch =
-        primaryConcepts.intersection(interestConcepts).isNotEmpty;
-    final baseInterestScore = interestConcepts.isEmpty
-        ? .55
-        : (matchedConcepts.length / max(1, destinationConcepts.length)) *
-            (primaryMatch ? 1.0 : .80);
+    final primaryMatch = RecommendationTaxonomy.primaryConcepts(item).intersection(interestConcepts).isNotEmpty;
+    final baseInterestScore = interestConcepts.isEmpty ? .55 :
+        (matchedConcepts.isEmpty ? 0.0 : .75 + .25 * matchedConcepts.length / max(1, destinationConcepts.length)) * (primaryMatch ? 1.0 : .80);
     final learnedAffinities = Map<String, dynamic>.from(
       preferences['learnedAffinities'] as Map? ?? const {},
     );
@@ -587,7 +602,7 @@ class RecommendationScoring {
         'score': _round2(interestScore * 100),
         'baseScore': _round2(baseInterestScore * 100),
         'learnedAdjustment': _round2((interestScore - baseInterestScore) * 100),
-        'applied': interestConcepts.isNotEmpty,
+        'applied': interestConcepts.isNotEmpty && destinationConcepts.isNotEmpty,
         'matched': matched,
         'learnedPositive': RecommendationTaxonomy.displayConcepts(
           matchedLearnedAffinities.entries
@@ -606,7 +621,7 @@ class RecommendationScoring {
       },
       'travelType': {
         'score': _round2(typeScore * 100),
-        'applied': typeConcepts.isNotEmpty,
+        'applied': typeConcepts.isNotEmpty && destinationConcepts.isNotEmpty,
         'matched': RecommendationTaxonomy.displayConcepts(
             typeConcepts.intersection(destinationConcepts)),
       },
@@ -617,10 +632,18 @@ class RecommendationScoring {
       'travelPersonality':
           _signal(personality.score, personality.applied, requestedPersonality),
     };
+    const weights = {'interests':.55,'travelType':.15,'pace':.10,'budget':.10,'travelPurpose':.06,'travelPersonality':.04};
+    final requested = [interestConcepts.isNotEmpty,typeConcepts.isNotEmpty,requestedPace.isNotEmpty,requestedBudget.isNotEmpty,requestedPurpose.isNotEmpty,requestedPersonality.isNotEmpty];
+    var knownWeight = 0.0; var requestedWeight = 0.0; var knownScore = 0.0; var wi = 0;
+    for (final entry in weights.entries) {
+      if (requested[wi++]) requestedWeight += entry.value;
+      if (signals[entry.key]['applied'] == true) { knownWeight += entry.value; knownScore += entry.value * (signals[entry.key]['score'] as num); }
+    }
     final collaborative = _collaborativeScore(
         item, feedback, peerPreferences, preferences, currentUserId);
     final unverifiedLocal = item['ratingSource']=='unverified_local_catalog';
-    final rating = unverifiedLocal ? 0.0 : _number(item['rating']).clamp(0, 5).toDouble();
+    final rawRating = _number(item['rating']);
+    final rating = unverifiedLocal || rawRating < 1 || rawRating > 5 ? 0.0 : rawRating;
     final reviews = max(0, _number(item['reviews']));
     final popularity = rating > 0
         ? min(100.0, rating / 5 * 80 + min(20.0, reviews / 500))
@@ -634,6 +657,10 @@ class RecommendationScoring {
       'matchedInterests': matched,
       'contentSignals': signals,
       'contentScore': _round2(content),
+      'personalSuitabilityScore': knownWeight > 0 && !(rawInterests.isNotEmpty && (interestConcepts.isEmpty || destinationConcepts.isEmpty)) ? _round2((knownScore / knownWeight).clamp(0,100).toDouble()) : null,
+      'evidenceConfidence': requestedWeight > 0 ? (knownWeight/requestedWeight*1000).round()/1000 : 0.0,
+      'interestEvidenceSource': primaryMatch ? 'primary_metadata' : matchedConcepts.isNotEmpty ? 'description' : 'none',
+      'scoringVersion': 'relevance_v2',
       'collaborativeScore': _round2(collaborative.score),
       'rawCollaborativeScore': _round2(collaborative.raw),
       'collaborativeConfidence': _round2(collaborative.confidence),
@@ -643,6 +670,7 @@ class RecommendationScoring {
       'popularitySource': unverifiedLocal ? 'neutral_unverified_local_catalog' : rating > 0 ? 'provider_rating_review_count' : 'neutral_missing_rating',
       'score': _round2(finalScore),
       'finalScore': _round2(finalScore),
+      'hybridRankingScore': _round2(finalScore),
       'scoreBreakdown': {
         'contentWeight': .60,
         'collaborativeWeight': .30,
@@ -654,7 +682,7 @@ class RecommendationScoring {
     });
     final reasons = _reasons(item, popularity);
     final reason =
-        '${finalScore.round()}% match • ${reasons.isEmpty ? 'Limited profile evidence; neutral fallback applied' : reasons.join(' • ')}';
+        '${finalScore.round()}/100 hybrid ranking • ${reasons.isEmpty ? 'Limited profile evidence; neutral fallback applied' : reasons.join(' • ')}';
     item['matchReasons'] = reasons;
     item['reason'] = reason;
     item['recommendationReason'] = reason;
@@ -681,7 +709,15 @@ class RecommendationScoring {
               currentUserId: currentUserId,
             ))
         .toList()
-      ..sort((a, b) => _number(b['score']).compareTo(_number(a['score'])));
+      ..sort((a, b) {
+        for (final key in ['score','rating','reviews']) {
+          final bv = key != 'score' && '${b['popularitySource'] ?? ''}'.startsWith('neutral') ? 0.0 : _number(b[key]);
+          final av = key != 'score' && '${a['popularitySource'] ?? ''}'.startsWith('neutral') ? 0.0 : _number(a[key]);
+          final difference = bv.compareTo(av);
+          if (difference != 0) return difference;
+        }
+        return _destinationId(a).compareTo(_destinationId(b));
+      });
 
     final unique = <Map<String, dynamic>>[];
     final seenIds = <String>{};
@@ -720,8 +756,8 @@ class RecommendationScoring {
         final category = preferredMatches.isNotEmpty
             ? preferredMatches.first
             : (allConcepts.isNotEmpty ? allConcepts.first : 'general');
-        final penalty = (counts[category] ?? 0) *
-            (preferred.contains(category) ? 2.0 : 7.0);
+        final penalty = min(4.0, (counts[category] ?? 0) *
+            (preferred.contains(category) ? 2.0 : 7.0));
         final adjusted = _number(item['score']) - penalty;
         if (adjusted > bestAdjusted) {
           bestIndex = index;

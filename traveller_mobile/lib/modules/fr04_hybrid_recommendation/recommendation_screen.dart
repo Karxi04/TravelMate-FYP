@@ -35,10 +35,12 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   String recommendationGenerationId = '';
   String? errorMessage;
   double minimumMatch = 70;
+  String scoreBasis = 'hybrid_v1';
   Map<String, dynamic> pagination = {};
   int requestVersion = 0;
   String generatedDestination = '';
   bool loadingMore = false;
+  Future<void> settingsWork = Future.value();
 
   @override
   void initState() {
@@ -71,10 +73,11 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     try {
       final settings = await api.get('/api/fr4/settings');
       final value = double.tryParse('${settings['minimumMatchScore']}');
+        if (mounted && version == requestVersion) scoreBasis = settings['scoreBasis'] == 'personal_v2' ? 'personal_v2' : 'hybrid_v1';
       if (mounted && version == requestVersion && value != null && value >= 40 && value <= 90) setState(() => minimumMatch = value);
     } catch (_) { /* The initial testing default remains 70 when settings cannot load. */ }
     try {
-      final data = await api.get('/api/fr4/recommendations', {'minimumMatchScore':'$minimumMatch'});
+      final data = await api.get('/api/fr4/recommendations', {'minimumMatchScore':'$minimumMatch', 'scoreBasis':scoreBasis});
       if (mounted && version == requestVersion && data is Map) {
         stale = data['stale'] == true;
         setState(() {
@@ -148,7 +151,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     try {
       final data = await api.post('/api/fr4/recommendations/generate', {
         'destinationArea': requestedArea,
-        'minimumMatchScore': minimumMatch,
+        'minimumMatchScore': minimumMatch, 'scoreBasis':scoreBasis,
         if ((reuseCandidates || expand) && generatedDestination == requestedArea && recommendationGenerationId.isNotEmpty)
           'previousGenerationId': recommendationGenerationId,
         if (expand) 'expandCandidates': true,
@@ -177,7 +180,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     setState(() { loadingMore = true; errorMessage = null; });
     try {
       final data = await api.get('/api/fr4/recommendations', {
-        'generationId': recommendationGenerationId, 'minimumMatchScore':'$minimumMatch',
+        'generationId': recommendationGenerationId, 'minimumMatchScore':'$minimumMatch', 'scoreBasis':scoreBasis,
         'offset': reset ? '0' : '${pagination['nextOffset'] ?? 0}',
       });
       if (!mounted || version != requestVersion) return;
@@ -196,11 +199,16 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   }
 
   Future<void> changeThreshold(double value) async {
-    ++requestVersion;
+    final version = ++requestVersion;
+    final basis = scoreBasis;
     setState(() { minimumMatch = value; loadingMore = false; });
-    try { await api.put('/api/fr4/settings', {'minimumMatchScore':value}); }
-    catch (error) { if (mounted) showError(context, 'Minimum match could not be saved: ${_errorText(error)}'); }
-    if (!mounted) return;
+    final save = settingsWork.then((_) async {
+      if (mounted) await api.put('/api/fr4/settings', {'minimumMatchScore':value,'scoreBasis':basis});
+    });
+    settingsWork = save.then<void>((_) {},onError:(Object _,StackTrace __) {});
+    try { await save; }
+    catch (error) { if (mounted && version == requestVersion) showError(context, 'Minimum match could not be saved: ${_errorText(error)}'); }
+    if (!mounted || version != requestVersion) return;
     if (recommendationGenerationId.isNotEmpty) await loadPage(reset:true);
     else await generate();
   }
@@ -387,7 +395,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final qualified = items.whereType<Map>().where((item) => recommendationQualifies(item,minimumMatch)).toList();
+    final qualified = items.whereType<Map>().where((item) => recommendationQualifies(item,minimumMatch,scoreBasis)).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('For you')),
       body: RefreshIndicator(
@@ -420,10 +428,14 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
               onSubmitted: (_) => busy ? null : generate(),
             ),
             const SizedBox(height: AppSpacing.sm),
-            Text('Minimum match: ${minimumMatch.round()}/100'),
+            Text('${scoreBasis == 'personal_v2' ? 'Minimum personal match' : 'Minimum ranking (legacy)'}: ${minimumMatch.round()}/100'),
+            DropdownButton<String>(value:scoreBasis, isExpanded:true,
+              items: const [DropdownMenuItem(value:'personal_v2',child:Text('Personal match')),DropdownMenuItem(value:'hybrid_v1',child:Text('Overall ranking (legacy)'))],
+              onChanged:busy ? null : (value) async { if(value == null) return; setState(()=>scoreBasis=value); await changeThreshold(minimumMatch); }),
+            const Text('Personal match uses known profile evidence. Overall ranking also includes community signals. This is a preference filter, not a validated accuracy percentage.'),
             Slider(value: minimumMatch, min:40, max:90, divisions:10,
               label:'${minimumMatch.round()}/100',
-              onChanged: busy ? null : (value) => setState(() => minimumMatch = value),
+              onChanged: busy ? null : (value) { ++requestVersion; setState(() => minimumMatch = value); },
               onChangeEnd: changeThreshold),
             TertiaryButton(label:'Change preferences', onPressed: () async {
               await Navigator.push(context, MaterialPageRoute(builder: (_) => PreferencesScreen(api:widget.api)));
@@ -466,7 +478,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
                 icon: Icons.auto_awesome_outlined,
                 title: 'No places meet this minimum match',
                 message:
-                    'No available destinations meet ${minimumMatch.round()}/100. Lower the minimum explicitly, change preferences, or search another Malaysian destination.',
+                    'No available destinations meet ${minimumMatch.round()}/100 ${scoreBasis == 'personal_v2' ? 'personal match' : 'hybrid ranking'}. Lower the minimum explicitly, change preferences, or search another Malaysian destination.',
                 actionLabel: minimumMatch > 40 ? 'Lower minimum match' : 'Refresh for you',
                 onAction: minimumMatch > 40 ? () => changeThreshold((minimumMatch - 10).clamp(40,90)) : generate,
               )

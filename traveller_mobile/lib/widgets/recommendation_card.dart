@@ -43,12 +43,18 @@ class RecommendationCard extends StatelessWidget {
           .trim();
 
   num? get _matchScore {
-    final raw = recommendation['finalScore'] ?? recommendation['score'];
+    final raw = _hasPersonalScore ? recommendation['personalSuitabilityScore'] : recommendation['finalScore'] ?? recommendation['score'];
     if (raw == null || raw == '') return null;
     final num? val = raw is num ? raw : num.tryParse(raw.toString());
     if (val == null || !val.isFinite) return null;
     return val.clamp(0, 100);
   }
+
+  bool get _hasPersonalScore {
+    final score = recommendation['personalSuitabilityScore'];
+    return recommendation['scoringVersion']=='relevance_v2' && score is num && score.isFinite && score >= 0 && score <= 100;
+  }
+  String get _scoreLabel => _hasPersonalScore ? 'Personal match' : 'Recommendation score';
 
   List<String> get _matchedInterests {
     final raw = recommendation['matchedInterests'];
@@ -64,7 +70,7 @@ class RecommendationCard extends StatelessWidget {
 
   static bool _isScoreOrMatchToken(String value) {
     final lower = value.toLowerCase().trim();
-    return RegExp(r'^\d+(\.\d+)?%\s*match$').hasMatch(lower) ||
+    return RegExp(r'^\d+(\.\d+)?/100 hybrid ranking$').hasMatch(lower) || RegExp(r'^\d+(\.\d+)?%\s*match$').hasMatch(lower) ||
         RegExp(r'^(?:recommendation\s+)?score:?\s*\d+(\.\d+)?(\/100)?$')
             .hasMatch(lower);
   }
@@ -128,7 +134,7 @@ class RecommendationCard extends StatelessWidget {
       container: true,
       label: score == null
           ? 'Recommended destination, $_title'
-          : 'Recommended destination, $_title, recommendation score ${score.round()} out of 100',
+          : 'Recommended destination, $_title, $_scoreLabel ${score.round()} out of 100',
       child: InkCard(
         padding: EdgeInsets.zero,
         child: Column(
@@ -252,9 +258,9 @@ class RecommendationCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(AppRadii.pill),
                           child: Tooltip(
                             message:
-                                'Recommendation score: ${score.round()}/100. Tap for details.',
+                                '$_scoreLabel: ${score.round()}/100. Tap for details.',
                             child: StatusChip(
-                              text: 'Recommendation score: ${score.round()}/100',
+                              text: '$_scoreLabel: ${score.round()}/100',
                               icon: Icons.auto_awesome_rounded,
                             ),
                           ),
@@ -273,6 +279,16 @@ class RecommendationCard extends StatelessWidget {
                         ),
                     ],
                   ),
+                  if (recommendation['scoringVersion']=='relevance_v2' && !_hasPersonalScore)
+                    Text('Personal match unavailable — interest evidence missing.',style:Theme.of(context).textTheme.bodySmall),
+                  if (_hasPersonalScore) ...[
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text('Hybrid ranking: ${((recommendation['hybridRankingScore'] ?? recommendation['finalScore']) as num?)?.toStringAsFixed(1) ?? '-'} /100',style:Theme.of(context).textTheme.bodySmall),
+                    if ((recommendation['evidenceConfidence'] as num? ?? 0) < 1)
+                      Text('Limited profile metadata (${((recommendation['evidenceConfidence'] as num? ?? 0)*100).round()}% of requested evidence available)',style:Theme.of(context).textTheme.bodySmall),
+                    if ((recommendation['collaborativeConfidence'] as num? ?? 0) == 0)
+                      Text('No similar-traveller ratings yet',style:Theme.of(context).textTheme.bodySmall),
+                  ],
                   if (reasons.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.sm),
                     ...reasons.map(
@@ -390,7 +406,7 @@ class RecommendationCard extends StatelessWidget {
                   const SizedBox(width: AppSpacing.xs),
                   Expanded(
                     child: Text(
-                      'Recommendation Score (${score.round()}/100)',
+                      '${_hasPersonalScore ? 'Personal match' : 'Recommendation Score'} (${score.round()}/100)',
                       style: Theme.of(sheetContext).textTheme.titleLarge,
                     ),
                   ),
@@ -404,6 +420,11 @@ class RecommendationCard extends StatelessWidget {
                     ),
               ),
               const SizedBox(height: AppSpacing.md),
+              if (_hasPersonalScore) ...[
+                Text('Personal match averages only supported profile signals. Evidence coverage describes available metadata, not prediction accuracy. Hybrid ranking retains 60% content, 30% similar travellers and 10% popularity.'),
+                const SizedBox(height: AppSpacing.sm),
+                Text('Hybrid ranking: ${recommendation['hybridRankingScore']} /100'),
+              ],
               if (breakdown != null) ...[
                 _breakdownCard(
                   sheetContext,
@@ -421,7 +442,7 @@ class RecommendationCard extends StatelessWidget {
                       ? '50/100 (Neutral baseline)'
                       : '${(breakdown['collaborative'] as num?)?.round() ?? '-'}/100',
                   description: isColdStart
-                      ? 'No peer ratings from similar travellers are recorded yet. A neutral 50/100 baseline is used so destinations without reviews are not unfairly penalized.'
+                      ? 'No peer ratings from similar travellers are recorded yet. A neutral 50/100 ranking prior is used. Personal match is assessed separately.'
                       : 'Based on feedback and ratings from travellers with similar travel styles.',
                 ),
                 const SizedBox(height: AppSpacing.sm),

@@ -1,0 +1,983 @@
+{
+  "commit": "5083fc6b0a558e1931220b13b88b376237dbcaa0",
+  "candidateFixtureSha256": "1ddeca9f55211e6affd67a613c549c0a05799001eff67c1720cbc80e8ee75474",
+  "note": "Actual unmodified previous scorer at the identified Git commit, same candidate pool. No provider/network calls. Frozen before result tuning.",
+  "scenarios": {
+    "cold_start": {
+      "A": [
+        {
+          "destinationId": "demo_penang_peranakan",
+          "rankNo": 1,
+          "contentScore": 86.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 71.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_kek_lok_si",
+          "rankNo": 2,
+          "contentScore": 86.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 71.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_chew_jetty",
+          "rankNo": 3,
+          "contentScore": 86.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 71.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_street_art",
+          "rankNo": 4,
+          "contentScore": 86.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 71.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_george_town",
+          "rankNo": 5,
+          "contentScore": 68.17,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 60.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_hill",
+          "rankNo": 6,
+          "contentScore": 44.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 46.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_armenian",
+          "rankNo": 7,
+          "contentScore": 59.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 55.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_beach",
+          "rankNo": 8,
+          "contentScore": 34.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 40.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_wonderfood",
+          "rankNo": 9,
+          "contentScore": 49.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 49.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gardens",
+          "rankNo": 10,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_national_park",
+          "rankNo": 11,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gurney_food",
+          "rankNo": 12,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_entopia",
+          "rankNo": 13,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_escape",
+          "rankNo": 14,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gurney_plaza",
+          "rankNo": 15,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_spice",
+          "rankNo": 16,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        }
+      ],
+      "B": [
+        {
+          "destinationId": "demo_penang_national_park",
+          "rankNo": 1,
+          "contentScore": 86.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 71.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_hill",
+          "rankNo": 2,
+          "contentScore": 59.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 55.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gardens",
+          "rankNo": 3,
+          "contentScore": 59.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 55.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_spice",
+          "rankNo": 4,
+          "contentScore": 59.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 55.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_entopia",
+          "rankNo": 5,
+          "contentScore": 59.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 55.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_beach",
+          "rankNo": 6,
+          "contentScore": 49.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 49.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_escape",
+          "rankNo": 7,
+          "contentScore": 34.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 40.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_george_town",
+          "rankNo": 8,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gurney_plaza",
+          "rankNo": 9,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gurney_food",
+          "rankNo": 10,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_peranakan",
+          "rankNo": 11,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_kek_lok_si",
+          "rankNo": 12,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_chew_jetty",
+          "rankNo": 13,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_wonderfood",
+          "rankNo": 14,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_street_art",
+          "rankNo": 15,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_armenian",
+          "rankNo": 16,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        }
+      ],
+      "C": [
+        {
+          "destinationId": "demo_penang_gurney_plaza",
+          "rankNo": 1,
+          "contentScore": 71.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 62.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gurney_food",
+          "rankNo": 2,
+          "contentScore": 59.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 55.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_spice",
+          "rankNo": 3,
+          "contentScore": 59.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 55.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_armenian",
+          "rankNo": 4,
+          "contentScore": 44.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 46.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_wonderfood",
+          "rankNo": 5,
+          "contentScore": 49.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 49.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gardens",
+          "rankNo": 6,
+          "contentScore": 44.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 46.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_george_town",
+          "rankNo": 7,
+          "contentScore": 34.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 40.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_escape",
+          "rankNo": 8,
+          "contentScore": 34.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 40.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_beach",
+          "rankNo": 9,
+          "contentScore": 34.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 40.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_peranakan",
+          "rankNo": 10,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_hill",
+          "rankNo": 11,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_national_park",
+          "rankNo": 12,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_entopia",
+          "rankNo": 13,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_kek_lok_si",
+          "rankNo": 14,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_chew_jetty",
+          "rankNo": 15,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_street_art",
+          "rankNo": 16,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        }
+      ]
+    },
+    "similar_peers": {
+      "A": [
+        {
+          "destinationId": "demo_penang_peranakan",
+          "rankNo": 1,
+          "contentScore": 86.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 71.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_kek_lok_si",
+          "rankNo": 2,
+          "contentScore": 86.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 71.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_chew_jetty",
+          "rankNo": 3,
+          "contentScore": 86.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 71.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_street_art",
+          "rankNo": 4,
+          "contentScore": 86.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 71.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_george_town",
+          "rankNo": 5,
+          "contentScore": 68.17,
+          "collaborativeScore": 72.67,
+          "popularityScore": 50.0,
+          "finalScore": 67.7,
+          "collaborativeConfidence": 0.567,
+          "collaborativeRatingCount": 2
+        },
+        {
+          "destinationId": "demo_penang_hill",
+          "rankNo": 6,
+          "contentScore": 44.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 46.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_armenian",
+          "rankNo": 7,
+          "contentScore": 59.0,
+          "collaborativeScore": 38.67,
+          "popularityScore": 50.0,
+          "finalScore": 52.0,
+          "collaborativeConfidence": 0.567,
+          "collaborativeRatingCount": 2
+        },
+        {
+          "destinationId": "demo_penang_beach",
+          "rankNo": 8,
+          "contentScore": 34.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 40.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_wonderfood",
+          "rankNo": 9,
+          "contentScore": 49.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 49.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gardens",
+          "rankNo": 10,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_national_park",
+          "rankNo": 11,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gurney_food",
+          "rankNo": 12,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_entopia",
+          "rankNo": 13,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_escape",
+          "rankNo": 14,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gurney_plaza",
+          "rankNo": 15,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_spice",
+          "rankNo": 16,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        }
+      ],
+      "B": [
+        {
+          "destinationId": "demo_penang_national_park",
+          "rankNo": 1,
+          "contentScore": 86.5,
+          "collaborativeScore": 38.67,
+          "popularityScore": 50.0,
+          "finalScore": 68.5,
+          "collaborativeConfidence": 0.567,
+          "collaborativeRatingCount": 2
+        },
+        {
+          "destinationId": "demo_penang_hill",
+          "rankNo": 2,
+          "contentScore": 59.0,
+          "collaborativeScore": 72.67,
+          "popularityScore": 50.0,
+          "finalScore": 62.2,
+          "collaborativeConfidence": 0.567,
+          "collaborativeRatingCount": 2
+        },
+        {
+          "destinationId": "demo_penang_gardens",
+          "rankNo": 3,
+          "contentScore": 59.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 55.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_spice",
+          "rankNo": 4,
+          "contentScore": 59.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 55.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_entopia",
+          "rankNo": 5,
+          "contentScore": 59.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 55.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_beach",
+          "rankNo": 6,
+          "contentScore": 49.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 49.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_escape",
+          "rankNo": 7,
+          "contentScore": 34.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 40.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_george_town",
+          "rankNo": 8,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gurney_plaza",
+          "rankNo": 9,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gurney_food",
+          "rankNo": 10,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_peranakan",
+          "rankNo": 11,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_kek_lok_si",
+          "rankNo": 12,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_chew_jetty",
+          "rankNo": 13,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_wonderfood",
+          "rankNo": 14,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_street_art",
+          "rankNo": 15,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_armenian",
+          "rankNo": 16,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        }
+      ],
+      "C": [
+        {
+          "destinationId": "demo_penang_gurney_plaza",
+          "rankNo": 1,
+          "contentScore": 71.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 62.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_wonderfood",
+          "rankNo": 2,
+          "contentScore": 49.83,
+          "collaborativeScore": 72.67,
+          "popularityScore": 50.0,
+          "finalScore": 56.7,
+          "collaborativeConfidence": 0.567,
+          "collaborativeRatingCount": 2
+        },
+        {
+          "destinationId": "demo_penang_spice",
+          "rankNo": 3,
+          "contentScore": 59.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 55.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gurney_food",
+          "rankNo": 4,
+          "contentScore": 59.0,
+          "collaborativeScore": 38.67,
+          "popularityScore": 50.0,
+          "finalScore": 52.0,
+          "collaborativeConfidence": 0.567,
+          "collaborativeRatingCount": 2
+        },
+        {
+          "destinationId": "demo_penang_armenian",
+          "rankNo": 5,
+          "contentScore": 44.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 46.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_gardens",
+          "rankNo": 6,
+          "contentScore": 44.0,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 46.4,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_george_town",
+          "rankNo": 7,
+          "contentScore": 34.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 40.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_escape",
+          "rankNo": 8,
+          "contentScore": 34.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 40.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_beach",
+          "rankNo": 9,
+          "contentScore": 34.83,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 40.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_peranakan",
+          "rankNo": 10,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_hill",
+          "rankNo": 11,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_national_park",
+          "rankNo": 12,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_entopia",
+          "rankNo": 13,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_kek_lok_si",
+          "rankNo": 14,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_chew_jetty",
+          "rankNo": 15,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        },
+        {
+          "destinationId": "demo_penang_street_art",
+          "rankNo": 16,
+          "contentScore": 16.5,
+          "collaborativeScore": 50.0,
+          "popularityScore": 50.0,
+          "finalScore": 29.9,
+          "collaborativeConfidence": 0.0,
+          "collaborativeRatingCount": 0
+        }
+      ]
+    }
+  }
+}
