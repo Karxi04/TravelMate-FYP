@@ -49,6 +49,12 @@ def seed_attempt(memory, trip_id='trip-1', **extra):
         'destination': 'Penang', 'price': 450.25, 'currency': 'MYR', 'taxIncluded': True,
         'itineraryDays': [{'dayNumber': 1, 'activities': ['Heritage walk']}],
     }
+    from services.package_checkout_contract import prepare_package_snapshot
+    catalogue = {**snapshot, 'id':'package-1','operatorId':'operator-1','approvalStatus':'approved','availabilityStatus':'available',
+        'adultPrice':450.25,'childPrice':175,'currency':'MYR','taxIncluded':True,'priceBasis':'per_person',
+        'title':snapshot['title'],'destination':snapshot['destination'],'itineraryDays':snapshot['itineraryDays']}
+    memory.seed('tourism_packages','package-1',catalogue)
+    snapshot = prepare_package_snapshot(catalogue, {'id':'operator-1'}, participants=snapshot.get('participants'), departure_date=snapshot.get('selectedDepartureDate'))
     memory.seed('package_checkout_attempts', 'attempt-1', {
         'travellerId': 'traveller-1', 'packageSnapshot': snapshot,
         'checkoutStatus': 'checkout_pending', 'paymentStatus': 'payment_pending',
@@ -73,6 +79,12 @@ def seed_group_attempt(memory, **extra):
             'activities': ['Heritage walk'],
         }],
     }
+    from services.package_checkout_contract import prepare_package_snapshot
+    catalogue = {**snapshot, 'id':'package-1','operatorId':'operator-1','approvalStatus':'approved','availabilityStatus':'available',
+        'adultPrice':450.25,'childPrice':175,'currency':'MYR','taxIncluded':True,'priceBasis':'per_person',
+        'title':snapshot['title'],'destination':snapshot['destination'],'itineraryDays':snapshot['itineraryDays']}
+    memory.seed('tourism_packages','package-1',catalogue)
+    snapshot = prepare_package_snapshot(catalogue, {'id':'operator-1'}, participants=snapshot.get('participants'), departure_date=snapshot.get('selectedDepartureDate'))
     memory.seed('package_checkout_attempts', 'attempt-1', {
         'travellerId': 'traveller-1', 'packageSnapshot': snapshot,
         'checkoutStatus': 'checkout_pending', 'paymentStatus': 'payment_pending',

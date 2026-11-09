@@ -293,7 +293,7 @@ def test_package_v2_validation_rejects_bad_itinerary_and_promotion(client, mock_
     bad_price = client.post('/api/fr12/packages', headers={'Authorization': 'Bearer valid_test_token'},
                             json={**base, 'originalPrice': 80, 'promotionalPrice': 90})
     assert bad_price.status_code == 400
-    assert 'cannot exceed' in bad_price.get_json()['error']
+    assert 'Promotions & Campaigns' in bad_price.get_json()['error']
 
 
 def test_package_v2_ownership_approved_edit_and_archive(client, mock_operator_auth):
@@ -352,7 +352,7 @@ def test_approved_campaign_edit_returns_to_review(client, mock_operator_auth):
         'description': 'Save on a local experience.', 'reviewStatus': 'approved',
         'campaignStatus': 'active', 'startDate': '2026-12-01', 'endDate': '2026-12-31',
     }
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=campaign), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=lambda c, i=None, **k: campaign if c=='promotional_campaigns' else {'id':'approved_package','operatorId':'test_operator_uid','approvalStatus':'approved'}), \
          patch('modules.fr12_tourism_operator_management.routes.updateRecord') as update:
         update.side_effect = lambda collection, document_id, data: {**campaign, **data}
         response = client.put('/api/fr12/campaigns/campaign_v2',

@@ -54,9 +54,10 @@
       </dd>
       {% endif %}
 
-      <dt>Parent Package</dt>
+      <dt>Linked Packages</dt>
       <dd>
         <strong>{{ item.get('packageTitle', 'Package unavailable') }}</strong>
+        {% for package in item.get('linkedPackages', []) %}<div>{{ package.get('title') }} · {{ package.get('approvalStatus') }} · <code>{{ package.get('id') }}</code></div>{% endfor %}
         {% if item.get('packageId') %}
           <div style="font-size: 11.5px; color: var(--ink-muted); margin-top: 2px;">
             Package ID: <code>{{ item.get('packageId') }}</code>

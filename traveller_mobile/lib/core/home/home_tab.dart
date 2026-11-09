@@ -1,3 +1,4 @@
+import '../utils/package_pricing.dart';
 import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -507,52 +508,7 @@ class _HomeTabState extends State<HomeTab> {
   }
 
 
-  bool _isPackagePromoActive(Map<String, dynamic> item) {
-    final promo = item['promotionalPrice'];
-    final promoNum = promo is num ? promo : num.tryParse(promo?.toString() ?? '');
-    if (promoNum == null || promoNum <= 0) return false;
-    final regular = item['adultPrice'] ?? item['price'];
-    final regularNum = regular is num ? regular : num.tryParse(regular?.toString() ?? '');
-    if (regularNum != null && promoNum >= regularNum) return false;
-
-    final startStr = item['promotionStart']?.toString().trim();
-    final endStr = item['promotionEnd']?.toString().trim();
-    if ((startStr == null || startStr.isEmpty) && (endStr == null || endStr.isEmpty)) {
-      return false;
-    }
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    if (startStr != null && startStr.isNotEmpty) {
-      final start = DateTime.tryParse(startStr);
-      if (start != null) {
-        final startDate = DateTime(start.year, start.month, start.day);
-        if (today.isBefore(startDate)) return false;
-      }
-    }
-    if (endStr != null && endStr.isNotEmpty) {
-      final end = DateTime.tryParse(endStr);
-      if (end != null) {
-        final endDate = DateTime(end.year, end.month, end.day);
-        if (today.isAfter(endDate)) return false;
-      }
-    }
-    return true;
-  }
-
-  String _packagePrice(Map<String, dynamic> item) {
-    final value = _isPackagePromoActive(item)
-        ? (item['promotionalPrice'] ?? item['adultPrice'] ?? item['price'])
-        : (item['adultPrice'] ?? item['price']);
-    final amount = value is num ? value : num.tryParse(value?.toString() ?? '');
-    if (amount == null) return '';
-    final currency = (item['currency'] ?? 'MYR').toString();
-    final formatted = amount == amount.roundToDouble()
-        ? amount.toStringAsFixed(0)
-        : amount.toStringAsFixed(2);
-    final basis = item['priceBasis'] == 'per_group' ? 'group' : 'person';
-    return '$currency $formatted / $basis';
-  }
+  String _packagePrice(Map<String, dynamic> item) => PackagePricing.label(item);
 
   String _packageDuration(Map<String, dynamic> item) {
     final days = int.tryParse((item['durationDays'] ?? '').toString());
@@ -1159,6 +1115,7 @@ class _HomeTabState extends State<HomeTab> {
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
+                          if (item['packagePricing'] is Map) Text(PackagePricing.label({...item, 'currency':'MYR', 'priceBasis': (item['packagePricing']['base'] as Map?)?['priceBasis']})),
                           if ((item['packageTitle'] ?? '')
                               .toString()
                               .isNotEmpty)

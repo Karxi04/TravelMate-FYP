@@ -14,6 +14,7 @@ from sequence_contract.firebase_firestore import (
     storeRecord,
 )
 from services.package_service import normalise_package
+from services.campaign_schedule import campaign_package_ids
 from services.review_service import published_review, review_id
 
 
@@ -39,7 +40,7 @@ _PACKAGE_FIELDS = {
     'createdAt', 'updatedAt',
 }
 _CAMPAIGN_FIELDS = {
-    'campaignTitle', 'description', 'packageId', 'startDate', 'endDate',
+    'campaignTitle', 'description', 'packageId', 'packageIds', 'startDate', 'endDate',
     'campaignStatus', 'discountType', 'discountValue', 'promoCode',
     'bannerImageUrl', 'termsConditions', 'packageTitle', 'destinationName',
     'packagePrice', 'packageImageUrl',
@@ -72,13 +73,22 @@ def _public_operator_summary(profile=None, source=None):
 
 
 def public_package(source, operator_profile=None, campaigns=None):
+    source = source or {}
     package = normalise_package(source or {})
     result = {'id': str((source or {}).get('id') or '')}
     result.update({key: package[key] for key in _PACKAGE_FIELDS if key in package})
     result.update({key: source[key] for key in ('createdAt', 'updatedAt') if key in source})
     result.update(_public_operator_summary(operator_profile, source))
-    if campaigns is not None:
-        result['activeCampaigns'] = [public_campaign(item, package=source) for item in campaigns]
+    from services.package_pricing import public_package_pricing
+    for key in ('originalPrice', 'promotionalPrice', 'promotionStart', 'promotionEnd'):
+        result.pop(key, None)
+    result['activeCampaigns'] = [public_campaign(item, package=source) for item in campaigns or []
+        if campaign_publication_eligible(item) and str(source.get('id') or '') in campaign_package_ids(item)
+        and item.get('operatorId') == source.get('operatorId')]
+    try:
+        result['packagePricing'] = public_package_pricing({**package, 'id': source.get('id'), 'operatorId': source.get('operatorId')}, campaigns or [])
+    except (ValueError, TypeError):
+        result['pricingUnavailable'] = True
     return {key: value for key, value in result.items() if value not in (None, '')}
 
 
@@ -161,7 +171,7 @@ def sync_package(package_id, source=None):
     profile = retrieveRecord('users', source.get('operatorId')) if source.get('operatorId') else None
     campaigns = [
         item for item in retrieveRecord('promotional_campaigns')
-        if str(item.get('packageId') or '') == str(package_id) and campaign_publication_eligible(item)
+        if str(package_id) in campaign_package_ids(item) and campaign_publication_eligible(item)
     ]
     storeRecord(
         PUBLIC_PACKAGE_COLLECTION,
@@ -176,23 +186,22 @@ def sync_campaign(campaign_id, source=None):
         return
     deleteRecord(PUBLIC_CAMPAIGN_COLLECTION, campaign_id)
     source = source if source is not None else retrieveRecord('promotional_campaigns', campaign_id)
-    package_id = str((source or {}).get('packageId') or '')
-    package = retrieveRecord('tourism_packages', package_id) if package_id else None
-    if not source or not package or not eligible_package(package) or not campaign_publication_eligible(source):
-        return
+    if not source or not campaign_publication_eligible(source):return
+    packages = [retrieveRecord('tourism_packages', pid) for pid in campaign_package_ids(source)]
+    packages = [p for p in packages if eligible_package(p) and p.get('operatorId') == source.get('operatorId')]
+    if not packages:return
     profile = retrieveRecord('users', source.get('operatorId')) if source.get('operatorId') else None
-    storeRecord(
-        PUBLIC_CAMPAIGN_COLLECTION,
-        public_campaign(source, package=package, operator_profile=profile),
-        campaign_id,
-    )
+    item = public_campaign(source, package=packages[0], operator_profile=profile)
+    item['packageIds'] = [p['id'] for p in packages]
+    item['packageId'] = packages[0]['id']
+    storeRecord(PUBLIC_CAMPAIGN_COLLECTION, item, campaign_id)
 
 
 def sync_campaigns_for_package(package_id):
     if not _writes_enabled():
         return
     for item in retrieveRecord('promotional_campaigns'):
-        if str(item.get('packageId') or '') == str(package_id):
+        if str(package_id) in campaign_package_ids(item):
             sync_campaign(item.get('id'), item)
 
 
@@ -214,10 +223,18 @@ def revoke_projection(collection, document_id):
     if collection == 'tourism_packages':
         deleteRecord(PUBLIC_PACKAGE_COLLECTION, document_id)
         for item in retrieveRecord('promotional_campaigns'):
-            if str(item.get('packageId') or '') == str(document_id):
+            if str(document_id) in campaign_package_ids(item):
                 deleteRecord(PUBLIC_CAMPAIGN_COLLECTION, item.get('id'))
     elif collection == 'promotional_campaigns':
         deleteRecord(PUBLIC_CAMPAIGN_COLLECTION, document_id)
+        old = retrieveRecord('promotional_campaigns', document_id) or {}
+        remaining = [c for c in retrieveRecord('promotional_campaigns') if c.get('id') != document_id]
+        for pid in campaign_package_ids(old):
+            deleteRecord(PUBLIC_PACKAGE_COLLECTION, pid)
+            package = retrieveRecord('tourism_packages', pid)
+            if eligible_package(package):
+                profile = retrieveRecord('users', package.get('operatorId')) if package.get('operatorId') else None
+                storeRecord(PUBLIC_PACKAGE_COLLECTION, public_package(package, profile, remaining), pid)
     elif collection == 'feedback':
         deleteRecord(PUBLIC_REVIEW_COLLECTION, document_id)
 
@@ -227,5 +244,7 @@ def source_changed(collection, document_id, source=None):
         sync_package(document_id, source)
     elif collection == 'promotional_campaigns':
         sync_campaign(document_id, source)
+        for pid in campaign_package_ids(source or {}):
+            sync_package(pid)
     elif collection == 'feedback':
         sync_review(document_id, source)

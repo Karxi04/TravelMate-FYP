@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
 
 from firebase_service import init_firebase
 from services.review_service import published_review, commit_feedback, ReviewConflict
+from services.campaign_schedule import campaign_package_ids
 from sequence_contract.firebase_firestore import deleteRecord, retrieveRecord, storeRecord
 from services.public_content_projection import (
     PUBLIC_CAMPAIGN_COLLECTION,
@@ -39,7 +40,7 @@ def rebuild(apply=False):
     eligible_packages = {str(item.get('id')): item for item in packages if eligible_package(item)}
     eligible_campaigns = [
         item for item in campaigns
-        if campaign_publication_eligible(item) and str(item.get('packageId') or '') in eligible_packages
+        if campaign_publication_eligible(item) and any(pid in eligible_packages and eligible_packages[pid].get('operatorId') == item.get('operatorId') for pid in campaign_package_ids(item))
     ]
     eligible_reviews = [
         item for item in reviews
@@ -64,8 +65,8 @@ def rebuild(apply=False):
     for item in retrieveRecord(PUBLIC_CAMPAIGN_COLLECTION):
         campaign_id = str(item.get('id'))
         current = retrieveRecord('promotional_campaigns', campaign_id)
-        parent = retrieveRecord('tourism_packages', str((current or {}).get('packageId') or ''))
-        current_eligible = bool(current and parent and campaign_publication_eligible(current) and eligible_package(parent))
+        parents = [retrieveRecord('tourism_packages', pid) for pid in campaign_package_ids(current or {})]
+        current_eligible = bool(current and campaign_publication_eligible(current) and any(eligible_package(p) and p.get('operatorId') == current.get('operatorId') for p in parents))
         if not current_eligible:
             deleteRecord(PUBLIC_CAMPAIGN_COLLECTION, campaign_id)
             counts['removedStale'] += 1
@@ -84,7 +85,7 @@ def rebuild(apply=False):
         profile = retrieveRecord('users', current.get('operatorId')) if current.get('operatorId') else None
         package_campaigns = [
             item for item in eligible_campaigns
-            if str(item.get('packageId') or '') == package_id
+            if package_id in campaign_package_ids(item)
         ]
         storeRecord(
             PUBLIC_PACKAGE_COLLECTION,
@@ -94,25 +95,17 @@ def rebuild(apply=False):
     for campaign in eligible_campaigns:
         campaign_id = str(campaign.get('id'))
         current = retrieveRecord('promotional_campaigns', campaign_id)
-        package_id = str((current or {}).get('packageId') or '')
-        package = retrieveRecord('tourism_packages', package_id)
-        snapshot_package = eligible_packages.get(package_id)
-        if (
-            _fingerprint(current) != _fingerprint(campaign)
-            or _fingerprint(package) != _fingerprint(snapshot_package)
-            or not current
-            or not package
-            or not campaign_publication_eligible(current)
-            or not eligible_package(package)
-        ):
+        ids=campaign_package_ids(current or {})
+        parents=[retrieveRecord('tourism_packages', pid) for pid in ids]
+        valid=[p for p in parents if eligible_package(p) and p.get('operatorId') == (current or {}).get('operatorId')]
+        if (_fingerprint(current) != _fingerprint(campaign) or not campaign_publication_eligible(current)
+                or not valid or any(_fingerprint(p) != _fingerprint(eligible_packages.get(pid)) for pid,p in zip(ids,parents))):
             counts['skippedConcurrentChanges'] += 1
             continue
         profile = retrieveRecord('users', current.get('operatorId')) if current.get('operatorId') else None
-        storeRecord(
-            PUBLIC_CAMPAIGN_COLLECTION,
-            public_campaign(current, package, profile),
-            campaign_id,
-        )
+        projected=public_campaign(current, valid[0], profile)
+        projected.update(packageIds=[p['id'] for p in valid],packageId=valid[0]['id'])
+        storeRecord(PUBLIC_CAMPAIGN_COLLECTION,projected,campaign_id)
     for review in eligible_reviews:
         review_id = str(review.get('id'))
         current = retrieveRecord('feedback', review_id)

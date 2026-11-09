@@ -178,28 +178,12 @@ def test_default_participants_is_one_adult_zero_children():
     assert snapshot['groupSize'] == 1
 
 
-def test_vivo_active_promotion_four_adults_is_rm3196():
-    raw = package(
-        adultPrice=899,
-        originalPrice=899,
-        promotionalPrice=799,
-        promotionStart='2026-10-20',
-        promotionEnd='2026-12-10',
-        minimumTravellers=4,
-        maximumTravellers=12,
-    )
-    snapshot = prepare_package_snapshot(
-        raw, {'id': 'op1'},
-        now='2026-10-25T10:00:00Z',
-        participants={'adults': 4, 'children': 0},
-    )
-    assert snapshot['isPromotionEligible'] is True
-    assert snapshot['regularAdultUnitPrice'] == 899
-    assert snapshot['adultUnitPrice'] == 799
-    assert snapshot['promotionalUnitPrice'] == 799
-    assert snapshot['originalPrice'] == 899
-    assert snapshot['price'] == 3196
-    assert snapshot['amountMinor'] == 319600
+def test_manual_package_promotion_is_deprecated_for_new_purchases():
+    raw=package(adultPrice=899, originalPrice=899, promotionalPrice=799, promotionStart='2026-10-20',promotionEnd='2026-12-10',minimumTravellers=4)
+    before=dict(raw)
+    snapshot=prepare_package_snapshot(raw,{'id':'op1'},now='2026-10-25',participants={'adults':4})
+    assert snapshot['price']==3596 and snapshot['amountMinor']==359600
+    assert not snapshot['isPromotionEligible'] and raw==before
 
 
 def test_vivo_unapplied_future_promotion_four_adults_is_rm3596():
@@ -246,56 +230,21 @@ def test_vivo_expired_promotion_four_adults_is_rm3596():
     assert snapshot['amountMinor'] == 359600
 
 
-def test_promotion_boundary_dates_are_inclusive():
-    raw = package(
-        adultPrice=899,
-        promotionalPrice=799,
-        promotionStart='2026-10-20',
-        promotionEnd='2026-12-10',
-    )
-    start_boundary = prepare_package_snapshot(
-        raw, {'id': 'op1'},
-        now='2026-10-20',
-        participants={'adults': 1, 'children': 0},
-    )
-    assert start_boundary['isPromotionEligible'] is True
-    assert start_boundary['adultUnitPrice'] == 799
-
-    end_boundary = prepare_package_snapshot(
-        raw, {'id': 'op1'},
-        now='2026-12-10',
-        participants={'adults': 1, 'children': 0},
-    )
-    assert end_boundary['isPromotionEligible'] is True
-    assert end_boundary['adultUnitPrice'] == 799
+def test_campaign_boundary_dates_are_inclusive():
+    from test_cross_system_commerce import campaign
+    c=campaign(startDate='2026-10-20',endDate='2026-12-10',discountType='fixed',discountValue=100)
+    for day in ('2026-10-20','2026-12-10'):
+        snapshot=prepare_package_snapshot(package(adultPrice=899),{'id':'op1'},now=day,campaigns=[c])
+        assert snapshot['price']==799 and snapshot['regularAdultUnitPrice']==899
+        assert snapshot['pricingBreakdown']['promotion']['id']=='c1'
 
 
-def test_per_group_active_promotion_and_regular():
-    raw = package(
-        priceBasis='per_group',
-        adultPrice=899,
-        promotionalPrice=799,
-        promotionStart='2026-10-01',
-        promotionEnd='2026-12-31',
-        maximumTravellers=10,
-    )
-    active = prepare_package_snapshot(
-        raw, {'id': 'op1'},
-        now='2026-10-25',
-        participants={'adults': 4, 'children': 2},
-    )
-    assert active['price'] == 799
-    assert active['amountMinor'] == 79900
-    assert active['isPromotionEligible'] is True
-
-    inactive = prepare_package_snapshot(
-        raw, {'id': 'op1'},
-        now='2027-01-01',
-        participants={'adults': 4, 'children': 2},
-    )
-    assert inactive['price'] == 899
-    assert inactive['amountMinor'] == 89900
-    assert inactive['isPromotionEligible'] is False
+def test_per_group_campaign_and_regular():
+    from test_cross_system_commerce import campaign
+    raw=package(priceBasis='per_group',adultPrice=899)
+    c=campaign(startDate='2026-10-20',endDate='2026-12-10',discountType='fixed',discountValue=100)
+    assert prepare_package_snapshot(raw,{'id':'op1'},now='2026-10-25',campaigns=[c],participants={'adults':4})['price']==799
+    assert prepare_package_snapshot(raw,{'id':'op1'},now='2026-12-11',campaigns=[c],participants={'adults':4})['price']==899
 
 
 def test_equal_adult_and_child_rates_preserved_in_snapshot():
@@ -346,7 +295,7 @@ def test_original_price_is_informational_never_overrides_payable_price():
         package(originalPrice=1500, adultPrice=899),
         {'id': 'op1'},
     )
-    assert snapshot['originalPrice'] == 1500
+    assert snapshot['originalPrice'] is None
     assert snapshot['adultUnitPrice'] == 899
     assert snapshot['price'] == 899
     assert snapshot['amountMinor'] == 89900

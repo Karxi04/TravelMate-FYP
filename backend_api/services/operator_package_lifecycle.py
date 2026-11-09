@@ -22,6 +22,7 @@ def deletion_blocker(retrieve, package_id):
         ('itineraries', [('packageId', '==', package_id)], 'saved Package Trips'),
         ('itineraries', [('packageSnapshot.packageId', '==', package_id)], 'saved Package Trips'),
         ('promotional_campaigns', [('packageId', '==', package_id)], 'promotional campaigns'),
+        ('promotional_campaigns', [('packageIds', 'array_contains', package_id)], 'promotional campaigns'),
         ('hotel_bookings', [('packageId', '==', package_id)], 'linked supplier bookings'),
     ]
     for collection, filters, label in dependencies:

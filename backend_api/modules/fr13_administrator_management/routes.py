@@ -26,6 +26,7 @@ from services.report_service import (
 from services.package_service import package_for_read, package_submission_error
 from services.review_service import ReviewConflict, current_screen, review_revision, published_review
 from services.public_content_projection import active_campaign, eligible_package
+from services.campaign_schedule import campaign_package_ids
 from modules.fr12_tourism_operator_management.analytics_service import is_paid_order
 from firebase_service import get_db
 
@@ -347,12 +348,12 @@ def pending_campaigns():
 
 def _campaign_view(item):
     item = dict(item)
-    package_id=str(item.get('packageId') or '').strip()
-    package=retrieveRecord('tourism_packages',package_id) if package_id else None
-    if not isinstance(package,dict):package={}
-    item['packageTitle']=package.get('packageTitle') or package.get('title') or '-'
-    item['destinationName']=package.get('destinationName') or package.get('destination') or ''
-    item['operatorName']=package.get('operatorName') or package.get('operatorDisplayName') or 'Tourism Operator'
+    packages=[retrieveRecord('tourism_packages', pid) for pid in campaign_package_ids(item)]
+    packages=[p for p in packages if isinstance(p,dict)]
+    item['linkedPackages']=[{'id':p.get('id'),'title':p.get('title') or p.get('packageTitle'),'approvalStatus':p.get('approvalStatus')} for p in packages]
+    item['packageTitle']=', '.join(p.get('title') or p.get('packageTitle') or '-' for p in packages) or '-'
+    item['destinationName']=', '.join(dict.fromkeys(p.get('destinationName') or p.get('destination') or '' for p in packages))
+    item['operatorName']=(packages[0].get('operatorName') if packages else None) or 'Tourism Operator'
     return item
 
 def campaign_records(pending_only=False):
@@ -398,11 +399,12 @@ def review_campaign(cid):
         schedule_error = campaign_schedule_error(current, publishing=True)
         if schedule_error:_fail(schedule_error,400)
         if not validateCampaignDatesAndContent(current):_fail('Invalid campaign dates or content',400)
-        package_id=str(current.get('packageId') or '').strip()
-        package=retrieveRecord('tourism_packages',package_id) if package_id else None
-        if not package:_fail('Related package not found',404)
-        if not eligible_package(package) or not current.get('operatorId') or package.get('operatorId') != current['operatorId']:
-            _fail('Campaign requires an eligible package owned by its operator',409)
+        if not campaign_package_ids(current):_fail('Related package not found',404)
+        for package_id in campaign_package_ids(current):
+            package=retrieveRecord('tourism_packages',package_id)
+            if not package:_fail('Related package not found',404)
+            if not eligible_package(package) or not current.get('operatorId') or package.get('operatorId') != current['operatorId']:
+                _fail('Campaign requires an eligible package owned by its operator',409)
     review=approve(current,comment) if decision=='approved' else reject(current,comment); updates={'reviewStatus':review['decision'],'reviewComment':review['reviewComment'],'reviewReason':review['reviewComment'],'reviewedBy':g.uid,'reviewedAt':review['reviewedAt'],'updatedAt':utc_now_iso()}
     if decision=='approved':updates['campaignStatus']='approved'
     return jsonify({'ok':True,'campaign':_save('promotional_campaigns',cid,updates,current)})
@@ -818,7 +820,7 @@ def _summary(criteria=None):
     pending_camps = sum(1 for c in campaigns if str(c.get('reviewStatus', '')).lower() in {'pending', 'submitted', 'pending_approval', 'under_review'})
     rejected_camps = sum(1 for c in campaigns if str(c.get('reviewStatus', '')).lower() == 'rejected')
     eligible_ids={p.get('id') for p in loaded_packages if eligible_package(p)}
-    active_camps = sum(1 for c in campaigns if active_campaign(c) and c.get('packageId') in eligible_ids)
+    active_camps = sum(1 for c in campaigns if active_campaign(c) and bool(set(campaign_package_ids(c)) & eligible_ids))
 
     visible_fb = sum(1 for f in feedback if published_review(f))
     pending_fb = sum(1 for f in feedback if str(f.get('moderationStatus', '')).lower() in {'pending', 'pending_review'})

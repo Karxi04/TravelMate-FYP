@@ -54,6 +54,7 @@ class _PackageDetailsApi extends ApiService {
 
   @override
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
+    if (path.endsWith('/quote')) return {'ok':true,'quote':{'quoteToken':'test-quote','price':mockAttempt?['amount'] ?? 100,'pricingBreakdown':{'finalPayable':mockAttempt?['amount'] ?? 100}}};
     postedPath = path;
     postedPayload = Map<String, dynamic>.from(body ?? const {});
     postedPayloads.add(postedPayload!);
@@ -182,7 +183,7 @@ void main() {
 
     // Header product details
     expect(find.text('Penang Heritage Escape'), findsOneWidget);
-    expect(find.text('MYR 320 / adult'), findsOneWidget);
+    expect(find.text('MYR 320.00 / person'), findsOneWidget);
     expect(find.text('2 days · 1 night'), findsOneWidget);
 
     // Overview Tab
@@ -255,7 +256,7 @@ void main() {
     ));
 
     expect(find.text('Legacy Island Tour'), findsOneWidget);
-    expect(find.text('MYR 88 / adult'), findsOneWidget);
+    expect(find.text('MYR 88.00 / person'), findsOneWidget);
     expect(find.text('1 day'), findsOneWidget);
     final visibleText = tester
         .widgetList<Text>(find.byType(Text))
@@ -293,7 +294,7 @@ void main() {
   });
 
   testWidgets(
-      'Vivo pricing scenario: active promo calculates RM799/adult and RM3196 for 4 adults',
+      'Legacy manual package promotion is ignored for new bookings',
       (tester) async {
     await tester.pumpWidget(const MaterialApp(
       home: TourismPackageDetailsScreen(
@@ -312,13 +313,13 @@ void main() {
       ),
     ));
 
-    expect(find.text('MYR 799 / adult'), findsOneWidget);
-    expect(find.text('Special promo rate'), findsOneWidget);
+    expect(find.text('MYR 899.00 / person'), findsOneWidget);
+    expect(find.text('Automatic campaign offer'), findsNothing);
 
     await _openBookingSheet(tester);
 
-    expect(find.text('Group total: MYR 799'), findsOneWidget);
-    expect(find.text('Promotional savings: MYR 100'), findsOneWidget);
+    expect(find.text('Group total: MYR 899'), findsOneWidget);
+    expect(find.textContaining('Promotional savings:'), findsNothing);
 
     // Increase to 4 adults
     await tester.tap(find.byKey(const ValueKey('package-adults-add')));
@@ -329,9 +330,9 @@ void main() {
     await tester.pump();
 
     expect(find.text('Adults: 4'), findsOneWidget);
-    expect(find.text('Group total: MYR 3196'), findsOneWidget);
-    expect(find.text('Promotional savings: MYR 400'), findsOneWidget);
-    expect(find.text('4 Adults × MYR 799'), findsOneWidget);
+    expect(find.text('Group total: MYR 3596'), findsOneWidget);
+    expect(find.textContaining('Promotional savings:'), findsNothing);
+    expect(find.text('4 Adults × MYR 899'), findsOneWidget);
   });
 
   testWidgets(
@@ -354,7 +355,7 @@ void main() {
       ),
     ));
 
-    expect(find.text('MYR 899 / adult'), findsOneWidget);
+    expect(find.text('MYR 899.00 / person'), findsOneWidget);
     expect(find.text('Special promo rate'), findsNothing);
 
     await _openBookingSheet(tester);
@@ -419,7 +420,7 @@ void main() {
       ),
     ));
 
-    expect(find.text('MYR 200 / adult'), findsOneWidget);
+    expect(find.text('MYR 200.00 / person'), findsOneWidget);
     expect(find.text('MYR 200 / child'), findsOneWidget);
     expect(find.text('Per person pricing'), findsOneWidget);
   });
@@ -462,7 +463,7 @@ void main() {
     ));
 
     expect(find.text('Fixed group pricing'), findsOneWidget);
-    expect(find.text('MYR 600 / group'), findsOneWidget);
+    expect(find.text('MYR 600.00 / group'), findsOneWidget);
 
     await _openBookingSheet(tester);
 
@@ -769,6 +770,7 @@ void main() {
         home: TourismPackageDetailsScreen(item: _checkoutPackage, api: api)));
     await tester.pumpAndSettle();
     await _openBookingSheet(tester);
+    api.mockAttempt = {'id':'changed-later', 'amount':120};
     await tester.tap(find.byKey(const ValueKey('package-checkout-btn')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Cancel').last);

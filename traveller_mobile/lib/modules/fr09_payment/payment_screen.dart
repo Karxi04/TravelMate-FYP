@@ -75,6 +75,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   String currentAttemptId = '';
   Map<String, dynamic>? activeOrder;
+  double? _refreshedPackageAmount;
+  Map<String, dynamic>? _refreshedPackagePricing;
   String checkoutAction = 'open_checkout';
   String? checkoutUrl;
   final TransactionAttemptLifecycle _packageRestartIntent =
@@ -88,6 +90,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final amt = num.tryParse(activeOrder!['amount'].toString())?.toDouble();
       if (amt != null && amt > 0) return amt;
     }
+    if (_refreshedPackageAmount != null) return _refreshedPackageAmount;
     if (widget.initialAmount != null && widget.initialAmount! > 0) {
       return widget.initialAmount;
     }
@@ -540,6 +543,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
         throw Exception('A new package checkout attempt could not be prepared.');
       }
 
+      if (!mounted) return;
+      final updatedAmount = num.tryParse('${newAttempt['amount']}')?.toDouble();
+      final updatedPricing = newAttempt['pricingBreakdown'] is Map ? Map<String,dynamic>.from(newAttempt['pricingBreakdown']) : null;
+      final accepted = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Review refreshed package quote'),
+        content: Text('MYR ${updatedAmount?.toStringAsFixed(2) ?? 'unavailable'}\nBefore discount: ${updatedPricing?['originalSubtotal'] ?? '-'}\nDiscount: ${updatedPricing?['promotionDiscount'] ?? 0}\n${updatedPricing?['promotion']?['campaignTitle'] ?? ''}\n${updatedPricing?['promotion']?['termsConditions'] ?? ''}'),
+        actions: [TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')), FilledButton(onPressed:updatedAmount==null?null:()=>Navigator.pop(ctx,true),child:const Text('Accept quote'))]));
+      if (accepted != true) return;
+      _refreshedPackageAmount = updatedAmount;
+      _refreshedPackagePricing = updatedPricing;
       currentAttemptId = newAttemptId;
       activeOrder = null;
       checkoutAction = 'open_checkout';
@@ -743,7 +756,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final displayAmount = authoritativeAmount;
     final pricing = snapshot?['pricingBreakdown'] is Map
         ? Map<String, dynamic>.from(snapshot!['pricingBreakdown'])
-        : widget.pricingBreakdown;
+        : _refreshedPackagePricing ?? widget.pricingBreakdown;
 
     final currentAction = checkoutAction;
     final bool isFlight = widget.quoteType == 'flight';
@@ -978,6 +991,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ),
                 if (isPackage && pricing != null) ...[
                   const SizedBox(height: 8),
+                  if (pricing['promotion'] is Map && (pricing['promotion'] as Map).isNotEmpty) ...[
+                    Text('${pricing['promotion']['campaignTitle'] ?? 'Promotion'} · ${pricing['promotion']['startDate'] ?? ''} to ${pricing['promotion']['endDate'] ?? ''}'),
+                    if ('${pricing['promotion']['termsConditions'] ?? ''}'.isNotEmpty) Text('${pricing['promotion']['termsConditions']}'),
+                  ],
                   for (final entry in const {
                     'originalSubtotal': 'Original package subtotal',
                     'promotionDiscount': 'Promotion discount',

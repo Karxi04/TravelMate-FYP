@@ -171,6 +171,7 @@ class ActionApi extends ApiService {
   @override
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
     posts.add({'path': path, 'body': copy(body ?? {})});
+    if (path.endsWith('/quote')) { final count=(body?['participants'] as Map?)?['adults'] ?? 1; return {'quote': {'quoteToken':'quoted-package','price':220*count,'pricingBreakdown':{'finalPayable':220*count}}}; }
     if (path == '/api/fr11/chat') {
       if (failChat) throw Exception('Synthetic send failure');
       final session = {
@@ -842,7 +843,7 @@ void main() {
     expect(find.text('Actual public booking terms package-B'), findsOneWidget);
     expect(api.posts, isEmpty);
     await tap(tester, find.byKey(const ValueKey('package-book-now-cta')));
-    expect(api.posts, isEmpty);
+    expect(api.posts.every((post) => post['path'].endsWith('/quote')), isTrue);
     await tester.tap(find.byKey(const ValueKey('package-adults-add')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('package-departure-date')));
@@ -850,7 +851,7 @@ void main() {
     await tester.tap(find.text('2030-12-12').last);
     await tester.pumpAndSettle();
     await tap(tester, find.byKey(const ValueKey('package-checkout-btn')));
-    final post = api.posts.single;
+    final post = api.posts.where((post) => !post['path'].endsWith('/quote')).single;
     expect(post['path'], '/api/fr15/package-checkout-attempts');
     expect(post['body']['packageId'], 'package-B');
     expect(post['body']['participants'], {'adults': 2, 'children': 0});

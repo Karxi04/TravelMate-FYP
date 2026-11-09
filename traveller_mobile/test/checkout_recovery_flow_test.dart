@@ -90,6 +90,26 @@ Widget buildTestApp(Widget child) {
 }
 
 void main() {
+  for (final accept in [false, true]) {
+    testWidgets('restarting expired package requires explicit fresh quote acceptance $accept', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final api = _MockCheckoutApi()..checkoutEnabled = true
+        ..ordersList = [{'id':'old-order','packageAttemptId':'old-attempt','quoteType':'package','packageId':'p1','status':'expired','checkoutAction':'restart_payment','amount':85,
+          'packageSnapshot':{'packageId':'p1','participants':{'adults':1,'children':0}}}]
+        ..newAttemptResponse = {'ok':true,'attempt':{'id':'fresh-attempt','amount':100,'pricingBreakdown':{'originalSubtotal':100,'promotionDiscount':0,'finalPayable':100,'currency':'MYR'}}}
+        ..sessionPostResponse = {'ok':true,'order':{'id':'fresh-order','quoteType':'package','status':'checkout_pending','checkoutAction':'check_status','amount':100}};
+      await tester.pumpWidget(buildTestApp(PaymentScreen(api:api,packageAttemptId:'old-attempt',initialAmount:85)));
+      await tester.pumpAndSettle();
+      final restart = find.text('Restart Payment');
+      await tester.ensureVisible(restart);await tester.tap(restart);
+      await tester.pump();await tester.pump(const Duration(milliseconds:300));
+      expect(find.text('Review refreshed package quote'),findsOneWidget);
+      expect(api.postCount,1);expect(api.lastPostedPath,'/api/fr15/package-checkout-attempts');
+      await tester.tap(find.text(accept ? 'Accept quote' : 'Cancel'));await tester.pumpAndSettle();
+      expect(api.postCount,accept ? 2 : 1);
+      if(accept) expect(api.lastPostedPath,'/api/fr9/package-checkout-attempts/fresh-attempt/checkout/session');
+    });
+  }
   for (final kind in ['hotel', 'package']) {
     testWidgets('F-F1A-P $kind hosted checkout uses authoritative attempt only', (tester) async {
       SharedPreferences.setMockInitialValues({});

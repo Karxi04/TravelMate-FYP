@@ -298,6 +298,7 @@ def validatePackageCompleteness(data):
 def validateCampaignDatesAndContent(data):
     if not isinstance(data, dict) or not isinstance(data.get('campaignTitle'), str): return False
     if not 1 <= len(data['campaignTitle'].strip()) <= 200: return False
+    if 'packageIds' in data and (not isinstance(data['packageIds'], list) or not data['packageIds'] or len(data['packageIds']) > 50 or any(not isinstance(x, str) or not x.strip() for x in data['packageIds'])): return False
     start, end = data.get('startDate'), data.get('endDate')
     start_date = _parse_iso_date(start)
     end_date = _parse_iso_date(end)

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from math import isfinite
 from services.commerce_money import record_money, public_pricing_breakdown
 from services.public_content_projection import active_campaign, eligible_package
+from services.campaign_schedule import campaign_package_ids
 from services.package_checkout_contract import build_initial_fulfillment_record, is_paid_order
 
 RECORD_LIMIT = 500
@@ -225,7 +226,7 @@ def generate_business_analytics(db, operator_id):
     )
 
     eligible_ids = {p['id'] for p in packages if eligible_package(p)}
-    active_campaigns = sum(1 for c in campaigns if active_campaign(c) and c.get('packageId') in eligible_ids)
+    active_campaigns = sum(1 for c in campaigns if active_campaign(c) and bool(set(campaign_package_ids(c)) & eligible_ids))
 
     # ==========================================================
     # BOOKING RECORDS (PACKAGE CHECKOUT ORDERS)

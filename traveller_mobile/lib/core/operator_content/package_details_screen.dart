@@ -1,3 +1,5 @@
+import 'dart:convert';
+import '../utils/package_pricing.dart';
 import 'package:flutter/material.dart';
 
 import '../../modules/fr09_payment/payment_screen.dart';
@@ -37,6 +39,39 @@ class _TourismPackageDetailsScreenState
   late final ApiService api;
   bool submitting = false;
   String promoCode = '';
+  Map<String, dynamic>? _serverQuote;
+  String? _quotedSelection;
+  String _offerEvidence(dynamic value) => jsonEncode([
+    for (final key in ['id','discountType','discountValue','startDate','endDate','termsConditions','promoCode'])
+      value is Map ? value[key] : null,
+  ]);
+  String? _quoteError;
+  bool _quoteLoading = false;
+  int _quoteRequest = 0;
+  bool get _canQuote => consumerPaymentsAvailable && !api.isStandalone && adults + children >= _minimumTravellers && packageDepartureError(_departureDates, selectedDepartureDate) == null;
+  Future<void> _refreshQuote(StateSetter refresh, BuildContext sheetContext) async {
+    if (!_canQuote) return;
+    final request = ++_quoteRequest;
+    setState(() { _quoteLoading = true; _quoteError = null; });
+    refresh(() {});
+    try { await _loadQuote(); } catch (error) { if (mounted && request == _quoteRequest) _quoteError = 'Price could not be refreshed. Update the price before payment.'; }
+    finally { if (mounted && request == _quoteRequest) { setState(() => _quoteLoading = false); if (sheetContext.mounted) refresh(() {}); } }
+  }
+  String get _selection => '$adults:$children:$selectedDepartureDate:$promoCode';
+  Map<String, dynamic>? get _currentPricing {
+    if (_quotedSelection == _selection && _serverQuote?['pricingBreakdown'] is Map) return Map<String, dynamic>.from(_serverQuote!['pricingBreakdown']);
+    final projected = PackagePricing.current(widget.item);
+    final party = projected?['participants'];
+    return promoCode.isEmpty && party is Map && party['adults'] == adults && party['children'] == children ? projected : null;
+  }
+  Future<Map<String, dynamic>> _loadQuote() async {
+    final selection = _selection;
+    final data = await api.post('/api/fr15/package-checkout-attempts/quote', {'packageId': widget.item['id'], 'participants': {'adults': adults, 'children': children}, if(selectedDepartureDate != null) 'departureDate': selectedDepartureDate, 'promoCode': promoCode});
+    final quote = Map<String, dynamic>.from(data['quote'] as Map);
+    if (!mounted || selection != _selection) throw Exception('Your selection changed. Review the current package price.');
+    setState(() { _serverQuote = quote; _quotedSelection = selection; });
+    return quote;
+  }
   bool consumerPaymentsAvailable = false;
   int adults = 1;
   int children = 0;
@@ -303,7 +338,10 @@ class _TourismPackageDetailsScreenState
         throw Exception('This package has no supported checkout price.');
       }
       if (!await _resolveExistingPurchase()) return;
+      final viewedPromotion = _offerEvidence(_currentPricing?['promotion']);
+      final quote = await _loadQuote();
       final response = await api.post('/api/fr15/package-checkout-attempts', {
+        'quoteToken': quote['quoteToken'],
         'packageId': packageId,
         'promoCode': promoCode,
         'participants': {'adults': adults, 'children': children},
@@ -325,14 +363,14 @@ class _TourismPackageDetailsScreenState
         throw Exception(
             'Server did not return an authoritative payable total.');
       }
-      if ((serverAmount - clientTotal).abs() > 0.01) {
+      if ((serverAmount - clientTotal).abs() > 0.001 || viewedPromotion != _offerEvidence((quote['pricingBreakdown'] as Map?)?['promotion'])) {
         if (!mounted) return;
         final accepted = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Review updated package amount'),
             content: Text(
-                'The current server quote is $_currency ${_money(serverAmount)}. Review the price breakdown before payment.'),
+                'The current server quote is $_currency ${_money(serverAmount)}.\nBefore discount: ${attempt['pricingBreakdown']?['originalSubtotal'] ?? serverAmount}\nDiscount: ${attempt['pricingBreakdown']?['promotionDiscount'] ?? 0}\n${attempt['pricingBreakdown']?['promotion']?['campaignTitle'] ?? ''}\n${attempt['pricingBreakdown']?['promotion']?['termsConditions'] ?? ''}\nReview before payment.'),
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
@@ -428,48 +466,8 @@ class _TourismPackageDetailsScreenState
 
   num? get _childPrice => _number(widget.item['childPrice']);
 
-  num? get _originalPrice => _number(widget.item['originalPrice']);
-
-  num? get _promotionalPrice => _number(widget.item['promotionalPrice']);
-
-  bool get _isPromotionEligible {
-    final promo = _promotionalPrice;
-    if (promo == null || promo <= 0) return false;
-    final regular = _regularAdultPrice;
-    if (regular != null && promo >= regular) return false;
-
-    final startStr = widget.item['promotionStart']?.toString().trim();
-    final endStr = widget.item['promotionEnd']?.toString().trim();
-    if ((startStr == null || startStr.isEmpty) &&
-        (endStr == null || endStr.isEmpty)) {
-      return false;
-    }
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    if (startStr != null && startStr.isNotEmpty) {
-      final start = DateTime.tryParse(startStr);
-      if (start != null) {
-        final startDate = DateTime(start.year, start.month, start.day);
-        if (today.isBefore(startDate)) return false;
-      }
-    }
-    if (endStr != null && endStr.isNotEmpty) {
-      final end = DateTime.tryParse(endStr);
-      if (end != null) {
-        final endDate = DateTime(end.year, end.month, end.day);
-        if (today.isAfter(endDate)) return false;
-      }
-    }
-    return true;
-  }
-
-  num? get _effectiveAdultPrice =>
-      (_isPromotionEligible && _promotionalPrice != null)
-          ? _promotionalPrice
-          : _regularAdultPrice;
-
-  num? get _adultPrice => _effectiveAdultPrice;
+  bool get _isPromotionEligible => (_number((_currentPricing ?? PackagePricing.current(widget.item))?['promotionDiscount']) ?? 0) > 0;
+  num? get _effectiveAdultPrice => _regularAdultPrice;
 
   List<String> get _departureDates => _list(widget.item['departureDates']);
 
@@ -484,40 +482,22 @@ class _TourismPackageDetailsScreenState
 
   num? get _groupTotal {
     if (!_hasVerifiedPriceBasis) return null;
-    if (_priceBasis == 'per_group') {
-      if (_isPromotionEligible && _promotionalPrice != null) {
-        return _promotionalPrice;
-      }
-      return _regularAdultPrice;
-    }
-    final adultRate = _effectiveAdultPrice;
-    if (adultRate == null) return null;
-    if (children > 0 && _childPrice == null) return null;
-    return adultRate * adults + (_childPrice ?? 0) * children;
+    if (_currentPricing != null) return _number(_currentPricing!['finalPayable']);
+    if (_priceBasis == 'per_group') return _regularAdultPrice;
+    if (_regularAdultPrice == null || (children > 0 && _childPrice == null)) return null;
+    return _regularAdultPrice! * adults + (_childPrice ?? 0) * children;
   }
 
   num? get _calculatedSavings {
-    if (!_isPromotionEligible ||
-        _promotionalPrice == null ||
-        _regularAdultPrice == null) {
-      return null;
-    }
-    final diff = _regularAdultPrice! - _promotionalPrice!;
-    if (diff <= 0) return null;
-    if (_priceBasis == 'per_group') return diff;
-    return diff * adults;
+    final savings = _number(_currentPricing?['promotionDiscount']);
+    return savings != null && savings > 0 ? savings : null;
   }
 
   String _money(num value) => value == value.roundToDouble()
       ? value.toStringAsFixed(0)
       : value.toStringAsFixed(2);
 
-  String get _price {
-    final amount = _adultPrice;
-    if (amount == null) return '';
-    final basis = _priceBasis == 'per_group' ? 'group' : 'adult';
-    return '$_currency ${_money(amount)} / $basis';
-  }
+  String get _price => PackagePricing.label(widget.item);
 
   String get _duration {
     final days = _number(widget.item['durationDays']);
@@ -679,6 +659,8 @@ class _TourismPackageDetailsScreenState
   }
 
   Future<void> _openBookingModal() async {
+    if (_canQuote) { try { await _loadQuote(); } catch (_) { _quoteError = 'Price could not be refreshed. Update the price before payment.'; } }
+    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -782,6 +764,7 @@ class _TourismPackageDetailsScreenState
                                             setState(() => adults -= 1);
                                             _checkoutIntent.startNewAttempt();
                                             setModalState(() {});
+                                            _refreshQuote(setModalState, context);
                                           }
                                         : null,
                                     canAddParticipant
@@ -789,6 +772,7 @@ class _TourismPackageDetailsScreenState
                                             setState(() => adults += 1);
                                             _checkoutIntent.startNewAttempt();
                                             setModalState(() {});
+                                            _refreshQuote(setModalState, context);
                                           }
                                         : null,
                                     'package-adults',
@@ -806,6 +790,7 @@ class _TourismPackageDetailsScreenState
                                             setState(() => children -= 1);
                                             _checkoutIntent.startNewAttempt();
                                             setModalState(() {});
+                                            _refreshQuote(setModalState, context);
                                           }
                                         : null,
                                     canAddChild
@@ -813,6 +798,7 @@ class _TourismPackageDetailsScreenState
                                             setState(() => children += 1);
                                             _checkoutIntent.startNewAttempt();
                                             setModalState(() {});
+                                            _refreshQuote(setModalState, context);
                                           }
                                         : null,
                                     'package-children',
@@ -881,6 +867,7 @@ class _TourismPackageDetailsScreenState
                                         () => selectedDepartureDate = value);
                                     _checkoutIntent.startNewAttempt();
                                     setModalState(() {});
+                                    _refreshQuote(setModalState, context);
                                   },
                                 ),
                                 if(packageDepartureError(_departureDates,selectedDepartureDate)!=null)
@@ -918,15 +905,23 @@ class _TourismPackageDetailsScreenState
                                 textCapitalization:
                                     TextCapitalization.characters,
                                 onChanged: (value) {
-                                  promoCode = value.trim();
+                                  setState(() => promoCode = value.trim());
                                   _checkoutIntent.startNewAttempt();
+                                  setModalState(() {});
                                 },
                               ),
+                              if (_quoteLoading) const Text('Updating authoritative price...'),
+                              if (_quoteError != null) Text(_quoteError!),
+                              TextButton.icon(key: const ValueKey('refresh-package-price'), onPressed: api.isStandalone ? null : () async {
+                                try { await _loadQuote(); if (context.mounted) setModalState(() {}); } catch(error) { if(context.mounted) showError(context, error); }
+                              }, icon: const Icon(Icons.refresh), label: const Text('Update price / apply code')),
+                              if (_currentPricing?['promotion'] is Map && _isPromotionEligible) Text('${_currentPricing!['promotion']['campaignTitle']} · ${_currentPricing!['promotion']['startDate']} to ${_currentPricing!['promotion']['endDate']}\n${_currentPricing!['promotion']['termsConditions'] ?? ''}'),
+                              const Text('One best applicable offer; discounts do not stack. Final price is verified before payment.'),
                               const SizedBox(height: AppSpacing.sm),
                               Text(
                                 _groupTotal == null
                                     ? 'Group total unavailable'
-                                    : 'Group total: $_currency ${_money(_groupTotal!)}',
+                                    : '${_currentPricing == null && widget.item['packagePricing'] != null ? 'Estimated base total' : 'Group total'}: $_currency ${_money(_groupTotal!)}',
                                 key: const ValueKey('package-group-total'),
                                 style: Theme.of(context)
                                     .textTheme
@@ -954,7 +949,7 @@ class _TourismPackageDetailsScreenState
                                 width: double.infinity,
                                 child: FilledButton.icon(
                                   key: const ValueKey('package-checkout-btn'),
-                                  onPressed: (!consumerPaymentsAvailable || submitting ||
+                                  onPressed: (!consumerPaymentsAvailable || submitting || _quoteLoading ||
                                           !_hasVerifiedPriceBasis ||
                                           !meetsMin ||
                                           packageDepartureError(_departureDates,selectedDepartureDate)!=null)
@@ -1477,6 +1472,9 @@ class _TourismPackageDetailsScreenState
                         const SizedBox(height: AppSpacing.xxs),
                         PackageTextBlock(text: campaign['description'].toString()),
                       ],
+                      if ((_number(campaign['discountValue']) ?? 0) > 0 && ['percentage','fixed'].contains(campaign['discountType']))
+                        Text('${campaign['discountType'] == 'percentage' ? '${campaign['discountValue']}% off' : 'MYR ${campaign['discountValue']} off'} · ${campaign['startDate']} to ${campaign['endDate']}'),
+                      if ((campaign['termsConditions'] ?? '').toString().isNotEmpty) PackageTextBlock(text: campaign['termsConditions'].toString()),
                       if ((campaign['promoCode'] ?? '')
                           .toString()
                           .trim()
@@ -2140,9 +2138,7 @@ class _TourismPackageDetailsScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _priceBasis == 'per_group'
-                        ? '$_currency ${_money(_groupTotal ?? _regularAdultPrice ?? 0)}'
-                        : '$_currency ${_money(_effectiveAdultPrice ?? 0)}',
+                    '$_currency ${_money(_groupTotal ?? _regularAdultPrice ?? 0)}',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w800,
                           color: AppColors.primary,
@@ -2252,8 +2248,7 @@ class _TourismPackageDetailsScreenState
             runSpacing: AppSpacing.xs,
             children: [
               if (_price.isNotEmpty)
-                TravelStatusPill(
-                    text: _price, icon: Icons.payments_outlined),
+                Text(_price, style: const TextStyle(fontWeight: FontWeight.w800)),
               if (_priceBasis == 'per_person' && _childPrice != null)
                 TravelStatusPill(
                   text: '$_currency ${_money(_childPrice!)} / child',
@@ -2280,14 +2275,8 @@ class _TourismPackageDetailsScreenState
                 ),
               if (_isPromotionEligible)
                 const TravelStatusPill(
-                  text: 'Special promo rate',
+                  text: 'Automatic campaign offer',
                   icon: Icons.local_offer_outlined,
-                ),
-              if (_originalPrice != null &&
-                  _originalPrice! > (_effectiveAdultPrice ?? 0))
-                TravelStatusPill(
-                  text: 'Orig. $_currency ${_money(_originalPrice!)}',
-                  icon: Icons.history_outlined,
                 ),
               if (_duration.isNotEmpty)
                 TravelStatusPill(

@@ -140,10 +140,10 @@ def test_package_new_get_contract(auth_client):
     assert 'name="currency"' in html
     assert 'name="adultPrice"' in html
     assert 'name="childPrice"' in html
-    assert 'name="originalPrice"' in html
-    assert 'name="promotionalPrice"' in html
-    assert 'name="promotionStart"' in html
-    assert 'name="promotionEnd"' in html
+    assert 'name="originalPrice"' not in html
+    assert 'name="promotionalPrice"' not in html
+    assert 'name="promotionStart"' not in html
+    assert 'name="promotionEnd"' not in html
     assert 'name="minimumTravellers"' in html
     assert 'name="maximumTravellers"' in html
     assert 'name="taxIncluded"' in html
@@ -238,10 +238,10 @@ def test_package_new_post_serialization(auth_client):
         assert payload["currency"] == "MYR"
         assert payload["adultPrice"] == 180.00
         assert payload["childPrice"] == 90.00
-        assert payload["originalPrice"] == 220.00
-        assert payload["promotionalPrice"] == 150.00
-        assert payload["promotionStart"] == "2026-11-01"
-        assert payload["promotionEnd"] == "2026-11-30"
+        assert "originalPrice" not in payload
+        assert "promotionalPrice" not in payload
+        assert "promotionStart" not in payload
+        assert "promotionEnd" not in payload
         assert payload["minimumTravellers"] == 2
         assert payload["maximumTravellers"] == 12
         assert payload["taxIncluded"] is True
@@ -455,3 +455,24 @@ def test_package_edit_post_failure_value_preservation(auth_client):
         # The updated title must be preserved in the re-rendered form
         assert 'value="Updated Title That Failed Save"' in html
         assert 'Database error updating package.' in html
+
+
+@pytest.mark.parametrize('path,method',[('/campaigns','POST'),('/campaigns/c1/edit-page','PUT')])
+def test_campaign_form_submits_multiple_owned_packages(auth_client,path,method):
+    posted=[]
+    packages=[{'id':pid,'title':pid,'approvalStatus':'approved'} for pid in ('p1','p2')]
+    current={'id':'c1','campaignTitle':'Offer','packageId':'p1','packageIds':['p1','p2'],'reviewStatus':'draft','startDate':'2027-01-01','endDate':'2027-01-31'}
+    def api(verb,url,**kwargs):
+        response=MagicMock();response.ok=True;response.status_code=200
+        response.json.return_value={'items':packages if url.endswith('/packages') else [current]}
+        if verb in {'POST','PUT'}:
+            posted.append((verb,url,kwargs.get('json')));response.json.return_value={'ok':True}
+        return response
+    with patch.dict(app.view_functions['operator_fr12.campaigns'].__globals__, {'call_api': api}), patch.dict(app.view_functions['operator_fr12.edit_campaign_page'].__globals__, {'call_api': api}):
+        page=auth_client.get(path)
+        assert page.status_code==200 and 'name="packageIds" multiple required' in page.get_data(as_text=True)
+        result=auth_client.post(path,data={'campaignTitle':'Offer','packageIds':['p1','p2'],'startDate':'2027-01-01','endDate':'2027-01-31','discountType':'fixed','discountValue':'20'})
+    assert result.status_code==302 and posted[-1][0]==method
+    payload=posted[-1][2]
+    assert payload['packageIds']==['p1','p2'] and payload['packageId']=='p1'
+    assert payload['discountValue']==20 and payload['promoCode']==''

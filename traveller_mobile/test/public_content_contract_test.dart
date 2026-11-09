@@ -11,7 +11,7 @@ void main() {
         {'title': 'Day 1', 'description': 'Walk', 'secret': 'private'},
       ],
       'activeCampaigns': [
-        {'campaignTitle': 'Offer', 'reviewedBy': 'private'},
+        {'campaignTitle': 'Offer', 'reviewedBy': 'private', 'startDate':'2020-01-01','endDate':'2099-01-01'},
       ],
     });
     expect(result['title'], 'Penang');
