@@ -20,6 +20,8 @@ class RecommendationTaxonomy {
       'food court',
       'culinary',
       'restaurants',
+      'food street', 'food streets', 'hawker centre', 'hawker center',
+      'kopitiam', 'medan selera', 'pasar makanan',
     },
     'culture': {
       'culture',
@@ -96,6 +98,8 @@ class RecommendationTaxonomy {
       'viewpoint',
       'architecture',
       'street art',
+      'photogenic', 'street photography', 'viewpoints',
+      'panoramic view', 'panoramic views', 'murals', 'mural',
     },
     'family': {
       'family',
@@ -132,6 +136,12 @@ class RecommendationTaxonomy {
 
   static String normalizePhrase(dynamic value) {
     var phrase = (value ?? '').toString().toLowerCase();
+    for (final term in ['没有','沒有','不含']) { phrase = phrase.replaceAll(term,' no '); }
+    const aliases = {'街头摄影':'street photography', '街頭攝影':'street photography',
+      '摄影':'photography', '攝影':'photography', '观景台':'viewpoint', '觀景台':'viewpoint',
+      '壁画':'mural', '壁畫':'mural', '美食街':'food street', '美食':'food',
+      '小贩中心':'hawker centre', '小販中心':'hawker centre', '茶室':'kopitiam', '夜市':'night market'};
+    for (final entry in aliases.entries) { phrase = phrase.replaceAll(entry.key, ' ${entry.value} '); }
     const accents = {'[àáâãäå]':'a','[èéêë]':'e','[ìíîï]':'i','[òóôõö]':'o','[ùúûü]':'u','[çč]':'c','ñ':'n','[ýÿ]':'y','š':'s','ž':'z'};
     for (final entry in accents.entries) { phrase = phrase.replaceAll(RegExp(entry.key), entry.value); }
     return phrase.replaceAll(RegExp(r'[\u0300-\u036f]'), '').replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
@@ -183,7 +193,7 @@ class RecommendationTaxonomy {
     const generic = {'food','culture','history','nature','outdoor','leisure','relaxed','social','family',
       'children','kids','shopping','photo','art','education','educational','scenic','scenery','park','market'};
     for (final clause in (item['description'] ?? '').toString().split(RegExp(r'[.;!?]'))) {
-      if (RegExp(r'\b(near|nearby|close to|walking distance)\b', caseSensitive:false).hasMatch(clause)) continue;
+      if (RegExp(r'\b(near|nearby|close to|walking distance)\b|附近|邻近|鄰近', caseSensitive:false).hasMatch(clause)) continue;
       final phrase = ' ${normalizePhrase(clause)} ';
       for (final group in conceptTerms.entries) {
         final searchable = group.key == 'nature' ? phrase.replaceAll(RegExp(r'\b(theme parks?|car parks?)\b'), '') : phrase;
@@ -660,7 +670,7 @@ class RecommendationScoring {
       'personalSuitabilityScore': knownWeight > 0 && !(rawInterests.isNotEmpty && (interestConcepts.isEmpty || destinationConcepts.isEmpty)) ? _round2((knownScore / knownWeight).clamp(0,100).toDouble()) : null,
       'evidenceConfidence': requestedWeight > 0 ? (knownWeight/requestedWeight*1000).round()/1000 : 0.0,
       'interestEvidenceSource': primaryMatch ? 'primary_metadata' : matchedConcepts.isNotEmpty ? 'description' : 'none',
-      'scoringVersion': 'relevance_v2',
+      'scoringVersion': 'recovery_v3',
       'collaborativeScore': _round2(collaborative.score),
       'rawCollaborativeScore': _round2(collaborative.raw),
       'collaborativeConfidence': _round2(collaborative.confidence),

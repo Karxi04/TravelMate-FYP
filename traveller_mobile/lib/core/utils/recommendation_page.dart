@@ -42,9 +42,21 @@ Map<String, dynamic> recommendationPage(
       'limit': limit,
       'candidateCount': all.length,
       'qualifiedCount': qualified.length,
+      'personalEvidenceCount': all.where((item)=>item['personalSuitabilityScore'] is num).length,
       'nextOffset': end < qualified.length ? end : null,
       'hasMore': end < qualified.length,
       'providerHasMore': snapshot['providerHasMore'] == true
     }
   };
+}
+
+/// An older server must not masquerade as a valid zero personal-match result.
+void validateRecommendationResponse(Map data, String basis) {
+  if (basis != 'personal_v2' || data['stale'] == true) return;
+  final rows = (data['recommendations'] as List? ?? []).whereType<Map>();
+  final page = data['pagination'];
+  if (page is! Map || page['scoreBasis'] != basis || page['personalEvidenceCount'] is! num ||
+      rows.any((row) => !row.containsKey('personalSuitabilityScore'))) {
+    throw StateError('Personal match is unavailable from this backend version. Update/restart the backend and refresh recommendations.');
+  }
 }

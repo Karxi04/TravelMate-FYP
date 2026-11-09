@@ -183,7 +183,7 @@ class StandaloneApiService {
       final version = PreferenceLearning.effectiveVersion(
         (preferences['preferenceProfileVersion'] ?? preferences['updatedAt'] ?? 'local_profile_legacy').toString(), learned);
       final stale = safeSnapshot != null && (safeSnapshot['preferenceProfileVersion'] != version ||
-          (query?['scoreBasis']=='personal_v2' && (safeSnapshot['recommendationResults'] as List? ?? []).whereType<Map>().any((item)=>item['scoringVersion']!='relevance_v2')));
+          (query?['scoreBasis']=='personal_v2' && safeSnapshot['engine']?['scoringVersion']!='recovery_v3'));
       final page = recommendationPage(safeSnapshot ?? {}, query ?? {});
       if(_uid!=uid) throw StateError('Account changed. Refresh recommendations.');
       return {
@@ -2418,7 +2418,7 @@ class StandaloneApiService {
   ];
 
   Map<String, dynamic> get _engineInfo => {
-        'scoringVersion':'relevance_v2',
+        'scoringVersion':'recovery_v3',
         'contentBasedFiltering': true,
         'collaborativeFiltering': true,
         'weightedScoring': {

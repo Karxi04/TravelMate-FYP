@@ -11,6 +11,7 @@ import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import 'package_gallery_viewer.dart';
 import 'package_text_block.dart';
+import '../utils/package_departures.dart';
 
 class TourismPackageDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -56,7 +57,7 @@ class _TourismPackageDetailsScreenState
     adults = 1;
     children = 0;
     final dates = _list(widget.item['departureDates']);
-    if (dates.length == 1) selectedDepartureDate = dates.first;
+    if (dates.length == 1 && packageDepartureAvailable(dates.first)) selectedDepartureDate = dates.first;
   }
 
   Map<String, dynamic> _map(dynamic value) =>
@@ -281,9 +282,8 @@ class _TourismPackageDetailsScreenState
         throw Exception(
             'Package pricing basis is not verified. Please contact the operator.');
       }
-      if (_departureDates.isNotEmpty && selectedDepartureDate == null) {
-        throw Exception('Select an available departure date.');
-      }
+      final departureError=packageDepartureError(_departureDates,selectedDepartureDate);
+      if(departureError!=null) throw Exception(departureError);
       final totalTravellers = adults + children;
       if (totalTravellers < _minimumTravellers) {
         throw Exception(
@@ -873,7 +873,8 @@ class _TourismPackageDetailsScreenState
                                   items: _departureDates
                                       .map((value) => DropdownMenuItem(
                                           value: value,
-                                          child: Text(value)))
+                                          enabled: packageDepartureAvailable(value),
+                                          child: Text(packageDepartureAvailable(value) ? value : '$value — unavailable')))
                                       .toList(),
                                   onChanged: (value) {
                                     setState(
@@ -882,6 +883,8 @@ class _TourismPackageDetailsScreenState
                                     setModalState(() {});
                                   },
                                 ),
+                                if(packageDepartureError(_departureDates,selectedDepartureDate)!=null)
+                                  Text(packageDepartureError(_departureDates,selectedDepartureDate)!,style:const TextStyle(color:AppColors.warning)),
                               ],
                               const Divider(height: AppSpacing.lg),
                               if (_hasVerifiedPriceBasis &&
@@ -954,8 +957,7 @@ class _TourismPackageDetailsScreenState
                                   onPressed: (!consumerPaymentsAvailable || submitting ||
                                           !_hasVerifiedPriceBasis ||
                                           !meetsMin ||
-                                          (_departureDates.isNotEmpty &&
-                                              selectedDepartureDate == null))
+                                          packageDepartureError(_departureDates,selectedDepartureDate)!=null)
                                       ? null
                                       : () async {
                                           Navigator.pop(modalContext);

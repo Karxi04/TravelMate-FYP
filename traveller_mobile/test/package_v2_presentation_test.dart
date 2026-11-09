@@ -81,6 +81,33 @@ Future<void> _openBookingSheet(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('past-only package explains unavailable checkout and never posts', (tester) async {
+    tester.view.physicalSize=const Size(1000,2400); tester.view.devicePixelRatio=1;
+    addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
+    final api=_PackageDetailsApi()..checkoutEnabled=true;
+    await tester.pumpWidget(MaterialApp(home:TourismPackageDetailsScreen(api:api,item:{..._checkoutPackage,'departureDates':['2000-11-07']})));
+    await tester.pumpAndSettle(); await _openBookingSheet(tester);
+    expect(find.textContaining('No current or upcoming package departures'),findsOneWidget);
+    final button=tester.widget<FilledButton>(find.byKey(const ValueKey('package-checkout-btn')));
+    expect(button.onPressed,isNull);
+    expect(api.postedPayloads,isEmpty);
+  });
+
+  testWidgets('past departure disabled and explicit valid selection reaches checkout unchanged', (tester) async {
+    tester.view.physicalSize=const Size(1000,2400); tester.view.devicePixelRatio=1;
+    addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
+    final api=_PackageDetailsApi()..checkoutEnabled=true;
+    await tester.pumpWidget(MaterialApp(home:TourismPackageDetailsScreen(api:api,item:{..._checkoutPackage,'departureDates':['2000-11-07','2099-11-10']})));
+    await tester.pumpAndSettle(); await _openBookingSheet(tester);
+    final dropdown=tester.widget<DropdownButtonFormField<String>>(find.byKey(const ValueKey('package-departure-date')));
+    expect(dropdown.initialValue,isNull);
+    await tester.tap(find.byKey(const ValueKey('package-departure-date'))); await tester.pumpAndSettle();
+    await tester.tap(find.text('2099-11-10').last); await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('package-checkout-btn')));
+    await tester.tap(find.byKey(const ValueKey('package-checkout-btn'))); await tester.pumpAndSettle();
+    expect(api.postedPayloads.single['departureDate'],'2099-11-10');
+  });
+
   testWidgets('F-F1A-P approved package purchase resumes existing authoritative attempt flow', (tester) async {
     tester.view.physicalSize = const Size(900, 2400);
     tester.view.devicePixelRatio = 1;

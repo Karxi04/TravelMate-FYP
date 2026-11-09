@@ -52,7 +52,7 @@ class RecommendationCard extends StatelessWidget {
 
   bool get _hasPersonalScore {
     final score = recommendation['personalSuitabilityScore'];
-    return recommendation['scoringVersion']=='relevance_v2' && score is num && score.isFinite && score >= 0 && score <= 100;
+    return const ['relevance_v2','recovery_v3'].contains(recommendation['scoringVersion']) && score is num && score.isFinite && score >= 0 && score <= 100;
   }
   String get _scoreLabel => _hasPersonalScore ? 'Personal match' : 'Recommendation score';
 
@@ -279,7 +279,7 @@ class RecommendationCard extends StatelessWidget {
                         ),
                     ],
                   ),
-                  if (recommendation['scoringVersion']=='relevance_v2' && !_hasPersonalScore)
+                  if (const ['relevance_v2','recovery_v3'].contains(recommendation['scoringVersion']) && !_hasPersonalScore)
                     Text('Personal match unavailable — interest evidence missing.',style:Theme.of(context).textTheme.bodySmall),
                   if (_hasPersonalScore) ...[
                     const SizedBox(height: AppSpacing.xxs),

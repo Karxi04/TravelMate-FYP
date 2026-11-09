@@ -383,6 +383,27 @@ def test_package_new_post_failure_value_preservation(auth_client):
         assert 'Title validation failed on backend.' in html
 
 
+def test_butterworth_inclusion_error_preserves_explicit_choice_and_promises(auth_client):
+    from html import unescape
+    import re
+    brochure = ['Standard admission ticket to Penang Bird Park.',
+                'Butterworth Art Walk guided sightseeing experience.']
+    form_data = {**SAMPLE_PACKAGE_PAYLOAD, 'guideActivitiesIncluded':'false',
+                 'accommodationIncluded':'false','transportIncluded':'false',
+                 'inclusions':'\n'.join(brochure)}
+    error = 'guideActivitiesIncluded: inclusion choice conflicts with the package brochure. Conflicting text: ' + '; '.join(brochure)
+    response = MagicMock(ok=False,status_code=409)
+    response.json.return_value = {'error':error}
+    with _patch_fr12(MagicMock(return_value=response)):
+        result = auth_client.post('/packages/new',data=form_data)
+    assert result.status_code == 200
+    html=unescape(result.get_data(as_text=True))
+    assert error in html and all(text in html for text in brochure)
+    select=re.search(r'<select id="guideActivitiesIncluded".*?</select>',html,re.S).group()
+    assert re.search(r'<option value="false"\s+selected',select)
+    assert 'choose Included if either a guided service or admission' in html
+
+
 def test_package_edit_post_failure_value_preservation(auth_client):
     """When API returns an error on edit, edit page re-renders with edited values preserved."""
     existing_package = {

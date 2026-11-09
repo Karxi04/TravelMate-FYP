@@ -260,6 +260,7 @@ def _page(record, options):
     return {**view, 'recommendationResults': qualified[offset:end], 'pagination': {
         'minimumMatchScore': minimum, 'scoreBasis':basis, 'offset': offset, 'limit': limit,
         'candidateCount': len(all_items), 'qualifiedCount': len(qualified),
+        'personalEvidenceCount': sum(isinstance(item.get('personalSuitabilityScore'), (int,float)) and not isinstance(item.get('personalSuitabilityScore'),bool) for item in all_items),
         'nextOffset': end if end < len(qualified) else None,
         'hasMore': end < len(qualified), 'providerHasMore': bool(record.get('providerHasMore')),
     }}
@@ -331,19 +332,21 @@ def generate():
             if expand:
                 return jsonify(ok=False, error='Additional destinations could not be loaded. Your current results are preserved.'), 502
 
-    if not previous:
-        cached = retrieveRecord(
-            'destination_cache',
-            filters=[] if destination_scope['scopeKey'] == 'my' else [('canonicalDestinationScope', '==', destination_scope['scopeKey'])],
-            limit=150,
-        )
-        if not cached and destination_scope.get('state'):
-            cached = retrieveRecord('destination_cache', filters=[('normalizedGeography.state','==',destination_scope['state'])], limit=150)
-        if len(cached or []) < 150 and destination_scope['scopeKey'] != 'my':
-            # Older seed/cache records predate scope fields; geography still gates every row.
-            cached = list(cached or []) + list(retrieveRecord('destination_cache',limit=150) or [])
-        if cached:
-            candidates += _filter_for_destination(cached, destination_scope)
+    cached = retrieveRecord(
+        'destination_cache',
+        filters=[] if destination_scope['scopeKey'] == 'my' else [('canonicalDestinationScope', '==', destination_scope['scopeKey'])],
+        limit=150,
+    )
+    if not cached and destination_scope.get('state'):
+        cached = retrieveRecord('destination_cache', filters=[('normalizedGeography.state','==',destination_scope['state'])], limit=150)
+    if len(cached or []) < 150 and destination_scope['scopeKey'] != 'my':
+        # Older seed/cache records predate scope fields; geography still gates every row.
+        cached = list(cached or []) + list(retrieveRecord('destination_cache',limit=150) or [])
+    if cached:
+        # Latest grounded metadata wins for the same identity; prior-only candidates survive.
+        refreshed = {_destination_id(item):item for item in _filter_for_destination(cached, destination_scope)}
+        candidates = [{**item, **refreshed.get(_destination_id(item), {})} for item in candidates]
+        candidates += list(refreshed.values())
 
     if not candidates and _fallback_mode():
         fallback_candidates = [{**x,'ratingSource':'unverified_local_catalog'} for x in DESTINATIONS]
@@ -418,7 +421,7 @@ def generate():
         'providerHasMore': provider_has_more,
         'providerNextOffset': provider_offset,
         'engine': {
-            'scoringVersion':'relevance_v2',
+            'scoringVersion':'recovery_v3',
             'contentBasedFiltering': True,
             'collaborativeFiltering': True,
             'weightedScoring': {'content': 0.60, 'collaborative': 0.30, 'popularity': 0.10},
@@ -472,7 +475,7 @@ def get_recommendations():
     stale = bool(record and isinstance(preference, dict) and isinstance(preference.get('interests'), list)
                  and (record.get('preferenceProfileVersion') != _preference_version(preference, learned)
                       or record.get('preferenceFingerprint') != _profile_fingerprint(preference)))
-    if request.args.get('scoreBasis')=='personal_v2' and any(item.get('scoringVersion')!='relevance_v2' for item in record.get('recommendationResults',[])):
+    if record and request.args.get('scoreBasis') == 'personal_v2' and (record.get('engine') or {}).get('scoringVersion') != 'recovery_v3':
         stale = True
     response_record = _page(record, request.args)
     if response_record is None:

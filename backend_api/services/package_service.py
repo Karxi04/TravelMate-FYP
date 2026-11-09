@@ -275,5 +275,11 @@ def package_submission_error(data):
         requirements = derive_required_services(package)
         for key, meta in requirements.items():
             if key + 'Included' in package and meta['uncertain']:
-                return f'{key}: inclusion choice conflicts with the package brochure. Review inclusions and exclusions.'
+                evidence = '; '.join(meta.get('conflictingClauses') or [])
+                return (f'{key}Included: inclusion choice conflicts with the package brochure. '
+                        f'Conflicting text: {evidence}. Correct this inclusion choice or the brochure to match the intended sale. '
+                        'Guide / activities includes either a guided service OR promised admission / reserved tickets / arranged activities.'
+                        if key == 'guideActivities' else
+                        f'{key}Included: inclusion choice conflicts with the package brochure. Conflicting text: {evidence}. '
+                        'Correct this inclusion choice or the brochure to match the intended sale.')
     return None

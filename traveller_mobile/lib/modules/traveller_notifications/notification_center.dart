@@ -14,7 +14,7 @@ const notificationPath = '/api/traveller/notifications';
 
 Widget? notificationDestination(Map target, ApiService api) {
   final id = '${target['tripId'] ?? ''}';
-  if (target['screen'] == 'payments') return PaymentHistoryScreen(api: api);
+  if (target['screen'] == 'payments') return PaymentHistoryScreen(api: api, focusOrderId:'${target['orderId'] ?? ''}');
   if (id.isEmpty || id.contains('/')) return null;
   return switch (target['screen']) {
     'package_trip' => PackageTripDetailsScreen(tripId: id, api: api),
@@ -212,7 +212,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                   ? FontWeight.normal
                                   : FontWeight.bold)),
                       subtitle: Text(
-                          '${item['message'] ?? ''}\n${timestamp(item['createdAt'])}'),
+                          '${item['message'] ?? ''}\n${item['sourceLabel'] == null ? '' : '${item['sourceLabel']}\n'}${timestamp(item['createdAt'])}'),
                       trailing: IconButton(
                           tooltip: item['read'] == true
                               ? 'Mark unread'

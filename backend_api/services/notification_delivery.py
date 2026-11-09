@@ -7,7 +7,7 @@ import re
 from uuid import uuid4
 
 from sequence_contract.firebase_firestore import retrieveRecord, claimRecord, transactNotificationRecord
-from services.traveller_notifications import derive_events, active_trip, trip_start, MYT
+from services.traveller_notifications import derive_events, active_trip, trip_start, MYT, canonical_payment_order
 
 log = logging.getLogger(__name__)
 
@@ -83,6 +83,7 @@ def capture_committed_order(order):
         uid = order.get('travellerId')
         if not uid:
             return
+        order = canonical_payment_order(order,uid,lambda oid:retrieveRecord('checkout_orders',oid))
         tid = order.get('fulfilledTripId')
         trip = retrieveRecord('itineraries',tid) if tid else None
         for event in derive_events(uid,[order],[trip] if trip else []):

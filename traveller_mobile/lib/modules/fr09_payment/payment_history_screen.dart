@@ -149,8 +149,9 @@ class _TravelRecordsScreenState extends State<TravelRecordsScreen> {
 
 class PaymentHistoryScreen extends StatefulWidget {
   final ApiService? api;
+  final String? focusOrderId;
 
-  const PaymentHistoryScreen({super.key, this.api});
+  const PaymentHistoryScreen({super.key, this.api, this.focusOrderId});
 
   @override
   State<PaymentHistoryScreen> createState() => _PaymentHistoryScreenState();
@@ -164,6 +165,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   bool isSessionExpired = false;
   bool actionBusy = false;
   Set<String> checkoutTypes = {};
+  bool _notificationOpened = false;
   final TransactionAttemptLifecycle _restartIntent =
       TransactionAttemptLifecycle('package_checkout_restart');
 
@@ -206,6 +208,17 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
           payments = parsed;
           loading = false;
         });
+        final reference = widget.focusOrderId;
+        if (!_notificationOpened && reference != null && reference.isNotEmpty) {
+          _notificationOpened = true;
+          final matches = parsed.where((item) => ['id','orderReference','checkoutOrderId','orderId']
+              .any((key)=>item[key]?.toString()==reference)).toList();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (matches.isNotEmpty) { _showPaymentDetails(context,matches.first); }
+            else { showError(context,'The referenced payment is unavailable in your payment history.'); }
+          });
+        }
       } else {
         setState(() {
           errorMessage = 'Unable to load payment history.';

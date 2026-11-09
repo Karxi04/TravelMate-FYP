@@ -43,6 +43,22 @@ def coordinates(trip):
     return None
 
 
+def canonical_payment_order(order, uid, lookup):
+    """Link a financial projection only to a verified same-owner checkout order."""
+    linked_id = order.get('checkoutOrderId') or order.get('orderId')
+    linked = lookup(str(linked_id)) if linked_id and order.get('travellerId') == uid else None
+    if not linked or linked.get('travellerId') != uid:
+        return order
+    return {**order, 'orderReference': str(linked.get('orderReference') or linked.get('id') or linked_id),
+            'packageSnapshot': linked.get('packageSnapshot') or order.get('packageSnapshot') or {},
+            'paidAt': order.get('paidAt') or linked.get('paidAt')}
+
+
+def payment_source_label(order, reference):
+    title = str((order.get('packageSnapshot') or {}).get('title') or '')[:150]
+    return (title + ' · ' if title else '') + 'Order ' + str(reference)
+
+
 def derive_events(uid, orders, trips, checklists=None, forecasts=None, now=None):
     now = now or datetime.now(timezone.utc)
     today = now.astimezone(MYT).date()
@@ -54,6 +70,7 @@ def derive_events(uid, orders, trips, checklists=None, forecasts=None, now=None)
                        'title':title, 'message':message, 'target':target, 'createdAt':now.isoformat(),
                        'occurredAt':occurred_at, 'read':False}
         if category == 'weather': events[nid]['forecastDate'] = source[1]
+        return events[nid]
     for order in orders:
         if order.get('travellerId') != uid or order.get('isSimulated') or order.get('bookingMode') == 'simulation':
             continue
@@ -68,8 +85,11 @@ def derive_events(uid, orders, trips, checklists=None, forecasts=None, now=None)
         if state not in {'paid','failed','cancelled','expired','refunded'} and terminal:
             state = terminal
         if state in {'paid','failed','cancelled','expired','refunded'}:
-            add('payment', [oid,state], 'Payment status updated', f'Your recorded payment status is {state}.',
+            event = add('payment', [oid,state], 'Payment status updated', f'Your recorded payment status is {state}.',
                 {'screen':'payments','orderId':oid}, (order.get('paidAt') if state == 'paid' else None) or order.get('updatedAt'))
+            event['sourceOrderId'] = oid
+            event['paymentState'] = state
+            event['sourceLabel'] = payment_source_label(order,oid)
         record = order.get('fulfillmentRecord') or {}
         trip_id = str(order.get('fulfilledTripId') or '')
         if state == 'paid' and order.get('fulfillmentStatus') == 'trip_ready' and record.get('status') == 'trip_ready' and record.get('confirmedBy') and record.get('confirmedAt') and trip_id in owned_trip_ids:

@@ -227,7 +227,7 @@ def applyContentBasedFiltering(recommendationInput):
             'personalSuitabilityScore': round(max(0.0,min(100.0,suitability)),2) if suitability is not None else None,
             'evidenceConfidence': round(known_weight/requested_weight,3) if requested_weight else 0.0,
             'interestEvidenceSource': 'primary_metadata' if primary_match else 'description' if matched_concepts else 'none',
-            'scoringVersion': 'relevance_v2',
+            'scoringVersion': 'recovery_v3',
             'matchedInterests': matched_interests,
             'matchedProfileTerms': [
                 key for key, value in content_signals.items()
