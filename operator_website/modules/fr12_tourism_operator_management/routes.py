@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone, timedelta
 from math import isfinite
+from uuid import uuid4
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response, jsonify
 from api_client import call_api
 from .table_controls import CATALOG_COLUMNS, BOOKING_COLUMNS, sort_records, departure_date, number
@@ -312,6 +313,7 @@ def _is_pending_booking(b):
 
 def _sorting(columns, values, default):
     column = request.args.get('sort', default)
+    if columns is BOOKING_COLUMNS and column=='fulfillment':column='readiness'
     if column not in columns:column = default
     direction = request.args.get('direction', 'desc' if column in {'updated', 'created'} else 'asc')
     if direction not in {'asc', 'desc'}:direction = 'asc'
@@ -320,12 +322,16 @@ def _sorting(columns, values, default):
     return column, direction, links
 
 
+def _booking_state(item,key):
+    return (item.get('statusOverview') or {}).get(key,{}).get('state')
+
+
 def _departure_summary(items):
     paid = [item for item in items if _is_paid_booking(item)]
     result = {'bookings':len(items), 'paid':len(paid), 'pending':sum(_is_pending_booking(item) for item in items),
               'travellers':0, 'adults':0, 'children':0, 'unknown_parties':0,
-              'ready':sum(item.get('fulfillmentStatus') == 'trip_ready' for item in paid),
-              'arrangements_pending':sum(item.get('fulfillmentStatus') not in {'trip_ready','fulfillment_declined'} for item in paid)}
+              'ready':sum(_booking_state(item,'operatorReadiness') == 'ready' for item in paid),
+              'arrangements_pending':sum(_booking_state(item,'operatorReadiness') in {'awaiting_arrangements','needs_review'} for item in paid)}
     for item in paid:
         adults, children, total = (number(item.get(key)) for key in ('adults','children','groupSize'))
         adults = adults if adults is not None and adults.is_integer() else None
@@ -386,9 +392,15 @@ def bookings():
         elif status == "pending":
             items = [b for b in items if _is_pending_booking(b)]
         elif status == "fulfilled":
-            items = [b for b in items if str(b.get("fulfillmentStatus", "")).lower() in {"fulfilled", "trip_ready"}]
+            items = [b for b in items if _booking_state(b,'operatorReadiness')=='ready']
         elif status == "awaiting_fulfillment":
-            items = [b for b in items if str(b.get("fulfillmentStatus", "")).lower() in {"awaiting_operator_fulfillment", "partially_fulfilled"}]
+            items = [b for b in items if _booking_state(b,'operatorReadiness')=='awaiting_arrangements']
+        elif status == 'needs_review':
+            items = [b for b in items if _booking_state(b,'operatorReadiness')=='needs_review']
+        elif status == 'trip_created':
+            items = [b for b in items if _booking_state(b,'travellerTrip')=='created']
+        elif status == 'supplier_not_required':
+            items = [b for b in items if _booking_state(b,'supplierArrangements')=='not_required']
         elif status == "declined":
             items = [b for b in items if str(b.get("fulfillmentStatus", "")).lower() == "fulfillment_declined"]
         elif status == "test":
@@ -414,11 +426,11 @@ def bookings():
         "total": len(all_items),
         "paid": sum(1 for b in all_items if _is_paid_booking(b)),
         "pending": sum(1 for b in all_items if _is_pending_booking(b)),
-        "fulfilled": sum(1 for b in all_items if str(b.get("fulfillmentStatus", "")).lower() in {"fulfilled", "trip_ready"}),
-        "awaiting_fulfillment": sum(1 for b in all_items if str(b.get("fulfillmentStatus", "")).lower() in {"awaiting_operator_fulfillment", "partially_fulfilled"}),
-        "trip_ready": sum(1 for b in all_items if str(b.get("fulfillmentStatus", "")).lower() in {"trip_ready", "fulfilled"}),
+        "fulfilled": sum(1 for b in all_items if _booking_state(b,'travellerTrip')=='created'),
+        "awaiting_fulfillment": sum(1 for b in all_items if _booking_state(b,'operatorReadiness')=='awaiting_arrangements'),
+        "trip_ready": sum(1 for b in all_items if _booking_state(b,'operatorReadiness')=='ready'),
         "declined": sum(1 for b in all_items if str(b.get("fulfillmentStatus", "")).lower() == "fulfillment_declined"),
-        "unconfirmed_supplier": sum(1 for b in all_items if b.get("supplierReservationStatus") in {"not_created", "unconfirmed"}),
+        "unconfirmed_supplier": sum(1 for b in all_items if _booking_state(b,'supplierArrangements') in {'pending','partially_recorded','needs_review'}),
         "test_orders": sum(1 for b in all_items if b.get("testMode")),
         "total_revenue": sum(
             _safe_float(b.get("groupTotal"))
@@ -459,7 +471,26 @@ def booking_detail(order_reference):
     return render_template(
         "fr12_tourism_operator_management/booking_detail.html",
         booking=item,
+        clarification_request_id=uuid4().hex,
     )
+
+
+@bp.route('/bookings/<order_reference>/clarifications',methods=['POST'])
+def propose_booking_clarification(order_reference):
+    if not guard():return redirect(url_for('operator_fr01.login'))
+    components={}
+    for key in ('accommodation','transport','guideActivities'):
+        value=request.form.get(key+'Resolution','')
+        if value in {'included','not_included'}:
+            components[key]={'required':value=='included','promise':request.form.get(key+'Promise','').strip()}
+    try:revision=int(request.form.get('expectedRevision',''))
+    except ValueError:revision=-1
+    response=call_api('POST',f'/api/fr12/bookings/{order_reference}/clarifications',json={
+        'expectedRevision':revision,'requestId':request.form.get('requestId',''),
+        'components':components,'legacyReview':request.form.get('legacyReview')=='true',
+        **{key:request.form.get(key,'').strip() for key in ('reason','evidenceReference','evidenceSummary')}})
+    flash('Clarification submitted for Administrator review.' if response.ok else _error(response,fallback='Clarification could not be submitted.'),'success' if response.ok else 'error')
+    return redirect(url_for('operator_fr12.booking_detail',order_reference=order_reference))
 
 
 @bp.route("/bookings/<order_reference>/fulfillment", methods=["POST"])

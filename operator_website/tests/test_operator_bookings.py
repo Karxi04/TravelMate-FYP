@@ -140,9 +140,9 @@ def test_operator_bookings_renders_data_and_honest_disclosures(auth_client):
 
         # Disclosures
         assert "Stripe Test Mode" in html
-        assert "Reservation Not Created" in html
-        assert "Supplier Status" in html
-        assert "Reservation Not Created" in html
+        assert "Reservation Not Created" not in html
+        assert "Supplier Arrangements" in html
+        assert "Operator Readiness" in html
 
         # Data rows
         assert "order-heritage-101" in html
@@ -152,7 +152,7 @@ def test_operator_bookings_renders_data_and_honest_disclosures(auth_client):
         assert "2 Adults, 1 Child" in html
         assert "MYR 1075.50" in html
         assert "🧪 Stripe Test" not in html
-        assert "Trip Created in App" in html
+        assert "Traveller Trip" in html
 
 
 def test_operator_bookings_empty_state(auth_client):
@@ -230,7 +230,8 @@ def test_operator_booking_detail_view(auth_client):
         assert "MYR 1075.50" in html
         assert "FYP demonstration environment" not in html
         assert "Order status summary" in html
-        assert "Reservation Not Created" in html
+        assert "Reservation Not Created" not in html
+        assert "Traveller Trip" in html and "Supplier Arrangements" in html
         assert "Read-Only Governance" in html
 
 

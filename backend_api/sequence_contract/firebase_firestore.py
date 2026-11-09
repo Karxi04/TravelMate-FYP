@@ -140,7 +140,7 @@ def updateRecord(collectionName, documentId, data, expected=None):
     return result
 
 
-def commitPackageFulfillment(document_id, expected, patch):
+def commitPackageFulfillment(document_id, expected, patch, clarification_revision=None):
     """CAS a package order and its owned Trip mirror in one transaction."""
     from google.cloud import firestore
     from services.review_service import ReviewConflict
@@ -153,6 +153,12 @@ def commitPackageFulfillment(document_id, expected, patch):
         current = {'id': snap.id, **(snap.to_dict() or {})} if snap.exists else None
         if current != expected:
             raise ReviewConflict('Booking changed. Refresh and try again.')
+        if clarification_revision is not None:
+            from services.booking_requirements import COLLECTION, assessment
+            review = db.collection(COLLECTION).document(document_id).get(transaction=transaction)
+            clarification = review.to_dict() if review.exists else None
+            if (not clarification or clarification.get('revision')!=clarification_revision or assessment(current,clarification)['integrityError']):
+                raise ReviewConflict('Purchased requirement clarification changed. Refresh before recording arrangements.')
         trip_id = current.get('fulfilledTripId')
         trip_ref = None
         if trip_id:
@@ -167,7 +173,7 @@ def commitPackageFulfillment(document_id, expected, patch):
             raise ReviewConflict('Recover the paid Package Trip before confirming arrangements.')
         if patch:
             transaction.update(source, patch)
-        if trip_ref is not None:
+        if trip_ref is not None and patch:
             updated = {**current, **patch}
             mirror = {key: updated[key] for key in ('fulfillmentStatus', 'supplierReservationStatus', 'fulfillmentRecord')
                       if key in updated}
@@ -177,8 +183,31 @@ def commitPackageFulfillment(document_id, expected, patch):
         return {**current, **patch}
 
     result = commit(db.transaction())
-    _notify_committed('checkout_orders', document_id, result)
+    if patch:
+        _notify_committed('checkout_orders', document_id, result)
     return result
+
+
+def commitRequirementClarification(document_id, actor, role, action, payload):
+    """Serialize a separate clarification/decision against the unchanged purchase."""
+    from google.cloud import firestore
+    from services.booking_requirements import COLLECTION, transition
+    from utils import utc_now_iso
+    db = get_db()
+    source = db.collection('checkout_orders').document(document_id)
+    review = db.collection(COLLECTION).document(document_id)
+
+    @firestore.transactional
+    def commit(transaction):
+        snap = source.get(transaction=transaction)
+        current = review.get(transaction=transaction)
+        if not snap.exists:raise ValueError('Booking not found.')
+        order = {**(snap.to_dict() or {}),'id':snap.id}
+        before = current.to_dict() if current.exists else None
+        updated = transition(order,before,payload,actor,role,action,utc_now_iso())
+        if updated != before:transaction.set(review,updated)
+        return updated
+    return commit(db.transaction())
 
 
 def transactPackingChecklist(trip_id, uid, transform):

@@ -536,6 +536,15 @@ def get_itinerary_route(iid):
     current = _own(iid)
     if not current:
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
+    if _is_package_trip(current) and current.get('checkoutOrderId'):
+        from services.booking_requirements import read_public_clarification
+        try:
+            order=retrieveRecord('checkout_orders',current['checkoutOrderId'])
+        except Exception:
+            order=None
+        if order and order.get('travellerId')==g.uid and order.get('fulfilledTripId')==iid:
+            summary=read_public_clarification(order,retrieveRecord)
+            if summary:current={**current,'approvedRequirementClarification':summary}
     return jsonify({'ok': True, 'itinerary': current})
 
 

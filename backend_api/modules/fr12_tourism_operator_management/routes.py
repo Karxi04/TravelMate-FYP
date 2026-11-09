@@ -17,6 +17,7 @@ from sequence_contract.firebase_firestore import (
     updateRecord,
     deleteRecord,
     commitPackageFulfillment,
+    commitRequirementClarification,
 )
 
 from sequence_contract.domain_functions import (
@@ -32,7 +33,8 @@ from firebase_service import get_db
 
 from flask import send_file
 from .analytics_service import generate_business_analytics, _safe_analytics_booking, unique_package_orders, RECORD_LIMIT, is_paid_order
-from services.package_checkout_contract import derive_required_services, build_initial_fulfillment_record, fulfillment_readiness
+from services.package_checkout_contract import build_initial_fulfillment_record, fulfillment_readiness
+from services.booking_requirements import COLLECTION as CLARIFICATION_COLLECTION, load_context
 from services.public_content_projection import eligible_package
 from services.report_service import export_operator_report
 from services.package_service import (
@@ -99,7 +101,8 @@ def packages():
 
 
 def _booking_projection(order):
-    return {**_safe_analytics_booking(order, include_fulfillment=True), 'paidAt': order.get('paidAt')}
+    context, trip = load_context(order,retrieveRecord)
+    return {**_safe_analytics_booking(order, include_fulfillment=True,requirement_context=context,trip_state=trip), 'paidAt': order.get('paidAt')}
 
 
 @bp.get('/bookings')
@@ -156,7 +159,11 @@ def _fulfillment_payload(fields):
 def _save_fulfillment(order_reference, order, patch):
     from services.review_service import ReviewConflict
     try:
-        updated = commitPackageFulfillment(order_reference, order, patch)
+        context=getattr(g,'fulfillment_context',None)
+        if context and context.get('record'):
+            updated = commitPackageFulfillment(order_reference, order, patch,clarification_revision=context['revision'])
+        else:
+            updated = commitPackageFulfillment(order_reference, order, patch)
         if not updated:
             raise RuntimeError('No persisted result')
         return jsonify({'ok': True, 'booking': _booking_projection(updated)}), 200
@@ -179,8 +186,6 @@ def update_booking_fulfillment(order_reference):
     order, error = _fulfillment_order(order_reference)
     if error:
         return error
-    if order.get('fulfillmentStatus') in {'trip_ready', 'fulfilled', 'fulfillment_declined'}:
-        return jsonify({'ok': False, 'error': 'Completed or declined arrangements cannot be changed here'}), 409
     payload = _fulfillment_payload({'serviceType', 'reference', 'supplierName', 'providerName', 'guideOrActivity', 'notes'})
     if payload is None:
         return jsonify({'ok': False, 'error': 'Invalid attestation fields or value types'}), 400
@@ -194,7 +199,13 @@ def update_booking_fulfillment(order_reference):
     notes = payload.get('notes', '')
     if not reference or len(reference) > 200 or len(name) > 200 or len(notes) > 2000 or any(ord(c) < 32 for c in reference):
         return jsonify({'ok': False, 'error': 'A valid reservation reference is required (maximum 200 characters).'}), 400
-    requirements = derive_required_services(order['packageSnapshot'])
+    context, trip = load_context(order,retrieveRecord)
+    g.fulfillment_context=context
+    if context['integrityError']:
+        return jsonify(ok=False,error='Purchased requirement clarification is unavailable or inconsistent. Administrator review is required.'),409
+    if order.get('fulfillmentStatus') in {'trip_ready', 'fulfillment_declined'} or (order.get('fulfillmentStatus')=='fulfilled' and not context['legacyReviewed']):
+        return jsonify({'ok': False, 'error': 'Completed or declined arrangements cannot be changed here'}), 409
+    requirements = context['requirements']
     if not requirements[service_type]['required'] or requirements[service_type].get('uncertain'):
         return jsonify({'ok': False, 'error': 'This service is not a verified included package arrangement'}), 409
     record = _fulfillment_record(order)
@@ -222,15 +233,19 @@ def confirm_booking_fulfillment(order_reference):
         return error
     if _fulfillment_payload(set()) is None:
         return jsonify({'ok': False, 'error': 'Confirmation does not accept booking field overrides'}), 400
-    if order.get('fulfillmentStatus') in {'fulfillment_declined', 'fulfilled'}:
+    context, trip = load_context(order,retrieveRecord)
+    g.fulfillment_context=context
+    if context['integrityError']:
+        return jsonify(ok=False,error='Purchased requirement clarification is unavailable or inconsistent. Administrator review is required.'),409
+    if order.get('fulfillmentStatus') == 'fulfillment_declined' or (order.get('fulfillmentStatus')=='fulfilled' and not context['legacyReviewed']):
         return jsonify({'ok': False, 'error': 'Declined or legacy fulfilled arrangements require review'}), 409
     if order.get('fulfillmentStatus') == 'trip_ready':
         return _save_fulfillment(order_reference, order, {})
     record = _fulfillment_record(order)
-    requirements = derive_required_services(order['packageSnapshot'])
+    requirements = context['requirements']
     if any(meta.get('uncertain') for meta in requirements.values()):
         return jsonify({'ok': False, 'error': 'Purchased brochure does not reliably establish included services. Review is required.'}), 409
-    readiness = fulfillment_readiness(order, requirements, record, True)
+    readiness = fulfillment_readiness(order, requirements, record, True,context['legacyReviewed'],trip['state'])
     if not readiness['canMarkReady']:
         return jsonify(ok=False,error='Cannot confirm fulfillment: arrangements have not been attested. ' + ' '.join(readiness['blockers'])),400
     now = utc_now_iso()
@@ -249,7 +264,11 @@ def decline_booking_fulfillment(order_reference):
     order, error = _fulfillment_order(order_reference)
     if error:
         return error
-    if order.get('fulfillmentStatus') in {'trip_ready', 'fulfilled'}:
+    context, trip = load_context(order,retrieveRecord)
+    g.fulfillment_context=context
+    if context['integrityError']:
+        return jsonify(ok=False,error='Clarification is unavailable; refresh before recording a decision.'),409
+    if order.get('fulfillmentStatus') == 'trip_ready' or (order.get('fulfillmentStatus')=='fulfilled' and not context['legacyReviewed']):
         return jsonify({'ok': False, 'error': 'Cannot decline completed arrangements here'}), 409
     payload = _fulfillment_payload({'reason'})
     reason = payload.get('reason', '') if payload is not None else ''
@@ -266,6 +285,41 @@ def decline_booking_fulfillment(order_reference):
     return _save_fulfillment(order_reference, order, {
         'fulfillmentStatus': 'fulfillment_declined', 'supplierReservationStatus': 'declined',
         'fulfillmentRecord': record, 'updatedAt': now})
+
+
+@bp.get('/booking-clarifications')
+@auth_required(['admin'])
+def booking_clarification_queue():
+    items=retrieveRecord(CLARIFICATION_COLLECTION,filters=[('status','==','pending')],limit=201) or []
+    return jsonify(ok=True,items=[{key:item.get(key) for key in ('orderId','operatorId','status','revision','updatedAt')} for item in items[:200]],dataLimited=len(items)>200)
+
+
+def _clarification_action(order_reference, action):
+    try:
+        commitRequirementClarification(order_reference,g.uid,g.role,action,request.get_json(silent=True))
+        order=retrieveRecord('checkout_orders',order_reference)
+        return jsonify(ok=True,booking=_booking_projection(order))
+    except PermissionError:
+        return jsonify(ok=False,error='Booking clarification is not authorized.'),403
+    except ReviewConflict as error:
+        return jsonify(ok=False,error=str(error)),409
+    except ValueError as error:
+        return jsonify(ok=False,error=str(error)),400
+    except Exception:
+        return jsonify(ok=False,error='Clarification storage is unavailable. Refresh before retrying.'),503
+
+
+@bp.post('/bookings/<order_reference>/clarifications')
+@auth_required(['operator'])
+def propose_booking_clarification(order_reference):
+    if g.role!='operator':return jsonify(ok=False,error='Only the owning operator can propose a clarification.'),403
+    return _clarification_action(order_reference,'propose')
+
+
+@bp.post('/bookings/<order_reference>/clarifications/review')
+@auth_required(['admin'])
+def review_booking_clarification(order_reference):
+    return _clarification_action(order_reference,'review')
 
 
 def _hotel_package_payload(payload, current=None):

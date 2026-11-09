@@ -8,6 +8,11 @@ from services.package_checkout_contract import (
 )
 
 
+def _read_order(value):
+    return lambda collection, identity=None, **kwargs: (None if collection == 'package_requirement_clarifications' else
+        _trip_for(value) if collection == 'itineraries' else deepcopy(value))
+
+
 AUTH_HEADER = {'Authorization': 'Bearer valid_test_token'}
 
 
@@ -166,7 +171,7 @@ def test_operator_attests_accommodation_component(client, mock_operator_auth):
 
     def mock_retrieve(col, doc_id=None, **k):
         if doc_id:
-            return deepcopy(store.get(doc_id))
+            return None if col == 'package_requirement_clarifications' else deepcopy(store.get(doc_id))
         return list(store.values())
 
     def mock_update(col, doc_id, data):
@@ -207,7 +212,7 @@ def test_operator_attests_accommodation_component(client, mock_operator_auth):
 
 def test_attestation_validation_rejects_missing_reference_or_bad_type(client, mock_operator_auth):
     order = _sample_order()
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=order):
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=_read_order(order)):
         # Missing reference
         res1 = client.post(
             f"/api/fr12/bookings/{order['id']}/fulfillment",
@@ -234,7 +239,7 @@ def test_attestation_validation_rejects_missing_reference_or_bad_type(client, mo
 def test_confirmation_gate_blocks_when_required_services_incomplete(client, mock_operator_auth):
     order = _sample_order()
     # Accommodation and transport are required, but neither is confirmed yet
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=order):
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=_read_order(order)):
         res = client.post(
             f"/api/fr12/bookings/{order['id']}/confirm-fulfillment",
             headers=AUTH_HEADER,
@@ -265,7 +270,7 @@ def test_confirmation_gate_succeeds_when_all_required_attested(client, mock_oper
 
     def mock_retrieve(col, doc_id=None, **k):
         if doc_id:
-            return deepcopy(store.get(doc_id))
+            return None if col == 'package_requirement_clarifications' else deepcopy(store.get(doc_id))
         return list(store.values())
 
     def mock_update(col, doc_id, data):
@@ -298,7 +303,7 @@ def test_confirmation_gate_succeeds_when_all_required_attested(client, mock_oper
 
 def test_unowned_booking_fulfillment_rejected(client, mock_operator_auth):
     order = _sample_order(operator_id='another_operator_uid')
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=order):
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=_read_order(order)):
         res = client.post(
             f"/api/fr12/bookings/{order['id']}/fulfillment",
             headers=AUTH_HEADER,
@@ -309,7 +314,7 @@ def test_unowned_booking_fulfillment_rejected(client, mock_operator_auth):
 
 def test_unpaid_booking_fulfillment_rejected(client, mock_operator_auth):
     order = _sample_order(status='checkout_open', paymentStatus='unpaid')
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=order):
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=_read_order(order)):
         res = client.post(
             f"/api/fr12/bookings/{order['id']}/fulfillment",
             headers=AUTH_HEADER,
@@ -331,7 +336,7 @@ def test_decline_workflow_requires_detailed_reason_and_updates_status(client, mo
 
     def mock_retrieve(col, doc_id=None, **k):
         if doc_id:
-            return deepcopy(store.get(doc_id))
+            return None if col == 'package_requirement_clarifications' else deepcopy(store.get(doc_id))
         return list(store.values())
 
     def mock_update(col, doc_id, data):

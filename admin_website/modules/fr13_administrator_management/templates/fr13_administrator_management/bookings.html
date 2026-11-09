@@ -16,6 +16,7 @@
   <a class="btn {% if booking_type == 'hotel' %}primary{% else %}outline{% endif %}" href="{{ url_for('admin_fr13.bookings', type='hotel') }}">Hotel Bookings</a>
   <a class="btn {% if booking_type == 'package' %}primary{% else %}outline{% endif %}" href="{{ url_for('admin_fr13.bookings', type='package') }}">Package Bookings (Platform)</a>
   <a class="btn {% if booking_type == 'all' %}primary{% else %}outline{% endif %}" href="{{ url_for('admin_fr13.bookings', type='all') }}">All Bookings</a>
+  <a class="btn outline" href="{{ url_for('admin_fr13.booking_clarifications') }}">Purchased Requirement Reviews</a>
 </div>
 
 {% if booking_type == 'package' %}
@@ -28,8 +29,8 @@
         <th scope="col">Operator</th>
         <th scope="col">Traveller</th>
         <th scope="col">Payment</th>
-        <th scope="col">Platform Fulfillment</th>
-        <th scope="col">Supplier Reservation</th>
+        <th scope="col">Traveller Trip</th><th scope="col">Operator Readiness</th>
+        <th scope="col">Supplier Arrangements</th><th scope="col">Requirement Review</th>
         <th scope="col">Amount</th>
         <th scope="col">Created</th>
       </tr>
@@ -54,18 +55,10 @@
         <td>
           <span class="status {{ x.get('paymentStatus', 'unpaid') }}">{{ x.get('paymentStatus', 'unpaid')|payment_label(x.get('orderStatus','')) }}</span>
         </td>
-        <td>
-          <span class="status {{ x.get('fulfillmentStatus', 'pending') }}">{{ (x.get('fulfillmentStatus', 'pending') or '')|replace('_', ' ')|title }}</span>
-        </td>
-        <td>
-          <span class="badge warning" title="{{ x.get('supplierReservationDisclosure', 'Platform order only. Direct supplier airline/hotel booking is not executed.') }}" style="font-size: 11px;">
-            {% set supplier_status = x.get('supplierReservationStatus', 'not_created') %}
-            {% if supplier_status == 'operator_attested' %}Arrangements Recorded (Operator)
-            {% elif supplier_status == 'declined' %}Unable to Fulfil
-            {% elif supplier_status == 'not_required' %}Not Required
-            {% else %}⚠️ Reservation Not Created{% endif %}
-          </span>
-        </td>
+        {% for key in ['travellerTrip','operatorReadiness','supplierArrangements'] %}
+        <td><span class="status" style="white-space:normal;overflow-wrap:anywhere">{{ (x.get('statusOverview') or {}).get(key,{}).get('label','Unavailable') }}</span></td>
+        {% endfor %}
+        <td><a class="btn outline" href="{{ url_for('admin_fr13.booking_clarification_review',order_reference=x.get('id')) }}">{{ x.get('clarificationStatus') or 'View Evidence' }}</a></td>
         <td>
           {% if x.get('amount') is not none %}
             <strong>{{ x.get('currency', 'UNKNOWN') }} {{ '%.2f'|format(x.get('amount')|float) }}</strong>
@@ -79,7 +72,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="9">
+        <td colspan="11">
           <div class="empty-state">
             <div class="empty-icon" aria-hidden="true">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
@@ -103,7 +96,7 @@
         <th scope="col">Details</th>
         <th scope="col">Traveller</th>
         <th scope="col">Status</th>
-        <th scope="col">Supplier Reservation</th>
+        <th scope="col">Supplier Arrangements</th><th scope="col">Requirement Review</th>
         <th scope="col">Amount</th>
         <th scope="col">Created</th>
       </tr>
@@ -134,17 +127,19 @@
         <td>
           {% if btype == 'package' %}
             <span class="status {{ x.get('paymentStatus', 'unpaid') }}">{{ x.get('paymentStatus', 'unpaid')|payment_label(x.get('orderStatus','')) }}</span>
+            {% for key,label in [('travellerTrip','Traveller Trip'),('operatorReadiness','Operator Readiness')] %}<p class="muted">{{ label }}: {{ (x.get('statusOverview') or {}).get(key,{}).get('label','Unavailable') }}</p>{% endfor %}
           {% else %}
             <span class="status {{ x.get('bookingStatus', 'unknown') }}">{{ x.get('confirmationLabel') or x.get('bookingStatus', 'unknown')|title }}</span>
           {% endif %}
         </td>
         <td>
           {% if btype == 'package' %}
-            <span class="badge warning" style="font-size: 11px;">⚠️ Reservation Not Created</span>
+            <span class="badge neutral" style="white-space:normal;overflow-wrap:anywhere">{{ (x.get('statusOverview') or {}).get('supplierArrangements',{}).get('label','Unavailable') }}</span>
           {% else %}
             <span class="badge neutral" style="font-size: 11px;">{{ 'Hotel Details Saved' if x.get('reservationProvenance') == 'simulation' else x.get('reservationProvenance', 'unverified')|replace('_', ' ')|title }}</span>
           {% endif %}
         </td>
+        <td>{% if btype == 'package' %}<a class="btn outline" href="{{ url_for('admin_fr13.booking_clarification_review',order_reference=x.get('id')) }}">{{ x.get('clarificationStatus') or 'View Evidence' }}</a>{% else %}—{% endif %}</td>
         {% set amount = x.get('amount', x.get('hotelCost', x.get('price'))) %}
         <td>
           {% if amount is not none %}
@@ -159,7 +154,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="8">
+        <td colspan="9">
           <div class="empty-state">
             <div class="empty-icon" aria-hidden="true">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>

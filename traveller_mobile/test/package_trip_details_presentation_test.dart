@@ -284,6 +284,45 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('PackageTripDetailsScreen Presentation & Integrity Tests', () {
+    testWidgets(
+        'refreshes approved interpretation separately from original purchase',
+        (tester) async {
+      tester.view.physicalSize = const Size(800, 3000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final trip = _mockPackageTrip();
+      final initial = Map<String, dynamic>.from(trip);
+      final original = trip['packageSnapshot'].toString();
+      trip['approvedRequirementClarification'] = {
+        'revision': 2,
+        'components': {
+          'transport': {
+            'required': true,
+            'promise': 'Original private transfers remain included.'
+          }
+        },
+      };
+      final api = _MockApi(
+          packageTrip: trip, personalizedTrip: _mockPersonalizedTrip());
+      await tester.pumpWidget(MaterialApp(
+          home: PackageTripDetailsScreen(
+        tripId: trip['id'].toString(),
+        api: api,
+        initialTrip: initial,
+      )));
+      await tester.pumpAndSettle();
+      expect(find.text('Reviewed purchased-service clarification'),
+          findsOneWidget);
+      expect(find.textContaining('Original private transfers remain included.'),
+          findsOneWidget);
+      expect(find.text('4D3N Penang Heritage & Street Food Trail'),
+          findsAtLeastNWidgets(1));
+      expect(trip['packageSnapshot'].toString(), original);
+      expect(find.textContaining('PRIVATE-contract'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('renders dedicated read-only screen with immutable snapshot and operator schedule', (tester) async {
       tester.view.physicalSize = const Size(800, 3000);
       tester.view.devicePixelRatio = 1.0;

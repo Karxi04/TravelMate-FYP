@@ -1,0 +1,44 @@
+{% set review = clarification.get('record') or {} %}
+{% if review or clarification.get('canPropose') or clarification.get('integrityError') %}
+<section class="card" style="margin-top:24px" aria-label="Purchased requirement clarification">
+  <h3>Clarification / Review Status</h3>
+  <p>Original purchase information is read-only. Clarification must establish what was purchased; it cannot remove a promised service or change the paid amount.</p>
+  {% if clarification.get('integrityError') %}<p role="alert">Clarification data is unavailable or no longer matches this purchase. Administrator review is required.</p>{% endif %}
+  {% if review %}<p><strong>{{ review.get('status','')|replace('_',' ')|title }}</strong> · Revision {{ review.get('revision') }}</p>{% endif %}
+  {% if review.get('decision') %}<p><strong>Administrator decision:</strong> {{ review.decision.reason }}</p>{% endif %}
+  {% for key, meta in req_services.items() %}
+    {% if meta.get('uncertain') %}
+    <details><summary>{{ {'accommodation':'Accommodation','transport':'Transportation','guideActivities':'Guide / Activities'}.get(key,key) }} — {{ meta.get('reviewReason') }}</summary>
+      {% for path, source in clarification.get('originalEvidence',{}).get(key,{}).items() %}
+      <strong>{{ path }}</strong>{% if source.present %}<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto">{{ source.value|tojson(indent=2) }}</pre>{% else %}<p>Field absent from purchased snapshot.</p>{% endif %}
+      {% endfor %}
+    </details>
+    {% elif meta.get('clarifiedPromise') %}<p><strong>{{ key }} — accepted entitlement:</strong> {{ meta.clarifiedPromise }}</p>{% endif %}
+  {% endfor %}
+  {% if review.get('history') %}<details><summary>Clarification audit history</summary>
+    {% for event in review.history %}<p><strong>Revision {{ event.revision }} · {{ event.action }}</strong> — {{ event.get('proposedAt') or event.get('reviewedAt') }} · {{ event.get('proposedBy') or event.get('reviewedBy') }}</p><p>{{ event.reason }}</p><p>Evidence reference: {{ event.evidenceReference }}</p>{% endfor %}
+  </details>{% endif %}
+  {% if clarification.get('canPropose') and review.get('status') != 'pending' %}
+  <form method="post" action="{{ url_for('operator_fr12.propose_booking_clarification',order_reference=booking.orderReference) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="requestId" value="{{ clarification_request_id }}">
+    <input type="hidden" name="expectedRevision" value="{{ clarification.get('revision',0) }}">
+    {% if booking.fulfillmentStatus == 'fulfilled' and not clarification.get('legacyReviewed') %}
+      <p>This legacy order says the Traveller Trip was fulfilled, but that does not establish operator arrangements. Administrator review must authorize resuming the arrangement workflow.</p>
+      <input type="hidden" name="legacyReview" value="true">
+    {% endif %}
+    {% for key,meta in req_services.items() %}{% if meta.get('uncertain') %}
+      <label>{{ {'accommodation':'Accommodation','transport':'Transportation','guideActivities':'Guide / Activities'}.get(key,key) }} — proposed interpretation
+        <select class="input" name="{{ key }}Resolution"><option value="">Keep unresolved</option><option value="included">Included in original purchase</option><option value="not_included">Not included in original purchase</option></select>
+      </label>
+      <label>Purchased entitlement summary (may be shown to the Traveller after approval)<textarea class="input" name="{{ key }}Promise" maxlength="500" placeholder="Describe the entitlement established by the original purchase evidence."></textarea></label>
+    {% endif %}{% endfor %}
+    <label>Reason for clarification<textarea class="input" name="reason" minlength="20" maxlength="2000" required></textarea></label>
+    <label>Contemporaneous purchase evidence reference<input class="input" name="evidenceReference" minlength="5" maxlength="500" required placeholder="Original brochure, agreement or purchase-time correspondence reference"></label>
+    <label>What the evidence establishes<textarea class="input" name="evidenceSummary" minlength="20" maxlength="2000" required></textarea></label>
+    <p class="muted">Current edited catalogue content alone cannot establish an older purchase. If evidence is insufficient, keep the affected component unresolved. Approval never marks arrangements ready automatically.</p>
+    <button class="btn primary" type="submit">Propose Clarification for Administrator Review</button>
+  </form>
+  {% elif review.get('status') == 'pending' %}<p role="status">Awaiting Administrator review. Unresolved components continue to block readiness.</p>{% endif %}
+</section>
+{% endif %}

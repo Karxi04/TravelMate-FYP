@@ -548,7 +548,7 @@ def build_initial_fulfillment_record(snapshot, now=None):
     }
 
 
-def fulfillment_readiness(order, requirements, record, paid):
+def fulfillment_readiness(order, requirements, record, paid, legacy_reviewed=False, trip_state=None):
     """Explain the same attestation conditions enforced by the readiness action."""
     labels = {'accommodation': 'Accommodation', 'transport': 'Transportation', 'guideActivities': 'Guide / Activities'}
     blockers, components = [], []
@@ -557,8 +557,10 @@ def fulfillment_readiness(order, requirements, record, paid):
     state = order.get('fulfillmentStatus')
     if state == 'fulfillment_declined':
         blockers.append('Unable to Fulfil has been recorded; readiness cannot be changed here.')
-    elif state == 'fulfilled':
+    elif state == 'fulfilled' and not legacy_reviewed:
         blockers.append('This legacy fulfilled order requires review before arrangements can be changed.')
+    if trip_state is not None and trip_state != 'created':
+        blockers.append('The linked Traveller Trip is not available. Recover the paid Package Trip before marking arrangements ready.')
     if set(requirements) != set(labels):
         blockers.append('Purchased service requirements are unavailable; review is required.')
     for key, meta in requirements.items():
@@ -585,4 +587,12 @@ def fulfillment_readiness(order, requirements, record, paid):
             'requirementsReliable': set(requirements) == set(labels) and not any(meta.get('uncertain') for meta in requirements.values()),
             'components': components, 'requiredCount': sum(c['required'] for c in components),
             'completedCount': sum(c['required'] and c['complete'] for c in components)}
+
+
+def is_paid_order(order):
+    payment = str(order.get('paymentStatus') or '').strip().lower()
+    status = str(order.get('orderStatus') or order.get('status') or '').strip().lower()
+    terminal = {'cancelled', 'checkout_cancelled', 'failed', 'checkout_failed', 'payment_failed',
+                'expired', 'checkout_expired', 'refunded', 'partially_refunded', 'rejected'}
+    return (payment in {'paid', 'succeeded'} or (not payment and status in {'paid', 'succeeded'})) and status not in terminal
 

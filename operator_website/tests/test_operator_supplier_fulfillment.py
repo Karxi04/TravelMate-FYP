@@ -198,6 +198,9 @@ def test_bookings_list_renders_trip_ready_and_attested_badges(auth_client):
     ready_booking = dict(SAMPLE_BOOKING)
     ready_booking["fulfillmentStatus"] = "trip_ready"
     ready_booking["supplierReservationStatus"] = "operator_attested"
+    ready_booking['statusOverview']={'travellerTrip':{'state':'created','label':'Created'},
+        'operatorReadiness':{'state':'ready','label':'Ready'},
+        'supplierArrangements':{'state':'arrangements_recorded','label':'Arrangements Recorded'}}
 
     mock_resp = MagicMock(ok=True)
     mock_resp.json.return_value = {"ok": True, "items": [ready_booking]}
@@ -206,8 +209,8 @@ def test_bookings_list_renders_trip_ready_and_attested_badges(auth_client):
         res = auth_client.get("/bookings")
         assert res.status_code == 200
         html = res.get_data(as_text=True)
-        assert "Trip Ready" in html
-        assert "Arrangements Recorded (Operator)" in html
+        assert ">Ready<" in html
+        assert "Arrangements Recorded" in html
 
 
 @pytest.mark.parametrize('ready,uncertain,disabled', [(False,False,True),(True,True,True),(True,False,False)])

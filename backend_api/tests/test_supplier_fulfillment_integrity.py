@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from services.package_checkout_contract import derive_required_services
-from test_fr12_operator_supplier_fulfillment import _sample_order, AUTH_HEADER, _memory_commit, _trip_for
+from test_fr12_operator_supplier_fulfillment import _sample_order, AUTH_HEADER, _memory_commit, _trip_for, _read_order
 
 
 def test_multi_day_self_guided_itinerary_does_not_imply_supplier_services():
@@ -45,7 +45,7 @@ def test_refunded_payment_is_not_reactivated_by_old_paid_session():
     {'serviceType': 'accommodation', 'reference': 'R1', 'confirmedBy': 'admin'},
 ])
 def test_attestation_payload_types_bounds_and_allowlist(client, mock_operator_auth, body):
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=_sample_order()), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=_read_order(_sample_order())), \
          patch('modules.fr12_tourism_operator_management.routes.updateRecord',
                side_effect=lambda c, i, data: {**_sample_order(), **data}) as save:
         result = client.post('/api/fr12/bookings/ord-sample-1/fulfillment', headers=AUTH_HEADER, json=body)
@@ -57,7 +57,7 @@ def test_confirmation_does_not_trust_persisted_required_flags(client, mock_opera
     order = _sample_order()
     for meta in order['fulfillmentRecord']['requiredServices'].values():
         meta['required'] = False
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=order), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=_read_order(order)), \
          patch('modules.fr12_tourism_operator_management.routes.updateRecord',
                side_effect=lambda c, i, data: {**order, **data}):
         result = client.post('/api/fr12/bookings/ord-sample-1/confirm-fulfillment', headers=AUTH_HEADER)
@@ -66,7 +66,7 @@ def test_confirmation_does_not_trust_persisted_required_flags(client, mock_opera
 
 def test_ambiguous_legacy_snapshot_cannot_be_falsely_confirmed(client, mock_operator_auth):
     order = _sample_order(packageSnapshot={'title': 'Legacy'}, fulfillmentRecord=None)
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=order), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=_read_order(order)), \
          patch('modules.fr12_tourism_operator_management.routes.updateRecord',
                side_effect=lambda c, i, data: {**order, **data}):
         result = client.post('/api/fr12/bookings/ord-sample-1/confirm-fulfillment', headers=AUTH_HEADER)
@@ -75,7 +75,7 @@ def test_ambiguous_legacy_snapshot_cannot_be_falsely_confirmed(client, mock_oper
 
 def test_payment_terminal_status_blocks_decline(client, mock_operator_auth):
     order = _sample_order(status='refunded', paymentStatus='refunded')
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=order), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=_read_order(order)), \
          patch('modules.fr12_tourism_operator_management.routes.updateRecord',
                side_effect=lambda c, i, data: {**order, **data}):
         result = client.post('/api/fr12/bookings/ord-sample-1/decline', headers=AUTH_HEADER,
@@ -84,7 +84,7 @@ def test_payment_terminal_status_blocks_decline(client, mock_operator_auth):
 
 
 def test_missing_persistence_never_returns_false_success(client, mock_operator_auth):
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=_sample_order()), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=_read_order(_sample_order())), \
          patch('modules.fr12_tourism_operator_management.routes.commitPackageFulfillment', return_value=None):
         result = client.post('/api/fr12/bookings/ord-sample-1/fulfillment', headers=AUTH_HEADER,
                              json={'serviceType': 'accommodation', 'reference': 'R1'})
@@ -96,7 +96,7 @@ def memory_flow(monkeypatch):
     from modules.fr12_tourism_operator_management import routes
     order = _sample_order()
     store = {order['id']: deepcopy(order), order['fulfilledTripId']: _trip_for(order)}
-    monkeypatch.setattr(routes, 'retrieveRecord', lambda c, i: deepcopy(store.get(i)))
+    monkeypatch.setattr(routes, 'retrieveRecord', lambda c, i: None if c == 'package_requirement_clarifications' else deepcopy(store.get(i)))
     monkeypatch.setattr(routes, 'commitPackageFulfillment', _memory_commit(store))
     return store
 
@@ -140,7 +140,7 @@ def test_repeat_attestation_and_decline_preserve_audit_metadata(client, mock_ope
 
 @pytest.mark.parametrize('failure', [None, RuntimeError('sensitive persistence detail')])
 def test_commit_failure_is_generic_503(client, mock_operator_auth, failure):
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=_sample_order()), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=_read_order(_sample_order())), \
          patch('modules.fr12_tourism_operator_management.routes.commitPackageFulfillment',
                return_value=failure, side_effect=failure):
         result = client.post('/api/fr12/bookings/ord-sample-1/fulfillment', headers=AUTH_HEADER,
@@ -155,8 +155,9 @@ def test_concurrent_attestations_have_one_cas_winner(app, mock_operator_auth, me
     from modules.fr12_tourism_operator_management import routes
     barrier = Barrier(2)
     def retrieve(c, i):
+        if c == 'package_requirement_clarifications': return None
         snapshot = deepcopy(memory_flow.get(i))
-        barrier.wait(timeout=5)
+        if c == 'checkout_orders': barrier.wait(timeout=5)
         return snapshot
     monkeypatch.setattr(routes, 'retrieveRecord', retrieve)
     def request(key):

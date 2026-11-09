@@ -1015,7 +1015,12 @@ def get_order(order_id):
     record = retrieveRecord(ORDER_COLLECTION, order_id)
     if not record or record.get('travellerId') != g.uid:
         return jsonify({'ok': False, 'error': 'Order not found'}), 404
-    return jsonify({'ok': True, 'order': _safe_order(record)})
+    safe = _safe_order(record)
+    if record.get('quoteType')=='package':
+        from services.booking_requirements import read_public_clarification
+        summary = read_public_clarification(record,retrieveRecord)
+        if summary:safe['approvedRequirementClarification']=summary
+    return jsonify({'ok': True, 'order': safe})
 
 
 @bp.get('/orders/<order_id>/reconcile')
