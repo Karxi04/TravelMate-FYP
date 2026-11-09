@@ -7,6 +7,7 @@ from math import radians, sin, cos, sqrt, atan2, isfinite
 from utils import utc_now_iso
 from services.recommendation_taxonomy import (
     candidate_concepts,
+    primary_concepts,
     concepts_for,
     display_concepts,
     normalize_budget,
@@ -138,14 +139,11 @@ def applyContentBasedFiltering(recommendationInput):
             # Candidate-side coverage rewards additional relevant evidence without
             # penalising a specialist when unrelated user interests are added.
             interest_coverage = len(matched_concepts) / max(1, len(destination_concepts))
-            primary_concepts = concepts_for([
-                item.get('title'), item.get('name'), item.get('type'), item.get('category'),
-                *(item.get('categories') if isinstance(item.get('categories'), list) else []),
-                *(item.get('tags') if isinstance(item.get('tags'), list) else []),
-            ])
             primary_match = bool(
-                primary_concepts.intersection(interest_concepts))
-            base_interest_score = interest_coverage * (
+                primary_concepts(item).intersection(interest_concepts))
+            # Interests are alternatives: a clear match is the main evidence;
+            # breadth adds a smaller signal instead of diluting a specialist.
+            base_interest_score = ((0.75 + 0.25 * interest_coverage) if matched_concepts else 0.0) * (
                 1.0 if primary_match else 0.80)
         else:
             base_interest_score = 0.55
@@ -186,7 +184,7 @@ def applyContentBasedFiltering(recommendationInput):
         content_signals = {
             'interests': {
                 'score': round(interest_score * 100.0, 2),
-                'applied': bool(interest_concepts),
+                'applied': bool(interest_concepts and destination_concepts),
                 'matched': matched_interests,
                 'requestedConcepts': sorted(interest_concepts),
                 'primaryCategoryMatch': primary_match,
@@ -203,7 +201,7 @@ def applyContentBasedFiltering(recommendationInput):
             },
             'travelType': {
                 'score': round(type_score * 100.0, 2),
-                'applied': bool(travel_type_concepts),
+                'applied': bool(travel_type_concepts and destination_concepts),
                 'matched': display_concepts(
                     travel_type_concepts.intersection(destination_concepts)),
             },
@@ -215,10 +213,21 @@ def applyContentBasedFiltering(recommendationInput):
                 personality_score, personality_applied, requested_personality),
         }
 
+        weights = {'interests':0.55,'travelType':0.15,'pace':0.10,'budget':0.10,'travelPurpose':0.06,'travelPersonality':0.04}
+        known_weight = sum(weights[key] for key,signal in content_signals.items() if signal['applied'])
+        requested = [bool(interest_concepts),bool(travel_type_concepts),bool(requested_pace),bool(requested_budget),bool(requested_purpose),bool(requested_personality)]
+        requested_weight = sum(weight for weight,applied in zip(weights.values(),requested) if applied)
+        suitability = (sum(weights[key]*signal['score'] for key,signal in content_signals.items() if signal['applied']) / known_weight) if known_weight else None
+        if raw_interests and (not interest_concepts or not destination_concepts):
+            suitability = None
         results.append({
             **item,
             'destinationId': _destination_id(item),
             'contentScore': round(max(0.0, min(100.0, content_score)), 2),
+            'personalSuitabilityScore': round(max(0.0,min(100.0,suitability)),2) if suitability is not None else None,
+            'evidenceConfidence': round(known_weight/requested_weight,3) if requested_weight else 0.0,
+            'interestEvidenceSource': 'primary_metadata' if primary_match else 'description' if matched_concepts else 'none',
+            'scoringVersion': 'recovery_v3',
             'matchedInterests': matched_interests,
             'matchedProfileTerms': [
                 key for key, value in content_signals.items()
@@ -320,14 +329,18 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
     current_interests = concepts_for(current.get('interests', []))
 
     ratings = {}
-    for row in collaborativeData or []:
+    seen_ratings = set()
+    for row in sorted(collaborativeData or [],key=lambda row:(str(row.get('updatedAt') or row.get('createdAt') or ''),str(row.get('id') or '')),reverse=True):
         did = str(row.get('destinationId') or '')
         if not did:
             continue
         uid = str(row.get('travellerId') or '')
         if currentTravellerId and uid == str(currentTravellerId):
             continue
-        rating = max(0.0, min(5.0, _score_number(row.get('rating'))))
+        rating = _score_number(row.get('rating')) if not isinstance(row.get('rating'),bool) else 0.0
+        if not uid or not 1 <= rating <= 5 or (uid,did) in seen_ratings:
+            continue
+        seen_ratings.add((uid,did))
         peer = peer_preferences.get(uid) if isinstance(peer_preferences, dict) else None
         if not peer or not current:
             continue
@@ -404,7 +417,8 @@ def calculateRecommendationScore(items):
     for item in items or []:
         content = max(0.0, min(100.0, _score_number(item.get('contentScore'))))
         collaborative = max(0.0, min(100.0, _score_number(item.get('collaborativeScore'))))
-        rating = min(5.0, max(0.0, _score_number(item.get('rating'))))
+        rating = _score_number(item.get('rating')) if not isinstance(item.get('rating'),bool) else 0.0
+        if not 1 <= rating <= 5:rating=0.0
         unverified_local = item.get('ratingSource') == 'unverified_local_catalog'
         if unverified_local:
             rating = 0.0
@@ -414,7 +428,7 @@ def calculateRecommendationScore(items):
         score = content * 0.60 + collaborative * 0.30 + popularity * 0.10
 
         reasons = _recommendation_reasons(item, popularity)
-        reason = f"{round(score)}% match"
+        reason = f"{round(score)}/100 hybrid ranking"
         if reasons:
             reason += ' • ' + ' • '.join(reasons)
         else:
@@ -428,6 +442,7 @@ def calculateRecommendationScore(items):
             'popularitySource': 'neutral_unverified_local_catalog' if unverified_local else 'provider_rating_review_count' if rating > 0 else 'neutral_missing_rating',
             'score': round(score, 2),
             'finalScore': round(score, 2),
+            'hybridRankingScore': round(score, 2),
             'scoreBreakdown': {
                 'contentWeight': 0.60,
                 'collaborativeWeight': 0.30,
@@ -478,22 +493,23 @@ def _recommendation_reasons(item, popularity):
     return reasons[:5]
 
 
+def _ranking_evidence(item):
+    if str(item.get('popularitySource') or '').startswith('neutral'):
+        return 0.0,0.0
+    return _score_number(item.get('rating')),_score_number(item.get('reviews'))
+
+
 def rankRecommendations(items):
     ranked = sorted(
         items or [],
-        key=lambda x: (_score_number(x.get('score')), _score_number(x.get('rating')), _score_number(x.get('reviews'))),
-        reverse=True,
+        key=lambda x: (-_score_number(x.get('score')), *(-value for value in _ranking_evidence(x)), _destination_id(x)),
     )
     return [{**item, 'rankNo': index + 1} for index, item in enumerate(ranked)]
 
 
 def deduplicateRecommendations(items):
     """Keep the best-scoring representation of each destination identity."""
-    ranked = sorted(
-        items or [],
-        key=lambda item: (_score_number(item.get('score')), _score_number(item.get('rating'))),
-        reverse=True,
-    )
+    ranked = rankRecommendations(items)
     seen_ids = set()
     seen_names = set()
     output = []
@@ -528,7 +544,7 @@ def diversifyRecommendations(items, preferenceProfile=None, limit=12):
                 sorted(concepts)[0] if concepts else 'general')
             repeated = category_counts.get(category, 0)
             penalty_rate = 2.0 if category in preferred else 7.0
-            penalty = repeated * penalty_rate
+            penalty = min(4.0, repeated * penalty_rate)
             adjusted = _score_number(item.get('score')) - penalty
             if adjusted > best_adjusted:
                 best_index = index

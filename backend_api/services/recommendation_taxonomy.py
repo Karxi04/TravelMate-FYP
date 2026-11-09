@@ -13,7 +13,8 @@ CONCEPT_TERMS = {
     'food': {
         'food', 'local food', 'local cuisine', 'cuisine', 'restaurant',
         'hawker', 'street food', 'cafe', 'coffee shop', 'food market',
-        'food court', 'culinary', 'restaurants',
+        'food court', 'culinary', 'restaurants', 'food street', 'food streets',
+        'hawker centre', 'hawker center', 'kopitiam', 'medan selera', 'pasar makanan',
     },
     'culture': {
         'culture', 'local culture', 'heritage', 'history', 'historical',
@@ -39,7 +40,8 @@ CONCEPT_TERMS = {
     },
     'photography': {
         'photography', 'photo', 'scenic', 'scenery', 'viewpoint',
-        'architecture', 'street art',
+        'architecture', 'street art', 'photogenic', 'street photography',
+        'viewpoints', 'panoramic view', 'panoramic views', 'murals', 'mural',
     },
     'family': {
         'family', 'children', 'kids', 'wildlife', 'education',
@@ -66,11 +68,22 @@ DISPLAY_NAMES = {
 
 def normalize_phrase(value):
     raw = unicodedata.normalize('NFKD', str(value or ''))
+    for term in ('没有', '沒有', '不含'):
+        raw = raw.replace(term, ' no ')
+    # Bounded literal provider labels, not inferred attributes of tourist places.
+    for term, alias in {'街头摄影':'street photography', '街頭攝影':'street photography',
+                        '摄影':'photography', '攝影':'photography', '观景台':'viewpoint', '觀景台':'viewpoint',
+                        '壁画':'mural', '壁畫':'mural', '美食街':'food street', '美食':'food',
+                        '小贩中心':'hawker centre', '小販中心':'hawker centre', '茶室':'kopitiam',
+                        '夜市':'night market'}.items():
+        raw = raw.replace(term, ' ' + alias + ' ')
     raw = ''.join(char for char in raw if not unicodedata.combining(char))
     return re.sub(r'[^a-z0-9]+', ' ', raw.lower()).strip()
 
 
 def _values(value):
+    if isinstance(value,dict):
+        return [value[key] for key in ('name','title','value') if value.get(key)]
     if isinstance(value, (list, tuple, set)):
         return [item for item in value if str(item or '').strip()]
     return [value] if str(value or '').strip() else []
@@ -80,24 +93,46 @@ def concepts_for(value):
     """Return canonical concepts represented by one or more text values."""
     concepts = set()
     for entry in _values(value):
+        if isinstance(entry,dict):
+            concepts.update(concepts_for(_values(entry)))
+            continue
         phrase = normalize_phrase(entry)
         if not phrase:
             continue
         padded = f' {phrase} '
         for concept, terms in CONCEPT_TERMS.items():
-            if any(f' {normalize_phrase(term)} ' in padded for term in terms):
+            searchable = re.sub(r'\b(theme parks?|car parks?)\b', '', padded) if concept == 'nature' else padded
+            if any(f' {normalize_phrase(term)} ' in searchable for term in terms):
                 concepts.add(concept)
     return concepts
 
 
-def candidate_concepts(item):
+def primary_concepts(item):
     values = []
     for field in (
         'interests', 'tags', 'categories', 'category', 'type', 'subtype',
-        'title', 'name', 'description',
+        'title', 'name', 'destinationType', 'types',
     ):
         values.extend(_values((item or {}).get(field)))
     return concepts_for(values)
+
+
+def candidate_concepts(item):
+    concepts = primary_concepts(item)
+    # Generic marketing and nearby amenities are not evidence of the attraction's offering.
+    generic = {'food','culture','history','nature','outdoor','leisure','relaxed','social','family',
+               'children','kids','shopping','photo','art','education','educational','scenic','scenery','park','market'}
+    for clause in re.split(r'[.;!?]', str((item or {}).get('description') or '')):
+        if re.search(r'\b(near|nearby|close to|walking distance)\b|附近|邻近|鄰近',clause,re.I):
+            continue
+        phrase = ' ' + normalize_phrase(clause) + ' '
+        for concept,terms in CONCEPT_TERMS.items():
+            searchable = re.sub(r'\b(theme parks?|car parks?)\b','',phrase) if concept=='nature' else phrase
+            if any(not re.search(r'\b(no|not|without)(?: an?| any| actual| real)?\s*$',searchable[:match.start()])
+                   for term in terms-generic
+                   for match in re.finditer(r'\b'+re.escape(normalize_phrase(term))+r'\b',searchable)):
+                concepts.add(concept)
+    return concepts
 
 
 def display_concepts(concepts):

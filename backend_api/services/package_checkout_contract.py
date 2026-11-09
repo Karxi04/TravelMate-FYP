@@ -67,10 +67,10 @@ def _participants(package, value):
     return {'adults': adults, 'children': children, 'total': total}
 
 
-def _departure_date(package, requested):
+def validate_package_departure(package, requested, now=None, allow_default=True):
     available = [str(value).strip() for value in package.get('departureDates') or [] if str(value).strip()]
     requested = str(requested or '').strip()
-    if not requested and len(available) == 1:
+    if allow_default and not requested and len(available) == 1:
         requested = available[0]
     if available and not requested:
         raise ValueError('Select one of the available package departure dates.')
@@ -78,9 +78,12 @@ def _departure_date(package, requested):
         raise ValueError('The selected package departure date is unavailable.')
     if requested:
         try:
-            date.fromisoformat(requested)
+            selected = date.fromisoformat(requested)
+            if selected.isoformat()!=requested:raise ValueError
         except ValueError:
             raise ValueError('The selected package departure date is invalid.')
+        if selected < malaysia_today(now):
+            raise ValueError('The selected departure date has passed in Malaysia. Choose a current or future supported departure.')
     return requested or None
 
 
@@ -294,7 +297,7 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None,
         except ValueError:
             original_price = None
 
-    selected_departure = _departure_date(package, departure_date)
+    selected_departure = validate_package_departure(package, departure_date, now)
     accommodation_hotel = safe_hotel_snapshot(package.get('accommodationHotel'))
     return {
         'contractVersion': 2,
@@ -475,6 +478,8 @@ def derive_required_services(snapshot):
             if key == 'transport' and t_notes and not types and not positive[key] and not negative[key]:
                 uncertain = True
         states[key] = {'required': bool(required and not uncertain), 'uncertain': bool(uncertain),
+                       'conflictingClauses': [text for text in (included if explicit is False else [excluded] + clauses)
+                           if re.search(patterns[key], text, re.I)][:8] if uncertain else [],
                        'reviewReason': ('Purchased inclusion and exclusion information conflicts.' if
                                         ((required and negative[key]) or (explicit is False and positive[key])) else
                                         'Purchased snapshot does not establish whether this component is included.') if uncertain else ''}

@@ -17,7 +17,7 @@ class PreferenceLearning {
   static const double affinityMax = 1;
   static const double moreLikeThisStep = .15;
   static const double notForMeStep = -.12;
-  static const double learnedInterestStrength = .10;
+  static const double learnedInterestStrength = .30;
   static const validFeedbackTypes = {'more_like_this', 'not_for_me'};
 
   static List<String> canonicalConcepts(dynamic raw) {

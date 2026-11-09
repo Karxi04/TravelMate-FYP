@@ -39,6 +39,7 @@ def package_payment(client, monkeypatch):
     monkeypatch.setattr('modules.fr09_payment.routes.retrieveRecord', memory.retrieve)
     monkeypatch.setattr('modules.fr09_payment.routes.claimRecord', memory.claim)
     monkeypatch.setattr('modules.fr09_payment.routes.updateRecord', memory.update)
+    memory.seed('tourism_packages','package-1',{'operatorId':'operator-1','approvalStatus':'approved','availabilityStatus':'available'})
     return memory, {'Authorization': f'Bearer {uid}'}
 
 

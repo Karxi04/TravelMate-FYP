@@ -551,7 +551,7 @@ def test_controlled_profiles_rank_the_matching_concept_first(
     assert ranked[0]['destinationId'] == expected
     assert ranked[0]['matchedInterests']
     assert ranked[0]['recommendationReason'].startswith(
-        f"{round(ranked[0]['score'])}% match")
+        f"{round(ranked[0]['score'])}/100 hybrid ranking")
 
 
 def test_taxonomy_maps_multi_word_and_related_interest_phrases():

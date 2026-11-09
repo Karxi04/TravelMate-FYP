@@ -33,6 +33,7 @@ from services.package_checkout_contract import (
     build_initial_fulfillment_record,
     package_amount_minor_units,
     package_trip_compatible,
+    validate_package_departure,
 )
 from sequence_contract.validators import validatePaymentInput
 from sequence_contract.firebase_firestore import claimRecord, retrieveRecord, updateRecord
@@ -542,6 +543,12 @@ def _package_attempt_for_checkout(attempt_id):
     if (str(attempt.get('checkoutStatus') or '').lower() in {'paid', 'cancelled', 'expired'} or
             str(attempt.get('paymentStatus') or '').lower() in {'paid', 'succeeded'}):
         raise ValueError('This package checkout attempt is no longer payable.')
+    validate_package_departure(snapshot,snapshot.get('selectedDepartureDate'),allow_default=False)
+    package = retrieveRecord('tourism_packages',snapshot.get('packageId'))
+    from services.public_content_projection import eligible_package
+    if not eligible_package(package) or package.get('operatorId')!=snapshot.get('operatorId'):
+        raise ValueError('The package is no longer approved and available for a new checkout. Reopen the package to review it.')
+    validate_package_departure(package,snapshot.get('selectedDepartureDate'),allow_default=False)
     return attempt, snapshot
 
 

@@ -146,7 +146,8 @@ def test_complete_traveller_journey_and_explicit_learning_refresh(client, journe
     original_snapshot = journey.retrieve("recommendation_snapshots", generation_id)
     assert first["source"] == "cache"  # Provider outage uses geographically eligible cache.
     assert {row["destinationId"] for row in first["recommendations"]} == {"shopping", "food"}
-    assert first["recommendations"][0]["destinationId"] == "shopping"
+    assert [row['destinationId'] for row in first['recommendations']] == ['food','shopping']
+    assert first['recommendations'][0]['score'] == first['recommendations'][1]['score']  # Stable identity tie-break, not a fabricated relevance gap.
     assert all(validate_candidate(row, normalize_destination_scope("Penang"))[0] for row in first["recommendations"])
     assert client.get("/api/fr4/recommendations", headers=AUTH).get_json()["recommendationGenerationId"] == generation_id
     details = client.get("/api/fr3/destinations/food", headers=AUTH).get_json()

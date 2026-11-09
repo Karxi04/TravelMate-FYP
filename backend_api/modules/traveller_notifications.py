@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, g, jsonify, request
 from auth_utils import auth_required
 from sequence_contract.firebase_firestore import retrieveRecord, claimRecord, storeRecord, updateRecord
-from services.traveller_notifications import derive_events, event_id, trip_start, active_trip, coordinates, MYT
+from services.traveller_notifications import derive_events, event_id, trip_start, active_trip, coordinates, MYT, canonical_payment_order, payment_source_label
 from services.packing_checklist_service import checklist_id
 from services.open_meteo_service import retrieveSevenDayForecast
 from services.notification_delivery import enabled, register_device, queue_notification
@@ -25,7 +25,11 @@ def reconcile(uid):
     now = datetime.now(timezone.utc)
     try:
         orders = retrieveRecord('checkout_orders', filters=[('travellerId','==',uid)]) or []
+        checkout_by_id = {str(order.get('id')):order for order in orders if order.get('travellerId') == uid}
         orders += retrieveRecord('payment_records', filters=[('travellerId','==',uid)]) or []
+        orders = [canonical_payment_order(order,uid,checkout_by_id.get) for order in orders]
+        source_by_id = {str(order.get(field)):order for order in orders if order.get('travellerId') == uid
+                        for field in ('id','orderReference','checkoutOrderId','orderId') if order.get(field)}
         trips = retrieveRecord('itineraries', filters=[('travellerId','==',uid)]) or []
         checklists, forecasts = {}, {}
         upcoming = [t for t in trips if t.get('travellerId') == uid and active_trip(t) and trip_start(t)
@@ -60,7 +64,13 @@ def reconcile(uid):
             saved, created = claimRecord('traveller_notifications',event['id'],event)
             queue_notification(saved,created)
         items = retrieveRecord('traveller_notifications',filters=[('travellerId','==',uid)]) or []
-        items = [item for item in items if item.get('travellerId') == uid]
+        items = [dict(item) for item in items if item.get('travellerId') == uid]
+        # Response-only context for historical inbox rows; read state and timestamps stay intact.
+        for item in items:
+            reference = str((item.get('target') or {}).get('orderId') or '')
+            source = source_by_id.get(reference)
+            if item.get('category') == 'payment' and source:
+                item['sourceLabel'] = payment_source_label(source,reference)
         items.sort(key=lambda item:str(item.get('createdAt') or ''), reverse=True)
         return dict(ok=True,items=items,unreadCount=sum(not item.get('read') for item in items),
                        evaluation='on_open_or_refresh_and_configured_worker',weatherUnavailable=weather_unavailable)

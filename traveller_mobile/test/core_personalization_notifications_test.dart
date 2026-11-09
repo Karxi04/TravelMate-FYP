@@ -151,7 +151,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         theme: buildInkWashTheme(), home: RecommendationScreen(api: api)));
     await tester.pumpAndSettle();
-    expect(find.text('Minimum match: 70/100'), findsOneWidget);
+    expect(find.text('Minimum ranking (legacy): 70/100'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Fixture place 0'),300,scrollable:find.byType(Scrollable).first);
     expect(find.text('Fixture place 0'), findsOneWidget);
     expect(find.text('Fixture place 12'), findsNothing);
     await tester.scrollUntilVisible(find.text('Load more matching places'), 600,
@@ -165,14 +166,14 @@ void main() {
     await tester.drag(find.byType(Slider), const Offset(500, 0));
     await tester.pumpAndSettle();
     expect(api.minimum, 90);
-    await tester.scrollUntilVisible(find.text('Minimum match: 90/100'), -400,
+    await tester.scrollUntilVisible(find.text('Minimum ranking (legacy): 90/100'), -400,
         scrollable: find.byType(Scrollable).first);
-    expect(find.text('Minimum match: 90/100'), findsOneWidget);
+    expect(find.text('Minimum ranking (legacy): 90/100'), findsOneWidget);
     expect(find.text('Fixture place 10'), findsNothing);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpWidget(MaterialApp(home: RecommendationScreen(api: api)));
     await tester.pumpAndSettle();
-    expect(find.text('Minimum match: 90/100'), findsOneWidget);
+    expect(find.text('Minimum ranking (legacy): 90/100'), findsOneWidget);
   });
 
   testWidgets('old page cannot overwrite a changed threshold', (tester) async {
@@ -181,8 +182,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Load more matching places'), 600,
         scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(find.text('Load more matching places'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Load more matching places'));
     await tester.pump();
+    expect(api.reads.any((query) => query['offset'] == '12'), isTrue);
     await tester.scrollUntilVisible(find.byType(Slider), -600,
         scrollable: find.byType(Scrollable).first);
     await tester.drag(find.byType(Slider), const Offset(500, 0));
@@ -191,9 +195,9 @@ void main() {
         .complete(api.response({'minimumMatchScore': 40, 'offset': 12}));
     await tester.pumpAndSettle();
     expect(api.minimum, 90);
-    await tester.scrollUntilVisible(find.text('Minimum match: 90/100'), -400,
+    await tester.scrollUntilVisible(find.text('Minimum ranking (legacy): 90/100'), -400,
         scrollable: find.byType(Scrollable).first);
-    expect(find.text('Minimum match: 90/100'), findsOneWidget);
+    expect(find.text('Minimum ranking (legacy): 90/100'), findsOneWidget);
     expect(find.text('Fixture place 12'), findsNothing);
   });
 

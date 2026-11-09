@@ -23,6 +23,8 @@ void main() {
     test(
         'profile ${rawCase['label']} matches real Python components for the same 16 genuine Penang places',
         () {
+      final ranked = RecommendationScoring.rankCandidates(candidates:candidates,preferences:profile,feedback:feedback,peerPreferences:peers,currentUserId:'${profile['travellerId']}',limit:150);
+      expect(ranked.map((row)=>row['destinationId']).toList(),rawCase['expectedRanking']);
       for (final candidate in candidates) {
         final result = RecommendationScoring.scoreCandidate(
             candidate: candidate,
@@ -36,7 +38,9 @@ void main() {
           'contentScore',
           'collaborativeScore',
           'popularityScore',
-          'finalScore'
+          'finalScore',
+          'personalSuitabilityScore',
+          'evidenceConfidence'
         ]) {
           expect(result[key], closeTo((expected[key] as num).toDouble(), .011),
               reason: '${candidate['title']} $key');

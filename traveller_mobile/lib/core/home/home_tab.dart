@@ -53,6 +53,7 @@ class _HomeTabState extends State<HomeTab> {
   bool _recommendationRefreshPending = false;
   int _recommendationVersion = 0;
   double minimumMatch = 70;
+  String scoreBasis = 'hybrid_v1';
   String recommendationArea = 'Malaysia';
   bool _sharedContentRequestInFlight = false;
   String? coreError;
@@ -154,16 +155,21 @@ class _HomeTabState extends State<HomeTab> {
       try {
         final settings = await api.get('/api/fr4/settings');
         final value = double.tryParse('${settings['minimumMatchScore']}');
-        if (value != null && value >= 40 && value <= 90) minimumMatch = value;
+        if (mounted && version == _recommendationVersion) {
+          scoreBasis = settings['scoreBasis'] == 'personal_v2' ? 'personal_v2' : 'hybrid_v1';
+          recommendations = recommendations.whereType<Map>().where((item)=>recommendationQualifies(item,minimumMatch,scoreBasis)).toList();
+        }
+        if (mounted && version == _recommendationVersion && value != null && value >= 40 && value <= 90) minimumMatch = value;
       } catch (_) {}
+      if (!mounted || version != _recommendationVersion) return;
       dynamic data;
       if (regenerate) {
         data = await api.post('/api/fr4/recommendations/generate', {
-          'destinationArea': recommendationArea, 'minimumMatchScore':minimumMatch,
+          'destinationArea': recommendationArea, 'minimumMatchScore':minimumMatch, 'scoreBasis':scoreBasis,
           if (reuseCandidates && recommendationGenerationId.isNotEmpty) 'previousGenerationId':recommendationGenerationId,
         });
       } else {
-        data = await api.get('/api/fr4/recommendations', {'minimumMatchScore':'$minimumMatch'});
+        data = await api.get('/api/fr4/recommendations', {'minimumMatchScore':'$minimumMatch', 'scoreBasis':scoreBasis});
         if (data is Map && version == _recommendationVersion) {
           recommendationArea = (data['snapshot']?['requestedDestination'] ?? recommendationArea).toString();
         }
@@ -171,13 +177,15 @@ class _HomeTabState extends State<HomeTab> {
             '${data['recommendationGenerationId'] ?? ''}'.isEmpty;
         if (needsGeneration && preferences != null) {
           data = await api.post('/api/fr4/recommendations/generate', {
-            'destinationArea': recommendationArea, 'minimumMatchScore':minimumMatch,
+            'destinationArea': recommendationArea, 'minimumMatchScore':minimumMatch, 'scoreBasis':scoreBasis,
+            if (data is Map && data['stale'] == true && '${data['recommendationGenerationId'] ?? ''}'.isNotEmpty) 'previousGenerationId':data['recommendationGenerationId'],
           });
         }
       }
       if (!mounted || version != _recommendationVersion || data is! Map) return;
+      validateRecommendationResponse(data,scoreBasis);
       setState(() {
-        recommendations = (data['recommendations'] as List? ?? []).whereType<Map>().where((item) => recommendationQualifies(item,minimumMatch)).toList();
+        recommendations = (data['recommendations'] as List? ?? []).whereType<Map>().where((item) => recommendationQualifies(item,minimumMatch,scoreBasis)).toList();
         recommendationArea = (data['snapshot']?['requestedDestination'] ?? recommendationArea).toString();
         recommendationSource = (data['source'] ?? '').toString();
         recommendationGenerationId = (data['recommendationGenerationId'] ??
@@ -188,11 +196,13 @@ class _HomeTabState extends State<HomeTab> {
     } catch (error) {
       if (regenerate) {
         try {
-          final existing = await api.get('/api/fr4/recommendations');
+          final existing = await api.get('/api/fr4/recommendations', {'minimumMatchScore':'$minimumMatch','scoreBasis':scoreBasis});
           if (mounted && version == _recommendationVersion && existing is Map) {
+            validateRecommendationResponse(existing,scoreBasis);
+            if (existing['stale'] == true) throw StateError('Saved recommendations need refreshing.');
             final cached = existing['recommendations'] as List? ?? [];
             setState(() {
-              if (cached.isNotEmpty) recommendations = cached.whereType<Map>().where((item) => recommendationQualifies(item,minimumMatch)).toList();
+              if (cached.isNotEmpty) recommendations = cached.whereType<Map>().where((item) => recommendationQualifies(item,minimumMatch,scoreBasis)).toList();
               recommendationSource = (existing['source'] ?? '').toString();
               recommendationGenerationId =
                   (existing['recommendationGenerationId'] ??
@@ -703,7 +713,10 @@ class _HomeTabState extends State<HomeTab> {
           title: 'For you',
           subtitle: 'Places selected from your travel style',
           actionLabel: recommendations.isEmpty ? 'Adjust match' : 'See all',
-          onAction: () => open(RecommendationScreen(api: widget.api)),
+          onAction: () async {
+            await open(RecommendationScreen(api: widget.api, initialDestination:recommendationArea, initialGenerationId:recommendationGenerationId));
+            if (mounted) { await _loadCoreData(); await loadPreferenceFeedback(); await loadRecommendations(); }
+          },
         ),
         const SizedBox(height: AppSpacing.xs),
         Align(

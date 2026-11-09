@@ -147,7 +147,7 @@ void main() {
     final feedbackButton = find.byKey(
       const ValueKey('recommendation-feedback-food_place'),
     );
-    await tester.ensureVisible(feedbackButton);
+    await tester.scrollUntilVisible(feedbackButton,300,scrollable:find.byType(Scrollable).first);
     await tester.pumpAndSettle();
     await tester.tap(feedbackButton);
     await tester.pumpAndSettle();
