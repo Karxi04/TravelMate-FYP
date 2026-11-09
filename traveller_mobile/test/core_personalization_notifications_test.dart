@@ -182,8 +182,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Load more matching places'), 600,
         scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(find.text('Load more matching places'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Load more matching places'));
     await tester.pump();
+    expect(api.reads.any((query) => query['offset'] == '12'), isTrue);
     await tester.scrollUntilVisible(find.byType(Slider), -600,
         scrollable: find.byType(Scrollable).first);
     await tester.drag(find.byType(Slider), const Offset(500, 0));
