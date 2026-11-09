@@ -272,7 +272,7 @@ def package_submission_error(data):
             return 'Specify Room Configuration for the included room or entire property.'
     if any(key in package for key in ('accommodationIncluded', 'transportIncluded', 'guideActivitiesIncluded')):
         from services.package_checkout_contract import derive_required_services
-        requirements = derive_required_services(package)
+        requirements = derive_required_services(package,review_optional_extras=True)
         for key, meta in requirements.items():
             if key + 'Included' in package and meta['uncertain']:
                 evidence = '; '.join(meta.get('conflictingClauses') or [])

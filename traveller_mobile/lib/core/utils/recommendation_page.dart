@@ -1,3 +1,5 @@
+import 'recommendation_taxonomy.dart';
+
 bool recommendationQualifies(Map item, num minimum, [String scoreBasis = 'hybrid_v1']) {
   final score = double.tryParse('${scoreBasis == 'personal_v2' ? item['personalSuitabilityScore'] : item['finalScore'] ?? item['score'] ?? 0}');
   return score != null &&
@@ -12,9 +14,10 @@ Map<String, dynamic> recommendationPage(
     Map<String, dynamic> snapshot, Map options) {
   final minimum = double.tryParse('${options['minimumMatchScore'] ?? 0}');
   final basis = options['scoreBasis'] ?? 'hybrid_v1';
+  final discovery = options['discoveryMode'];
   final offset = int.tryParse('${options['offset'] ?? 0}');
   final limit = int.tryParse('${options['limit'] ?? 12}');
-  if (!['hybrid_v1','personal_v2'].contains(basis) || minimum == null ||
+  if (![null,'',recommendationDiscoveryMode].contains(discovery) || !['hybrid_v1','personal_v2'].contains(basis) || minimum == null ||
       !minimum.isFinite ||
       minimum < 0 ||
       minimum > 100 ||
@@ -30,7 +33,7 @@ Map<String, dynamic> recommendationPage(
       .whereType<Map>()
       .toList();
   final qualified =
-      all.where((item) => recommendationQualifies(item, minimum, basis)).toList();
+      all.where((item) => discovery == recommendationDiscoveryMode ? item['discoveryEligible'] == true : recommendationQualifies(item, minimum, basis)).toList();
   final end = offset + limit;
   return {
     ...snapshot,
@@ -38,6 +41,7 @@ Map<String, dynamic> recommendationPage(
     'pagination': {
       'minimumMatchScore': minimum,
       'scoreBasis': basis,
+      'discoveryMode': discovery, 'thresholdApplied': discovery != recommendationDiscoveryMode,
       'offset': offset,
       'limit': limit,
       'candidateCount': all.length,
@@ -58,5 +62,40 @@ void validateRecommendationResponse(Map data, String basis) {
   if (page is! Map || page['scoreBasis'] != basis || page['personalEvidenceCount'] is! num ||
       rows.any((row) => !row.containsKey('personalSuitabilityScore'))) {
     throw StateError('Personal match is unavailable from this backend version. Update/restart the backend and refresh recommendations.');
+  }
+}
+
+const recommendationDiscoveryMode = 'relevant_v1';
+
+Map<String,dynamic> discoveryAnnotations(Map item, Map preference) {
+  final concepts = (item['destinationConcepts'] as List? ?? []).map((value)=>value.toString()).toSet();
+  var requested = RecommendationTaxonomy.conceptsFor(preference['interests'] ?? []);
+  final hasInterests = (preference['interests'] as List? ?? []).isNotEmpty;
+  if (requested.isEmpty && !hasInterests) requested = RecommendationTaxonomy.conceptsFor(preference['travelType']);
+  var matched = concepts.intersection(requested);
+  if (requested.isEmpty && !hasInterests) {
+    final affinities = preference['learnedAffinities'] as Map? ?? {};
+    matched = concepts.where((key)=>affinities[key] is num && affinities[key] >= .1).toSet();
+  }
+  final excluded = concepts.intersection(RecommendationTaxonomy.conceptsFor(preference['excludedInterests'] ?? []));
+  final did = '${item['destinationId'] ?? item['id'] ?? ''}';
+  final rejected = (preference['destinationFeedback'] as Map? ?? {})[did] == 'not_for_me';
+  final eligible = matched.isNotEmpty && excluded.isEmpty && !rejected;
+  String? foodType;
+  if (matched.contains('food')) {
+    final text = RecommendationTaxonomy.normalizePhrase(['title','name','category','type','interests'].map((key)=>item[key] ?? '').join(' '));
+    foodType = RegExp(r'\bmuseum\b').hasMatch(text) ? 'food_museum'
+        : RegExp(r'\bcooking (class|school|workshop|experience)\b').hasMatch(text) ? 'cooking'
+        : RegExp(r'\b(hawker|restaurant|cafe|kopitiam|food (court|street|market))\b').hasMatch(text) ? 'dining'
+        : RegExp(r'\b(spice|spices|garden)\b').hasMatch(text) ? 'culinary_culture' : 'food_related';
+  }
+  return {'discoveryEligible':eligible,'discoveryMatchedConcepts':eligible ? (matched.toList()..sort()) : <String>[],'foodExperienceType':foodType};
+}
+
+void validateDiscoveryResponse(Map data) {
+  if (data['stale'] == true) return;
+  if (data['ok'] == false || data['pagination'] is! Map ||
+      data['pagination']['discoveryMode'] != recommendationDiscoveryMode) {
+    throw StateError('Recommendation discovery is unavailable.');
   }
 }

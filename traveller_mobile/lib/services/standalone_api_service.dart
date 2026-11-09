@@ -183,7 +183,8 @@ class StandaloneApiService {
       final version = PreferenceLearning.effectiveVersion(
         (preferences['preferenceProfileVersion'] ?? preferences['updatedAt'] ?? 'local_profile_legacy').toString(), learned);
       final stale = safeSnapshot != null && (safeSnapshot['preferenceProfileVersion'] != version ||
-          (query?['scoreBasis']=='personal_v2' && safeSnapshot['engine']?['scoringVersion']!='recovery_v3'));
+          (query?['scoreBasis']=='personal_v2' && (safeSnapshot['engine'] is! Map || safeSnapshot['engine']['scoringVersion']!='recovery_v3')) ||
+          (query?['discoveryMode']==recommendationDiscoveryMode && (safeSnapshot['engine'] is! Map || safeSnapshot['engine']['discoveryVersion']!=recommendationDiscoveryMode)));
       final page = recommendationPage(safeSnapshot ?? {}, query ?? {});
       if(_uid!=uid) throw StateError('Account changed. Refresh recommendations.');
       return {
@@ -2419,6 +2420,7 @@ class StandaloneApiService {
 
   Map<String, dynamic> get _engineInfo => {
         'scoringVersion':'recovery_v3',
+        'discoveryVersion':recommendationDiscoveryMode,
         'contentBasedFiltering': true,
         'collaborativeFiltering': true,
         'weightedScoring': {
@@ -3046,6 +3048,11 @@ class StandaloneApiService {
     final uid=_uid;
     final preferences = await _readMap('preferences') ?? {};
     final learnedProfile = await _readMap('learned_preference_profile');
+    final feedbackStates = learnedProfile?['feedbackByDestination'];
+    if (preferences['interests'] is! List ||
+        (learnedProfile?.containsKey('feedbackByDestination') == true && (feedbackStates is! Map || feedbackStates.values.any((value)=>value is! Map)))) {
+      throw StateError('Saved recommendation preferences need review.');
+    }
     final effectivePreferences =
         PreferenceLearning.effectiveProfile(preferences, learnedProfile);
     final requestedDestination =
@@ -3096,7 +3103,7 @@ class StandaloneApiService {
       limit: 150,
     );
     final top = scored
-        .map((item) => {...item, 'recommendationSource': item['source']=='openstreetmap' ? 'cache' : 'fallback'})
+        .map((item) => {...item, ...discoveryAnnotations(item,effectivePreferences), 'recommendationSource': item['source']=='openstreetmap' ? 'cache' : 'fallback'})
         .map((item) =>
             MalaysianLocality.validateCandidate(item, destinationScope))
         .where((item) => item['geographicEligibility']?['eligible'] == true)

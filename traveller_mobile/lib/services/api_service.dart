@@ -11,13 +11,14 @@ import 'transaction_request.dart';
 
 const backendConnectionMessage =
     "We couldn't connect to TravelMate. Check your connection and try again.";
+const backendUnavailableMessage = 'TravelMate is temporarily unavailable. Please try again.';
 
 bool isBackendConnectionFailure(Object error) =>
     error is TimeoutException || error is http.ClientException;
 
 String userFacingApiError(Object error) {
   if (isBackendConnectionFailure(error)) return backendConnectionMessage;
-  if (error is ApiException) return error.message;
+  if (error is ApiException) return error.statusCode >= 500 ? backendUnavailableMessage : error.message;
   return 'Something went wrong. Please try again.';
 }
 
@@ -254,7 +255,7 @@ class ApiService {
       final response = await http
           .get(uri, headers: await _headers())
           .timeout(RequestTimeouts.forGet(path));
-      return _decode(response);
+      return decodeResponse(response);
     } catch (e) {
       debugPrint('Backend GET failed ($path): $e');
       rethrow;
@@ -290,7 +291,7 @@ class ApiService {
             body: jsonEncode(payload),
           )
           .timeout(RequestTimeouts.forPost(path));
-      return _decode(response);
+      return decodeResponse(response);
     } catch (e) {
       debugPrint('Backend POST failed ($path): $e');
       rethrow;
@@ -312,7 +313,7 @@ class ApiService {
             body: jsonEncode(payload),
           )
           .timeout(RequestTimeouts.ordinaryRead);
-      return _decode(response);
+      return decodeResponse(response);
     } catch (e) {
       debugPrint('Backend PUT failed ($path): $e');
       rethrow;
@@ -330,7 +331,7 @@ class ApiService {
       final response = await http
           .delete(Uri.parse('$baseUrl$path'), headers: await _headers())
           .timeout(RequestTimeouts.ordinaryRead);
-      return _decode(response);
+      return decodeResponse(response);
     } catch (e) {
       debugPrint('Backend DELETE failed ($path): $e');
       rethrow;
@@ -360,29 +361,32 @@ class ApiService {
             body: jsonEncode(payload),
           )
           .timeout(RequestTimeouts.ordinaryRead);
-      return _decode(response);
+      return decodeResponse(response);
     } catch (e) {
       debugPrint('Backend PATCH failed ($path): $e');
       rethrow;
     }
   }
 
-  dynamic _decode(http.Response response) {
+  static dynamic decodeResponse(http.Response response) {
     dynamic data;
     try {
       data = jsonDecode(response.body.isEmpty ? '{}' : response.body);
     } catch (_) {
-      data = {'error': response.body};
+      throw ApiException(backendUnavailableMessage,response.statusCode >= 400 ? response.statusCode : 502,
+          {'code':'invalid_server_response'});
     }
     if (response.statusCode >= 400) {
-      final message = data is Map
+      final rawMessage = data is Map
           ? (data['error'] ?? 'Request failed (${response.statusCode})')
           : 'Request failed';
+      final message = response.statusCode >= 500 || RegExp(r'<(?:!doctype|html|head|body)\b',caseSensitive:false).hasMatch('$rawMessage')
+          ? backendUnavailableMessage : rawMessage.toString();
       throw ApiException(
-        message.toString(),
+        message,
         response.statusCode,
         data is Map
-            ? Map<String, dynamic>.from(data)
+            ? {...Map<String, dynamic>.from(data),'error':message}
             : <String, dynamic>{'error': message},
       );
     }

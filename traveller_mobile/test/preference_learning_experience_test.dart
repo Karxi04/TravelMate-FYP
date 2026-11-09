@@ -22,6 +22,7 @@ Map<String, dynamic> _place({
       'popularity': 80,
       'finalScore': 82,
       'recommendationSource': 'cache',
+      'discoveryEligible':true,
     };
 
 void main() {
@@ -244,6 +245,7 @@ class _LearningApi extends ApiService {
           'ok': true,
           'recommendationGenerationId': 'rec_visible_1',
           'recommendations': [_place()],
+          'pagination':{'discoveryMode':'relevant_v1'},
           'source': 'cache',
         };
       case '/api/fr4/preference-feedback':
@@ -264,7 +266,7 @@ class _LearningApi extends ApiService {
   @override
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
     if (path == '/api/fr4/recommendations/generate') {
-      return {'ok':true,'recommendationGenerationId':'rec_updated','recommendations':[_place()],'source':'cache'};
+      return {'ok':true,'recommendationGenerationId':'rec_updated','recommendations':[_place()],'pagination':{'discoveryMode':'relevant_v1'},'source':'cache'};
     }
     if (path == '/api/fr4/preference-feedback') {
       lastFeedback = body;

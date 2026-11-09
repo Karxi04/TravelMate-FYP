@@ -22,6 +22,7 @@ class RecommendationTaxonomy {
       'restaurants',
       'food street', 'food streets', 'hawker centre', 'hawker center',
       'kopitiam', 'medan selera', 'pasar makanan',
+      'cooking class', 'cooking school', 'cooking workshop',
     },
     'culture': {
       'culture',

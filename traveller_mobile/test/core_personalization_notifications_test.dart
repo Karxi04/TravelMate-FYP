@@ -28,13 +28,15 @@ class RecsApi extends ApiService {
             'destinationId': 'fixture_$i',
             'title': 'Fixture place $i',
             'finalScore': 95 - i,
+            'discoveryEligible':true,
+            'discoveryMatchedConcepts':['culture'],
             'destinationConcepts': ['culture'],
             'type': 'Culture'
           });
   Map response(Map options) {
     final page = recommendationPage({
       'recommendationGenerationId': 'generation_$generations',
-      'requestedDestination': 'Penang',
+      'requestedDestination': options['destinationArea'] ?? 'Penang',
       'recommendationResults': pool
     }, options);
     return {
@@ -144,61 +146,41 @@ void main() {
     expect(() => api.response({'offset': -1}), throwsArgumentError);
   });
 
-  testWidgets(
-      'threshold slider filters correctly, persists and Load More keeps unique qualified results',
-      (tester) async {
-    final api = RecsApi();
-    await tester.pumpWidget(MaterialApp(
-        theme: buildInkWashTheme(), home: RecommendationScreen(api: api)));
+  testWidgets('discovery has no score controls or settings writes and Load More keeps unique suggestions', (tester) async {
+    final api=RecsApi()..minimum=90;
+    await tester.pumpWidget(MaterialApp(theme:buildInkWashTheme(),home:RecommendationScreen(api:api)));
     await tester.pumpAndSettle();
-    expect(find.text('Minimum ranking (legacy): 70/100'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Fixture place 0'),300,scrollable:find.byType(Scrollable).first);
-    expect(find.text('Fixture place 0'), findsOneWidget);
-    expect(find.text('Fixture place 12'), findsNothing);
-    await tester.scrollUntilVisible(find.text('Load more matching places'), 600,
-        scrollable: find.byType(Scrollable).first);
-    await tester.tap(find.text('Load more matching places'));
-    await tester.pumpAndSettle();
-    expect(find.text('Fixture place 12'), findsOneWidget);
-    expect(api.reads.last['offset'], '12');
-    await tester.scrollUntilVisible(find.byType(Slider), -600,
-        scrollable: find.byType(Scrollable).first);
-    await tester.drag(find.byType(Slider), const Offset(500, 0));
-    await tester.pumpAndSettle();
-    expect(api.minimum, 90);
-    await tester.scrollUntilVisible(find.text('Minimum ranking (legacy): 90/100'), -400,
-        scrollable: find.byType(Scrollable).first);
-    expect(find.text('Minimum ranking (legacy): 90/100'), findsOneWidget);
-    expect(find.text('Fixture place 10'), findsNothing);
+    expect(find.byType(Slider),findsNothing);
+    expect(find.byType(DropdownButton<String>),findsNothing);
+    expect(api.reads.last['minimumMatchScore'],isNull);
+    expect(api.reads.last['discoveryMode'],recommendationDiscoveryMode);
+    await tester.scrollUntilVisible(find.text('Load more matching places'),600,scrollable:find.byType(Scrollable).first);
+    await tester.ensureVisible(find.text('Load more matching places'));await tester.pumpAndSettle();
+    await tester.tap(find.text('Load more matching places'));await tester.pumpAndSettle();
+    expect(api.reads.last['offset'],'12');
+    expect(find.text('Fixture place 12'),findsOneWidget);
+    expect(api.minimum,90);
     await tester.pumpWidget(const SizedBox());
-    await tester.pumpWidget(MaterialApp(home: RecommendationScreen(api: api)));
+    await tester.pumpWidget(MaterialApp(home:RecommendationScreen(api:api)));
     await tester.pumpAndSettle();
-    expect(find.text('Minimum ranking (legacy): 90/100'), findsOneWidget);
+    expect(api.minimum,90);expect(find.byType(Slider),findsNothing);
   });
 
-  testWidgets('old page cannot overwrite a changed threshold', (tester) async {
-    final api = RecsApi()..heldPage = Completer();
-    await tester.pumpWidget(MaterialApp(home: RecommendationScreen(api: api)));
+  testWidgets('old page cannot overwrite a changed destination', (tester) async {
+    final api=RecsApi()..heldPage=Completer();
+    await tester.pumpWidget(MaterialApp(home:RecommendationScreen(api:api)));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Load more matching places'), 600,
-        scrollable: find.byType(Scrollable).first);
-    await tester.ensureVisible(find.text('Load more matching places'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Load more matching places'));
-    await tester.pump();
-    expect(api.reads.any((query) => query['offset'] == '12'), isTrue);
-    await tester.scrollUntilVisible(find.byType(Slider), -600,
-        scrollable: find.byType(Scrollable).first);
-    await tester.drag(find.byType(Slider), const Offset(500, 0));
-    await tester.pumpAndSettle();
-    api.heldPage!
-        .complete(api.response({'minimumMatchScore': 40, 'offset': 12}));
-    await tester.pumpAndSettle();
-    expect(api.minimum, 90);
-    await tester.scrollUntilVisible(find.text('Minimum ranking (legacy): 90/100'), -400,
-        scrollable: find.byType(Scrollable).first);
-    expect(find.text('Minimum ranking (legacy): 90/100'), findsOneWidget);
-    expect(find.text('Fixture place 12'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Load more matching places'),600,scrollable:find.byType(Scrollable).first);
+    await tester.ensureVisible(find.text('Load more matching places'));await tester.pumpAndSettle();
+    await tester.tap(find.text('Load more matching places'));await tester.pump();
+    expect(api.reads.any((query)=>query['offset']=='12'),isTrue);
+    await tester.scrollUntilVisible(find.byType(TextField),-600,scrollable:find.byType(Scrollable).first);
+    await tester.enterText(find.byType(TextField),'Kuala Lumpur');
+    await tester.ensureVisible(find.text('Refresh for you'));await tester.pumpAndSettle();
+    await tester.tap(find.text('Refresh for you'));await tester.pumpAndSettle();
+    api.heldPage!.complete(api.response({'offset':12}));await tester.pumpAndSettle();
+    expect(find.text('Fixture place 12'),findsNothing);
+    expect(find.widgetWithText(TextField,'Kuala Lumpur'),findsOneWidget);
   });
 
   testWidgets(
@@ -230,7 +212,7 @@ void main() {
         scrollable: find.byType(Scrollable).first);
     await tester.tap(find.text('Refresh for you'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Provider unavailable'), findsOneWidget);
+    expect(find.text('Something went wrong. Please try again.'), findsOneWidget);
     expect(find.text('Fixture place 0'), findsOneWidget);
     expect(api.generations, 0);
   });

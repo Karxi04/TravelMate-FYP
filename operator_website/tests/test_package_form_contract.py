@@ -404,6 +404,29 @@ def test_butterworth_inclusion_error_preserves_explicit_choice_and_promises(auth
     assert 'choose Included if either a guided service or admission' in html
 
 
+@pytest.mark.parametrize('choice,expected',[('true',True),('false',False)])
+@pytest.mark.parametrize('editing',[False,True])
+def test_butterworth_create_edit_serialize_exact_boolean_and_separate_extras(auth_client,choice,expected,editing):
+    form={**SAMPLE_PACKAGE_PAYLOAD,'guideActivitiesIncluded':choice,
+          'accommodationIncluded':'false','transportIncluded':'false',
+          'inclusions':'Standard admission ticket to Penang Bird Park.\nGuided sightseeing experience at Butterworth Art Walk.\nEnglish-speaking tour escort.',
+          'exclusions':'Optional extra bird-feeding activities, paid separately.\nAdditional admission/services not specifically listed in inclusions.'}
+    response=MagicMock(ok=True,status_code=201)
+    response.json.return_value={'package':{'id':'butterworth','approvalStatus':'draft'}}
+    api=MagicMock(return_value=response)
+    with _patch_fr12(api):
+        result=auth_client.post('/packages/butterworth/edit' if editing else '/packages/new',data=form)
+    assert result.status_code==302
+    method,path=api.call_args.args
+    assert method==('PUT' if editing else 'POST')
+    assert path==('/api/fr12/packages/butterworth' if editing else '/api/fr12/packages')
+    payload=api.call_args.kwargs['json']
+    assert payload['guideActivitiesIncluded'] is expected
+    assert payload['accommodationIncluded'] is payload['transportIncluded'] is False
+    assert payload['inclusions']==form['inclusions'].splitlines()
+    assert payload['exclusions']==form['exclusions'].splitlines()
+
+
 def test_package_edit_post_failure_value_preservation(auth_client):
     """When API returns an error on edit, edit page re-renders with edited values preserved."""
     existing_package = {

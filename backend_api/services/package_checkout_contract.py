@@ -301,6 +301,7 @@ def prepare_package_snapshot(package, operator, quantity=1, now=None,
     accommodation_hotel = safe_hotel_snapshot(package.get('accommodationHotel'))
     return {
         'contractVersion': 2,
+        'supplierRequirementVersion': 2,
         'packageId': str(package.get('id') or ''), 'operatorId': str(package['operatorId']),
         'title': package.get('title') or package.get('packageTitle'),
         'destination': package.get('destination') or package.get('destinationName'),
@@ -374,7 +375,23 @@ def create_package_attempt(claim, traveller_id, package, operator, idempotency_k
     return existing, created
 
 
-def derive_required_services(snapshot):
+def _guide_exclusion_applies(text, included):
+    words = lambda value: set(re.findall(r'[a-z]+',value.lower())) - set(
+        'a an the to for of at in and or not no all any other included excluded includes package '
+        'standard basic admission admissions ticket tickets guide guided tour tours escort activities '
+        'activity services service fee fees optional additional extra separately paid payable charged '
+        'mentioned listed specified specifically explicitly this is are be with'.split())
+    same_product = any(len(words(text) & words(promise)) >= 2 for promise in included)
+    if re.search(r'\b(standard|basic|required)\b',text,re.I) and not re.search(r'not (?:specifically |explicitly )?(?:listed|mentioned|specified)',text,re.I):
+        return True
+    if re.search(r'not (?:specifically |explicitly )?(?:listed|mentioned|specified)',text,re.I) and not same_product:
+        return False
+    if re.search(r'\b(optional|additional|extra)\b',text,re.I):
+        return same_product and not re.search(r'\b(additional|extra)\b',text,re.I)
+    return True
+
+
+def derive_required_services(snapshot, *, review_optional_extras=False):
     """
     Dynamically determine required supplier services from package snapshot.
     Only explicit brochure commitments require supplier arrangements. Days,
@@ -437,11 +454,18 @@ def derive_required_services(snapshot):
     positive['guideActivities'] = any(re.search(patterns['guideActivities'], text, re.I) and not
         (re.search(r'\bfree\b', text, re.I) and not re.search(r'\b(reserved|guide|guided|docent|escort)\b', text, re.I)) for text in included)
     negative = {key: bool(re.search(pattern, excluded, re.I)) for key, pattern in patterns.items()}
+    # Historical purchases retain their interpretation and authorized clarification workflow.
+    review_optional_extras = review_optional_extras or snapshot.get('supplierRequirementVersion') == 2
+    guide_excluded = [part.strip() for text in (exclusions if isinstance(exclusions,list) else [])
+                      for part in re.split(r'[.;]',str(text)) if part.strip()]
+    if review_optional_extras:
+        guide_excluded = [text for text in guide_excluded if _guide_exclusion_applies(text,included)]
+        negative['guideActivities'] = any(re.search(patterns['guideActivities'],text,re.I) for text in guide_excluded)
     for key, pattern in patterns.items():
         negative[key] |= any(re.search(pattern, text, re.I) and
                              re.search(r'\b(no|not included|excluded)\b', text, re.I) for text in clauses)
     if positive['guideActivities'] and negative['guideActivities']:
-        excluded_clauses = [excluded] + [text for text in clauses if re.search(r'\b(no|not included|excluded)\b', text, re.I)]
+        excluded_clauses = (guide_excluded if review_optional_extras else [excluded]) + [text for text in clauses if re.search(r'\b(no|not included|excluded)\b', text, re.I)]
         subtypes = [r'\b(guide|guided|docent|escort)\b', r'\b(tickets?|admission|entrance fee|park pass)\b', r'\bactivit(?:y|ies)\b']
         negative['guideActivities'] = any(any(re.search(p, text, re.I) for text in included) and
                                            any(re.search(p, text, re.I) for text in excluded_clauses) for p in subtypes)

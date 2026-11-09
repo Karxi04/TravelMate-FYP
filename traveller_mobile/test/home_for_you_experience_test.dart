@@ -11,6 +11,7 @@ import 'package:travelmate_traveller/widgets/recommendation_card.dart';
 
 Map<String, dynamic> _recommendation() => {
       'destinationId': 'kek_lok_si',
+      'discoveryEligible':true,
       'title': 'Kek Lok Si Temple',
       'address': 'Air Itam, Penang',
       'category': 'Culture',
@@ -87,6 +88,7 @@ class _HomeApi extends ApiService {
           'stale':staleRecommendations,
           'snapshot':{'requestedDestination':'Penang'},
           'recommendations': emptyQualified ? [] : [_recommendation()],
+          'pagination':{'discoveryMode':'relevant_v1'},
           'source': 'fallback',
         };
       case '/api/public/tourism-packages':
@@ -114,6 +116,7 @@ class _HomeApi extends ApiService {
         'ok': true,
         'recommendationGenerationId':'rec_hidden_123',
         'recommendations': [_recommendation()],
+        'pagination':{'discoveryMode':'relevant_v1'},
         'source': 'fallback',
       };
     }
@@ -264,7 +267,7 @@ void main() {
     await _settleHome(tester, api);
     await _showOnHome(tester, find.text('Try again'));
 
-    expect(find.text('Recommendation service unavailable'), findsOneWidget);
+    expect(find.text('Something went wrong. Please try again.'), findsOneWidget);
     await tester.tap(find.text('Try again'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
@@ -305,7 +308,7 @@ void main() {
     final api=_HomeApi()..emptyQualified=true;
     await _settleHome(tester,api);
     expect(api.generationCalls,0);
-    await _showOnHome(tester,find.text('Adjust match'));
-    expect(find.text('No places meet your minimum match'),findsOneWidget);
+    await _showOnHome(tester,find.text('See all'));
+    expect(find.text('No relevant suggestions available yet'),findsOneWidget);
   });
 }

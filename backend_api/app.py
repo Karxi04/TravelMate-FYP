@@ -92,7 +92,8 @@ def create_app():
 
     @app.get("/api/health")
     def health():
-        return jsonify({"ok": True, "service": "TravelMate Backend API"})
+        return jsonify({"ok": True, "service": "TravelMate Backend API",
+                        "recommendationContract": "relevant_v1"})
 
     @app.get("/api/config-status")
     @auth_required(['admin'])
