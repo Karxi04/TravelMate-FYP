@@ -92,8 +92,10 @@ def create_app():
 
     @app.get("/api/health")
     def health():
+        from services.package_checkout_contract import SUPPLIER_REQUIREMENT_VERSION
         return jsonify({"ok": True, "service": "TravelMate Backend API",
-                        "recommendationContract": "relevant_v1"})
+                        "recommendationContract": "relevant_v1",
+                        "packageRequirementsContract": f"supplier_v{SUPPLIER_REQUIREMENT_VERSION}"})
 
     @app.get("/api/config-status")
     @auth_required(['admin'])

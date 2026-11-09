@@ -159,7 +159,7 @@ def test_historical_supplier_interpretation_remains_unchanged_and_new_snapshot_v
     assert derive_required_services(old)['guideActivities']['uncertain']
     draft=package(approvalStatus='approved',inclusions=BROCHURE,exclusions=old['exclusions'],guideActivitiesIncluded=True)
     snapshot=prepare_package_snapshot(draft,{'id':'test_operator_uid'})
-    assert snapshot['supplierRequirementVersion']==2
+    assert snapshot['supplierRequirementVersion']==3
     assert derive_required_services(snapshot)['guideActivities']['required']
     assert old==original
 
@@ -203,10 +203,11 @@ def test_actual_operator_routes_preserve_submitted_boolean_and_submit_contract(c
     assert repository.read('tourism_packages',pid)['approvalStatus']==('pending' if choice else 'draft')
 
 
-def test_public_health_advertises_only_the_recommendation_contract(client):
+def test_public_health_advertises_safe_contract_markers(client):
     response=client.get('/api/health')
     assert response.status_code==200
     assert response.json['recommendationContract']=='relevant_v1'
+    assert response.json['packageRequirementsContract']=='supplier_v3'
     assert not {'uid','projectId','credentials'} & response.json.keys()
 
 
