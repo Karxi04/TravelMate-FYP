@@ -43,7 +43,7 @@ def _patch_view_api(view_name, mock_fn):
 def test_supplier_attestation_disclosure_is_not_overwritten(auth_client,status,label):
     response=MagicMock(ok=True)
     response.json.return_value={'ok':True,'items':[{'id':'synthetic','bookingType':'package',
-        'supplierReservationStatus':status,'supplierReservationDisclosure':'Operator evidence, not API verified',
+        'statusOverview':{'supplierArrangements':{'label':label}},'supplierReservationStatus':status,'supplierReservationDisclosure':'Operator evidence, not API verified',
         'amount':100,'currency':'MYR','fulfillmentStatus':'trip_ready'}]}
     with _patch_view_api('admin_fr13.bookings',MagicMock(return_value=response)):
         page=auth_client.get('/admin/bookings?type=package')
@@ -179,7 +179,8 @@ def test_admin_bookings_renders_package_tab_and_supplier_disclosure(auth_client)
         html = res.data.decode("utf-8")
         assert "Package Bookings (Platform)" in html
         assert "Penang Heritage Tour" in html
-        assert "Reservation Not Created" in html
+        assert "Reservation Not Created" not in html
+        assert "Supplier Arrangements" in html and "Traveller Trip" in html
         assert "420.00" in html
 
 

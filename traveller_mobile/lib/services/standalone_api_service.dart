@@ -548,6 +548,10 @@ class StandaloneApiService {
   // ------------------------------------------------------------------
 
   Future<Map<String, dynamic>?> _readMap(String name) async {
+    if (name == 'learned_preference_profile') {
+      final bundle = await _readMap('learning_bundle_v1');
+      if (bundle != null) return Map<String,dynamic>.from(bundle['profile'] as Map);
+    }
     final raw = memoryStore != null
         ? memoryStore![_key(name)]
         : await _prefs.getString(_key(name));
@@ -566,6 +570,10 @@ class StandaloneApiService {
   }
 
   Future<List<Map<String, dynamic>>> _readList(String name) async {
+    if (name == 'recommendation_feedback_events') {
+      final bundle = await _readMap('learning_bundle_v1');
+      if (bundle != null) return (bundle['events'] as List).map((row) => Map<String,dynamic>.from(row as Map)).toList();
+    }
     final raw = memoryStore != null
         ? memoryStore![_key(name)]
         : await _prefs.getString(_key(name));
@@ -3197,11 +3205,10 @@ class StandaloneApiService {
       );
       if(_uid!=uid) throw StateError('Account changed. Retry your feedback.');
       if (update.changed) {
-        await _writeMap('learned_preference_profile', update.profile);
         final events = await _readList('recommendation_feedback_events');
         events.insert(0, Map<String, dynamic>.from(update.event!));
         if(_uid!=uid) throw StateError('Account changed.');
-        await _writeList('recommendation_feedback_events', events);
+        await _writeMap('learning_bundle_v1', {'schemaVersion':1,'profile':update.profile,'events':events});
       }
       return {
         'ok': true,
@@ -3227,11 +3234,10 @@ class StandaloneApiService {
       eventId: eventId,
     );
     if(_uid!=uid) throw StateError('Account changed. Retry your feedback reset.');
-    await _writeMap('learned_preference_profile', update.profile);
     final events = await _readList('recommendation_feedback_events');
     events.insert(0, Map<String, dynamic>.from(update.event!));
     if(_uid!=uid) throw StateError('Account changed.');
-    await _writeList('recommendation_feedback_events', events);
+    await _writeMap('learning_bundle_v1', {'schemaVersion':1,'profile':update.profile,'events':events});
     return {
       'ok': true,
       'changed': update.changed,
@@ -3921,8 +3927,21 @@ class StandaloneApiService {
   Map<String, dynamic> _calculateBudget(Map<String, dynamic> trip) {
     final activities =
         (trip['activities'] as List? ?? []).whereType<Map>().toList();
-    final activityCost =
-        activities.fold<double>(0, (sum, e) => sum + _num(e['estimatedCost']));
+    final travellers = max(1, _num(trip['travellerCount']).round());
+    var activityCost = 0.0;
+    var unknownActivityCount = 0;
+    for (final activity in activities) {
+      final unit = '${activity['pricingUnit'] ?? ''}';
+      final amount = double.tryParse('${activity['unitPrice'] ?? activity['estimatedCost']}');
+      final currency = '${activity['currency'] ?? 'MYR'}'.toUpperCase();
+      final evidencedZero = amount == 0 && ['per_person','per_group','already_aggregated'].contains(unit) &&
+          ['verified_ticket','catalog_estimate','user_entered'].contains(activity['costProvenance']);
+      if (currency != 'MYR' || amount == null || !amount.isFinite || amount < 0 || (amount == 0 && !evidencedZero)) {
+        unknownActivityCount++;
+      } else {
+        activityCost += amount * (unit == 'per_person' ? travellers : 1);
+      }
+    }
     final selectedFlight = trip['selectedFlight'] is Map
         ? Map<String, dynamic>.from(trip['selectedFlight'] as Map)
         : <String, dynamic>{};
@@ -3957,7 +3976,6 @@ class StandaloneApiService {
             ? _num(trip['hotelCost'])
             : nightlyRate * nights * rooms);
     final carRental = _num(trip['carRentalCost']);
-    final travellers = max(1, _num(trip['travellerCount']).round());
     final transport = trip['transportCost'] != null
         ? _num(trip['transportCost'])
         : days * 35.0;
@@ -3968,7 +3986,7 @@ class StandaloneApiService {
     final limit = _num(trip['budgetLimit']);
     final remaining = limit - total;
     final over = max(0.0, -remaining);
-    final status = hotelCurrencyIssue || flightIssue
+    final status = hotelCurrencyIssue || flightIssue || unknownActivityCount > 0
         ? 'attention_required'
         : (limit > 0 && total > limit ? 'over_budget' : 'within_budget');
     return {
@@ -3985,12 +4003,14 @@ class StandaloneApiService {
       'remaining': _money(remaining),
       'overBy': _money(over),
       'status': status,
-      'incomplete': hotelCurrencyIssue || flightIssue,
+      'incomplete': hotelCurrencyIssue || flightIssue || unknownActivityCount > 0,
+      'knownEstimatedSubtotal': _money(total),
+      'unknownActivityCount': unknownActivityCount,
       'attention': flightIssue
           ? 'Flight amount is excluded until a validated MYR planning price is available.'
           : (hotelCurrencyIssue
               ? 'Hotel amount is excluded until a validated MYR currency is available.'
-              : ''),
+              : unknownActivityCount > 0 ? 'Admission estimates are unknown for $unknownActivityCount activities. The subtotal excludes unknown costs.' : ''),
       'costProvenance': {
         'flight': flightIssue
             ? 'excluded_unknown_currency_or_basis'
@@ -4010,7 +4030,9 @@ class StandaloneApiService {
             trip['foodCost'] != null ? 'provided' : 'estimated_daily_allowance',
         'activities': 'mixed_estimates',
       },
-      'comparison': status == 'over_budget'
+      'comparison': status == 'attention_required'
+          ? 'The known estimated subtotal is RM ${_money(total)}. Missing costs prevent a complete budget comparison.'
+          : status == 'over_budget'
           ? 'The current plan exceeds the budget by RM ${_money(over)}. Review the suggested lower-cost alternatives.'
           : 'The current plan is within budget with RM ${_money(max(0, remaining))} remaining.',
     };
@@ -5840,7 +5862,7 @@ class StandaloneApiService {
       'curry mee': 'Food',
       'laksa': 'Food',
       'culture': 'Culture',
-      'heritage': 'Heritage',
+      'heritage': 'Culture',
       'history': 'History',
       'nature': 'Nature',
       'hiking': 'Adventure',
@@ -5853,6 +5875,7 @@ class StandaloneApiService {
       'nightlife': 'Nightlife',
       'beach': 'Nature',
       'family': 'Family',
+      'kids': 'Family',
       'architecture': 'Architecture',
     };
     final requestedInterests = <String>{};
@@ -5861,7 +5884,7 @@ class StandaloneApiService {
     for (final entry in interestWords.entries) {
       for (final match in RegExp('\\b${RegExp.escape(entry.key)}${['museum','mall'].contains(entry.key) ? 's?' : ''}\\b', caseSensitive:false).allMatches(message)) {
         final preceding = message.substring(max(0,match.start-60),match.start).split(RegExp(r'[,.!?;]|\bbut\b')).last;
-        final negative = RegExp(r"\b(not|no|don't|do not|avoid|without|instead of|rather than)\b[\w\s]{0,45}$",caseSensitive:false).hasMatch(preceding);
+        final negative = RegExp(r"\b(not|no|don't|do not|dislike|hate|avoid|without|instead of|rather than)\b[\w\s]{0,45}$",caseSensitive:false).hasMatch(preceding);
         final narrow = entry.key=='museum' ? 'Museum' : entry.key=='mall' ||
           (entry.key=='shopping' && RegExp(r'^\s+malls?\b',caseSensitive:false).hasMatch(message.substring(match.end))) ? 'Shopping Mall' : null;
         if (negative) { if(narrow!=null) excludedTypes.add(narrow); else excluded.add(entry.value); }
@@ -5870,13 +5893,13 @@ class StandaloneApiService {
     }
     state['excludedInterests'] = excluded.toList();
     state['excludedActivityTypes'] = excludedTypes.toList();
-    if (RegExp(r'\b(affordable|cheap|low.cost)\b').hasMatch(q)) state['budgetRange'] = 'Budget';
+    if (RegExp(r'\b(affordable|cheap|low.cost|inexpensive|budget.friendly|on a budget|tight budget)\b').hasMatch(q)) state['budgetRange'] = 'Budget';
     if (RegExp(r'\b(avoid|do not want|don t want|no)\b.{0,20}\bcrowd').hasMatch(q)) state['avoidCrowds'] = true;
     if (requestedInterests.isNotEmpty)
       state['interests'] = requestedInterests.toList();
     if (q.contains('no preference')) state['interestsConfirmed'] = true;
 
-    if (q.contains('relaxed') || q.contains('relaxing') || q.contains('slow pace'))
+    if (q.contains('relaxed') || q.contains('relaxing') || q.contains('slow pace') || q.contains('take it easy') || q.contains('leisurely') || q.contains('not rushed'))
       state['pace'] = 'Relaxed';
     if (q.contains('packed') || q.contains('many places') || q.contains('busy'))
       state['pace'] = 'Packed';
@@ -6010,6 +6033,7 @@ class StandaloneApiService {
         'dayNo': dayNo,
         'timeSlot': slots[daySlot],
         'estimatedCost': d['estimatedCost'] ?? 0,
+        for (final key in ['pricingUnit','unitPrice','costCategory','costProvenance','priceSourceUrl','priceVerifiedAt','pricingEvidence','currency']) if(d[key]!=null) key:d[key],
         'category': d['category'] ?? d['type'] ?? '',
         'indoor': d['indoor'] ?? false,
         'openingHours': d['openingHours'] ?? '',
@@ -6045,7 +6069,8 @@ class StandaloneApiService {
       'status': 'generated',
       if(state['avoidCrowds']==true) 'planningLimitations':['Verified crowd-level data is unavailable; quieter conditions cannot be guaranteed.'],
     };
-    return planConstraintAwareItinerary(plan, preserveOrder:true, respectDayAssignments:true);
+    final scheduled = planConstraintAwareItinerary(plan, preserveOrder:true, respectDayAssignments:true);
+    return {...scheduled,'budgetEstimate':_calculateBudget(scheduled)};
   }
 
   String _tripPlanReply(Map<String, dynamic> plan, Map<String, dynamic> prefs) {

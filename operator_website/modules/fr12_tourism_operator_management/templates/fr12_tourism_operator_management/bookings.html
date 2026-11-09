@@ -61,18 +61,18 @@
       </div>
     </div>
     <div class="metric">{{ summary.fulfilled }}</div>
-    <div class="metric-help">Fulfilled in traveller app</div>
+    <div class="metric-help">Linked Traveller Trip verified</div>
   </div>
 
   <div class="metric-card accent-amber">
     <div class="metric-card-top">
-      <span class="metric-label">Supplier Reservations</span>
+      <span class="metric-label">Outstanding Arrangements</span>
       <div class="metric-card-icon" aria-hidden="true">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       </div>
     </div>
-    <div class="metric">{{ summary.unconfirmed_supplier }} Unconfirmed</div>
-    <div class="metric-help">Requires manual operator booking</div>
+    <div class="metric">{{ summary.unconfirmed_supplier }} Need attention</div>
+    <div class="metric-help">Required, partial or unresolved arrangements</div>
   </div>
 </div>
 
@@ -100,7 +100,10 @@
       <option value="all" {% if status == 'all' %}selected{% endif %}>All Bookings</option>
       <option value="paid" {% if status == 'paid' %}selected{% endif %}>Paid Orders</option>
       <option value="awaiting_fulfillment" {% if status == 'awaiting_fulfillment' %}selected{% endif %}>Awaiting Arrangements</option>
-      <option value="fulfilled" {% if status == 'fulfilled' %}selected{% endif %}>Trip Ready / Fulfilled</option>
+      <option value="fulfilled" {% if status == 'fulfilled' %}selected{% endif %}>Operator Ready</option>
+      <option value="needs_review" {% if status == 'needs_review' %}selected{% endif %}>Needs Review</option>
+      <option value="trip_created" {% if status == 'trip_created' %}selected{% endif %}>Traveller Trip Created</option>
+      <option value="supplier_not_required" {% if status == 'supplier_not_required' %}selected{% endif %}>No External Arrangements Required</option>
       <option value="pending" {% if status == 'pending' %}selected{% endif %}>Payment Pending</option>
       <option value="declined" {% if status == 'declined' %}selected{% endif %}>Unable to Fulfil</option>
       <option value="test" {% if status == 'test' %}selected{% endif %}>Stripe Test Mode Only</option>
@@ -172,8 +175,9 @@
         {{ sort_header('party', 'Party Breakdown') }}
         {{ sort_header('amount', 'Amount') }}
         {{ sort_header('payment', 'Payment Status') }}
-        {{ sort_header('fulfillment', 'In-App Fulfillment') }}
-        {{ sort_header('supplier', 'Supplier Status') }}
+        {{ sort_header('trip', 'Traveller Trip') }}
+        {{ sort_header('readiness', 'Operator Readiness') }}
+        {{ sort_header('supplier', 'Supplier Arrangements') }}
         {{ sort_header('created', 'Created') }}
         <th style="text-align:right">Action</th>
       </tr>
@@ -252,49 +256,13 @@
           <span class="status {{ 'approved' if label == 'Paid' else 'pending' if label == 'Pending' else 'expired' if label == 'Expired' else 'rejected' }}">{{ label }}</span>
         </td>
 
-        <td>
-          {% set ful_status = (item.fulfillmentStatus or '')|lower %}
-          {% if ful_status in ['trip_ready', 'fulfilled'] %}
-            <span class="badge-fulfillment trip_ready">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-              <span>{{ 'Trip Ready' if ful_status == 'trip_ready' else 'Trip Created in App' }}</span>
-            </span>
-          {% elif ful_status == 'partially_fulfilled' %}
-            <span class="badge-fulfillment pending">
-              <span>Partially Confirmed</span>
-            </span>
-          {% elif ful_status in ['pending', 'fulfillment_pending', 'awaiting_operator_fulfillment'] %}
-            <span class="badge-fulfillment pending">
-              <span>Awaiting Arrangements</span>
-            </span>
-          {% elif ful_status == 'fulfillment_declined' %}
-            <span class="badge-fulfillment declined">
-              <span>Declined</span>
-            </span>
-          {% elif ful_status in ['not_created', 'none', 'unfulfilled', 'not_fulfilled'] or not item.fulfillmentStatus %}
-            <span class="badge-fulfillment fallback">Not Fulfilled</span>
-          {% else %}
-            <span class="badge-fulfillment fallback">{{ ful_status|replace('_', ' ')|title }}</span>
-          {% endif %}
+        {% set overview = item.get('statusOverview') or {} %}
+        {% for key in ['travellerTrip','operatorReadiness','supplierArrangements'] %}
+        {% set state = overview.get(key, {}) %}
+        <td><span class="status {{ 'approved' if state.get('state') in ['created','ready','arrangements_recorded','not_required'] else 'pending' }}" style="white-space:normal;overflow-wrap:anywhere;max-width:100%">{{ state.get('label','Unavailable') }}</span>
+          {% if key == 'supplierArrangements' and state.get('state') in ['arrangements_recorded','partially_recorded'] %}<small class="muted" style="display:block">Operator records · {{ state.get('completedCount',0) }}/{{ state.get('requiredCount',0) }}</small>{% endif %}
         </td>
-
-        <td>
-          {% set sup_status = (item.supplierReservationStatus or '')|lower %}
-          {% if sup_status == 'operator_attested' %}
-            <span class="badge-supplier attested" title="Supplier reservation confirmed and attested by operator">
-              ✅ Arrangements Recorded (Operator)
-            </span>
-          {% elif sup_status == 'not_required' %}<span class="badge-supplier">Not Required</span>
-          {% elif sup_status == 'declined' %}
-            <span class="badge-supplier declined" title="Supplier fulfillment declined by operator">
-              ❌ Declined
-            </span>
-          {% else %}
-            <span class="badge-supplier unconfirmed" title="Actual third-party supplier reservation must be coordinated manually by the operator">
-              ⚠️ Reservation Not Created
-            </span>
-          {% endif %}
-        </td>
+        {% endfor %}
 
         <td>{{ (item.get('createdAt') or '—')[:19]|replace('T',' ') }}</td>
         <td style="text-align: right;">

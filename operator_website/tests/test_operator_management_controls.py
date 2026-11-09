@@ -10,11 +10,16 @@ from test_operator_bookings import auth_client, app  # noqa: F401
 
 
 def booking(reference, **changes):
-    return {'id':reference,'orderReference':reference,'packageId':'p1','packageTitle':'Heritage package',
+    item={'id':reference,'orderReference':reference,'packageId':'p1','packageTitle':'Heritage package',
             'departureDate':'2027-01-10','groupSize':3,'adults':2,'children':1,'amount':300,'groupTotal':300,
             'currency':'MYR','paymentStatus':'paid','orderStatus':'paid','isPaid':True,'testMode':True,
             'fulfillmentStatus':'awaiting_operator_fulfillment','supplierReservationStatus':'not_created',
             'createdAt':'2026-11-08T10:00:00Z',**changes}
+    item.setdefault('statusOverview',{
+        'travellerTrip':{'state':'created','label':'Created'},
+        'operatorReadiness':{'state': 'not_applicable' if not item['isPaid'] else 'ready' if item['fulfillmentStatus']=='trip_ready' else 'awaiting_arrangements','label':'Ready' if item['fulfillmentStatus']=='trip_ready' else 'Awaiting Arrangements'},
+        'supplierArrangements':{'state':'not_required' if not item['isPaid'] else 'partially_recorded' if item['fulfillmentStatus']=='partially_fulfilled' else 'pending','label':'Awaiting Arrangements'}})
+    return item
 
 
 @pytest.fixture
@@ -44,9 +49,15 @@ SORTED = [
     booking('A',packageTitle='Alpha',departureDate='2027-01-01',groupSize=2,amount=9.5,paymentStatus='failed',orderStatus='failed',isPaid=False,fulfillmentStatus='fulfillment_declined',supplierReservationStatus='declined',createdAt='2026-11-07T10:00:00Z'),
     booking('B',packageTitle='Gamma',departureDate='2027-01-03',groupSize=20,amount=1000,paymentStatus='pending',orderStatus='checkout_open',isPaid=False,fulfillmentStatus='trip_ready',supplierReservationStatus='not_created',createdAt='2026-11-09T10:00:00Z'),
 ]
+for row in SORTED:
+    states={'A':('unknown','unable_to_fulfil','needs_review'),
+            'B':('not_created','ready','not_required'),
+            'C':('created','awaiting_arrangements','partially_recorded')}[row['id']]
+    for key,state in zip(('travellerTrip','operatorReadiness','supplierArrangements'),states):
+        row['statusOverview'][key]={'state':state,'label':state.replace('_',' ').title()}
 EXPECTED = {'reference':['A','B','C'],'package':['A','C','B'],'departure':['A','C','B'],
             'party':['A','C','B'],'amount':['A','C','B'],'payment':['A','C','B'],
-            'fulfillment':['A','C','B'],'supplier':['A','B','C'],'created':['A','C','B']}
+            'trip':['C','B','A'],'readiness':['C','B','A'],'supplier':['A','B','C'],'created':['A','C','B']}
 
 
 @pytest.mark.parametrize('column',list(EXPECTED))

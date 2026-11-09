@@ -2,17 +2,9 @@ from datetime import datetime, timezone
 from math import isfinite
 from services.commerce_money import record_money, public_pricing_breakdown
 from services.public_content_projection import active_campaign, eligible_package
-from services.package_checkout_contract import derive_required_services, build_initial_fulfillment_record, fulfillment_readiness
+from services.package_checkout_contract import build_initial_fulfillment_record, is_paid_order
 
 RECORD_LIMIT = 500
-
-
-def is_paid_order(order):
-    payment = _normalise(order.get('paymentStatus'))
-    status = _normalise(order.get('orderStatus') or order.get('status'))
-    terminal = {'cancelled', 'checkout_cancelled', 'failed', 'checkout_failed', 'payment_failed',
-                'expired', 'checkout_expired', 'refunded', 'partially_refunded', 'rejected'}
-    return (payment in {'paid', 'succeeded'} or (not payment and status in {'paid', 'succeeded'})) and status not in terminal
 
 
 def unique_package_orders(orders):
@@ -47,7 +39,7 @@ def _normalise(value):
     return str(value or "").strip().lower()
 
 
-def _safe_analytics_booking(order_data, include_fulfillment=False):
+def _safe_analytics_booking(order_data, include_fulfillment=False, requirement_context=None, trip_state=None):
     """
     Project a raw checkout_orders document to an operator-safe analytics booking projection.
 
@@ -108,7 +100,9 @@ def _safe_analytics_booking(order_data, include_fulfillment=False):
     group_total = amt_val
 
     ful_record = order_data.get("fulfillmentRecord")
-    required_services = derive_required_services(snapshot)
+    from services.booking_requirements import assessment, status_overview, trip_status
+    context = requirement_context or assessment(order_data)
+    required_services = context['requirements']
     if not ful_record and is_paid_order(order_data):
         ful_record = build_initial_fulfillment_record(snapshot, now=order_data.get("createdAt"))
 
@@ -153,7 +147,10 @@ def _safe_analytics_booking(order_data, include_fulfillment=False):
         "updatedAt": order_data.get("updatedAt"),
     }
     if include_fulfillment:
-        res["readiness"] = fulfillment_readiness(order_data, required_services, ful_record or {}, is_paid_order(order_data))
+        overview, readiness = status_overview(order_data,context,ful_record,trip_state or trip_status(order_data,unavailable=True))
+        res['statusOverview'] = overview
+        res["readiness"] = readiness
+        res['requirementClarification'] = context
         res["pricingBreakdown"] = public_pricing_breakdown(snapshot.get("pricingBreakdown"))
         res["packageTripId"] = order_data.get("fulfilledTripId")
         res["fulfillmentRecord"] = ful_record

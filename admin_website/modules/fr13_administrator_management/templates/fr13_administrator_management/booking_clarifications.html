@@ -1,0 +1,11 @@
+{% extends 'portal_base.html' %}
+{% block title %}Purchased Requirement Reviews | TravelMate{% endblock %}
+{% block content %}
+<div class="page-title"><div><span class="eyebrow">Booking Governance</span><h1>Purchased Requirement Reviews</h1><p>Review order-bound evidence without changing original purchases or paid amounts.</p></div><a class="btn outline" href="{{ url_for('admin_fr13.bookings',type='package') }}">Package Bookings</a></div>
+{% if backend_error %}<p role="alert">Review service unavailable. Refresh to retry.</p>{% endif %}
+{% if data_limited %}<p>Showing the first 200 pending proposals. Resolve these before requesting the remaining queue.</p>{% endif %}
+<div class="table-wrap"><table><thead><tr><th>Order</th><th>Operator</th><th>Revision</th><th>Submitted / Updated</th><th>Review</th></tr></thead><tbody>
+{% for item in items %}<tr><td style="overflow-wrap:anywhere">{{ item.orderId }}</td><td>{{ item.operatorId }}</td><td>{{ item.revision }}</td><td>{{ item.updatedAt }}</td><td><a class="btn outline" href="{{ url_for('admin_fr13.booking_clarification_review',order_reference=item.orderId) }}">Review Evidence</a></td></tr>
+{% else %}<tr><td colspan="5">No pending purchase clarifications.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

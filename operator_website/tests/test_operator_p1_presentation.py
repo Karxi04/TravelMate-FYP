@@ -193,6 +193,13 @@ P1_FIXTURES = [
         "createdAt": None,
     },
 ]
+for fixture in P1_FIXTURES:
+    created=fixture['orderReference']=='ord-paid-fulfilled'
+    paid=fixture['paymentStatus']=='paid'
+    fixture['statusOverview']={
+        'travellerTrip':{'state':'created' if created else 'not_created','label':'Created' if created else 'Not Created'},
+        'operatorReadiness':{'state':'needs_review' if created else 'awaiting_arrangements' if paid else 'not_applicable','label':'Needs Review' if created else 'Awaiting Arrangements' if paid else 'Not Applicable'},
+        'supplierArrangements':{'state':'needs_review','label':'Needs Review'}}
 
 
 # =========================================================================
@@ -376,7 +383,7 @@ def test_p1_10_verified_payment_with_pending_fulfillment_does_not_claim_trip_cre
         assert "Order status summary" in html
         # Does NOT falsely claim trip has already been created
         assert "An independent <strong>Package Trip</strong> has been created" not in html
-        assert "Fulfillment Pending" in html
+        assert "Awaiting Arrangements" in html
 
 
 # =========================================================================
@@ -393,8 +400,8 @@ def test_p1_11_completed_fulfillment_displays_package_trip_information_correctly
 
         # Truthfully claims verified payment and trip created
         assert ">Paid<" in html
-        assert "Trip Created in App" in html
-        assert "Trip Created in App" in html
+        assert "Traveller Trip" in html and ">Created<" in html
+        assert "Traveller Trip" in html and ">Created<" in html
         assert "Paid" in html
 
 
@@ -413,11 +420,11 @@ def test_p1_12_supplier_reservation_disclosure_remains_truthful(auth_client):
             html = res.get_data(as_text=True)
 
             # Header must always retain authoritative disclosure
-            assert "Reservation Not Created" in html
+            assert "Reservation Not Created" not in html
             # Clarifies that third-party supplier reservations are NOT created automatically
-            assert "External suppliers" in html
+            assert "not independent supplier confirmation" in html
             # Notice box at bottom
-            assert "Operator Coordination Notice" in html
+            assert "Creating a Traveller Trip does not reserve a supplier service" in html
 
 
 # =========================================================================
@@ -573,7 +580,7 @@ def test_p1_18_existing_fr09_checkout_fulfillment_contract(auth_client):
         html = res.get_data(as_text=True)
         assert "ord_fr09_stripe_checkout" in html
         assert "Pending" in html
-        assert "Not Fulfilled" in html
+        assert "Traveller Trip" in html and "Operator Readiness" in html
 
     with patch.dict(app.view_functions["operator_fr12.booking_detail"].__globals__, {"call_api": lambda m, p, **k: mock_resp}):
         mock_resp.json.return_value = {'ok': True, 'booking': fr09_projected_order}
@@ -582,7 +589,7 @@ def test_p1_18_existing_fr09_checkout_fulfillment_contract(auth_client):
         html_det = res_det.get_data(as_text=True)
         assert ">Pending<" in html_det
         assert "Stripe Checkout" in html_det
-        assert "Reservation Not Created" in html_det
+        assert "Reservation Not Created" not in html_det
 
 
 # =========================================================================

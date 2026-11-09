@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response, g
 from api_client import call_api
+from uuid import uuid4
 
 bp = Blueprint("admin_fr13", __name__, template_folder="templates", url_prefix="/admin")
 
@@ -244,6 +245,36 @@ def payments():
         data_limited=bool(data.get("dataLimited", False)),
         **params,
     )
+
+
+@bp.route('/booking-clarifications')
+def booking_clarifications():
+    if not guard():return redirect(url_for('admin_fr01.login'))
+    response=call_api('GET','/api/fr12/booking-clarifications')
+    data=response.json() if response.ok else {}
+    return render_template('fr13_administrator_management/booking_clarifications.html',
+        items=data.get('items',[]),backend_error=not response.ok,data_limited=data.get('dataLimited',False))
+
+
+@bp.route('/bookings/<order_reference>/clarification',methods=['GET','POST'])
+def booking_clarification_review(order_reference):
+    if not guard():return redirect(url_for('admin_fr01.login'))
+    if request.method=='POST':
+        try:revision=int(request.form.get('expectedRevision',''))
+        except ValueError:revision=-1
+        response=call_api('POST',f'/api/fr12/bookings/{order_reference}/clarifications/review',json={
+            'expectedRevision':revision,'requestId':request.form.get('requestId',''),
+            'decision':request.form.get('decision',''),'reason':request.form.get('reason','').strip(),
+            'evidenceReference':request.form.get('evidenceReference','').strip(),
+            'entitlementVerified':request.form.get('entitlementVerified')=='true'})
+        data=response.json()
+        flash('Clarification decision recorded.' if response.ok else data.get('error','Decision could not be saved.'),'success' if response.ok else 'error')
+        return redirect(url_for('admin_fr13.booking_clarification_review',order_reference=order_reference))
+    response=call_api('GET',f'/api/fr12/bookings/{order_reference}')
+    if not response.ok:
+        flash('Booking review is unavailable.','error')
+        return redirect(url_for('admin_fr13.booking_clarifications'))
+    return render_template('fr13_administrator_management/booking_clarification_review.html',booking=response.json()['booking'],request_id=uuid4().hex)
 
 
 @bp.post("/feedback/<feedback_id>/review")

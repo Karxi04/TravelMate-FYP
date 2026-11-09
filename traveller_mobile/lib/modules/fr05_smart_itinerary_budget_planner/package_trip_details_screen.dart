@@ -485,6 +485,31 @@ class _PackageTripDetailsScreenState extends State<PackageTripDetailsScreen> {
           const SizedBox(height: 16),
 
           // 3. Overview Description & Meeting Point
+          if (trip!['approvedRequirementClarification'] is Map) ...[
+            InkCard(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text('Reviewed purchased-service clarification',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  const Text(
+                      'This separately reviewed interpretation preserves your original purchased package below.'),
+                  for (final entry
+                      in ((trip!['approvedRequirementClarification']
+                                  as Map)['components'] as Map? ??
+                              {})
+                          .entries)
+                    Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text('${{
+                              'accommodation': 'Accommodation',
+                              'transport': 'Transportation',
+                              'guideActivities': 'Guide / Activities'
+                            }[entry.key] ?? entry.key}: ${entry.value['required'] == true ? 'Included' : 'Not included'} — ${entry.value['promise']}')),
+                ])),
+            const SizedBox(height: 16),
+          ],
           if ((snap['description'] ?? trip!['description'] ?? '').toString().isNotEmpty ||
               meetingPoint.isNotEmpty)
             _buildOverviewCard(

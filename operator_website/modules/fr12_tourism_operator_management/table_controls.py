@@ -8,7 +8,7 @@ CATALOG_COLUMNS = {'title': 'Package', 'destination': 'Destination', 'duration':
                    'price': 'Price', 'status': 'Status', 'updated': 'Updated'}
 BOOKING_COLUMNS = {'reference': 'Order Reference', 'package': 'Package Excursion', 'departure': 'Departure',
                    'party': 'Party Breakdown', 'amount': 'Amount', 'payment': 'Payment Status',
-                   'fulfillment': 'In-App Fulfillment', 'supplier': 'Supplier Status', 'created': 'Created'}
+                   'trip': 'Traveller Trip', 'readiness': 'Operator Readiness', 'supplier': 'Supplier Arrangements', 'created': 'Created'}
 
 
 def number(value):
@@ -42,8 +42,11 @@ def sort_records(items, column, direction, catalog=False):
                'updated': ('updatedAt', 'createdAt')} if catalog else
               {'reference': ('orderReference', 'id'), 'package': ('packageTitle',), 'departure': ('departureDate',),
                'party': ('groupSize',), 'amount': ('amount', 'groupTotal'), 'payment': ('paymentStatus',),
-               'fulfillment': ('fulfillmentStatus',), 'supplier': ('supplierReservationStatus',), 'created': ('createdAt',)})
+               'trip': (), 'readiness': (), 'supplier': (), 'created': ('createdAt',)})
     def value(item):
+        if not catalog and column in {'trip','readiness','supplier'}:
+            key={'trip':'travellerTrip','readiness':'operatorReadiness','supplier':'supplierArrangements'}[column]
+            return (item.get('statusOverview') or {}).get(key,{}).get('state')
         if column == 'payment':
             return payment_label(item.get('paymentStatus'), item.get('orderStatus')).casefold() if item.get('paymentStatus') or item.get('orderStatus') else None
         raw = next((item.get(key) for key in fields[column] if item.get(key) not in (None, '')), None)

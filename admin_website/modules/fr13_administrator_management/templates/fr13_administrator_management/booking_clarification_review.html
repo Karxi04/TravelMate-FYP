@@ -1,0 +1,29 @@
+{% extends 'portal_base.html' %}
+{% block title %}Booking Clarification Review | TravelMate{% endblock %}
+{% block content %}
+{% set context=booking.get('requirementClarification') or {} %}{% set review=context.get('record') or {} %}{% set proposal=review.get('proposal') or {} %}
+<div class="page-title"><div><span class="eyebrow">Paid Purchase Governance</span><h1>Booking Clarification Review</h1><p style="overflow-wrap:anywhere">Order {{ booking.orderReference }} · {{ booking.packageTitle }}</p></div><a class="btn outline" href="{{ url_for('admin_fr13.booking_clarifications') }}">Back to Reviews</a></div>
+<section class="card"><h3>Current Assessment</h3><p>Payment: {{ booking.paymentStatus|payment_label(booking.orderStatus) }}</p>
+{% for key,label in [('travellerTrip','Traveller Trip'),('operatorReadiness','Operator Readiness'),('supplierArrangements','Supplier Arrangements')] %}<p>{{ label }}: {{ (booking.get('statusOverview') or {}).get(key,{}).get('label','Unavailable') }}</p>{% endfor %}
+<p>Original purchase snapshot and paid amount remain unchanged. This is an evidence-based interpretation, not permission to remove a promised service.</p></section>
+{% for key,requirement in (booking.get('requiredServices') or {}).items() %}{% if requirement.get('uncertain') %}<p role="status"><strong>{{ {'accommodation':'Accommodation','transport':'Transportation','guideActivities':'Guide / Activities'}.get(key,key) }}:</strong> {{ requirement.get('reviewReason') }}</p>{% endif %}{% endfor %}
+<section class="card" style="margin-top:20px"><h3>Original Purchased Evidence</h3>
+{% for component,fields in context.get('originalEvidence',{}).items() %}<details><summary>{{ component }}</summary>
+{% for path,source in fields.items() %}<strong>{{ path }}</strong>{% if source.present %}<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto">{{ source.value|tojson(indent=2) }}</pre>{% else %}<p>Field absent.</p>{% endif %}{% endfor %}
+</details>{% endfor %}</section>
+<section class="card" style="margin-top:20px"><h3>Proposed Interpretation</h3><p>Status: {{ review.get('status','No proposal') }} · Revision {{ review.get('revision',0) }}</p>
+{% for key,resolution in proposal.get('components',{}).items() %}<p><strong>{{ key }} — {{ 'Included' if resolution.required else 'Not Included' }}</strong>: {{ resolution.promise }}</p>{% endfor %}
+{% if proposal.get('legacyReview') %}<p>Requests reviewed access to the legacy arrangement workflow. This does not mark it Ready.</p>{% endif %}
+<p>Operator reason: {{ proposal.get('reason','') }}</p><p>Evidence reference: {{ proposal.get('evidenceReference','') }}</p><p>Evidence explanation: {{ proposal.get('evidenceSummary','') }}</p>
+{% if review.get('status')=='pending' %}
+<form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="requestId" value="{{ request_id }}"><input type="hidden" name="expectedRevision" value="{{ review.revision }}">
+<label>Decision<select class="input" name="decision" required><option value="needs_evidence">More evidence required — keep blocked</option><option value="rejected">Reject proposed interpretation</option><option value="approved">Approve evidence-backed interpretation</option></select></label>
+<label>Decision reason<textarea class="input" name="reason" minlength="20" maxlength="2000" required></textarea></label>
+<label>Verified purchase-time evidence reference (required for approval)<input class="input" name="evidenceReference" maxlength="500"></label>
+<label><input type="checkbox" name="entitlementVerified" value="true"> I checked contemporaneous evidence. The resolution reflects the original purchased entitlement and does not remove a service promised to the paid Traveller.</label>
+<p>If the historical evidence cannot establish the entitlement, request more evidence. Current catalogue edits alone cannot justify approval.</p>
+<button class="btn primary" type="submit">Record Review Decision</button></form>
+{% endif %}</section>
+<section class="card" style="margin-top:20px"><h3>Audit History</h3>{% for event in review.get('history',[]) %}<p><strong>Revision {{ event.revision }} — {{ event.action }}</strong> · {{ event.get('proposedBy') or event.get('reviewedBy') }} · {{ event.get('proposedAt') or event.get('reviewedAt') }}</p><p>{{ event.reason }}</p><p>Evidence: {{ event.evidenceReference }}</p>{% endfor %}</section>
+{% endblock %}

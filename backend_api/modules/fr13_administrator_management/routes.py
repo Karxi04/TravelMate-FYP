@@ -630,6 +630,13 @@ def booking_records():
                     'currency': str(o.get('currency') or 'UNKNOWN').upper(),
                     'createdAt': o.get('createdAt') or '',
                 }
+                from services.booking_requirements import load_context
+                from modules.fr12_tourism_operator_management.analytics_service import _safe_analytics_booking
+                context, trip = load_context(o,retrieveRecord)
+                assessment = _safe_analytics_booking(o,include_fulfillment=True,requirement_context=context,trip_state=trip)
+                pkg_proj['statusOverview'] = assessment['statusOverview']
+                pkg_proj['readiness'] = assessment['readiness']
+                pkg_proj['clarificationStatus'] = (context.get('record') or {}).get('status')
                 items.append(pkg_proj)
 
     if status:

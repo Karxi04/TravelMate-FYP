@@ -414,7 +414,7 @@ void main() {
       }),
     ]);
     final profile =
-        jsonDecode(memory['travelmate_owner_learned_preference_profile']!);
+        jsonDecode(memory['travelmate_owner_learning_bundle_v1']!)['profile'];
     expect(profile['affinities'], {'culture': .15, 'food': .15});
     final repeated = await a.post('/api/fr4/preference-feedback', {
       'destinationId': 'museum',
@@ -428,7 +428,7 @@ void main() {
       'feedbackType': 'not_for_me'
     });
     expect(
-        jsonDecode(memory['travelmate_owner_learned_preference_profile']!)[
+        jsonDecode(memory['travelmate_owner_learning_bundle_v1']!)['profile'][
             'affinities'],
         {'culture': .15, 'food': .15});
     final other =

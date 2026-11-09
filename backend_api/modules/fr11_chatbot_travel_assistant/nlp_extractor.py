@@ -334,7 +334,7 @@ INTEREST_MAPPING = {
     'Beach': ['beach', 'island', 'coastal', 'snorkeling', 'sea', 'diving'],
     'Relaxation': ['relax', 'relaxing', 'relaxation', 'chill', 'peaceful', 'spa', 'calm'],
     'Shopping': ['shopping', 'mall', 'market', 'bazaar'],
-    'Family': ['family', 'kids', 'children', 'child'],
+    'Family': ['family', 'kid', 'kids', 'children', 'child'],
     'Photography': ['photo', 'photography', 'viewpoint'],
 }
 
@@ -345,7 +345,7 @@ SPECIFIC_ACTIVITY_TYPES = {
 
 BROAD_EXCLUSION_TERMS = {
     'Food': [r'food', r'culinary', r'dining', r'cuisine'],
-    'Culture': [r'culture', r'cultural\s+attractions?', r'heritage\s+attractions?'],
+    'Culture': [r'culture', r'cultural\s+attractions?', r'heritage(?:\s+attractions?)?'],
     'Nature': [r'nature', r'outdoor\s+nature'],
     'Beach': [r'beach(?:es)?', r'coastal\s+activities'],
     'Relaxation': [r'relaxation', r'relaxing\s+activities'],
@@ -703,6 +703,8 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
                                collaborative_data=None, peer_preferences=None, current_traveller_id=None):
     """Build a structured trip plan from authentic catalog activities, or report coverage gap."""
     matching = find_matching_catalog_destinations(destination_area, destination_state, catalog)
+    from services.pricing_registry import enrich_candidate_pricing
+    matching = [enrich_candidate_pricing(item) for item in matching]
     if catalog is None or catalog is DESTINATIONS:
         matching = [{**item,'ratingSource':'unverified_local_catalog'} for item in matching]
     if not matching:
@@ -770,7 +772,9 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
                 'timeRangeLabel': slot,
                 'estimatedCost': float(d.get('estimatedCost', 0) or 0),
                 **pricing_snapshot(d),
-                'gps_coordinates': d.get('gps_coordinates', {}),
+                'gps_coordinates': d.get('gps_coordinates') or d.get('gpsCoordinates') or {},
+                'openingHours': d.get('openingHours') or d.get('opening_hours') or '',
+                **{key:d[key] for key in ('openingHoursSourceUrl','openingHoursVerifiedAt') if key in d},
                 'type': d.get('type') or d.get('category') or '',
                 'category': d.get('category') or d.get('type') or '',
                 'description': d.get('description', ''),
