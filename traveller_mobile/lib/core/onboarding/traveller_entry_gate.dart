@@ -1,8 +1,10 @@
+import '../../widgets/ink_card.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../modules/fr02_travel_preference/preferences_screen.dart';
 import '../../services/api_service.dart';
+import '../../services/android_push_service.dart';
 import '../../widgets/travel_widgets.dart';
 import '../navigation/app_shell.dart';
 
@@ -62,8 +64,11 @@ class _TravellerEntryGateState extends State<TravellerEntryGate> {
 
   Future<void> _signOut() async {
     try {
+      await AndroidPushService.instance.beforeLogout();
       await FirebaseAuth.instance.signOut();
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) showError(context, 'Connect to TravelMate and retry signing out so Android notifications can be disabled.');
+    }
   }
 
   Future<void> _check() async {

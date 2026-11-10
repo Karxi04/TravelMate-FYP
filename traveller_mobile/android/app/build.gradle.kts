@@ -58,6 +58,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        manifestPlaceholders["travelMateLabel"] = if (pushTestBuild) "TravelMate Push Sandbox" else if (emulatorBuild) "TravelMate Hermetic Test" else "TravelMate"
         applicationId = if (emulatorBuild || pushTestBuild) "org.travelmate.hermetic.travelmate_hermetic" else "com.example.travelmate_traveller"
         buildConfigField("boolean", "USE_FIREBASE_EMULATOR", emulatorBuild.toString())
         // You can update the following values to match your application needs.

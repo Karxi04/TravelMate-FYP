@@ -4,7 +4,8 @@ import hashlib
 import json
 import math
 
-CATEGORIES = {'payment', 'arrangements_ready', 'upcoming_trip', 'packing', 'weather'}
+CATEGORIES = {'payment', 'arrangements_ready', 'upcoming_trip', 'packing', 'weather',
+              'package_booking', 'arrangements_update', 'booking_attention'}
 MYT = timezone(timedelta(hours=8))
 
 
@@ -91,11 +92,40 @@ def derive_events(uid, orders, trips, checklists=None, forecasts=None, now=None)
             event['paymentState'] = state
             event['sourceLabel'] = payment_source_label(order,oid)
         record = order.get('fulfillmentRecord') or {}
+        if not isinstance(record,dict):record={}
         trip_id = str(order.get('fulfilledTripId') or '')
         if state == 'paid' and order.get('fulfillmentStatus') == 'trip_ready' and record.get('status') == 'trip_ready' and record.get('confirmedBy') and record.get('confirmedAt') and trip_id in owned_trip_ids:
-            add('arrangements_ready', oid, 'Package arrangements ready',
+            ready = add('arrangements_ready', oid, 'Package arrangements ready',
                 'The operator marked your purchased package arrangements ready. This is an operator attestation.',
                 {'screen':'package_trip','tripId':trip_id,'orderId':oid}, record['confirmedAt'])
+            ready['sourceOrderId'] = str(order.get('id') or '')
+        if state == 'paid' and order.get('quoteType') == 'package':
+            source_id = str(order.get('id') or '')
+            trip = next((t for t in trips if str(t.get('id')) == trip_id and t.get('travellerId') == uid), None)
+            linked = (trip and trip.get('checkoutOrderId') == source_id
+                      and order.get('operatorId') and trip.get('operatorId') == order['operatorId'])
+            target = {'screen':'package_trip','tripId':trip_id,'orderId':oid} if linked else {'screen':'payments','orderId':oid}
+            def package_update(category, source, title, message, occurred):
+                event = add(category,source,title,message,target,occurred)
+                event['sourceOrderId'] = source_id
+                return event
+            if linked and active_trip(trip):
+                package_update('package_booking', oid, 'Package trip created',
+                    'Your paid package purchase has a saved trip. This does not confirm supplier reservations.', trip.get('createdAt'))
+            if order.get('fulfillmentStatus') == 'partially_fulfilled' and record.get('status') == 'partially_fulfilled':
+                services=record.get('services') or {}
+                if not isinstance(services,dict):services={}
+                for component,label in {'accommodation':'accommodation','transport':'transportation','guideActivities':'guide / activity'}.items():
+                    service = services.get(component) or {}
+                    if not isinstance(service,dict):continue
+                    if (service.get('required') is True and service.get('status') == 'confirmed' and service.get('reference')
+                            and service.get('confirmedAt') and service.get('confirmedBy') and service.get('provenance') == 'operator_attested'):
+                        package_update('arrangements_update', [oid,component,service['confirmedAt']], 'Package arrangement updated',
+                            f'The operator recorded {label} arrangements. This is an operator attestation; review the current booking details.', service['confirmedAt'])
+            if (order.get('fulfillmentStatus') == 'fulfillment_declined' and record.get('status') == 'fulfillment_declined'
+                    and record.get('declinedAt') and record.get('declinedBy')):
+                package_update('booking_attention', [oid,record['declinedAt']], 'Package booking needs attention',
+                    'The operator marked the package unable to fulfil. Review your booking. No refund is implied by this update.', record['declinedAt'])
     for trip in trips:
         if trip.get('travellerId') != uid or not active_trip(trip):
             continue
@@ -142,3 +172,19 @@ def derive_events(uid, orders, trips, checklists=None, forecasts=None, now=None)
         source_trip = next((t for t in trips if str(t.get('id')) == tid),None)
         if source_trip: event['tripStartDate'] = source_trip.get('startDate')
     return list(events.values())
+
+
+
+def push_presentation(notification):
+    """Generic category wording only; no account, itinerary or financial details on the lock screen."""
+    title,body = {
+        'payment':('Payment update','Your payment status changed. Open TravelMate to review it securely.'),
+        'package_booking':('Package trip created','Your package purchase has a saved trip. Review its current arrangement status in TravelMate.'),
+        'arrangements_update':('Arrangement update','Your operator recorded an arrangement update. Open TravelMate to review the current details.'),
+        'arrangements_ready':('Operator readiness update','Your operator updated package readiness. Review the recorded status in TravelMate.'),
+        'booking_attention':('Booking needs attention','A package booking needs your attention. Open TravelMate to review its current status.'),
+        'upcoming_trip':('Upcoming trip','You have an upcoming trip. Open TravelMate to review your plans.'),
+        'packing':('Packing reminder','Review your trip packing checklist in TravelMate.'),
+        'weather':('Trip forecast advisory','A trip forecast advisory is available. Open TravelMate to review it.'),
+    }.get(notification.get('category'),('Update','You have a TravelMate update. Open the app to view it securely.'))
+    return {'title':'TravelMate — '+title,'body':body}

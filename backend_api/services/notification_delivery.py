@@ -7,7 +7,7 @@ import re
 from uuid import uuid4
 
 from sequence_contract.firebase_firestore import retrieveRecord, claimRecord, transactNotificationRecord
-from services.traveller_notifications import derive_events, active_trip, trip_start, MYT, canonical_payment_order
+from services.traveller_notifications import derive_events, active_trip, trip_start, MYT, canonical_payment_order, push_presentation
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ def register_device(uid, payload, disable=False):
 def queue_notification(event, created):
     if not enabled() or not created:
         return
-    if event.get('category') in {'payment','arrangements_ready'}:
+    if event.get('category') in {'payment','arrangements_ready','package_booking','arrangements_update','booking_attention'}:
         try:
             occurred = datetime.fromisoformat(str(event.get('occurredAt') or '').replace('Z','+00:00'))
             if occurred.tzinfo is None or not now_utc()-timedelta(hours=24) <= occurred <= now_utc()+timedelta(minutes=5):return
@@ -61,6 +61,15 @@ def queue_notification(event, created):
 
 def still_due(notification, now):
     category = notification.get('category')
+    if category in {'arrangements_ready','package_booking','arrangements_update','booking_attention'}:
+        uid=notification.get('travellerId')
+        source=notification.get('sourceOrderId')
+        order=retrieveRecord('checkout_orders',source) if source else None
+        if not order or order.get('travellerId')!=uid:return False
+        tid=order.get('fulfilledTripId')
+        trip=retrieveRecord('itineraries',tid) if tid else None
+        if trip and (trip.get('travellerId')!=uid or (not active_trip(trip) and category!='booking_attention')):return False
+        return any(item['id']==notification['id'] for item in derive_events(uid,[order],[trip] if trip else [],now=now))
     if category not in {'upcoming_trip','packing','weather'}: return True
     uid=notification['travellerId'];tid=(notification.get('target') or {}).get('tripId')
     trip=retrieveRecord('itineraries',tid) if tid else None
@@ -110,8 +119,9 @@ def _send(device, notification):
     if app.project_id != project: raise RuntimeError('FCM project mismatch.')
     # FlutterFire 16.5 exposes registration tokens, not FCM-registered FIDs.
     # Admin 7.7 supports token compatibility; never relabel a token as a FID.
+    presentation = push_presentation(notification)
     return messaging.send(messaging.Message(token=device['token'],
-        notification=messaging.Notification(title='TravelMate — Update',body='You have a TravelMate update. Open the app to view it securely.'),
+        notification=messaging.Notification(**presentation),
         data={'notificationId':notification['id']},
         android=messaging.AndroidConfig(priority='high',ttl=timedelta(hours=1),
             notification=messaging.AndroidNotification(channel_id='travelmate_updates',icon='ic_notification',
@@ -138,6 +148,17 @@ def _finish(key, lease, patch):
         lambda current:{**current,**patch,'leaseUntil':''} if current and current.get('lease')==lease else None)
 
 
+def _eligible_device(device, owner, now):
+    allowed={app.strip() for app in os.getenv('PUSH_ANDROID_APP_IDS','').split(',') if app.strip()}
+    return bool(device and device.get('active') and device.get('travellerId')==owner and device.get('appId') in allowed
+                and str(device.get('updatedAt') or '') >= (now-timedelta(days=30)).isoformat())
+
+
+def _dispatch_log(nid, outcome):
+    safe_id=nid if isinstance(nid,str) and re.fullmatch(r'[a-f0-9]{64}',nid) else 'invalid'
+    log.info('notification_dispatch event=%s outcome=%s',safe_id,outcome)
+
+
 def dispatch(uid=None, limit=100, sender=None, max_sends=100):
     if not enabled():
         return {'sent':0,'disabled':True}
@@ -160,7 +181,7 @@ def dispatch(uid=None, limit=100, sender=None, max_sends=100):
         devices = retrieveRecord('notification_devices',filters=[('travellerId','==',owner),('active','==',True)],limit=20) or []
         complete = True
         for device in devices:
-            if device.get('travellerId') != owner or not device.get('active') or str(device.get('updatedAt') or '') < (now-timedelta(days=30)).isoformat():
+            if not _eligible_device(device,owner,now):
                 continue
             if attempts >= max_sends:
                 complete=False;break
@@ -172,22 +193,26 @@ def dispatch(uid=None, limit=100, sender=None, max_sends=100):
                 continue
             lease=attempt['lease']
             current = retrieveRecord('notification_devices',device['id'])
-            if not current or not current.get('active') or current.get('travellerId') != owner:
+            if not _eligible_device(current,owner,now) or current.get('bindingHash')!=device.get('bindingHash'):
                 _finish(key,lease,{'status':'cancelled'});continue
             try:
                 attempts+=1
                 sender(current,notification)
                 _finish(key,lease,{'status':'sent','sentAt':now_utc().isoformat()});sent+=1
+                _dispatch_log(nid,'provider_accepted')
             except Exception as error:
-                code = str(getattr(error,'code',''))
+                safe_codes={'UnregisteredError':'unregistered','SenderIdMismatchError':'sender_mismatch',
+                    'UnavailableError':'unavailable','ResourceExhaustedError':'quota_exceeded','InternalError':'internal'}
+                code = safe_codes.get(type(error).__name__,'send_failed')
                 invalid = type(error).__name__ in {'UnregisteredError','SenderIdMismatchError'}
                 if invalid:
                     transactNotificationRecord('notification_devices',device['id'],lambda row:
                         {**row,'active':False} if row and row.get('travellerId')==owner else None)
                 terminal = invalid or attempt['attempts'] >= 8
                 _finish(key,lease,{'status':'invalid' if invalid else 'exhausted' if terminal else 'retry',
-                    'errorCode':code[:60] if re.fullmatch(r'[A-Za-z0-9_-]*',code) else 'send_failed',
+                    'errorCode':code,
                     'retryAt':(now+timedelta(seconds=min(3600,30*2**min(attempt['attempts'],7)))).isoformat()})
+                _dispatch_log(nid,'invalid_token' if invalid else 'exhausted' if terminal else 'retry')
                 complete &= terminal
         if complete:
             transactNotificationRecord('notification_outbox',job['id'],lambda current:{**current,'status':'processed'} if current else None)

@@ -80,12 +80,15 @@ class Platform extends PushPlatform {
 class Api extends ApiService {
   final posts = <Map>[];
   bool fail = false;
+  bool reject = false;
+  Completer<dynamic>? postGate;
   Completer<dynamic>? held;
   @override
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
     if (fail) throw StateError('offline');
     posts.add({'path': path, ...?body});
-    return {'ok': true};
+    if (postGate != null) return postGate!.future;
+    return {'ok': !reject};
   }
 
   @override
@@ -95,6 +98,8 @@ class Api extends ApiService {
     return {
       'ok': true,
       'item': {
+        'id': path.split('/').last,
+        'travellerId': 'a',
         'target': {'screen': 'trip', 'tripId': 'owned-trip'}
       }
     };
@@ -313,5 +318,100 @@ void main() {
                 .get('/api/fr4/preference-feedback'))['learning']
             ['currentFeedback'],
         isEmpty);
+  });
+  test(
+      'same foreground business event alerts once even under concurrent delivery',
+      () async {
+    final api = Api();
+    final platform = Platform();
+    final service = Service(api, platform, Store())..uid = 'a';
+    await Future.wait(
+        [service.foreground('a' * 64), service.foreground('a' * 64)]);
+    await service.foreground('a' * 64);
+    await service.foreground('b' * 64);
+    expect(platform.shown, ['a' * 64, 'b' * 64]);
+  });
+  test(
+      'permission granted later registers, later revocation removes association',
+      () async {
+    final api = Api();
+    final platform = Platform()..allowed = false;
+    final service = Service(api, platform, Store());
+    await service.synchronize('a');
+    expect(api.posts, isEmpty);
+    expect(service.registered, isFalse);
+    platform.allowed = true;
+    await service.synchronize('a', requestPermission: true);
+    expect(service.registered, isTrue);
+    expect(platform.prompts, 1);
+    platform.allowed = false;
+    await service.synchronize('a');
+    expect(api.posts.last['path'], endsWith('/unregister'));
+    expect(service.registered, isFalse);
+  });
+  test('server rejection cannot be saved as successful device registration',
+      () async {
+    final api = Api()..reject = true;
+    final store = Store();
+    final service = Service(api, Platform(), store);
+    await expectLater(service.synchronize('a'), throwsA(isA<ApiException>()));
+    expect(store.values['android_push_token'], isNull);
+    expect(service.registered, isFalse);
+  });
+  test(
+      'logout invalidates pending foreground response before queued token work finishes',
+      () async {
+    final api = Api()..postGate = Completer<dynamic>();
+    final platform = Platform();
+    final service = Service(api, platform, Store());
+    final registering = service.synchronize('a');
+    for (var i = 0; i < 10 && api.posts.isEmpty; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(api.posts, isNotEmpty);
+    api.held = Completer<dynamic>();
+    final response = service.foreground('d' * 64);
+    final logout = service.beforeLogout();
+    api.held!.complete({
+      'ok': true,
+      'item': {'id': 'd' * 64, 'travellerId': 'a', 'read': false}
+    });
+    await response;
+    expect(platform.shown, isEmpty);
+    api.postGate!.complete({'ok': true});
+    await registering;
+    await logout;
+    expect(service.uid, isNull);
+    expect(service.registered, isFalse);
+  });
+  test(
+      'account switch immediately invalidates a response while registration is queued',
+      () async {
+    final api = Api();
+    final platform = Platform();
+    final service = Service(api, platform, Store());
+    await service.synchronize('a');
+    api.held = Completer<dynamic>();
+    final response = service.foreground('e' * 64);
+    final switching = service.synchronize('b');
+    expect(service.uid, 'b');
+    api.held!.complete({
+      'ok': true,
+      'item': {'id': 'e' * 64, 'travellerId': 'a', 'read': false}
+    });
+    await response;
+    await switching;
+    expect(platform.shown, isEmpty);
+  });
+  test(
+      'malformed successful detail responses cannot create a system notification',
+      () async {
+    final api = Api()..held = Completer<dynamic>();
+    final platform = Platform();
+    final service = Service(api, platform, Store())..uid = 'a';
+    final response = service.foreground('f' * 64);
+    api.held!.complete({'ok': true});
+    await response;
+    expect(platform.shown, isEmpty);
   });
 }
