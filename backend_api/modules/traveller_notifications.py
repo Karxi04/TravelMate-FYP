@@ -102,7 +102,7 @@ def device_unregistration():
 
 def _device(disable):
     if not enabled() and not disable:
-        return jsonify(ok=False,error='Android push is not configured on this backend.'),503
+        return jsonify(ok=False,code='push_disabled',error='Android push is not configured on this backend.'),503
     try:
         key = register_device(g.uid,request.get_json(silent=True),disable)
         return jsonify(ok=True,deviceId=key)

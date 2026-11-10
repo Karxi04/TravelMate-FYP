@@ -26,4 +26,4 @@ spec:
                 - name: PUSH_FIREBASE_PROJECT_ID
                   value: PROJECT_ID
                 - name: PUSH_ANDROID_APP_IDS
-                  value: org.travelmate.hermetic.travelmate_hermetic
+                  value: com.example.travelmate_traveller

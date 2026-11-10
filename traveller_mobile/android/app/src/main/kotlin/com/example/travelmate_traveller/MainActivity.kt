@@ -31,6 +31,19 @@ class MainActivity : FlutterActivity() {
         notificationChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "travelmate/notifications")
         notificationChannel.setMethodCallHandler { call, result ->
             when (call.method) {
+                "remindersAvailable" -> result.success(true)
+                "reminderOwner" -> reminderResult(result) {
+                    TripReminderReceiver.adoptOwner(this, call.argument<String>("owner").orEmpty())
+                    null
+                }
+                "replaceReminders" -> reminderResult(result) {
+                    TripReminderReceiver.replace(this, call.argument<String>("owner")!!,
+                        call.argument<List<Map<String, Any>>>("items") ?: emptyList())
+                    true
+                }
+                "clearReminders" -> reminderResult(result) { TripReminderReceiver.clear(this); null }
+                "reminderTarget" -> reminderResult(result) { TripReminderReceiver.target(this,
+                    call.argument<String>("owner").orEmpty(), call.argument<String>("id").orEmpty()) }
                 "binding" -> {
                     val file = File(noBackupFilesDir, "travelmate_push_binding")
                     val existing = if (file.exists()) file.readText() else ""
@@ -117,6 +130,11 @@ class MainActivity : FlutterActivity() {
                 initialCheckoutLink = link
             }
         }
+    }
+
+    private fun reminderResult(result: MethodChannel.Result, action: () -> Any?) {
+        try { result.success(action()) }
+        catch (_: Exception) { result.error("reminder_unavailable", "Trip reminders could not be updated.", null) }
     }
 
     private fun checkoutLink(intent: Intent?): String? {

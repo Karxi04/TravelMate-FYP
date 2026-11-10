@@ -10,8 +10,10 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'firebase_startup.dart';
+import 'trip_reminders.dart';
 
-const pushBuildEnabled = bool.fromEnvironment('ENABLE_ANDROID_PUSH');
+const pushBuildEnabled =
+    bool.fromEnvironment('ENABLE_ANDROID_PUSH', defaultValue: true);
 const pushTestBuild = bool.fromEnvironment('PUSH_TEST_BUILD');
 const pushAppId = pushTestBuild
     ? FirebaseEmulatorConfig.package
@@ -89,6 +91,7 @@ class AndroidPushService with WidgetsBindingObserver {
   static final instance = AndroidPushService();
   final ApiService api;
   final PushPlatform platform;
+  late final TripReminders tripReminders = TripReminders(api: api);
   final SharedPreferencesAsync? _storage;
   SharedPreferencesAsync get storage => _storage ?? SharedPreferencesAsync();
   String? uid;
@@ -168,8 +171,12 @@ class AndroidPushService with WidgetsBindingObserver {
     return value;
   }
 
-  Future<Map<String, dynamic>> registration(String token) async =>
-      {'token': token, 'bindingSecret': await binding(), 'appId': pushAppId};
+  Future<Map<String, dynamic>> registration(String token) async => {
+        'token': token,
+        'bindingSecret': await binding(),
+        'appId': pushAppId,
+        'localTripReminders': tripReminders.capable
+      };
   Future<void> _saveDevice(String path, String token) async {
     final result = await api.post(path, await registration(token));
     if (result['ok'] != true)
@@ -180,6 +187,7 @@ class AndroidPushService with WidgetsBindingObserver {
 
   Future<void> synchronize(String? owner, {bool requestPermission = false}) {
     final accountChanged = uid != null && uid != owner;
+    tripReminders.changeOwner(owner);
     // Invalidate in-flight display immediately, even while token work is queued.
     if (uid != owner) {
       uid = owner;
@@ -203,7 +211,9 @@ class AndroidPushService with WidgetsBindingObserver {
           await storage.remove('android_push_uid');
         }
         if (owner == null || revision != _authRevision) return;
-        if (!await platform.permission(request: requestPermission)) {
+        final allowed = await platform.permission(request: requestPermission);
+        await tripReminders.refresh(owner, allowed: allowed);
+        if (!allowed) {
           await _unregister();
           return;
         }
@@ -224,8 +234,9 @@ class AndroidPushService with WidgetsBindingObserver {
       } catch (error) {
         registered = false;
         registrationProblem = error is ApiException &&
-                error.data['error'] ==
-                    'Android push is not configured on this backend.'
+                (error.code == 'push_disabled' ||
+                    error.data['error'] ==
+                        'Android push is not configured on this backend.')
             ? 'This backend has not enabled push dispatch. Android permission alone cannot enable delivery.'
             : 'Device registration could not be confirmed. Check your connection and retry.';
         rethrow;
@@ -251,7 +262,9 @@ class AndroidPushService with WidgetsBindingObserver {
   Future<void> beforeLogout() {
     if (!supported) return Future.value();
     _authRevision++;
+    final clearing = tripReminders.changeOwner(null);
     return serialize(() async {
+      await clearing;
       await _unregister();
       uid = null;
       _authRevision++;
@@ -276,6 +289,7 @@ class AndroidPushService with WidgetsBindingObserver {
           item['id'] != id ||
           item['travellerId'] != owner) return;
       inboxChanged();
+      refreshTripReminders();
       if (item['read'] == true) return;
       await platform.showUpdate(
           id!, result['presentation'] is Map ? result['presentation'] : {});
@@ -304,6 +318,7 @@ class AndroidPushService with WidgetsBindingObserver {
     if (!supported || started) return;
     started = true;
     onTap = callback;
+    ApiService.tripChanges.addListener(refreshTripReminders);
     WidgetsBinding.instance.addObserver(this);
     FirebaseMessaging.onBackgroundMessage(travelMateBackgroundMessage);
     subscriptions.add(FirebaseMessaging.onMessage.listen((message) {
@@ -328,6 +343,16 @@ class AndroidPushService with WidgetsBindingObserver {
     try {
       tap(await FirebasePushPlatform.channel.invokeMethod<String>('initial'));
     } catch (_) {}
+  }
+
+  void refreshTripReminders() {
+    final owner = uid;
+    if (!supported || owner == null) return;
+    serialize(() async {
+      if (uid != owner) return;
+      await tripReminders.refresh(owner, allowed: await platform.permission());
+      registrationChanges.value++;
+    }).catchError((Object _) {});
   }
 
   @override

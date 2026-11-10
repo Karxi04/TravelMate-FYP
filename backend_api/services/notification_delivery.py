@@ -25,9 +25,11 @@ def now_utc():
 
 
 def register_device(uid, payload, disable=False):
-    allowed = {'token', 'bindingSecret', 'appId'}
+    allowed = {'token', 'bindingSecret', 'appId', 'localTripReminders'}
     if not isinstance(payload, dict) or set(payload) - allowed:
-        raise ValueError('Use token, bindingSecret and appId only.')
+        raise ValueError('Use token, bindingSecret, appId and optional localTripReminders only.')
+    if 'localTripReminders' in payload and not isinstance(payload['localTripReminders'], bool):
+        raise ValueError('localTripReminders must be a boolean.')
     token, secret, app = (payload.get(key) for key in ('token','bindingSecret','appId'))
     if not isinstance(app,str) or not isinstance(token,str) or not 20 <= len(token) <= 4096 or not isinstance(secret,str) or not re.fullmatch(r'[A-Za-z0-9_-]{43,128}',secret):
         raise ValueError('Invalid device registration.')
@@ -41,7 +43,8 @@ def register_device(uid, payload, disable=False):
         if disable and not current:
             return None
         return {'travellerId':uid,'token':token,'bindingHash':digest(secret),'appId':app,
-                'active':not disable,'updatedAt':now_utc().isoformat()}
+                'active':not disable,'updatedAt':now_utc().isoformat(),
+                'localTripReminders':payload.get('localTripReminders',False)}
     transactNotificationRecord('notification_devices',key,update)
     return key
 
@@ -61,6 +64,10 @@ def queue_notification(event, created):
 
 def still_due(notification, now):
     category = notification.get('category')
+    if category == 'payment' and notification.get('paymentType') == 'package' and notification.get('paymentState') == 'paid':
+        order = retrieveRecord('checkout_orders',notification.get('paymentOrderId')) if notification.get('paymentOrderId') else None
+        return bool(order and order.get('travellerId') == notification.get('travellerId') and order.get('paymentStatus') == 'paid'
+                    and not order.get('isSimulated') and order.get('bookingMode') != 'simulation')
     if category in {'arrangements_ready','package_booking','arrangements_update','booking_attention'}:
         uid=notification.get('travellerId')
         source=notification.get('sourceOrderId')
@@ -181,6 +188,8 @@ def dispatch(uid=None, limit=100, sender=None, max_sends=100):
         devices = retrieveRecord('notification_devices',filters=[('travellerId','==',owner),('active','==',True)],limit=20) or []
         complete = True
         for device in devices:
+            if notification.get('category') == 'upcoming_trip' and device.get('localTripReminders') is True:
+                continue
             if not _eligible_device(device,owner,now):
                 continue
             if attempts >= max_sends:
@@ -194,6 +203,8 @@ def dispatch(uid=None, limit=100, sender=None, max_sends=100):
             lease=attempt['lease']
             current = retrieveRecord('notification_devices',device['id'])
             if not _eligible_device(current,owner,now) or current.get('bindingHash')!=device.get('bindingHash'):
+                _finish(key,lease,{'status':'cancelled'});continue
+            if notification.get('category') == 'upcoming_trip' and current.get('localTripReminders') is True:
                 _finish(key,lease,{'status':'cancelled'});continue
             try:
                 attempts+=1

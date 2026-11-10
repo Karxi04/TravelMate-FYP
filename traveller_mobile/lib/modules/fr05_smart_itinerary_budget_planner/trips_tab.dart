@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../services/android_push_service.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
@@ -163,6 +164,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
     }
     try {
       final data = await api.get('/api/fr5/itineraries');
+      AndroidPushService.instance.refreshTripReminders();
       if (mounted) setState(() => items = data['items'] ?? []);
     } catch (_) {
       if (mounted) {

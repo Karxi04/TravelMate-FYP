@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'android_notification_settings.dart';
 import '../../services/android_push_service.dart';
+import '../../services/trip_reminders.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/travel_widgets.dart';
@@ -32,6 +33,8 @@ bool validTargetId(String id) => id.length <= 200 &&
 Future<Widget?> notificationForTap(String id, ApiService api,
     {required String owner, required String? Function() currentOwner}) async {
   if (!AndroidPushService.validId(id) || currentOwner() != owner) return null;
+  final local = await localReminderTarget(id, owner, api, currentOwner);
+  if (local != null && currentOwner() == owner) return notificationDestination(local, api);
   final data=await api.get('$notificationPath/$id');
   if (currentOwner()!=owner) return null;
   final item=data['item'];

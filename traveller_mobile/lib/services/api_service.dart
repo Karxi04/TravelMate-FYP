@@ -117,6 +117,16 @@ class ApiException implements Exception {
 
 class ApiService {
   static String? customBaseUrl;
+  static final tripChanges = ValueNotifier<int>(0);
+
+  static dynamic decodeMutationResponse(String path, http.Response response) {
+    final result = decodeResponse(response);
+    if (result is Map && result['ok'] != false &&
+        (path.startsWith('/api/fr5/') || path.startsWith('/api/fr15/'))) {
+      tripChanges.value++;
+    }
+    return result;
+  }
 
   /// Local defaults are for debug builds; cloud releases require explicit HTTPS.
   static String get baseUrl {
@@ -255,7 +265,11 @@ class ApiService {
       final response = await http
           .get(uri, headers: await _headers())
           .timeout(RequestTimeouts.forGet(path));
-      return decodeResponse(response);
+      final result = decodeResponse(response);
+      if (path.startsWith('/api/fr9/orders/') && path.endsWith('/reconcile') && result is Map && result['ok'] != false) {
+        tripChanges.value++;
+      }
+      return result;
     } catch (e) {
       debugPrint('Backend GET failed ($path): $e');
       rethrow;
@@ -291,7 +305,7 @@ class ApiService {
             body: jsonEncode(payload),
           )
           .timeout(RequestTimeouts.forPost(path));
-      return decodeResponse(response);
+      return decodeMutationResponse(path, response);
     } catch (e) {
       debugPrint('Backend POST failed ($path): $e');
       rethrow;
@@ -313,7 +327,7 @@ class ApiService {
             body: jsonEncode(payload),
           )
           .timeout(RequestTimeouts.ordinaryRead);
-      return decodeResponse(response);
+      return decodeMutationResponse(path, response);
     } catch (e) {
       debugPrint('Backend PUT failed ($path): $e');
       rethrow;
@@ -331,7 +345,7 @@ class ApiService {
       final response = await http
           .delete(Uri.parse('$baseUrl$path'), headers: await _headers())
           .timeout(RequestTimeouts.ordinaryRead);
-      return decodeResponse(response);
+      return decodeMutationResponse(path, response);
     } catch (e) {
       debugPrint('Backend DELETE failed ($path): $e');
       rethrow;
@@ -361,7 +375,7 @@ class ApiService {
             body: jsonEncode(payload),
           )
           .timeout(RequestTimeouts.ordinaryRead);
-      return decodeResponse(response);
+      return decodeMutationResponse(path, response);
     } catch (e) {
       debugPrint('Backend PATCH failed ($path): $e');
       rethrow;
