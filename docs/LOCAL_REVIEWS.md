@@ -14,13 +14,24 @@ alternate source IDs under existing standalone permissions; first-party clients
 share the deterministic ID and API aggregates deduplicate historical owner records.
 No automatic repair of historical duplicates or moderation decisions occurs.
 
-`screening` is additive private metadata: local Unicode normalization/tokenization,
-lexical abuse, URL/unsafe-content and repetition flags, risk, method, timestamp and
-content hash. This is deterministic rule-based NLP triage, not Gemini, a trained
-toxicity model or a confidence score. All new/edited reviews await Admin approval,
-including low-risk content. Failures become uncertain/pending; nothing is discarded
-or falsely approved. Standalone writes have no server screening at submission;
-the Admin queue computes current triage and persists it with the decision.
+`screening` is private metadata for abuse, URLs and unsafe content, repetition,
+and rating/comment consistency. The lexical check handles common English and
+Malay expressions and negation. It flags clear disagreement between 4–5 stars and
+negative text, or 1–2 stars and positive text. Mixed comments and matching
+negative reviews can have low risk. Weak disagreement and unrecognized wording
+are marked uncertain. The evidence counts describe recognized expressions rather
+than model confidence.
+
+Every new or edited review awaits Administrator approval, including low-risk
+content. The backend screens the effective rating and comment together, even
+when only one field changes. Standalone writes still enter the pending queue
+without server screening at submission. The Admin queue computes current triage
+for these and other reviews and saves it with the Administrator's decision.
+
+The synthetic Penang cases in
+`backend_api/tests/fixtures/penang_synthetic_reviews.json` run through the FR10
+route with in-memory storage. The George Town Street Art samples use its existing
+demo fixture ID. Keep all samples in isolated development tests.
 
 Existing enums remain: `feedbackStatus:visible` plus `moderationStatus:pending_review`
 is private; `reviewed` (also readable legacy `approved`) is public; `removed` is

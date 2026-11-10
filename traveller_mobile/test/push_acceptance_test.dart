@@ -72,6 +72,14 @@ class ScopeAuth implements FirebaseAuth {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(FirebasePushPlatform.channel, (call) async => null);
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(FirebasePushPlatform.channel, null);
+  });
   final id = 'a' * 64;
   test('cold/background tap resolves exact owned record and marks it read',
       () async {

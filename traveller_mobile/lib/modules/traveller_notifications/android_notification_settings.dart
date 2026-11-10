@@ -149,6 +149,9 @@ class _AndroidNotificationSettingsState
             style: TextStyle(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
         Text(description),
+        if (push.supported)
+          Text(push.tripReminders.problem ??
+              'Trip reminders: 9:00 AM Malaysia time on the day before the saved start date. Open Trips after changes made on another device to refresh this phone.'),
         if (busy && push.supported) const LinearProgressIndicator(),
         if (push.supported && !busy && push.uid != null) ...[
           if (!authorized)

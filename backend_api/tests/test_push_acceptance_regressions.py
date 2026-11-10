@@ -139,5 +139,5 @@ def test_public_presentation_is_category_only(client,mock_traveller_auth,memory)
     memory.rows[('traveller_notifications',notice['id'])]['message']='PRIVATE_OWNED_PAYMENT_DATA'
     response=client.get('/api/traveller/notifications/'+notice['id'],headers={'Authorization':'Bearer fixture'})
     assert response.status_code==200
-    assert response.json['presentation']['title']=='TravelMate — Payment update'
+    assert response.json['presentation']['title']=='TravelMate — Payment Successful'
     assert 'PRIVATE' not in str(response.json['presentation'])

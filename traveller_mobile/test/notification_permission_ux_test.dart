@@ -99,6 +99,14 @@ Future<void> frame(WidgetTester tester, Widget child) async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(FirebasePushPlatform.channel, (call) async => null);
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(FirebasePushPlatform.channel, null);
+  });
   test(
       'actual Firebase adapter checks granted state before any permission request',
       () async {

@@ -50,7 +50,8 @@ def canonical_payment_order(order, uid, lookup):
     linked = lookup(str(linked_id)) if linked_id and order.get('travellerId') == uid else None
     if not linked or linked.get('travellerId') != uid:
         return order
-    return {**order, 'orderReference': str(linked.get('orderReference') or linked.get('id') or linked_id),
+    return {**order, 'quoteType':linked.get('quoteType') or order.get('quoteType'),
+            'checkoutOrderId':str(linked.get('id') or linked_id), 'orderReference': str(linked.get('orderReference') or linked.get('id') or linked_id),
             'packageSnapshot': linked.get('packageSnapshot') or order.get('packageSnapshot') or {},
             'paidAt': order.get('paidAt') or linked.get('paidAt')}
 
@@ -90,6 +91,8 @@ def derive_events(uid, orders, trips, checklists=None, forecasts=None, now=None)
                 {'screen':'payments','orderId':oid}, (order.get('paidAt') if state == 'paid' else None) or order.get('updatedAt'))
             event['sourceOrderId'] = oid
             event['paymentState'] = state
+            event['paymentType'] = order.get('quoteType')
+            event['paymentOrderId'] = str(order.get('checkoutOrderId') or order.get('id') or '')
             event['sourceLabel'] = payment_source_label(order,oid)
         record = order.get('fulfillmentRecord') or {}
         if not isinstance(record,dict):record={}
@@ -187,4 +190,8 @@ def push_presentation(notification):
         'packing':('Packing reminder','Review your trip packing checklist in TravelMate.'),
         'weather':('Trip forecast advisory','A trip forecast advisory is available. Open TravelMate to review it.'),
     }.get(notification.get('category'),('Update','You have a TravelMate update. Open the app to view it securely.'))
+    if notification.get('category') == 'payment' and notification.get('paymentState') == 'paid':
+        title = 'Payment Successful'
+        body = ('Your tourism package payment has been confirmed.' if notification.get('paymentType') == 'package'
+                else 'Your payment has been confirmed.')
     return {'title':'TravelMate — '+title,'body':body}

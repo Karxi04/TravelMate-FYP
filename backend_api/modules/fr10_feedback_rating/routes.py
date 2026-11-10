@@ -27,7 +27,7 @@ def submit_feedback():
         profile = retrieveRecord('users', g.uid) or {}
         now = utc_now_iso()
         data = {**payload, 'travellerId': g.uid, 'travellerName': profile.get('name') or 'Traveller',
-                'submittedAt': now, 'updatedAt': now, **pending_screen(payload['comment'])}
+                'submittedAt': now, 'updatedAt': now, **pending_screen(payload['comment'], payload['rating'])}
         identity = review_id(g.uid, payload['destinationId'])
         try:
             result, created = (existing[0], False) if existing else claimRecord('feedback', identity, data)
@@ -61,7 +61,11 @@ def update_feedback(fid):
     payload = request.get_json(silent=True)
     if not valid_review(payload, partial=True):
         return jsonify({'ok': False, 'error': 'Invalid feedback update'}), 400
-    updates = {**payload, 'updatedAt': utc_now_iso(), **pending_screen(payload.get('comment', current.get('comment', '')))}
+    screening = pending_screen(
+        payload.get('comment', current.get('comment', '')),
+        payload.get('rating', current.get('rating')),
+    )
+    updates = {**payload, 'updatedAt': utc_now_iso(), **screening}
     try:
         return jsonify({'ok': True, 'feedback': updateRecord('feedback', fid, updates, expected=current)})
     except ReviewConflict as error:

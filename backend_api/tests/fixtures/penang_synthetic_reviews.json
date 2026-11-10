@@ -1,0 +1,331 @@
+{
+  "dataset": "Penang destination review scenarios",
+  "synthetic": true,
+  "usage": "Development fixtures only. Fictional scenarios, no visitor identities. Never import into shared or production listings.",
+  "reviews": [
+    {
+      "destinationName": "Armenian Street",
+      "destinationId": "penang_armenian_street",
+      "catalogue": "standalone",
+      "rating": 5,
+      "comment": "I loved the mix of heritage shophouses and small craft displays along Lebuh Armenian. It was a lovely stretch to walk slowly and take photos of the old facades.",
+      "expectedSentiment": "positive",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Armenian Street",
+      "destinationId": "penang_armenian_street",
+      "catalogue": "standalone",
+      "rating": 3,
+      "comment": "The shophouse details were interesting, but the foot traffic made it difficult to linger. An okay stop for a short heritage walk.",
+      "expectedSentiment": "mixed",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Armenian Street",
+      "destinationId": "penang_armenian_street",
+      "catalogue": "standalone",
+      "rating": 2,
+      "comment": "The narrow pavement felt too crowded for a leisurely walk. I left disappointed because stopping to look at the shophouses kept interrupting the flow of people.",
+      "expectedSentiment": "negative",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Penang Hill",
+      "destinationId": "local_penang_hill",
+      "catalogue": "backend_catalogue",
+      "rating": 5,
+      "comment": "The views from Penang Hill were beautiful, and I really enjoyed the cooler air and relaxed atmosphere. It was a lovely place to spend the morning.",
+      "expectedSentiment": "positive",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Penang Hill",
+      "destinationId": "local_penang_hill",
+      "catalogue": "backend_catalogue",
+      "rating": 3,
+      "comment": "The scenery was nice, but the funicular queue felt slow. Overall it was okay for a short look across the island.",
+      "expectedSentiment": "mixed",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Penang Hill",
+      "destinationId": "local_penang_hill",
+      "catalogue": "backend_catalogue",
+      "rating": 1,
+      "comment": "I was disappointed by how much of the outing felt like waiting. The queues were frustrating and I did not enjoy trying to find room at the viewpoint.",
+      "expectedSentiment": "negative",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Kek Lok Si Temple",
+      "destinationId": "local_kek_lok_si",
+      "catalogue": "backend_catalogue",
+      "rating": 5,
+      "comment": "I found the temple architecture impressive, especially the details around the pagoda. The courtyard felt peaceful and I enjoyed taking my time with the carvings.",
+      "expectedSentiment": "positive",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Kek Lok Si Temple",
+      "destinationId": "local_kek_lok_si",
+      "catalogue": "backend_catalogue",
+      "rating": 3,
+      "comment": "The pagoda was interesting, although the climb between levels felt tiring. A decent stop if you set aside enough time for the stairs.",
+      "expectedSentiment": "mixed",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Kek Lok Si Temple",
+      "destinationId": "local_kek_lok_si",
+      "catalogue": "backend_catalogue",
+      "rating": 2,
+      "comment": "The uphill sections were tiring and I found the route between the terraces confusing. The outing felt frustrating and I came away disappointed.",
+      "expectedSentiment": "negative",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Chew Jetty",
+      "destinationId": "local_chew_jetty",
+      "catalogue": "backend_catalogue",
+      "rating": 4,
+      "comment": "I enjoyed the walk along the wooden jetty. The view towards the water was lovely and the houses on stilts made it an interesting contrast to the streets nearby.",
+      "expectedSentiment": "positive",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Chew Jetty",
+      "destinationId": "local_chew_jetty",
+      "catalogue": "backend_catalogue",
+      "rating": 3,
+      "comment": "The waterfront view was nice, but the boardwalk felt crowded when people stopped for photos. Okay for a quick look at the stilt houses.",
+      "expectedSentiment": "mixed",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Chew Jetty",
+      "destinationId": "local_chew_jetty",
+      "catalogue": "backend_catalogue",
+      "rating": 2,
+      "comment": "It felt uncomfortable passing groups on the narrow boards. I found the short walk frustrating because there was little room to pause by the water.",
+      "expectedSentiment": "negative",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Gurney Drive Hawker Centre",
+      "destinationId": "penang_gurney_drive",
+      "catalogue": "standalone",
+      "rating": 5,
+      "comment": "The char koay teow was delicious and I enjoyed sharing a few hawker dishes in one place. The evening atmosphere made it a satisfying dinner stop.",
+      "expectedSentiment": "positive",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Gurney Drive Hawker Centre",
+      "destinationId": "penang_gurney_drive",
+      "catalogue": "standalone",
+      "rating": 3,
+      "comment": "There was a good range of dishes, but it felt noisy and finding somewhere to sit took effort. The meal was average overall.",
+      "expectedSentiment": "mixed",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Gurney Drive Hawker Centre",
+      "destinationId": "penang_gurney_drive",
+      "catalogue": "standalone",
+      "rating": 1,
+      "comment": "The wait between ordering and eating felt frustrating, and the meal did not meet my expectations. I left disappointed with the whole dinner outing.",
+      "expectedSentiment": "negative",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Batu Ferringhi Beach",
+      "destinationId": "local_batu_ferringhi",
+      "catalogue": "backend_catalogue",
+      "rating": 5,
+      "comment": "The sunset colours over the water were beautiful. I enjoyed a slow walk along the sand with the sea breeze and found it a relaxing end to the day.",
+      "expectedSentiment": "positive",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Batu Ferringhi Beach",
+      "destinationId": "local_batu_ferringhi",
+      "catalogue": "backend_catalogue",
+      "rating": 3,
+      "comment": "The sea breeze was pleasant, but the stretch I picked felt noisy for a quiet break. It was okay for a walk along the sand.",
+      "expectedSentiment": "mixed",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Batu Ferringhi Beach",
+      "destinationId": "local_batu_ferringhi",
+      "catalogue": "backend_catalogue",
+      "rating": 2,
+      "comment": "I wanted a quiet time by the sea, but the stretch felt too crowded and noisy. I found it frustrating to keep moving just to find a spot to sit.",
+      "expectedSentiment": "negative",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "George Town Street Art",
+      "destinationId": "demo_penang_street_art",
+      "catalogue": "demo_fixture",
+      "rating": 4,
+      "comment": "I enjoyed looking for murals around different lanes. The way the artwork used doors and walls was interesting, and the walk gave me some memorable photo angles.",
+      "expectedSentiment": "positive",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "George Town Street Art",
+      "destinationId": "demo_penang_street_art",
+      "catalogue": "demo_fixture",
+      "rating": 3,
+      "comment": "The murals were nice once I found them, but working out a route between the lanes was confusing. A decent walk if you only choose a few stops.",
+      "expectedSentiment": "mixed",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "George Town Street Art",
+      "destinationId": "demo_penang_street_art",
+      "catalogue": "demo_fixture",
+      "rating": 2,
+      "comment": "Trying to link up the mural stops felt confusing and frustrating. I spent more time looking for the next wall than looking at the art.",
+      "expectedSentiment": "negative",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Pinang Peranakan Mansion",
+      "destinationId": "local_peranakan_mansion",
+      "catalogue": "backend_catalogue",
+      "rating": 5,
+      "comment": "The carved furniture and patterned tiles were beautiful. I found the displays of everyday objects impressive and enjoyed seeing how the rooms fitted together.",
+      "expectedSentiment": "positive",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Pinang Peranakan Mansion",
+      "destinationId": "local_peranakan_mansion",
+      "catalogue": "backend_catalogue",
+      "rating": 3,
+      "comment": "The collections were interesting, but the rooms felt crowded when I wanted to read the labels. Overall it was a decent look at Peranakan design.",
+      "expectedSentiment": "mixed",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Pinang Peranakan Mansion",
+      "destinationId": "local_peranakan_mansion",
+      "catalogue": "backend_catalogue",
+      "rating": 2,
+      "comment": "I found it difficult to pause and make sense of the displays in the tighter rooms. The visit felt underwhelming and I left disappointed with how little I took in.",
+      "expectedSentiment": "negative",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Penang Botanic Gardens",
+      "destinationId": "local_botanical_gardens",
+      "catalogue": "backend_catalogue",
+      "rating": 4,
+      "comment": "I enjoyed the shaded walk past the large trees. The greenery felt peaceful and made it a pleasant change from walking along busy roads.",
+      "expectedSentiment": "positive",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Penang Botanic Gardens",
+      "destinationId": "local_botanical_gardens",
+      "catalogue": "backend_catalogue",
+      "rating": 3,
+      "comment": "The trees made for a nice stroll, although the walk felt tiring in the heat. An okay choice for a short loop if you bring water.",
+      "expectedSentiment": "mixed",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Penang Botanic Gardens",
+      "destinationId": "local_botanical_gardens",
+      "catalogue": "backend_catalogue",
+      "rating": 2,
+      "comment": "The loop felt tiring in the heat and I found it uncomfortable to keep going. I came away disappointed because I had wanted an easy, restful outing.",
+      "expectedSentiment": "negative",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Tropical Spice Garden",
+      "destinationId": "tropical_spice_garden",
+      "catalogue": "standalone",
+      "rating": 5,
+      "comment": "I loved noticing the different scents as I walked through the spice plants. The shaded paths were lovely and the plant labels made the visit especially interesting.",
+      "expectedSentiment": "positive",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Tropical Spice Garden",
+      "destinationId": "tropical_spice_garden",
+      "catalogue": "standalone",
+      "rating": 3,
+      "comment": "The spice plants were interesting, but I found parts of the sloping paths difficult to walk. A decent outing if you take it slowly.",
+      "expectedSentiment": "mixed",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Tropical Spice Garden",
+      "destinationId": "tropical_spice_garden",
+      "catalogue": "standalone",
+      "rating": 2,
+      "comment": "The uneven sections felt tiring and I found following the path between the plants confusing. I left disappointed because the walk itself took up most of my attention.",
+      "expectedSentiment": "negative",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Entopia by Penang Butterfly Farm",
+      "destinationId": "entopia",
+      "catalogue": "standalone",
+      "rating": 5,
+      "comment": "The butterflies were beautiful to watch among the plants. I enjoyed slowing down to spot them, and the life-cycle displays made the visit memorable.",
+      "expectedSentiment": "positive",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Entopia by Penang Butterfly Farm",
+      "destinationId": "entopia",
+      "catalogue": "standalone",
+      "rating": 3,
+      "comment": "Watching the butterflies was enjoyable, although some viewing spots felt crowded. Overall it was okay when I moved through at my own pace.",
+      "expectedSentiment": "mixed",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Entopia by Penang Butterfly Farm",
+      "destinationId": "entopia",
+      "catalogue": "standalone",
+      "rating": 2,
+      "comment": "I found it difficult to stop and watch the butterflies without feeling in the way. Moving through the displays felt frustrating, so the outing was disappointing for me.",
+      "expectedSentiment": "negative",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Wonderfood Museum",
+      "destinationId": "local_wonderfood",
+      "catalogue": "backend_catalogue",
+      "rating": 4,
+      "comment": "The oversized models of familiar Malaysian dishes were interesting and made for playful photos. I enjoyed looking at the little details on the hawker food displays.",
+      "expectedSentiment": "positive",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Wonderfood Museum",
+      "destinationId": "local_wonderfood",
+      "catalogue": "backend_catalogue",
+      "rating": 3,
+      "comment": "The food replicas were nice for a few photos, but the layout felt confusing when I wanted to read the descriptions in order. It was okay as a short museum visit.",
+      "expectedSentiment": "mixed",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationName": "Wonderfood Museum",
+      "destinationId": "local_wonderfood",
+      "catalogue": "backend_catalogue",
+      "rating": 2,
+      "comment": "I found the large food displays underwhelming after the first few photos. The visit felt disappointing because I wanted more context about how the dishes are eaten and shared.",
+      "expectedSentiment": "negative",
+      "expectedRisk": "low"
+    }
+  ]
+}
