@@ -52,7 +52,10 @@ def retrieveRecord(collectionName, documentId=None, filters=None, limit=None):
     collection = get_db().collection(collectionName)
     if documentId:
         snap = collection.document(str(documentId)).get()
-        return ({"id": snap.id, **(snap.to_dict() or {})}) if snap.exists else None
+        if not snap.exists:
+            return None
+        record = {"id": snap.id, **(snap.to_dict() or {})}
+        return loadRecommendationSnapshot(record) if collectionName == 'recommendation_snapshots' else record
     query = collection
     for field, operator, value in (filters or []):
         query = query.where(field, operator, value)
@@ -61,9 +64,24 @@ def retrieveRecord(collectionName, documentId=None, filters=None, limit=None):
     return [doc_to_dict(doc) for doc in query.stream()]
 
 
+def loadRecommendationSnapshot(record):
+    """Hydrate a selected list result after filtering and sorting its headers."""
+    if 'recommendationPayloadFormat' not in record:
+        return record
+    from services.recommendation_snapshot_storage import load_snapshot
+    ref = get_db().collection('recommendation_snapshots').document(record['id'])
+    return load_snapshot(ref, record)
+
+
 def storeRecord(collectionName, data, documentId=None, merge=False):
     """Exact sequence-diagram name for Firestore create/store."""
-    ref = get_db().collection(collectionName).document(str(documentId)) if documentId else get_db().collection(collectionName).document()
+    db = get_db()
+    collection = db.collection(collectionName)
+    ref = collection.document(str(documentId)) if documentId else collection.document()
+    if collectionName == 'recommendation_snapshots':
+        from services.recommendation_snapshot_storage import write_snapshot
+        write_snapshot(db, ref, data)
+        return {"id": ref.id, **data}
     if documentId:
         _revoke_public_projection(collectionName, documentId)
     ref.set(data, merge=merge)

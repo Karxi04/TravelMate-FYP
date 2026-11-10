@@ -8,7 +8,7 @@ from uuid import uuid4
 from math import isfinite
 from flask import Blueprint, jsonify, g, request
 from google.cloud.firestore_v1 import GeoPoint
-from google.api_core.exceptions import GoogleAPICallError
+from google.api_core.exceptions import GoogleAPICallError, InvalidArgument
 from werkzeug.exceptions import HTTPException
 from auth_utils import auth_required
 from utils import utc_now_iso
@@ -18,6 +18,7 @@ from services.pricing_registry import enrich_candidate_pricing
 from services.review_service import published_review
 from services.recommendation_taxonomy import candidate_concepts
 from services.recommendation_discovery import DISCOVERY_MODE, discovery_annotations, discovery_queries
+from services.recommendation_snapshot_storage import validation_reason
 from services.preference_learning import (
     apply_explicit_feedback,
     canonical_concepts,
@@ -31,7 +32,9 @@ from services.malaysian_locality import (
     normalize_destination_scope,
     validate_candidate,
 )
-from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, transactPreferenceLearning
+from sequence_contract.firebase_firestore import (
+    loadRecommendationSnapshot, retrieveRecord, storeRecord, transactPreferenceLearning,
+)
 from sequence_contract.domain_functions import (
     prepareRecommendationInput,
     applyContentBasedFiltering,
@@ -411,14 +414,20 @@ def generate():
             for item in _filter_for_destination(discovered, destination_scope)[:40]:
                 did = str(item.get('destinationId') or '')
                 if did:
-                    storeRecord('destination_cache', {
-                        **item,
-                        'requestedDestination': destination_area,
-                        'canonicalDestinationScope': destination_scope['scopeKey'],
-                        'canonicalDestinationName': destination_scope['canonicalName'],
-                        'recommendationSource': 'live_provider',
-                        'cachedAt': utc_now_iso(),
-                    }, did, merge=True)
+                    try:
+                        storeRecord('destination_cache', {
+                            **item,
+                            'requestedDestination': destination_area,
+                            'canonicalDestinationScope': destination_scope['scopeKey'],
+                            'canonicalDestinationName': destination_scope['canonicalName'],
+                            'recommendationSource': 'live_provider',
+                            'cachedAt': utc_now_iso(),
+                        }, did, merge=True)
+                    except InvalidArgument as error:
+                        # The candidate remains in the ranked snapshot even if
+                        # Firestore rejects its optional discovery cache entry.
+                        logger.warning('recommendation_cache_invalid request_id=%s reason=%s',
+                                       _correlation_id(), validation_reason(error))
         except Exception as error:
             logger.warning('recommendation_provider_unavailable request_id=%s type=%s',
                            _correlation_id(),type(error).__name__)
@@ -515,7 +524,13 @@ def generate():
         },
         'recommendationResults': ranked,
     }
-    storeRecord('recommendation_snapshots', record, generation_id)
+    try:
+        storeRecord('recommendation_snapshots', record, generation_id)
+    except InvalidArgument as error:
+        logger.warning('recommendation_snapshot_invalid request_id=%s reason=%s candidates=%d compressed_bytes=%s',
+                       _correlation_id(), validation_reason(error), len(ranked),
+                       getattr(error, 'snapshot_bytes', 'unavailable'))
+        raise
 
     response_record = _page(record, payload)
     return jsonify({
@@ -551,7 +566,7 @@ def get_recommendations():
                 if _requested_area(item.get('requestedDestination') or item.get('destinationArea')) == requested
             ]
         snapshots.sort(key=lambda item: str(item.get('generatedAt') or ''), reverse=True)
-        record = snapshots[0] if snapshots else {}
+        record = loadRecommendationSnapshot(snapshots[0]) if snapshots else {}
     preference = retrieveRecord('travel_preferences', g.uid)
     learned = retrieveRecord('learned_preference_profiles', g.uid)
     stale = bool(record and isinstance(preference, dict) and isinstance(preference.get('interests'), list)
