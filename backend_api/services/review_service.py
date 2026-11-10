@@ -6,6 +6,7 @@ import unicodedata
 from math import isfinite
 
 from utils import utc_now_iso
+from services.review_sentiment import classify_review_sentiment
 
 
 def valid_review(data, partial=False):
@@ -35,7 +36,7 @@ def review_revision(item):
     return hashlib.sha256(json.dumps({key:item.get(key) for key in fields}, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def screen_review(comment):
+def screen_review(comment, rating=None):
     """Rule-based NLP triage, not an AI approval or a statistical confidence score."""
     text = unicodedata.normalize('NFKC', comment).casefold()
     tokens = re.findall(r'\w+', text)
@@ -46,14 +47,21 @@ def screen_review(comment):
         flags.append('spam_or_unsafe_content')
     if re.search(r'(.)\1{7,}', text) or (len(tokens) >= 8 and len(set(tokens)) / len(tokens) < .35):
         flags.append('repeated_content')
-    return {'method': 'local_rules_v1', 'risk': 'flagged' if flags else ('low' if len(tokens) >= 3 else 'uncertain'),
-            'flags': flags, 'screenedAt': utc_now_iso()}
+    sentiment = classify_review_sentiment(text, rating)
+    if sentiment['ratingMismatch']:
+        flags.append('rating_sentiment_mismatch')
+    evidence = sentiment['positiveEvidence'] + sentiment['negativeEvidence']
+    meaningful = len(tokens) >= 3 or (len(comment.strip()) >= 8 and evidence >= 2)
+    uncertain = not meaningful or sentiment['ratingAlignment'] == 'uncertain'
+    risk = 'flagged' if flags else 'uncertain' if uncertain else 'low'
+    return {'method': 'local_rules_v2_rating_sentiment', 'risk': risk, 'flags': flags,
+            'sentiment': sentiment, 'screenedAt': utc_now_iso()}
 
 
-def pending_screen(comment):
+def pending_screen(comment, rating=None):
     comment = comment if isinstance(comment, str) else ''
     try:
-        result = screen_review(comment)
+        result = screen_review(comment, rating)
     except Exception:
         result = {'method': 'unavailable', 'risk': 'uncertain', 'flags': [], 'screenedAt': utc_now_iso()}
     result['contentHash'] = hashlib.sha256(comment.encode()).hexdigest()
@@ -64,7 +72,7 @@ def pending_screen(comment):
 def current_screen(item):
     comment = item.get('comment') if isinstance(item.get('comment'), str) else ''
     # Recompute cheap local triage: legacy/client-era cached indicators are not authority.
-    return pending_screen(comment)['screening']
+    return pending_screen(comment, item.get('rating'))['screening']
 
 
 def published_review(item):

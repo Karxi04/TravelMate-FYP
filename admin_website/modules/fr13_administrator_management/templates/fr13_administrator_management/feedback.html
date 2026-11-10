@@ -52,11 +52,21 @@
         <!-- Automated Screening Flags -->
         {% if x.get('screening') %}
           {% set risk = x.screening.get('risk', 'uncertain')|lower %}
-          <div style="padding: 8px 12px; background: {% if risk == 'high' or risk == 'unsafe' %}var(--danger-bg){% elif risk == 'medium' or risk == 'uncertain' %}var(--warning-bg){% else %}var(--success-bg){% endif %}; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          {% set tone = 'danger' if risk in ['high', 'unsafe'] else 'success' if risk == 'low' else 'warning' %}
+          <div style="padding: 8px 12px; background: var(--{{ tone }}-bg); border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
             <strong>Screening Risk:</strong>
-            <span class="badge {% if risk == 'high' or risk == 'unsafe' %}danger{% elif risk == 'medium' or risk == 'uncertain' %}warning{% else %}success{% endif %}" style="font-size: 10.5px; padding: 1px 6px;">
+            <span class="badge {{ tone }}" style="font-size: 10.5px; padding: 1px 6px;">
               {{ risk|capitalize }}
             </span>
+            {% set sentiment = x.screening.get('sentiment') %}
+            {% if sentiment %}
+              <span class="muted">· Comment tone: {{ sentiment.get('label', 'uncertain')|capitalize }}</span>
+              {% if sentiment.get('ratingMismatch') %}
+                <span>· Check the star rating against the comment</span>
+              {% elif sentiment.get('ratingAlignment') == 'uncertain' %}
+                <span>· Rating agreement unclear</span>
+              {% endif %}
+            {% endif %}
             {% if x.screening.get('flags') %}
               <span class="muted">· Flags: {{ x.screening.get('flags')|join(', ')|replace('_', ' ') }}</span>
             {% endif %}

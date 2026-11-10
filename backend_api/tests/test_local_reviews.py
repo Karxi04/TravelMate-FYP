@@ -89,7 +89,7 @@ def test_real_local_screening(comment, flag):
 
 
 def test_screening_failure_stays_pending(monkeypatch):
-    monkeypatch.setattr('services.review_service.screen_review', lambda _: (_ for _ in ()).throw(RuntimeError('private')))
+    monkeypatch.setattr('services.review_service.screen_review', lambda *args: (_ for _ in ()).throw(RuntimeError('private')))
     result = pending_screen('A lovely place to visit.')
     assert result['moderationStatus'] == 'pending_review'
     assert result['screening']['risk'] == 'uncertain' and 'private' not in str(result)

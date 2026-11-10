@@ -35,7 +35,7 @@ def test_owner_can_update_flutter_rating_and_comment_only(client, mock_traveller
     assert updates['feedbackStatus'] == 'visible'
     assert updates['moderationStatus'] == 'pending_review'
     assert set(updates) == {'rating', 'comment', 'feedbackStatus', 'moderationStatus', 'updatedAt', 'screening'}
-    assert updates['screening']['method'] == 'local_rules_v1'
+    assert updates['screening']['method'] == 'local_rules_v2_rating_sentiment'
 
 
 def test_non_owner_cannot_update_feedback(client, mock_traveller_auth):
