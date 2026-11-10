@@ -557,7 +557,8 @@ def test_gemini_flask_route_hides_provider_failure(client, journey, monkeypatch)
         )
         response = client.post("/api/fr11/chat", headers=AUTH, json={"message": "Budget advice"})
     assert response.status_code == 502
-    assert response.get_json()["error"] == "Gemini service is unavailable"
+    assert response.get_json()["error"] == "The travel assistant is temporarily unavailable. Please retry."
+    assert "private-key-marker" not in str(response.get_json())
     assert journey.retrieve("chat_messages") == []
 
 
@@ -588,12 +589,10 @@ def test_gemini_flask_route_does_not_reuse_another_travellers_session(client, jo
         second = client.post("/api/fr11/chat", headers={
             "Authorization": "Bearer other-traveller",
         }, json={"sessionId": first_id, "message": "What can I do in Penang?"})
-    assert second.status_code == 200
-    assert second.get_json()["session"]["id"] != first_id
-    assert second.get_json()["session"]["travellerId"] == "other-traveller"
-    contents = sdk.return_value.models.generate_content.call_args.kwargs["contents"]
-    assert "SECRET_CROSS_USER_NOTE" not in contents
-    assert "Private first reply" not in contents
+    assert second.status_code == 404
+    assert second.get_json()["error"] == "Chat session not found."
+    assert sdk.return_value.models.generate_content.call_count == 1
+    assert len(journey.retrieve("chat_sessions")) == 1
 
 
 def test_gemini_flask_route_keeps_auth_and_validation(client, journey, monkeypatch):

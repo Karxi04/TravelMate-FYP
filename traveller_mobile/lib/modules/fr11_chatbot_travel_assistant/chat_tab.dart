@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'database_chat_cards.dart';
 import '../../widgets/local_place_rating.dart';
 
 import '../../services/api_service.dart';
@@ -53,10 +54,15 @@ class _ChatTabState extends State<ChatTab> {
     openingPackageIds.add(id);
     setState(() {});
     try {
-      final data = await api.get('/api/public/tourism-packages');
+      final authoritative = recommendation['quoteContext'] is Map;
+      final data = await api.get(authoritative
+          ? '/api/fr11/packages/$id'
+          : '/api/public/tourism-packages');
       if (data['ok'] == false)
         throw StateError('Package information is unavailable.');
-      final matches = (data['items'] as List? ?? const [])
+      final matches = (authoritative
+              ? [if (data['package'] is Map) data['package']]
+              : (data['items'] as List? ?? const []))
           .whereType<Map>()
           .where((item) => item['id']?.toString() == id)
           .toList();
@@ -70,7 +76,25 @@ class _ChatTabState extends State<ChatTab> {
           context,
           MaterialPageRoute(
               builder: (_) => TourismPackageDetailsScreen(
-                  item: Map<String, dynamic>.from(matches.single), api: api)));
+                  item: Map<String, dynamic>.from(matches.single),
+                  api: api,
+                  initialAdults:
+                      recommendation['quoteContext']?['partyKnown'] == true
+                          ? recommendation['quoteContext']['participants']
+                              ['adults'] as int?
+                          : null,
+                  initialChildren:
+                      recommendation['quoteContext']?['partyKnown'] == true
+                          ? recommendation['quoteContext']['participants']
+                              ['children'] as int?
+                          : null,
+                  initialPromoCode: recommendation['chatQuote']?['promotion']
+                      ?['promoCode'] as String?,
+                  initialDepartureDate:
+                      recommendation['quoteContext']?['dateKnown'] == true
+                          ? recommendation['quoteContext']['departureDate']
+                              as String?
+                          : null)));
     } catch (error) {
       if (mounted) showError(context, error);
     } finally {
@@ -110,6 +134,8 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   final suggestions = const [
+    'Find a Penang package under RM500',
+    'Show my saved trips',
     'Plan things to do',
     'Adjust my itinerary',
     'Help with my budget',
@@ -247,6 +273,8 @@ class _ChatTabState extends State<ChatTab> {
         'message': text,
         'guidedPlanning': true,
         if (activeSessionId != null) 'sessionId': activeSessionId,
+        if (planningState['commerceRevision'] != null)
+          'commerceRevision': planningState['commerceRevision'],
       });
       final session = data['session'];
       if (session is Map && mounted) {
@@ -260,11 +288,26 @@ class _ChatTabState extends State<ChatTab> {
         setState(() => messages = [...messages, data['item']]);
       }
       await loadSessions(openNewest: false);
-    } catch (_) {
+    } catch (error) {
+      if (error is ApiException &&
+          error.statusCode == 409 &&
+          activeSessionId != null) {
+        try {
+          final current = await api.get('/api/fr11/sessions/$activeSessionId');
+          if (mounted && current['session'] is Map) {
+            final session = Map<String, dynamic>.from(current['session']);
+            setState(() {
+              messages = session['messages'] as List? ?? [];
+              acceptPlanningState(session);
+            });
+          }
+        } catch (_) {/* Keep the retry message if refreshing also fails. */}
+      }
       if (mounted) {
         setState(() {
-          sendError =
-              'Your message wasn’t sent. Check your connection and try again.';
+          sendError = error is ApiException && error.statusCode == 409
+              ? 'This conversation changed. Review the refreshed chat and retry your message.'
+              : 'Your message wasn’t sent. Check your connection and try again.';
         });
       }
     } finally {
@@ -684,6 +727,12 @@ class _ChatTabState extends State<ChatTab> {
           ),
           const SizedBox(height: 8),
           ...packages.map((pkg) {
+            if (pkg['chatQuote'] is Map)
+              return DatabasePackageCard(
+                  package: pkg,
+                  onDetails: openingPackageIds.isEmpty
+                      ? () => openPackageDetails(pkg)
+                      : null);
             final title =
                 (pkg['title'] ?? pkg['packageTitle'] ?? 'Tourism Package')
                     .toString();
@@ -1375,6 +1424,13 @@ class _ChatTabState extends State<ChatTab> {
                                   packageRecommendationsCard(packages),
                                 if (advisory.isNotEmpty)
                                   _buildAdvisoryCard(advisory),
+                                if (item['ownedTrips'] is List ||
+                                    item['ownedOrders'] is List)
+                                  OwnedChatRecords(
+                                      item: item, onTrips: openTrips),
+                                if (item['priceNotice'] != null)
+                                  _buildAdvisoryCard(
+                                      item['priceNotice'].toString()),
                               ],
                             ),
                           ),

@@ -155,7 +155,7 @@ class _TravelMateAppState extends State<TravelMateApp> {
               WidgetsBinding.instance
                   .addPostFrameCallback((_) => _openCheckoutReturnIfReady());
               WidgetsBinding.instance.addPostFrameCallback((_) => _openPushIfReady());
-              return const TravellerEntryGate();
+              return TravellerEntryGate(key: ValueKey(snapshot.data!.uid));
             },
           );
         },

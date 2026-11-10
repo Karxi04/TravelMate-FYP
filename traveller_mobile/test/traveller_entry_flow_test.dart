@@ -283,7 +283,8 @@ void main() {
     await tester.pumpWidget(_gate(api));
     await tester.pump();
 
-    expect(find.text('Database error'), findsOneWidget);
+    expect(find.text(backendUnavailableMessage), findsOneWidget);
+    expect(find.text('Database error'), findsNothing);
     expect(find.text('Retry'), findsOneWidget);
     expect(find.text('Back to Sign In'), findsOneWidget);
     expect(api.calls.where((c) => c.startsWith('POST')).length, 1);

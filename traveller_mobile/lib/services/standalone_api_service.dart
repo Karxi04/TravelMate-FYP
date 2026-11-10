@@ -5685,12 +5685,24 @@ class StandaloneApiService {
     List<Map<String, dynamic>> placeSuggestions = [];
     String reply;
 
+    // Standalone has no authoritative campaigns_v1 quote service; do not invent offers.
+    final independent = RegExp(r'\b(?:plan my own|independent|not (?:a )?(?:tourism )?package|(?:plan|create|build) .{0,30}(?:trip|itinerary))\b', caseSensitive: false).hasMatch(message);
+    final savedTripsRequest = RegExp(r'\b(?:my saved trips|show my trips|list my trips)\b', caseSensitive: false).hasMatch(message);
+    if (independent) existingPlanning.remove('assistantMode');
+
     final planningIntent = payload['guidedPlanning'] == true ||
         _hasPlanningIntent(message) || existingPlanning.isNotEmpty;
     final question = _normaliseSearch(message);
     final featureEnquiry = RegExp(r'^(?:what|how|will|is|can|tell me)\b').hasMatch(question) &&
         RegExp(r'\b(?:weather|rains?|raining|hotels?|flights?|budget tips|save money)\b').hasMatch(question) && !RegExp(r'\b(?:plan|itinerary|change|adjust|update)\b').hasMatch(question);
-    if (featureEnquiry) {
+    final databaseRequest = !independent && !savedTripsRequest && (RegExp(r'\b(?:packages?|campaigns?|promotions?|discounts?|my bookings|my orders|my purchases|my payment|operator arrangements?|supplier status)\b', caseSensitive: false).hasMatch(message) || (existingPlanning['assistantMode'] == 'packages' && !featureEnquiry));
+    if (savedTripsRequest) {
+      session['planningState'] = {...existingPlanning, 'assistantMode': 'owned'};
+      reply = trips.isEmpty ? 'No saved trips were found for your account on this device.' : 'Here are up to 20 of your saved trips on this device.';
+    } else if (databaseRequest) {
+      session['planningState'] = {...existingPlanning, 'assistantMode': 'packages'};
+      reply = 'Live Operator package search, campaigns and purchased-order status require the authenticated TravelMate backend. They cannot be verified in standalone mode. Switch to the backend connection to search actual packages, or ask me to plan your own independent itinerary.';
+    } else if (featureEnquiry) {
       reply = _assistantReply(message,prefs,latest);
     } else if (planningIntent) {
       final planning =
@@ -5747,6 +5759,7 @@ class StandaloneApiService {
       'reply': reply,
       'source': 'travelmate',
       'createdAt': _now(),
+      if (savedTripsRequest) 'ownedTrips': trips.take(20).map((trip) => {for(final key in ['id','title','destinationArea','startDate','endDate','tripType']) if(trip[key] != null) key:trip[key]}).toList(),
       if (plan != null) 'tripPlan': plan,
       if (plan != null && (session['planningState'] as Map?)?['savedPlans'] is Map && ((session['planningState'] as Map)['savedPlans'] as Map)[plan['draftId']] != null)
         'savedTripId': ((session['planningState'] as Map)['savedPlans'] as Map)[plan['draftId']],

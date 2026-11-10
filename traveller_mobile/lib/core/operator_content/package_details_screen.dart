@@ -21,12 +21,18 @@ class TourismPackageDetailsScreen extends StatefulWidget {
   /// Retained for backwards compatibility with legacy callers.
   final VoidCallback? onAddToTrip;
   final ApiService? api;
+  final int? initialAdults, initialChildren;
+  final String? initialDepartureDate, initialPromoCode;
 
   const TourismPackageDetailsScreen({
     super.key,
     required this.item,
     this.onAddToTrip,
     this.api,
+    this.initialAdults,
+    this.initialChildren,
+    this.initialDepartureDate,
+    this.initialPromoCode,
   });
 
   @override
@@ -89,10 +95,15 @@ class _TourismPackageDetailsScreenState
       final types = await loadHostedCheckoutCapabilities(api);
       if (mounted) setState(() => consumerPaymentsAvailable = types.contains('package'));
     });
-    adults = 1;
-    children = 0;
+    adults = (widget.initialAdults ?? 1).clamp(1, 50);
+    children = (widget.initialChildren ?? 0).clamp(0, 50 - adults);
+    promoCode = widget.initialPromoCode ?? '';
     final dates = _list(widget.item['departureDates']);
-    if (dates.length == 1 && packageDepartureAvailable(dates.first)) selectedDepartureDate = dates.first;
+    final requested = widget.initialDepartureDate;
+    if (requested != null) {
+      if ((dates.isEmpty || dates.contains(requested)) && packageDepartureAvailable(requested)) selectedDepartureDate = requested;
+      else { Future.microtask(() { if (mounted) showError(context, 'The requested departure is no longer available. Review the current dates.'); }); }
+    } else if (dates.length == 1 && packageDepartureAvailable(dates.first)) selectedDepartureDate = dates.first;
   }
 
   Map<String, dynamic> _map(dynamic value) =>
