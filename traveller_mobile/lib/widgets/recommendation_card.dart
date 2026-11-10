@@ -13,6 +13,7 @@ class RecommendationCard extends StatelessWidget {
   final String? preferenceFeedback;
   final ValueChanged<String>? onPreferenceFeedback;
   final bool feedbackBusy;
+  final bool discovery;
 
   const RecommendationCard({
     super.key,
@@ -22,6 +23,7 @@ class RecommendationCard extends StatelessWidget {
     this.preferenceFeedback,
     this.onPreferenceFeedback,
     this.feedbackBusy = false,
+    this.discovery = false,
     this.source = '',
   });
 
@@ -258,9 +260,9 @@ class RecommendationCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(AppRadii.pill),
                           child: Tooltip(
                             message:
-                                '$_scoreLabel: ${score.round()}/100. Tap for details.',
+                                discovery ? 'Why this suggestion' : '$_scoreLabel: ${score.round()}/100. Tap for details.',
                             child: StatusChip(
-                              text: '$_scoreLabel: ${score.round()}/100',
+                              text: discovery ? 'Why this suggestion' : '$_scoreLabel: ${score.round()}/100',
                               icon: Icons.auto_awesome_rounded,
                             ),
                           ),
@@ -279,9 +281,9 @@ class RecommendationCard extends StatelessWidget {
                         ),
                     ],
                   ),
-                  if (const ['relevance_v2','recovery_v3'].contains(recommendation['scoringVersion']) && !_hasPersonalScore)
+                  if (!discovery && const ['relevance_v2','recovery_v3'].contains(recommendation['scoringVersion']) && !_hasPersonalScore)
                     Text('Personal match unavailable — interest evidence missing.',style:Theme.of(context).textTheme.bodySmall),
-                  if (_hasPersonalScore) ...[
+                  if (!discovery && _hasPersonalScore) ...[
                     const SizedBox(height: AppSpacing.xxs),
                     Text('Hybrid ranking: ${((recommendation['hybridRankingScore'] ?? recommendation['finalScore']) as num?)?.toStringAsFixed(1) ?? '-'} /100',style:Theme.of(context).textTheme.bodySmall),
                     if ((recommendation['evidenceConfidence'] as num? ?? 0) < 1)
@@ -289,6 +291,14 @@ class RecommendationCard extends StatelessWidget {
                     if ((recommendation['collaborativeConfidence'] as num? ?? 0) == 0)
                       Text('No similar-traveller ratings yet',style:Theme.of(context).textTheme.bodySmall),
                   ],
+                  if (discovery && recommendation['foodExperienceType'] != null)
+                    Text(switch (recommendation['foodExperienceType']) {
+                      'dining' => 'Food stop / dining',
+                      'food_museum' => 'Food-themed museum; dining is not implied.',
+                      'cooking' => 'Cooking experience; check booking details.',
+                      'culinary_culture' => 'Spices and culinary culture; a cooking class is not implied.',
+                      _ => 'Food-related experience; dining is not confirmed.',
+                    }),
                   if (reasons.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.sm),
                     ...reasons.map(
@@ -406,7 +416,7 @@ class RecommendationCard extends StatelessWidget {
                   const SizedBox(width: AppSpacing.xs),
                   Expanded(
                     child: Text(
-                      '${_hasPersonalScore ? 'Personal match' : 'Recommendation Score'} (${score.round()}/100)',
+                      discovery ? 'Why this suggestion' : '${_hasPersonalScore ? 'Personal match' : 'Recommendation Score'} (${score.round()}/100)',
                       style: Theme.of(sheetContext).textTheme.titleLarge,
                     ),
                   ),

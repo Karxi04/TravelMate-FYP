@@ -1,3 +1,4 @@
+import '../utils/package_pricing.dart';
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
@@ -26,11 +27,13 @@ class CampaignDetailsScreen extends StatelessWidget {
         if ((item['packageTitle'] ?? '').toString().isNotEmpty) Text('For ${item['packageTitle']}', style: const TextStyle(color: InkWashColors.mutedInk)),
         const SizedBox(height: 15),
         InkCard(color: InkWashColors.cream, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (discount.isNotEmpty) Text(type == 'percentage' ? '$discount% off' : 'Save RM $discount', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+          if (['percentage','fixed'].contains(type) && (num.tryParse(discount) ?? 0) > 0) Text(type == 'percentage' ? '$discount% off' : 'Save RM $discount', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
           if ((item['promoCode'] ?? '').toString().isNotEmpty) ...[const SizedBox(height: 7), SelectableText('Promo code: ${item['promoCode']}', style: const TextStyle(fontWeight: FontWeight.w800))],
+          if (['percentage','fixed'].contains(type) && (item['promoCode'] ?? '').toString().trim().isEmpty && (num.tryParse(discount) ?? 0) > 0) const Text('Applied automatically to eligible package bookings. Best single offer; no stacking.'),
           const SizedBox(height: 8),
           Text((item['description'] ?? '').toString()),
         ])),
+        if (item['packagePricing'] is Map) Padding(padding: const EdgeInsets.only(top: 12), child: Text(PackagePricing.label({...item, 'currency': 'MYR', 'priceBasis': (item['packagePricing']['base'] as Map?)?['priceBasis']}))),
         const SizedBox(height: 16),
         InkCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Promotion period', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),

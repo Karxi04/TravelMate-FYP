@@ -14,14 +14,37 @@ const notificationPath = '/api/traveller/notifications';
 
 Widget? notificationDestination(Map target, ApiService api) {
   final id = '${target['tripId'] ?? ''}';
+  if (target['screen'] == 'payments' && !validTargetId('${target['orderId'] ?? ''}')) return null;
   if (target['screen'] == 'payments') return PaymentHistoryScreen(api: api, focusOrderId:'${target['orderId'] ?? ''}');
-  if (id.isEmpty || id.contains('/')) return null;
+  if (!validTargetId(id)) return null;
   return switch (target['screen']) {
     'package_trip' => PackageTripDetailsScreen(tripId: id, api: api),
     'trip' => TripDetailsScreen(tripId: id, api: api),
     'packing' => PackingChecklistScreen(tripId: id, api: api),
     _ => null,
   };
+}
+
+bool validTargetId(String id) => id.length <= 200 &&
+    RegExp(r'^[A-Za-z0-9_-][A-Za-z0-9_:.-]*$').hasMatch(id);
+
+/// Resolve the opaque push ID through authenticated backend data, never payload URLs.
+Future<Widget?> notificationForTap(String id, ApiService api,
+    {required String owner, required String? Function() currentOwner}) async {
+  if (!AndroidPushService.validId(id) || currentOwner() != owner) return null;
+  final data=await api.get('$notificationPath/$id');
+  if (currentOwner()!=owner) return null;
+  final item=data['item'];
+  if (data['ok']==false || item is! Map || item['id']!=id || item['travellerId']!=owner || item['target'] is! Map) {
+    throw const ApiException('This update is unavailable for the current account.',404,{});
+  }
+  final screen=notificationDestination(item['target'] as Map,api);
+  if (screen==null) throw const ApiException('This update has no supported destination.',404,{});
+  if (item['read']!=true) {
+    final changed=await api.patch('$notificationPath/$id',{'read':true});
+    if (changed['ok']==false) throw const ApiException('The update could not be marked read. Please retry.',503,{});
+  }
+  return currentOwner()==owner ? screen : null;
 }
 
 class NotificationBell extends StatefulWidget {
@@ -41,12 +64,14 @@ class _NotificationBellState extends State<NotificationBell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    AndroidPushService.instance.notificationsChanged.addListener(load);
     load();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    AndroidPushService.instance.notificationsChanged.removeListener(load);
     super.dispose();
   }
 
@@ -102,26 +127,43 @@ class NotificationCenterScreen extends StatefulWidget {
       _NotificationCenterScreenState();
 }
 
-class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
+class _NotificationCenterScreenState extends State<NotificationCenterScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>> items = [];
   bool busy = true;
+  int loadVersion = 0;
   String? error;
   String notice = '';
   final pending = <String>{};
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    AndroidPushService.instance.notificationsChanged.addListener(load);
     load();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    AndroidPushService.instance.notificationsChanged.removeListener(load);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) load();
+  }
+
   Future<void> load() async {
+    if (!mounted) return;
+    final request=++loadVersion;
     setState(() {
       busy = true;
       error = null;
     });
     try {
       final data = await widget.api.get(notificationPath);
-      if (mounted)
+      if (mounted && request==loadVersion)
         setState(() {
           items = (data['items'] as List? ?? [])
               .whereType<Map>()
@@ -130,9 +172,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           notice = '${data['notice'] ?? ''}';
         });
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted && request==loadVersion) setState(() => error = e.toString());
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted && request==loadVersion) setState(() => busy = false);
     }
   }
 
@@ -177,11 +219,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 'Inbox checked when you open or refresh TravelMate. Android push also requires permission and a configured backend.'),
                   if (AndroidPushService.instance.supported)
                     TextButton.icon(icon:const Icon(Icons.notifications_active_outlined),label:const Text('Android notification settings'),onPressed:() async {
-                      final enable=await showDialog<bool>(context:context,builder:(dialogContext) => AlertDialog(
+                      final enable=await showDialog<String>(context:context,builder:(dialogContext) => AlertDialog(
                         title:const Text('Android notifications'),content:const Text('Allow TravelMate to notify you about recorded payments, package updates and upcoming trips. You can keep using the inbox and planning if you decline. If Android already denied permission, enable it in system app settings.'),
-                        actions:[TextButton(onPressed:() => Navigator.pop(dialogContext,false),child:const Text('Not now')),TextButton(onPressed:() => Navigator.pop(dialogContext,true),child:const Text('Continue'))]));
-                      if(enable!=true)return;
-                      try { await AndroidPushService.instance.synchronize(FirebaseAuth.instance.currentUser?.uid,requestPermission:true); }
+                        actions:[TextButton(onPressed:() => Navigator.pop(dialogContext),child:const Text('Not now')),TextButton(onPressed:() => Navigator.pop(dialogContext,'allow'),child:const Text('Continue')),TextButton(onPressed:() => Navigator.pop(dialogContext,'settings'),child:const Text('Open Android settings'))]));
+                      if(enable==null)return;
+                      try {
+                        final push=AndroidPushService.instance;
+                        if(enable=='settings') { await push.openSettings(); return; }
+                        await push.synchronize(FirebaseAuth.instance.currentUser?.uid,requestPermission:true);
+                        if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(push.registered ? 'Android notifications enabled.' : 'Android push is not registered. Review notification permission and channel settings, then retry with a connection.')));
+                      }
                       catch(e) { if(context.mounted)showError(context,'Android push could not be enabled. Your inbox is still available.'); }
                     }),
                   if (notice.isNotEmpty)
@@ -201,6 +248,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       leading: Icon(switch (item['category']) {
                         'payment' => Icons.receipt_long_outlined,
                         'arrangements_ready' => Icons.task_alt,
+                        'package_booking' => Icons.card_travel_outlined,
+                        'arrangements_update' => Icons.assignment_turned_in_outlined,
+                        'booking_attention' => Icons.info_outline,
                         'upcoming_trip' => Icons.calendar_month_outlined,
                         'packing' => Icons.backpack_outlined,
                         'weather' => Icons.cloud_outlined,

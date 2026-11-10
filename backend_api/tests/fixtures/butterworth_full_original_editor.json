@@ -1,0 +1,86 @@
+{
+  "provenance": "Complete owner-provided six-step editor text export; not database or captured HTTP evidence.",
+  "sourceSha256": "5f78e1dca653e538708c86bc1552ead1fd20d137c595d75847d05a9a416f3ce1",
+  "coverage": {
+    "steps": 6,
+    "inclusions": 9,
+    "exclusions": 11,
+    "itineraryDays": 1,
+    "itineraryActivities": 14,
+    "policyFields": [
+      "cancellationPolicy",
+      "refundPolicy",
+      "bookingTerms",
+      "importantNotes",
+      "transportNotes"
+    ]
+  },
+  "limitations": [
+    "Gallery URLs are not exposed in the textual export (three photos are listed).",
+    "Checkbox checked-state is not encoded; taxIncluded=on corresponds to its supplied all-fees-included declaration.",
+    "Category display text mapped to existing stored Family & Leisure option.",
+    "Legacy originalPrice269.0 retained as export provenance only; removed fields are not posted."
+  ],
+  "legacyExportPrice": {
+    "originalPrice": "269.0"
+  },
+  "form": {
+    "title": "Butterworth Heritage & Wildlife Discovery – Full Day Tour",
+    "destination": "Butterworth, Penang",
+    "destinationArea": "Butterworth, Seberang Jaya & Teluk Air Tawar",
+    "category": "Family & Leisure",
+    "durationDays": "1",
+    "durationNights": "0",
+    "shortDescription": "Explore mainland Penang's hidden gems with colourful street art, fascinating birds, cultural landmarks and relaxing coastal views on a memorable full-day adventure.",
+    "fullDescription": "Discover the hidden treasures of mainland Penang with our Butterworth Heritage & Wildlife Discovery – Full Day Tour, a memorable journey combining wildlife, local heritage, cultural landmarks and coastal scenery.\n\nBegin your adventure at Penang Bird Park in Seberang Jaya, where you can discover fascinating bird species, explore tropical garden environments and experience educational wildlife exhibits.\n\nAfter enjoying a delicious local lunch, continue to Butterworth Art Walk, a colourful outdoor gallery showcasing murals inspired by the history, culture and traditional lifestyles of Seberang Perai.\n\nExplore the impressive architecture of Tow Boo Kong Temple, one of Butterworth's significant cultural landmarks, and learn about the area's Chinese heritage and traditions.\n\nComplete your journey with a relaxing visit to Robina Eco Park in Teluk Air Tawar. Enjoy refreshing sea breezes, coastal scenery and beautiful views across the Penang Strait.\n\nWith convenient ground transportation, selected attraction admission, local lunch and guided sightseeing, this package is perfect for families, students, couples and travellers seeking to experience a different side of Penang beyond the island's popular tourist attractions.",
+    "heroImage": "https://dynamic-media-cdn.tripadvisor.com/media/photo-o/0e/db/22/fa/penang-bird-park.jpg?w=1200&h=-1&s=1",
+    "adultPrice": "229.0",
+    "childPrice": "169.0",
+    "minimumTravellers": "4",
+    "maximumTravellers": "8",
+    "taxNotes": "Penang Bird Park currently publishes standard admission rates of RM65 for adults and RM45 for children below 12, with separate MyKad/MyKid rates. The suggested package prices are higher to account for transport, food and guide services, but they are not supplier quotations.",
+    "departureDates": "2026-11-07\n2026-11-14\n2026-11-21\n2026-11-28",
+    "departureLocation": "Penang Sentral, Butterworth, Penang",
+    "meetingPoint": "Level 2, near the Taxi Pick-Up & Drop-Off waiting area, Penang Sentral, Jalan Bagan Dalam, 12100 Butterworth, Penang.",
+    "departureNotes": "Travellers must arrive at Penang Sentral by 8:45 AM for registration and a short tour briefing.\n\nThe guided excursion is scheduled to depart at 9:00 AM from the designated pickup area at Penang Sentral, Butterworth.\n\nAll participants must present their TravelMate booking voucher and a valid identification document during registration.\n\nThe tour escort will verify traveller details, explain the daily itinerary and provide essential safety instructions.\n\nTravellers are advised to wear comfortable walking shoes, bring sufficient drinking water and prepare appropriate sun protection.\n\nThe tour is expected to conclude at approximately 5:00 PM at Penang Sentral.\n\nDeparture and return times may vary depending on weather, local traffic conditions and attraction operating schedules.\n\nTravellers who expect to arrive late should contact the assigned tour operator before departure.",
+    "highlights": "Discover fascinating birds and tropical wildlife at Penang Bird Park.\nExplore colourful heritage murals along Butterworth Art Walk.\nAdmire the impressive architecture of Tow Boo Kong Temple.\nEnjoy a delicious local Malaysian lunch in Seberang Jaya.\nRelax by the coastline and enjoy scenic views at Robina Eco Park.",
+    "inclusions": "Standard admission ticket to Penang Bird Park, including access to visitor exhibits and aviaries.\nGuided sightseeing experience at Butterworth Art Walk.\nCultural visit to Tow Boo Kong Temple.\nCoastal sightseeing experience at Robina Eco Park.\nOne local Malaysian lunch at a selected dining venue.\nPrivate air-conditioned ground transportation throughout the scheduled excursion.\nEnglish-speaking tour escort providing guided introductions to local heritage, cultural landmarks, and attractions.\nDesignated pickup and return drop-off at Penang Sentral, Butterworth.\nDriver services, fuel, and road tolls for scheduled transfers.",
+    "accommodationName": "None",
+    "accommodationCategory": "Not Applicable – Day Trip",
+    "roomType": "None – No Overnight Stay",
+    "transportTypes": "Private air-conditioned MPV or minibus\nGuided walking tour at Butterworth Art Walk\nWalking exploration at Penang Bird Park\nShort guided cultural walk at Tow Boo Kong Temple\nLeisure walking at Robina Eco Park",
+    "accommodationNotes": "This is a single-day sightseeing excursion and does not include overnight accommodation.\n\nTravellers are not required to arrange hotel check-in or check-out as part of the package.\n\nThe tour begins at approximately 9:00 AM and concludes at approximately 5:00 PM on the same day.\n\nPrivate air-conditioned transportation is provided for all scheduled transfers between attractions.\n\nThe tour starts and ends at Penang Sentral, Butterworth.\n\nTravellers requiring overnight accommodation before or after the excursion must arrange their own lodging.\n\nPersonal hotel expenses and additional transfers outside the scheduled itinerary are not included.",
+    "exclusions": "Domestic and international flights to Penang.\nHotel accommodation and overnight stays.\nBreakfast and dinner.\nTransportation to Penang Sentral before the tour and from Penang Sentral after the tour.\nPersonal travel and medical insurance.\nPersonal shopping, souvenirs, snacks, and additional beverages.\nOptional bird-feeding activities where separately charged.\nAdditional attraction admission fees not specified in the itinerary.\nPersonal donations or purchases at religious sites.\nFerry tickets and transportation outside the scheduled itinerary.\nPersonal expenses and services not expressly included in the package.",
+    "whatToBring": "Comfortable walking shoes\nLightweight and breathable clothing\nReusable drinking water bottle\nSunscreen\nHat or cap\nCompact umbrella or raincoat\nInsect repellent\nMobile phone or camera\nValid identification document\nTravelMate booking voucher\nPersonal medication\nSmall daypack for personal belongings",
+    "cancellationPolicy": "Travellers may cancel their bookings before the scheduled departure date, subject to the following conditions:\n\n7 days or more before departure: 100% refund of the eligible package payment.\n\n3 to 6 days before departure: 50% refund of the eligible package payment.\n\nLess than 3 days before departure: No refund.\n\nNo-show on departure day: No refund.\n\nCancellation requests must be submitted through the designated TravelMate support channel or directly to the assigned tour operator.\n\nThe cancellation period is calculated according to Malaysian local time (GMT+8).\n\nApproved cancellations are subject to verification of the booking and applicable payment records.",
+    "refundPolicy": "If the tour is cancelled by the operator due to insufficient participants, attraction closures, safety concerns or unforeseen operational circumstances, travellers will be offered a full refund or an alternative departure date.\n\nIf severe weather makes an outdoor activity unsafe, the operator may adjust the itinerary, reschedule the affected activity or provide a suitable alternative.\n\nWhere a substantial portion of the purchased package cannot be delivered, the operator will assess the appropriate refund or alternative arrangement.\n\nApproved refunds will be returned through the original payment method where supported. Actual processing times depend on the payment provider and relevant financial institutions.\n\nFor TravelMate FYP demonstration transactions using Stripe Test Mode, no real payment is collected and no real monetary refund is issued.\n\nActual commercial refund arrangements must comply with applicable booking terms and consumer protection requirements.",
+    "bookingTerms": "Bookings must be submitted at least 72 hours before the scheduled departure.\n\nEach tour requires a minimum of 4 travellers and accommodates a maximum of 8 travellers.\n\nAdult pricing applies to travellers aged 12 years and above. Child pricing applies to travellers aged 3 to 11 years. Children below 3 years old require advance arrangements.\n\nAll children must be accompanied by a responsible adult.\n\nTravellers must provide accurate booking information and attend registration at the designated meeting point.\n\nA TravelMate booking voucher or confirmation record will be issued through the applicable booking workflow once booking requirements are satisfied.\n\nTravellers are required to present their booking voucher and a valid identification document before boarding the tour vehicle.\n\nTour participation remains subject to operator confirmation and sufficient group numbers.\n\nFYP demonstration vouchers and sandbox payment records do not represent valid commercial attraction reservations.",
+    "importantNotes": "This tour is suitable for participants with a basic to moderate level of physical fitness.\n\nActivities involve walking through outdoor attractions, cultural sites, bird park pathways and coastal recreational areas.\n\nSome locations may feature uneven walking surfaces, steps, slopes or limited wheelchair accessibility.\n\nTravellers are advised to wear comfortable footwear and remain hydrated throughout the excursion.\n\nThe tropical climate of Penang may involve high temperatures, humidity, occasional heavy rain and exposure to insects.\n\nVisitors must follow attraction safety rules and avoid touching or feeding animals unless expressly permitted by attraction staff.\n\nAppropriate and respectful clothing is recommended when visiting religious sites.\n\nParents or guardians must supervise accompanying children throughout the tour.\n\nTravellers with mobility limitations, medical conditions, allergies or special assistance requirements should contact the operator before booking.\n\nFull wheelchair accessibility cannot be guaranteed for every activity.",
+    "transportNotes": "Private air-conditioned transportation will be provided using an MPV or minibus suitable for the confirmed group size.\n\nAs this is a single-day excursion, travellers are encouraged to bring only a small daypack and essential personal belongings.\n\nLarge suitcases, oversized luggage and bulky equipment are not recommended due to limited vehicle storage space.\n\nAll passengers must wear seat belts where fitted and comply with the driver's safety instructions.\n\nSmoking and vaping are prohibited inside the tour vehicle.\n\nTravellers must keep their valuables, identification documents and personal belongings secure throughout the journey.\n\nScheduled transportation includes transfers between Penang Sentral and all attractions listed in the itinerary.\n\nAdditional private transfers and unscheduled transportation requests are not included.\n\nTravel times may change depending on traffic congestion, road conditions and weather.",
+    "itineraryTitle": [
+      "Butterworth Wildlife, Cultural Heritage & Coastal Discovery"
+    ],
+    "itineraryAccommodation": [
+      "None – Single-Day Tour Without Overnight Accommodation"
+    ],
+    "itineraryDescription": [
+      "Begin your mainland Penang adventure at 8:45 AM with registration and a short briefing at Penang Sentral, Butterworth.\n\nDepart at 9:00 AM in a private air-conditioned vehicle and travel towards Seberang Jaya.\n\nAt approximately 9:30 AM, arrive at Penang Bird Park, a family-oriented wildlife attraction featuring tropical gardens, walk-in aviaries and diverse bird species. Enjoy a relaxing exploration of the park and learn about the fascinating characteristics of local and exotic birds. Subject to availability, observe the scheduled bird show at approximately 11:30 AM.\n\nAt noon, complete the park visit and proceed to a selected restaurant in Seberang Jaya for an included Malaysian lunch.\n\nAfter lunch, travel to Butterworth Art Walk, where colourful outdoor murals illustrate the history, traditional trades and cultural development of mainland Penang. Enjoy a guided stroll and opportunities for photography.\n\nContinue to Tow Boo Kong Temple along Jalan Raja Uda at approximately 2:35 PM. Discover the temple's impressive traditional architecture and cultural significance while exploring permitted public areas.\n\nIn the late afternoon, travel to Robina Eco Park in Teluk Air Tawar. Enjoy a relaxing coastal walk, refreshing sea breezes and scenic views across the Penang Strait.\n\nAt approximately 4:30 PM, depart the coastal park and return to Penang Sentral.\n\nThe tour concludes at approximately 5:00 PM, marking the end of an enjoyable day exploring Butterworth's wildlife, heritage and coastal attractions."
+    ],
+    "itineraryActivities": [
+      "08:45 AM – Meet at Penang Sentral for registration and tour briefing.\n09:00 AM – Depart for Seberang Jaya by private air-conditioned vehicle.\n09:30 AM – Explore Penang Bird Park and its tropical wildlife exhibits.\n11:30 AM – Observe the bird show, subject to the attraction's schedule and availability.\n12:00 PM – Depart Penang Bird Park.\n12:15 PM – Enjoy an included local Malaysian lunch in Seberang Jaya.\n01:15 PM – Transfer to Butterworth Art Walk.\n01:40 PM – Explore colourful heritage murals and enjoy photography.\n02:25 PM – Transfer to Tow Boo Kong Temple.\n02:40 PM – Discover Tow Boo Kong Temple's architecture and cultural heritage.\n03:25 PM – Travel to Robina Eco Park, Teluk Air Tawar.\n03:55 PM – Enjoy coastal scenery, relaxation and photography.\n04:30 PM – Depart Robina Eco Park for Penang Sentral.\n05:00 PM – Arrive at Penang Sentral and conclude the tour."
+    ],
+    "itineraryMeals": [
+      "Lunch – Local Malaysian set meal at a selected restaurant in Seberang Jaya."
+    ],
+    "itineraryTransportNotes": [
+      "Private air-conditioned MPV or minibus transportation is provided throughout the full-day excursion.  Route: Penang Sentral → Penang Bird Park → Seberang Jaya Lunch Venue → Butterworth Art Walk → Tow Boo Kong Temple → Robina Eco Park → Penang Sentral.  Driver services, fuel and road tolls for all scheduled transfers are included.  Travellers should arrive at the meeting location at least 15 minutes before departure.  Travel times are estimates and may vary depending on local traffic, weather conditions and attraction schedules.  The final return transfer is expected to arrive at Penang Sentral by approximately 5:00 PM."
+    ],
+    "accommodationIncluded": "false",
+    "transportIncluded": "true",
+    "guideActivitiesIncluded": "true",
+    "currency": "MYR",
+    "priceBasis": "per_person",
+    "taxIncluded": "on",
+    "availabilityStatus": "available"
+  }
+}

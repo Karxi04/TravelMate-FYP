@@ -16,10 +16,10 @@ class PublicContentContract {
     'cancellationPolicy', 'refundPolicy', 'bookingTerms', 'importantNotes',
     'whatToBring', 'availabilityStatus', 'validFrom', 'validUntil',
     'createdAt', 'updatedAt',
-    'operatorName', 'operatorEmail', 'operatorPhone', 'activeCampaigns',
+    'operatorName', 'operatorEmail', 'operatorPhone', 'activeCampaigns', 'packagePricing', 'pricingUnavailable',
   };
   static const _campaignFields = {
-    'id', 'campaignTitle', 'description', 'packageId', 'startDate', 'endDate',
+    'id', 'campaignTitle', 'description', 'packageId', 'packageIds', 'packagePricing', 'startDate', 'endDate',
     'campaignStatus', 'discountType', 'discountValue', 'promoCode',
     'bannerImageUrl', 'termsConditions', 'packageTitle', 'destinationName',
     'packagePrice', 'packageImageUrl', 'operatorName', 'operatorEmail',
@@ -33,6 +33,7 @@ class PublicContentContract {
 
   static Map<String, dynamic> package(Map<String, dynamic> raw) {
     final result = _copy(raw, _packageFields);
+    for (final key in ['originalPrice', 'promotionalPrice', 'promotionStart', 'promotionEnd']) { result.remove(key); }
     result['itineraryDays'] = _maps(raw['itineraryDays'], {
       'dayNumber', 'title', 'description', 'activities', 'meals',
       'accommodation', 'transportNotes',
@@ -52,12 +53,13 @@ class PublicContentContract {
   static bool activeCampaign(Map<String, dynamic> item) {
     final status = (item['campaignStatus'] ?? 'approved').toString().toLowerCase();
     if (!{'approved', 'active'}.contains(status)) return false;
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
     final today = DateTime(now.year, now.month, now.day);
     final start = DateTime.tryParse((item['startDate'] ?? '').toString());
     final end = DateTime.tryParse((item['endDate'] ?? '').toString());
-    if (start != null && today.isBefore(DateTime(start.year, start.month, start.day))) return false;
-    if (end != null && today.isAfter(DateTime(end.year, end.month, end.day))) return false;
+    if (start == null || end == null) return false;
+    if ( today.isBefore(DateTime(start.year, start.month, start.day))) return false;
+    if ( today.isAfter(DateTime(end.year, end.month, end.day))) return false;
     return true;
   }
 

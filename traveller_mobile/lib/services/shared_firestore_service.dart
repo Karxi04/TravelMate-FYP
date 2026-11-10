@@ -48,22 +48,23 @@ class SharedFirestoreService {
       for (final d in packageSnap.docs)
         d.id: PublicContentContract.package(_doc(d))
     };
+    final expanded = <Map<String,dynamic>>[];
     for (final item in items) {
-      final package = packages[(item['packageId'] ?? '').toString()];
-      if (package != null) {
-        item['packageTitle'] = package['packageTitle'];
-        item['destinationName'] = package['destinationName'];
-        item['packagePrice'] = package['price'];
-        item['packageImageUrl'] = package['imageUrl'] ?? package['bannerImageUrl'] ?? '';
+      final ids = item['packageIds'] is List ? item['packageIds'] as List : [item['packageId']];
+      for (final id in ids) {
+        final package = packages['$id'];
+        if (package == null) continue;
+        expanded.add({...item, 'packageId':'$id', 'packageTitle':package['packageTitle'], 'destinationName':package['destinationName'],
+          'packagePrice':package['price'], 'packagePricing':package['packagePricing'], 'packageImageUrl':package['imageUrl'] ?? ''});
       }
     }
 
-    items.sort((a, b) {
+    expanded.sort((a, b) {
       final ad = (a['startDate'] ?? '').toString();
       final bd = (b['startDate'] ?? '').toString();
       return ad.compareTo(bd);
     });
-    return items;
+    return expanded;
   }
 
   Future<List<Map<String, dynamic>>> _publicReviews([String? destinationId]) async {

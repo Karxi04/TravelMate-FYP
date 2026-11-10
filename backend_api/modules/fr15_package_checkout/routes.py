@@ -1,7 +1,7 @@
 from flask import Blueprint, g, jsonify, request
 from auth_utils import auth_required
 from sequence_contract.firebase_firestore import claimRecord, retrieveRecord
-from services.package_checkout_contract import create_package_attempt
+from services.package_checkout_contract import create_package_attempt, prepare_package_snapshot
 
 bp = Blueprint('fr15_package_checkout', __name__, url_prefix='/api/fr15/package-checkout-attempts')
 
@@ -9,6 +9,7 @@ bp = Blueprint('fr15_package_checkout', __name__, url_prefix='/api/fr15/package-
 @auth_required(['traveller'])
 def create_attempt():
     payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Package selection must be an object.'}),400
     package = retrieveRecord('tourism_packages', str(payload.get('packageId') or ''))
     trip_id = str(payload.get('intendedTripId') or '').strip()
     trip = retrieveRecord('itineraries', trip_id) if trip_id else None
@@ -25,10 +26,11 @@ def create_attempt():
             retrieveRecord('users', (package or {}).get('operatorId')) or {},
             str(payload.get('idempotencyKey') or ''), trip, payload.get('quantity', 1),
             participants=participants, departure_date=payload.get('departureDate'),
-            campaigns=retrieveRecord('promotional_campaigns', filters=[('packageId', '==', str(payload.get('packageId') or ''))]),
-            promo_code=payload.get('promoCode', ''))
+            campaigns=retrieveRecord('promotional_campaigns', filters=[('operatorId', '==', (package or {}).get('operatorId'))]),
+            promo_code=payload.get('promoCode', ''), expected_quote_token=payload.get('quoteToken'))
     except ValueError as exc:
-        return jsonify({'ok': False, 'error': str(exc)}), 409
+        return jsonify({'ok': False, 'error': str(exc),
+                        **({'code':'package_price_changed'} if 'offer terms changed' in str(exc) else {})}), 409
     except Exception:
         return jsonify({'ok': False, 'error': 'Package checkout preparation is temporarily unavailable.'}), 503
     return jsonify({'ok': True, 'attempt': attempt, 'reused': not created})
@@ -40,3 +42,21 @@ def get_attempt(attempt_id):
     if not attempt or attempt.get('travellerId') != g.uid:
         return jsonify({'ok': False, 'error': 'Package checkout attempt not found.'}), 404
     return jsonify({'ok': True, 'attempt': attempt})
+
+
+@bp.post('/quote')
+@auth_required(['traveller'])
+def quote_package():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Package selection must be an object.'}),400
+    try:
+        package = retrieveRecord('tourism_packages', str(payload.get('packageId') or '')) or {}
+        snapshot = prepare_package_snapshot(package, retrieveRecord('users', package.get('operatorId')) or {},
+            participants=payload.get('participants'), departure_date=payload.get('departureDate'),
+            campaigns=retrieveRecord('promotional_campaigns', filters=[('operatorId', '==', package.get('operatorId'))]),
+            promo_code=payload.get('promoCode', ''))
+    except ValueError as exc:
+        return jsonify({'ok':False, 'error':str(exc)}),409
+    except Exception:
+        return jsonify({'ok':False, 'error':'Package pricing is temporarily unavailable.'}),503
+    return jsonify({'ok':True, 'quote':snapshot})

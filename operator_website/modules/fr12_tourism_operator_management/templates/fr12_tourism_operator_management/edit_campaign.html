@@ -35,10 +35,10 @@
       </div>
 
       <div class="field">
-        <label for="packageId">Linked Approved Package *</label>
-        <select id="packageId" class="input" name="packageId" required>
+        <label for="packageId">Linked Approved Packages *</label>
+        <select id="packageId" class="input" name="packageIds" multiple required>
           {% for package in approved_packages %}
-            <option value="{{ package.id }}" {% if package.id|string == p.get('packageId', '')|string %}selected{% endif %}>
+            <option value="{{ package.id }}" {% if package.id|string in p.get('packageIds', [p.get('packageId', '')]) %}selected{% endif %}>
               {{ package.get('title', package.get('packageTitle', 'Package')) }}
             </option>
           {% endfor %}
@@ -70,7 +70,7 @@
       </div>
 
       <div class="field">
-        <label for="promoCode">Promo Code</label>
+        <span class="field-help">Leave the code blank for an automatic offer. Only one best applicable discount is used; offers do not stack.</span><label for="promoCode">Promo Code</label>
         <input id="promoCode" class="input" name="promoCode" value="{{ p.get('promoCode', '') }}">
       </div>
 

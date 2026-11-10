@@ -6,6 +6,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.os.Build
+import android.provider.Settings
 import android.net.Uri
 import android.util.Base64
 import java.io.File
@@ -39,6 +40,12 @@ class MainActivity : FlutterActivity() {
                     result.success(binding)
                 }
                 "initial" -> { result.success(initialNotification); initialNotification = null }
+                "canDisplay" -> result.success(manager.areNotificationsEnabled() &&
+                    (Build.VERSION.SDK_INT < 26 || manager.getNotificationChannel("travelmate_updates")?.importance != NotificationManager.IMPORTANCE_NONE))
+                "settings" -> {
+                    startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+                    result.success(null)
+                }
                 "clear" -> { manager.cancelAll(); result.success(null) }
                 "show" -> {
                     val id = call.argument<String>("notificationId")
@@ -50,7 +57,9 @@ class MainActivity : FlutterActivity() {
                         val pending = PendingIntent.getActivity(this, id.hashCode(), tap, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
                         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, "travelmate_updates") else Notification.Builder(this)
                         manager.notify(id, 0, builder.setSmallIcon(R.drawable.ic_notification)
-                            .setContentTitle("TravelMate — Update").setContentText("You have a TravelMate update. Open the app to view it securely.")
+                            .setContentTitle(call.argument<String>("title")?.take(100) ?: "TravelMate — Update")
+                            .setContentText(call.argument<String>("body")?.take(240) ?: "You have a TravelMate update. Open the app to view it securely.")
+                            .setOnlyAlertOnce(true)
                             .setVisibility(Notification.VISIBILITY_PRIVATE).setAutoCancel(true).setContentIntent(pending).build())
                         result.success(null)
                     }

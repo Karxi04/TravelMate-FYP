@@ -98,6 +98,11 @@ final _fullTestPackage = <String, dynamic>{
   'childPrice': 280,
   'originalPrice': 680,
   'promotionalPrice': 499,
+  'packagePricing': {
+    'base': {'participants':{'adults':2,'children':0},'amountMinor':110000,'originalSubtotal':1100,'finalPayable':1100,'promotionDiscount':0,'promotion':{}},
+    'offers': [{'participants':{'adults':2,'children':0},'amountMinor':99800,'originalSubtotal':1100,'finalPayable':998,'promotionDiscount':102,
+      'promotion':{'id':'approved-offer','campaignTitle':'Nature campaign','startDate':'2026-01-01','endDate':'2027-12-31','promoCode':''}}],
+  },
   'promotionStart': '2026-01-01',
   'promotionEnd': '2027-12-31',
   'priceBasis': 'per_person',
@@ -206,8 +211,9 @@ void main() {
       expect(find.text('Langkawi Nature & Mangrove Safari'), findsWidgets);
       expect(find.text('Langkawi, Kedah, Malaysia'), findsOneWidget);
       expect(find.text('3 days · 2 nights'), findsOneWidget);
-      expect(find.text('Special promo rate'), findsOneWidget);
-      expect(find.text('Orig. MYR 680'), findsOneWidget);
+      expect(find.text('Automatic campaign offer'), findsOneWidget);
+      expect(find.text('Orig. MYR 680'), findsNothing);
+      expect(find.textContaining('was 1100.00'), findsOneWidget);
       expect(find.text('Up to 8 travellers'), findsOneWidget);
     });
 

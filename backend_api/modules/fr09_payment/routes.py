@@ -549,6 +549,19 @@ def _package_attempt_for_checkout(attempt_id):
     if not eligible_package(package) or package.get('operatorId')!=snapshot.get('operatorId'):
         raise ValueError('The package is no longer approved and available for a new checkout. Reopen the package to review it.')
     validate_package_departure(package,snapshot.get('selectedDepartureDate'),allow_default=False)
+    # Existing hosted sessions keep their immutable order and reconciliation path.
+    existing = retrieveRecord(ORDER_COLLECTION, _package_order_document_id(attempt_id))
+    if not existing or not existing.get('checkoutSessionId'):
+        from services.package_checkout_contract import prepare_package_snapshot
+        from services.package_pricing import pricing_fingerprint
+        if snapshot.get('pricingVersion') != 'campaigns_v1':
+            raise ValueError('This older unpaid quote must be refreshed. Return to the package and review the current amount.')
+        current = prepare_package_snapshot(package, {'id': package.get('operatorId')},
+            participants=snapshot.get('participants'), departure_date=snapshot.get('selectedDepartureDate'),
+            campaigns=retrieveRecord('promotional_campaigns', filters=[('operatorId', '==', package.get('operatorId'))]),
+            promo_code=snapshot.get('requestedPromoCode', ''))
+        if pricing_fingerprint(snapshot) != pricing_fingerprint(current):
+            raise ValueError('Package price or promotion terms changed. Return to the package, refresh and accept the current quote before payment.')
     return attempt, snapshot
 
 
@@ -761,6 +774,7 @@ def checkout_capabilities():
     except RuntimeError:
         available = False
     return jsonify({'ok': True, 'mode': 'test', 'hostedCheckout': bool(available),
+                    'packagePricingContract': 'campaigns_v1',
                     'supportedQuoteTypes': ['hotel', 'package'] if available else []})
 
 
@@ -773,6 +787,8 @@ def create_package_checkout_session(attempt_id):
         return jsonify({'ok': False, 'error': 'Package checkout attempt was not found.'}), 404
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 409
+    except Exception:
+        return jsonify({'ok':False,'error':'Package price verification is temporarily unavailable. Try again later.'}),503
     minor_units = package_amount_minor_units(snapshot)
     order_id = _package_order_document_id(attempt_id)
     now = utc_now_iso()

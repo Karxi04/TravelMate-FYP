@@ -72,8 +72,8 @@ def test_malaysia_midnight_and_historical_schedule():
     assert active_campaign(campaign(), malaysia_today(NOW))
 
 
-@pytest.mark.parametrize(('instant', 'expected'), [('2026-11-07T15:59:59Z', 100), ('2026-11-07T16:00:00Z', 80)])
-def test_brochure_price_uses_same_malaysia_day_as_campaigns(instant, expected):
+@pytest.mark.parametrize(('instant', 'expected'), [('2026-11-07T15:59:59Z', 100), ('2026-11-07T16:00:00Z', 100)])
+def test_manual_brochure_price_never_overrides_campaign_contract(instant, expected):
     snapshot = prepare_package_snapshot(package(promotionalPrice=80, promotionStart='2026-11-08', promotionEnd='2026-11-08'),
                                         {'id':'op1'}, now=instant)
     assert snapshot['price'] == expected
@@ -189,7 +189,7 @@ def test_past_campaign_create_is_rejected_before_write(client, mock_operator_aut
 
 def test_historical_campaign_title_edit_preserves_dates_but_date_changes_are_validated(client, mock_operator_auth):
     old = campaign(operatorId='test_operator_uid', reviewStatus='draft', startDate='2000-01-01', endDate='2000-02-01')
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=old), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=lambda c, i=None, **k: old if c=='promotional_campaigns' else package(id='p1',operatorId='test_operator_uid')), \
          patch('modules.fr12_tourism_operator_management.routes.updateRecord', side_effect=lambda c, i, updates: {**old, **updates}) as save:
         response = client.put('/api/fr12/campaigns/c1', headers={'Authorization':'Bearer test'}, json={'campaignTitle':'Historical title'})
         assert response.status_code == 200
@@ -202,7 +202,7 @@ def test_historical_campaign_title_edit_preserves_dates_but_date_changes_are_val
 
 def test_expired_campaign_cannot_be_submitted(client, mock_operator_auth):
     old = campaign(operatorId='test_operator_uid', reviewStatus='draft', startDate='2000-01-01', endDate='2000-02-01')
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=old), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=lambda c, i=None, **k: old if c=='promotional_campaigns' else package(id='p1',operatorId='test_operator_uid')), \
          patch('modules.fr12_tourism_operator_management.routes.updateRecord') as save:
         response = client.post('/api/fr12/campaigns/c1/submit', headers={'Authorization':'Bearer test'}, json={})
     assert response.status_code == 400 and 'expired' in response.get_json()['error']

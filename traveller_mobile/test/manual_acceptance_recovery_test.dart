@@ -15,7 +15,7 @@ class SharedGenerationApi extends RecsApi {
     minimum=45;
     pool.clear();
     pool.add({'destinationId':'penang-street-art','title':'Penang Street Art',
-      'finalScore':61,'personalSuitabilityScore':80,'scoringVersion':'recovery_v3'});
+      'discoveryEligible':true,'finalScore':61,'personalSuitabilityScore':80,'scoringVersion':'recovery_v3'});
   }
   @override
   Future<dynamic> get(String path,[Map<String,String>? query]) async {
@@ -74,7 +74,7 @@ void main() {
     expect(()=>validateRecommendationResponse({'recommendations':[],'pagination':{'scoreBasis':'personal_v2','personalEvidenceCount':0}},'personal_v2'),returnsNormally);
   });
 
-  testWidgets('Home See all shares generation and scope then reloads changed settings on return',(tester) async {
+  testWidgets('Home See all shares generation and scope without applying old settings',(tester) async {
     tester.view.physicalSize=const Size(1000,2600); tester.view.devicePixelRatio=1;
     addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
     final api=SharedGenerationApi();
@@ -86,20 +86,20 @@ void main() {
     expect(find.byType(RecommendationScreen),findsOneWidget);
     expect(api.reads.last['generationId'],'generation_0');
     expect(api.reads.last['destinationArea'],'Penang');
-    expect(api.reads.last['scoreBasis'],'personal_v2');
+    expect(api.reads.last['discoveryMode'],recommendationDiscoveryMode);
     expect(find.text('Penang Street Art'),findsOneWidget);
     api.minimum=85;
     await tester.pageBack(); await tester.pumpAndSettle();
     expect(api.reads.length,greaterThan(before+1));
-    expect(api.reads.last['minimumMatchScore'],'85.0');
-    expect(find.text('Penang Street Art'),findsNothing);
+    expect(api.reads.last['minimumMatchScore'],isNull);
+    expect(find.text('Penang Street Art'),findsOneWidget);
   });
 
   testWidgets('old backend displays compatibility error instead of no matches',(tester) async {
     await tester.pumpWidget(MaterialApp(theme:buildInkWashTheme(),home:RecommendationScreen(api:OldBackendApi(),initialDestination:'Penang')));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.textContaining('Update/restart the backend'),300,scrollable:find.byType(Scrollable).first);
-    expect(find.textContaining('Update/restart the backend'),findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Something went wrong. Please try again.'),300,scrollable:find.byType(Scrollable).first);
+    expect(find.text('Something went wrong. Please try again.'),findsOneWidget);
     expect(find.text('No places meet this minimum match'),findsNothing);
   });
 

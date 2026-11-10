@@ -376,36 +376,7 @@
       <span class="field-help">Discounted rate for children. Leave blank if not applicable.</span>
     </div>
 
-    <div class="field">
-      <label for="originalPrice">
-        <span>Reference / Strikethrough Price (MYR)</span>
-        <span class="field-destination-badge brochure">Optional Savings Display</span>
-      </label>
-      <input id="originalPrice" class="input" name="originalPrice" type="number" min="0" step="0.01" value="{{ p.get('originalPrice', '') }}" placeholder="e.g. 199.00">
-      <span class="field-help">Displays a strikethrough price on brochure cards to showcase discounts.</span>
-    </div>
-
-    <div class="field">
-      <label for="promotionalPrice">
-        <span>Promotional Discount Rate (MYR)</span>
-        <span class="field-destination-badge brochure">Active Promo Rate</span>
-      </label>
-      <input id="promotionalPrice" class="input" name="promotionalPrice" type="number" min="0" step="0.01" value="{{ p.get('promotionalPrice', '') }}" placeholder="e.g. 129.00">
-      <span class="field-help">Special rate applied when booking falls within promotional dates below.</span>
-    </div>
-
-    <div class="field">
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div>
-          <label for="promotionStart"><span>Promo Valid From</span></label>
-          <input id="promotionStart" class="input" type="date" name="promotionStart" value="{{ p.get('promotionStart', '') }}">
-        </div>
-        <div>
-          <label for="promotionEnd"><span>Promo Valid Until</span></label>
-          <input id="promotionEnd" class="input" type="date" name="promotionEnd" value="{{ p.get('promotionEnd', '') }}">
-        </div>
-      </div>
-    </div>
+    <div class="field full-span"><p class="field-help">Set the normal selling price here. Create automatic discounts or coupon offers separately in <a href="/campaigns">Promotions &amp; Campaigns</a>; Administrator approval is required.</p></div>
 
     <div class="field">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
@@ -537,7 +508,7 @@
     </select>
   </div>
   {% endfor %}
-  <p class="field-help">Guide / reserved tickets or activities: choose Included if either a guided service or admission / reserved tickets / arranged activities are promised. For example, an included Bird Park admission ticket requires an arrangement even without a guide. Choose Not included only when neither is sold. Correct the choice or the brochure yourself; saved purchases are unchanged.</p>
+  <p class="field-help">Guide / reserved tickets or activities: choose Included if either a guided service or admission / reserved tickets / arranged activities are promised. For example, an included Bird Park admission ticket requires an arrangement even without a guide. Optional extras paid separately may be excluded; do not exclude the standard admission or guide you promise. Choose Not included only when neither is sold. Correct the choice or the brochure yourself; saved purchases are unchanged.</p>
   <p class="field-help">Confirm what travellers purchase. Walking guidance, optional transfers and free self-guided visits do not require supplier arrangements. These choices do not alter past purchases.</p>
 </div>
   <div class="package-form-grid">

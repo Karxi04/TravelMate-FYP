@@ -27,3 +27,9 @@ def campaign_schedule_error(data, *, new=False, previous=None, publishing=False,
     if publishing and end < today:
         return 'An expired campaign cannot be submitted or approved.'
     return None
+
+
+def campaign_package_ids(campaign):
+    values = campaign.get('packageIds') if 'packageIds' in campaign else [campaign.get('packageId')]
+    if not isinstance(values, list): return []
+    return list(dict.fromkeys(str(value).strip() for value in values if isinstance(value, str) and value.strip()))

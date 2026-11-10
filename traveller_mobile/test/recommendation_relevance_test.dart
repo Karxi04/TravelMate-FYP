@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -19,8 +18,8 @@ class RelevanceApi extends RecsApi {
     pool.clear();
     for (final entry in [('weak','High ranking venue',90,30),('strong','Strong personal fit',60,90)]) {
       pool.add({'destinationId':entry.$1,'title':entry.$2,'finalScore':entry.$3,'hybridRankingScore':entry.$3,
-        'personalSuitabilityScore':entry.$4,'scoringVersion':'relevance_v2','evidenceConfidence':.778,
-        'collaborativeConfidence':0,'type':'Culture','matchedInterests':['Culture'],
+        'personalSuitabilityScore':entry.$4,'discoveryEligible':entry.$1=='strong','scoringVersion':'relevance_v2','evidenceConfidence':.778,
+        'collaborativeConfidence':0,'type':entry.$1=='weak' ? 'Adventure' : 'Culture','matchedInterests':entry.$1=='weak' ? [] : ['Culture'],
         'scoreBreakdown':{'content':70,'collaborative':50,'popularity':50}});
     }
   }
@@ -32,17 +31,6 @@ class RelevanceApi extends RecsApi {
   @override
   Future<dynamic> put(String path,[Map<String,dynamic>? body]) async {
     settingsWrites.add({...body!});basis=body['scoreBasis'];
-    return super.put(path,body);
-  }
-}
-
-class QueuedSettingsApi extends RecsApi {
-  final firstSave = Completer<void>();
-  final saved = <num>[];
-  @override
-  Future<dynamic> put(String path,[Map<String,dynamic>? body]) async {
-    saved.add(body!['minimumMatchScore']);
-    if (saved.length == 1) await firstSave.future;
     return super.put(path,body);
   }
 }
@@ -110,39 +98,17 @@ void main() {
     ],preferences:profile);
     expect(ranked.map((r)=>r['destinationId']).toList(),['a','z']);
   });
-  testWidgets('explicit threshold-basis selection preserves 80 and shows a genuinely strong personal fit',(tester) async {
-    tester.view.physicalSize=const Size(900,1800);tester.view.devicePixelRatio=1;
+  testWidgets('discovery ignores saved 80 and excludes a high-ranked unrelated venue', (tester) async {
+    tester.view.physicalSize=const Size(900,2000);tester.view.devicePixelRatio=1;
     addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);
     final api=RelevanceApi();
     await tester.pumpWidget(MaterialApp(theme:buildInkWashTheme(),home:RecommendationScreen(api:api,initialDestination:'Penang')));
     await tester.pumpAndSettle();
-    expect(find.text('Minimum ranking (legacy): 80/100'),findsOneWidget);
-    expect(find.text('High ranking venue'),findsOneWidget);
-    expect(find.text('Strong personal fit'),findsNothing);
-    await tester.ensureVisible(find.byType(DropdownButton<String>));
-    await tester.tap(find.byType(DropdownButton<String>));await tester.pumpAndSettle();
-    await tester.tap(find.text('Personal match').last);await tester.pumpAndSettle();
-    expect(api.settingsWrites.last,{'minimumMatchScore':80.0,'scoreBasis':'personal_v2'});
-    expect(find.text('Minimum personal match: 80/100'),findsOneWidget);
-    expect(find.text('High ranking venue'),findsNothing);
     expect(find.text('Strong personal fit'),findsOneWidget);
-    expect(tester.takeException(),isNull);
-  });
-  testWidgets('rapid slider drags persist in order and stale save cannot reload an older threshold',(tester) async {
-    final api=QueuedSettingsApi();
-    await tester.pumpWidget(MaterialApp(home:RecommendationScreen(api:api,initialDestination:'Penang')));
-    await tester.pumpAndSettle();
-    final slider=find.byType(Slider);
-    await tester.ensureVisible(slider);
-    await tester.drag(slider,const Offset(90,0));await tester.pump();
-    expect(api.saved,hasLength(1));
-    await tester.drag(slider,const Offset(-170,0));await tester.pump();
-    expect(api.saved,hasLength(1));
-    api.firstSave.complete();await tester.pumpAndSettle();
-    expect(api.saved,hasLength(2));expect(api.saved[0],isNot(api.saved[1]));
-    expect(api.minimum,api.saved.last);
-    await tester.scrollUntilVisible(find.text('Minimum ranking (legacy): ${api.saved.last.round()}/100'),-300,scrollable:find.byType(Scrollable).first);
-    expect(find.text('Minimum ranking (legacy): ${api.saved.last.round()}/100'),findsOneWidget);
+    expect(find.text('High ranking venue'),findsNothing);
+    expect(find.byType(Slider),findsNothing);
+    expect(find.byType(DropdownButton<String>),findsNothing);
+    expect(api.settingsWrites,isEmpty);expect(api.minimum,80);
     expect(tester.takeException(),isNull);
   });
   testWidgets('score tap explains personal suitability, hybrid ranking and missing peer evidence',(tester) async {

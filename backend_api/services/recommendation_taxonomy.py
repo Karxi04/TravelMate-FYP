@@ -15,6 +15,7 @@ CONCEPT_TERMS = {
         'hawker', 'street food', 'cafe', 'coffee shop', 'food market',
         'food court', 'culinary', 'restaurants', 'food street', 'food streets',
         'hawker centre', 'hawker center', 'kopitiam', 'medan selera', 'pasar makanan',
+        'cooking class', 'cooking school', 'cooking workshop',
     },
     'culture': {
         'culture', 'local culture', 'heritage', 'history', 'historical',

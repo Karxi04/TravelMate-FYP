@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, send_from_directory
 from services.image_storage_service import is_safe_filename, get_upload_dir
 
 from auth_utils import auth_required
+from services.campaign_schedule import campaign_package_ids
 from sequence_contract.firebase_firestore import retrieveRecord
 from services.public_content_projection import (
     active_campaign,
@@ -27,8 +28,7 @@ def tourism_packages():
     campaigns = [x for x in retrieveRecord('promotional_campaigns', filters=[('reviewStatus', '==', 'approved')]) if active_campaign(x)]
     campaigns_by_package = {}
     for campaign in campaigns:
-        package_id = str(campaign.get('packageId') or '')
-        if package_id:
+        for package_id in campaign_package_ids(campaign):
             campaigns_by_package.setdefault(package_id, []).append(campaign)
 
     visible = []
@@ -50,15 +50,13 @@ def promotional_campaigns():
     packages = {str(x.get('id')): x for x in retrieveRecord('tourism_packages') if eligible_package(x)}
     visible = []
     for campaign in campaigns:
-        package = packages.get(str(campaign.get('packageId') or ''))
-        if not package:
-            continue
-        item = public_campaign(
-            campaign,
-            package=package,
-            operator_profile=_operator_summary(campaign.get('operatorId')),
-        )
-        visible.append(item)
+        for pid in campaign_package_ids(campaign):
+            package = packages.get(pid)
+            if not package or package.get('operatorId') != campaign.get('operatorId'):continue
+            item = public_campaign(campaign, package=package, operator_profile=_operator_summary(campaign.get('operatorId')))
+            item['packageId'] = pid
+            item['packagePricing'] = public_package(package, campaigns=campaigns).get('packagePricing')
+            visible.append(item)
     visible.sort(key=lambda x: str(x.get('startDate') or ''))
     return jsonify({'ok': True, 'items': visible, 'source': 'firestore'})
 

@@ -1,0 +1,319 @@
+{
+  "purpose": "Offline, owner-reviewed Photography/Food evaluation; human judgements never enrich production metadata. No current availability, ratings, reviews, prices or cooking-class entitlement is implied.",
+  "humanReview": "Project owner corrected the labels before the next comparison on 2026-11-09.",
+  "humanFrozenEvidenceSha256": "f8e873c24dff723d71216b74ff9c7547665e63299c2e83163a29dce50d67e376",
+  "baseFixtureSha256": "1ddeca9f55211e6affd67a613c549c0a05799001eff67c1720cbc80e8ee75474",
+  "profile": {
+    "travellerId": "isolated_photography_food",
+    "interests": [
+      "Photography",
+      "Food"
+    ],
+    "travelPersonality": "Planner",
+    "travelPace": "Moderate"
+  },
+  "additionalCandidates": [
+    {
+      "destinationId": "demo_penang_chulia_curry_mee",
+      "title": "Chulia Street Curry Mee",
+      "address": "Lebuh Carnarvon, George Town, Penang, Malaysia",
+      "category": "Hawker food",
+      "description": "Curry mee street-food stall listed in the Penang tourism food guide.",
+      "sourceUrl": "https://mypenang.gov.my/uploads/downloads/SFA_Penang-Street-Food_V04Sep24-EN.pdf",
+      "source": "isolated_documented_fixture"
+    }
+  ],
+  "judgements": {
+    "demo_penang_george_town": {
+      "grade": 2,
+      "themes": [
+        "photography"
+      ],
+      "kind": "photography",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_peranakan": {
+      "grade": 1,
+      "themes": [
+        "photography"
+      ],
+      "kind": "photography where permitted",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_kek_lok_si": {
+      "grade": 2,
+      "themes": [
+        "photography"
+      ],
+      "kind": "photography",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_chew_jetty": {
+      "grade": 2,
+      "themes": [
+        "photography"
+      ],
+      "kind": "photography",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_wonderfood": {
+      "grade": 2,
+      "themes": [
+        "photography",
+        "food"
+      ],
+      "kind": "food-themed museum, not dining",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_hill": {
+      "grade": 2,
+      "themes": [
+        "photography"
+      ],
+      "kind": "photography",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_gardens": {
+      "grade": 1,
+      "themes": [
+        "photography"
+      ],
+      "kind": "photography",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_national_park": {
+      "grade": 1,
+      "themes": [
+        "photography"
+      ],
+      "kind": "photography",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_escape": {
+      "grade": 0,
+      "themes": [],
+      "kind": "not established",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_beach": {
+      "grade": 2,
+      "themes": [
+        "photography"
+      ],
+      "kind": "photography",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_gurney_plaza": {
+      "grade": 0,
+      "themes": [],
+      "kind": "conditional dining evidence missing",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_gurney_food": {
+      "grade": 2,
+      "themes": [
+        "food"
+      ],
+      "kind": "dining",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_spice": {
+      "grade": 1,
+      "themes": [
+        "food"
+      ],
+      "kind": "spices/culinary culture, no assumed cooking class",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_street_art": {
+      "grade": 2,
+      "themes": [
+        "photography"
+      ],
+      "kind": "photography",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_armenian": {
+      "grade": 2,
+      "themes": [
+        "photography"
+      ],
+      "kind": "photography",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_entopia": {
+      "grade": 1,
+      "themes": [
+        "photography"
+      ],
+      "kind": "photography",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    },
+    "demo_penang_chulia_curry_mee": {
+      "grade": 2,
+      "themes": [
+        "food"
+      ],
+      "kind": "dining",
+      "reviewer": "project owner",
+      "basis": "Explicit human correction in current task, separate from production metadata"
+    }
+  },
+  "baselineCommit": "c78fb1cde80abc9e77c91841b3a5e57ffbecf208",
+  "baselineScores": {
+    "demo_penang_chulia_curry_mee": {
+      "finalScore": 68.3,
+      "personalSuitabilityScore": 100.0,
+      "contentScore": 80.5,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_chew_jetty": {
+      "finalScore": 64.18,
+      "personalSuitabilityScore": 87.5,
+      "contentScore": 73.63,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_gurney_food": {
+      "finalScore": 64.18,
+      "personalSuitabilityScore": 87.5,
+      "contentScore": 73.63,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_hill": {
+      "finalScore": 64.18,
+      "personalSuitabilityScore": 87.5,
+      "contentScore": 73.63,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_kek_lok_si": {
+      "finalScore": 64.18,
+      "personalSuitabilityScore": 87.5,
+      "contentScore": 73.63,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_spice": {
+      "finalScore": 64.18,
+      "personalSuitabilityScore": 87.5,
+      "contentScore": 73.63,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_street_art": {
+      "finalScore": 64.18,
+      "personalSuitabilityScore": 87.5,
+      "contentScore": 73.63,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_beach": {
+      "finalScore": 62.8,
+      "personalSuitabilityScore": 83.33,
+      "contentScore": 71.33,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_george_town": {
+      "finalScore": 62.8,
+      "personalSuitabilityScore": 83.33,
+      "contentScore": 71.33,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_wonderfood": {
+      "finalScore": 62.8,
+      "personalSuitabilityScore": 83.33,
+      "contentScore": 71.33,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_armenian": {
+      "finalScore": 35.3,
+      "personalSuitabilityScore": 0.0,
+      "contentScore": 25.5,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_entopia": {
+      "finalScore": 35.3,
+      "personalSuitabilityScore": 0.0,
+      "contentScore": 25.5,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_escape": {
+      "finalScore": 35.3,
+      "personalSuitabilityScore": 0.0,
+      "contentScore": 25.5,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_gardens": {
+      "finalScore": 35.3,
+      "personalSuitabilityScore": 0.0,
+      "contentScore": 25.5,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_gurney_plaza": {
+      "finalScore": 35.3,
+      "personalSuitabilityScore": 0.0,
+      "contentScore": 25.5,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_national_park": {
+      "finalScore": 35.3,
+      "personalSuitabilityScore": 0.0,
+      "contentScore": 25.5,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    },
+    "demo_penang_peranakan": {
+      "finalScore": 35.3,
+      "personalSuitabilityScore": 0.0,
+      "contentScore": 25.5,
+      "collaborativeScore": 50.0,
+      "popularityScore": 50.0
+    }
+  },
+  "baselineOrdering": [
+    "demo_penang_chulia_curry_mee",
+    "demo_penang_chew_jetty",
+    "demo_penang_gurney_food",
+    "demo_penang_hill",
+    "demo_penang_kek_lok_si",
+    "demo_penang_spice",
+    "demo_penang_street_art",
+    "demo_penang_beach",
+    "demo_penang_george_town",
+    "demo_penang_wonderfood",
+    "demo_penang_armenian",
+    "demo_penang_entopia",
+    "demo_penang_escape",
+    "demo_penang_gardens",
+    "demo_penang_gurney_plaza",
+    "demo_penang_national_park",
+    "demo_penang_peranakan"
+  ]
+}

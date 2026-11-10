@@ -29,6 +29,7 @@ from .nlp_extractor import (
     filter_constraint_candidates,
 )
 from .guided_planning import guided_requirements
+from .package_assistant import respond as commerce_response, public_details
 import re
 import os
 import json
@@ -275,6 +276,8 @@ def _extract_place_suggestions(message, destination_area=None, prefer_indoor=Fal
 @auth_required(['traveller'])
 def chat():
     payload = request.get_json(silent=True) or {}
+    if not isinstance(payload,dict):
+        return jsonify({'ok':False,'error':'Chat data must be an object.'}),400
     message = str(payload.get('message', '')).strip()
     if not validateQuestion(message):
         return jsonify({'ok': False, 'error': 'message is required'}), 400
@@ -282,12 +285,31 @@ def chat():
     if len(message) > 2000:
         return jsonify({'ok': False, 'error': 'Message exceeds 2000 character limit'}), 400
 
-    session = _session_ref(payload.get('sessionId')) or _new_session(_session_title(message))
+    try:
+        session = _session_ref(payload.get('sessionId'))
+        if payload.get('sessionId') and not session:
+            return jsonify({'ok':False,'error':'Chat session not found.'}),404
+        session = session or _new_session(_session_title(message))
+    except Exception:
+        return jsonify({'ok':False,'error':'Your conversation could not be loaded. Please retry.'}),503
     messages = [dict(x) for x in session.get('messages', []) if isinstance(x, dict)]
     if len(messages) >= 30:
         return jsonify({'ok': False, 'error': 'Chat session limit reached. Start a new chat session to continue.'}), 429
 
     planning_state = dict(session.get('planningState') or {})
+    if payload.get('commerceRevision') is not None and payload['commerceRevision'] != planning_state.get('commerceRevision',0):
+        return jsonify({'ok':False,'error':'This conversation changed. Reopen the chat before sending the next message.','code':'stale_chat_context'}),409
+    commerce = commerce_response(message, planning_state, retrieveRecord, g.uid)
+    if commerce is not None:
+        item = {'message':message,'createdAt':utc_now_iso(),'travellerId':g.uid,'source':'travelmate-data',**commerce}
+        try:
+            record=storeRecord('chat_messages',{**item,'sessionId':session['id']})
+            item['id']=record['id']
+            messages.append(item)
+            session=updateRecord('chat_sessions',session['id'],{'messages':messages,'planningState':planning_state,'updatedAt':utc_now_iso()},expected=session)
+        except Exception:
+            return jsonify({'ok':False,'error':'The conversation could not be saved. Reopen the chat and retry.'}),409
+        return jsonify({'ok':True,'reply':item['reply'],'source':item['source'],'item':item,'session':session})
     previous_requirements = {key: planning_state.get(key) for key in ('destinationArea', 'startDate', 'endDate', 'tripDays', 'budgetLimit', 'travellerCount', 'interests', 'excludedInterests', 'excludedActivityTypes', 'preferIndoor', 'travelPace', 'budgetRange', 'avoidCrowds')}
 
     # Extract NLP requirements from user message
@@ -438,7 +460,7 @@ def chat():
         session = updateRecord('chat_sessions', session['id'], updates)
         return jsonify({'ok': True, 'reply': clarification_reply, 'source': 'travelmate-assistant', 'messageId': record['id'], 'item': item, 'session': session})
 
-    history = messages[-20:] or retrieveRecord('chat_messages', filters=[('travellerId', '==', g.uid)], limit=20) or []
+    history = [item for item in messages[-20:] if item.get('source') != 'travelmate-data']
     system_context = _context(session)
     recent_context = ''
     if history:
@@ -466,8 +488,8 @@ def chat():
                 generateFollowUpResponse(message, context, with_source=True, planning_state=planning_state)
                 if history else generateChatbotResponse(message, context, with_source=True, planning_state=planning_state)
             )
-        except Exception as exc:
-            return jsonify({'ok': False, 'error': str(exc)}), 502
+        except Exception:
+            return jsonify({'ok': False, 'error': 'The travel assistant is temporarily unavailable. Please retry.'}), 502
 
     reply, source = response['reply'], response['source']
     if detailed_intent in {'INTEREST_MODIFICATION', 'INDOOR_ALTERNATIVE'} and (
@@ -778,3 +800,14 @@ def clear_history():
     for session in sessions:
         deleteRecord('chat_sessions', session['id'])
     return jsonify({'ok': True, 'deleted': len(items), 'deletedSessions': len(sessions)})
+
+
+@bp.get('/packages/<package_id>')
+@auth_required(['traveller'])
+def package_details(package_id):
+    try:
+        item=public_details(package_id,retrieveRecord)
+    except Exception:
+        return jsonify({'ok':False,'error':'Package details are temporarily unavailable.'}),503
+    if not item:return jsonify({'ok':False,'error':'This package is no longer available.'}),404
+    return jsonify({'ok':True,'package':item})

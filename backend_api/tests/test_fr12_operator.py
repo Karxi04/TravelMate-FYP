@@ -2,7 +2,7 @@ import pytest
 from copy import deepcopy
 from contextlib import ExitStack
 from contextlib import contextmanager
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 from modules.fr12_tourism_operator_management.analytics_service import generate_business_analytics
 from services.package_service import package_for_read
 
@@ -139,14 +139,15 @@ def test_admin_booking_projection_can_read_all_package_orders(client, mock_admin
     ]
     with patch(
         'modules.fr12_tourism_operator_management.routes.retrieveRecord',
-        return_value=orders,
+        side_effect=lambda collection,*args,**kwargs: orders if collection=='checkout_orders' else None,
     ) as retrieve:
         response = client.get(
             '/api/fr12/bookings', headers={'Authorization': 'Bearer valid_test_token'}
         )
     assert response.status_code == 200
     assert [item['orderReference'] for item in response.get_json()['items']] == ['one', 'two']
-    retrieve.assert_called_once_with('checkout_orders', filters=None, limit=501)
+    assert retrieve.call_args_list == [call('checkout_orders',filters=None,limit=501),
+        call('package_requirement_clarifications','one'),call('package_requirement_clarifications','two')]
 
 def test_operator_packages_crud(client, mock_operator_auth):
     sample_pkg = {
@@ -292,7 +293,7 @@ def test_package_v2_validation_rejects_bad_itinerary_and_promotion(client, mock_
     bad_price = client.post('/api/fr12/packages', headers={'Authorization': 'Bearer valid_test_token'},
                             json={**base, 'originalPrice': 80, 'promotionalPrice': 90})
     assert bad_price.status_code == 400
-    assert 'cannot exceed' in bad_price.get_json()['error']
+    assert 'Promotions & Campaigns' in bad_price.get_json()['error']
 
 
 def test_package_v2_ownership_approved_edit_and_archive(client, mock_operator_auth):
@@ -351,7 +352,7 @@ def test_approved_campaign_edit_returns_to_review(client, mock_operator_auth):
         'description': 'Save on a local experience.', 'reviewStatus': 'approved',
         'campaignStatus': 'active', 'startDate': '2026-12-01', 'endDate': '2026-12-31',
     }
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=campaign), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=lambda c, i=None, **k: campaign if c=='promotional_campaigns' else {'id':'approved_package','operatorId':'test_operator_uid','approvalStatus':'approved'}), \
          patch('modules.fr12_tourism_operator_management.routes.updateRecord') as update:
         update.side_effect = lambda collection, document_id, data: {**campaign, **data}
         response = client.put('/api/fr12/campaigns/campaign_v2',
@@ -487,10 +488,12 @@ def test_s1_operator_list_owner_filter_dedup_and_missing_values(client,mock_oper
             _s1_package_order(id='hotel',quoteType='hotel'),
             _s1_package_order(id='unknown',amount=None,currency='',paidAt=None,paymentStatus='pending',status='checkout_pending')]
     before=deepcopy(orders)
-    with commerce_read_only_guard(),patch('modules.fr12_tourism_operator_management.routes.retrieveRecord',return_value=orders) as read:
+    with commerce_read_only_guard(),patch('modules.fr12_tourism_operator_management.routes.retrieveRecord',
+            side_effect=lambda collection,*args,**kwargs: orders if collection=='checkout_orders' else None) as read:
         response=client.get('/api/fr12/bookings',headers={'Authorization':'Bearer valid_test_token'})
     assert response.status_code==200 and response.json['ok'] is True
-    read.assert_called_once_with('checkout_orders',filters=[('operatorId','==','test_operator_uid')],limit=501)
+    assert read.call_args_list == [call('checkout_orders',filters=[('operatorId','==','test_operator_uid')],limit=501),
+        call('package_requirement_clarifications','unknown'),call('package_requirement_clarifications','s1-order-owned')]
     items={item['id']:item for item in response.json['items']}
     assert set(items)=={'s1-order-owned','unknown'}
     assert items['unknown']['amount'] is None and items['unknown']['currency']=='UNKNOWN'

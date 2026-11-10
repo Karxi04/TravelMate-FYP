@@ -84,7 +84,8 @@ def _campaign_payload():
     return {
         "campaignTitle": request.form.get("campaignTitle", "").strip(),
         "description": request.form.get("description", "").strip(),
-        "packageId": request.form.get("packageId", "").strip(),
+        "packageId": (request.form.getlist("packageIds") or [request.form.get("packageId", "").strip()])[0],
+        "packageIds": request.form.getlist("packageIds") or [request.form.get("packageId", "").strip()],
         "startDate": request.form.get("startDate", ""),
         "endDate": request.form.get("endDate", ""),
         "promoCode": request.form.get("promoCode", "").strip(),
@@ -112,7 +113,7 @@ def _decorate_campaigns(items, package_items):
     decorated = []
     for campaign in items:
         item = dict(campaign)
-        item["packageTitle"] = package_names.get(str(item.get("packageId", "")), "Package")
+        item["packageTitle"] = ", ".join(package_names.get(str(pid), "Package") for pid in item.get("packageIds", [item.get("packageId", "")]))
         item["displayStatus"] = _campaign_state(item)
         decorated.append(item)
     return decorated
@@ -155,10 +156,6 @@ def _package_payload():
         "currency": request.form.get("currency", "MYR").strip().upper(),
         "adultPrice": _optional_float("adultPrice") if request.form.get("adultPrice") is not None else _optional_float("price"),
         "childPrice": _optional_float("childPrice"),
-        "originalPrice": _optional_float("originalPrice"),
-        "promotionalPrice": _optional_float("promotionalPrice"),
-        "promotionStart": request.form.get("promotionStart", ""),
-        "promotionEnd": request.form.get("promotionEnd", ""),
         "priceBasis": request.form.get("priceBasis", "per_person"),
         "taxIncluded": request.form.get("taxIncluded") == "on",
         "taxNotes": request.form.get("taxNotes", "").strip(),
@@ -230,7 +227,7 @@ def dashboard():
         "pendingCampaigns": sum(1 for item in campaigns if str(item.get("reviewStatus", "")).lower() in {"pending", "submitted"}),
         "activeCampaigns": sum(1 for item in campaigns if _campaign_state(item) == 'approved'
             and str(item.get('campaignStatus', 'approved')).lower() in {'active', 'approved'}
-            and any(p.get('id') == item.get('packageId') and p.get('approvalStatus') == 'approved'
+            and any(p.get('id') in item.get('packageIds', [item.get('packageId')]) and p.get('approvalStatus') == 'approved'
                     and p.get('availabilityStatus', 'available') == 'available' for p in packages)),
         "totalBookings": len(bookings_data),
         "paidBookings": sum(1 for item in bookings_data if _is_paid_booking(item)),

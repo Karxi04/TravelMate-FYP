@@ -95,7 +95,7 @@
 
           <td>
             <div style="font-weight: 700; color: var(--ink);">
-              {{ item.get('currency', 'MYR') }} {{ '%.2f'|format(item.get('promotionalPrice') or item.get('adultPrice') or item.get('price') or 0) }}
+              {{ item.get('currency', 'MYR') }} {{ '%.2f'|format(item.get('adultPrice') or item.get('price') or 0) }}
             </div>
             <div style="font-size: 11px; color: var(--ink-muted);">
               {{ 'per group' if item.get('priceBasis') == 'per_group' else 'per person' }}

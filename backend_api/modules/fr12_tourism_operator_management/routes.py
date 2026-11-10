@@ -36,6 +36,7 @@ from .analytics_service import generate_business_analytics, _safe_analytics_book
 from services.package_checkout_contract import build_initial_fulfillment_record, fulfillment_readiness
 from services.booking_requirements import COLLECTION as CLARIFICATION_COLLECTION, load_context
 from services.public_content_projection import eligible_package
+from services.campaign_schedule import campaign_package_ids
 from services.report_service import export_operator_report
 from services.package_service import (
     normalise_package,
@@ -57,7 +58,7 @@ from services.image_storage_service import (
 CAMPAIGN_EDITABLE_FIELDS = {
     'campaignTitle',
     'description',
-    'packageId',
+    'packageId', 'packageIds',
     'startDate',
     'endDate',
     'discountType',
@@ -342,6 +343,8 @@ def _hotel_package_payload(payload, current=None):
 def create_package_route():
     payload=request.get_json(silent=True) or {}
     if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Package data must be an object'}),400
+    if any(payload.get(k) not in (None, '') for k in ('originalPrice', 'promotionalPrice', 'promotionStart', 'promotionEnd')):
+        return jsonify({'ok':False,'error':'Create discounts through Promotions & Campaigns, not package pricing.'}),400
     error=package_validation_error(payload)
     if error:return jsonify({'ok':False,'error':error}),400
     payload, error = _hotel_package_payload(payload)
@@ -370,12 +373,18 @@ def update_package(pid):
     if current.get('approvalStatus') in {'pending','submitted'}:return jsonify({'ok':False,'error':'Package cannot be edited in its current state'}),409
     payload=request.get_json(silent=True) or {}
     if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Package data must be an object'}),400
+    if any(payload.get(k) not in (None, '') for k in ('originalPrice', 'promotionalPrice', 'promotionStart', 'promotionEnd')):
+        return jsonify({'ok':False,'error':'Create discounts through Promotions & Campaigns, not package pricing.'}),400
+    for key in ('originalPrice','promotionalPrice','promotionStart','promotionEnd'):payload.pop(key, None)
     merged={**current, **payload}; error=package_validation_error(merged)
     if error:return jsonify({'ok':False,'error':error}),400
     hotel_edit = 'hotelSelection' in payload or bool(current.get('accommodationHotel'))
     payload, error = _hotel_package_payload(payload, current)
     if error is not None:return error
     updates=normalise_package(payload,current)
+    for key in ('originalPrice', 'promotionalPrice', 'promotionStart', 'promotionEnd'):
+        if key in current:updates[key] = deepcopy(current[key])
+        else:updates.pop(key, None)
     if current.get('approvalStatus') == 'archived':
         updates.update(lifecycle_patch(current, g.uid, 'edited_archived', 'archived'))
         updates['archiveRequiresReview'] = bool(current.get('archiveRequiresReview') or package_update_changes_reviewed_content(current, payload))
@@ -470,19 +479,23 @@ def create_campaign_route():
     from services.campaign_schedule import campaign_schedule_error
     payload=request.get_json(silent=True) or {}
     if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Campaign data must be an object'}),400
+    if any(k in payload for k in ('eligibilityConditions','usageLimit','quantityLimit')):
+        return jsonify({'ok':False,'error':'This campaign condition is not supported by automatic checkout.'}),400
     disallowed = [k for k in payload if k in PROTECTED_CAMPAIGN_FIELDS]
     if disallowed:
         return jsonify({'ok':False,'error':f'Field "{disallowed[0]}" is protected and cannot be supplied by operator'}),400
     schedule_error = campaign_schedule_error(payload, new=True)
     if schedule_error:return jsonify({'ok': False, 'error': schedule_error}), 400
     if not validateCampaignDatesAndContent(payload):return jsonify({'ok':False,'error':'Invalid campaign dates or content'}),400
-    pid=str(payload.get('packageId','')).strip()
-    if pid:
+    for pid in campaign_package_ids(payload):
         pkg=_own('tourism_packages',pid)
         if not pkg:return jsonify({'ok':False,'error':'Related package not found'}),404
         if not eligible_package(pkg):return jsonify({'ok':False,'error':'Promotional campaign requires an approved package'}),409
     profile=retrieveRecord('users',g.uid) or {}
     campaign_data = {k: payload[k] for k in payload if k in CAMPAIGN_EDITABLE_FIELDS}
+    if 'packageIds' in campaign_data:
+        campaign_data['packageIds'] = campaign_package_ids(campaign_data)
+        campaign_data['packageId'] = campaign_data['packageIds'][0]
     campaign_data['operatorName']=profile.get('companyName') or profile.get('businessName') or profile.get('name') or 'TravelMate Tourism Operator'
     result=storeRecord('promotional_campaigns',createCampaign(campaign_data,g.uid)); return jsonify({'ok':True,'id':result['id'],'campaign':result}),201
 @bp.put('/campaigns/<cid>')
@@ -494,6 +507,8 @@ def update_campaign(cid):
     if current.get('reviewStatus') in {'pending','submitted','under_review'}:return jsonify({'ok':False,'error':'Campaign under administrator review cannot be edited'}),409
     payload=request.get_json(silent=True) or {}
     if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Campaign data must be an object'}),400
+    if any(k in payload for k in ('eligibilityConditions','usageLimit','quantityLimit')):
+        return jsonify({'ok':False,'error':'This campaign condition is not supported by automatic checkout.'}),400
     if not payload:
         return jsonify({'ok':False,'error':'No update data provided'}),400
     disallowed = [k for k in payload if k in PROTECTED_CAMPAIGN_FIELDS]
@@ -506,12 +521,18 @@ def update_campaign(cid):
     schedule_error = campaign_schedule_error(merged, previous=current)
     if schedule_error:return jsonify({'ok': False, 'error': schedule_error}), 400
     if not validateCampaignDatesAndContent(merged):return jsonify({'ok':False,'error':'Invalid campaign dates or content'}),400
-    if 'packageId' in updates:
-        pid=str(updates.get('packageId','')).strip()
-        if pid:
-            pkg=_own('tourism_packages',pid)
-            if not pkg:return jsonify({'ok':False,'error':'Related package not found'}),404
-            if not eligible_package(pkg):return jsonify({'ok':False,'error':'Promotional campaign requires an approved package'}),409
+    if 'packageId' in updates and 'packageIds' not in updates:
+        merged.pop('packageIds', None)
+        updates['packageIds'] = campaign_package_ids(merged)
+    for pid in campaign_package_ids(merged):
+        pkg=_own('tourism_packages',pid)
+        if not pkg:return jsonify({'ok':False,'error':'Related package not found'}),404
+        if not eligible_package(pkg):return jsonify({'ok':False,'error':'Promotional campaign requires an approved package'}),409
+    if 'packageIds' in updates:
+        updates['packageIds'] = campaign_package_ids(merged)
+        if not updates['packageIds']:
+            return jsonify({'ok':False,'error':'Select at least one approved package.'}),400
+        updates['packageId'] = updates['packageIds'][0]
     updates['updatedAt']=utc_now_iso()
     if current.get('reviewStatus') == 'approved':
         updates.update({
@@ -555,11 +576,12 @@ def submit_campaign(cid):
     if schedule_error:return jsonify({'ok': False, 'error': schedule_error}), 400
     if not validateCampaignDatesAndContent(current):
         return jsonify({'ok': False, 'error': 'Invalid campaign dates or content'}), 400
-    package = _own('tourism_packages', str(current.get('packageId') or '').strip())
-    if not package:
-        return jsonify({'ok': False, 'error': 'Related package not found'}), 404
-    if not eligible_package(package):
-        return jsonify({'ok': False, 'error': 'Promotional campaign requires an approved package'}), 409
+    if not campaign_package_ids(current):
+        return jsonify({'ok':False,'error':'Related package not found'}),404
+    for pid in campaign_package_ids(current):
+        package = _own('tourism_packages', pid)
+        if not package:return jsonify({'ok':False,'error':'Related package not found'}),404
+        if not eligible_package(package):return jsonify({'ok':False,'error':'Promotional campaign requires an approved package'}),409
 
     return jsonify({
         'ok': True,

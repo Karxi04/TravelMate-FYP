@@ -47,7 +47,10 @@ def public_pricing_breakdown(value):
     if any(amount is None for amount in result.values()) or not isinstance(value.get('currency'), str):
         return None
     result['currency'] = value['currency']
+    for key in ('pricingVersion', 'priceBasis', 'regularAdultUnitPrice', 'childUnitPrice', 'amountMinor', 'taxIncluded', 'taxNotes', 'stackingPolicy'):
+        if key in value: result[key] = value[key]
+    if isinstance(value.get('participants'), dict): result['participants'] = {k:value['participants'][k] for k in ('adults','children','total') if k in value['participants']}
     promotion = value.get('promotion') or {}
-    result['promotion'] = {key: promotion[key] for key in ('id', 'campaignTitle', 'discountType', 'discountValue', 'source', 'promoCode')
+    result['promotion'] = {key: promotion[key] for key in ('id', 'campaignTitle', 'discountType', 'discountValue', 'source', 'promoCode', 'startDate', 'endDate', 'termsConditions')
                            if isinstance(promotion, dict) and isinstance(promotion.get(key), (str, int, float))}
     return result

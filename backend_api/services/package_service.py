@@ -213,18 +213,12 @@ def package_validation_error(data):
         return 'Price basis must be per person or per group.'
 
     for field, label in (
-        ('childPrice', 'Child price'), ('originalPrice', 'Original price'),
-        ('promotionalPrice', 'Promotional price'),
+        ('childPrice', 'Child price'),
     ):
         if raw.get(field) not in (None, ''):
             value = _number(raw.get(field))
             if value is None or value < 0:
                 return f'{label} must be zero or greater.'
-    original = _number(raw.get('originalPrice'))
-    promotional = _number(raw.get('promotionalPrice'))
-    if original is not None and promotional is not None and promotional > original:
-        return 'Promotional price cannot exceed the original price.'
-
     minimum = _integer(raw.get('minimumTravellers')) if raw.get('minimumTravellers') not in (None, '') else None
     maximum_raw = raw.get('maximumTravellers') if 'maximumTravellers' in raw else raw.get('maxTravellers')
     maximum = _integer(maximum_raw) if maximum_raw not in (None, '') else None
@@ -243,11 +237,6 @@ def package_validation_error(data):
     if departure_dates is not None:
         if not isinstance(departure_dates, list) or any(not _valid_date(value) for value in departure_dates):
             return 'Departure dates must be valid dates.'
-    for field in ('promotionStart', 'promotionEnd'):
-        if raw.get(field) and not _valid_date(raw[field]):
-            return 'Promotion dates must be valid dates.'
-    if raw.get('promotionStart') and raw.get('promotionEnd') and raw['promotionStart'] > raw['promotionEnd']:
-        return 'Promotion start date cannot be after its end date.'
     for field in ('validFrom', 'validUntil'):
         if raw.get(field) and not _valid_date(raw[field]):
             return 'Package validity dates must be valid dates.'
@@ -272,7 +261,7 @@ def package_submission_error(data):
             return 'Specify Room Configuration for the included room or entire property.'
     if any(key in package for key in ('accommodationIncluded', 'transportIncluded', 'guideActivitiesIncluded')):
         from services.package_checkout_contract import derive_required_services
-        requirements = derive_required_services(package)
+        requirements = derive_required_services(package,review_optional_extras=True)
         for key, meta in requirements.items():
             if key + 'Included' in package and meta['uncertain']:
                 evidence = '; '.join(meta.get('conflictingClauses') or [])

@@ -2,9 +2,14 @@ import hashlib
 import json
 import logging
 import os
+import traceback
+from pathlib import Path
 from uuid import uuid4
 from math import isfinite
 from flask import Blueprint, jsonify, g, request
+from google.cloud.firestore_v1 import GeoPoint
+from google.api_core.exceptions import GoogleAPICallError
+from werkzeug.exceptions import HTTPException
 from auth_utils import auth_required
 from utils import utc_now_iso
 from services.serpapi_service import retrieveDestinationResults
@@ -12,6 +17,7 @@ from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
 from services.review_service import published_review
 from services.recommendation_taxonomy import candidate_concepts
+from services.recommendation_discovery import DISCOVERY_MODE, discovery_annotations, discovery_queries
 from services.preference_learning import (
     apply_explicit_feedback,
     canonical_concepts,
@@ -40,6 +46,46 @@ bp = Blueprint('fr04_recommendations', __name__, url_prefix='/api/fr4')
 logger = logging.getLogger(__name__)
 
 
+def _correlation_id():
+    return g.setdefault('recommendation_request_id',uuid4().hex[:16])
+
+
+@bp.before_request
+def correlate_request():
+    _correlation_id()
+
+
+@bp.after_request
+def correlate_response(response):
+    response.headers['X-Request-ID'] = _correlation_id()
+    response.headers['X-TravelMate-Recommendations'] = DISCOVERY_MODE
+    return response
+
+
+@bp.errorhandler(Exception)
+def recommendation_failure(error):
+    if isinstance(error, HTTPException):
+        return jsonify(ok=False,error='The recommendation request could not be completed.',
+                       requestId=_correlation_id()),error.code
+    frames = [f'{Path(frame.filename).name}:{frame.lineno}:{frame.name}'
+              for frame in traceback.extract_tb(error.__traceback__)]
+    # Never log exception values, request payloads, tokens, UIDs or stored records.
+    logger.error('recommendation_failure request_id=%s type=%s frames=%s',
+                 _correlation_id(),type(error).__name__,' > '.join(frames))
+    return jsonify(ok=False,error='Recommendations are temporarily unavailable. Please try again.',
+                   code='recommendations_unavailable',requestId=_correlation_id()), (503 if isinstance(error,GoogleAPICallError) else 500)
+
+
+def _firestore_json_values(value):
+    if isinstance(value,GeoPoint):
+        return {'latitude':value.latitude,'longitude':value.longitude}
+    if isinstance(value,dict):
+        return {key:_firestore_json_values(item) for key,item in value.items()}
+    if isinstance(value,(list,tuple)):
+        return [_firestore_json_values(item) for item in value]
+    return value
+
+
 def _fallback_mode():
     return os.getenv('FALLBACK_MODE', 'false').lower() in {'1', 'true', 'yes'}
 
@@ -54,7 +100,7 @@ def _is_destination_relevant(item, destination_area):
 
 
 def _filter_for_destination(items, destination_area):
-    accepted, _ = filter_candidates(items, destination_area)
+    accepted, _ = filter_candidates(_firestore_json_values(items), destination_area)
     return accepted
 
 
@@ -212,7 +258,7 @@ def _snapshot_item(item, source):
 
 
 def _snapshot_response_view(record):
-    record = dict(record or {})
+    record = _firestore_json_values(dict(record or {}))
     scope = record.get('canonicalDestinationScope')
     if not isinstance(scope, dict):
         scope = normalize_destination_scope(
@@ -224,15 +270,16 @@ def _snapshot_response_view(record):
     )
     if rejected:
         logger.warning(
-            'Response geographic guard removed %s stored candidate(s) from snapshot %s',
+            'Response geographic guard removed %s stored candidate(s)',
             len(rejected),
-            record.get('recommendationGenerationId'),
         )
     return {**record, 'recommendationResults': safe_results}
 
 
 def _page(record, options):
     try:
+        discovery = options.get('discoveryMode')
+        if discovery not in (None,'',DISCOVERY_MODE):raise ValueError
         basis = options.get('scoreBasis') or 'hybrid_v1'
         if basis not in {'hybrid_v1','personal_v2'}:raise ValueError
         if any(isinstance(options.get(key),bool) for key in ('minimumMatchScore','offset','limit')):
@@ -250,6 +297,9 @@ def _page(record, options):
     all_items = view['recommendationResults']
     qualified = []
     for item in all_items:
+        if discovery:
+            if item.get('discoveryEligible') is True:qualified.append(item)
+            continue
         try:
             score = float(item.get('personalSuitabilityScore') if basis=='personal_v2' else item.get('finalScore') if item.get('finalScore') is not None else item.get('score') or 0)
             if isfinite(score) and 0 <= score <= 100 and score >= minimum:
@@ -259,6 +309,7 @@ def _page(record, options):
     end = offset + limit
     return {**view, 'recommendationResults': qualified[offset:end], 'pagination': {
         'minimumMatchScore': minimum, 'scoreBasis':basis, 'offset': offset, 'limit': limit,
+        'discoveryMode': discovery or None, 'thresholdApplied': not bool(discovery),
         'candidateCount': len(all_items), 'qualifiedCount': len(qualified),
         'personalEvidenceCount': sum(isinstance(item.get('personalSuitabilityScore'), (int,float)) and not isinstance(item.get('personalSuitabilityScore'),bool) for item in all_items),
         'nextOffset': end if end < len(qualified) else None,
@@ -274,6 +325,14 @@ def generate():
         return jsonify({'ok': False, 'error': 'Complete travel preferences first'}), 400
 
     learned_profile = retrieveRecord('learned_preference_profiles', g.uid)
+    if (not isinstance(pref.get('interests',[]),list) or
+            (learned_profile and (not isinstance(learned_profile,dict) or
+             not isinstance(learned_profile.get('feedbackByDestination',{}),dict) or
+             any(not isinstance(learned_profile.get(key,{}) or {},dict) for key in ('affinities','evidence')) or
+             any(not isinstance(state,dict) for state in learned_profile.get('feedbackByDestination',{}).values())))):
+        logger.warning('recommendation_profile_review request_id=%s',_correlation_id())
+        return jsonify(ok=False,error='Saved recommendation preferences need review. Update your preferences or reset recommendation learning.',
+                       code='recommendation_profile_review',requestId=_correlation_id()),409
     effective_pref = effective_preference_profile(pref, learned_profile)
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload,dict):
@@ -295,42 +354,21 @@ def generate():
     source = 'cache'
     previous_id = str(payload.get('previousGenerationId') or '')
     previous = retrieveRecord('recommendation_snapshots', previous_id) if previous_id else None
-    if previous_id and (not previous or previous.get('travellerId') != g.uid or
-                        (previous.get('canonicalDestinationScope') or {}).get('scopeKey') != destination_scope['scopeKey']):
+    previous_scope = previous.get('canonicalDestinationScope') if previous else None
+    previous_key = previous_scope.get('scopeKey') if isinstance(previous_scope,dict) else None
+    if previous and not previous_key:
+        previous_key = _requested_area(previous.get('requestedDestination') or previous.get('destinationArea'))
+    if previous_id and (not previous or previous.get('travellerId') != g.uid or previous_key != destination_scope['scopeKey']):
         return jsonify(ok=False, error='Recommendation snapshot not found for this destination.'), 404
-    provider_offset = int((previous or {}).get('providerNextOffset') or 0)
+    try:
+        provider_offset = int((previous or {}).get('providerNextOffset') or 0)
+        if not 0 <= provider_offset <= 60 or provider_offset % 20:provider_offset = 0
+    except (TypeError,ValueError,OverflowError):provider_offset = 0
     expand = payload.get('expandCandidates') is True
     if previous:
         candidates = _filter_for_destination(previous.get('recommendationResults') or [], destination_scope)
         source = previous.get('source', 'cache')
     provider_has_more = bool((previous or {}).get('providerHasMore'))
-
-    # Prefer live destination information when SerpApi is configured.
-    if os.getenv('SERPAPI_KEY', '').strip() and (not previous or (expand and provider_has_more and provider_offset < 60)):
-        try:
-            discovered = _provider_destinations(search_query, destination_scope, provider_offset)
-            candidates += _filter_for_destination(
-                discovered,
-                destination_scope,
-            )
-            source = 'live_provider'
-            provider_offset += 20
-            provider_has_more = len(discovered) >= 20 and provider_offset < 60
-            for item in _filter_for_destination(discovered, destination_scope)[:20]:
-                did = str(item.get('destinationId') or '')
-                if did:
-                    storeRecord('destination_cache', {
-                        **item,
-                        'requestedDestination': destination_area,
-                        'canonicalDestinationScope': destination_scope['scopeKey'],
-                        'canonicalDestinationName': destination_scope['canonicalName'],
-                        'recommendationSource': 'live_provider',
-                        'cachedAt': utc_now_iso(),
-                    }, did, merge=True)
-        except Exception:
-            # Keep an existing snapshot useful when a later provider page fails.
-            if expand:
-                return jsonify(ok=False, error='Additional destinations could not be loaded. Your current results are preserved.'), 502
 
     cached = retrieveRecord(
         'destination_cache',
@@ -347,6 +385,47 @@ def generate():
         refreshed = {_destination_id(item):item for item in _filter_for_destination(cached, destination_scope)}
         candidates = [{**item, **refreshed.get(_destination_id(item), {})} for item in candidates]
         candidates += list(refreshed.values())
+
+    if search_query != 'tourist attractions' or payload.get('discoveryMode') != DISCOVERY_MODE:
+        provider_queries = [search_query]
+    elif previous and isinstance(previous.get('providerQueries'),list) and previous.get('providerQueries') and all(isinstance(query,str) and query for query in previous['providerQueries'][:2]) and previous.get('preferenceFingerprint') == _profile_fingerprint(pref) and previous.get('preferenceProfileVersion') == _preference_version(pref,learned_profile):
+        provider_queries = previous['providerQueries'][:2]
+    else:
+        provider_queries = discovery_queries(effective_pref,candidates)
+    if previous and previous.get('providerQueries') != provider_queries:
+        provider_offset = 0
+        provider_has_more = bool(os.getenv('SERPAPI_KEY','').strip())
+
+    # Prefer live destination information when SerpApi is configured.
+    if os.getenv('SERPAPI_KEY', '').strip() and (not previous or (expand and provider_has_more and provider_offset < 60)):
+        try:
+            batches = [_provider_destinations(query,destination_scope,provider_offset) for query in provider_queries]
+            discovered = [item for batch in batches for item in batch]
+            candidates += _filter_for_destination(
+                discovered,
+                destination_scope,
+            )
+            source = 'live_provider'
+            provider_offset += 20
+            provider_has_more = any(len(batch) >= 20 for batch in batches) and provider_offset < 60
+            for item in _filter_for_destination(discovered, destination_scope)[:40]:
+                did = str(item.get('destinationId') or '')
+                if did:
+                    storeRecord('destination_cache', {
+                        **item,
+                        'requestedDestination': destination_area,
+                        'canonicalDestinationScope': destination_scope['scopeKey'],
+                        'canonicalDestinationName': destination_scope['canonicalName'],
+                        'recommendationSource': 'live_provider',
+                        'cachedAt': utc_now_iso(),
+                    }, did, merge=True)
+        except Exception as error:
+            logger.warning('recommendation_provider_unavailable request_id=%s type=%s',
+                           _correlation_id(),type(error).__name__)
+            # Keep an existing snapshot useful when a later provider page fails.
+            if expand:
+                return jsonify(ok=False, error='Additional destinations could not be loaded. Your current results are preserved.'), 502
+
 
     if not candidates and _fallback_mode():
         fallback_candidates = [{**x,'ratingSource':'unverified_local_catalog'} for x in DESTINATIONS]
@@ -402,7 +481,8 @@ def generate():
             len(rejected_final),
             destination_scope['scopeKey'],
         )
-    ranked = [_snapshot_item(item, source) for item in final_candidates[:150]]
+    ranked = [{**_snapshot_item(item, source),**discovery_annotations(item,effective_pref)}
+              for item in final_candidates[:150]]
 
     generation_id = uuid4().hex
     record = {
@@ -420,7 +500,9 @@ def generate():
         'scoreBasis':payload.get('scoreBasis') or 'hybrid_v1',
         'providerHasMore': provider_has_more,
         'providerNextOffset': provider_offset,
+        'providerQueries': provider_queries,
         'engine': {
+            'discoveryVersion': DISCOVERY_MODE,
             'scoringVersion':'recovery_v3',
             'contentBasedFiltering': True,
             'collaborativeFiltering': True,
@@ -475,7 +557,10 @@ def get_recommendations():
     stale = bool(record and isinstance(preference, dict) and isinstance(preference.get('interests'), list)
                  and (record.get('preferenceProfileVersion') != _preference_version(preference, learned)
                       or record.get('preferenceFingerprint') != _profile_fingerprint(preference)))
-    if record and request.args.get('scoreBasis') == 'personal_v2' and (record.get('engine') or {}).get('scoringVersion') != 'recovery_v3':
+    engine = record.get('engine') if isinstance(record.get('engine'),dict) else {}
+    if record and request.args.get('scoreBasis') == 'personal_v2' and engine.get('scoringVersion') != 'recovery_v3':
+        stale = True
+    if record and request.args.get('discoveryMode') and engine.get('discoveryVersion') != DISCOVERY_MODE:
         stale = True
     response_record = _page(record, request.args)
     if response_record is None:

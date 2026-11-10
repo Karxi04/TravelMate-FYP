@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -26,6 +27,8 @@ abstract class PushPlatform {
   Future<String?> token();
   Future<void> deleteToken();
   Future<void> show(String id);
+  Future<void> showUpdate(String id, Map presentation) => show(id);
+  Future<void> openSettings() async {}
   Future<void> clear();
 }
 
@@ -39,7 +42,8 @@ class FirebasePushPlatform implements PushPlatform {
     final settings = request
         ? await FirebaseMessaging.instance.requestPermission()
         : await FirebaseMessaging.instance.getNotificationSettings();
-    return settings.authorizationStatus == AuthorizationStatus.authorized;
+    return settings.authorizationStatus == AuthorizationStatus.authorized &&
+        (await channel.invokeMethod<bool>('canDisplay') ?? false);
   }
 
   @override
@@ -58,6 +62,15 @@ class FirebasePushPlatform implements PushPlatform {
   Future<void> show(String id) =>
       channel.invokeMethod('show', {'notificationId': id});
   @override
+  Future<void> showUpdate(String id, Map presentation) =>
+      channel.invokeMethod('show', {
+        'notificationId': id,
+        'title': presentation['title'],
+        'body': presentation['body']
+      });
+  @override
+  Future<void> openSettings() => channel.invokeMethod('settings');
+  @override
   Future<void> clear() => channel.invokeMethod('clear');
 }
 
@@ -72,6 +85,13 @@ class AndroidPushService with WidgetsBindingObserver {
   void Function(String)? onTap;
   final subscriptions = <StreamSubscription>[];
   bool started = false;
+  bool registered = false;
+  int _authRevision = 0;
+  final notificationsChanged = ValueNotifier<int>(0);
+  final _foregroundPending = <String>{};
+  final _foregroundShown = LinkedHashSet<String>();
+  void inboxChanged() => notificationsChanged.value++;
+  Future<void> openSettings() => platform.openSettings();
   String? lastTap;
   DateTime? lastTapAt;
   AndroidPushService(
@@ -109,39 +129,63 @@ class AndroidPushService with WidgetsBindingObserver {
 
   Future<Map<String, dynamic>> registration(String token) async =>
       {'token': token, 'bindingSecret': await binding(), 'appId': pushAppId};
-  Future<void> synchronize(String? owner, {bool requestPermission = false}) =>
-      serialize(() async {
-        if (!supported) return;
-        final previous = await storage.getString('android_push_uid');
-        if (previous != null && previous != owner) {
-          // A switched credential cannot revoke another UID: drop the transport token.
-          await platform.deleteToken();
-          await platform.clear();
-          await storage.remove('android_push_token');
-          await storage.remove('android_push_uid');
-        }
-        uid = owner;
-        if (owner == null) return;
-        if (!await platform.permission(request: requestPermission)) {
-          await _unregister();
-          return;
-        }
-        final token = await platform.token();
-        if (token == null) return;
-        final old = await storage.getString('android_push_token');
-        if (old != null && old != token)
-          await api.post('/api/traveller/notifications/devices/unregister',
-              await registration(old));
-        await api.post(
-            '/api/traveller/notifications/devices', await registration(token));
-        await storage.setString('android_push_token', token);
-        await storage.setString('android_push_uid', owner);
-      });
+  Future<void> _saveDevice(String path, String token) async {
+    final result = await api.post(path, await registration(token));
+    if (result['ok'] != true)
+      throw const ApiException(
+          'Android push registration could not be verified. Please retry.',
+          503, {});
+  }
+
+  Future<void> synchronize(String? owner, {bool requestPermission = false}) {
+    final accountChanged = uid != null && uid != owner;
+    // Invalidate in-flight display immediately, even while token work is queued.
+    if (uid != owner) {
+      uid = owner;
+      _authRevision++;
+      registered = false;
+      _foregroundShown.clear();
+      lastTap = null;
+    }
+    final revision = _authRevision;
+    return serialize(() async {
+      if (!supported || revision != _authRevision || uid != owner) return;
+      final previous = await storage.getString('android_push_uid');
+      if ((previous != null && previous != owner) || accountChanged) {
+        // A switched credential cannot revoke another UID: invalidate the token.
+        await platform.deleteToken();
+        await platform.clear();
+        await storage.remove('android_push_token');
+        await storage.remove('android_push_uid');
+      }
+      if (owner == null || revision != _authRevision) return;
+      if (!await platform.permission(request: requestPermission)) {
+        await _unregister();
+        return;
+      }
+      if (revision != _authRevision) return;
+      final token = await platform.token();
+      if (token == null || revision != _authRevision) return;
+      final old = await storage.getString('android_push_token');
+      if (old != null && old != token) {
+        await _saveDevice(
+            '/api/traveller/notifications/devices/unregister', old);
+      }
+      if (revision != _authRevision) return;
+      await _saveDevice('/api/traveller/notifications/devices', token);
+      // Keep the completed association so a queued account change can revoke its transport.
+      await storage.setString('android_push_token', token);
+      await storage.setString('android_push_uid', owner);
+      if (revision == _authRevision) registered = true;
+    });
+  }
+
   Future<void> _unregister() async {
+    registered = false;
     final token = await storage.getString('android_push_token');
     if (token != null) {
-      await api.post('/api/traveller/notifications/devices/unregister',
-          await registration(token));
+      await _saveDevice(
+          '/api/traveller/notifications/devices/unregister', token);
       await platform.deleteToken();
     }
     await platform.clear();
@@ -149,18 +193,43 @@ class AndroidPushService with WidgetsBindingObserver {
     await storage.remove('android_push_uid');
   }
 
-  Future<void> beforeLogout() => serialize(() async {
-        if (supported) {
-          await _unregister();
-          uid = null;
-        }
-      });
+  Future<void> beforeLogout() {
+    if (!supported) return Future.value();
+    _authRevision++;
+    return serialize(() async {
+      await _unregister();
+      uid = null;
+      _authRevision++;
+      _foregroundShown.clear();
+      lastTap = null;
+    });
+  }
+
   Future<void> foreground(String? id) async {
     if (uid == null || !validId(id)) return;
     final owner = uid;
-    final result = await api.get('/api/traveller/notifications/$id');
-    if (uid == owner && result['item']?['read'] != true)
-      await platform.show(id!);
+    final revision = _authRevision;
+    final key = '$owner:$id';
+    if (_foregroundShown.contains(key) || !_foregroundPending.add(key)) return;
+    try {
+      final result = await api.get('/api/traveller/notifications/$id');
+      final item = result['item'];
+      if (uid != owner ||
+          revision != _authRevision ||
+          result['ok'] == false ||
+          item is! Map ||
+          item['id'] != id ||
+          item['travellerId'] != owner) return;
+      inboxChanged();
+      if (item['read'] == true) return;
+      await platform.showUpdate(
+          id!, result['presentation'] is Map ? result['presentation'] : {});
+      _foregroundShown.add(key);
+      if (_foregroundShown.length > 200)
+        _foregroundShown.remove(_foregroundShown.first);
+    } finally {
+      _foregroundPending.remove(key);
+    }
   }
 
   static bool validId(String? id) =>
@@ -196,9 +265,14 @@ class AndroidPushService with WidgetsBindingObserver {
     FirebasePushPlatform.channel.setMethodCallHandler((call) async {
       if (call.method == 'tap') tap(call.arguments as String?);
     });
-    tap((await FirebaseMessaging.instance.getInitialMessage())
-        ?.data['notificationId']);
-    tap(await FirebasePushPlatform.channel.invokeMethod<String>('initial'));
+    // One cold-start source failing must not suppress the other tap bridge.
+    try {
+      tap((await FirebaseMessaging.instance.getInitialMessage())
+          ?.data['notificationId']);
+    } catch (_) {}
+    try {
+      tap(await FirebasePushPlatform.channel.invokeMethod<String>('initial'));
+    } catch (_) {}
   }
 
   @override

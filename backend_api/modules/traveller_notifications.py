@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, g, jsonify, request
 from auth_utils import auth_required
 from sequence_contract.firebase_firestore import retrieveRecord, claimRecord, storeRecord, updateRecord
-from services.traveller_notifications import derive_events, event_id, trip_start, active_trip, coordinates, MYT, canonical_payment_order, payment_source_label
+from services.traveller_notifications import derive_events, event_id, trip_start, active_trip, coordinates, MYT, canonical_payment_order, payment_source_label, push_presentation
 from services.packing_checklist_service import checklist_id
 from services.open_meteo_service import retrieveSevenDayForecast
 from services.notification_delivery import enabled, register_device, queue_notification
@@ -84,7 +84,7 @@ def notification_detail(notification_id):
     item = retrieveRecord('traveller_notifications',notification_id)
     if not item or item.get('travellerId') != g.uid:
         return jsonify(ok=False,error='Notification not found.'),404
-    return jsonify(ok=True,item=item)
+    return jsonify(ok=True,item=item,presentation=push_presentation(item))
 
 
 @bp.post('/devices')

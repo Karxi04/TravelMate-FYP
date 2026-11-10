@@ -1,3 +1,4 @@
+import 'widgets/ink_card.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -18,8 +19,9 @@ Future<void> main() async {
 
 class TravelMateApp extends StatefulWidget {
   final Future<void> Function()? initialize;
+  final FirebaseAuth? auth;
 
-  const TravelMateApp({super.key, this.initialize});
+  const TravelMateApp({super.key, this.initialize, this.auth});
 
   @override
   State<TravelMateApp> createState() => _TravelMateAppState();
@@ -27,11 +29,15 @@ class TravelMateApp extends StatefulWidget {
 
 class _TravelMateAppState extends State<TravelMateApp> {
   late Future<void> initialization;
+  FirebaseAuth get auth => widget.auth ?? FirebaseAuth.instance;
   final navigatorKey = GlobalKey<NavigatorState>();
   final checkoutReturnChannel = CheckoutReturnChannel();
   final handledReturnOrders = <String>{};
   CheckoutReturnLink? pendingCheckoutReturn;
   String? pendingNotification;
+  final openingNotifications = <String>{};
+  bool authOwnerKnown=false;
+  String? navigationOwner;
 
   @override
   void initState() {
@@ -68,19 +74,25 @@ class _TravelMateAppState extends State<TravelMateApp> {
   Future<void> _openPushIfReady() async {
     final id=pendingNotification;
     if(id==null)return;
-    final user=FirebaseAuth.instance.currentUser;
+    final user=auth.currentUser;
     final navigator=navigatorKey.currentState;
     if(user==null || navigator==null)return;
     pendingNotification=null;
+    final openingKey='${user.uid}:$id';
+    if(!openingNotifications.add(openingKey))return;
     try {
-      final api=ApiService();
-      final result=await api.get('$notificationPath/$id');
-      if(!mounted || FirebaseAuth.instance.currentUser?.uid!=user.uid)return;
-      final screen=notificationDestination(result['item']['target'] as Map,api);
-      if(screen==null)return;
-      await api.patch('$notificationPath/$id',{'read':true});
-      if(mounted && FirebaseAuth.instance.currentUser?.uid==user.uid)navigator.push(MaterialPageRoute(builder:(_) => screen));
-    } catch (_) { /* Expired/foreign notifications never open private records. */ }
+      final screen=await notificationForTap(id,ApiService(),owner:user.uid,
+        currentOwner:() => auth.currentUser?.uid);
+      if(mounted && screen!=null && auth.currentUser?.uid==user.uid) {
+        AndroidPushService.instance.inboxChanged();
+        navigator.push(MaterialPageRoute(builder:(_) => screen));
+      }
+    } catch (_) {
+      if(mounted && auth.currentUser?.uid==user.uid) {
+        final context=navigatorKey.currentContext;
+        if(context!=null) showError(context,'This update is unavailable. Open Notifications to review the current status.');
+      }
+    } finally { openingNotifications.remove(openingKey); }
   }
 
   void _retryInitialization() => setState(() => initialization = _initialize());
@@ -100,7 +112,7 @@ class _TravelMateAppState extends State<TravelMateApp> {
     final link = pendingCheckoutReturn;
     if (link == null || handledReturnOrders.contains(link.orderId)) return;
     try {
-      if (FirebaseAuth.instance.currentUser == null) return;
+      if (auth.currentUser == null) return;
     } catch (_) {
       return;
     }
@@ -123,6 +135,7 @@ class _TravelMateAppState extends State<TravelMateApp> {
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'TravelMate',
+      builder: (context, child) => pushTestBuild ? Banner(message:'Push Test Sandbox',location:BannerLocation.topEnd,child:child ?? const SizedBox.shrink()) : child ?? const SizedBox.shrink(),
       theme: buildInkWashTheme(),
       home: FutureBuilder<void>(
         future: initialization,
@@ -144,18 +157,28 @@ class _TravelMateAppState extends State<TravelMateApp> {
             );
           }
           return StreamBuilder<User?>(
-            stream: FirebaseAuth.instance.authStateChanges(),
+            stream: auth.authStateChanges(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Scaffold(
                   body: Center(child: CircularProgressIndicator()),
                 );
               }
+              final nextOwner=snapshot.data?.uid;
+              if(authOwnerKnown && navigationOwner!=nextOwner) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if(mounted && auth.currentUser?.uid==nextOwner) {
+                    navigatorKey.currentState?.popUntil((route)=>route.isFirst);
+                  }
+                });
+              }
+              authOwnerKnown=true;
+              navigationOwner=nextOwner;
               if (snapshot.data == null) return const LoginScreen();
               WidgetsBinding.instance
                   .addPostFrameCallback((_) => _openCheckoutReturnIfReady());
               WidgetsBinding.instance.addPostFrameCallback((_) => _openPushIfReady());
-              return const TravellerEntryGate();
+              return TravellerEntryGate(key: ValueKey(snapshot.data!.uid));
             },
           );
         },
