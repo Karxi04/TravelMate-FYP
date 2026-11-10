@@ -24,6 +24,7 @@ Future<void> travelMateBackgroundMessage(RemoteMessage message) async {}
 abstract class PushPlatform {
   Future<String?> installationBinding() async => null;
   Future<bool> permission({bool request = false});
+  Future<bool> authorizationGranted() => permission();
   Future<String?> token();
   Future<void> deleteToken();
   Future<void> show(String id);
@@ -34,28 +35,38 @@ abstract class PushPlatform {
 
 class FirebasePushPlatform implements PushPlatform {
   static const channel = MethodChannel('travelmate/notifications');
+  final FirebaseMessaging? messaging;
+  FirebasePushPlatform({this.messaging});
+  FirebaseMessaging get client => messaging ?? FirebaseMessaging.instance;
   @override
   Future<String?> installationBinding() =>
       channel.invokeMethod<String>('binding');
   @override
+  Future<bool> authorizationGranted() async =>
+      (await client.getNotificationSettings()).authorizationStatus ==
+      AuthorizationStatus.authorized;
+
+  @override
   Future<bool> permission({bool request = false}) async {
-    final settings = request
-        ? await FirebaseMessaging.instance.requestPermission()
-        : await FirebaseMessaging.instance.getNotificationSettings();
+    var settings = await client.getNotificationSettings();
+    if (request &&
+        settings.authorizationStatus != AuthorizationStatus.authorized) {
+      settings = await client.requestPermission();
+    }
     return settings.authorizationStatus == AuthorizationStatus.authorized &&
         (await channel.invokeMethod<bool>('canDisplay') ?? false);
   }
 
   @override
   Future<String?> token() async {
-    await FirebaseMessaging.instance.setAutoInitEnabled(true);
-    return FirebaseMessaging.instance.getToken();
+    await client.setAutoInitEnabled(true);
+    return client.getToken();
   }
 
   @override
   Future<void> deleteToken() async {
-    await FirebaseMessaging.instance.setAutoInitEnabled(false);
-    await FirebaseMessaging.instance.deleteToken();
+    await client.setAutoInitEnabled(false);
+    await client.deleteToken();
   }
 
   @override
@@ -86,6 +97,8 @@ class AndroidPushService with WidgetsBindingObserver {
   final subscriptions = <StreamSubscription>[];
   bool started = false;
   bool registered = false;
+  String? registrationProblem;
+  final registrationChanges = ValueNotifier<int>(0);
   int _authRevision = 0;
   final notificationsChanged = ValueNotifier<int>(0);
   final _foregroundPending = <String>{};
@@ -107,6 +120,34 @@ class AndroidPushService with WidgetsBindingObserver {
       !api.isStandalone &&
       !kIsWeb &&
       defaultTargetPlatform == TargetPlatform.android;
+  String? get unavailableReason {
+    if (supported) return null;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return 'System alerts are available in the supported Android app. Your inbox still works here.';
+    }
+    if (!pushBuildEnabled)
+      return 'Android system alerts are disabled in this build. Enabling Android permission alone cannot enable delivery. Your in-app inbox still works.';
+    if (useFirebaseEmulator)
+      return 'This emulator-connected build cannot receive real FCM alerts. Your inbox still works.';
+    if (api.isStandalone)
+      return 'System alerts require a connection to the authenticated TravelMate backend. Your inbox still works.';
+    return 'Android system alerts are unavailable in this configuration.';
+  }
+
+  Future<bool> claimPermissionExplanation() async {
+    if (!supported || uid == null) return false;
+    final owner = uid;
+    var claimed = false;
+    await serialize(() async {
+      if (uid != owner || await platform.authorizationGranted()) return;
+      if (await storage.getString('android_push_permission_explained') == 'yes')
+        return;
+      await storage.setString('android_push_permission_explained', 'yes');
+      claimed = uid == owner;
+    });
+    return claimed;
+  }
+
   Future<void> serialize(Future<void> Function() action) {
     final next = work.then((_) => action());
     work = next.catchError((Object _) {});
@@ -149,34 +190,48 @@ class AndroidPushService with WidgetsBindingObserver {
     }
     final revision = _authRevision;
     return serialize(() async {
-      if (!supported || revision != _authRevision || uid != owner) return;
-      final previous = await storage.getString('android_push_uid');
-      if ((previous != null && previous != owner) || accountChanged) {
-        // A switched credential cannot revoke another UID: invalidate the token.
-        await platform.deleteToken();
-        await platform.clear();
-        await storage.remove('android_push_token');
-        await storage.remove('android_push_uid');
+      try {
+        registered = false;
+        registrationProblem = null;
+        if (!supported || revision != _authRevision || uid != owner) return;
+        final previous = await storage.getString('android_push_uid');
+        if ((previous != null && previous != owner) || accountChanged) {
+          // A switched credential cannot revoke another UID: invalidate the token.
+          await platform.deleteToken();
+          await platform.clear();
+          await storage.remove('android_push_token');
+          await storage.remove('android_push_uid');
+        }
+        if (owner == null || revision != _authRevision) return;
+        if (!await platform.permission(request: requestPermission)) {
+          await _unregister();
+          return;
+        }
+        if (revision != _authRevision) return;
+        final token = await platform.token();
+        if (token == null || revision != _authRevision) return;
+        final old = await storage.getString('android_push_token');
+        if (old != null && old != token) {
+          await _saveDevice(
+              '/api/traveller/notifications/devices/unregister', old);
+        }
+        if (revision != _authRevision) return;
+        await _saveDevice('/api/traveller/notifications/devices', token);
+        // Keep the completed association so a queued account change can revoke its transport.
+        await storage.setString('android_push_token', token);
+        await storage.setString('android_push_uid', owner);
+        if (revision == _authRevision) registered = true;
+      } catch (error) {
+        registered = false;
+        registrationProblem = error is ApiException &&
+                error.data['error'] ==
+                    'Android push is not configured on this backend.'
+            ? 'This backend has not enabled push dispatch. Android permission alone cannot enable delivery.'
+            : 'Device registration could not be confirmed. Check your connection and retry.';
+        rethrow;
+      } finally {
+        registrationChanges.value++;
       }
-      if (owner == null || revision != _authRevision) return;
-      if (!await platform.permission(request: requestPermission)) {
-        await _unregister();
-        return;
-      }
-      if (revision != _authRevision) return;
-      final token = await platform.token();
-      if (token == null || revision != _authRevision) return;
-      final old = await storage.getString('android_push_token');
-      if (old != null && old != token) {
-        await _saveDevice(
-            '/api/traveller/notifications/devices/unregister', old);
-      }
-      if (revision != _authRevision) return;
-      await _saveDevice('/api/traveller/notifications/devices', token);
-      // Keep the completed association so a queued account change can revoke its transport.
-      await storage.setString('android_push_token', token);
-      await storage.setString('android_push_uid', owner);
-      if (revision == _authRevision) registered = true;
     });
   }
 

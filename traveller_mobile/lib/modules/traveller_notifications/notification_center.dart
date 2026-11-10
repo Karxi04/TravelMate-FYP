@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'android_notification_settings.dart';
 import '../../services/android_push_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
@@ -217,20 +217,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
                 children: [
                   const Text(
                 'Inbox checked when you open or refresh TravelMate. Android push also requires permission and a configured backend.'),
-                  if (AndroidPushService.instance.supported)
-                    TextButton.icon(icon:const Icon(Icons.notifications_active_outlined),label:const Text('Android notification settings'),onPressed:() async {
-                      final enable=await showDialog<String>(context:context,builder:(dialogContext) => AlertDialog(
-                        title:const Text('Android notifications'),content:const Text('Allow TravelMate to notify you about recorded payments, package updates and upcoming trips. You can keep using the inbox and planning if you decline. If Android already denied permission, enable it in system app settings.'),
-                        actions:[TextButton(onPressed:() => Navigator.pop(dialogContext),child:const Text('Not now')),TextButton(onPressed:() => Navigator.pop(dialogContext,'allow'),child:const Text('Continue')),TextButton(onPressed:() => Navigator.pop(dialogContext,'settings'),child:const Text('Open Android settings'))]));
-                      if(enable==null)return;
-                      try {
-                        final push=AndroidPushService.instance;
-                        if(enable=='settings') { await push.openSettings(); return; }
-                        await push.synchronize(FirebaseAuth.instance.currentUser?.uid,requestPermission:true);
-                        if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(push.registered ? 'Android notifications enabled.' : 'Android push is not registered. Review notification permission and channel settings, then retry with a connection.')));
-                      }
-                      catch(e) { if(context.mounted)showError(context,'Android push could not be enabled. Your inbox is still available.'); }
-                    }),
+                  const AndroidNotificationSettings(),
+                  const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                          'Press and hold a notification to view its support reference.')),
                   if (notice.isNotEmpty)
                     Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -273,6 +264,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
                           icon: Icon(item['read'] == true
                               ? Icons.mark_email_read_outlined
                               : Icons.mark_email_unread_outlined)),
+                      onLongPress: () => showDialog<void>(
+                          context: context,
+                          builder: (dialog) => AlertDialog(
+                                  title: const Text('Notification reference'),
+                                  content: SelectableText(
+                                      '${item['id'] ?? 'Unavailable'}'),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () => Navigator.pop(dialog),
+                                        child: const Text('Close'))
+                                  ])),
                       onTap: () async {
                         final screen = notificationDestination(
                             item['target'] as Map? ?? {}, widget.api);
