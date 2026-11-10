@@ -1,5 +1,46 @@
 import pytest
 from unittest.mock import patch
+from pathlib import Path
+import re
+
+from services.review_destination import _ALIASES, review_destination_id
+from test_local_reviews import headers, memory
+
+
+def test_flutter_uses_same_penang_review_identity_groups():
+    contract = Path(__file__).resolve().parents[2] / 'traveller_mobile/lib/services/review_contract.dart'
+    body = contract.read_text(encoding='utf-8').split('static const _aliases', 1)[1].split('};', 1)[0]
+    groups = {identity: tuple(re.findall(r"'([^']+)'", aliases))
+              for identity, aliases in re.findall(r"'([^']+)':\s*\[([^\]]+)\]", body)}
+    assert groups == _ALIASES
+    for distinct in ('penang_clan_jetties', 'clan_jetties', 'demo_penang_street_art',
+                     'gurney_plaza', 'penang_armenian_street'):
+        assert review_destination_id(distinct) == distinct
+
+
+def test_penang_alias_review_reuses_legacy_source_and_aggregates_approved_owners(client, memory):
+    comment = 'Beautiful scenery and a wonderful visit.'
+    base = {'feedbackStatus': 'visible', 'moderationStatus': 'reviewed',
+            'submittedAt': '2026-01-01', 'comment': comment}
+    memory['feedback', 'old'] = {**base, 'id': 'old', 'travellerId': 'owner',
+                                 'destinationId': 'penang_hill', 'rating': 5}
+    memory['feedback', 'old_duplicate'] = {**base, 'id': 'old_duplicate', 'travellerId': 'owner',
+                                           'submittedAt': '2025-01-01',
+                                           'destinationId': 'local_penang_hill', 'rating': 2}
+    memory['feedback', 'other'] = {**base, 'id': 'other', 'travellerId': 'other',
+                                   'destinationId': 'local_penang_hill', 'rating': 1}
+    response = client.post('/api/fr10/feedback', headers=headers(), json={
+        'destinationId': 'local_penang_hill', 'rating': 5, 'comment': comment,
+    })
+    assert response.status_code == 200 and response.json['id'] == 'old'
+    assert len(memory) == 3 and memory['feedback', 'old']['destinationId'] == 'penang_hill'
+    batch = client.get('/api/fr3/local-ratings', headers=headers()).json['items']
+    for identity in ('local_penang_hill', 'penang_hill'):
+        details = client.get(f'/api/fr3/destinations/{identity}/ratings-reviews',
+                             headers=headers()).json['result']
+        assert batch[identity] == {'rating': 3.0, 'reviews': 2}
+        assert (details['rating'], details['reviews']) == (3.0, 2)
+        assert {row['id'] for row in details['user_reviews']} == {'old', 'other'}
 
 
 def test_local_rating_batch_uses_only_approved_owner_contributions(client, mock_traveller_auth):

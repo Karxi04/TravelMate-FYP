@@ -3,6 +3,7 @@ from auth_utils import auth_required
 from utils import utc_now_iso
 from sequence_contract.firebase_firestore import retrieveRecord, claimRecord, updateRecord, deleteRecord
 from services.review_service import valid_review, review_id, pending_screen, ReviewConflict
+from services.review_destination import review_destination_id, review_destination_ids
 from google.api_core.exceptions import Aborted, DeadlineExceeded
 
 bp = Blueprint('fr10_feedback', __name__, url_prefix='/api/fr10')
@@ -20,9 +21,15 @@ def submit_feedback():
     payload = request.get_json(silent=True)
     if not valid_review(payload):
         return jsonify({'ok': False, 'error': 'Choose a place, rate it 1–5 and write 5–2000 characters.'}), 400
-    payload = {**payload, 'destinationId': payload['destinationId'].strip(), 'comment': payload['comment'].strip()}
+    payload = {**payload, 'destinationId': review_destination_id(payload['destinationId']),
+               'comment': payload['comment'].strip()}
     try:
-        existing = retrieveRecord('feedback', filters=[('travellerId', '==', g.uid), ('destinationId', '==', payload['destinationId'])]) or []
+        existing = [
+            item for identity in review_destination_ids(payload['destinationId'])
+            for item in retrieveRecord('feedback', filters=[
+                ('travellerId', '==', g.uid), ('destinationId', '==', identity),
+            ]) or []
+        ]
         existing = sorted(existing, key=lambda x: str(x.get('submittedAt') or ''), reverse=True)
         profile = retrieveRecord('users', g.uid) or {}
         now = utc_now_iso()
@@ -39,7 +46,8 @@ def submit_feedback():
                 raise
             created = False
         if not created:
-            if result.get('travellerId') != g.uid or result.get('destinationId') != payload['destinationId']:
+            if (result.get('travellerId') != g.uid or
+                    review_destination_id(result.get('destinationId') or '') != payload['destinationId']):
                 return jsonify({'ok': False, 'error': 'Review could not be submitted.'}), 409
             if result.get('feedbackStatus') == 'removed':
                 return jsonify({'ok': False, 'error': 'This review was removed. Contact support if you need help.'}), 409

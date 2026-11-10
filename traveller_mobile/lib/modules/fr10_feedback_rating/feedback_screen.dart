@@ -37,7 +37,11 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     Future.microtask(load);
   }
 
-  String placeId(Map<String, dynamic> p) => DestinationUtils.resolveId(p);
+  String placeId(Map<String, dynamic> p) =>
+      ReviewContract.destinationId(DestinationUtils.resolveId(p));
+
+  Iterable<dynamic> reviewsFor(String id) => items.where((item) =>
+      ReviewContract.destinationId('${item['destinationId'] ?? ''}') == id);
 
   String placeName(Map<String, dynamic> p) => DestinationUtils.resolveName(p);
 
@@ -46,7 +50,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       final data = await api.get('/api/fr10/feedback');
       if (mounted) setState(() {
         items = data['items'] ?? [];
-        final existing = items.where((item) => item['destinationId'] == (selectedPlace == null ? null : placeId(selectedPlace!)));
+        final existing = selectedPlace == null ? const [] : reviewsFor(placeId(selectedPlace!));
         if (existing.isNotEmpty && comment.text.isEmpty) {
           comment.text = existing.first['comment'] ?? '';
           rating = int.tryParse('${existing.first['rating']}') ?? 5;
@@ -161,7 +165,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     setState(() => busy = true);
     try {
       final place = selectedPlace!;
-      final existing = items.where((item) => item['destinationId'] == placeId(place));
+      final existing = reviewsFor(placeId(place));
       final response = existing.isNotEmpty
           ? await api.put('/api/fr10/feedback/${existing.first['id']}', {'rating': rating, 'comment': comment.text.trim()})
           : await api.post('/api/fr10/feedback', {
@@ -171,6 +175,13 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
         'rating': rating,
         'comment': comment.text.trim(),
       });
+      final saved = response is Map ? response['feedback'] : null;
+      if (response is! Map || response['ok'] != true || saved is! Map ||
+          !{'pending_review', 'reviewed', 'approved'}.contains(saved['moderationStatus'])) {
+        throw StateError('TravelMate could not confirm that your review was saved.');
+      }
+      if (!mounted) return;
+      final status = ReviewContract.status(Map<String, dynamic>.from(saved));
       comment.clear();
       setState(() {
         rating = 5;
@@ -179,8 +190,11 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       LocalReviewRatings.invalidate();
       await load();
       if (mounted) {
-        final review = response is Map && response['feedback'] is Map ? Map<String, dynamic>.from(response['feedback']) : <String, dynamic>{};
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ReviewContract.status(review) == 'Published' ? 'Your review is published.' : 'Your review is awaiting approval.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(status == 'Published'
+              ? 'Your review is published.'
+              : 'Your review is awaiting approval.'),
+        ));
       }
     } catch (e) {
       if (mounted) showError(context, e);

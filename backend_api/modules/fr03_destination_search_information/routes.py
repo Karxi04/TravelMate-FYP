@@ -26,6 +26,7 @@ from sequence_contract.firebase_firestore import (
 )
 from services.public_content_projection import public_review
 from services.review_service import approved_reviews
+from services.review_destination import review_destination_id, review_destination_ids
 from services.malaysian_locality import (
     normalize_destination_scope,
     normalize_candidate_geography,
@@ -456,13 +457,15 @@ def local_ratings():
     for item in retrieveRecord('feedback'):
         identity = item.get('destinationId')
         if isinstance(identity, str) and identity:
-            grouped.setdefault(identity, []).append(item)
+            grouped.setdefault(review_destination_id(identity), []).append(item)
     result = {}
     for identity, records in grouped.items():
         approved = approved_reviews(records)
         if approved:
-            result[identity] = {'rating': round(sum(float(x['rating']) for x in approved) / len(approved), 1),
-                                'reviews': len(approved)}
+            summary = {'rating': round(sum(float(x['rating']) for x in approved) / len(approved), 1),
+                       'reviews': len(approved)}
+            for alias in review_destination_ids(identity):
+                result[alias] = summary
     return jsonify({'ok': True, 'items': result})
 
 
@@ -638,22 +641,10 @@ def destination_details(place_id):
 
 def retrieveRatingsAndReviews(place_id):
     """Retrieve TravelMate Traveller reviews from the shared Firestore database."""
-    records = retrieveRecord('feedback', filters=[('destinationId', '==', place_id)])
-    if not records:
-        cached = _cached_destination(place_id) or _local_destination(place_id)
-        if cached:
-            other_ids = {
-                str(cached.get('destinationId') or ''),
-                str(cached.get('place_id') or ''),
-                str(cached.get('data_id') or ''),
-                str(cached.get('data_cid') or ''),
-                str(cached.get('title') or ''),
-                str(cached.get('name') or ''),
-            } - {'', str(place_id)}
-            for alt_id in other_ids:
-                records = retrieveRecord('feedback', filters=[('destinationId', '==', alt_id)])
-                if records:
-                    break
+    records = [
+        item for identity in review_destination_ids(place_id)
+        for item in retrieveRecord('feedback', filters=[('destinationId', '==', identity)]) or []
+    ]
     visible = approved_reviews(records)
     visible.sort(key=lambda x: str(x.get('updatedAt') or x.get('submittedAt') or ''), reverse=True)
     ratings = []

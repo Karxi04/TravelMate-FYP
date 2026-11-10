@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../core/utils/destination_utils.dart';
 import '../services/api_service.dart';
+import '../services/review_contract.dart';
 import 'travel_widgets.dart';
 
 /// Presentation only: never substitutes provider scores or changes ranking data.
@@ -22,15 +23,17 @@ class LocalReviewRatings {
   }
 
   static void remember(String id, Map<String, dynamic> summary) {
-    _recent[id] = summary;
-    _recentUntil[id] = DateTime.now().add(const Duration(seconds: 30));
+    final canonical = ReviewContract.destinationId(id);
+    _recent[canonical] = summary;
+    _recentUntil[canonical] = DateTime.now().add(const Duration(seconds: 30));
     revision.value++;
   }
 
   static Future<Map<String, dynamic>> forPlace(String id,
       {ApiService? api}) async {
     final now = DateTime.now();
-    if (_recentUntil[id]?.isAfter(now) == true) return _recent[id]!;
+    final canonical = ReviewContract.destinationId(id);
+    if (_recentUntil[canonical]?.isAfter(now) == true) return _recent[canonical]!;
     String uid;
     try {
       uid = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -50,7 +53,7 @@ class LocalReviewRatings {
           .catchError((_) => <String, dynamic>{});
     }
     final summaries = await _pending!;
-    final summary = summaries[id];
+    final summary = summaries[canonical] ?? summaries[id];
     return summary is Map ? Map<String, dynamic>.from(summary) : {};
   }
 }

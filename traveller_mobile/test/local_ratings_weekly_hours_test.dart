@@ -16,6 +16,10 @@ const place = {
 
 class RatingsApi extends ApiService {
   int batches = 0;
+  final requestedReviewPaths = <String>[];
+  Map<String, dynamic> reviewSummary = {
+    'rating': 4.0, 'reviews': 2, 'user_reviews': []
+  };
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
     if (path == '/api/fr3/local-ratings') {
@@ -26,10 +30,10 @@ class RatingsApi extends ApiService {
         }
       };
     }
-    if (path.endsWith('/ratings-reviews'))
-      return {
-        'result': {'rating': 4.0, 'reviews': 2, 'user_reviews': []}
-      };
+    if (path.endsWith('/ratings-reviews')) {
+      requestedReviewPaths.add(path);
+      return {'result': reviewSummary};
+    }
     if (path.endsWith('/nearby')) return {'items': []};
     return {
       'destination': {
@@ -57,6 +61,29 @@ void main() {
     expect(
         values.every((v) => v['rating'] == 4.0 && v['reviews'] == 2), isTrue);
     expect(await LocalReviewRatings.forPlace('unrated', api: api), isEmpty);
+  });
+  testWidgets('Penang details refreshes the opened review identity and card count',
+      (tester) async {
+    final api = RatingsApi();
+    await tester.pumpWidget(MaterialApp(
+      home: DestinationDetailsScreen(api: api, initialDestination: const {
+        'destinationId': 'penang_hill',
+        'title': 'Penang Hill',
+      }),
+    ));
+    await tester.pumpAndSettle();
+    // The fake details endpoint supplies a different ID. Reviews stay bound to
+    // the destination the traveller actually opened.
+    const path = '/api/fr3/destinations/local_penang_hill/ratings-reviews';
+    expect(api.requestedReviewPaths, [path]);
+    expect((await LocalReviewRatings.forPlace('penang_hill', api: api))['reviews'], 2);
+    api.reviewSummary = {'rating': null, 'reviews': 0, 'user_reviews': []};
+    await tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh();
+    await tester.pumpAndSettle();
+    expect(api.requestedReviewPaths, [path, path]);
+    expect((await LocalReviewRatings.forPlace('local_penang_hill', api: api))['reviews'], 0);
+    await tester.scrollUntilVisible(find.text('No TravelMate reviews yet.'), 260);
+    expect(find.text('No TravelMate reviews yet.'), findsOneWidget);
   });
   for (final entry in ['Suggestions', 'Explore', 'Nearby']) {
     testWidgets(

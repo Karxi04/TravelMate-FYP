@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'shared_firestore_service.dart';
+import 'review_contract.dart';
 import 'standalone_api_service.dart';
 import 'transaction_request.dart';
 
@@ -178,9 +179,9 @@ class ApiService {
     if (path == '/api/fr3/local-ratings') {
       final groups = <String, List<num>>{};
       for (final review in await _shared.visibleReviews()) {
-        final id = '${review['destinationId'] ?? ''}';
-        final rating = num.tryParse('${review['rating']}');
-        if (id.isNotEmpty && rating != null && rating.isFinite && rating >= 1 && rating <= 5) {
+        final id = ReviewContract.destinationId('${review['destinationId'] ?? ''}');
+        final rating = ReviewContract.approvedRating(review);
+        if (id.isNotEmpty && rating != null) {
           groups.putIfAbsent(id, () => []).add(rating);
         }
       }
@@ -212,7 +213,7 @@ class ApiService {
       final id = _destinationIdFromReviewPath(path);
       final reviews = await _shared.destinationReviews(id);
       final ratings = reviews
-          .map((e) => double.tryParse('${e['rating']}'))
+          .map(ReviewContract.approvedRating)
           .whereType<double>()
           .toList();
       final average = ratings.isEmpty
@@ -226,14 +227,14 @@ class ApiService {
               average == null ? null : double.parse(average.toStringAsFixed(1)),
           'reviews': reviews.length,
           'review_summary': reviews.isEmpty
-              ? 'No Traveller reviews have been submitted for this place yet.'
+              ? 'No TravelMate reviews yet.'
               : 'Ratings and reviews submitted by TravelMate Travellers.',
           'user_reviews': reviews
               .map((e) => {
                     ...e,
-                    'username': e['travellerName'] ?? 'Traveller',
-                    'description': e['comment'] ?? '',
-                    'date': e['updatedAt'] ?? e['submittedAt'] ?? '',
+                    'username': e['username'] ?? e['travellerName'] ?? 'Traveller',
+                    'description': e['description'] ?? e['comment'] ?? '',
+                    'date': e['date'] ?? e['updatedAt'] ?? e['submittedAt'] ?? '',
                   })
               .toList(),
         },
