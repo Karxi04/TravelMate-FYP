@@ -408,7 +408,7 @@ void main() {
     expect(find.text('About RM 20'), findsOneWidget);
 
     await _show(tester, find.text('Local Reviews'));
-    expect(find.text('TravelMate 4.8 out of 5 · 1 review'), findsOneWidget);
+    expect(find.text('4.8 · 1 review'), findsOneWidget);
     expect(find.text('Alya'), findsOneWidget);
     expect(find.text('Beautiful views and a peaceful visit.'), findsOneWidget);
 

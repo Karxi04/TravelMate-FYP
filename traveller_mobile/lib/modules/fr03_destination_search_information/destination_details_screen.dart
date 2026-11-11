@@ -696,10 +696,13 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       children: [
         AppSectionHeader(
           title: 'Local Reviews',
-          subtitle: reviewInfo?['rating'] == null
-              ? 'TravelMate community reviews'
-              : '${privatePreview ? 'Private FYP' : 'TravelMate'} ${reviewInfo!['rating']} out of 5 · ${reviewInfo!['reviews']} ${reviewInfo!['reviews'] == 1 ? 'review' : 'reviews'}',
+          subtitle: reviewInfo?['rating'] == null ? 'TravelMate community reviews' : null,
         ),
+        if (reviewInfo?['rating'] != null)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xs),
+            child: LocalReviewRatingBadge(summary: reviewInfo!),
+          ),
         if (privatePreview) const Text('Fictional reviews for the private FYP demonstration.'),
         const SizedBox(height: AppSpacing.sm),
         if (reviewsFailed)

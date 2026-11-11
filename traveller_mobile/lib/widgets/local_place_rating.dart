@@ -90,25 +90,30 @@ class LocalPlaceRating extends StatelessWidget {
               api: api),
           builder: (_, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) return const SizedBox.shrink();
-            final data = snapshot.data ?? {};
-            final demo = data['fypPreview'] == true;
-            final rating = num.tryParse('${data['rating']}');
-            final count = int.tryParse('${data['reviews']}') ?? 0;
-            if (rating == null ||
-                !rating.isFinite ||
-                rating < 1 ||
-                rating > 5 ||
-                count < 1) {
-              return const SizedBox.shrink();
-            }
-            return Semantics(
-                label:
-                    '${demo ? 'Private FYP' : 'TravelMate'} ${rating.toStringAsFixed(1)} out of 5, $count reviews',
-                child: StatusChip(
-                    text:
-                        '${demo ? 'FYP · ' : ''}${rating.toStringAsFixed(1)} · $count ${count == 1 ? 'review' : 'reviews'}',
-                    icon: Icons.star_rounded));
+            return LocalReviewRatingBadge(summary: snapshot.data ?? const {});
           },
         ),
       );
+}
+
+class LocalReviewRatingBadge extends StatelessWidget {
+  final Map<String, dynamic> summary;
+
+  const LocalReviewRatingBadge({super.key, required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final rating = num.tryParse('${summary['rating']}');
+    final count = int.tryParse('${summary['reviews']}') ?? 0;
+    if (rating == null || !rating.isFinite || rating < 1 || rating > 5 || count < 1) {
+      return const SizedBox.shrink();
+    }
+    final score = rating.toStringAsFixed(1);
+    final reviews = '$count ${count == 1 ? 'review' : 'reviews'}';
+    return Semantics(
+      label: '$score out of 5, $reviews',
+      excludeSemantics: true,
+      child: StatusChip(text: '$score · $reviews', icon: Icons.star_rounded),
+    );
+  }
 }

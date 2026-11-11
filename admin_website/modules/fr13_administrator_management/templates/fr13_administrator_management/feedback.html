@@ -10,6 +10,17 @@
   </div>
 </div>
 
+<nav class="actions" aria-label="Review source" style="margin-bottom: 20px;">
+  {% for value, label in [('traveller', 'Traveller Reviews'), ('fyp_penang', 'FYP Penang Reviews')] %}
+    <a class="btn {{ 'primary' if source == value else 'secondary' }}"
+       href="{{ url_for('admin_fr13.feedback', source=value) }}"
+       {% if source == value %}aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>
+{% if source == 'fyp_penang' %}
+<p class="muted">Private fictional reviews for the Penang demonstration.</p>
+{% endif %}
+
 {% if not backend_error %}
 <div class="grid g4" style="margin-bottom: 20px;">
   {% for value, label, count in [
@@ -18,7 +29,7 @@
     ('normal', 'Normal reviews', counts.automatic + counts.manual),
     ('hidden', 'Hidden reviews', counts.hidden)
   ] %}
-  <a class="card metric-card" href="{{ url_for('admin_fr13.feedback', status=value, q=query) }}">
+  <a class="card metric-card" href="{{ url_for('admin_fr13.feedback', source=source, status=value, q=query) }}">
     <div class="metric">{{ count }}</div>
     <div class="metric-label">{{ label }}</div>
     {% if value == 'normal' %}
@@ -30,6 +41,7 @@
 {% endif %}
 
 <form method="get" class="card actions" style="padding: 14px; margin-bottom: 20px;">
+  <input type="hidden" name="source" value="{{ source }}">
   <div class="field">
     <label for="review-search">Search reviews, destinations or users</label>
     <input class="input" id="review-search" name="q" type="search" value="{{ query }}">
@@ -113,7 +125,7 @@
           {% endfor %}
         </details>
       {% elif decision or x.get('reviewedBy') or x.get('removedBy') %}
-        <p><a href="{{ url_for('admin_fr13.feedback', q=query, status=status, history=x.id) }}">Decision history</a></p>
+        <p><a href="{{ url_for('admin_fr13.feedback', source=source, q=query, status=status, history=x.id) }}">Decision history</a></p>
       {% endif %}
       {% if category != 'hidden' %}
         <form method="post" action="{{ url_for('admin_fr13.review_feedback', feedback_id=x.id) }}" style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
@@ -122,6 +134,7 @@
           <input type="hidden" name="expectedRevision" value="{{ x.get('reviewRevision', '') }}">
           <input type="hidden" name="status" value="{{ status }}">
           <input type="hidden" name="q" value="{{ query }}">
+          <input type="hidden" name="source" value="{{ source }}">
           <div class="field">
             <label for="note-{{ loop.index }}">Moderation note</label>
             <textarea class="input" id="note-{{ loop.index }}" name="comment" rows="2" maxlength="2000"></textarea>

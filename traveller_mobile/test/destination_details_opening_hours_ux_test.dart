@@ -78,12 +78,14 @@ void main() {
       'title': 'Penang Hill',
       'address': 'Air Itam, Penang',
     };
+    var rating = 3.0;
+    var count = 3;
     final api = _MockDetailsApi((path) {
       if (path.endsWith('/ratings-reviews')) {
         return {
           'result': {
-            'rating': 3.0,
-            'reviews': 3,
+            'rating': rating,
+            'reviews': count,
             'fypPreview': true,
             'user_reviews': [
               for (final stars in [1, 3, 5])
@@ -101,13 +103,22 @@ void main() {
     });
     await _pumpDestination(tester, initial: place, api: api);
     await _scrollIntoView(tester, find.text('Local Reviews'));
-    expect(find.text('Private FYP 3.0 out of 5 · 3 reviews'), findsOneWidget);
+    expect(find.text('3.0 · 3 reviews'), findsOneWidget);
+    expect(find.textContaining('FYP ·'), findsNothing);
     expect(find.text('Fictional reviews for the private FYP demonstration.'), findsOneWidget);
     for (final stars in [1, 3, 5]) {
       expect(find.text('Reviewer $stars'), findsOneWidget);
       expect(find.text('Comment for $stars stars.'), findsOneWidget);
     }
     expect(find.text('Write a review'), findsNothing);
+    rating = 4.5;
+    count = 12;
+    await tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh();
+    await tester.pumpAndSettle();
+    await _scrollIntoView(tester, find.text('Local Reviews'));
+    expect(find.text('4.5 · 12 reviews'), findsOneWidget);
+    expect(find.text('3.0 · 3 reviews'), findsNothing);
+    expect(find.text('Reviewer 5'), findsOneWidget);
   });
 
   group('Batch 21E-D1: Destination Details Opening Hours & Fallback UX', () {

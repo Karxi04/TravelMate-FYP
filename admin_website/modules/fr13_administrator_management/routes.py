@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response, g
+from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response, g, abort
 from api_client import call_api
 from uuid import uuid4
 
@@ -148,13 +148,17 @@ def review_campaign(campaign_id):
 def feedback():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    response = call_api("GET", "/api/fr13/feedback")
+    source = request.args.get("source", "traveller")
+    if source not in {"traveller", "fyp_penang"}:
+        abort(400)
+    source_args = {"params": {"source": source}} if source == "fyp_penang" else {}
+    response = call_api("GET", "/api/fr13/feedback", **source_args)
     categories = {
         "flagged": "Flagged", "needs_review": "Needs review", "automatic": "Automatically approved",
         "manual": "Manually approved", "hidden": "Hidden",
     }
     counts = dict.fromkeys(categories, 0)
-    status = request.args.get("status", "queue")
+    status = request.args.get("status", "all" if source == "fyp_penang" else "queue")
     if status not in {*categories, "queue", "normal", "all"}:
         status = "queue"
     query = request.args.get("q", "").strip()
@@ -175,10 +179,11 @@ def feedback():
     history_id = request.args.get("history", "")
     history = None
     if any(item.get("id") == history_id for item in items):
-        response = call_api("GET", f"/api/fr13/feedback/{history_id}/history")
+        response = call_api("GET", f"/api/fr13/feedback/{history_id}/history", **source_args)
         history = response.json().get("items", []) if response.ok else None
     return render_template("fr13_administrator_management/feedback.html", items=items, counts=counts,
-                           categories=categories, status=status, query=query, history_id=history_id, history=history)
+                           categories=categories, status=status, query=query, history_id=history_id,
+                           history=history, source=source)
 
 @bp.route("/destinations")
 def destinations():
@@ -310,20 +315,24 @@ def booking_clarification_review(order_reference):
 def review_feedback(feedback_id):
     if not guard():
         return redirect(url_for("admin_fr01.login"))
+    source = request.form.get("source", "traveller")
+    if source not in {"traveller", "fyp_penang"}:
+        abort(400)
+    source_args = {"params": {"source": source}} if source == "fyp_penang" else {}
     decision = request.form.get("decision", "keep")
     response = call_api("POST", f"/api/fr13/feedback/{feedback_id}/review", json={
         "decision": decision,
         "comment": request.form.get("comment", ""),
         "expectedUpdatedAt": request.form.get("expectedUpdatedAt", ""),
         **({"expectedRevision": request.form["expectedRevision"]} if "expectedRevision" in request.form else {}),
-    })
+    }, **source_args)
     if response.ok:
         flash({"keep": "Review approved.", "reject": "Review rejected."}.get(
             decision, "Review hidden from Traveller view."), "success")
     else:
         flash(_error(response), "error")
     return redirect(url_for("admin_fr13.feedback", status=request.form.get("status", "queue"),
-                            q=request.form.get("q", "")))
+                            q=request.form.get("q", ""), **({"source": source} if source_args else {})))
 
 @bp.post("/feedback/<feedback_id>/remove")
 def remove_feedback(feedback_id):

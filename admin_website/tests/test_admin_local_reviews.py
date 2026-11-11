@@ -56,3 +56,31 @@ def test_moderation_filters_counts_and_history(auth_client):
     assert 'Unrelated Place' in queue and 'Chew Jetty' in queue and 'Penang Hill' not in queue
     assert 'Penang Hill' in normal and 'Manual Place' not in normal and 'Unrelated Place' not in normal
     assert '1 automatic · 1 manual' in normal and 'Earlier decision' in normal
+
+
+def test_private_source_is_carried_to_filters_history_and_actions(auth_client):
+    calls = []
+    response = MagicMock(ok=True)
+    row = {'id': 'penang', 'destinationName': 'Penang Hill', 'travellerName': 'Mira S.',
+           'moderationCategory': 'flagged', 'reviewRevision': 'expected'}
+
+    def api(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        response.json.return_value = {'items': [] if path.endswith('/history') else [row]}
+        return response
+
+    with _patch_admin_api(api):
+        page = auth_client.get('/admin/feedback?source=fyp_penang&q=mira&history=penang')
+        result = auth_client.post('/admin/feedback/penang/review', data={
+            'source': 'fyp_penang', 'decision': 'keep', 'expectedRevision': 'expected',
+        })
+    html = page.get_data(as_text=True)
+    assert 'aria-current="page">FYP Penang Reviews' in html
+    assert 'Penang Hill' in html and 'Private fictional reviews' in html
+    assert 'source=fyp_penang' in html and 'name="source" value="fyp_penang"' in html
+    assert [path for _, path, _ in calls] == [
+        '/api/fr13/feedback', '/api/fr13/feedback/penang/history', '/api/fr13/feedback/penang/review',
+    ]
+    assert all(kwargs['params'] == {'source': 'fyp_penang'} for _, _, kwargs in calls)
+    assert calls[-1][2]['json']['expectedRevision'] == 'expected'
+    assert result.status_code == 302 and 'source=fyp_penang' in result.location

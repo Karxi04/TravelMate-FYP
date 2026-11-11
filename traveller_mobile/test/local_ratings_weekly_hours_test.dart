@@ -16,6 +16,7 @@ const place = {
 
 class RatingsApi extends ApiService {
   int batches = 0;
+  Map<String, dynamic> cardSummary = {'rating': 4.0, 'reviews': 2};
   final requestedReviewPaths = <String>[];
   Map<String, dynamic> reviewSummary = {
     'rating': 4.0, 'reviews': 2, 'user_reviews': []
@@ -26,7 +27,7 @@ class RatingsApi extends ApiService {
       batches++;
       return {
         'items': {
-          'same-place': {'rating': 4.0, 'reviews': 2}
+          'same-place': cardSummary
         }
       };
     }
@@ -132,6 +133,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('4.9'), findsNothing);
     expect(find.byIcon(Icons.star_rounded), findsNothing);
+  });
+  testWidgets('private card badge refreshes approved totals without a prefix',
+      (tester) async {
+    final api = RatingsApi()
+      ..cardSummary = {'rating': 3, 'reviews': 3, 'fypPreview': true};
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: LocalPlaceRating(place: place, api: api)),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('3.0 · 3 reviews'), findsOneWidget);
+    expect(find.byIcon(Icons.star_rounded), findsOneWidget);
+    expect(find.textContaining('FYP'), findsNothing);
+
+    api.cardSummary = {'rating': 4.2, 'reviews': 8, 'fypPreview': true};
+    LocalReviewRatings.invalidate();
+    await tester.pumpAndSettle();
+    expect(find.text('4.2 · 8 reviews'), findsOneWidget);
+    expect(find.text('3.0 · 3 reviews'), findsNothing);
   });
   testWidgets('local rating fits a narrow compact card with large text', (tester) async {
     LocalReviewRatings.remember('same-place', {'rating':4.0,'reviews':2});

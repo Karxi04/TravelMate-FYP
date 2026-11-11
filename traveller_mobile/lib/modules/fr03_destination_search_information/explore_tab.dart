@@ -6,6 +6,7 @@ import '../../core/utils/destination_utils.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/destination_card.dart';
+import '../../widgets/local_place_rating.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../fr04_hybrid_recommendation/recommendation_screen.dart';
@@ -506,7 +507,11 @@ class _ExploreTabState extends State<ExploreTab> {
       ),
       padding: EdgeInsets.zero,
       body: RefreshIndicator(
-        onRefresh: () async { await favourites.load(); if (hasSearched) await search(); },
+        onRefresh: () async {
+          LocalReviewRatings.invalidate();
+          await favourites.load();
+          if (hasSearched) await search();
+        },
         child: ListView(
           key: const ValueKey('explore-scroll'),
           padding: const EdgeInsets.fromLTRB(
