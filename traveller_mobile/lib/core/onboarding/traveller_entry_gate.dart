@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../modules/fr02_travel_preference/preferences_screen.dart';
+import '../../modules/traveller_notifications/android_notification_permission.dart';
 import '../../services/api_service.dart';
 import '../../services/android_push_service.dart';
 import '../../widgets/travel_widgets.dart';
@@ -194,17 +195,17 @@ class _TravellerEntryGateState extends State<TravellerEntryGate> {
       );
     }
 
-    if (!completed) {
-      return PreferencesScreen(
-        onboarding: true,
-        api: api,
-        loadExisting: false,
-        onCompleted: () {
-          if (mounted) setState(() => completed = true);
-        },
-      );
-    }
-
-    return widget.home ?? const AppShell();
+    return AndroidNotificationPermission(
+      child: completed
+          ? widget.home ?? const AppShell()
+          : PreferencesScreen(
+              onboarding: true,
+              api: api,
+              loadExisting: false,
+              onCompleted: () {
+                if (mounted) setState(() => completed = true);
+              },
+            ),
+    );
   }
 }

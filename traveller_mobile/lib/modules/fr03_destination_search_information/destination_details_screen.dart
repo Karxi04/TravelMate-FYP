@@ -132,7 +132,9 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
 
     try {
       final reviewId = Uri.encodeComponent(reviewDestinationId);
+      final reviewOwner = LocalReviewRatings.accountUid;
       final data = await api.get('/api/fr3/destinations/$reviewId/ratings-reviews');
+      if (!mounted || reviewOwner != LocalReviewRatings.accountUid) return;
       reviewInfo = data['result'] is Map
           ? Map<String, dynamic>.from(data['result'] as Map)
           : null;
@@ -688,6 +690,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   Widget _reviewsSection() {
     final reviews = _reviews();
     final visible = showAllReviews ? reviews : reviews.take(3).toList();
+    final privatePreview = reviewInfo?['fypPreview'] == true;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -695,8 +698,9 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
           title: 'Local Reviews',
           subtitle: reviewInfo?['rating'] == null
               ? 'TravelMate community reviews'
-              : 'TravelMate ${reviewInfo!['rating']} out of 5 · ${reviewInfo!['reviews']} ${reviewInfo!['reviews'] == 1 ? 'review' : 'reviews'}',
+              : '${privatePreview ? 'Private FYP' : 'TravelMate'} ${reviewInfo!['rating']} out of 5 · ${reviewInfo!['reviews']} ${reviewInfo!['reviews'] == 1 ? 'review' : 'reviews'}',
         ),
+        if (privatePreview) const Text('Fictional reviews for the private FYP demonstration.'),
         const SizedBox(height: AppSpacing.sm),
         if (reviewsFailed)
           AppErrorState(
@@ -730,7 +734,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             ),
         ],
         const SizedBox(height: AppSpacing.xs),
-        SecondaryButton(
+        if (!privatePreview) SecondaryButton(
           label: 'Write a review',
           icon: Icons.rate_review_outlined,
           onPressed: () async { await Navigator.push(

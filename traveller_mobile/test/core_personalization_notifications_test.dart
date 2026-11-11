@@ -275,7 +275,7 @@ void main() {
     await tester
         .pumpWidget(MaterialApp(home: NotificationCenterScreen(api: api)));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Retry later'), findsOneWidget);
+    expect(find.text('Notifications are unavailable. Please try again.'), findsOneWidget);
     api.fail = false;
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();

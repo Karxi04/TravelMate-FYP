@@ -26,6 +26,7 @@ from sequence_contract.firebase_firestore import (
 )
 from services.public_content_projection import public_review
 from services.review_service import approved_reviews
+from services.fyp_reviews import dataset_for, dataset_reviews
 from services.review_destination import review_destination_id, review_destination_ids
 from services.malaysian_locality import (
     normalize_destination_scope,
@@ -35,6 +36,26 @@ from services.malaysian_locality import (
 )
 
 bp = Blueprint('fr03_destinations', __name__, url_prefix='/api/fr3')
+REVIEW_CONTEXT_HEADER = 'X-TravelMate-Review-Context'
+
+
+def _private_review_dataset():
+    # Older clients do not label the fictional dataset in the review section.
+    if request.headers.get(REVIEW_CONTEXT_HEADER) == 'fyp-v1':
+        return dataset_for(g.uid)
+    return None
+
+
+@bp.after_request
+def _prevent_shared_review_caching(response):
+    if request.endpoint in {
+        'fr03_destinations.local_ratings', 'fr03_destinations.ratings_reviews',
+        'fr03_destinations.search_destinations', 'fr03_destinations.destination_details',
+    }:
+        response.headers['Cache-Control'] = 'private, no-store'
+        response.vary.add('Authorization')
+        response.vary.add(REVIEW_CONTEXT_HEADER)
+    return response
 
 
 def _fallback_mode():
@@ -452,18 +473,27 @@ def _merge_destination(cached, provider):
 @bp.get('/local-ratings')
 @auth_required(['traveller'])
 def local_ratings():
+    demo = _private_review_dataset()
+    private_ids = set(demo[1]) if demo else set()
     # One read pass for a page of cards; retain the existing approval/dedup policy.
     grouped = {}
     for item in retrieveRecord('feedback'):
         identity = item.get('destinationId')
         if isinstance(identity, str) and identity:
-            grouped.setdefault(review_destination_id(identity), []).append(item)
+            canonical = review_destination_id(identity)
+            if canonical not in private_ids:
+                grouped.setdefault(canonical, []).append(item)
+    if demo:
+        for item in dataset_reviews(*demo):
+            grouped.setdefault(item['destinationId'], []).append(item)
     result = {}
     for identity, records in grouped.items():
         approved = approved_reviews(records)
         if approved:
             summary = {'rating': round(sum(float(x['rating']) for x in approved) / len(approved), 1),
                        'reviews': len(approved)}
+            if identity in private_ids:
+                summary['fypPreview'] = True
             for alias in review_destination_ids(identity):
                 result[alias] = summary
     return jsonify({'ok': True, 'items': result})
@@ -504,6 +534,17 @@ def search_destinations():
                 'ok': False,
                 'error': f"Requested destination '{location}' could not be resolved as a Malaysian destination.",
             }), 400
+
+    demo = _private_review_dataset()
+    if demo and offset == 0:
+        matches = [place for place in demo[1].values()
+                   if _search_text(q) == _search_text(place['title'])]
+        matches, _ = filter_candidates(matches, requested_scope)
+        if matches:
+            results = [_private_destination(place) for place in matches]
+            return jsonify({'ok': True, 'results': _filter_by_category(results, filterOption),
+                            'source': 'fyp_private', 'nextOffset': None,
+                            'locationUsed': requested_scope.get('canonicalName') or provider_location})
 
     interpreted_query = _provider_query(q)
     coordinates = {
@@ -593,6 +634,11 @@ def search_destinations():
 @bp.get('/destinations/<path:place_id>')
 @auth_required(['traveller'])
 def destination_details(place_id):
+    demo = _private_review_dataset()
+    place = demo[1].get(review_destination_id(place_id)) if demo else None
+    if place:
+        return jsonify({'ok': True, 'destination': _private_destination(place),
+                        'source': 'fyp_private', 'detailsAvailable': True})
     cached = _cached_destination(place_id)
     provider_ref, reference_type = _provider_reference(place_id, cached)
 
@@ -639,12 +685,22 @@ def destination_details(place_id):
         )
 
 
+def _private_destination(place):
+    known = _local_destination(place['destinationId'])
+    return {**place, **(known or {}), 'destinationId': place['destinationId'],
+            'place_id': place['destinationId']}
+
+
 def retrieveRatingsAndReviews(place_id):
     """Retrieve TravelMate Traveller reviews from the shared Firestore database."""
     records = [
         item for identity in review_destination_ids(place_id)
         for item in retrieveRecord('feedback', filters=[('destinationId', '==', identity)]) or []
     ]
+    return _ratings_and_reviews(records)
+
+
+def _ratings_and_reviews(records):
     visible = approved_reviews(records)
     visible.sort(key=lambda x: str(x.get('updatedAt') or x.get('submittedAt') or ''), reverse=True)
     ratings = []
@@ -666,6 +722,13 @@ def retrieveRatingsAndReviews(place_id):
 @bp.get('/destinations/<path:place_id>/ratings-reviews')
 @auth_required(['traveller'])
 def ratings_reviews(place_id):
+    demo = _private_review_dataset()
+    canonical = review_destination_id(place_id)
+    if demo and canonical in demo[1]:
+        records = [item for item in dataset_reviews(*demo) if item['destinationId'] == canonical]
+        result = {**_ratings_and_reviews(records), 'fypPreview': True,
+                  'review_summary': 'Private FYP reviews. Fictional fixtures.'}
+        return jsonify({'ok': True, 'source': 'fyp_private', 'result': result})
     result = retrieveRatingsAndReviews(place_id)
     return jsonify({'ok': True, 'source': 'travelmate_database', 'result': result})
 

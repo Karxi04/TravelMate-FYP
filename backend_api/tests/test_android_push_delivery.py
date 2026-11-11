@@ -107,6 +107,23 @@ def test_dispatch_multi_device_replay_no_private_payload_and_no_other_owner(memo
     assert len(memory.read('traveller_notifications'))==1
 
 
+def test_acceptance_rollout_scopes_existing_outbox_and_registration(memory, monkeypatch):
+    delivery.register_device(UID, registration())
+    other_registration = registration('other-' + 'x' * 30)
+    delivery.register_device('other', other_registration)
+    own = event(memory)
+    foreign = event(memory, 'other')
+    monkeypatch.setenv('PUSH_TRAVELLER_UID', UID)
+    with pytest.raises(PermissionError):
+        delivery.register_device('other', other_registration)
+    assert delivery.dispatch(uid='other')['sent'] == 0
+    sent = []
+    assert delivery.dispatch(sender=lambda device, notice: sent.append(notice['id']))['sent'] == 1
+    assert sent == [own['id']]
+    assert memory.read('notification_outbox', foreign['id'])['status'] == 'pending'
+    delivery.register_device('other', other_registration, disable=True)
+
+
 def test_concurrent_dispatch_lease_prevents_duplicate_send(memory):
     delivery.register_device(UID,registration());event(memory);calls=[]
     with ThreadPoolExecutor(max_workers=2) as executor:

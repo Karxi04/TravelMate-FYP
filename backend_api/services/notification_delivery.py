@@ -16,6 +16,14 @@ def enabled():
     return os.getenv('TRAVELMATE_PUSH_ENABLED', '').lower() == 'true'
 
 
+def rollout_traveller():
+    return os.getenv('PUSH_TRAVELLER_UID', '').strip()
+
+
+def _in_rollout(uid):
+    return rollout_traveller() in ('', uid)
+
+
 def digest(value):
     return hashlib.sha256(str(value).encode()).hexdigest()
 
@@ -25,6 +33,8 @@ def now_utc():
 
 
 def register_device(uid, payload, disable=False):
+    if not disable and not _in_rollout(uid):
+        raise PermissionError('Device registration is unavailable.')
     allowed = {'token', 'bindingSecret', 'appId', 'localTripReminders'}
     if not isinstance(payload, dict) or set(payload) - allowed:
         raise ValueError('Use token, bindingSecret, appId and optional localTripReminders only.')
@@ -50,7 +60,7 @@ def register_device(uid, payload, disable=False):
 
 
 def queue_notification(event, created):
-    if not enabled() or not created:
+    if not enabled() or not created or not _in_rollout(event.get('travellerId')):
         return
     if event.get('category') in {'payment','arrangements_ready','package_booking','arrangements_update','booking_attention'}:
         try:
@@ -97,7 +107,7 @@ def capture_committed_order(order):
         return
     try:
         uid = order.get('travellerId')
-        if not uid:
+        if not uid or not _in_rollout(uid):
             return
         order = canonical_payment_order(order,uid,lambda oid:retrieveRecord('checkout_orders',oid))
         tid = order.get('fulfilledTripId')
@@ -169,6 +179,11 @@ def _dispatch_log(nid, outcome):
 def dispatch(uid=None, limit=100, sender=None, max_sends=100):
     if not enabled():
         return {'sent':0,'disabled':True}
+    scoped_uid = rollout_traveller()
+    if scoped_uid:
+        if uid is not None and uid != scoped_uid:
+            return {'sent': 0}
+        uid = scoped_uid
     sender = sender or _send
     now = now_utc()
     filters = [('status','==','pending')]

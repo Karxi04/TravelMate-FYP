@@ -263,8 +263,12 @@ class ApiService {
     try {
       final uri = Uri.parse('$baseUrl$path').replace(queryParameters: query);
       debugPrint('GET  → $uri');
+      final headers = await _headers();
+      if (path == '/api/fr3/local-ratings' || path.startsWith('/api/fr3/destinations/')) {
+        headers['X-TravelMate-Review-Context'] = 'fyp-v1';
+      }
       final response = await http
-          .get(uri, headers: await _headers())
+          .get(uri, headers: headers)
           .timeout(RequestTimeouts.forGet(path));
       final result = decodeResponse(response);
       if (path.startsWith('/api/fr9/orders/') && path.endsWith('/reconcile') && result is Map && result['ok'] != false) {
