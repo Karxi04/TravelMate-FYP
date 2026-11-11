@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 import math
+import re
 
 CATEGORIES = {'payment', 'arrangements_ready', 'upcoming_trip', 'packing', 'weather',
               'package_booking', 'arrangements_update', 'booking_attention'}
@@ -56,9 +57,42 @@ def canonical_payment_order(order, uid, lookup):
             'paidAt': order.get('paidAt') or linked.get('paidAt')}
 
 
-def payment_source_label(order, reference):
-    title = str((order.get('packageSnapshot') or {}).get('title') or '')[:150]
-    return (title + ' · ' if title else '') + 'Order ' + str(reference)
+def _inbox_package_name(title):
+    return re.sub(r'\s+[–—-]\s+(?:Full|Half) Day Tour$', '', title.strip(), flags=re.I)
+
+
+def inbox_presentation(item, checkout_order=None):
+    """Format an inbox copy, including rows written by older app versions."""
+    if item.get('category') == 'payment':
+        item.pop('sourceLabel', None)
+        order = checkout_order or {}
+        confirmed = order.get('status') == 'paid' and order.get('paymentStatus') == 'paid'
+        legacy_paid = confirmed and item.get('message') == 'Your recorded payment status is paid.'
+        if (item.get('paymentState') == 'paid' or legacy_paid) and order.get('status') != 'payment_mismatch':
+            snapshot = order.get('packageSnapshot')
+            snapshot = snapshot if isinstance(snapshot, dict) else {}
+            name = _inbox_package_name(str(snapshot.get('title') or ''))
+            amount = order.get('amountMinor')
+            money = ''
+            if confirmed and order.get('currency') == 'MYR' and type(amount) is int and amount >= 0:
+                ringgit, sen = divmod(amount, 100)
+                money = f' of MYR {ringgit:,}.{sen:02d}'
+            item['title'] = 'Payment Successful'
+            subject = f' for {name}' if name else ''
+            item['message'] = f'Your payment{money}{subject} was confirmed.'
+    elif item.get('category') == 'upcoming_trip':
+        match = re.fullmatch(r'(.+) starts in (1|3) day\(s\), on (\d{4}-\d{2}-\d{2})\.',
+                             item.get('message') or '', flags=re.DOTALL)
+        if match:
+            title, days, raw_date = match.groups()
+            try:
+                start = date.fromisoformat(raw_date)
+            except ValueError:
+                return
+            name = _inbox_package_name(title)
+            subject = 'Your trip' if name.casefold() == 'your trip' else f'Your {name}' + (
+                '' if name.casefold().endswith(' trip') else ' trip')
+            item['message'] = f"{subject} starts in {days} {'day' if days == '1' else 'days'}, on {start.day} {start:%B %Y}."
 
 
 def derive_events(uid, orders, trips, checklists=None, forecasts=None, now=None):
@@ -93,7 +127,6 @@ def derive_events(uid, orders, trips, checklists=None, forecasts=None, now=None)
             event['paymentState'] = state
             event['paymentType'] = order.get('quoteType')
             event['paymentOrderId'] = str(order.get('checkoutOrderId') or order.get('id') or '')
-            event['sourceLabel'] = payment_source_label(order,oid)
         record = order.get('fulfillmentRecord') or {}
         if not isinstance(record,dict):record={}
         trip_id = str(order.get('fulfilledTripId') or '')

@@ -17,7 +17,7 @@ from services import gemini_service as gs
 
 def test_01_default_timeout(monkeypatch):
     monkeypatch.delenv('GEMINI_TIMEOUT_SECONDS', raising=False)
-    assert gs.get_gemini_timeout_seconds() == 30.0
+    assert gs.get_gemini_timeout_seconds() == 20.0
 
 
 def test_02_valid_custom_timeout(monkeypatch):
@@ -27,17 +27,17 @@ def test_02_valid_custom_timeout(monkeypatch):
 
 def test_03_missing_variable(monkeypatch):
     monkeypatch.setenv('GEMINI_TIMEOUT_SECONDS', '')
-    assert gs.get_gemini_timeout_seconds() == 30.0
+    assert gs.get_gemini_timeout_seconds() == 20.0
 
 
 def test_04_invalid_numeric_value(monkeypatch):
     monkeypatch.setenv('GEMINI_TIMEOUT_SECONDS', 'invalid_str')
-    assert gs.get_gemini_timeout_seconds() == 30.0
+    assert gs.get_gemini_timeout_seconds() == 20.0
 
 
 def test_05_negative_value(monkeypatch):
     monkeypatch.setenv('GEMINI_TIMEOUT_SECONDS', '-10')
-    assert gs.get_gemini_timeout_seconds() == 30.0
+    assert gs.get_gemini_timeout_seconds() == 20.0
 
 
 def test_06_extremely_large_value(monkeypatch):
@@ -55,9 +55,17 @@ def test_08_correct_sdk_http_options_and_no_retry_loop(monkeypatch):
     timeout_sec = gs.get_gemini_timeout_seconds()
     timeout_ms = int(timeout_sec * 1000)
     assert timeout_ms == 25000
-    http_opts = types.HttpOptions(timeout=timeout_ms)
-    assert http_opts.timeout == 25000
-    assert http_opts.retry_options is None
+    client = MagicMock()
+    client.models.generate_content.return_value.text = 'A short reply'
+    with patch.object(gs.genai, 'Client') as constructor:
+        constructor.return_value = client
+        monkeypatch.setenv('GEMINI_API_KEY', 'test_key')
+        assert gs._generate('Synthetic question') == 'A short reply'
+        http_opts = constructor.call_args.kwargs['http_options']
+        assert http_opts.timeout == 25000
+        assert http_opts.retry_options.attempts == 1
+        assert client.models.generate_content.call_count == 1
+        client.close.assert_called_once()
 
 
 # ==============================================================================
@@ -133,7 +141,7 @@ def test_16_client_timeout():
 
 
 def test_17_empty_response():
-    exc = RuntimeError("Gemini returned an empty response")
+    exc = gs.EmptyProviderResponse()
     cat = gs._classify_provider_error(exc)
     assert cat == 'EMPTY_PROVIDER_RESPONSE'
 
@@ -142,6 +150,26 @@ def test_18_unexpected_provider_exception():
     exc = KeyError("unexpected_field")
     cat = gs._classify_provider_error(exc)
     assert cat == 'UNEXPECTED_PROVIDER_ERROR'
+
+
+@pytest.mark.parametrize('status,category', [
+    (400, 'HTTP_400_BAD_REQUEST'), (401, 'HTTP_401_403_AUTH_ERROR'),
+    (403, 'HTTP_401_403_AUTH_ERROR'), (404, 'HTTP_404_MODEL_OR_RESOURCE_NOT_FOUND'),
+    (500, 'HTTP_500_PROVIDER_ERROR'),
+])
+def test_provider_classification_ignores_error_body(status, category):
+    error = ClientError(status, '429 timeout followed by synthetic private content')
+    assert gs._classify_provider_error(error) == category
+
+
+@pytest.mark.parametrize('value,error', [('  ', gs.EmptyProviderResponse),
+    ('{"internalId":"example"}', gs.InvalidProviderResponse)])
+def test_empty_and_structured_provider_output_are_rejected(monkeypatch, value, error):
+    monkeypatch.setenv('GEMINI_API_KEY', 'test_key')
+    with patch.object(gs.genai, 'Client') as constructor:
+        constructor.return_value.models.generate_content.return_value.text = value
+        with pytest.raises(error):
+            gs._generate('Synthetic question')
 
 
 def test_19_correct_source_labeling(monkeypatch):

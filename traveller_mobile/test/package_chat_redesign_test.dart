@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/core/operator_content/package_details_screen.dart';
@@ -587,6 +590,40 @@ void main() {
       await tester.tap(find.text('Read more').first);
       await tester.pumpAndSettle();
       expect(find.textContaining('[END_OF_POLICY]'), findsOneWidget);
+    });
+
+    testWidgets('original Butterworth brochure expands completely at narrow width', (tester) async {
+      final fixture = jsonDecode(File(
+        '../backend_api/tests/fixtures/butterworth_full_original_editor.json',
+      ).readAsStringSync()) as Map;
+      final form = Map<String, dynamic>.from(fixture['form'] as Map);
+      final description = form['fullDescription'] as String;
+      final finalParagraph = description.trim().split('\n\n').last;
+      final inclusions = (form['inclusions'] as String).split('\n');
+      final exclusions = (form['exclusions'] as String).split('\n');
+      tester.view.physicalSize = const Size(320, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(_wrap(TourismPackageDetailsScreen(
+        api: _MockRedesignApi(),
+        item: {...form, 'id':'butterworth-original', 'inclusions':inclusions, 'exclusions':exclusions,
+          'itinerary':[{
+            'dayNumber':1, 'title':(form['itineraryTitle'] as List).first,
+            'description':(form['itineraryDescription'] as List).first,
+            'activities':(form['itineraryActivities'] as List).first,
+          }],
+        },
+      ), width:320, height:1200, textScale:1.5));
+      await tester.pumpAndSettle();
+      final expand = find.text('Read full description');
+      await Scrollable.ensureVisible(tester.element(expand), alignment: 0.5);
+      await tester.pumpAndSettle();
+      await tester.tap(expand);
+      await tester.pumpAndSettle();
+      expect(find.text(finalParagraph), findsOneWidget);
+      expect(find.text('Show less'), findsWidgets);
+      expect(tester.takeException(), isNull);
     });
 
     for (final width in [320.0, 360.0, 390.0, 430.0]) {

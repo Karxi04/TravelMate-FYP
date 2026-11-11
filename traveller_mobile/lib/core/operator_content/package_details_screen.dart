@@ -530,10 +530,9 @@ class _TourismPackageDetailsScreenState
     if (intro.isEmpty && daySplit.length > 1) {
       intro = raw.trim();
     }
-    // Normalize raw markdown artifacts like **Day 1**, ###, etc.
     return intro
-        .replaceAll(RegExp(r'\*\*([^*]+)\*\*'), r'$1')
-        .replaceAll(RegExp(r'#{1,6}\s*'), '')
+        .replaceAllMapped(RegExp(r'\*\*([^*]+)\*\*'), (match) => match[1]!)
+        .replaceAll(RegExp(r'^#{1,6}\s+', multiLine: true), '')
         .trim();
   }
 
@@ -1437,7 +1436,9 @@ class _TourismPackageDetailsScreenState
   }
 
   Widget _buildOverviewTab(String description) {
-    final cleanIntro = _cleanOverviewText(description);
+    final shortDescription = _text('shortDescription');
+    final cleanIntro =
+        _cleanOverviewText(shortDescription.isEmpty ? description : shortDescription);
     final campaigns = (widget.item['activeCampaigns'] as List? ?? const [])
         .whereType<Map>()
         .map((entry) => Map<String, dynamic>.from(entry))
@@ -1456,8 +1457,10 @@ class _TourismPackageDetailsScreenState
               children: [
                 _heading('Package overview'),
                 PackageTextBlock(
-                  text: description, preview: cleanIntro,
+                  text: description.isEmpty ? cleanIntro : description,
+                  preview: cleanIntro,
                   expandLabel: 'Read full description',
+                  separateParagraphs: true,
                 ),
               ],
             ),
@@ -1485,7 +1488,13 @@ class _TourismPackageDetailsScreenState
                       ],
                       if ((_number(campaign['discountValue']) ?? 0) > 0 && ['percentage','fixed'].contains(campaign['discountType']))
                         Text('${campaign['discountType'] == 'percentage' ? '${campaign['discountValue']}% off' : 'MYR ${campaign['discountValue']} off'} · ${campaign['startDate']} to ${campaign['endDate']}'),
-                      if ((campaign['termsConditions'] ?? '').toString().isNotEmpty) PackageTextBlock(text: campaign['termsConditions'].toString()),
+                      if ((campaign['termsConditions'] ?? '').toString().isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        PackageTextBlock(
+                          text: campaign['termsConditions'].toString(),
+                          expandLabel: 'Read full promotion terms',
+                        ),
+                      ],
                       if ((campaign['promoCode'] ?? '')
                           .toString()
                           .trim()
@@ -1594,12 +1603,10 @@ class _TourismPackageDetailsScreenState
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: EdgeInsets.zero,
                 title: Text(
-                  'Day $dayNumber · $title',
-                  maxLines: 2, overflow: TextOverflow.ellipsis,
+                  title.isEmpty ? 'Day $dayNumber' : 'Day $dayNumber · $title',
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 children: [
-                  if (title.isNotEmpty) PackageTextBlock(text: title, collapsedLines: 3),
                   if (description.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.xxs),
                     Align(

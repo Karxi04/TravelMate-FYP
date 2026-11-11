@@ -627,6 +627,15 @@ void main() {
     expect(api.posts, isEmpty);
     expect(find.text('Save this trip?'), findsNothing);
   });
+
+  testWidgets('regenerate sends one guided request to the active chat', (tester) async {
+    final api = ActionApi(draft: true);
+    await frame(tester, ChatTab(api: api));
+    await tap(tester, find.text('Regenerate'));
+    expect(api.posts.single['path'], '/api/fr11/chat');
+    expect(api.posts.single['body']['message'], 'Regenerate itinerary');
+    expect(api.posts.single['body']['sessionId'], 'session-1');
+  });
   testWidgets(
       'send and Retry message use the exact failed question and never navigate',
       (tester) async {

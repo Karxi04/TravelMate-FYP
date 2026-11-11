@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services.traveller_notifications import derive_events, coordinates
+from services.traveller_notifications import derive_events, coordinates, inbox_presentation
 from services.packing_checklist_service import checklist_id
 
 UID='test_traveller_uid'
@@ -145,6 +145,8 @@ def test_authenticated_reconcile_read_unread_dedup_cache_and_owner_routes(client
     first=client.get('/api/traveller/notifications',headers=AUTH)
     assert first.status_code==200 and first.json['unreadCount']==5
     assert 'private' not in first.get_data(as_text=True)
+    upcoming=next(item for item in first.json['items'] if item['category']=='upcoming_trip')
+    assert upcoming['message']=='Your Penang trip starts in 3 days, on 11 November 2026.'
     nid=first.json['items'][0]['id']
     assert client.patch('/api/traveller/notifications/'+nid,headers=AUTH,json={'read':True}).status_code==200
     second=client.get('/api/traveller/notifications',headers=AUTH)
@@ -157,6 +159,17 @@ def test_authenticated_reconcile_read_unread_dedup_cache_and_owner_routes(client
     assert client.patch('/api/traveller/notifications/foreign',headers=AUTH,json={'read':True}).status_code==404
     assert not any(item['id']=='foreign' for item in client.get('/api/traveller/notifications',headers=AUTH).json['items'])
     for key,value in before.items():assert db[key]==value
+
+
+def test_inbox_words_legacy_trip_and_does_not_use_unverified_payment_amount():
+    item = {'category':'upcoming_trip','message':'Butterworth Heritage & Wildlife Discovery – Full Day Tour starts in 1 day(s), on 2026-11-14.'}
+    inbox_presentation(item)
+    assert item['message']=='Your Butterworth Heritage & Wildlife Discovery trip starts in 1 day, on 14 November 2026.'
+    payment = {'category':'payment','paymentState':'paid','message':'Your recorded payment status is paid.',
+               'sourceLabel':'Order very-long-reference','target':{'orderId':'very-long-reference'}}
+    inbox_presentation(payment, {'status':'payment_mismatch','paymentStatus':'paid','amountMinor':91600,'currency':'MYR'})
+    assert payment['message']=='Your recorded payment status is paid.'
+    assert payment['target']['orderId']=='very-long-reference' and 'sourceLabel' not in payment
 
 
 @pytest.mark.parametrize('role',['anonymous','operator','admin'])

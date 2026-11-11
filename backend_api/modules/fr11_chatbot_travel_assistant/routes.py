@@ -9,7 +9,7 @@ from services.activity_pricing import pricing_snapshot
 from services.local_catalog import DESTINATIONS
 from services.preference_learning import effective_preference_profile
 from services.malaysian_locality import normalize_candidate_geography, normalize_destination_scope
-from services.recommendation_taxonomy import candidate_concepts, concepts_for
+from services.recommendation_taxonomy import candidate_concepts, concepts_for, display_concepts
 from services.review_service import published_review
 from .nlp_extractor import (
     extract_geographic_entities,
@@ -24,6 +24,7 @@ from .nlp_extractor import (
     extract_day_specific,
     classify_user_intent,
     classify_detailed_intent,
+    conversational_question,
     check_requirement_completeness,
     build_structured_trip_plan,
     validate_save_plan_payload,
@@ -334,6 +335,10 @@ def _activity_preview(state):
         ) if isinstance(row.get(key), (str, int, float))}
         if geography['latitude'] is not None and geography['longitude'] is not None:
             display['gps_coordinates'] = {'latitude': geography['latitude'], 'longitude': geography['longitude']}
+        duration = row.get('recommendedDurationMinutes')
+        if type(duration) is int and duration > 0:
+            display['recommendedDurationMinutes'] = duration
+        display['matchedInterests'] = display_concepts(interests & candidate_concepts(row))
         suggestions.append({**display, **pricing_snapshot(row), 'state': geography['state'], 'city': geography['city']})
         if len(suggestions) >= limit:
             break
@@ -341,7 +346,7 @@ def _activity_preview(state):
         return f'I don’t have a verified activity card for {area} yet. You can choose another destination.', []
     window = 'half-day' if half_day else f'{days}-day' if days else 'flexible'
     reply = f'Here are {window} activity ideas for {area}.'
-    if interests and not any(interests & candidate_concepts(row) for row in suggestions):
+    if interests and not any(row['matchedInterests'] for row in suggestions):
         reply += ' I found limited matches for your interests, so these are nearby ideas within the selected destination.'
     if half_day:
         reply += ' Start with one stop and add another if you have time.'
@@ -386,6 +391,7 @@ def chat():
         except Exception:
             return jsonify({'ok':False,'error':'The conversation could not be saved. Reopen the chat and retry.'}),409
         return jsonify({'ok':True,'reply':item['reply'],'source':item['source'],'item':item,'session':session})
+    original_planning_state = dict(planning_state)
     previous_requirements = {key: planning_state.get(key) for key in (
         'destinationArea', 'startDate', 'endDate', 'tripDays', 'budgetLimit', 'travellerCount',
         'interests', 'excludedInterests', 'excludedActivityTypes', 'preferIndoor', 'travelPace',
@@ -488,26 +494,32 @@ def chat():
         planning_state['daySpecificPreferences'] = cur_day
     if detailed_intent:
         planning_state['lastIntent'] = detailed_intent
+    is_conversational = conversational_question(message) and not geo.get('is_destination_change')
+    if is_conversational:
+        planning_state = original_planning_state
     requirements_changed = any(planning_state.get(key) != value for key, value in previous_requirements.items())
     if requirements_changed or date_error:
         planning_state.pop('activePlan', None)
-    existing_plan = planning_state.get('activePlan') if _show_plan_request(message) and not planning_state.get('dateClarification') else None
-    if geo.get('is_multi_destination'):
+    active_plan = planning_state.get('activePlan') or {}
+    saved_regeneration = (message.casefold() == 'regenerate itinerary'
+                          and active_plan.get('draftId') in (planning_state.get('savedPlans') or {}))
+    existing_plan = active_plan if (_show_plan_request(message) or saved_regeneration) and not planning_state.get('dateClarification') else None
+    if not is_conversational and geo.get('is_multi_destination'):
         planning_state['tripMode'] = 'road_trip'
         planning_state['multipleDestinations'] = list(geo.get('multiple_destinations') or [])
         planning_state['originDestination'] = geo.get('origin_destination')
         planning_state['targetDestination'] = geo.get('target_destination')
-    elif geo.get('destination_area') and (
+    elif not is_conversational and geo.get('destination_area') and (
         geo.get('is_destination_change') or detailed_intent == 'ITINERARY_PLANNING'
     ):
         _clear_multi_destination_state(planning_state)
 
-    if payload.get('guidedPlanning') is True or detailed_intent == 'ACTIVITY_DISCOVERY':
+    if not is_conversational and (payload.get('guidedPlanning') is True or detailed_intent == 'ACTIVITY_DISCOVERY'):
         planning_state['guidedPlanning'] = True
     guided_check = None
     if existing_plan:
         guided_check = {'clarification_needed': False, 'ready': False}
-    elif planning_state.get('guidedPlanning') or detailed_intent == 'ACTIVITY_DISCOVERY':
+    elif not is_conversational and (planning_state.get('guidedPlanning') or detailed_intent == 'ACTIVITY_DISCOVERY'):
         preferences = retrieveRecord('travel_preferences', g.uid) or {}
         guided_check = guided_requirements(message, planning_state, preferences, dates_supplied=dates_supplied)
     guided_ready = bool(guided_check and guided_check.get('ready'))
@@ -543,8 +555,12 @@ def chat():
         return jsonify({'ok': True, 'reply': foreign_reply, 'source': 'travelmate-assistant', 'messageId': record['id'], 'item': item, 'session': session})
 
     # Check requirement completeness for planning requests
-    req_check = ({'clarification_needed': True, 'clarification_prompt': planning_state['dateClarification']}
-                 if planning_state.get('dateClarification') else guided_check or check_requirement_completeness(message, planning_state))
+    req_check = {}
+    if not is_conversational:
+        if planning_state.get('dateClarification'):
+            req_check = {'clarification_needed': True, 'clarification_prompt': planning_state['dateClarification']}
+        else:
+            req_check = guided_check or check_requirement_completeness(message, planning_state)
     if req_check.get('clarification_needed'):
         clarification_reply = req_check.get('clarification_prompt')
         previews = []
@@ -577,7 +593,7 @@ def chat():
         return jsonify({'ok': True, 'reply': clarification_reply, 'source': 'travelmate-assistant', 'messageId': record['id'], 'item': item, 'session': session})
 
     road_trip_unsupported = (
-        planning_state.get('tripMode') == 'road_trip'
+        not is_conversational and planning_state.get('tripMode') == 'road_trip'
         and classify_user_intent(message, planning_state) == 'PLANNING_REQUEST'
     )
     if road_trip_unsupported:
@@ -606,7 +622,7 @@ def chat():
             return jsonify({'ok': False, 'error': 'The travel assistant is temporarily unavailable. Please retry.'}), 502
 
     reply, source = response['reply'], response['source']
-    if not guided_activities and detailed_intent in {'INTEREST_MODIFICATION', 'INDOOR_ALTERNATIVE'} and (
+    if not guided_activities and not is_conversational and detailed_intent in {'INTEREST_MODIFICATION', 'INDOOR_ALTERNATIVE'} and (
         planning_state.get('excludedInterests')
         or planning_state.get('excludedActivityTypes')
         or planning_state.get('preferIndoor')
@@ -644,7 +660,7 @@ def chat():
             item['savedTripId'] = saved_id
             reply = item['reply'] = 'This plan was saved to Trips. You can reopen it from Trips.'
     if (
-        not existing_plan and not guided_activities
+        not existing_plan and not guided_activities and not is_conversational
         and (guided_ready or (guided_check is None and classify_user_intent(message, planning_state) == 'PLANNING_REQUEST'))
         and dest_for_planning
         and planning_state.get('tripMode') != 'road_trip'
@@ -728,13 +744,15 @@ def chat():
                 'preferIndoor': bool(indoor_val),
             }
 
-    suggestions = activity_suggestions if guided_activities else _extract_place_suggestions(
-        message,
-        destination_area=dest_for_planning,
-        prefer_indoor=planning_state.get('preferIndoor', False),
-        excluded_interests=planning_state.get('excludedInterests'),
-        excluded_activity_types=planning_state.get('excludedActivityTypes'),
-    )
+    suggestions = activity_suggestions if guided_activities else []
+    if not guided_activities and not is_conversational:
+        suggestions = _extract_place_suggestions(
+            message,
+            destination_area=dest_for_planning,
+            prefer_indoor=planning_state.get('preferIndoor', False),
+            excluded_interests=planning_state.get('excludedInterests'),
+            excluded_activity_types=planning_state.get('excludedActivityTypes'),
+        )
     if suggestions and not plan:
         item['placeSuggestions'] = suggestions
 

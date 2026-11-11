@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
+import '../../core/operator_content/package_text_block.dart';
 
 /// Values are backend quotes; this widget never computes payable amounts.
 class DatabasePackageCard extends StatelessWidget {
@@ -72,7 +73,10 @@ class DatabasePackageCard extends StatelessWidget {
               if ((offer['promoCode'] ?? '').toString().isNotEmpty)
                 Text('Explicit coupon: ${offer['promoCode']}'),
               if ((offer['termsConditions'] ?? '').toString().isNotEmpty)
-                Text(offer['termsConditions'].toString()),
+                PackageTextBlock(
+                  text: offer['termsConditions'].toString(),
+                  expandLabel: 'Read full offer terms',
+                ),
             ],
             Text(quote['taxIncluded'] == true
                 ? 'Declared taxes/fees included'
@@ -80,8 +84,11 @@ class DatabasePackageCard extends StatelessWidget {
             Text(
                 'Party limits: ${package['minimumTravellers'] ?? 1}–${package['maximumTravellers'] ?? 'not specified'}'),
             const SizedBox(height: 6),
-            for (final line in (package['inclusions'] as List? ?? []))
-              Text('• $line'),
+            if (package['inclusions'] case final List inclusions when inclusions.isNotEmpty)
+              PackageTextBlock(
+                text: inclusions.map((line) => '• $line').join('\n'),
+                expandLabel: 'Read all listed inclusions',
+              ),
             if (package['inclusionsTruncated'] == true ||
                 conditions['termsTruncated'] == true)
               const Text('Open details for all inclusions and complete terms.'),

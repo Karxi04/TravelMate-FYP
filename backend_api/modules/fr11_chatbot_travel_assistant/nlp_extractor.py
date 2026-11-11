@@ -519,6 +519,13 @@ def activity_request(text):
     ))
 
 
+def conversational_question(text):
+    q = text.lower().strip()
+    return bool(re.match(r"(?:explain|why|what (?:is|are|was|were)|tell me (?:about|more)|"
+                         r"how (?:does|do|did|can)|could you explain)\b", q)
+                and not re.search(r'\b(?:things to do|places to (?:visit|eat)|attractions|must-see|what to see|activities)\b', q))
+
+
 def classify_detailed_intent(text, planning_state=None):
     q = text.lower().strip()
     ps = dict(planning_state or {})

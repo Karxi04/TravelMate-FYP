@@ -39,10 +39,15 @@ class RecommendationCard extends StatelessWidget {
       .toString()
       .trim();
 
-  String get _category =>
-      (recommendation['category'] ?? recommendation['type'] ?? '')
-          .toString()
-          .trim();
+  String get _category {
+    final evidence = recommendation['verifiedDestinationEvidence'];
+    if (evidence is Map && evidence['suppliesCategory'] == true) {
+      return '${evidence['category'] ?? ''}'.trim();
+    }
+    return (recommendation['category'] ?? recommendation['type'] ?? '')
+        .toString()
+        .trim();
+  }
 
   num? get _matchScore {
     final raw = _hasPersonalScore ? recommendation['personalSuitabilityScore'] : recommendation['finalScore'] ?? recommendation['score'];

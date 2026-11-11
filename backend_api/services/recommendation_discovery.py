@@ -4,6 +4,61 @@ from services.recommendation_taxonomy import concepts_for, candidate_concepts, n
 
 DISCOVERY_MODE = 'relevant_v1'
 
+# Exact place aliases only. Geography must independently resolve to Penang.
+_PENANG_EVIDENCE = (
+    (('armenian street', 'lebuh armenian', 'armenian street street art'),
+     'Heritage street art', 'George Town heritage street with murals and street photography.',
+     ('photography', 'culture'), 'https://mypenang.gov.my/view_directory.php?id=THVMRHBRb2V2ODlQc3hRTEkvalB4QT09'),
+    (('pinang peranakan mansion', 'penang peranakan mansion'),
+     'Heritage museum', 'Peranakan museum in a heritage mansion. The venue restricts indoor photography.',
+     ('culture',), 'https://www.pinangperanakanmansion.com.my/'),
+    (('penang botanic gardens', 'penang botanical gardens', 'taman botani pulau pinang'),
+     'Botanical garden', 'Botanical gardens with tropical plants and wildlife for nature photography.',
+     ('nature', 'photography'), 'https://www.mypenang.gov.my/view_directory.php?id=bDg0Kzh2NEs2UTdJNnpacitRUnlkdz09'),
+    (('penang national park', 'taman negara pulau pinang'),
+     'National park', 'Coastal trails and beaches around Teluk Bahang for landscape photography.',
+     ('nature', 'adventure', 'photography'), 'https://mypenang.gov.my/uploads/downloads/SFA_Teluk-Bahang_Eng_V03Aug24.pdf'),
+    (('escape penang',),
+     'Adventure theme park', 'Outdoor adventure park with water rides and climbing activities.',
+     ('adventure', 'family', 'leisure'), 'https://www.escape.my/pg/activities'),
+    (('gurney plaza',),
+     'Shopping mall', 'Shopping mall with a food hall and restaurant directory.',
+     ('shopping', 'food'), 'https://gurneyplaza.com.my/store/gurney-food-hall/'),
+    (('entopia by penang butterfly farm', 'entopia butterfly farm', 'entopia', 'penang butterfly farm'),
+     'Butterfly garden', 'Butterfly garden and indoor exhibits in Teluk Bahang. The venue permits personal photography.',
+     ('nature', 'family', 'photography'), 'https://www.entopia.com/faq/'),
+)
+_EVIDENCE_BY_ALIAS = {alias: (category, description, concepts, url)
+                      for aliases, category, description, concepts, url in _PENANG_EVIDENCE for alias in aliases}
+_GENERIC_CATEGORY = {'', 'attraction', 'tourist attraction', 'point of interest', 'establishment', 'place'}
+
+
+def enrich_discovery_candidate(item):
+    """Keep provider fields intact and attach separately sourced scoring evidence."""
+    geography = item.get('normalizedGeography') or {}
+    alias = normalize_phrase(item.get('title') or item.get('name'))
+    evidence = _EVIDENCE_BY_ALIAS.get(alias)
+    result = {key: value for key, value in item.items() if key != 'verifiedDestinationEvidence'}
+    if not evidence or geography.get('state') != 'Penang' or geography.get('conflict'):
+        return result
+    category, description, concepts, source_url = evidence
+    provider_category = normalize_phrase(item.get('category') or item.get('type'))
+    original_description = normalize_phrase(item.get('description'))
+    evidence = {'category': category, 'description': description, 'concepts': list(concepts),
+                'sourceUrl': source_url, 'matchedAlias': alias}
+    if alias in {'pinang peranakan mansion', 'penang peranakan mansion'}:
+        evidence['excludedConcepts'] = ['photography']
+    if alias == 'gurney plaza':
+        evidence['foodExperienceType'] = 'dining'
+    result['verifiedDestinationEvidence'] = evidence
+    if provider_category in _GENERIC_CATEGORY:
+        evidence['suppliesCategory'] = True
+    if original_description in _GENERIC_CATEGORY | {
+        normalize_phrase(item.get('address')), normalize_phrase(item.get('type')),
+    }:
+        evidence['suppliesDescription'] = True
+    return result
+
 
 def discovery_queries(preference, candidates):
     excluded = concepts_for(preference.get('excludedInterests') or [])
@@ -13,7 +68,7 @@ def discovery_queries(preference, candidates):
         did = str(item.get('destinationId') or item.get('id') or '')
         if (preference.get('destinationFeedback') or {}).get(did) == 'not_for_me':
             continue
-        concepts = candidate_concepts(item)
+        concepts = candidate_concepts(enrich_discovery_candidate(item))
         if not concepts & excluded:
             covered.update(concepts)
     missing = requested - covered
@@ -42,6 +97,7 @@ def discovery_annotations(item, preference):
                      'cooking' if re.search(r'\bcooking (class|school|workshop|experience)\b',text) else
                      'dining' if re.search(r'\b(hawker|restaurant|cafe|kopitiam|food (court|street|market))\b',text) else
                      'culinary_culture' if re.search(r'\b(spice|spices|garden)\b',text) else 'food_related')
+        food_type = (item.get('verifiedDestinationEvidence') or {}).get('foodExperienceType') or food_type
     return {'discoveryEligible': bool(matched and not excluded and not rejected),
             'discoveryMatchedConcepts': sorted(matched) if not excluded and not rejected else [],
             'foodExperienceType': food_type}
