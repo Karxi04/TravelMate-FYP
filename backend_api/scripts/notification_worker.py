@@ -10,11 +10,11 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from firebase_service import get_db, init_firebase
 from sequence_contract.firebase_firestore import transactNotificationRecord
-from services.notification_delivery import enabled, now_utc, dispatch, queue_notification, rollout_traveller, digest
+from services.notification_delivery import dispatch_enabled, now_utc, dispatch, queue_notification, rollout_traveller, digest
 
 
 def run_worker(batch_size=100):
-    if not enabled(): return {'disabled':True}
+    if not dispatch_enabled(): return {'disabled':True}
     now=now_utc();lease=uuid4().hex
     scoped_uid=rollout_traveller()
     state_id='reconcile_' + digest(scoped_uid) if scoped_uid else 'reconcile'

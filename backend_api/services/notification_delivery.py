@@ -16,6 +16,10 @@ def enabled():
     return os.getenv('TRAVELMATE_PUSH_ENABLED', '').lower() == 'true'
 
 
+def dispatch_enabled():
+    return enabled() and os.getenv('PUSH_DISPATCH_ENABLED', 'true').lower() == 'true'
+
+
 def rollout_traveller():
     return os.getenv('PUSH_TRAVELLER_UID', '').strip()
 
@@ -60,7 +64,7 @@ def register_device(uid, payload, disable=False):
 
 
 def queue_notification(event, created):
-    if not enabled() or not created or not _in_rollout(event.get('travellerId')):
+    if not dispatch_enabled() or not created or not _in_rollout(event.get('travellerId')):
         return
     if event.get('category') in {'payment','arrangements_ready','package_booking','arrangements_update','booking_attention'}:
         try:
@@ -103,7 +107,7 @@ def still_due(notification, now):
 
 
 def capture_committed_order(order):
-    if not enabled():
+    if not dispatch_enabled():
         return
     try:
         uid = order.get('travellerId')
@@ -177,7 +181,7 @@ def _dispatch_log(nid, outcome):
 
 
 def dispatch(uid=None, limit=100, sender=None, max_sends=100):
-    if not enabled():
+    if not dispatch_enabled():
         return {'sent':0,'disabled':True}
     scoped_uid = rollout_traveller()
     if scoped_uid:

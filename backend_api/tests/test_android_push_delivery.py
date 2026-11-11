@@ -124,6 +124,15 @@ def test_acceptance_rollout_scopes_existing_outbox_and_registration(memory, monk
     delivery.register_device('other', other_registration, disable=True)
 
 
+def test_registration_can_be_verified_before_dispatch_activation(memory, monkeypatch):
+    monkeypatch.setenv('PUSH_DISPATCH_ENABLED', 'false')
+    key = delivery.register_device(UID, registration())
+    assert memory.read('notification_devices', key)['active']
+    event(memory)
+    assert memory.read('notification_outbox') == []
+    assert delivery.dispatch() == {'sent': 0, 'disabled': True}
+
+
 def test_concurrent_dispatch_lease_prevents_duplicate_send(memory):
     delivery.register_device(UID,registration());event(memory);calls=[]
     with ThreadPoolExecutor(max_workers=2) as executor:
