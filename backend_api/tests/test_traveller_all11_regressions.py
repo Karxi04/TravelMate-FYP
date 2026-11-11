@@ -82,11 +82,10 @@ def test_guidance_one_question_and_existing_preferences():
     assert guided_requirements('2', state, prefs)['ready']
     assert state['interests'] == ['Culture'] and state['travelPace'] == 'relaxed'
 
-def test_guidance_asks_interests_then_pace_without_defaulting():
+def test_complete_dated_draft_does_not_require_optional_interests_or_pace():
     state = {'destinationArea': 'Penang', 'tripDays': 3, 'startDate':'2030-12-12','endDate':'2030-12-14', 'budgetLimit': 500, 'travellerCount': 2}
-    assert guided_requirements('plan a trip', state, {})['missing'] == ['interests']
-    assert guided_requirements('no preference', state, {})['missing'] == ['travelPace']
-    assert guided_requirements('relaxed', state, {})['ready']
+    assert guided_requirements('plan a trip', state, {})['ready']
+    assert 'interests' not in state and 'travelPace' not in state
 
 def test_guided_chat_draft_never_saves_trip(client, mock_traveller_auth):
     session = {'id': 's', 'travellerId': 'test_traveller_uid', 'messages': [], 'planningState': {}}

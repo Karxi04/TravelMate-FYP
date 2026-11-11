@@ -166,9 +166,13 @@ def test_route_persists_beach_exclusion_across_turns(offline_chat):
     assert state['travellerCount'] == 2
     assert state['excludedInterests'] == ['Beach']
     assert 'Beach' not in state.get('interests', [])
-    plan = retained['item']['tripPlan']
-    assert plan['excludedInterests'] == ['Beach']
-    assert all(item.get('category') != 'Beach' for item in plan['activities'])
+    plan = retained['item'].get('tripPlan')
+    if plan is not None:
+        assert plan['excludedInterests'] == ['Beach']
+        assert all(item.get('category') != 'Beach' for item in plan['activities'])
+    else:
+        assert retained['item']['constraintConflict']['excludedInterests'] == ['Beach']
+        assert 'activePlan' not in state
 
 
 def test_route_does_not_store_trip_duration_as_traveller_count(offline_chat):

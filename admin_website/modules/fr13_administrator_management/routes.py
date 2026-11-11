@@ -148,24 +148,21 @@ def review_campaign(campaign_id):
 def feedback():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    source = request.args.get("source", "traveller")
-    if source not in {"traveller", "fyp_penang"}:
-        abort(400)
-    source_args = {"params": {"source": source}} if source == "fyp_penang" else {}
-    response = call_api("GET", "/api/fr13/feedback", **source_args)
+    response = call_api("GET", "/api/fr13/feedback", params={"source": "all"})
+    data = response.json() if response.ok else {}
     categories = {
         "flagged": "Flagged", "needs_review": "Needs review", "automatic": "Automatically approved",
         "manual": "Manually approved", "hidden": "Hidden",
     }
     counts = dict.fromkeys(categories, 0)
-    status = request.args.get("status", "all" if source == "fyp_penang" else "queue")
+    status = request.args.get("status", "queue")
     if status not in {*categories, "queue", "normal", "all"}:
         status = "queue"
     query = request.args.get("q", "").strip()
     search = query.casefold()
     group = {"flagged", "needs_review"} if status == "queue" else {"automatic", "manual"} if status == "normal" else {status}
     items = []
-    for item in response.json().get("items", []) if response.ok else []:
+    for item in data.get("items", []):
         category = item.get("moderationCategory", "needs_review")
         if category not in categories:
             category = "needs_review"
@@ -177,13 +174,18 @@ def feedback():
             continue
         items.append({**item, "moderationCategory": category})
     history_id = request.args.get("history", "")
+    history_source = request.args.get("history_source", request.args.get("source", "traveller"))
     history = None
-    if any(item.get("id") == history_id for item in items):
-        response = call_api("GET", f"/api/fr13/feedback/{history_id}/history", **source_args)
+    if history_source in {"traveller", "fyp_penang"} and any(
+        item.get("id") == history_id and item.get("reviewSource", "traveller") == history_source for item in items
+    ):
+        response = call_api("GET", f"/api/fr13/feedback/{history_id}/history",
+                            **({"params": {"source": history_source}} if history_source == "fyp_penang" else {}))
         history = response.json().get("items", []) if response.ok else None
     return render_template("fr13_administrator_management/feedback.html", items=items, counts=counts,
                            categories=categories, status=status, query=query, history_id=history_id,
-                           history=history, source=source)
+                           history=history, history_source=history_source,
+                           private_unavailable=data.get("privateUnavailable", False))
 
 @bp.route("/destinations")
 def destinations():
@@ -332,7 +334,7 @@ def review_feedback(feedback_id):
     else:
         flash(_error(response), "error")
     return redirect(url_for("admin_fr13.feedback", status=request.form.get("status", "queue"),
-                            q=request.form.get("q", ""), **({"source": source} if source_args else {})))
+                            q=request.form.get("q", "")))
 
 @bp.post("/feedback/<feedback_id>/remove")
 def remove_feedback(feedback_id):

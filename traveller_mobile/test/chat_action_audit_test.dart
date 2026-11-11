@@ -90,6 +90,7 @@ class ActionApi extends ApiService {
       failSessions = false,
       failActivity = false;
   bool rejectActivity = false;
+  List<String>? suggestedReplies;
   ActionApi({bool recommendations = false, bool draft = false}) {
     if (recommendations || draft) {
       final raw = copy(jsonDecode(
@@ -179,7 +180,8 @@ class ActionApi extends ApiService {
         'title': 'Sent chat',
         'planningState': {},
         'messages': [
-          {'message': body!['message'], 'reply': 'Reply to ${body['message']}'}
+          {'message': body!['message'], 'reply': 'Reply to ${body['message']}',
+            if (suggestedReplies != null) 'suggestedReplies': suggestedReplies}
         ]
       };
       sessions = [copy(session)];
@@ -303,6 +305,20 @@ void main() {
       expect(api.posts.single['path'], '/api/fr11/chat');
     });
   }
+  testWidgets('guided reply submits to the current session and leaves typing available',
+      (tester) async {
+    final api = ActionApi()..suggestedReplies = ['Half day', 'Not sure'];
+    await frame(tester, ChatTab(api: api));
+    await tap(tester, find.widgetWithText(ActionChip, 'Plan things to do'));
+    expect(find.byType(TextField), findsOneWidget);
+    api.suggestedReplies = null;
+    await tap(tester, find.widgetWithText(ActionChip, 'Half day'));
+    expect(api.posts.last['path'], '/api/fr11/chat');
+    expect(api.posts.last['body'], {
+      'message': 'Half day', 'guidedPlanning': true, 'sessionId': 'sent-session'
+    });
+    expect(find.widgetWithText(ActionChip, 'Not sure'), findsNothing);
+  });
   for (final tool in ['Flights', 'Hotels', 'Packing', 'Weather', 'Trips']) {
     testWidgets(
         'travel tool $tool opens the correct existing screen with the same API',

@@ -1312,6 +1312,14 @@ class _ChatTabState extends State<ChatTab> {
                     final advisory =
                         (item['weatherAdvice'] ?? item['advisory'] ?? '')
                             .toString();
+                    final replies = identical(raw, messages.last) &&
+                            item['suggestedReplies'] is List
+                        ? (item['suggestedReplies'] as List)
+                            .whereType<String>()
+                            .where((text) => text.trim().isNotEmpty)
+                            .take(6)
+                            .toList()
+                        : <String>[];
 
                     return [
                       Align(
@@ -1416,6 +1424,20 @@ class _ChatTabState extends State<ChatTab> {
                                     color: AppColors.textPrimary,
                                   ),
                                 ),
+                                if (replies.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    children: [
+                                      for (final text in replies)
+                                        ActionChip(
+                                          label: Text(text),
+                                          onPressed: busy ? null : () => send(text),
+                                        ),
+                                    ],
+                                  ),
+                                ],
                                 if (placeSuggestions.isNotEmpty)
                                   placeSuggestionsCard(placeSuggestions),
                                 if (plan is Map)

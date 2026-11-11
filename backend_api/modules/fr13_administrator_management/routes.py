@@ -409,8 +409,8 @@ def review_campaign(cid):
     review=approve(current,comment) if decision=='approved' else reject(current,comment); updates={'reviewStatus':review['decision'],'reviewComment':review['reviewComment'],'reviewReason':review['reviewComment'],'reviewedBy':g.uid,'reviewedAt':review['reviewedAt'],'updatedAt':utc_now_iso()}
     if decision=='approved':updates['campaignStatus']='approved'
     return jsonify({'ok':True,'campaign':_save('promotional_campaigns',cid,updates,current)})
-def _private_feedback():
-    source = request.args.get('source', 'traveller')
+def _private_feedback(source=None, *, optional=False):
+    source = source or request.args.get('source', 'traveller')
     if source == 'traveller':
         return None, []
     if source != 'fyp_penang':
@@ -421,16 +421,22 @@ def _private_feedback():
             return dataset[0], dataset_reviews(*dataset)
     except Exception:
         pass
+    if optional:
+        return None, []
     _fail('The private Penang review dataset is unavailable.', 503)
 
 
 @bp.get('/feedback')
 @auth_required(['admin'])
 def all_feedback():
-    ref, private_rows = _private_feedback()
+    unified = request.args.get('source') == 'all'
+    ref, private_rows = _private_feedback('fyp_penang' if unified else None, optional=unified)
+    sources = [('fyp_penang', item) for item in private_rows]
+    if unified or ref is None:
+        sources.extend(('traveller', item) for item in _load('feedback'))
     items = []
-    for item in private_rows if ref is not None else _load('feedback'):
-        screening = item['screening'] if ref is not None else current_screen(item)
+    for source, item in sources:
+        screening = item['screening'] if source == 'fyp_penang' else current_screen(item)
         decision = item.get('moderationDecision') or {}
         if item.get('feedbackStatus') == 'removed':
             category = 'hidden'
@@ -438,11 +444,13 @@ def all_feedback():
             category = 'automatic' if decision.get('actor') == 'system' else 'manual'
         else:
             category = 'flagged' if screening['risk'] == 'flagged' else 'needs_review'
-        items.append({**item, 'screening': screening, 'moderationCategory': category,
+        items.append({**item, 'screening': screening, 'moderationCategory': category, 'reviewSource': source,
                       'reviewRevision': review_revision(item)})
     items.sort(key=lambda item: str(item.get('submittedAt') or ''), reverse=True)
-    response = jsonify({'ok': True, 'items': items})
-    if ref is not None:
+    response = jsonify({'ok': True, 'items': items,
+                        **({'privateUnavailable': ref is None,
+                            'dataLimited': getattr(g, 'admin_data_limited', False)} if unified else {})})
+    if ref is not None or unified:
         response.headers['Cache-Control'] = 'private, no-store'
     return response
 
@@ -497,6 +505,9 @@ def review_feedback(fid):
         return jsonify({'ok':False,'error':'Use a moderation note of at most 2000 characters.'}),400
     if decision not in {'keep', 'remove', 'reject', 'hide'}:
         return jsonify({'ok': False, 'error': 'Choose Approve, Reject or Hide.'}), 400
+    if ref is not None and (current.get('feedbackStatus') == 'removed'
+                            or (published_review(current) and decision in {'keep', 'reject'})):
+        return jsonify({'ok': False, 'error': 'That action is unavailable for this review status.'}), 409
     note = payload.get('comment', '')
     if decision != 'keep':
         outcome = ('hide' if published_review(current) else 'reject') if decision == 'remove' else decision

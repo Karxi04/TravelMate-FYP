@@ -121,51 +121,18 @@ def _format_tailored_planning_fallback(dest, dest_state, days, budget, traveller
     if interests:
         intro += f" Highlighting your interests in {', '.join(interests)}."
 
-    dest_lower = dest.lower()
-    if 'kuala lumpur' in dest_lower or dest_lower == 'kl':
-        structure = (
-            "Recommended structure: Day 1 Petronas Twin Towers, KLCC Park and Bukit Bintang street food; "
-            "Day 2 Batu Caves Temple, Merdeka Square and colonial heritage landmarks; "
-            "Day 3 Perdana Botanical Garden, National Museum and Thean Hou Temple."
-        )
-    elif 'melaka' in dest_lower or 'malacca' in dest_lower:
-        structure = (
-            "Recommended structure: Day 1 A Famosa fortress, St. Paul's Hill, the Stadthuys Red Square, and Jonker Street night market; "
-            "Day 2 Melaka River Cruise, Baba & Nyonya Heritage Museum, and local Peranakan food trails; "
-            "Day 3 coastal views and historical handicrafts."
-        )
-    elif 'penang' in dest_lower or 'george town' in dest_lower:
-        structure = (
-            "Recommended structure: Day 1 George Town UNESCO heritage core, street art murals and food trail; "
-            "Day 2 Kek Lok Si Temple, Penang Hill funicular and Air Itam laksa; "
-            "Day 3 Penang Botanic Gardens or Batu Ferringhi beach."
-        )
-    elif 'langkawi' in dest_lower:
-        structure = (
-            "Recommended structure: Day 1 Langkawi SkyCab and curved Sky Bridge; "
-            "Day 2 Kilim Karst Geoforest Park boat safari with eagle feeding and mangrove caves; "
-            "Day 3 relaxation at Pantai Cenang beach and night food market."
-        )
-    elif 'sabah' in dest_lower or 'kota kinabalu' in dest_lower:
-        structure = (
-            "Recommended structure: Day 1 Kota Kinabalu City Mosque, waterfront market and Tanjung Aru sunset; "
-            "Day 2 Tunku Abdul Rahman Marine Park island hopping; "
-            "Day 3 day-trip to Kinabalu National Park and Kundasang highland farms."
-        )
-    elif 'sarawak' in dest_lower or 'kuching' in dest_lower:
-        structure = (
-            "Recommended structure: Day 1 Kuching Waterfront, Astana viewpoint and Borneo Cultures Museum; "
-            "Day 2 Bako National Park coastal hike; "
-            "Day 3 Sarawak Cultural Village and Semenggoh Wildlife Centre."
-        )
-    else:
-        structure = f"Recommended structure: Explore the top cultural, natural, and culinary highlights of {dest} across {days} days, pacing activities conveniently by area."
+    from modules.fr11_chatbot_travel_assistant.nlp_extractor import find_matching_catalog_destinations
+    candidates = find_matching_catalog_destinations(dest, dest_state)
+    names = [row.get('title') or row.get('name') for row in candidates[:5]]
+    names = [name for name in names if name]
+    structure = ('TravelMate catalogue ideas: ' + ', '.join(names) + '.' if names else
+                 f'I have limited verified activity information for {dest}.')
 
     if budget:
         cost_note = f"Please note that the RM{budget:g} budget is an estimate covering local transit, dining, and admission fees; check live accommodation and flight prices in TravelMate before finalizing bookings."
     else:
         cost_note = "Please note that budget totals are estimates; verify live rates in TravelMate before making bookings."
-    footer = f"{cost_note} Use the day-by-day plan and attraction cards below to explore your itinerary."
+    footer = f"{cost_note} Check current place details before adding stops to your itinerary."
 
     return f"{intro}\n\n{structure}\n\n{footer}"
 
@@ -279,98 +246,26 @@ def _local_assistant(question, context='', planning_state=None):
             "Open Trips → Budget to see the system's calculated total and alternatives."
         )
 
-    # 6b. Conversational Adjustments when planningState has active destination
-    dest = ps.get('destinationArea') or ps.get('destinationState')
-    if not dest:
-        for candidate, canon in [('kuala lumpur', 'Kuala Lumpur'), ('kl', 'Kuala Lumpur'), ('melaka', 'Melaka'), ('malacca', 'Melaka'), ('penang', 'Penang'), ('george town', 'Penang'), ('langkawi', 'Langkawi'), ('sabah', 'Sabah'), ('kota kinabalu', 'Kota Kinabalu'), ('sarawak', 'Sarawak'), ('kuching', 'Kuching'), ('ipoh', 'Ipoh')]:
-            if re.search(r'\b' + re.escape(candidate) + r'\b', q):
-                dest = canon
-                break
-
-    has_planning_intent = is_explicit_planning or any(k in q for k in ['plan', 'itinerary', 'trip', 'change our budget', 'budget to', 'make it cheaper', 'days', 'travellers', 'people'])
-    if dest and (has_planning_intent or ps.get('tripDays') or ps.get('budgetLimit')):
-        dest_state = ps.get('destinationState') or dest
-        days = ps.get('tripDays') or 3
-        budget = ps.get('budgetLimit')
-        travellers = ps.get('travellerCount')
-        s_date = ps.get('startDate')
-        e_date = ps.get('endDate')
-        interests = ps.get('interests') or []
-        return _format_tailored_planning_fallback(dest, dest_state, days, budget, travellers, s_date, e_date, interests)
-
-    # 8. Destination-specific food advice
-    if any(word in q for word in ['kuala lumpur', ' kl ']) or q.endswith(' kl') or q.startswith('kl '):
-        if any(word in q for word in ['food', 'eat', 'hawker', 'restaurant']):
-            return (
-                "For Kuala Lumpur, must-try food experiences include Jalan Alor night street food (grilled chicken wings, satay, dim sum), "
-                "Petaling Street Chinatown for beef noodles and claypot rice, and Brickfields for authentic South Indian banana leaf rice."
-            )
-        return (
-            "A balanced 3-day Kuala Lumpur structure is: Day 1 Petronas Twin Towers, KLCC Park and Bukit Bintang shopping & street food; "
-            "Day 2 Batu Caves Temple, Merdeka Square and colonial heritage landmarks; "
-            "Day 3 Perdana Botanical Garden, National Museum and Thean Hou Temple. "
-            "Use Home → Personalised Plan to arrange these automatically based on your preferences."
-        )
-
-    if any(word in q for word in ['melaka', 'malacca']):
-        if any(word in q for word in ['food', 'eat', 'hawker', 'restaurant']):
-            return (
-                "In Melaka, do not miss Hainanese chicken rice balls along Jonker Street, authentic Nyonya laksa, Peranakan kuih, "
-                "and refreshing Gula Melaka cendol near the Stadthuys."
-            )
-        return (
-            "A simple Melaka itinerary includes: Day 1 A Famosa fortress, St. Paul's Hill, the Stadthuys Red Square, and Jonker Street night market; "
-            "Day 2 Melaka River Cruise, Baba & Nyonya Heritage Museum, and a local food trail along the historical waterfront."
-        )
-
-    if 'langkawi' in q:
-        if any(word in q for word in ['food', 'eat', 'hawker', 'restaurant']):
-            return (
-                "In Langkawi, enjoy fresh seafood along Pantai Cenang, local Malay laksa near the airport, and the rotating night markets "
-                "in Kuah and Padang Matsirat for budget-friendly authentic street dishes."
-            )
-        return (
-            "A great Langkawi holiday structure: Day 1 Langkawi SkyCab cable car and curved Sky Bridge; "
-            "Day 2 Kilim Karst Geoforest Park boat safari with eagle feeding and mangrove caves; "
-            "Day 3 relaxation and water activities at Pantai Cenang beach."
-        )
-
-    if any(word in q for word in ['sabah', 'kota kinabalu', ' kk ']) or q.endswith(' kk'):
-        if any(word in q for word in ['food', 'eat', 'hawker', 'restaurant']):
-            return (
-                "In Sabah, savour fresh ocean seafood at the Kota Kinabalu Waterfront, local Tuaran mee, Hinava (traditional Kadazan-Dusun raw fish salad), "
-                "and freshly grilled fish at the Filipino Market night stalls."
-            )
-        return (
-            "A recommended Sabah itinerary: Day 1 Kota Kinabalu City Mosque, Tanjung Aru beach sunset and night food market; "
-            "Day 2 Tunku Abdul Rahman Marine Park island hopping and snorkeling; "
-            "Day 3 day-trip to Kinabalu National Park and Kundasang highland farms."
-        )
-
-    if any(word in q for word in ['sarawak', 'kuching']):
-        if any(word in q for word in ['food', 'eat', 'hawker', 'restaurant']):
-            return (
-                "In Kuching, start your morning with authentic Sarawak laksa (praised by Anthony Bourdain), followed by springy kolo mee, "
-                "crisp jungle midin fern, and layered Sarawak kek lapis along the waterfront."
-            )
-        return (
-            "A memorable Sarawak trip: Day 1 Kuching Waterfront, Astana viewpoint and the world-class Borneo Cultures Museum; "
-            "Day 2 Bako National Park coastal hike to spot proboscis monkeys and sea stacks; "
-            "Day 3 Sarawak Cultural Village and Semenggoh Wildlife Centre orangutan sanctuary."
-        )
-
-    if any(word in q for word in ['food', 'eat', 'hawker', 'restaurant']):
-        return (
-            "Across Malaysia, every region offers iconic food: Penang is famous for Char Koay Teow, Asam Laksa and Cendol; "
-            "Kuala Lumpur for Jalan Alor street food and Nasi Lemak; Melaka for Chicken Rice Balls and Nyonya cuisine; "
-            "Ipoh for white coffee and bean sprout chicken; and Sarawak for authentic Sarawak Laksa and Kolo Mee."
-        )
-
-    if any(word in q for word in ['plan', 'itinerary', 'day', 'trip', 'penang', 'george town']):
-        return (
-            "A simple 3-day Penang structure is: Day 1 George Town heritage core + Peranakan/Wonderfood Museum + food trail; "
-            "Day 2 Kek Lok Si + Penang Hill + Air Itam food; Day 3 Botanic Gardens or Batu Ferringhi, with an indoor mall/museum backup if rain is likely. "
-            "For a personalised version, use Home → Personalised Plan so TravelMate ranks destinations from your preferences and generates the day schedule automatically."
+    from modules.fr11_chatbot_travel_assistant.nlp_extractor import (
+        activity_request, extract_duration, extract_geographic_entities,
+    )
+    geo = extract_geographic_entities(question)
+    dest = geo.get('destination_area') or ps.get('destinationArea')
+    dest_state = geo.get('destination_state') or ps.get('destinationState')
+    planning_words = re.search(r'\b(?:plan|itinerary|trip|day|days|attractions|places|food|eat|visit)\b', q)
+    if activity_request(q) or is_explicit_planning or planning_words or geo.get('destination_area') or (
+        dest and (ps.get('tripDays') or detailed_intent in {
+            'BUDGET_ADJUSTMENT', 'DURATION_ADJUSTMENT', 'TRAVELLER_COUNT_ADJUSTMENT', 'DATE_ADJUSTMENT',
+        })
+    ):
+        if not dest:
+            return 'Sure! Where in Malaysia would you like to explore?'
+        days = ps.get('tripDays') or extract_duration(question)
+        if not days:
+            return f'How much time do you have in {dest}? I can suggest activities for a half day, a full day, or several days.'
+        return _format_tailored_planning_fallback(
+            dest, dest_state, days, ps.get('budgetLimit'), ps.get('travellerCount'),
+            ps.get('startDate'), ps.get('endDate'), ps.get('interests') or [],
         )
 
     if context_lower:

@@ -70,8 +70,14 @@ def test_admin_sees_private_sources_and_legacy_decisions_without_mixing(client, 
     rows = response.json['items']
     assert response.headers['Cache-Control'] == 'private, no-store'
     assert len(rows) == 36 and {row['moderationCategory'] for row in rows} == {'automatic'}
+    combined = client.get(url, headers=headers('admin'), query_string={'source': 'all'})
+    assert combined.headers['Cache-Control'] == 'private, no-store'
+    assert Counter(row['reviewSource'] for row in combined.json['items']) == {'fyp_penang': 36, 'traveller': 1}
+    assert client.get(url, headers=headers('fyp-viewer'), query_string={'source': 'all'}).status_code == 403
     ref.collection('moderation').document.return_value.collection.return_value.stream.return_value = []
     path = f"{url}/{rows[0]['id']}"
+    assert client.post(path + '/review', headers=headers('admin'), query_string={'source': 'all'},
+                       json={'decision': 'hide'}).status_code == 400
     history = client.get(path + '/history', headers=headers('admin'), query_string=private)
     assert history.json['items'][0]['outcome'] == 'approve'
     assert history.json['items'][0]['actor'] == 'system'

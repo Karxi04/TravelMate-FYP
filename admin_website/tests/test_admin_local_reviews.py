@@ -44,7 +44,7 @@ def test_moderation_filters_counts_and_history(auth_client):
         {'id': 'manual', 'destinationName': 'Manual Place', 'moderationCategory': 'manual'},
         {'id': 'hidden', 'destinationName': 'Hidden Place', 'moderationCategory': 'hidden'},
     ]
-    def api(method, path):
+    def api(method, path, **kwargs):
         response = MagicMock(ok=True)
         items = rows if path == '/api/fr13/feedback' else [
             {'actor': 'administrator', 'outcome': 'approve', 'note': 'Earlier decision'}]
@@ -62,25 +62,30 @@ def test_private_source_is_carried_to_filters_history_and_actions(auth_client):
     calls = []
     response = MagicMock(ok=True)
     row = {'id': 'penang', 'destinationName': 'Penang Hill', 'travellerName': 'Mira S.',
-           'moderationCategory': 'flagged', 'reviewRevision': 'expected'}
+           'moderationCategory': 'flagged', 'reviewRevision': 'expected',
+           'reviewSource': 'fyp_penang'}
+    genuine = {'id': 'penang', 'destinationName': 'Genuine place', 'travellerName': 'Genuine reviewer',
+               'moderationCategory': 'manual', 'reviewSource': 'traveller'}
 
     def api(method, path, **kwargs):
         calls.append((method, path, kwargs))
-        response.json.return_value = {'items': [] if path.endswith('/history') else [row]}
+        response.json.return_value = {'items': [] if path.endswith('/history') else [row, genuine]}
         return response
 
     with _patch_admin_api(api):
-        page = auth_client.get('/admin/feedback?source=fyp_penang&q=mira&history=penang')
+        page = auth_client.get('/admin/feedback?status=all&history_source=fyp_penang&history=penang')
         result = auth_client.post('/admin/feedback/penang/review', data={
             'source': 'fyp_penang', 'decision': 'keep', 'expectedRevision': 'expected',
         })
     html = page.get_data(as_text=True)
-    assert 'aria-current="page">FYP Penang Reviews' in html
-    assert 'Penang Hill' in html and 'Private fictional reviews' in html
-    assert 'source=fyp_penang' in html and 'name="source" value="fyp_penang"' in html
+    assert 'Review source' not in html and 'FYP Penang Reviews' not in html
+    assert 'Penang Hill' in html and 'Genuine place' in html
+    assert 'name="source" value="fyp_penang"' in html and 'name="source" value="traveller"' in html
+    assert html.count('<details open>') == 1
     assert [path for _, path, _ in calls] == [
         '/api/fr13/feedback', '/api/fr13/feedback/penang/history', '/api/fr13/feedback/penang/review',
     ]
-    assert all(kwargs['params'] == {'source': 'fyp_penang'} for _, _, kwargs in calls)
+    assert calls[0][2]['params'] == {'source': 'all'}
+    assert all(kwargs['params'] == {'source': 'fyp_penang'} for _, _, kwargs in calls[1:])
     assert calls[-1][2]['json']['expectedRevision'] == 'expected'
-    assert result.status_code == 302 and 'source=fyp_penang' in result.location
+    assert result.status_code == 302 and 'source=' not in result.location
