@@ -30,7 +30,11 @@ def memory(monkeypatch):
         db[(collection, identity)] = deepcopy(dict(data, id=identity))
         return deepcopy(db[(collection, identity)])
     def update(collection, identity, data, **kwargs):
-        db[(collection, identity)].update(deepcopy(data))
+        row = db[(collection, identity)]
+        if collection == 'chat_sessions' and set(data) == {'planningState'}:
+            row['planningState'].setdefault('savedPlans', {}).update(data['planningState']['savedPlans'])
+        else:
+            row.update(deepcopy(data))
         return read(collection, identity)
     def claim(collection, identity, data):
         existing = read(collection, identity)
@@ -90,6 +94,7 @@ def test_activity_quick_prompt_and_short_replies_are_grounded(client, mock_trave
     shorter = send(client, 'I only have half a day.', ipoh['session'])
     assert 'half-day' in shorter['reply'] and len(shorter['item']['placeSuggestions']) <= 2
     assert 'tripPlan' not in shorter['item']
+    assert 'tripDays' not in shorter['session']['planningState']
     reopened = client.get('/api/fr11/sessions/' + session['id'], headers=AUTH).json['session']
     assert reopened['planningState']['destinationArea'] == 'Ipoh'
     assert send(client, 'Plan things to do')['session']['planningState'].get('destinationArea') is None
@@ -128,6 +133,37 @@ def test_single_date_waits_for_duration_and_allows_optional_skips(client, mock_t
     plan = ready['item']['tripPlan']
     assert (plan['startDate'], plan['endDate'], plan['tripDays']) == ('2026-12-12', '2026-12-13', 2)
     assert len(plan['planningLimitations']) == 2
+
+
+@pytest.mark.skipif(not os.getenv('TRAVELMATE_FR11_TEST_EMULATOR'), reason='requires disposable Firestore emulator')
+def test_firestore_chat_turn_replaces_removed_draft_fields(monkeypatch):
+    from google.auth.credentials import AnonymousCredentials
+    from google.cloud import firestore
+    from sequence_contract import firebase_firestore
+
+    host = os.environ['TRAVELMATE_FR11_TEST_EMULATOR']
+    assert host.startswith('127.0.0.1:')
+    monkeypatch.setenv('FIRESTORE_EMULATOR_HOST', host)
+    db = firestore.Client(project='demo-travelmate-chat-state', credentials=AnonymousCredentials())
+    monkeypatch.setattr(firebase_firestore, 'get_db', lambda: db)
+    ref = db.collection('chat_sessions').document('half-day-test')
+    ref.create({'travellerId': 'synthetic', 'messages': [], 'planningState': {
+        'tripDays': 3, 'startDate': '2026-12-12', 'endDate': '2026-12-14',
+        'activePlan': {'draftId': 'old-draft'}, 'guidedQuestion': 'startDate',
+        'savedPlans': {'older': 'trip-one'},
+    }})
+    next_state = {'activityWindow': 'half_day', 'destinationArea': 'Ipoh',
+                  'savedPlans': {'older': 'trip-one'}}
+    updated = firebase_firestore.updateRecord('chat_sessions', ref.id, {
+        'messages': [{'message': 'Half day'}], 'planningState': next_state,
+    })
+    assert updated['planningState'] == next_state
+    firebase_firestore.updateRecord('chat_sessions', ref.id, {
+        'planningState': {'savedPlans': {'confirmed': 'trip-two'}},
+    })
+    assert ref.get().to_dict()['planningState'] == {
+        **next_state, 'savedPlans': {'older': 'trip-one', 'confirmed': 'trip-two'},
+    }
 
 
 def johor_provider(monkeypatch):

@@ -841,9 +841,8 @@ def save_plan():
         trip_id = 'chat_' + hashlib.sha256(f'{g.uid}:{save_session["id"]}:{draft_id}'.encode('utf-8')).hexdigest()[:32]
         itinerary['id'] = trip_id
         result, created = claimRecord('itineraries', trip_id, itinerary)
-        state = dict(save_session.get('planningState') or {})
-        state['savedPlans'] = {**(state.get('savedPlans') or {}), draft_id: result['id']}
-        updateRecord('chat_sessions', save_session['id'], {'planningState': state})
+        updateRecord('chat_sessions', save_session['id'],
+                     {'planningState': {'savedPlans': {draft_id: result['id']}}})
         return jsonify({'ok': True, 'id': result['id'], 'itinerary': result, 'budget': result.get('budgetEstimate'), 'alreadySaved': not created}), 201 if created else 200
     result = storeRecord('itineraries', itinerary)
     return jsonify({'ok': True, 'id': result['id'], 'itinerary': result, 'budget': budget}), 201

@@ -156,7 +156,11 @@ def updateRecord(collectionName, documentId, data, expected=None):
         option = get_db().write_option(last_update_time=snap.update_time)
     _revoke_public_projection(collectionName, documentId)
     if option is None:
-        ref.set(data, merge=True)
+        if collectionName == 'chat_sessions' and {'messages', 'planningState'} <= data.keys():
+            # A chat turn replaces the state map, including removed draft and duration fields.
+            ref.update(data)
+        else:
+            ref.set(data, merge=True)
     else:
         try:
             ref.update(data, option=option)
