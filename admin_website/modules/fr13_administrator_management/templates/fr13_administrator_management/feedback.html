@@ -5,113 +5,140 @@
 {% include '_admin_data_state.html' %}
 <div class="page-title">
   <div>
-    <span class="eyebrow">COMMUNITY &amp; CONTENT SAFETY</span>
-    <h1>Traveller Reviews &amp; Feedback</h1>
-    <p>Approve submitted community reviews before public display, or remove inappropriate or policy-violating comments.</p>
+    <h1>Review Moderation</h1>
+    <p>Review flagged or uncertain feedback and manage published Traveller reviews.</p>
   </div>
 </div>
 
+{% if not backend_error %}
+<div class="grid g4" style="margin-bottom: 20px;">
+  {% for value, label, count in [
+    ('flagged', 'Flagged reviews', counts.flagged),
+    ('needs_review', 'Needs review', counts.needs_review),
+    ('normal', 'Normal reviews', counts.automatic + counts.manual),
+    ('hidden', 'Hidden reviews', counts.hidden)
+  ] %}
+  <a class="card metric-card" href="{{ url_for('admin_fr13.feedback', status=value, q=query) }}">
+    <div class="metric">{{ count }}</div>
+    <div class="metric-label">{{ label }}</div>
+    {% if value == 'normal' %}
+      <div class="metric-help">{{ counts.automatic }} automatic · {{ counts.manual }} manual</div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<form method="get" class="card actions" style="padding: 14px; margin-bottom: 20px;">
+  <div class="field">
+    <label for="review-search">Search reviews, destinations or users</label>
+    <input class="input" id="review-search" name="q" type="search" value="{{ query }}">
+  </div>
+  <div class="field">
+    <label for="review-status">Moderation status</label>
+    <select class="input" id="review-status" name="status">
+      {% for value, label in [('queue', 'Moderation queue'), ('all', 'All reviews'), ('normal', 'Normal reviews')] + (categories.items()|list) %}
+        <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button class="btn primary" type="submit">Apply filters</button>
+</form>
+
 <div class="grid g2">
   {% for x in items %}
-    <article class="card review-card" style="display: flex; flex-direction: column; justify-content: space-between;">
-      <div>
-        <!-- Status & Moderation Header -->
-        <div class="actions" style="justify-content: space-between; margin-bottom: 12px;">
-          <div style="display: flex; gap: 6px; align-items: center;">
-            <span class="status {{ 'rejected' if x.get('feedbackStatus') == 'removed' else 'active' }}">
-              {{ x.get('feedbackStatus', 'visible')|title }}
-            </span>
-            <span class="status {{ 'pending' if x.get('moderationStatus', 'pending_review') == 'pending_review' else 'approved' }}">
-              {{ x.get('moderationStatus', 'pending_review')|replace('_', ' ')|title }}
-            </span>
-          </div>
-
-          <!-- Rating Badge -->
-          <div style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: var(--canvas); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; color: #D97706;">
-            <span>★</span>
-            <span>{{ x.get('rating', '-') }}</span>
-            <span class="muted" style="font-weight: 400; font-size: 11px;">/ 5</span>
-          </div>
-        </div>
-
-        <!-- Destination & Author -->
-        <h3 style="margin: 0 0 4px; font-size: 17px;">{{ x.get('destinationName', x.get('destinationId', 'Destination')) }}</h3>
-        {% if x.get('destinationAddress') %}
-          <p class="muted" style="margin: 0 0 8px; font-size: 12.5px;">{{ x.get('destinationAddress') }}</p>
-        {% endif %}
-
-        <div style="font-size: 13px; margin-bottom: 10px;">
-          <strong>Traveller:</strong> {{ x.get('travellerName', 'Traveller') }}
-        </div>
-
-        <!-- Review Comment -->
-        <blockquote style="margin: 0 0 14px; padding: 10px 14px; background: var(--canvas); border-left: 3px solid var(--bluegrey); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-style: normal; font-size: 13.5px; line-height: 1.5; color: var(--ink);">
-          {{ x.get('comment', '') }}
-        </blockquote>
-
-        <!-- Automated Screening Flags -->
-        {% if x.get('screening') %}
-          {% set risk = x.screening.get('risk', 'uncertain')|lower %}
-          {% set tone = 'danger' if risk in ['high', 'unsafe'] else 'success' if risk == 'low' else 'warning' %}
-          <div style="padding: 8px 12px; background: var(--{{ tone }}-bg); border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-            <strong>Screening Risk:</strong>
-            <span class="badge {{ tone }}" style="font-size: 10.5px; padding: 1px 6px;">
-              {{ risk|capitalize }}
-            </span>
-            {% set sentiment = x.screening.get('sentiment') %}
-            {% if sentiment %}
-              <span class="muted">· Comment tone: {{ sentiment.get('label', 'uncertain')|capitalize }}</span>
-              {% if sentiment.get('ratingMismatch') %}
-                <span>· Check the star rating against the comment</span>
-              {% elif sentiment.get('ratingAlignment') == 'uncertain' %}
-                <span>· Rating agreement unclear</span>
-              {% endif %}
-            {% endif %}
-            {% if x.screening.get('flags') %}
-              <span class="muted">· Flags: {{ x.screening.get('flags')|join(', ')|replace('_', ' ') }}</span>
-            {% endif %}
-          </div>
-        {% endif %}
-
-        <!-- Moderation Note -->
-        {% if x.get('reviewComment') %}
-          <p class="muted" style="font-size: 12.5px; margin: 0 0 10px; background: var(--canvas); padding: 8px 12px; border-radius: var(--radius-sm);">
-            <strong>Moderation note:</strong> {{ x.get('reviewComment') }}
-          </p>
-        {% endif %}
-
-        <p class="muted" style="font-size: 11.5px; margin: 0 0 14px;">
-          <small>Submitted: {{ x.get('submittedAt', '-') }}</small>
-        </p>
+    {% set category = x.moderationCategory %}
+    {% set screening = x.get('screening') or {} %}
+    {% set risk = screening.get('risk', 'uncertain') %}
+    {% set tone = 'success' if risk == 'low' else 'warning' %}
+    {% set sentiment = screening.get('sentiment') or {} %}
+    {% set decision = x.get('moderationDecision') or {} %}
+    <article class="card review-card" style="overflow-wrap: anywhere;">
+      <div class="actions" style="justify-content: space-between;">
+        <span class="status {{ 'rejected' if category == 'hidden' else 'pending' if category in ['flagged', 'needs_review'] else 'approved' }}">
+          {{ categories[category] }}
+          {% if category == 'hidden' and decision.get('outcome') == 'reject' %} · Rejected{% endif %}
+        </span>
+        <strong aria-label="{{ x.get('rating', '-') }} out of 5 stars">★ {{ x.get('rating', '-') }} / 5</strong>
       </div>
-
-      <!-- Decision Form -->
-      {% if x.get('feedbackStatus') != 'removed' %}
+      <h3>{{ x.get('destinationName') or x.get('destinationId', 'Destination') }}</h3>
+      {% if x.get('destinationAddress') %}<p class="muted">{{ x.destinationAddress }}</p>{% endif %}
+      <p class="muted">{{ x.get('travellerName') or 'Traveller' }} · {{ (x.get('submittedAt') or '')[:10] or 'Date unavailable' }}</p>
+      <blockquote style="margin: 12px 0; padding: 10px 14px; background: var(--canvas); border-left: 3px solid var(--bluegrey);">
+        {{ x.get('comment', '') }}
+      </blockquote>
+      <p>
+        <span class="badge {{ tone }}">{{ risk|capitalize }} risk</span>
+        · Comment tone: {{ sentiment.get('label', 'uncertain')|capitalize }}
+        {% if sentiment.get('ratingMismatch') %}
+          · Check the star rating against the comment
+        {% elif sentiment.get('ratingAlignment') == 'compatible' and risk != 'uncertain' %}
+          · Rating and tone are compatible
+        {% else %}
+          · Rating agreement unclear
+        {% endif %}
+      </p>
+      {% if screening.get('flags') %}
+        <p>Flags: {{ screening.flags|join(', ')|replace('_', ' ') }}</p>
+      {% endif %}
+      {% if screening.get('reason') %}
+        <p>Screening reason: {{ screening.reason|replace('_', ' ') }}</p>
+      {% endif %}
+      {% if category in ['automatic', 'manual', 'hidden'] %}
+        <p class="muted">
+          {% if decision.get('actor') == 'system' %}
+            System decision · {{ decision.get('policyVersion', '') }}
+          {% else %}
+            Administrator decision
+          {% endif %}
+          {% if decision.get('at') %} · {{ decision.at[:10] }}{% endif %}
+        </p>
+      {% endif %}
+      {% if x.get('reviewComment') %}
+        <p class="muted"><strong>Administrator note</strong> {{ x.reviewComment }}</p>
+      {% endif %}
+      {% if history_id == x.id and history is not none %}
+        <details open>
+          <summary>Decision history</summary>
+          {% for event in history %}
+            <p class="muted">
+              {{ event.get('at') or event.get('removedAt') or event.get('reviewedAt') or 'Date unavailable' }}
+              · {{ event.get('actor', 'administrator')|capitalize }}
+              · {{ event.get('outcome') or event.get('moderationStatus') }}
+              {% if event.get('policyVersion') %} · {{ event.policyVersion }}{% endif %}
+              {% if event.get('note') or event.get('reviewComment') %} · {{ event.get('note') or event.reviewComment }}{% endif %}
+            </p>
+          {% else %}
+            <p class="muted">No earlier decisions recorded.</p>
+          {% endfor %}
+        </details>
+      {% elif decision or x.get('reviewedBy') or x.get('removedBy') %}
+        <p><a href="{{ url_for('admin_fr13.feedback', q=query, status=status, history=x.id) }}">Decision history</a></p>
+      {% endif %}
+      {% if category != 'hidden' %}
         <form method="post" action="{{ url_for('admin_fr13.review_feedback', feedback_id=x.id) }}" style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="expectedUpdatedAt" value="{{ x.get('updatedAt', '') }}">
           <input type="hidden" name="expectedRevision" value="{{ x.get('reviewRevision', '') }}">
-          
-          <div class="field" style="margin-bottom: 12px;">
-            <label style="font-size: 12px; font-weight: 600;">Moderation note</label>
-            <textarea class="input" name="comment" placeholder="Reason or follow-up note" rows="2" style="font-size: 12.5px; padding: 6px 10px;"></textarea>
+          <input type="hidden" name="status" value="{{ status }}">
+          <input type="hidden" name="q" value="{{ query }}">
+          <div class="field">
+            <label for="note-{{ loop.index }}">Moderation note</label>
+            <textarea class="input" id="note-{{ loop.index }}" name="comment" rows="2" maxlength="2000"></textarea>
           </div>
           <div class="actions">
-            <button class="btn primary btn-sm" name="decision" value="keep" type="submit">Approve</button>
-            <button class="btn danger btn-sm" name="decision" value="remove" type="submit">
-              {{ 'Hide' if x.get('moderationStatus') in ['reviewed', 'approved'] else 'Reject' }}
-            </button>
+            {% if category in ['flagged', 'needs_review'] %}
+              <button class="btn primary btn-sm" name="decision" value="keep" type="submit">Approve</button>
+              <button class="btn danger btn-sm" name="decision" value="reject" type="submit">Reject</button>
+            {% endif %}
+            <button class="btn danger btn-sm" name="decision" value="hide" type="submit">Hide</button>
           </div>
         </form>
       {% endif %}
     </article>
   {% else %}
     <div class="card cream empty-state" style="grid-column: 1 / -1;">
-      <div class="empty-icon" aria-hidden="true">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      </div>
-      <strong>No Traveller reviews have been submitted.</strong>
-      <p>Community ratings and feedback will appear here for administrative moderation.</p>
+      <strong>{{ 'Reviews are unavailable.' if backend_error else 'No reviews match these filters.' }}</strong>
     </div>
   {% endfor %}
 </div>

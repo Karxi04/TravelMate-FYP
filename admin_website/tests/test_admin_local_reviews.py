@@ -33,3 +33,26 @@ def test_admin_review_action_forwards_revision_and_rejection(auth_client):
             'decision': 'remove', 'comment': 'Spam', 'expectedUpdatedAt': 'revision'})
     assert result.status_code == 302
     assert captured[0][2]['json'] == {'decision': 'remove', 'comment': 'Spam', 'expectedUpdatedAt': 'revision'}
+
+
+def test_moderation_filters_counts_and_history(auth_client):
+    rows = [
+        {'id': 'normal', 'destinationName': 'Penang Hill', 'moderationCategory': 'automatic',
+         'moderationDecision': {'actor': 'system', 'policyVersion': 'travelmate-review-auto-v1'}},
+        {'id': 'flagged', 'destinationName': 'Unrelated Place', 'moderationCategory': 'flagged'},
+        {'id': 'uncertain', 'destinationName': 'Chew Jetty', 'moderationCategory': 'needs_review'},
+        {'id': 'manual', 'destinationName': 'Manual Place', 'moderationCategory': 'manual'},
+        {'id': 'hidden', 'destinationName': 'Hidden Place', 'moderationCategory': 'hidden'},
+    ]
+    def api(method, path):
+        response = MagicMock(ok=True)
+        items = rows if path == '/api/fr13/feedback' else [
+            {'actor': 'administrator', 'outcome': 'approve', 'note': 'Earlier decision'}]
+        response.json.return_value = {'items': items}
+        return response
+    with _patch_admin_api(api):
+        queue = auth_client.get('/admin/feedback').get_data(as_text=True)
+        normal = auth_client.get('/admin/feedback?status=normal&q=penang&history=normal').get_data(as_text=True)
+    assert 'Unrelated Place' in queue and 'Chew Jetty' in queue and 'Penang Hill' not in queue
+    assert 'Penang Hill' in normal and 'Manual Place' not in normal and 'Unrelated Place' not in normal
+    assert '1 automatic · 1 manual' in normal and 'Earlier decision' in normal

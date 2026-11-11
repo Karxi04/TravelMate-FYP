@@ -95,6 +95,8 @@ class MainActivity : FlutterActivity() {
                         result.success(mapOf(
                             "package" to packageName,
                             "emulatorBuild" to true,
+                            "privateReviewDemo" to BuildConfig.PRIVATE_REVIEW_DEMO,
+                            "androidEmulator" to (Build.HARDWARE in setOf("ranchu", "goldfish")),
                             "productionResourcesAbsent" to (resources.getIdentifier("google_app_id", "string", packageName) == 0),
                             "projects" to projects
                         ))

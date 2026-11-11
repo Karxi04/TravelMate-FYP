@@ -98,9 +98,19 @@ def claimRecord(collectionName, documentId, data):
     ``set`` so concurrent duplicate requests cannot both win the claim. No
     provider/network work is performed while the claim is being created.
     """
-    ref = get_db().collection(collectionName).document(str(documentId))
+    db = get_db()
+    ref = db.collection(collectionName).document(str(documentId))
     try:
-        ref.create(data)
+        if collectionName == 'feedback':
+            from services.review_service import stage_public_review, stage_review_decision
+            batch = db.batch()
+            batch.create(ref, data)
+            projection = db.collection('public_destination_reviews').document(ref.id)
+            stage_public_review(batch, projection, ref.id, data)
+            stage_review_decision(batch, ref, data)
+            batch.commit()
+        else:
+            ref.create(data)
         return {"id": ref.id, **data}, True
     except AlreadyExists:
         snap = ref.get()

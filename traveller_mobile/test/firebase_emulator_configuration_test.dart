@@ -95,4 +95,35 @@ void main() {
       expect(() => c.validateBackend(bad), throwsStateError);
     }
   });
+  test('private preview accepts the normal package only on a desktop emulator', () {
+    const config = FirebaseEmulatorConfig(
+      apiUrl: 'http://10.0.2.2:5005',
+      reviewDemo: true,
+    );
+    final native = {
+      'package': 'com.example.travelmate_traveller',
+      'emulatorBuild': true,
+      'privateReviewDemo': true,
+      'androidEmulator': true,
+      'productionResourcesAbsent': true,
+      'projects': <String>[],
+    };
+    config.validateNative(native);
+    for (final mismatched in [
+      {...native, 'androidEmulator': false},
+      {...native, 'privateReviewDemo': false},
+      {...native, 'productionResourcesAbsent': false},
+      {...native, 'package': FirebaseEmulatorConfig.package},
+    ]) {
+      expect(() => config.validateNative(mismatched), throwsStateError);
+    }
+    expect(
+      () => const FirebaseEmulatorConfig(
+        host: '127.0.0.1',
+        apiUrl: 'http://127.0.0.1:5005',
+        reviewDemo: true,
+      ).validate(platform: TargetPlatform.android),
+      throwsStateError,
+    );
+  });
 }

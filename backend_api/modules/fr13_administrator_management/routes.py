@@ -24,7 +24,7 @@ from services.report_service import (
     export_system_report_pdf
 )
 from services.package_service import package_for_read, package_submission_error
-from services.review_service import ReviewConflict, current_screen, review_revision, published_review
+from services.review_service import ReviewConflict, current_screen, review_revision, published_review, review_history
 from services.public_content_projection import active_campaign, eligible_package
 from services.campaign_schedule import campaign_package_ids
 from modules.fr12_tourism_operator_management.analytics_service import is_paid_order
@@ -411,10 +411,26 @@ def review_campaign(cid):
 @bp.get('/feedback')
 @auth_required(['admin'])
 def all_feedback():
-    items = _load('feedback')
-    items = [{**item, 'screening': current_screen(item), 'reviewRevision': review_revision(item)} for item in items]
-    items.sort(key=lambda item: (item.get('moderationStatus') != 'pending_review', str(item.get('submittedAt') or '')))
+    items = []
+    for item in _load('feedback'):
+        screening = current_screen(item)
+        decision = item.get('moderationDecision') or {}
+        if item.get('feedbackStatus') == 'removed':
+            category = 'hidden'
+        elif published_review(item):
+            category = 'automatic' if decision.get('actor') == 'system' else 'manual'
+        else:
+            category = 'flagged' if screening['risk'] == 'flagged' else 'needs_review'
+        items.append({**item, 'screening': screening, 'moderationCategory': category,
+                      'reviewRevision': review_revision(item)})
+    items.sort(key=lambda item: str(item.get('submittedAt') or ''), reverse=True)
     return jsonify({'ok': True, 'items': items})
+
+
+@bp.get('/feedback/<fid>/history')
+@auth_required(['admin'])
+def feedback_history(fid):
+    return jsonify({'ok': True, 'items': review_history(fid)})
 
 
 def _commit_review(fid, current, updates, **extra):
@@ -425,6 +441,11 @@ def _commit_review(fid, current, updates, **extra):
         return jsonify({'ok': False, 'error': str(error)}), 409
     except Exception:
         return jsonify({'ok': False, 'error': 'Review moderation is temporarily unavailable.'}), 503
+
+
+def _admin_review_decision(outcome, note=''):
+    return {'actor': 'administrator', 'actorId': g.uid, 'outcome': outcome,
+            'at': utc_now_iso(), 'note': note}
 
 @bp.post('/feedback/<fid>/review')
 @auth_required(['admin'])
@@ -440,18 +461,23 @@ def review_feedback(fid):
         return jsonify({'ok':False,'error':'This review changed. Refresh and try again.'}),409
     if not isinstance(payload.get('comment',''), str) or len(payload.get('comment','')) > 2000:
         return jsonify({'ok':False,'error':'Use a moderation note of at most 2000 characters.'}),400
-    if decision not in {'keep','remove'}:return jsonify({'ok':False,'error':'decision must be keep or remove'}),400
-    if decision=='remove':
+    if decision not in {'keep', 'remove', 'reject', 'hide'}:
+        return jsonify({'ok': False, 'error': 'Choose Approve, Reject or Hide.'}), 400
+    note = payload.get('comment', '')
+    if decision != 'keep':
+        outcome = ('hide' if published_review(current) else 'reject') if decision == 'remove' else decision
         updates={
             'moderationStatus':'removed',
             'feedbackStatus':'removed',
-            'reviewComment':payload.get('comment',''),
+            'reviewComment':note,
             'removedBy':g.uid,
             'removedAt':utc_now_iso(),
             'updatedAt':utc_now_iso(),
+            'moderationDecision':_admin_review_decision(outcome, note),
         }
-        return _commit_review(fid, current, updates, removedId=fid, decision='remove')
-    updates={'moderationStatus':'reviewed','feedbackStatus':'visible','reviewComment':payload.get('comment',''),'reviewedBy':g.uid,'reviewedAt':utc_now_iso(),'updatedAt':utc_now_iso()}
+        return _commit_review(fid, current, updates, removedId=fid, decision=decision)
+    updates={'moderationStatus':'reviewed','feedbackStatus':'visible','reviewComment':note,'reviewedBy':g.uid,'reviewedAt':utc_now_iso(),'updatedAt':utc_now_iso(),
+             'moderationDecision':_admin_review_decision('approve', note)}
     return _commit_review(fid, current, updates, decision='keep')
 
 @bp.delete('/feedback/<fid>')
@@ -465,6 +491,7 @@ def remove_feedback(fid):
         'removedBy':g.uid,
         'removedAt':utc_now_iso(),
         'updatedAt':utc_now_iso(),
+        'moderationDecision':_admin_review_decision('hide'),
     }
     return _commit_review(fid, current, updates, removedId=fid)
 

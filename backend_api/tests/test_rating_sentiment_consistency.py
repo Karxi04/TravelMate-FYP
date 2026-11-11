@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from services.local_catalog import DESTINATIONS
-from services.review_service import current_screen, screen_review
+from services.review_service import current_screen, screen_review, screen_submission
 from test_local_reviews import headers, memory
 
 
@@ -47,6 +47,23 @@ def test_legacy_review_without_a_valid_rating_has_uncertain_alignment():
     assert screening['risk'] == 'uncertain'
 
 
+@pytest.mark.parametrize(('rating', 'comment', 'risk'), [
+    (5, 'Beautiful views and a wonderful outing.', 'low'),
+    (3, 'Nice views but long queues.', 'low'),
+    (1, 'The queues were frustrating and the visit was disappointing.', 'low'),
+    (5, 'Terrible experience. The visit was frustrating and disappointing.', 'flagged'),
+    (1, 'Amazing views and a beautiful garden. I loved the visit.', 'flagged'),
+    (3, 'Buy now https://example.invalid', 'flagged'),
+    (4, 'There are four paths near the water.', 'uncertain'),
+    (5, 'Beautiful and clean but the wait was terrible.', 'uncertain'),
+    (5, 'Amazing views', 'uncertain'),
+])
+def test_automatic_policy_requires_sufficient_matching_evidence(rating, comment, risk):
+    result = screen_submission(comment, rating)
+    assert result['screening']['risk'] == risk
+    assert result['moderationStatus'] == ('reviewed' if risk == 'low' else 'pending_review')
+
+
 def test_fixture_uses_distinct_existing_catalogue_and_demo_ids():
     assert DATASET['synthetic'] is True
     backend = {place['destinationId'] for place in DESTINATIONS}
@@ -73,7 +90,9 @@ def test_penang_sample_through_real_submission(client, memory, row):
     response = client.post('/api/fr10/feedback', headers=headers(), json=payload)
     assert response.status_code == 201
     saved = memory['feedback', response.json['id']]
-    assert saved['moderationStatus'] == 'pending_review'
+    assert saved['moderationStatus'] == 'reviewed'
+    assert saved['moderationDecision']['actor'] == 'system'
+    assert saved['moderationDecision']['policyVersion'] == saved['screening']['policyVersion']
     screening = saved['screening']
     assert screening['sentiment']['label'] == row['expectedSentiment']
     assert screening['sentiment']['ratingAlignment'] == 'compatible'
@@ -112,7 +131,8 @@ def test_rating_only_and_comment_only_edits_and_admin_rescreen(client, memory):
     }).json['feedback']
     assert corrected['rating'] == 1
     assert corrected['screening']['risk'] == 'low'
-    assert corrected['moderationStatus'] == 'pending_review'
+    assert corrected['moderationStatus'] == 'reviewed'
+    assert corrected['moderationDecision']['actor'] == 'system'
     approved = client.post(review_url, headers=headers('admin'), json={'decision': 'keep'})
     assert approved.json['feedback']['screening']['risk'] == 'low'
     result = client.get(public_url, headers=headers()).json['result']
@@ -120,3 +140,21 @@ def test_rating_only_and_comment_only_edits_and_admin_rescreen(client, memory):
     assert 'screening' not in result['user_reviews'][0]
     client.post(review_url, headers=headers('admin'), json={'decision': 'remove'})
     assert client.get(public_url, headers=headers()).json['result']['reviews'] == 0
+
+
+def test_legacy_pending_review_retry_does_not_auto_approve(client, memory):
+    comment = 'Beautiful scenery and a wonderful outing.'
+    memory['feedback', 'legacy'] = {
+        'id': 'legacy', 'travellerId': 'owner', 'destinationId': 'local_penang_hill',
+        'rating': 5, 'comment': comment, 'feedbackStatus': 'visible',
+        'moderationStatus': 'pending_review',
+    }
+    endpoint = '/api/fr10/feedback'
+    repeated = client.post(endpoint, headers=headers(), json={
+        'destinationId': 'local_penang_hill', 'rating': 5, 'comment': comment,
+    })
+    assert repeated.status_code == 200
+    assert repeated.json['feedback']['moderationStatus'] == 'pending_review'
+    unchanged = client.put(endpoint + '/legacy', headers=headers(), json={'rating': 5})
+    assert unchanged.json['feedback']['moderationStatus'] == 'pending_review'
+    assert client.get('/api/fr13/feedback', headers=headers('admin')).json['items'][0]['moderationCategory'] == 'needs_review'

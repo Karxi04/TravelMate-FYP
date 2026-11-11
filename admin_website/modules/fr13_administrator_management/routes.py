@@ -149,7 +149,36 @@ def feedback():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
     response = call_api("GET", "/api/fr13/feedback")
-    return render_template("fr13_administrator_management/feedback.html", items=response.json().get("items", []) if response.ok else [])
+    categories = {
+        "flagged": "Flagged", "needs_review": "Needs review", "automatic": "Automatically approved",
+        "manual": "Manually approved", "hidden": "Hidden",
+    }
+    counts = dict.fromkeys(categories, 0)
+    status = request.args.get("status", "queue")
+    if status not in {*categories, "queue", "normal", "all"}:
+        status = "queue"
+    query = request.args.get("q", "").strip()
+    search = query.casefold()
+    group = {"flagged", "needs_review"} if status == "queue" else {"automatic", "manual"} if status == "normal" else {status}
+    items = []
+    for item in response.json().get("items", []) if response.ok else []:
+        category = item.get("moderationCategory", "needs_review")
+        if category not in categories:
+            category = "needs_review"
+        counts[category] += 1
+        if status != "all" and category not in group:
+            continue
+        if search and not any(search in str(item.get(key) or "").casefold()
+                              for key in ("comment", "destinationName", "destinationId", "travellerName", "travellerId")):
+            continue
+        items.append({**item, "moderationCategory": category})
+    history_id = request.args.get("history", "")
+    history = None
+    if any(item.get("id") == history_id for item in items):
+        response = call_api("GET", f"/api/fr13/feedback/{history_id}/history")
+        history = response.json().get("items", []) if response.ok else None
+    return render_template("fr13_administrator_management/feedback.html", items=items, counts=counts,
+                           categories=categories, status=status, query=query, history_id=history_id, history=history)
 
 @bp.route("/destinations")
 def destinations():
@@ -289,10 +318,12 @@ def review_feedback(feedback_id):
         **({"expectedRevision": request.form["expectedRevision"]} if "expectedRevision" in request.form else {}),
     })
     if response.ok:
-        flash("Review approved." if decision == "keep" else "Review removed from Traveller view.", "success")
+        flash({"keep": "Review approved.", "reject": "Review rejected."}.get(
+            decision, "Review hidden from Traveller view."), "success")
     else:
         flash(_error(response), "error")
-    return redirect(url_for("admin_fr13.feedback"))
+    return redirect(url_for("admin_fr13.feedback", status=request.form.get("status", "queue"),
+                            q=request.form.get("q", "")))
 
 @bp.post("/feedback/<feedback_id>/remove")
 def remove_feedback(feedback_id):

@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, g
 from auth_utils import auth_required
 from utils import utc_now_iso
 from sequence_contract.firebase_firestore import retrieveRecord, claimRecord, updateRecord, deleteRecord
-from services.review_service import valid_review, review_id, pending_screen, ReviewConflict
+from services.review_service import valid_review, review_id, screen_submission, ReviewConflict
 from services.review_destination import review_destination_id, review_destination_ids
 from google.api_core.exceptions import Aborted, DeadlineExceeded
 
@@ -34,7 +34,7 @@ def submit_feedback():
         profile = retrieveRecord('users', g.uid) or {}
         now = utc_now_iso()
         data = {**payload, 'travellerId': g.uid, 'travellerName': profile.get('name') or 'Traveller',
-                'submittedAt': now, 'updatedAt': now, **pending_screen(payload['comment'], payload['rating'])}
+                'submittedAt': now, 'updatedAt': now, **screen_submission(payload['comment'], payload['rating'])}
         identity = review_id(g.uid, payload['destinationId'])
         try:
             result, created = (existing[0], False) if existing else claimRecord('feedback', identity, data)
@@ -69,7 +69,11 @@ def update_feedback(fid):
     payload = request.get_json(silent=True)
     if not valid_review(payload, partial=True):
         return jsonify({'ok': False, 'error': 'Invalid feedback update'}), 400
-    screening = pending_screen(
+    if 'comment' in payload:
+        payload['comment'] = payload['comment'].strip()
+    if all(current.get(key) == value for key, value in payload.items()):
+        return jsonify({'ok': True, 'feedback': current})
+    screening = screen_submission(
         payload.get('comment', current.get('comment', '')),
         payload.get('rating', current.get('rating')),
     )

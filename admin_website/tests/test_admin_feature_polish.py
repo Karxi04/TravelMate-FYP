@@ -310,7 +310,7 @@ def test_feedback_moderation_presentation_and_empty_state(admin_client):
         resp = admin_client.get("/admin/feedback")
         assert resp.status_code == 200
         html = resp.data.decode("utf-8")
-        assert "Traveller Reviews &amp; Feedback" in html
+        assert "Review Moderation" in html
         assert "Kek Lok Si Temple" in html
         assert "★" in html
         assert "Sarah Lee" in html
@@ -321,7 +321,7 @@ def test_feedback_moderation_presentation_and_empty_state(admin_client):
     with _patch_view_api("admin_fr13.feedback", mock_empty):
         resp = admin_client.get("/admin/feedback")
         assert resp.status_code == 200
-        assert b"No Traveller reviews have been submitted." in resp.data
+        assert b"No reviews match these filters." in resp.data
 
 
 # =========================================================================
