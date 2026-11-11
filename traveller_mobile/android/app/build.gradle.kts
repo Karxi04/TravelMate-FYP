@@ -14,7 +14,11 @@ val startupDefines = (project.findProperty("dart-defines") as? String).orEmpty()
     .split(",").filter { it.isNotBlank() }
     .map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
 val emulatorBuild = startupDefines.contains("USE_FIREBASE_EMULATOR=true")
+val privateReviewDemo = startupDefines.contains("PRIVATE_REVIEW_DEMO=true")
 val pushTestBuild = startupDefines.contains("PUSH_TEST_BUILD=true")
+if (privateReviewDemo && !emulatorBuild) {
+    throw GradleException("The private review demo requires Firebase emulators.")
+}
 if (startupDefines.any { it.startsWith("PUSH_TEST_BUILD=") && it !in listOf("PUSH_TEST_BUILD=true", "PUSH_TEST_BUILD=false") }) {
     throw GradleException("PUSH_TEST_BUILD must be true or false.")
 }
@@ -58,9 +62,15 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        manifestPlaceholders["travelMateLabel"] = if (pushTestBuild) "TravelMate Push Sandbox" else if (emulatorBuild) "TravelMate Hermetic Test" else "TravelMate"
-        applicationId = if (emulatorBuild || pushTestBuild) "org.travelmate.hermetic.travelmate_hermetic" else "com.example.travelmate_traveller"
+        manifestPlaceholders["travelMateLabel"] = when {
+            privateReviewDemo -> "TravelMate Private FYP Preview"
+            pushTestBuild -> "TravelMate Push Sandbox"
+            emulatorBuild -> "TravelMate Hermetic Test"
+            else -> "TravelMate"
+        }
+        applicationId = if ((emulatorBuild && !privateReviewDemo) || pushTestBuild) "org.travelmate.hermetic.travelmate_hermetic" else "com.example.travelmate_traveller"
         buildConfigField("boolean", "USE_FIREBASE_EMULATOR", emulatorBuild.toString())
+        buildConfigField("boolean", "PRIVATE_REVIEW_DEMO", privateReviewDemo.toString())
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

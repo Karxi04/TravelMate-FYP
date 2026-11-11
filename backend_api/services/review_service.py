@@ -8,6 +8,8 @@ from math import isfinite
 from utils import utc_now_iso
 from services.review_sentiment import classify_review_sentiment
 
+SCREENING_POLICY = 'travelmate-review-auto-v1'
+
 
 def valid_review(data, partial=False):
     if not isinstance(data, dict) or not data:
@@ -54,25 +56,56 @@ def screen_review(comment, rating=None):
     meaningful = len(tokens) >= 3 or (len(comment.strip()) >= 8 and evidence >= 2)
     uncertain = not meaningful or sentiment['ratingAlignment'] == 'uncertain'
     risk = 'flagged' if flags else 'uncertain' if uncertain else 'low'
-    return {'method': 'local_rules_v2_rating_sentiment', 'risk': risk, 'flags': flags,
-            'sentiment': sentiment, 'screenedAt': utc_now_iso()}
+    result = {'method': 'local_rules_v2_rating_sentiment', 'risk': risk, 'flags': flags,
+              'sentiment': sentiment, 'screenedAt': utc_now_iso()}
+    if risk == 'uncertain':
+        result['reason'] = 'insufficient_text' if not meaningful else 'rating_alignment_unclear'
+    return result
 
 
-def pending_screen(comment, rating=None):
+def _screening(comment, rating):
     comment = comment if isinstance(comment, str) else ''
     try:
         result = screen_review(comment, rating)
     except Exception:
-        result = {'method': 'unavailable', 'risk': 'uncertain', 'flags': [], 'screenedAt': utc_now_iso()}
+        result = {'method': 'unavailable', 'risk': 'uncertain', 'flags': [],
+                  'reason': 'screening_unavailable', 'screenedAt': utc_now_iso()}
     result['contentHash'] = hashlib.sha256(comment.encode()).hexdigest()
-    # Existing policy requires Administrator review; low-risk is not auto-approved.
-    return {'moderationStatus': 'pending_review', 'feedbackStatus': 'visible', 'screening': result}
+    result['rating'] = rating
+    result['policyVersion'] = SCREENING_POLICY
+    return result
+
+
+def screen_submission(comment, rating):
+    screening = _screening(comment, rating)
+    sentiment = screening.get('sentiment', {})
+    eligible_ratings = {
+        'positive': (4, 5), 'negative': (1, 2), 'neutral': (3,), 'mixed': (3,),
+    }
+    if screening['risk'] == 'low':
+        if len(re.findall(r'\w+', comment)) < 3:
+            screening.update(risk='uncertain', reason='insufficient_text')
+        elif rating not in eligible_ratings.get(sentiment.get('label'), ()):
+            screening.update(risk='uncertain', reason='rating_alignment_unclear')
+    approved = screening['risk'] == 'low'
+    return {
+        'moderationStatus': 'reviewed' if approved else 'pending_review',
+        'feedbackStatus': 'visible',
+        'screening': screening,
+        'moderationDecision': {'actor': 'system', 'outcome': 'approve' if approved else 'pending',
+                               'at': screening['screenedAt'], 'policyVersion': SCREENING_POLICY},
+    }
 
 
 def current_screen(item):
     comment = item.get('comment') if isinstance(item.get('comment'), str) else ''
-    # Recompute cheap local triage: legacy/client-era cached indicators are not authority.
-    return pending_screen(comment, item.get('rating'))['screening']
+    rating = item.get('rating')
+    stored = item.get('screening')
+    if (isinstance(stored, dict) and stored.get('policyVersion') == SCREENING_POLICY
+            and stored.get('rating') == rating
+            and stored.get('contentHash') == hashlib.sha256(comment.encode()).hexdigest()):
+        return stored
+    return screen_submission(comment, rating)['screening']
 
 
 def published_review(item):
@@ -98,11 +131,33 @@ class ReviewConflict(ValueError):
     pass
 
 
+def stage_public_review(write, projection, document_id, record):
+    from services.public_content_projection import public_review
+    if published_review(record):
+        write.set(projection, public_review({**record, 'id': document_id}))
+    else:
+        write.delete(projection)
+
+
+def stage_review_decision(write, source, record):
+    decision = record.get('moderationDecision')
+    if decision:
+        audit = {**decision, 'screening': record.get('screening', {})}
+        write.set(source.collection('moderation_history').document(review_revision(record)), audit)
+
+
+def review_history(document_id):
+    from firebase_service import get_db
+    source = get_db().collection('feedback').document(document_id)
+    history = [entry.to_dict() for entry in source.collection('moderation_history').stream()]
+    return sorted(history, key=lambda entry: entry.get('at') or entry.get('removedAt') or entry.get('reviewedAt') or '',
+                  reverse=True)
+
+
 def commit_feedback(document_id, expected, patch=None):
     """CAS source and public projection together; prevent stale moderation approvals."""
     from firebase_service import get_db
     from google.cloud import firestore
-    from services.public_content_projection import public_review
     db = get_db()
     source = db.collection('feedback').document(document_id)
     projection = db.collection('public_destination_reviews').document(document_id)
@@ -111,8 +166,7 @@ def commit_feedback(document_id, expected, patch=None):
     def commit(transaction):
         snap = source.get(transaction=transaction)
         current = snap.to_dict() if snap.exists else None
-        keys = ('travellerId', 'destinationId', 'rating', 'comment', 'updatedAt', 'moderationStatus', 'feedbackStatus')
-        if not current or any(current.get(key) != expected.get(key) for key in keys):
+        if not current or review_revision(current) != review_revision(expected):
             raise ReviewConflict('This review changed. Refresh and try again.')
         if patch is None:
             transaction.delete(source)
@@ -121,9 +175,15 @@ def commit_feedback(document_id, expected, patch=None):
         updated = {**current, **patch}
         if patch:
             transaction.update(source, patch)
-        if published_review(updated):
-            transaction.set(projection, public_review({'id': document_id, **updated}))
-        else:
-            transaction.delete(projection)
+        stage_public_review(transaction, projection, document_id, updated)
+        if patch and 'moderationDecision' in patch:
+            if not current.get('moderationDecision') and (current.get('reviewedBy') or current.get('removedBy')):
+                # Capture a pre-policy Administrator decision before replacing its metadata.
+                legacy = {key: current[key] for key in (
+                    'reviewedBy', 'reviewedAt', 'removedBy', 'removedAt', 'reviewComment',
+                    'moderationStatus', 'feedbackStatus',
+                ) if key in current}
+                transaction.set(source.collection('moderation_history').document(review_revision(current)), legacy)
+            stage_review_decision(transaction, source, updated)
         return {'id': document_id, **updated}
     return commit(db.transaction())

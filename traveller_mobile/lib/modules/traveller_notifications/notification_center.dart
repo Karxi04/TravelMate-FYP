@@ -1,5 +1,5 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'android_notification_settings.dart';
 import '../../services/android_push_service.dart';
 import '../../services/trip_reminders.dart';
 import '../../services/api_service.dart';
@@ -135,7 +135,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
   bool busy = true;
   int loadVersion = 0;
   String? error;
-  String notice = '';
   final pending = <String>{};
   @override
   void initState() {
@@ -172,10 +171,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
               .whereType<Map>()
               .map(Map<String, dynamic>.from)
               .toList();
-          notice = '${data['notice'] ?? ''}';
         });
     } catch (e) {
-      if (mounted && request==loadVersion) setState(() => error = e.toString());
+      if (kDebugMode) debugPrint('Notification inbox refresh: ${e.runtimeType}');
+      if (mounted && request==loadVersion) {
+        setState(() => error = 'Notifications are unavailable. Please try again.');
+      }
     } finally {
       if (mounted && request==loadVersion) setState(() => busy = false);
     }
@@ -191,7 +192,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
       if (mounted) setState(() => item['read'] = read);
       return true;
     } catch (e) {
-      if (mounted) showError(context, e);
+      if (kDebugMode) debugPrint('Notification read state: ${e.runtimeType}');
+      if (mounted) showError(context, 'Could not update this notification. Please try again.');
       return false;
     } finally {
       if (mounted) setState(() => pending.remove(id));
@@ -218,17 +220,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: AppSpacing.page,
                 children: [
-                  const Text(
-                'Inbox checked when you open or refresh TravelMate. Android push also requires permission and a configured backend.'),
-                  const AndroidNotificationSettings(),
-                  const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
-                          'Press and hold a notification to view its support reference.')),
-                  if (notice.isNotEmpty)
-                    Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Text(notice)),
                   if (busy) const Center(child: CircularProgressIndicator()),
                   if (error != null)
                     AppErrorState(message: error!, onRetry: load),
@@ -267,17 +258,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
                           icon: Icon(item['read'] == true
                               ? Icons.mark_email_read_outlined
                               : Icons.mark_email_unread_outlined)),
-                      onLongPress: () => showDialog<void>(
-                          context: context,
-                          builder: (dialog) => AlertDialog(
-                                  title: const Text('Notification reference'),
-                                  content: SelectableText(
-                                      '${item['id'] ?? 'Unavailable'}'),
-                                  actions: [
-                                    TextButton(
-                                        onPressed: () => Navigator.pop(dialog),
-                                        child: const Text('Close'))
-                                  ])),
                       onTap: () async {
                         final screen = notificationDestination(
                             item['target'] as Map? ?? {}, widget.api);

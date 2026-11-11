@@ -1,4 +1,4 @@
-from .travel_dates import parse_date_range
+from .travel_dates import malaysian_today, parse_date_range
 import re
 import unicodedata
 from datetime import date, timedelta
@@ -90,8 +90,15 @@ def extract_geographic_entities(text):
 
     # Determine text to scan for destination
     text_to_scan = t_clean
+    direct_change = re.search(
+        r'\b(?:change|switch|move)\s+(?:(?:our|the|my)\s+destination\s+)?to\s+(.+?)(?:\s+instead\s+of\s+|$)',
+        t_clean,
+    )
     if is_dest_change and dest_part:
         text_to_scan = dest_part
+    elif direct_change and _ordered_malaysian_mentions(direct_change[1]):
+        is_dest_change = True
+        text_to_scan = direct_change[1]
     elif origin_part and foreign_origin:
         text_to_scan = re.sub(rf'\bfrom\s+{re.escape(origin_part)}\b', '', t_clean)
 
@@ -284,19 +291,21 @@ def extract_dates(text, duration_days=3, default_start=None, default_end=None):
     if explicit_range:
         return explicit_range
     q = text.lower()
-    today = date.today()
+    today = malaysian_today()
+
+    def from_start(start):
+        end = (start + timedelta(days=duration_days - 1)).isoformat() if duration_days else None
+        return start.isoformat(), end
 
     if 'starting tomorrow' in q or 'starts tomorrow' in q:
         start = today + timedelta(days=1)
-        end = start + timedelta(days=duration_days - 1)
-        return start.isoformat(), end.isoformat()
+        return from_start(start)
     if 'next saturday' in q:
         days_ahead = (5 - today.weekday()) % 7
         if days_ahead == 0:
             days_ahead = 7
         start = today + timedelta(days=days_ahead)
-        end = start + timedelta(days=duration_days - 1)
-        return start.isoformat(), end.isoformat()
+        return from_start(start)
 
     m_exp = re.search(r'\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)\s+(\d{4})\b', q)
     if m_exp:
@@ -307,8 +316,7 @@ def extract_dates(text, duration_days=3, default_start=None, default_end=None):
             month_num = MONTH_NAMES[m_str]
             try:
                 start = date(year_num, month_num, day_num)
-                end = start + timedelta(days=duration_days - 1)
-                return start.isoformat(), end.isoformat()
+                return from_start(start)
             except Exception:
                 pass
 
@@ -317,8 +325,7 @@ def extract_dates(text, duration_days=3, default_start=None, default_end=None):
         d_val, m_val, y_val = int(m_slash.group(1)), int(m_slash.group(2)), int(m_slash.group(3))
         try:
             start = date(y_val, m_val, d_val)
-            end = start + timedelta(days=duration_days - 1)
-            return start.isoformat(), end.isoformat()
+            return from_start(start)
         except Exception:
             pass
 
@@ -505,6 +512,13 @@ def extract_day_specific(text):
     return {}
 
 
+def activity_request(text):
+    return bool(re.search(
+        r'\b(?:things to do|what to do|what can (?:i|we) do|activity ideas|sightseeing ideas|'
+        r'general ideas|just ideas|half[ -](?:a[ -])?day)\b', text, re.I,
+    ))
+
+
 def classify_detailed_intent(text, planning_state=None):
     q = text.lower().strip()
     ps = dict(planning_state or {})
@@ -515,6 +529,9 @@ def classify_detailed_intent(text, planning_state=None):
         return 'FOREIGN_UNSUPPORTED'
     if geo.get('is_destination_change'):
         return 'ITINERARY_MODIFICATION'
+
+    if activity_request(q) and not re.search(r'\b(?:flight|hotel|car rental|forecast|if it rains)\b', q):
+        return 'ACTIVITY_DISCOVERY'
 
     # Check for explicit itinerary planning phrases
     is_explicit_planning = (
@@ -596,13 +613,9 @@ def classify_detailed_intent(text, planning_state=None):
         return 'DESTINATION_ENQUIRY'
 
     # 13. Social / general conversation
-    if any(gc in q for gc in ['hello', 'hi', 'good morning', 'good evening', 'thank you', 'thanks', 'goodbye', 'bye', 'nice to meet you', 'who created you']):
-        return 'GENERAL_CONVERSATION'
-
-    # 14. Fallbacks
     if any(t in q for t in ['recommend', 'food', 'eat', 'restaurant', 'attraction']):
         return 'DESTINATION_ENQUIRY'
-    if any(t in q for t in ['plan', 'itinerary', 'trip']):
+    if re.search(r'\b(?:plan|itinerary|trip)\b', q):
         return 'ITINERARY_PLANNING'
 
     return 'GENERAL_CONVERSATION'
@@ -615,6 +628,8 @@ def classify_user_intent(text, planning_state=None):
 
     if detailed in {'ITINERARY_PLANNING', 'ITINERARY_MODIFICATION'}:
         return 'PLANNING_REQUEST'
+    if detailed == 'ACTIVITY_DISCOVERY':
+        return 'PROVISIONAL_EXPLORATION'
     if detailed in {'DURATION_ADJUSTMENT', 'BUDGET_ADJUSTMENT', 'TRAVELLER_COUNT_ADJUSTMENT', 'DATE_ADJUSTMENT', 'INTEREST_MODIFICATION', 'INDOOR_ALTERNATIVE'}:
         if dest:
             return 'PLANNING_REQUEST'
@@ -675,23 +690,23 @@ def find_matching_catalog_destinations(destination_area, destination_state=None,
         geo = normalize_candidate_geography(d)
         addr = clean_text(d.get('address', ''))
         title = clean_text(d.get('title', ''))
-        if state_low and geo.get('state') and clean_text(geo['state']) != state_low:
+        if geo.get('conflict') or (state_low and clean_text(geo.get('state')) != state_low):
             continue
 
         # Exact city or locality match
         if geo.get('city') and clean_text(geo['city']) == area_low:
             matches.append(d)
-        elif area_low in addr or area_low in title:
+        elif area_low and (f' {area_low} ' in f' {addr} ' or f' {area_low} ' in f' {title} '):
             matches.append(d)
 
     if matches:
         return matches
 
     # Try matching by state
-    if state_low:
+    if state_low and area_low == state_low:
         for d in items:
             geo = normalize_candidate_geography(d)
-            if geo.get('state') and clean_text(geo['state']) == state_low:
+            if not geo.get('conflict') and clean_text(geo.get('state')) == state_low:
                 matches.append(d)
     return matches
 

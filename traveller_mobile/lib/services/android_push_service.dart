@@ -100,14 +100,11 @@ class AndroidPushService with WidgetsBindingObserver {
   final subscriptions = <StreamSubscription>[];
   bool started = false;
   bool registered = false;
-  String? registrationProblem;
-  final registrationChanges = ValueNotifier<int>(0);
   int _authRevision = 0;
   final notificationsChanged = ValueNotifier<int>(0);
   final _foregroundPending = <String>{};
   final _foregroundShown = LinkedHashSet<String>();
   void inboxChanged() => notificationsChanged.value++;
-  Future<void> openSettings() => platform.openSettings();
   String? lastTap;
   DateTime? lastTapAt;
   AndroidPushService(
@@ -123,20 +120,6 @@ class AndroidPushService with WidgetsBindingObserver {
       !api.isStandalone &&
       !kIsWeb &&
       defaultTargetPlatform == TargetPlatform.android;
-  String? get unavailableReason {
-    if (supported) return null;
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
-      return 'System alerts are available in the supported Android app. Your inbox still works here.';
-    }
-    if (!pushBuildEnabled)
-      return 'Android system alerts are disabled in this build. Enabling Android permission alone cannot enable delivery. Your in-app inbox still works.';
-    if (useFirebaseEmulator)
-      return 'This emulator-connected build cannot receive real FCM alerts. Your inbox still works.';
-    if (api.isStandalone)
-      return 'System alerts require a connection to the authenticated TravelMate backend. Your inbox still works.';
-    return 'Android system alerts are unavailable in this configuration.';
-  }
-
   Future<bool> claimPermissionExplanation() async {
     if (!supported || uid == null) return false;
     final owner = uid;
@@ -200,7 +183,6 @@ class AndroidPushService with WidgetsBindingObserver {
     return serialize(() async {
       try {
         registered = false;
-        registrationProblem = null;
         if (!supported || revision != _authRevision || uid != owner) return;
         final previous = await storage.getString('android_push_uid');
         if ((previous != null && previous != owner) || accountChanged) {
@@ -233,15 +215,13 @@ class AndroidPushService with WidgetsBindingObserver {
         if (revision == _authRevision) registered = true;
       } catch (error) {
         registered = false;
-        registrationProblem = error is ApiException &&
-                (error.code == 'push_disabled' ||
-                    error.data['error'] ==
-                        'Android push is not configured on this backend.')
-            ? 'This backend has not enabled push dispatch. Android permission alone cannot enable delivery.'
-            : 'Device registration could not be confirmed. Check your connection and retry.';
+        if (kDebugMode) {
+          final code = error is ApiException && error.code == 'push_disabled'
+              ? 'push_disabled'
+              : error.runtimeType;
+          debugPrint('Android push registration: $code');
+        }
         rethrow;
-      } finally {
-        registrationChanges.value++;
       }
     });
   }
@@ -351,7 +331,6 @@ class AndroidPushService with WidgetsBindingObserver {
     serialize(() async {
       if (uid != owner) return;
       await tripReminders.refresh(owner, allowed: await platform.permission());
-      registrationChanges.value++;
     }).catchError((Object _) {});
   }
 

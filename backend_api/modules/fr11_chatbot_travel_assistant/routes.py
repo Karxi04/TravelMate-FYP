@@ -8,6 +8,8 @@ from sequence_contract.domain_functions import createItinerary, calculateBudget
 from services.activity_pricing import pricing_snapshot
 from services.local_catalog import DESTINATIONS
 from services.preference_learning import effective_preference_profile
+from services.malaysian_locality import normalize_candidate_geography, normalize_destination_scope
+from services.recommendation_taxonomy import candidate_concepts, concepts_for
 from services.review_service import published_review
 from .nlp_extractor import (
     extract_geographic_entities,
@@ -272,6 +274,80 @@ def _extract_place_suggestions(message, destination_area=None, prefer_indoor=Fal
     return matches[:4]
 
 
+def _planning_catalog(area, state, interests=None):
+    scope = normalize_destination_scope(area)
+    cached = retrieveRecord('destination_cache',
+                            filters=[('canonicalDestinationScope', '==', scope.get('scopeKey'))],
+                            limit=150) or []
+    catalog = DESTINATIONS
+    if cached:
+        from services.activity_pricing import PRICING_FIELDS
+        by_id = {str(row.get('destinationId') or row.get('place_id')):
+                 {**row, 'ratingSource': 'unverified_local_catalog'} for row in DESTINATIONS}
+        for candidate in cached:
+            key = str(candidate.get('destinationId') or candidate.get('place_id') or '')
+            if not key:
+                continue
+            base = by_id.get(key, {})
+            merged = {**base, **{k: v for k, v in candidate.items() if v not in (None, '', [], {})}}
+            if base.get('pricingUnit') or 'unitPrice' in base:
+                merged.update({key: base[key] for key in PRICING_FIELDS if key in base})
+            by_id[key] = merged
+        catalog = list(by_id.values())
+    matching = find_matching_catalog_destinations(area, state, catalog)
+    food_focus = concepts_for(interests or []) == {'food'}
+    needs_search = not matching or (food_focus and not any('food' in candidate_concepts(row) for row in matching))
+    if needs_search and os.getenv('SERPAPI_KEY', '').strip():
+        try:
+            query = 'local food and hawker centres' if food_focus else 'tourist attractions'
+            result = retrieveDestinationResults(f'{query} in {area}', area)
+            catalog = [*catalog, *(result.get('local_results') or [])]
+        except Exception:
+            pass
+    return catalog
+
+
+def _activity_preview(state):
+    area, region = state['destinationArea'], state.get('destinationState')
+    matches = find_matching_catalog_destinations(area, region, _planning_catalog(area, region, state.get('interests')))
+    candidates = filter_constraint_candidates(matches, excluded_interests=state.get('excludedInterests'),
+        excluded_activity_types=state.get('excludedActivityTypes'), prefer_indoor=state.get('preferIndoor', False))
+    if not candidates:
+        return f'I don’t have verified activities for {area} that fit these details yet. You can adjust your preferences or choose another destination.', []
+    interests = concepts_for(state.get('interests') or [])
+    ranked = sorted(candidates, key=lambda row: len(interests & candidate_concepts(row)), reverse=True)
+    half_day = state.get('activityWindow') == 'half_day'
+    days = state.get('tripDays')
+    limit = 2 if half_day else min(6, max(3, days * 2)) if days else 4
+    suggestions = []
+    seen = set()
+    for row in ranked:
+        identity = row.get('destinationId') or row.get('place_id')
+        if not identity or identity in seen or not (row.get('title') or row.get('name')):
+            continue
+        seen.add(identity)
+        geography = normalize_candidate_geography(row)
+        display = {key: row[key] for key in (
+            'destinationId', 'place_id', 'title', 'name', 'address', 'category', 'type', 'description',
+            'thumbnail', 'imageUrl', 'photoAttribution', 'imageSource', 'estimatedCost',
+            'openingHoursSourceUrl', 'openingHoursVerifiedAt',
+        ) if isinstance(row.get(key), (str, int, float))}
+        if geography['latitude'] is not None and geography['longitude'] is not None:
+            display['gps_coordinates'] = {'latitude': geography['latitude'], 'longitude': geography['longitude']}
+        suggestions.append({**display, **pricing_snapshot(row), 'state': geography['state'], 'city': geography['city']})
+        if len(suggestions) >= limit:
+            break
+    if not suggestions:
+        return f'I don’t have a verified activity card for {area} yet. You can choose another destination.', []
+    window = 'half-day' if half_day else f'{days}-day' if days else 'flexible'
+    reply = f'Here are {window} activity ideas for {area}.'
+    if interests and not any(interests & candidate_concepts(row) for row in suggestions):
+        reply += ' I found limited matches for your interests, so these are nearby ideas within the selected destination.'
+    if half_day:
+        reply += ' Start with one stop and add another if you have time.'
+    return reply, suggestions
+
+
 @bp.post('/chat')
 @auth_required(['traveller'])
 def chat():
@@ -310,16 +386,22 @@ def chat():
         except Exception:
             return jsonify({'ok':False,'error':'The conversation could not be saved. Reopen the chat and retry.'}),409
         return jsonify({'ok':True,'reply':item['reply'],'source':item['source'],'item':item,'session':session})
-    previous_requirements = {key: planning_state.get(key) for key in ('destinationArea', 'startDate', 'endDate', 'tripDays', 'budgetLimit', 'travellerCount', 'interests', 'excludedInterests', 'excludedActivityTypes', 'preferIndoor', 'travelPace', 'budgetRange', 'avoidCrowds')}
+    previous_requirements = {key: planning_state.get(key) for key in (
+        'destinationArea', 'startDate', 'endDate', 'tripDays', 'budgetLimit', 'travellerCount',
+        'interests', 'excludedInterests', 'excludedActivityTypes', 'preferIndoor', 'travelPace',
+        'budgetRange', 'avoidCrowds', 'activityWindow', 'planningGoal', 'daySpecificPreferences')}
 
     # Extract NLP requirements from user message
     geo = extract_geographic_entities(message)
-    dur = extract_duration(message, planning_state.get('tripDays'))
+    explicit_duration = extract_duration(message)
+    dur = explicit_duration or planning_state.get('tripDays')
+    half_day = bool(re.search(r'\bhalf[ -](?:a[ -])?day\b', message, re.I))
     bud = extract_budget(message, planning_state.get('budgetLimit'))
     trav = extract_travellers(message, planning_state.get('travellerCount'))
     date_error = None
     try:
-        s_date, e_date = extract_dates(message, dur or 3)
+        guided = payload.get('guidedPlanning') is True or planning_state.get('guidedPlanning')
+        s_date, e_date = extract_dates(message, dur if guided else dur or 3)
     except ValueError as error:
         s_date = e_date = None
         date_error = str(error)
@@ -329,19 +411,36 @@ def chat():
     elif s_date and e_date:
         dur = (date.fromisoformat(e_date) - date.fromisoformat(s_date)).days + 1
         planning_state.pop('dateClarification', None)
-    elif extract_duration(message) is not None:
-        if planning_state.pop('dateClarification', None):
+        planning_state.pop('activityWindow', None)
+    elif half_day:
+        dur = None
+        planning_state['activityWindow'] = 'half_day'
+        for key in ('tripDays', 'startDate', 'endDate', 'dateClarification'):
+            planning_state.pop(key, None)
+    elif explicit_duration is not None:
+        planning_state.pop('activityWindow', None)
+        if planning_state.pop('dateClarification', None) or (
+            planning_state.get('endDate') and explicit_duration != planning_state.get('tripDays')
+        ):
             planning_state.pop('startDate', None)
             planning_state.pop('endDate', None)
     if not date_error and not s_date and not e_date:
         s_date, e_date = planning_state.get('startDate'), planning_state.get('endDate')
         if s_date and e_date:
             dur = (date.fromisoformat(e_date) - date.fromisoformat(s_date)).days + 1
-    ints = extract_interests(message, planning_state.get('interests'))
+        elif s_date and dur:
+            e_date = (date.fromisoformat(s_date) + timedelta(days=dur - 1)).isoformat()
+    explicit_interests = extract_interests(message)
+    if explicit_interests and (not planning_state.get('chatInterests') or re.search(r'\b(?:more|focus on)\b', message, re.I)):
+        ints = explicit_interests
+    else:
+        ints = extract_interests(message, planning_state.get('interests'))
+    if explicit_interests:
+        planning_state['chatInterests'] = True
     ex_ints = extract_excluded_interests(message, planning_state.get('excludedInterests'))
     ex_types = extract_excluded_activity_types(message, planning_state.get('excludedActivityTypes'))
     indoor_pref = extract_indoor_preference(message, planning_state.get('preferIndoor'))
-    if re.search(r'\b(relaxing|relaxed|slow[- ]paced|easy pace|take it easy|leisurely|not rushed)\b', message, re.I):
+    if re.search(r'\b(relaxing|relaxed|slower|slow[- ]paced|easy pace|take it easy|leisurely|not rushed)\b', message, re.I):
         planning_state['travelPace'] = 'relaxed'
     if re.search(r'\b(active pace|busy pace|packed trip)\b', message, re.I):
         planning_state['travelPace'] = 'active'
@@ -353,7 +452,10 @@ def chat():
     detailed_intent = classify_detailed_intent(message, planning_state)
 
     # Update accumulated planning state
-    if geo.get('destination_area'):
+    if geo.get('destination_area') and detailed_intent not in {
+        'WEATHER_ENQUIRY', 'HOTEL_ENQUIRY', 'FLIGHT_ENQUIRY', 'CAR_RENTAL_ENQUIRY',
+        'BUDGET_ENQUIRY', 'FEATURE_EXPLANATION',
+    }:
         planning_state['destinationArea'] = geo['destination_area']
         planning_state['destinationState'] = geo['destination_state']
         planning_state['destinationCountry'] = 'Malaysia'
@@ -365,7 +467,10 @@ def chat():
         planning_state['travellerCount'] = trav
     if s_date:
         planning_state['startDate'] = s_date
-        planning_state['endDate'] = e_date
+        if e_date:
+            planning_state['endDate'] = e_date
+        else:
+            planning_state.pop('endDate', None)
     if ints:
         planning_state['interests'] = ints
     if ex_ints:
@@ -397,15 +502,18 @@ def chat():
     ):
         _clear_multi_destination_state(planning_state)
 
-    if payload.get('guidedPlanning') is True:
+    if payload.get('guidedPlanning') is True or detailed_intent == 'ACTIVITY_DISCOVERY':
         planning_state['guidedPlanning'] = True
     guided_check = None
     if existing_plan:
         guided_check = {'clarification_needed': False, 'ready': False}
-    elif planning_state.get('guidedPlanning'):
+    elif planning_state.get('guidedPlanning') or detailed_intent == 'ACTIVITY_DISCOVERY':
         preferences = retrieveRecord('travel_preferences', g.uid) or {}
         guided_check = guided_requirements(message, planning_state, preferences, dates_supplied=dates_supplied)
     guided_ready = bool(guided_check and guided_check.get('ready'))
+    guided_activities = bool(guided_check and guided_check.get('activities'))
+    if any(planning_state.get(key) != value for key, value in previous_requirements.items()):
+        planning_state.pop('activePlan', None)
     session['planningState'] = planning_state
 
     # Handle foreign destination boundary
@@ -439,6 +547,10 @@ def chat():
                  if planning_state.get('dateClarification') else guided_check or check_requirement_completeness(message, planning_state))
     if req_check.get('clarification_needed'):
         clarification_reply = req_check.get('clarification_prompt')
+        previews = []
+        if req_check.get('preview'):
+            intro, previews = _activity_preview(planning_state)
+            clarification_reply = f'{intro} {clarification_reply}'
         if not planning_state.get('dateClarification') and s_date and e_date and re.search(r'\b(?:until|to|through|till)\b|\d{4}-\d{2}-\d{2}|[–—]', message, re.I):
             clarification_reply = f'Travel dates: {s_date} to {e_date} ({dur} calendar days, {dur - 1} nights). ' + clarification_reply
         item = {
@@ -449,6 +561,10 @@ def chat():
             'source': 'travelmate-assistant',
             'createdAt': utc_now_iso(),
         }
+        if req_check.get('suggestedReplies'):
+            item['suggestedReplies'] = req_check['suggestedReplies']
+        if previews:
+            item['placeSuggestions'] = previews
         record = storeRecord('chat_messages', {**item, 'sessionId': session['id']})
         item['id'] = record['id']
         messages.append(item)
@@ -460,14 +576,6 @@ def chat():
         session = updateRecord('chat_sessions', session['id'], updates)
         return jsonify({'ok': True, 'reply': clarification_reply, 'source': 'travelmate-assistant', 'messageId': record['id'], 'item': item, 'session': session})
 
-    history = [item for item in messages[-20:] if item.get('source') != 'travelmate-data']
-    system_context = _context(session)
-    recent_context = ''
-    if history:
-        recent = history[-3:]
-        recent_context = '\n'.join(f"Traveller: {x.get('message')}\nTravelMate: {x.get('reply')}" for x in recent)
-    context = system_context + ('\nRecent conversation:\n' + recent_context if recent_context else '')
-
     road_trip_unsupported = (
         planning_state.get('tripMode') == 'road_trip'
         and classify_user_intent(message, planning_state) == 'PLANNING_REQUEST'
@@ -478,12 +586,18 @@ def chat():
         response = {'reply':'Choose More like this on a specific For You destination card so the selected place can be identified. Casual chat does not overwrite your saved questionnaire.', 'source':'travelmate-assistant'}
     elif existing_plan:
         response = {'reply': 'Here is your existing itinerary. Review the day-by-day card below.', 'source': 'travelmate-assistant'}
+    elif guided_activities:
+        activity_reply, activity_suggestions = _activity_preview(planning_state)
+        response = {'reply': activity_reply, 'source': 'travelmate-assistant'}
     elif guided_ready:
         response = {'reply': 'Here is a draft based on your trip details and saved preferences. Review its dates, budget and activities before choosing Save. No trip or booking has been created.', 'source': 'travelmate-assistant'}
     elif geo.get('is_destination_change'):
         response = {'reply': _destination_change_reply(planning_state), 'source': 'travelmate-assistant'}
     else:
         try:
+            history = [item for item in messages[-20:] if item.get('source') != 'travelmate-data']
+            recent = '\n'.join(f"Traveller: {x.get('message')}\nTravelMate: {x.get('reply')}" for x in history[-3:])
+            context = _context(session) + ('\nRecent conversation:\n' + recent if recent else '')
             response = (
                 generateFollowUpResponse(message, context, with_source=True, planning_state=planning_state)
                 if history else generateChatbotResponse(message, context, with_source=True, planning_state=planning_state)
@@ -492,7 +606,7 @@ def chat():
             return jsonify({'ok': False, 'error': 'The travel assistant is temporarily unavailable. Please retry.'}), 502
 
     reply, source = response['reply'], response['source']
-    if detailed_intent in {'INTEREST_MODIFICATION', 'INDOOR_ALTERNATIVE'} and (
+    if not guided_activities and detailed_intent in {'INTEREST_MODIFICATION', 'INDOOR_ALTERNATIVE'} and (
         planning_state.get('excludedInterests')
         or planning_state.get('excludedActivityTypes')
         or planning_state.get('preferIndoor')
@@ -507,6 +621,8 @@ def chat():
         'source': source,
         'createdAt': utc_now_iso(),
     }
+    if guided_activities and activity_suggestions and planning_state.get('activityWindow') != 'half_day':
+        item['suggestedReplies'] = ['Make a dated itinerary']
     if road_trip_unsupported:
         item['constraintConflict'] = {
             'status': 'unsupported_multi_destination',
@@ -528,7 +644,8 @@ def chat():
             item['savedTripId'] = saved_id
             reply = item['reply'] = 'This plan was saved to Trips. You can reopen it from Trips.'
     if (
-        not existing_plan and (guided_ready or classify_user_intent(message, planning_state) == 'PLANNING_REQUEST')
+        not existing_plan and not guided_activities
+        and (guided_ready or (guided_check is None and classify_user_intent(message, planning_state) == 'PLANNING_REQUEST'))
         and dest_for_planning
         and planning_state.get('tripMode') != 'road_trip'
     ):
@@ -542,29 +659,7 @@ def chat():
         ex_types_val = planning_state.get('excludedActivityTypes')
         indoor_val = planning_state.get('preferIndoor', False)
 
-        catalog = DESTINATIONS
-        from services.malaysian_locality import normalize_destination_scope
-        scope = normalize_destination_scope(dest_for_planning)
-        cached = retrieveRecord('destination_cache',filters=[('canonicalDestinationScope','==',scope.get('scopeKey'))],limit=150) or []
-        if cached:
-            # Existing provider cache avoids another live search; exact identities retain specific pricing.
-            from services.activity_pricing import PRICING_FIELDS
-            by_id = {str(d.get('destinationId') or d.get('place_id')):{**d,'ratingSource':'unverified_local_catalog'} for d in DESTINATIONS}
-            for candidate in cached:
-                key = str(candidate.get('destinationId') or candidate.get('place_id') or '')
-                if not key: continue
-                base = by_id.get(key,{})
-                merged = {**base,**{k:v for k,v in candidate.items() if v not in (None,'',[],{})}}
-                if base.get('pricingUnit') or 'unitPrice' in base:
-                    merged.update({k:base[k] for k in PRICING_FIELDS if k in base})
-                by_id[key] = merged
-            catalog = list(by_id.values())
-        if not find_matching_catalog_destinations(dest_for_planning, dest_state_for_planning,catalog) and os.getenv('SERPAPI_KEY', '').strip():
-            try:
-                result = retrieveDestinationResults(f'tourist attractions {dest_for_planning}', dest_for_planning)
-                catalog = result.get('local_results') or []
-            except Exception:
-                catalog = []
+        catalog = _planning_catalog(dest_for_planning, dest_state_for_planning, ints_val)
         plan, plan_status = build_structured_trip_plan(
             destination_area=dest_for_planning,
             destination_state=dest_state_for_planning,
@@ -588,6 +683,12 @@ def chat():
         if plan and plan_status == 'ready':
             if planning_state.get('avoidCrowds'):
                 plan['planningLimitations'] = ['Verified crowd-level data is unavailable; quieter conditions cannot be guaranteed.']
+            if guided_ready and not planning_state.get('budgetLimit'):
+                plan.setdefault('planningLimitations', []).append('The budget field uses a default planning estimate of MYR 1,200.')
+            if guided_ready and not planning_state.get('travellerCount'):
+                plan.setdefault('planningLimitations', []).append('Cost estimates are for one traveller.')
+            if guided_ready and plan.get('planningLimitations'):
+                reply = item['reply'] = ' '.join([reply, *plan['planningLimitations']])
             plan['travelPace'] = planning_state.get('travelPace', '')
             plan['travelPersonality'] = planning_state.get('travelPersonality', '')
             plan['draftId'] = _plan_id(plan)
@@ -627,7 +728,7 @@ def chat():
                 'preferIndoor': bool(indoor_val),
             }
 
-    suggestions = _extract_place_suggestions(
+    suggestions = activity_suggestions if guided_activities else _extract_place_suggestions(
         message,
         destination_area=dest_for_planning,
         prefer_indoor=planning_state.get('preferIndoor', False),
@@ -740,9 +841,8 @@ def save_plan():
         trip_id = 'chat_' + hashlib.sha256(f'{g.uid}:{save_session["id"]}:{draft_id}'.encode('utf-8')).hexdigest()[:32]
         itinerary['id'] = trip_id
         result, created = claimRecord('itineraries', trip_id, itinerary)
-        state = dict(save_session.get('planningState') or {})
-        state['savedPlans'] = {**(state.get('savedPlans') or {}), draft_id: result['id']}
-        updateRecord('chat_sessions', save_session['id'], {'planningState': state})
+        updateRecord('chat_sessions', save_session['id'],
+                     {'planningState': {'savedPlans': {draft_id: result['id']}}})
         return jsonify({'ok': True, 'id': result['id'], 'itinerary': result, 'budget': result.get('budgetEstimate'), 'alreadySaved': not created}), 201 if created else 200
     result = storeRecord('itineraries', itinerary)
     return jsonify({'ok': True, 'id': result['id'], 'itinerary': result, 'budget': budget}), 201

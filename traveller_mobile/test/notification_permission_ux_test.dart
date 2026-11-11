@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:travelmate_traveller/services/api_service.dart';
 import 'package:travelmate_traveller/services/android_push_service.dart';
-import 'package:travelmate_traveller/modules/traveller_notifications/android_notification_settings.dart';
+import 'package:travelmate_traveller/modules/traveller_notifications/android_notification_permission.dart';
 import 'package:travelmate_traveller/modules/traveller_notifications/notification_center.dart';
 import 'android_push_service_test.dart' show Store;
 import 'core_personalization_notifications_test.dart' show NoticesApi;
@@ -85,10 +85,6 @@ class Push extends AndroidPushService {
   }
   @override
   bool get supported => available;
-  @override
-  String? get unavailableReason => available
-      ? null
-      : 'Android system alerts are disabled in this build. Enabling Android permission alone cannot enable delivery. Your in-app inbox still works.';
 }
 
 Future<void> frame(WidgetTester tester, Widget child) async {
@@ -97,11 +93,15 @@ Future<void> frame(WidgetTester tester, Widget child) async {
   await tester.pumpAndSettle();
 }
 
+Widget gate(Push push) => AndroidNotificationPermission(
+    push: push, child: const Text('Traveller home'));
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(FirebasePushPlatform.channel, (call) async => null);
+        .setMockMethodCallHandler(
+            FirebasePushPlatform.channel, (call) async => null);
   });
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -161,142 +161,118 @@ void main() {
     expect(messaging.requests, 0);
   });
   testWidgets(
-      'opening notification settings explains permission then requests on Allow',
+      'signed-in entry asks once and only Allow requests native permission',
       (tester) async {
     final api = RegistrationApi();
     final platform = PermissionPlatform();
-    final store = Store();
-    final push = Push(api, platform, store);
-    await frame(tester, AndroidNotificationSettings(push: push));
-    expect(find.text('Allow Android alerts?'), findsOneWidget);
+    final push = Push(api, platform, Store());
+    await frame(tester, gate(push));
+    expect(find.text('Allow notifications?'), findsOneWidget);
     expect(platform.prompts, 0);
     expect(api.posts, 0);
-    await tester.tap(find.text('Allow alerts'));
+    await tester.tap(find.text('Allow'));
     await tester.pumpAndSettle();
     expect(platform.prompts, 1);
     expect(api.posts, 1);
     expect(push.registered, isTrue);
-    expect(
-        find.textContaining('does not confirm FCM delivery'), findsOneWidget);
+    expect(find.text('Traveller home'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
-    await frame(tester, AndroidNotificationSettings(push: push));
-    expect(find.text('Allow Android alerts?'), findsNothing);
+    await frame(tester, gate(push));
+    expect(find.text('Allow notifications?'), findsNothing);
     expect(platform.prompts, 1);
   });
-  testWidgets(
-      'Not now preserves inbox use and does not automatically ask again',
+
+  testWidgets('Not Now keeps home available and remembers the choice',
       (tester) async {
     final api = RegistrationApi();
     final platform = PermissionPlatform();
     final push = Push(api, platform, Store());
-    await frame(tester, AndroidNotificationSettings(push: push));
-    await tester.tap(find.text('Not now'));
+    await frame(tester, gate(push));
+    await tester.tap(find.text('Not Now'));
     await tester.pumpAndSettle();
     expect(platform.prompts, 0);
     expect(api.posts, 0);
+    expect(find.text('Traveller home'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
-    await frame(tester, AndroidNotificationSettings(push: push));
-    expect(find.text('Allow Android alerts?'), findsNothing);
-    expect(find.text('Enable Android alerts'), findsOneWidget);
+    await frame(tester, gate(push));
+    expect(find.text('Allow notifications?'), findsNothing);
   });
-  testWidgets(
-      'already allowed permission registers without an explanation or native prompt',
-      (tester) async {
+
+  testWidgets('already granted permission never prompts', (tester) async {
     final api = RegistrationApi();
     final platform = PermissionPlatform()..granted = true;
     final push = Push(api, platform, Store());
-    await frame(tester, AndroidNotificationSettings(push: push));
+    await frame(tester, gate(push));
+    expect(find.text('Allow notifications?'), findsNothing);
     expect(platform.prompts, 0);
-    expect(api.posts, 1);
-    expect(find.text('Allow Android alerts?'), findsNothing);
+    expect(find.text('Traveller home'), findsOneWidget);
   });
-  testWidgets(
-      'disabled build explains the blocker and never asks for permission',
-      (tester) async {
+
+  testWidgets('unsupported build never offers permission', (tester) async {
     final api = RegistrationApi();
     final platform = PermissionPlatform();
     final push = Push(api, platform, Store())..available = false;
-    await frame(tester, AndroidNotificationSettings(push: push));
-    expect(find.textContaining('disabled in this build'), findsOneWidget);
-    expect(find.text('Enable Android alerts'), findsNothing);
-    expect(find.text('Allow Android alerts?'), findsNothing);
+    await frame(tester, gate(push));
+    expect(find.text('Allow notifications?'), findsNothing);
+    expect(find.text('Traveller home'), findsOneWidget);
     expect(platform.prompts, 0);
     expect(api.posts, 0);
   });
-  testWidgets(
-      'permission granted but backend disabled is visibly distinct from enabled delivery',
+
+  testWidgets('disabled backend does not block home after native grant',
       (tester) async {
     final api = RegistrationApi()..disabled = true;
-    final platform = PermissionPlatform()..granted = true;
+    final platform = PermissionPlatform();
     final push = Push(api, platform, Store());
-    await frame(tester, AndroidNotificationSettings(push: push));
-    expect(find.textContaining('backend has not enabled push dispatch'),
-        findsOneWidget);
-    expect(push.registered, isFalse);
-    expect(platform.prompts, 0);
-    expect(find.text('Retry device registration'), findsOneWidget);
-    api.disabled = false;
-    await tester.tap(find.text('Retry device registration'));
+    await frame(tester, gate(push));
+    await tester.tap(find.text('Allow'));
     await tester.pumpAndSettle();
-    expect(push.registered, isTrue);
-    expect(platform.prompts, 0);
-    expect(api.posts, 2);
-    expect(
-        find.textContaining('does not confirm FCM delivery'), findsOneWidget);
+    expect(platform.prompts, 1);
+    expect(api.posts, 1);
+    expect(push.registered, isFalse);
+    expect(find.text('Traveller home'), findsOneWidget);
+    expect(find.textContaining('backend'), findsNothing);
   });
-  testWidgets(
-      'channel disabled goes to settings rather than requesting granted permission',
-      (tester) async {
-    final api = RegistrationApi();
-    final platform = PermissionPlatform()
-      ..granted = true
-      ..channel = false;
-    final push = Push(api, platform, Store());
-    await frame(tester, AndroidNotificationSettings(push: push));
-    expect(find.textContaining('channel is disabled'), findsOneWidget);
-    expect(platform.prompts, 0);
-    expect(api.posts, 0);
-  });
-  testWidgets('notification long press exposes only its support reference',
+
+  testWidgets('inbox shows notification content without Android controls',
       (tester) async {
     final api = NoticesApi();
     await tester
         .pumpWidget(MaterialApp(home: NotificationCenterScreen(api: api)));
     await tester.pumpAndSettle();
-    await tester.longPress(find.text('Payment status updated'));
-    await tester.pumpAndSettle();
-    expect(find.text('Notification reference'), findsOneWidget);
-    expect(find.text('event1'), findsOneWidget);
+    expect(find.text('Payment status updated'), findsOneWidget);
+    expect(find.text('Android system notifications'), findsNothing);
+    expect(find.text('Retry device registration'), findsNothing);
+    expect(find.text('Open Android settings'), findsNothing);
+    expect(find.text('Allow notifications?'), findsNothing);
     expect(api.updates, isEmpty);
   });
-  testWidgets(
-      'native denial does not cause automatic permission loops on reopening',
+
+  testWidgets('native denial is respected when signed-in entry reopens',
       (tester) async {
     final api = RegistrationApi();
     final platform = PermissionPlatform()..grantOnRequest = false;
     final push = Push(api, platform, Store());
-    await frame(tester, AndroidNotificationSettings(push: push));
-    await tester.tap(find.text('Allow alerts'));
+    await frame(tester, gate(push));
+    await tester.tap(find.text('Allow'));
     await tester.pumpAndSettle();
     expect(platform.prompts, 1);
     expect(api.posts, 0);
     expect(push.registered, isFalse);
     await tester.pumpWidget(const SizedBox.shrink());
-    await frame(tester, AndroidNotificationSettings(push: push));
-    expect(find.text('Allow Android alerts?'), findsNothing);
+    await frame(tester, gate(push));
+    expect(find.text('Allow notifications?'), findsNothing);
     expect(platform.prompts, 1);
-    expect(find.text('Open Android settings'), findsOneWidget);
   });
-  testWidgets(
-      'unavailable SDK gives a sanitized status without an unhandled prompt failure',
+
+  testWidgets('permission SDK failure leaves the home available',
       (tester) async {
     final api = RegistrationApi();
     final push = Push(api, UnavailablePlatform(), Store());
-    await frame(tester, AndroidNotificationSettings(push: push));
-    expect(find.textContaining('status could not be checked'), findsOneWidget);
+    await frame(tester, gate(push));
     expect(find.textContaining('PRIVATE'), findsNothing);
+    expect(find.text('Traveller home'), findsOneWidget);
     expect(api.posts, 0);
-    expect(find.text('Allow Android alerts?'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

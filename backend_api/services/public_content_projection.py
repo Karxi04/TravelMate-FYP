@@ -16,6 +16,7 @@ from sequence_contract.firebase_firestore import (
 from services.package_service import normalise_package
 from services.campaign_schedule import campaign_package_ids
 from services.review_service import published_review, review_id
+from services.review_destination import review_destination_id
 
 
 PUBLIC_PACKAGE_COLLECTION = 'public_tourism_packages'
@@ -119,7 +120,7 @@ def public_review(source):
     if published_review(source):
         result['publicationStatus'] = 'approved'
     if source.get('travellerId') and source.get('destinationId'):
-        result['reviewKey'] = review_id(source['travellerId'], source['destinationId'])
+        result['reviewKey'] = review_id(source['travellerId'], review_destination_id(source['destinationId']))
     result['description'] = str(source.get('comment') or '')
     result['date'] = source.get('updatedAt') or source.get('submittedAt') or ''
     return {key: value for key, value in result.items() if value not in (None, '')}

@@ -69,7 +69,12 @@ class SharedFirestoreService {
 
   Future<List<Map<String, dynamic>>> _publicReviews([String? destinationId]) async {
     Query<Map<String, dynamic>> query = _db.collection('public_destination_reviews').where('publicationStatus', isEqualTo: 'approved');
-    if (destinationId != null) query = query.where('destinationId', isEqualTo: destinationId);
+    if (destinationId != null) {
+      final ids = ReviewContract.destinationIds(destinationId);
+      query = ids.length == 1
+          ? query.where('destinationId', isEqualTo: ids.single)
+          : query.where('destinationId', whereIn: ids);
+    }
     final all = <Map<String, dynamic>>[];
     QueryDocumentSnapshot<Map<String, dynamic>>? cursor;
     while (true) {
@@ -81,7 +86,7 @@ class SharedFirestoreService {
     all.sort((a, b) => '${b['updatedAt'] ?? b['submittedAt'] ?? b['date'] ?? ''}'
         .compareTo('${a['updatedAt'] ?? a['submittedAt'] ?? a['date'] ?? ''}'));
     final unique = <String, Map<String, dynamic>>{};
-    for (final item in all) {
+    for (final item in all.where((item) => ReviewContract.approvedRating(item) != null)) {
       unique.putIfAbsent('${item['reviewKey'] ?? item['id']}', () => item);
     }
     return unique.values.toList();
@@ -89,9 +94,7 @@ class SharedFirestoreService {
 
   Future<List<Map<String, dynamic>>> destinationReviews(String destinationId) async {
     if (destinationId.trim().isEmpty) return [];
-    final items = (await _publicReviews(destinationId)).where((item) {
-      return (item['destinationId'] ?? '').toString() == destinationId;
-    }).toList();
+    final items = await _publicReviews(destinationId);
     items.sort((a, b) {
       final ad = (a['updatedAt'] ?? a['submittedAt'] ?? '').toString();
       final bd = (b['updatedAt'] ?? b['submittedAt'] ?? '').toString();
@@ -123,10 +126,14 @@ class SharedFirestoreService {
   Future<Map<String, dynamic>> createReview(Map<String, dynamic> payload) async {
     if (_uid.isEmpty) throw Exception('Please sign in before submitting a review.');
     if (!ReviewContract.valid(payload)) throw Exception('Choose a place, rate it 1–5 and write 5–2000 characters.');
+    final destination = ReviewContract.destinationId(payload['destinationId']);
+    final comment = (payload['comment'] as String).trim();
     final user = FirebaseAuth.instance.currentUser;
     final now = DateTime.now().toUtc().toIso8601String();
     final data = <String, dynamic>{
       ...payload,
+      'destinationId': destination,
+      'comment': comment,
       'travellerId': _uid,
       'travellerName': user?.displayName ?? 'Traveller',
       'feedbackStatus': 'visible',
@@ -134,14 +141,17 @@ class SharedFirestoreService {
       'submittedAt': now,
       'updatedAt': now,
     };
-    final previous = (await ownReviews()).where((item) => item['destinationId'] == payload['destinationId']).toList();
-    final ref = _db.collection('feedback').doc(previous.isEmpty ? ReviewContract.identity(_uid, payload['destinationId']) : previous.first['id']);
+    final previous = (await ownReviews()).where((item) =>
+        ReviewContract.destinationId('${item['destinationId'] ?? ''}') == destination).toList();
+    final ref = _db.collection('feedback').doc(previous.isEmpty
+        ? ReviewContract.identity(_uid, destination)
+        : previous.first['id']);
     return _db.runTransaction((transaction) async {
       final existing = await transaction.get(ref);
       if (existing.exists) {
         final item = existing.data()!;
         if (item['travellerId'] != _uid || item['feedbackStatus'] == 'removed') throw Exception('This review cannot be resubmitted.');
-        if (item['rating'] != payload['rating'] || item['comment'] != payload['comment']) throw Exception('You already reviewed this place. Edit your existing review.');
+        if (item['rating'] != payload['rating'] || item['comment'] != comment) throw Exception('You already reviewed this place. Edit your existing review.');
         return {'id': ref.id, ...item};
       }
       transaction.set(ref, data);

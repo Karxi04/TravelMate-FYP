@@ -1,0 +1,549 @@
+{
+  "synthetic": true,
+  "reviews": [
+    {
+      "destinationId": "penang_armenian_street",
+      "reviewer": "Aina Z.",
+      "rating": 5,
+      "comment": "Beautiful morning light along the shophouses. I loved finding the little tiled entrances between the souvenir stalls.",
+      "submittedAt": "2026-11-09T09:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "penang_armenian_street",
+      "reviewer": "Kai L.",
+      "rating": 4,
+      "comment": "The walk between the old shopfronts was pleasant, and the painted shutters made for some nice photos.",
+      "submittedAt": "2026-11-08T10:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "penang_armenian_street",
+      "reviewer": "Mira S.",
+      "rating": 5,
+      "comment": "The old five-foot ways are wonderful. I enjoyed taking my time over the door carvings near the temple.",
+      "submittedAt": "2026-11-07T11:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "penang_armenian_street",
+      "reviewer": "Faris R.",
+      "rating": 3,
+      "comment": "The shop signs were interesting but the bicycles made the narrow lane crowded. Okay for one quick loop.",
+      "submittedAt": "2026-11-06T12:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "penang_armenian_street",
+      "reviewer": "Jia Y.",
+      "rating": 4,
+      "comment": "The lanterns and shaded verandahs were cantik. A nice stretch to walk before the shops open.",
+      "submittedAt": "2026-11-05T13:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "penang_armenian_street",
+      "reviewer": "Shafiq N.",
+      "rating": 2,
+      "comment": "The main photo corner was too crowded. Frustrating to keep stepping around people posing beside the wall.",
+      "submittedAt": "2026-11-04T14:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "penang_armenian_street",
+      "reviewer": "Nadia K.",
+      "rating": 5,
+      "comment": "The textures around the old clan house were amazing. This was my favourite place for a slow photo walk.",
+      "submittedAt": "2026-11-03T15:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_penang_hill",
+      "reviewer": "Han W.",
+      "rating": 5,
+      "comment": "Breathtaking view over the island when the clouds lifted. The early funicular ride was wonderful.",
+      "submittedAt": "2026-11-02T16:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_penang_hill",
+      "reviewer": "Amirah T.",
+      "rating": 4,
+      "comment": "The upper paths were peaceful once I walked past the station. Lovely shade under the bigger trees.",
+      "submittedAt": "2026-11-01T17:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_penang_hill",
+      "reviewer": "Ravi M.",
+      "rating": 5,
+      "comment": "We loved watching the city wake up from the railing. The cooler air was excellent after town.",
+      "submittedAt": "2026-10-31T09:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_penang_hill",
+      "reviewer": "Nurul B.",
+      "rating": 5,
+      "comment": "Cantik lah, especially the layers of hills looking towards the mainland. I would visit again for the morning light.",
+      "submittedAt": "2026-10-30T10:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_penang_hill",
+      "reviewer": "Liyana P.",
+      "rating": 4,
+      "comment": "The funicular climb itself was interesting. The walk round the top was relaxing with plenty of spots to pause.",
+      "submittedAt": "2026-10-29T11:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_penang_hill",
+      "reviewer": "Wei C.",
+      "rating": 2,
+      "comment": "The ride queue was frustrating and the viewing deck too crowded. I could barely get to the railing.",
+      "submittedAt": "2026-10-28T12:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_penang_hill",
+      "reviewer": "Hafiz J.",
+      "rating": 3,
+      "comment": "The cool breeze was nice, but the queues by the lift were tiring. Biasa for me overall.",
+      "submittedAt": "2026-10-27T13:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_penang_hill",
+      "reviewer": "Sara H.",
+      "rating": 5,
+      "comment": "The trees around the upper track were beautiful. It felt peaceful even though George Town was just below us.",
+      "submittedAt": "2026-10-26T14:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_kek_lok_si",
+      "reviewer": "Mei T.",
+      "rating": 5,
+      "comment": "The temple roofs looked beautiful from the lower staircase, and the bronze statue was impressive up close.",
+      "submittedAt": "2026-10-25T15:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_kek_lok_si",
+      "reviewer": "Danish A.",
+      "rating": 4,
+      "comment": "I enjoyed following the courtyard levels. The little painted details on the roof were lovely.",
+      "submittedAt": "2026-10-24T16:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_kek_lok_si",
+      "reviewer": "Yasmin W.",
+      "rating": 5,
+      "comment": "The lanterns by the passage were cantik. An amazing view opens out when you reach the higher courtyard.",
+      "submittedAt": "2026-10-23T17:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_kek_lok_si",
+      "reviewer": "Kean F.",
+      "rating": 2,
+      "comment": "The route through the souvenir passage was confusing. The long waiting time at the incline lift was frustrating.",
+      "submittedAt": "2026-10-22T09:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_kek_lok_si",
+      "reviewer": "Siti D.",
+      "rating": 3,
+      "comment": "The carvings were beautiful but getting from one level to the next was tiring. A mixed afternoon for me.",
+      "submittedAt": "2026-10-21T10:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_kek_lok_si",
+      "reviewer": "Kavin L.",
+      "rating": 4,
+      "comment": "Nice to see the pagoda between the rooftops as we climbed. The upper courtyard felt peaceful.",
+      "submittedAt": "2026-10-20T11:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_chew_jetty",
+      "reviewer": "Fatin U.",
+      "rating": 4,
+      "comment": "We enjoyed the wooden walk and the friendly stalls near the entrance. The little boats made nice photos.",
+      "submittedAt": "2026-10-19T12:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_chew_jetty",
+      "reviewer": "Li Q.",
+      "rating": 3,
+      "comment": "The view between the houses was lovely, but the walkway got crowded whenever people stopped for pictures.",
+      "submittedAt": "2026-10-18T13:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_chew_jetty",
+      "reviewer": "Aqil V.",
+      "rating": 2,
+      "comment": "The planks were difficult to navigate in the crush. I found the narrow stretch near the end frustrating.",
+      "submittedAt": "2026-10-17T14:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_chew_jetty",
+      "reviewer": "Reena C.",
+      "rating": 5,
+      "comment": "The water looked beautiful from the end of the jetty. I loved seeing the houses on stilts in that light.",
+      "submittedAt": "2026-10-16T15:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "penang_gurney_drive",
+      "reviewer": "Aminah H.",
+      "rating": 5,
+      "comment": "The char koay teow was sedap and the smoky wok smell had me queuing again. Great supper with friends.",
+      "submittedAt": "2026-10-15T16:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "penang_gurney_drive",
+      "reviewer": "Yi J.",
+      "rating": 4,
+      "comment": "Good assam laksa and a friendly stallholder who explained the toppings. We enjoyed sharing small portions.",
+      "submittedAt": "2026-10-14T17:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "penang_gurney_drive",
+      "reviewer": "Anis M.",
+      "rating": 2,
+      "comment": "Our oyster omelette was overpriced and the food court got noisy. The long queues made supper frustrating.",
+      "submittedAt": "2026-10-13T09:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "penang_gurney_drive",
+      "reviewer": "Taufiq S.",
+      "rating": 3,
+      "comment": "The satay was tasty enough and the table was okay. It was an ordinary supper for our group.",
+      "submittedAt": "2026-10-12T10:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "penang_gurney_drive",
+      "reviewer": "Chloe G.",
+      "rating": 4,
+      "comment": "The hawker stalls were interesting to browse. Our rojak was delicious, especially the tangy sauce.",
+      "submittedAt": "2026-10-11T11:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_batu_ferringhi",
+      "reviewer": "Nabil E.",
+      "rating": 5,
+      "comment": "Beautiful sunset near the sand, with the fishing boats silhouetted. I loved sitting there after the heat eased.",
+      "submittedAt": "2026-10-10T12:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_batu_ferringhi",
+      "reviewer": "Hui Y.",
+      "rating": 4,
+      "comment": "A relaxing walk where the beach curves away from the busier stretch. The evening breeze was pleasant.",
+      "submittedAt": "2026-10-09T13:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_batu_ferringhi",
+      "reviewer": "Izzah L.",
+      "rating": 1,
+      "comment": "The sand where we sat was dirty and the jet ski noise was awful. I would not return for a swim.",
+      "submittedAt": "2026-10-08T14:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_batu_ferringhi",
+      "reviewer": "Kumar T.",
+      "rating": 3,
+      "comment": "The horizon was beautiful, but the busy water-sports area was noisy. Okay for a quick walk.",
+      "submittedAt": "2026-10-07T15:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_batu_ferringhi",
+      "reviewer": "Sofia N.",
+      "rating": 4,
+      "comment": "Cantik evening sky over the water. The softer sand further along made for a lovely stroll.",
+      "submittedAt": "2026-10-06T16:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_batu_ferringhi",
+      "reviewer": "Haziq O.",
+      "rating": 2,
+      "comment": "I found the line of water-sports booths unpleasant. The area was too crowded for the quiet beach break I wanted.",
+      "submittedAt": "2026-10-05T17:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "demo_penang_street_art",
+      "reviewer": "Farah K.",
+      "rating": 5,
+      "comment": "The bicycle mural looked wonderful against the worn plaster. I loved the way people lined up to take turns.",
+      "submittedAt": "2026-10-04T09:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "demo_penang_street_art",
+      "reviewer": "Jia H.",
+      "rating": 4,
+      "comment": "I enjoyed spotting the wire figures between the murals. It was a nice way to look up from the map.",
+      "submittedAt": "2026-10-03T10:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "demo_penang_street_art",
+      "reviewer": "Arun P.",
+      "rating": 3,
+      "comment": "Some pieces were interesting, but the lanes were crowded around the main stops. An okay walk overall.",
+      "submittedAt": "2026-10-02T11:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "demo_penang_street_art",
+      "reviewer": "Alyaa B.",
+      "rating": 2,
+      "comment": "Tracking down the faded murals was confusing and disappointing. The busiest corners took ages to get through.",
+      "submittedAt": "2026-10-01T12:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "demo_penang_street_art",
+      "reviewer": "Sze L.",
+      "rating": 5,
+      "comment": "The wall colours were amazing in the late light. Finding the smaller paintings away from the queue was seronok.",
+      "submittedAt": "2026-09-30T13:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_peranakan_mansion",
+      "reviewer": "Suresh V.",
+      "rating": 5,
+      "comment": "The carved furniture and beadwork were amazing. I loved the little details in the tiled courtyard.",
+      "submittedAt": "2026-09-29T14:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_peranakan_mansion",
+      "reviewer": "Irfan I.",
+      "rating": 4,
+      "comment": "The guide's explanation of the wedding clothes was interesting. The old dining room was impressive.",
+      "submittedAt": "2026-09-28T15:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_peranakan_mansion",
+      "reviewer": "Nisha R.",
+      "rating": 3,
+      "comment": "The jewellery displays were beautiful, but the upstairs landing was crowded. A mixed visit for me.",
+      "submittedAt": "2026-09-27T16:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_peranakan_mansion",
+      "reviewer": "Shu K.",
+      "rating": 4,
+      "comment": "I enjoyed looking at the old household objects in the cabinets. The upstairs rooms were surprisingly lovely.",
+      "submittedAt": "2026-09-26T17:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_botanical_gardens",
+      "reviewer": "Zarina L.",
+      "rating": 5,
+      "comment": "The giant trees were beautiful and the lower path felt peaceful in the early morning. I would come again.",
+      "submittedAt": "2026-09-25T09:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_botanical_gardens",
+      "reviewer": "Darren H.",
+      "rating": 4,
+      "comment": "Bagus for a slow walk. The shady route near the stream was relaxing and the garden signs were helpful.",
+      "submittedAt": "2026-09-24T10:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_botanical_gardens",
+      "reviewer": "Aqilah T.",
+      "rating": 2,
+      "comment": "The signposts were confusing near the paths I wanted. The detour in the midday heat was tiring.",
+      "submittedAt": "2026-09-23T11:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "tropical_spice_garden",
+      "reviewer": "Ling M.",
+      "rating": 5,
+      "comment": "The bamboo walkway was beautiful and I loved smelling the crushed leaves at the spice display.",
+      "submittedAt": "2026-09-22T12:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "tropical_spice_garden",
+      "reviewer": "Nora R.",
+      "rating": 4,
+      "comment": "The labelled ginger plants were menarik. It was a worthwhile walk under the trees even in the heat.",
+      "submittedAt": "2026-09-21T13:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "tropical_spice_garden",
+      "reviewer": "Shan K.",
+      "rating": 3,
+      "comment": "The spice signs were interesting but the uneven steps were tiring. Okay if you take it slowly.",
+      "submittedAt": "2026-09-20T14:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "tropical_spice_garden",
+      "reviewer": "Iskandar Z.",
+      "rating": 1,
+      "comment": "The slippery path felt uncomfortable and the route signs were poor. For me it was a disappointing outing.",
+      "submittedAt": "2026-09-19T15:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "entopia",
+      "reviewer": "Shanice P.",
+      "rating": 5,
+      "comment": "The butterfly garden was amazing. I loved waiting by the flowers until the blue wings opened.",
+      "submittedAt": "2026-09-18T16:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "entopia",
+      "reviewer": "Maya C.",
+      "rating": 4,
+      "comment": "The displays about pupae were interesting, and the garden paths were pleasant to wander with the kids.",
+      "submittedAt": "2026-09-17T17:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "entopia",
+      "reviewer": "Eileen T.",
+      "rating": 5,
+      "comment": "Seronok seeing butterflies land beside the waterfall. The indoor exhibits were excellent too.",
+      "submittedAt": "2026-09-16T09:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "entopia",
+      "reviewer": "Hani S.",
+      "rating": 3,
+      "comment": "The butterflies were beautiful but the indoor corridor got crowded. The visit felt mixed.",
+      "submittedAt": "2026-09-15T10:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "entopia",
+      "reviewer": "Hakim N.",
+      "rating": 4,
+      "comment": "I enjoyed spotting different wings at the feeding stations. The staff member by the exhibit was helpful.",
+      "submittedAt": "2026-09-14T11:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_wonderfood",
+      "reviewer": "Kevin Y.",
+      "rating": 4,
+      "comment": "The giant cendol display was great fun, and I enjoyed reading the labels about local dishes.",
+      "submittedAt": "2026-09-13T12:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_wonderfood",
+      "reviewer": "Syaz A.",
+      "rating": 3,
+      "comment": "Some of the food models were interesting but the last room felt ordinary. Okay for a short visit.",
+      "submittedAt": "2026-09-12T13:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_wonderfood",
+      "reviewer": "Nur A.",
+      "rating": 2,
+      "comment": "I found the photo displays boring after a while. The tight space was uncomfortable once more visitors came in.",
+      "submittedAt": "2026-09-11T14:30:00+08:00",
+      "expectedRisk": "low"
+    },
+    {
+      "destinationId": "local_penang_hill",
+      "reviewer": "Laila U.",
+      "rating": 5,
+      "comment": "The long queues were terrible. The crowded platform felt awful and I would not return.",
+      "submittedAt": "2026-09-10T15:30:00+08:00",
+      "expectedRisk": "flagged"
+    },
+    {
+      "destinationId": "local_chew_jetty",
+      "reviewer": "Ben T.",
+      "rating": 1,
+      "comment": "I loved the beautiful wooden houses and the wonderful view over the water.",
+      "submittedAt": "2026-09-09T16:30:00+08:00",
+      "expectedRisk": "flagged"
+    },
+    {
+      "destinationId": "local_batu_ferringhi",
+      "reviewer": "Daniel C.",
+      "rating": 4,
+      "comment": "The sand by our spot was dirty, and the jet ski noise made the afternoon unpleasant.",
+      "submittedAt": "2026-09-08T17:30:00+08:00",
+      "expectedRisk": "flagged"
+    },
+    {
+      "destinationId": "local_kek_lok_si",
+      "reviewer": "Sham R.",
+      "rating": 2,
+      "comment": "The lanterns were beautiful and the view over the roofs was amazing. I would come again.",
+      "submittedAt": "2026-09-07T09:30:00+08:00",
+      "expectedRisk": "flagged"
+    },
+    {
+      "destinationId": "local_wonderfood",
+      "reviewer": "Priya M.",
+      "rating": 5,
+      "comment": "The exhibits were boring. The tight photo corners were awful and the visit was a waste of time.",
+      "submittedAt": "2026-09-06T10:30:00+08:00",
+      "expectedRisk": "flagged"
+    },
+    {
+      "destinationId": "entopia",
+      "reviewer": "Atiqah P.",
+      "rating": 1,
+      "comment": "The butterfly garden was fantastic, the waterfall was beautiful, and the displays were excellent.",
+      "submittedAt": "2026-09-05T11:30:00+08:00",
+      "expectedRisk": "flagged"
+    },
+    {
+      "destinationId": "local_peranakan_mansion",
+      "reviewer": "Dina H.",
+      "rating": 5,
+      "comment": "There were two rooms before the staircase and some objects behind glass.",
+      "submittedAt": "2026-09-04T12:30:00+08:00",
+      "expectedRisk": "uncertain"
+    },
+    {
+      "destinationId": "penang_gurney_drive",
+      "reviewer": "Heng K.",
+      "rating": 4,
+      "comment": "We reached around eight and ordered at the third stall near the end.",
+      "submittedAt": "2026-09-03T13:30:00+08:00",
+      "expectedRisk": "uncertain"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import '../../core/utils/destination_utils.dart';
 import '../../core/utils/opening_hours_utils.dart';
 import '../../widgets/local_place_rating.dart';
 import '../../services/api_service.dart';
+import '../../services/review_contract.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/destination_card.dart';
 import '../../widgets/ink_card.dart';
@@ -60,6 +61,10 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     return id.isEmpty ? title : id;
   }
   String get title => DestinationUtils.resolveName(detail);
+  String get reviewDestinationId {
+    final openedId = DestinationUtils.resolveId(widget.initialDestination);
+    return ReviewContract.destinationId(openedId.isEmpty ? destinationId : openedId);
+  }
   String get address =>
       (detail['address'] ?? detail['location'] ?? '').toString().trim();
   String get category =>
@@ -126,13 +131,18 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     }
 
     try {
-      final data = await api.get(
-        '/api/fr3/destinations/$encoded/ratings-reviews',
-      );
+      final reviewId = Uri.encodeComponent(reviewDestinationId);
+      final reviewOwner = LocalReviewRatings.accountUid;
+      final data = await api.get('/api/fr3/destinations/$reviewId/ratings-reviews');
+      if (!mounted || reviewOwner != LocalReviewRatings.accountUid) return;
       reviewInfo = data['result'] is Map
           ? Map<String, dynamic>.from(data['result'] as Map)
           : null;
-      if (reviewInfo != null) LocalReviewRatings.remember(id, reviewInfo!);
+      if (reviewInfo == null) {
+        reviewsFailed = true;
+      } else {
+        LocalReviewRatings.remember(reviewDestinationId, reviewInfo!);
+      }
     } catch (_) {
       reviewsFailed = true;
     }
@@ -680,15 +690,20 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   Widget _reviewsSection() {
     final reviews = _reviews();
     final visible = showAllReviews ? reviews : reviews.take(3).toList();
+    final privatePreview = reviewInfo?['fypPreview'] == true;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         AppSectionHeader(
-          title: 'Reviews',
-          subtitle: reviewInfo?['rating'] == null
-              ? 'TravelMate community reviews'
-              : 'TravelMate ${reviewInfo!['rating']} out of 5 · ${reviewInfo!['reviews']} ${reviewInfo!['reviews'] == 1 ? 'review' : 'reviews'}',
+          title: 'Local Reviews',
+          subtitle: reviewInfo?['rating'] == null ? 'TravelMate community reviews' : null,
         ),
+        if (reviewInfo?['rating'] != null)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xs),
+            child: LocalReviewRatingBadge(summary: reviewInfo!),
+          ),
+        if (privatePreview) const Text('Fictional reviews for the private FYP demonstration.'),
         const SizedBox(height: AppSpacing.sm),
         if (reviewsFailed)
           AppErrorState(
@@ -699,7 +714,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         else if (reviews.isEmpty)
           const TravelEmptyState(
             icon: Icons.rate_review_outlined,
-            title: 'No reviews yet.',
+            title: 'No TravelMate reviews yet.',
             message: 'Be the first to share your experience of this place.',
           )
         else ...[
@@ -722,13 +737,16 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             ),
         ],
         const SizedBox(height: AppSpacing.xs),
-        SecondaryButton(
+        if (!privatePreview) SecondaryButton(
           label: 'Write a review',
           icon: Icons.rate_review_outlined,
           onPressed: () async { await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => FeedbackScreen(initialDestination: detail, api: api),
+              builder: (_) => FeedbackScreen(
+                initialDestination: {...detail, 'destinationId': reviewDestinationId},
+                api: api,
+              ),
             ),
           ); if (mounted) await loadDetails(); },
         ),

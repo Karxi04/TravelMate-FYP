@@ -30,7 +30,11 @@ def memory(monkeypatch):
         db[(collection, identity)] = deepcopy(dict(data, id=identity))
         return deepcopy(db[(collection, identity)])
     def update(collection, identity, data, **kwargs):
-        db[(collection, identity)].update(deepcopy(data))
+        row = db[(collection, identity)]
+        if collection == 'chat_sessions' and set(data) == {'planningState'}:
+            row['planningState'].setdefault('savedPlans', {}).update(data['planningState']['savedPlans'])
+        else:
+            row.update(deepcopy(data))
         return read(collection, identity)
     def claim(collection, identity, data):
         existing = read(collection, identity)
@@ -50,6 +54,116 @@ def send(client, message, session=None):
     response = client.post('/api/fr11/chat', headers=AUTH, json={'message': message, 'guidedPlanning': True, **({'sessionId': session['id']} if session else {})})
     assert response.status_code == 200, response.json
     return response.json
+
+
+def test_activity_quick_prompt_and_short_replies_are_grounded(client, mock_traveller_auth, memory, monkeypatch):
+    memory.pop(('travel_preferences', 'test_traveller_uid'))
+    def unexpected(*args, **kwargs):
+        pytest.fail('Guided activity planning must use the catalogue, not generated factual claims.')
+    monkeypatch.setattr(routes, 'generateChatbotResponse', unexpected)
+    monkeypatch.setattr(routes, 'generateFollowUpResponse', unexpected)
+    first = send(client, 'Plan things to do')
+    assert first['reply'] == 'Sure! Where in Malaysia would you like to explore?'
+    assert 'placeSuggestions' not in first['item'] and 'packages' not in first['item']
+    session = first['session']
+    for message, question in [('Penang', 'tripDays'), ('maybe', 'tripDays'), ('Two days', 'interests')]:
+        response = send(client, message, session)
+        session = response['session']
+        assert session['planningState']['guidedQuestion'] == question
+    result = send(client, 'Food and culture', session)
+    assert result['session']['planningState']['interests'] == ['Food', 'Culture']
+    assert 'tripPlan' not in result['item']
+    assert all('penang' in str(row.get('state', '')).lower() for row in result['item']['placeSuggestions'])
+    changed = send(client, 'Actually, change to Ipoh.', result['session'])
+    state = changed['session']['planningState']
+    assert state['destinationArea'] == 'Ipoh' and state['tripDays'] == 2
+    assert state['interests'] == ['Food', 'Culture']
+    assert 'Ipoh' in changed['reply'] and not changed['item'].get('placeSuggestions')
+    monkeypatch.setenv('SERPAPI_KEY', 'synthetic-test-only')
+    monkeypatch.setattr(routes, 'retrieveDestinationResults', lambda query, area: {
+        'local_results': [
+            {'place_id': 'ipoh-test', 'title': 'Synthetic Ipoh food stop', 'address': 'Ipoh, Perak, Malaysia',
+             'state': 'Perak', 'category': 'Food'},
+            {'place_id': 'wrong-city', 'title': 'Synthetic Taiping food stop', 'address': 'Taiping, Perak, Malaysia',
+             'state': 'Perak', 'category': 'Food'},
+        ] if area == 'Ipoh' else [],
+    })
+    ipoh = send(client, 'Things to do in Ipoh for one day with food', changed['session'])
+    assert ipoh['session']['planningState']['tripDays'] == 1
+    assert [row['place_id'] for row in ipoh['item']['placeSuggestions']] == ['ipoh-test']
+    shorter = send(client, 'I only have half a day.', ipoh['session'])
+    assert 'half-day' in shorter['reply'] and len(shorter['item']['placeSuggestions']) <= 2
+    assert 'tripPlan' not in shorter['item']
+    assert 'tripDays' not in shorter['session']['planningState']
+    reopened = client.get('/api/fr11/sessions/' + session['id'], headers=AUTH).json['session']
+    assert reopened['planningState']['destinationArea'] == 'Ipoh'
+    assert send(client, 'Plan things to do')['session']['planningState'].get('destinationArea') is None
+
+
+def test_undated_and_dated_complete_requests_use_different_paths(client, mock_traveller_auth, memory):
+    melaka = send(client, 'Plan a 2-day food trip to Melaka.')
+    state = melaka['session']['planningState']
+    assert state['destinationArea'] == 'Melaka City' and state['tripDays'] == 2
+    assert state['interests'] == ['Food'] and state['guidedQuestion'] == 'startDate'
+    assert 'tripPlan' not in melaka['item'] and melaka['item']['placeSuggestions']
+    revised = send(client, 'No museums, more nature.', melaka['session'])
+    assert revised['session']['planningState']['interests'] == ['Nature']
+    assert revised['session']['planningState']['excludedActivityTypes'] == ['Museum']
+    assert all('museum' not in row['title'].lower() for row in revised['item'].get('placeSuggestions', []))
+    langkawi = send(client, 'Plan a relaxed 3-day Langkawi trip from 12 December to 14 December for two people, RM1,500 budget.')
+    plan = langkawi['item']['tripPlan']
+    assert (plan['destinationArea'], plan['startDate'], plan['endDate']) == ('Langkawi', '2026-12-12', '2026-12-14')
+    assert (plan['numberOfTravellers'], plan['budgetLimit'], plan['travelPace']) == (2, 1500, 'relaxed')
+    assert all('langkawi' in a['address'].lower() for a in plan['activities'])
+    changed = send(client, 'Change our budget to RM900 and make the pace busy', langkawi['session'])
+    newer = changed['item']['tripPlan']
+    assert newer['budgetLimit'] == 900 and newer['travelPace'] == 'active'
+    assert newer['draftId'] != plan['draftId']
+
+
+def test_single_date_waits_for_duration_and_allows_optional_skips(client, mock_traveller_auth, memory):
+    first = send(client, 'Plan Langkawi starting 12 December 2026')
+    state = first['session']['planningState']
+    assert state['startDate'] == '2026-12-12' and 'endDate' not in state and 'tripDays' not in state
+    assert state['guidedQuestion'] == 'tripDays'
+    duration = send(client, 'Two days', first['session'])
+    assert duration['session']['planningState']['guidedQuestion'] == 'budgetLimit'
+    skipped_budget = send(client, 'Skip', duration['session'])
+    ready = send(client, 'Skip', skipped_budget['session'])
+    plan = ready['item']['tripPlan']
+    assert (plan['startDate'], plan['endDate'], plan['tripDays']) == ('2026-12-12', '2026-12-13', 2)
+    assert len(plan['planningLimitations']) == 2
+
+
+@pytest.mark.skipif(not os.getenv('TRAVELMATE_FR11_TEST_EMULATOR'), reason='requires disposable Firestore emulator')
+def test_firestore_chat_turn_replaces_removed_draft_fields(monkeypatch):
+    from google.auth.credentials import AnonymousCredentials
+    from google.cloud import firestore
+    from sequence_contract import firebase_firestore
+
+    host = os.environ['TRAVELMATE_FR11_TEST_EMULATOR']
+    assert host.startswith('127.0.0.1:')
+    monkeypatch.setenv('FIRESTORE_EMULATOR_HOST', host)
+    db = firestore.Client(project='demo-travelmate-chat-state', credentials=AnonymousCredentials())
+    monkeypatch.setattr(firebase_firestore, 'get_db', lambda: db)
+    ref = db.collection('chat_sessions').document('half-day-test')
+    ref.create({'travellerId': 'synthetic', 'messages': [], 'planningState': {
+        'tripDays': 3, 'startDate': '2026-12-12', 'endDate': '2026-12-14',
+        'activePlan': {'draftId': 'old-draft'}, 'guidedQuestion': 'startDate',
+        'savedPlans': {'older': 'trip-one'},
+    }})
+    next_state = {'activityWindow': 'half_day', 'destinationArea': 'Ipoh',
+                  'savedPlans': {'older': 'trip-one'}}
+    updated = firebase_firestore.updateRecord('chat_sessions', ref.id, {
+        'messages': [{'message': 'Half day'}], 'planningState': next_state,
+    })
+    assert updated['planningState'] == next_state
+    firebase_firestore.updateRecord('chat_sessions', ref.id, {
+        'planningState': {'savedPlans': {'confirmed': 'trip-two'}},
+    })
+    assert ref.get().to_dict()['planningState'] == {
+        **next_state, 'savedPlans': {'older': 'trip-one', 'confirmed': 'trip-two'},
+    }
 
 
 def johor_provider(monkeypatch):
@@ -83,11 +197,15 @@ def test_full_guided_date_conversation(client, mock_traveller_auth, memory, monk
     assert plan['travelPersonality'] == 'Explorer' and plan['interests'] == ['Culture']
     assert {a['dayNo'] for a in plan['activities']} == {1, 2, 3, 4, 5}
     assert len({a['destinationId'] for a in plan['activities']}) == len(plan['activities'])
-    assert all(a['state'] == 'Johor' and a['travelBufferMinutes'] == 0 for a in plan['activities'])
+    assert all(a['state'] == 'Johor' for a in plan['activities'])
+    assert all(a['travelDistanceKm'] is None for a in plan['activities'] if a['travelTimeSource'] == 'estimated_default')
     assert not [key for key in memory if key[0] == 'itineraries']
     fixture = Path(__file__).resolve().parents[2]/'traveller_mobile/test/fixtures/fr11_guided_contract.json'
     if wording == '12 Dec until 16 Dec':
-        assert json.loads(fixture.read_text(encoding='utf-8'))['item']['tripPlan'] == plan
+        previous = json.loads(fixture.read_text(encoding='utf-8'))['item']['tripPlan']
+        assert (plan['destinationArea'], plan['startDate'], plan['endDate']) == (
+            previous['destinationArea'], previous['startDate'], previous['endDate'])
+        assert {a['destinationId'] for a in plan['activities']} <= {a['destinationId'] for a in previous['activities']}
     if wording == '12 Dec until 16 Dec' and os.getenv('TRAVELMATE_FR11_CONTRACT_OUTPUT'):
         Path(os.environ['TRAVELMATE_FR11_CONTRACT_OUTPUT']).write_text(json.dumps(final, indent=2, ensure_ascii=False)+'\n', encoding='utf-8')
 

@@ -11,6 +11,7 @@ import '../firebase_options.dart';
 import 'api_service.dart';
 
 const useFirebaseEmulator = bool.fromEnvironment('USE_FIREBASE_EMULATOR');
+const privateReviewDemo = bool.fromEnvironment('PRIVATE_REVIEW_DEMO');
 
 class FirebaseEmulatorConfig {
   static const project = 'demo-travelmate-f3p2v';
@@ -21,6 +22,7 @@ class FirebaseEmulatorConfig {
   final int authPort;
   final int firestorePort;
   final bool standalone;
+  final bool reviewDemo;
 
   const FirebaseEmulatorConfig({
     this.host = const String.fromEnvironment('FIREBASE_EMULATOR_HOST',
@@ -31,6 +33,7 @@ class FirebaseEmulatorConfig {
     this.firestorePort = const int.fromEnvironment('FIREBASE_FIRESTORE_PORT',
         defaultValue: 18085),
     this.standalone = ApiService.forceStandalone,
+    this.reviewDemo = privateReviewDemo,
   });
 
   factory FirebaseEmulatorConfig.fromEnvironment() => FirebaseEmulatorConfig(
@@ -53,6 +56,7 @@ class FirebaseEmulatorConfig {
         web ||
         (platform ?? defaultTargetPlatform) != TargetPlatform.android ||
         standalone ||
+        (reviewDemo && host != '10.0.2.2') ||
         !{'10.0.2.2', '127.0.0.1'}.contains(host) ||
         authPort < 1024 ||
         authPort > 65535 ||
@@ -80,13 +84,16 @@ class FirebaseEmulatorConfig {
 
   void validateNative(Map<dynamic, dynamic> native) {
     final projects = native['projects'];
-    if (native['package'] != package ||
+    final expectedPackage = reviewDemo ? 'com.example.travelmate_traveller' : package;
+    if (native['package'] != expectedPackage ||
+        (native['privateReviewDemo'] == true) != reviewDemo ||
+        (reviewDemo && native['androidEmulator'] != true) ||
         native['emulatorBuild'] != true ||
         native['productionResourcesAbsent'] != true ||
         projects is! List ||
         projects.any((id) => id != project)) {
       throw StateError(
-          'Emulator isolation requires the dedicated Android test build with no production Firebase initialization/resources.');
+          'Emulator isolation requires the matching Android preview build with no production Firebase resources. The private review preview runs on an Android emulator.');
     }
   }
 
@@ -107,6 +114,9 @@ Future<void> initializeTravelMateFirebase() async {
       String.fromEnvironment('USE_FIREBASE_EMULATOR', defaultValue: 'false');
   if (!{'true', 'false'}.contains(rawFlag))
     throw StateError('USE_FIREBASE_EMULATOR must be true or false.');
+  if (privateReviewDemo && !useFirebaseEmulator) {
+    throw StateError('The private review preview requires Firebase emulators.');
+  }
   if (!useFirebaseEmulator) {
     if (const bool.fromEnvironment('PUSH_TEST_BUILD')) {
       const project = String.fromEnvironment('PUSH_TEST_FIREBASE_PROJECT_ID');

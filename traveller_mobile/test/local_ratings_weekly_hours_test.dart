@@ -16,20 +16,25 @@ const place = {
 
 class RatingsApi extends ApiService {
   int batches = 0;
+  Map<String, dynamic> cardSummary = {'rating': 4.0, 'reviews': 2};
+  final requestedReviewPaths = <String>[];
+  Map<String, dynamic> reviewSummary = {
+    'rating': 4.0, 'reviews': 2, 'user_reviews': []
+  };
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
     if (path == '/api/fr3/local-ratings') {
       batches++;
       return {
         'items': {
-          'same-place': {'rating': 4.0, 'reviews': 2}
+          'same-place': cardSummary
         }
       };
     }
-    if (path.endsWith('/ratings-reviews'))
-      return {
-        'result': {'rating': 4.0, 'reviews': 2, 'user_reviews': []}
-      };
+    if (path.endsWith('/ratings-reviews')) {
+      requestedReviewPaths.add(path);
+      return {'result': reviewSummary};
+    }
     if (path.endsWith('/nearby')) return {'items': []};
     return {
       'destination': {
@@ -57,6 +62,29 @@ void main() {
     expect(
         values.every((v) => v['rating'] == 4.0 && v['reviews'] == 2), isTrue);
     expect(await LocalReviewRatings.forPlace('unrated', api: api), isEmpty);
+  });
+  testWidgets('Penang details refreshes the opened review identity and card count',
+      (tester) async {
+    final api = RatingsApi();
+    await tester.pumpWidget(MaterialApp(
+      home: DestinationDetailsScreen(api: api, initialDestination: const {
+        'destinationId': 'penang_hill',
+        'title': 'Penang Hill',
+      }),
+    ));
+    await tester.pumpAndSettle();
+    // The fake details endpoint supplies a different ID. Reviews stay bound to
+    // the destination the traveller actually opened.
+    const path = '/api/fr3/destinations/local_penang_hill/ratings-reviews';
+    expect(api.requestedReviewPaths, [path]);
+    expect((await LocalReviewRatings.forPlace('penang_hill', api: api))['reviews'], 2);
+    api.reviewSummary = {'rating': null, 'reviews': 0, 'user_reviews': []};
+    await tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh();
+    await tester.pumpAndSettle();
+    expect(api.requestedReviewPaths, [path, path]);
+    expect((await LocalReviewRatings.forPlace('local_penang_hill', api: api))['reviews'], 0);
+    await tester.scrollUntilVisible(find.text('No TravelMate reviews yet.'), 260);
+    expect(find.text('No TravelMate reviews yet.'), findsOneWidget);
   });
   for (final entry in ['Suggestions', 'Explore', 'Nearby']) {
     testWidgets(
@@ -105,6 +133,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('4.9'), findsNothing);
     expect(find.byIcon(Icons.star_rounded), findsNothing);
+  });
+  testWidgets('private card badge refreshes approved totals without a prefix',
+      (tester) async {
+    final api = RatingsApi()
+      ..cardSummary = {'rating': 3, 'reviews': 3, 'fypPreview': true};
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: LocalPlaceRating(place: place, api: api)),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('3.0 · 3 reviews'), findsOneWidget);
+    expect(find.byIcon(Icons.star_rounded), findsOneWidget);
+    expect(find.textContaining('FYP'), findsNothing);
+
+    api.cardSummary = {'rating': 4.2, 'reviews': 8, 'fypPreview': true};
+    LocalReviewRatings.invalidate();
+    await tester.pumpAndSettle();
+    expect(find.text('4.2 · 8 reviews'), findsOneWidget);
+    expect(find.text('3.0 · 3 reviews'), findsNothing);
   });
   testWidgets('local rating fits a narrow compact card with large text', (tester) async {
     LocalReviewRatings.remember('same-place', {'rating':4.0,'reviews':2});

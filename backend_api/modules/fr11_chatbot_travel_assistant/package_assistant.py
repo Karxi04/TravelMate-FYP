@@ -11,7 +11,7 @@ from services.preference_learning import effective_preference_profile
 from services.recommendation_taxonomy import candidate_concepts, concepts_for
 from services.commerce_money import record_money, public_pricing_breakdown
 from services.booking_requirements import load_context, status_overview
-from .nlp_extractor import extract_geographic_entities, extract_duration, extract_dates, extract_interests, extract_excluded_interests, NUMBER_WORDS
+from .nlp_extractor import activity_request, extract_geographic_entities, extract_duration, extract_dates, extract_interests, extract_excluded_interests, NUMBER_WORDS
 from .travel_dates import parse_date_range
 # shortcut: bounded catalogue scan; add indexed pagination when the live catalogue exceeds this limit.
 CATALOGUE_LIMIT = 200
@@ -28,6 +28,8 @@ def conversation_action(message, state):
         return 'itinerary'
     if re.search(r'\b(?:packages?|campaigns?|promotions?|discounted tours?|discounts?)\b', text):
         return 'packages'
+    if activity_request(text):
+        return 'itinerary'
     if state.get('assistantMode') == 'packages' and (extract_geographic_entities(message).get('destination_area') or extract_duration(message) or extract_interests(message)):
         return 'packages'
     if state.get('assistantMode') == 'packages' and re.search(r'\b(?:under|below|above|budget|actually|instead|only|without|with|cheaper|cheapest|compare|first|second|third|which|show|find|make|adults?|children|child|next|on|reset|start over|code|rm|myr|food|photography|hotel|transport|guided)\b', text):

@@ -135,7 +135,46 @@ class _TravelMateAppState extends State<TravelMateApp> {
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'TravelMate',
-      builder: (context, child) => pushTestBuild ? Banner(message:'Push Test Sandbox',location:BannerLocation.topEnd,child:child ?? const SizedBox.shrink()) : child ?? const SizedBox.shrink(),
+      builder: (context, child) {
+        final content = child ?? const SizedBox.shrink();
+        if (privateReviewDemo) {
+          final colors = Theme.of(context).colorScheme;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Material(
+                color: colors.secondaryContainer,
+                child: SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                    child: Text(
+                      'Private FYP preview · Fictional reviews',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: colors.onSecondaryContainer),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: MediaQuery.removePadding(
+                  context: context,
+                  removeTop: true,
+                  child: content,
+                ),
+              ),
+            ],
+          );
+        }
+        if (pushTestBuild) {
+          return Banner(
+            message: 'Push Test Sandbox',
+            location: BannerLocation.topEnd,
+            child: content,
+          );
+        }
+        return content;
+      },
       theme: buildInkWashTheme(),
       home: FutureBuilder<void>(
         future: initialization,

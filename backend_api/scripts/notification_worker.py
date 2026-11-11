@@ -4,26 +4,32 @@ import sys
 from pathlib import Path
 from datetime import timedelta
 from uuid import uuid4
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from firebase_service import get_db, init_firebase
 from sequence_contract.firebase_firestore import transactNotificationRecord
-from services.notification_delivery import enabled, now_utc, dispatch, queue_notification
+from services.notification_delivery import dispatch_enabled, now_utc, dispatch, queue_notification, rollout_traveller, digest
 
 
 def run_worker(batch_size=100):
-    if not enabled(): return {'disabled':True}
+    if not dispatch_enabled(): return {'disabled':True}
     now=now_utc();lease=uuid4().hex
+    scoped_uid=rollout_traveller()
+    state_id='reconcile_' + digest(scoped_uid) if scoped_uid else 'reconcile'
     def acquire(row):
         if row and str(row.get('leaseUntil') or '')>now.isoformat():return None
         return {**(row or {}),'lease':lease,'leaseUntil':(now+timedelta(minutes=20)).isoformat()}
-    state=transactNotificationRecord('notification_worker_state','reconcile',acquire)
+    state=transactNotificationRecord('notification_worker_state',state_id,acquire)
     if not state:return {'leased':True}
     count=0;failed=0
     try:
         from modules.traveller_notifications import reconcile
-        query=get_db().collection('notification_devices').order_by('__name__').limit(batch_size)
+        query=get_db().collection('notification_devices')
+        if scoped_uid:
+            query=query.where(filter=FieldFilter('travellerId', '==', scoped_uid))
+        query=query.order_by('__name__').limit(batch_size)
         if state.get('cursor'):query=query.start_after({'__name__':get_db().collection('notification_devices').document(state['cursor'])})
         rows=list(query.stream());seen=set()
         for doc in rows:
@@ -43,11 +49,11 @@ def run_worker(batch_size=100):
             except Exception:failed+=1
         sent=dispatch(limit=100)
         cursor=rows[-1].id if len(rows)==batch_size else ''
-        transactNotificationRecord('notification_worker_state','reconcile',lambda row:
+        transactNotificationRecord('notification_worker_state',state_id,lambda row:
             {**row,'cursor':cursor,'leaseUntil':'','lastRunAt':now.isoformat(),'failures':failed} if row and row.get('lease')==lease else None)
         return {'owners':count,'failedOwners':failed,**sent,'moreDevices':bool(cursor)}
     except Exception:
-        transactNotificationRecord('notification_worker_state','reconcile',lambda row:
+        transactNotificationRecord('notification_worker_state',state_id,lambda row:
             {**row,'leaseUntil':''} if row and row.get('lease')==lease else None)
         raise
 

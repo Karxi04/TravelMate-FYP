@@ -236,7 +236,8 @@ def test_2_one_approved_legacy_review(fake_db, fake_app):
     created_proj = fake_db.collections[PUBLIC_REVIEW_COLLECTION].get('rev_1')
     assert created_proj is not None
     assert created_proj['publicationStatus'] == 'approved'
-    assert created_proj['reviewKey'] == review_id('user_a', 'penang_hill')
+    assert created_proj['destinationId'] == 'penang_hill'
+    assert created_proj['reviewKey'] == review_id('user_a', 'local_penang_hill')
     assert created_proj['rating'] == 5
 
 
@@ -325,7 +326,8 @@ def test_7_existing_projection_updates_marker_and_key(fake_db, fake_app):
     execute_migration(fake_db, manifest, sources, projs, 'demo-travelmate-f3p2v')
     updated = fake_db.collections[PUBLIC_REVIEW_COLLECTION]['rev_legacy']
     assert updated['publicationStatus'] == 'approved'
-    assert updated['reviewKey'] == review_id('user_x', 'kek_lok_si')
+    assert updated['destinationId'] == 'kek_lok_si'
+    assert updated['reviewKey'] == review_id('user_x', 'local_kek_lok_si')
 
 
 # -----------------------------------------------------------------------------

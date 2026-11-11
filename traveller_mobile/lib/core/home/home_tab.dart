@@ -23,6 +23,7 @@ import '../../modules/traveller_notifications/notification_center.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/recommendation_card.dart';
+import '../../widgets/local_place_rating.dart';
 import '../../widgets/travel_widgets.dart';
 import '../operator_content/campaign_details_screen.dart';
 import '../operator_content/package_details_screen.dart';
@@ -127,6 +128,7 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Future<void> refreshHome() async {
+    LocalReviewRatings.invalidate();
     if(mounted) setState(() => notificationRefresh++);
     await Future.wait([
       _loadCoreData(),

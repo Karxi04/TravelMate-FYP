@@ -2,9 +2,12 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from threading import Lock
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
-from services.review_service import pending_screen, screen_review, ReviewConflict, approved_reviews, current_screen, review_revision
+from google.api_core.exceptions import InvalidArgument
+from sequence_contract.firebase_firestore import claimRecord
+from services.review_service import screen_submission, screen_review, ReviewConflict, approved_reviews, current_screen, review_revision
 from services.public_content_projection import public_review
 
 
@@ -67,7 +70,8 @@ def test_submission_moderation_average_and_hide(client, memory):
     changed = client.post('/api/fr10/feedback', json=payload(comment='A different experience.'), headers=headers())
     assert changed.status_code == 409
     url = '/api/fr3/destinations/synthetic-place/ratings-reviews'
-    assert client.get(url, headers=headers()).json['result']['rating'] is None
+    assert first.json['feedback']['moderationDecision']['actor'] == 'system'
+    assert client.get(url, headers=headers()).json['result']['rating'] == 5
     assert client.post(f'/api/fr13/feedback/{identity}/review', headers=headers(), json={'decision': 'keep'}).status_code == 403
     assert client.put(f'/api/fr10/feedback/{identity}', headers=headers('other'), json={'rating': 1}).status_code == 404
     assert client.post('/api/fr10/feedback', json=payload()).status_code == 401
@@ -90,9 +94,10 @@ def test_real_local_screening(comment, flag):
 
 def test_screening_failure_stays_pending(monkeypatch):
     monkeypatch.setattr('services.review_service.screen_review', lambda *args: (_ for _ in ()).throw(RuntimeError('private')))
-    result = pending_screen('A lovely place to visit.')
+    result = screen_submission('A lovely place to visit.', 5)
     assert result['moderationStatus'] == 'pending_review'
     assert result['screening']['risk'] == 'uncertain' and 'private' not in str(result)
+    assert current_screen({**result, 'rating': 5, 'comment': 'A lovely place to visit.'})['reason'] == 'screening_unavailable'
 
 
 def test_legacy_decisions_and_duplicates_are_not_migrated_or_assumed_approved():
@@ -107,7 +112,7 @@ def test_legacy_decisions_and_duplicates_are_not_migrated_or_assumed_approved():
     assert 'publicationStatus' not in public_review(pending)
     assert public_review(newer)['publicationStatus'] == 'approved'
     assert current_screen({'comment':None, 'screening':'legacy-invalid'})['risk'] == 'uncertain'
-    assert pending_screen(None)['screening']['risk'] == 'uncertain'
+    assert screen_submission(None, None)['screening']['risk'] == 'uncertain'
 
 
 @pytest.mark.parametrize('bad', [payload(rating=True), payload(rating=2.5), payload(rating=6), payload(comment='tiny'),
@@ -165,4 +170,47 @@ def test_admin_stale_form_detects_content_change_even_with_unchanged_client_time
     response = client.post(f'/api/fr13/feedback/{identity}/review', headers=headers('admin'),
         json={'decision':'keep', 'expectedUpdatedAt':created['feedback']['updatedAt'], 'expectedRevision':old_revision})
     assert response.status_code == 409
-    assert memory[('feedback', identity)]['moderationStatus'] == 'pending_review'
+    assert memory[('feedback', identity)]['moderationStatus'] == 'reviewed'
+
+
+@pytest.mark.parametrize(('action', 'comment', 'category'), [
+    ('keep', 'There are four paths leading towards the water.', 'manual'),
+    ('reject', 'Click here https://example.invalid', 'hidden'),
+    ('hide', 'Beautiful views and a peaceful visit.', 'hidden'),
+])
+def test_admin_actions_record_outcomes(client, memory, action, comment, category):
+    created = client.post('/api/fr10/feedback', json=payload(comment=comment), headers=headers()).json
+    fid = created['id']
+    response = client.post(f'/api/fr13/feedback/{fid}/review', headers=headers('admin'), json={
+        'decision': action, 'comment': 'Decision note', 'expectedRevision': review_revision(created['feedback']),
+    })
+    assert response.status_code == 200
+    decision = response.json['feedback']['moderationDecision']
+    assert decision['actor'] == 'administrator' and decision['actorId'] == 'admin'
+    assert decision['outcome'] == ('approve' if action == 'keep' else action)
+    assert client.get('/api/fr13/feedback', headers=headers('admin')).json['items'][0]['moderationCategory'] == category
+    if category == 'hidden':
+        assert client.put(f'/api/fr10/feedback/{fid}', headers=headers(), json={'rating': 4}).status_code == 409
+
+
+def test_approved_claim_stages_source_projection_and_audit_in_one_commit(monkeypatch):
+    db = Mock()
+    source = Mock(id='review-id')
+    projection = Mock()
+    db.collection.side_effect = lambda name: SimpleNamespace(
+        document=lambda _: source if name == 'feedback' else projection)
+    monkeypatch.setattr('sequence_contract.firebase_firestore.get_db', lambda: db)
+    batch = db.batch.return_value
+    batch.commit.side_effect = InvalidArgument('projection rejected')
+    data = {**payload(), 'travellerId': 'owner',
+            **screen_submission(payload()['comment'], payload()['rating'])}
+    with pytest.raises(InvalidArgument):
+        claimRecord('feedback', source.id, data)
+    batch.create.assert_called_once_with(source, data)
+    assert batch.set.call_count == 2
+    assert batch.set.call_args_list[0].args[0] is projection
+    assert batch.set.call_args_list[0].args[1]['publicationStatus'] == 'approved'
+    assert batch.set.call_args_list[1].args[1]['actor'] == 'system'
+    batch.commit.assert_called_once()
+    source.create.assert_not_called()
+    projection.set.assert_not_called()

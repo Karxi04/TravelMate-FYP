@@ -5,6 +5,7 @@ import '../../core/utils/recommendation_page.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/recommendation_card.dart';
+import '../../widgets/local_place_rating.dart';
 import '../../widgets/travel_widgets.dart';
 import '../fr03_destination_search_information/destination_details_screen.dart';
 import '../fr02_travel_preference/preferences_screen.dart';
@@ -382,7 +383,10 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('For you')),
       body: RefreshIndicator(
-        onRefresh: generate,
+        onRefresh: () async {
+          LocalReviewRatings.invalidate();
+          await generate();
+        },
         child: ListView(
           padding: AppSpacing.page,
           children: [

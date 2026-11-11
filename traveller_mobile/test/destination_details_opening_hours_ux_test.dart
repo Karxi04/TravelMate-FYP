@@ -71,6 +71,56 @@ Future<void> _scrollIntoView(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
+  testWidgets('private FYP response uses the usual review cards and one section label',
+      (tester) async {
+    const place = {
+      'destinationId': 'local_penang_hill',
+      'title': 'Penang Hill',
+      'address': 'Air Itam, Penang',
+    };
+    var rating = 3.0;
+    var count = 3;
+    final api = _MockDetailsApi((path) {
+      if (path.endsWith('/ratings-reviews')) {
+        return {
+          'result': {
+            'rating': rating,
+            'reviews': count,
+            'fypPreview': true,
+            'user_reviews': [
+              for (final stars in [1, 3, 5])
+                {
+                  'username': 'Reviewer $stars',
+                  'rating': stars,
+                  'description': 'Comment for $stars stars.',
+                  'date': '2026-11-11',
+                }
+            ],
+          },
+        };
+      }
+      return {'destination': place, 'items': []};
+    });
+    await _pumpDestination(tester, initial: place, api: api);
+    await _scrollIntoView(tester, find.text('Local Reviews'));
+    expect(find.text('3.0 · 3 reviews'), findsOneWidget);
+    expect(find.textContaining('FYP ·'), findsNothing);
+    expect(find.text('Fictional reviews for the private FYP demonstration.'), findsOneWidget);
+    for (final stars in [1, 3, 5]) {
+      expect(find.text('Reviewer $stars'), findsOneWidget);
+      expect(find.text('Comment for $stars stars.'), findsOneWidget);
+    }
+    expect(find.text('Write a review'), findsNothing);
+    rating = 4.5;
+    count = 12;
+    await tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh();
+    await tester.pumpAndSettle();
+    await _scrollIntoView(tester, find.text('Local Reviews'));
+    expect(find.text('4.5 · 12 reviews'), findsOneWidget);
+    expect(find.text('3.0 · 3 reviews'), findsNothing);
+    expect(find.text('Reviewer 5'), findsOneWidget);
+  });
+
   group('Batch 21E-D1: Destination Details Opening Hours & Fallback UX', () {
     // 1. Complete weekly hours
     testWidgets('1. Complete weekly hours renders 7-day Monday to Sunday timetable', (tester) async {

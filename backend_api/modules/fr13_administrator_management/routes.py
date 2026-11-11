@@ -24,7 +24,8 @@ from services.report_service import (
     export_system_report_pdf
 )
 from services.package_service import package_for_read, package_submission_error
-from services.review_service import ReviewConflict, current_screen, review_revision, published_review
+from services.review_service import ReviewConflict, current_screen, review_revision, published_review, review_history
+from services.fyp_reviews import private_dataset, dataset_reviews, moderation_history, moderate_review
 from services.public_content_projection import active_campaign, eligible_package
 from services.campaign_schedule import campaign_package_ids
 from modules.fr12_tourism_operator_management.analytics_service import is_paid_order
@@ -408,55 +409,127 @@ def review_campaign(cid):
     review=approve(current,comment) if decision=='approved' else reject(current,comment); updates={'reviewStatus':review['decision'],'reviewComment':review['reviewComment'],'reviewReason':review['reviewComment'],'reviewedBy':g.uid,'reviewedAt':review['reviewedAt'],'updatedAt':utc_now_iso()}
     if decision=='approved':updates['campaignStatus']='approved'
     return jsonify({'ok':True,'campaign':_save('promotional_campaigns',cid,updates,current)})
+def _private_feedback(source=None, *, optional=False):
+    source = source or request.args.get('source', 'traveller')
+    if source == 'traveller':
+        return None, []
+    if source != 'fyp_penang':
+        _fail('Unknown review source.', 400)
+    try:
+        dataset = private_dataset()
+        if dataset:
+            return dataset[0], dataset_reviews(*dataset)
+    except Exception:
+        pass
+    if optional:
+        return None, []
+    _fail('The private Penang review dataset is unavailable.', 503)
+
+
 @bp.get('/feedback')
 @auth_required(['admin'])
 def all_feedback():
-    items = _load('feedback')
-    items = [{**item, 'screening': current_screen(item), 'reviewRevision': review_revision(item)} for item in items]
-    items.sort(key=lambda item: (item.get('moderationStatus') != 'pending_review', str(item.get('submittedAt') or '')))
-    return jsonify({'ok': True, 'items': items})
+    unified = request.args.get('source') == 'all'
+    ref, private_rows = _private_feedback('fyp_penang' if unified else None, optional=unified)
+    sources = [('fyp_penang', item) for item in private_rows]
+    if unified or ref is None:
+        sources.extend(('traveller', item) for item in _load('feedback'))
+    items = []
+    for source, item in sources:
+        screening = item['screening'] if source == 'fyp_penang' else current_screen(item)
+        decision = item.get('moderationDecision') or {}
+        if item.get('feedbackStatus') == 'removed':
+            category = 'hidden'
+        elif published_review(item):
+            category = 'automatic' if decision.get('actor') == 'system' else 'manual'
+        else:
+            category = 'flagged' if screening['risk'] == 'flagged' else 'needs_review'
+        items.append({**item, 'screening': screening, 'moderationCategory': category, 'reviewSource': source,
+                      'reviewRevision': review_revision(item)})
+    items.sort(key=lambda item: str(item.get('submittedAt') or ''), reverse=True)
+    response = jsonify({'ok': True, 'items': items,
+                        **({'privateUnavailable': ref is None,
+                            'dataLimited': getattr(g, 'admin_data_limited', False)} if unified else {})})
+    if ref is not None or unified:
+        response.headers['Cache-Control'] = 'private, no-store'
+    return response
 
 
-def _commit_review(fid, current, updates, **extra):
+@bp.get('/feedback/<fid>/history')
+@auth_required(['admin'])
+def feedback_history(fid):
+    ref, rows = _private_feedback()
+    if ref is not None:
+        record = next((item for item in rows if item['id'] == fid), None)
+        if not record:
+            _fail('Feedback not found', 404)
+        response = jsonify({'ok': True, 'items': moderation_history(ref, record)})
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    return jsonify({'ok': True, 'items': review_history(fid)})
+
+
+def _commit_review(fid, current, updates, *, private_ref=None, **extra):
     try:
-        updates['screening'] = current_screen(current)
-        return jsonify({'ok': True, 'feedback': updateRecord('feedback', fid, updates, expected=current), **extra})
+        if private_ref is not None:
+            result = moderate_review(private_ref, current, updates)
+        else:
+            updates['screening'] = current_screen(current)
+            result = updateRecord('feedback', fid, updates, expected=current)
+        return jsonify({'ok': True, 'feedback': result, **extra})
     except ReviewConflict as error:
         return jsonify({'ok': False, 'error': str(error)}), 409
     except Exception:
         return jsonify({'ok': False, 'error': 'Review moderation is temporarily unavailable.'}), 503
 
+
+def _admin_review_decision(outcome, note=''):
+    return {'actor': 'administrator', 'actorId': g.uid, 'outcome': outcome,
+            'at': utc_now_iso(), 'note': note}
+
 @bp.post('/feedback/<fid>/review')
 @auth_required(['admin'])
 def review_feedback(fid):
-    current=retrieveRecord('feedback',fid)
+    ref, rows = _private_feedback()
+    current = (next((item for item in rows if item['id'] == fid), None) if ref is not None
+               else retrieveRecord('feedback', fid))
     if not current:return jsonify({'ok':False,'error':'Feedback not found'}),404
     payload=request.get_json(silent=True) or {}
     if not isinstance(payload, dict):return jsonify({'ok':False,'error':'Invalid moderation request'}),400
     decision=str(payload.get('decision','')).lower()
     if 'expectedUpdatedAt' in payload and payload['expectedUpdatedAt'] != (current.get('updatedAt') or ''):
         return jsonify({'ok':False,'error':'This review changed. Refresh and try again.'}),409
-    if 'expectedRevision' in payload and payload['expectedRevision'] != review_revision(current):
+    if (ref is not None or 'expectedRevision' in payload) and payload.get('expectedRevision') != review_revision(current):
         return jsonify({'ok':False,'error':'This review changed. Refresh and try again.'}),409
     if not isinstance(payload.get('comment',''), str) or len(payload.get('comment','')) > 2000:
         return jsonify({'ok':False,'error':'Use a moderation note of at most 2000 characters.'}),400
-    if decision not in {'keep','remove'}:return jsonify({'ok':False,'error':'decision must be keep or remove'}),400
-    if decision=='remove':
+    if decision not in {'keep', 'remove', 'reject', 'hide'}:
+        return jsonify({'ok': False, 'error': 'Choose Approve, Reject or Hide.'}), 400
+    if ref is not None and (current.get('feedbackStatus') == 'removed'
+                            or (published_review(current) and decision in {'keep', 'reject'})):
+        return jsonify({'ok': False, 'error': 'That action is unavailable for this review status.'}), 409
+    note = payload.get('comment', '')
+    if decision != 'keep':
+        outcome = ('hide' if published_review(current) else 'reject') if decision == 'remove' else decision
         updates={
             'moderationStatus':'removed',
             'feedbackStatus':'removed',
-            'reviewComment':payload.get('comment',''),
+            'reviewComment':note,
             'removedBy':g.uid,
             'removedAt':utc_now_iso(),
             'updatedAt':utc_now_iso(),
+            'moderationDecision':_admin_review_decision(outcome, note),
         }
-        return _commit_review(fid, current, updates, removedId=fid, decision='remove')
-    updates={'moderationStatus':'reviewed','feedbackStatus':'visible','reviewComment':payload.get('comment',''),'reviewedBy':g.uid,'reviewedAt':utc_now_iso(),'updatedAt':utc_now_iso()}
-    return _commit_review(fid, current, updates, decision='keep')
+        return _commit_review(fid, current, updates, private_ref=ref, removedId=fid, decision=decision)
+    updates={'moderationStatus':'reviewed','feedbackStatus':'visible','reviewComment':note,'reviewedBy':g.uid,'reviewedAt':utc_now_iso(),'updatedAt':utc_now_iso(),
+             'moderationDecision':_admin_review_decision('approve', note)}
+    return _commit_review(fid, current, updates, private_ref=ref, decision='keep')
 
 @bp.delete('/feedback/<fid>')
 @auth_required(['admin'])
 def remove_feedback(fid):
+    if request.args.get('source', 'traveller') != 'traveller':
+        _fail('Use the private review moderation action.', 400)
     current = retrieveRecord('feedback',fid)
     if not current:return jsonify({'ok':False,'error':'Feedback not found'}),404
     updates={
@@ -465,6 +538,7 @@ def remove_feedback(fid):
         'removedBy':g.uid,
         'removedAt':utc_now_iso(),
         'updatedAt':utc_now_iso(),
+        'moderationDecision':_admin_review_decision('hide'),
     }
     return _commit_review(fid, current, updates, removedId=fid)
 
