@@ -1,6 +1,8 @@
 import os
 import sys
 import ipaddress
+import re
+from base64 import b64encode
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +15,7 @@ from dotenv import load_dotenv
 from firebase_service import get_db, init_firebase
 from auth_utils import auth_required
 from services.stripe_service import stripePaymentMode
+from services.local_lan import load_lan_signer, local_lan_networks, local_lan_origins
 from request_rate_limit import init_rate_limiter
 
 load_dotenv()
@@ -36,32 +39,20 @@ def _allowed_cors_origins():
     return origins
 
 
-def local_lan_network(environ=None):
-    source = environ if environ is not None else os.environ
-    environment = str(source.get("APP_ENV", "development")).strip().lower()
-    enabled = str(source.get("LOCAL_LAN_DEMO", "")).strip().lower() in {"1", "true", "yes", "on"}
-    if not enabled:
-        return None
-    if environment not in {"development", "dev", "local", "demo"}:
-        raise RuntimeError("LOCAL_LAN_DEMO is allowed only in an explicit local environment")
-    cidr = str(source.get("TRUSTED_LAN_CIDR", "")).strip()
-    try:
-        network = ipaddress.ip_network(cidr, strict=False)
-    except ValueError as exc:
-        raise RuntimeError("LOCAL_LAN_DEMO requires a valid TRUSTED_LAN_CIDR") from exc
-    if network.version != 4 or not network.network_address.is_private:
-        raise RuntimeError("TRUSTED_LAN_CIDR must be a private IPv4 network")
-    return network
-
-
 def create_app():
     app = Flask(__name__)
-    trusted_lan = local_lan_network()
-    if trusted_lan:
+    networks = local_lan_networks()
+    lan_origins = local_lan_origins(networks)
+    lan_sign = load_lan_signer(os.getenv("LOCAL_LAN_IDENTITY_KEY", "")) if lan_origins else None
+    app.config["LOCAL_LAN_ORIGINS"] = lan_origins
+    if networks:
         @app.before_request
         def allow_only_trusted_lan():
-            peer = ipaddress.ip_address(request.remote_addr or "")
-            if peer.is_loopback or peer in trusted_lan:
+            try:
+                peer = ipaddress.ip_address(request.remote_addr or "")
+            except ValueError:
+                abort(403)
+            if peer.is_loopback or any(peer in network for network in networks):
                 return None
             abort(403)
     init_rate_limiter(app, db_factory=get_db)
@@ -93,9 +84,21 @@ def create_app():
     @app.get("/api/health")
     def health():
         from services.package_checkout_contract import SUPPLIER_REQUIREMENT_VERSION
-        return jsonify({"ok": True, "service": "TravelMate Backend API",
-                        "recommendationContract": "relevant_v1",
-                        "packageRequirementsContract": f"supplier_v{SUPPLIER_REQUIREMENT_VERSION}"})
+        payload = {"ok": True, "service": "TravelMate Backend API",
+                   "recommendationContract": "relevant_v1",
+                   "packageRequirementsContract": f"supplier_v{SUPPLIER_REQUIREMENT_VERSION}"}
+        nonce = request.args.get("lanChallenge")
+        if nonce is None:
+            return jsonify(payload)
+        origin = f"http://{request.host}"
+        if not lan_sign or origin not in lan_origins:
+            abort(404)
+        if not re.fullmatch(r"[0-9a-f]{64}", nonce):
+            abort(400)
+        payload["lanProof"] = b64encode(lan_sign(origin, nonce)).decode("ascii")
+        response = jsonify(payload)
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/api/config-status")
     @auth_required(['admin'])
@@ -120,7 +123,7 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
-    bind_host = "0.0.0.0" if local_lan_network() else "127.0.0.1"
+    bind_host = "0.0.0.0" if local_lan_networks() else "127.0.0.1"
     app.run(
         host=bind_host,
         port=int(os.getenv("PORT", "5000")),

@@ -3,17 +3,17 @@ import os
 import re
 import uuid
 import stripe
-from ipaddress import ip_address, ip_network
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from html import escape
 from urllib.parse import urlencode, urlparse
 
-from flask import Blueprint, request, jsonify, g, current_app, Response
+from flask import Blueprint, request, jsonify, g, current_app, has_request_context, Response
 
 from auth_utils import auth_required
 from utils import utc_now_iso
 from services.commerce_money import record_money, public_pricing_breakdown
+from services.local_lan import is_lan_address, local_lan_networks
 from services.stripe_service import (
     createPaymentSession,
     createCheckoutSession,
@@ -366,27 +366,28 @@ def _configured_checkout_url(name, fallback):
 def _checkout_return_url(outcome):
     if outcome not in {'success', 'cancel'}:
         raise RuntimeError('Unsupported Checkout return outcome.')
-    local_demo = os.getenv('LOCAL_LAN_DEMO', '').strip().lower() in {'1', 'true', 'yes'}
+    networks = local_lan_networks()
     origin = os.getenv('STRIPE_CHECKOUT_RETURN_ORIGIN', '').strip().rstrip('/')
+    local_origins = current_app.config.get('LOCAL_LAN_ORIGINS', ()) if networks and has_request_context() else ()
+    if local_origins:
+        incoming = f'http://{request.host}'
+        if incoming in local_origins:
+            origin = incoming
+        elif request.remote_addr not in {'127.0.0.1', '::1'} or origin not in local_origins:
+            raise RuntimeError('Checkout requires an approved LOCAL_LAN_ORIGINS address.')
     if origin:
         parsed = urlparse(origin)
         if (parsed.scheme not in {'https', 'http'} or not parsed.hostname or
                 parsed.username or parsed.password or parsed.query or parsed.fragment or
                 parsed.path not in {'', '/'}):
             raise RuntimeError('STRIPE_CHECKOUT_RETURN_ORIGIN must be an origin without a path or credentials.')
-        if local_demo:
-            try:
-                address = ip_address(parsed.hostname)
-                trusted = ip_network(os.environ['TRUSTED_LAN_CIDR'], strict=False)
-            except (KeyError, ValueError) as exc:
-                raise RuntimeError('LOCAL_LAN_DEMO Checkout origin requires a trusted private IPv4 address.') from exc
-            if (parsed.scheme != 'http' or address.version != 4 or not address.is_private or
-                    address not in trusted or str(address) in {'127.0.0.1', '10.0.2.2', '10.0.3.2'}):
+        if networks:
+            if parsed.scheme != 'http' or not is_lan_address(parsed.hostname, networks):
                 raise RuntimeError('LOCAL_LAN_DEMO Checkout origin must be reachable inside TRUSTED_LAN_CIDR.')
         elif os.getenv('APP_ENV', 'development').strip().lower() == 'production' and parsed.scheme != 'https':
             raise RuntimeError('STRIPE_CHECKOUT_RETURN_ORIGIN must use HTTPS in production.')
         return f'{origin}/api/fr9/checkout/return/{outcome}?session_id={{CHECKOUT_SESSION_ID}}'
-    if local_demo:
+    if networks:
         raise RuntimeError('LOCAL_LAN_DEMO requires STRIPE_CHECKOUT_RETURN_ORIGIN.')
     name = 'STRIPE_CHECKOUT_SUCCESS_URL' if outcome == 'success' else 'STRIPE_CHECKOUT_CANCEL_URL'
     fallback = f'http://127.0.0.1:5000/api/fr9/checkout/return/{outcome}?session_id={{CHECKOUT_SESSION_ID}}'
@@ -765,7 +766,8 @@ def checkout_capabilities():
     # Configuration only: never contact Stripe or disclose credential values.
     available = (os.getenv('STRIPE_SECRET_KEY', '').strip().startswith('sk_test_') and
                  os.getenv('STRIPE_WEBHOOK_SECRET', '').strip().startswith('whsec_') and
-                 (os.getenv('STRIPE_CHECKOUT_RETURN_ORIGIN', '').strip() or
+                 (current_app.config.get('LOCAL_LAN_ORIGINS') or
+                  os.getenv('STRIPE_CHECKOUT_RETURN_ORIGIN', '').strip() or
                   (os.getenv('STRIPE_CHECKOUT_SUCCESS_URL', '').strip() and
                    os.getenv('STRIPE_CHECKOUT_CANCEL_URL', '').strip())))
     try:
