@@ -2,6 +2,7 @@ import 'dart:async';
 import '../../services/android_push_service.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/navigation/app_shell_navigation.dart';
 import '../../services/api_service.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
@@ -37,6 +38,8 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
   int selectedSegment = 0; // 0: My Plans, 1: Package Trips
   TripFilter selectedFilter = TripFilter.all;
   Timer? _midnightTimer;
+  bool? _isShellTripsSelected;
+  int _loadVersion = 0;
 
   static const _months = [
     'Jan',
@@ -156,6 +159,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
   }
 
   Future<void> load() async {
+    final version = ++_loadVersion;
     if (mounted) {
       setState(() {
         loading = true;
@@ -164,14 +168,15 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
     }
     try {
       final data = await api.get('/api/fr5/itineraries');
+      if (!mounted || version != _loadVersion) return;
       AndroidPushService.instance.refreshTripReminders();
-      if (mounted) setState(() => items = data['items'] ?? []);
+      setState(() => items = data['items'] ?? []);
     } catch (_) {
-      if (mounted) {
+      if (mounted && version == _loadVersion) {
         setState(() => loadError = 'We couldn’t load your trips. Try again.');
       }
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted && version == _loadVersion) setState(() => loading = false);
     }
   }
 
@@ -633,6 +638,20 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
     api = widget.api ?? ApiService();
     _scheduleMidnightTimer();
     Future.microtask(load);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final navigation = AppShellNavigation.maybeOf(context);
+    if (navigation == null) return;
+    final wasSelected = _isShellTripsSelected;
+    _isShellTripsSelected = navigation.selectedTab == AppShellTab.trips;
+    if (wasSelected == false && _isShellTripsSelected == true) {
+      Future.microtask(() {
+        if (mounted && _isShellTripsSelected == true) load();
+      });
+    }
   }
 
   @override

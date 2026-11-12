@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travelmate_traveller/core/navigation/app_shell.dart';
 import 'package:travelmate_traveller/core/navigation/app_shell_navigation.dart';
 import 'package:travelmate_traveller/core/operator_content/package_details_screen.dart';
 import 'package:travelmate_traveller/modules/fr03_destination_search_information/destination_details_screen.dart';
@@ -211,10 +212,9 @@ class ActionApi extends ApiService {
     }
     if (path == '/api/fr11/save-plan') {
       if (saveGate != null) return saveGate!.future;
-      return {
-        'ok': true,
-        'itinerary': {'id': 'saved-trip', 'title': 'Confirmed trip'}
-      };
+      final savedTrip = trip('saved-trip')..['title'] = 'Confirmed trip';
+      trips.add(savedTrip);
+      return {'ok': true, 'itinerary': savedTrip};
     }
     if (path == '/api/fr15/package-checkout-attempts')
       return {'ok': true, 'attempt': {}};
@@ -615,6 +615,33 @@ void main() {
     expect(find.byType(TripsTab), findsOneWidget);
     expect(api.posts, hasLength(1));
   });
+  testWidgets('opening a saved chat plan refreshes the existing Trips tab',
+      (tester) async {
+    final api = ActionApi(draft: true);
+    await frame(
+      tester,
+      AppShell(pages: [
+        const SizedBox.shrink(),
+        const SizedBox.shrink(),
+        TripsTab(api: api),
+        ChatTab(api: api),
+        const SizedBox.shrink(),
+      ]),
+    );
+    const listPath = '/api/fr5/itineraries';
+    expect(api.gets.where((path) => path == listPath), hasLength(1));
+
+    await tap(tester, find.text('Assistant'));
+    await tap(tester, find.text('Save plan to Trips'));
+    await tap(tester, find.text('Confirm save'));
+    await tap(tester, find.text('Open saved trip in Trips'));
+
+    expect(find.byType(TripsTab), findsOneWidget);
+    expect(find.text('Confirmed trip'), findsOneWidget);
+    expect(api.gets.where((path) => path == listPath), hasLength(2));
+    expect(api.posts.map((post) => post['path']), ['/api/fr11/save-plan']);
+  });
+
   testWidgets('stale draft cannot be saved by tapping its disabled action',
       (tester) async {
     final api = ActionApi(draft: true);
