@@ -17,6 +17,42 @@ AUTH={'Authorization':'Bearer isolated'}
 UID='test_traveller_uid'
 
 
+def test_verified_penang_metadata_reaches_refresh_and_persisted_discovery(client, mock_traveller_auth, repository):
+    repository.update('travel_preferences', UID, {'interests':['Photography','Food']})
+    rows = [
+        {'destinationId':'street','title':'Lebuh Armenian','category':'Tourist attraction','address':'George Town, Penang'},
+        {'destinationId':'mall','title':'Gurney Plaza','category':'Shopping mall','address':'Penang'},
+        {'destinationId':'park','title':'ESCAPE Penang','category':'Adventure park','address':'Penang'},
+        {'destinationId':'museum','title':'Pinang Peranakan Mansion','description':'Heritage architecture.','address':'Penang'},
+        {'destinationId':'wrong','title':'Entopia','address':'Teluk Bahang, Penang',
+         'gps_coordinates':{'latitude':3.139,'longitude':101.6869}},
+    ]
+    for row in rows:
+        repository.store('destination_cache', row, row['destinationId'])
+    request = {'destinationArea':'Penang','discoveryMode':'relevant_v1'}
+    first = client.post('/api/fr4/recommendations/generate', headers=AUTH, json=request)
+    assert first.status_code == 200, first.json
+    first_id = first.json['recommendationGenerationId']
+    first_snapshot = deepcopy(repository.read('recommendation_snapshots', first_id))
+    response = client.post('/api/fr4/recommendations/generate', headers=AUTH,
+                           json={**request, 'previousGenerationId':first_id})
+    assert response.status_code == 200, response.json
+    assert response.json['recommendationGenerationId'] != first_id
+    assert repository.read('recommendation_snapshots', first_id) == first_snapshot
+    public = {row['destinationId']:row for row in response.json['recommendations']}
+    assert set(public) == {'street','mall'}
+    assert public['street']['category'] == 'Tourist attraction'
+    assert public['street']['verifiedDestinationEvidence']['suppliesCategory']
+    assert public['street']['discoveryMatchedConcepts'] == ['photography']
+    assert public['mall']['foodExperienceType'] == 'dining'
+    for row in public.values():
+        assert row['finalScore'] == round(.6*row['contentScore']+.3*row['collaborativeScore']+.1*row['popularityScore'], 2)
+    assert repository.read('destination_cache', 'street') == {**rows[0], 'id':'street'}
+    reopened = client.get('/api/fr4/recommendations', headers=AUTH,
+                          query_string={'generationId':response.json['recommendationGenerationId'], 'discoveryMode':'relevant_v1'})
+    assert reopened.json['recommendations'] == response.json['recommendations']
+
+
 def score(candidate,profile=None):return rank(profile or {'interests':['Culture'],'travelType':'Culture','travelPace':'Relaxed','budgetRange':'Moderate'},[candidate])[0]
 
 

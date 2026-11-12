@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'local_backend.dart';
 import 'shared_firestore_service.dart';
 import 'review_contract.dart';
 import 'standalone_api_service.dart';
@@ -117,6 +118,9 @@ class ApiException implements Exception {
 }
 
 class ApiService {
+  static const _buildBaseUrl = String.fromEnvironment('API_BASE_URL');
+  static const _alternateUrl = String.fromEnvironment('API_BASE_URL_ALTERNATE');
+  static final _localBackend = _configureLocalBackend();
   static String? customBaseUrl;
   static final tripChanges = ValueNotifier<int>(0);
 
@@ -131,13 +135,31 @@ class ApiService {
 
   /// Local defaults are for debug builds; cloud releases require explicit HTTPS.
   static String get baseUrl {
-    const envUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
+    if (_localBackend != null) return privateLanOrigin(_buildBaseUrl).toString();
     final override = customBaseUrl?.trim() ?? '';
-    return resolveApiBaseUrl(override.isNotEmpty ? override : envUrl);
+    return resolveApiBaseUrl(override.isNotEmpty ? override : _buildBaseUrl);
   }
 
   static void setBaseUrl(String url) {
     customBaseUrl = url.trim();
+  }
+
+  static LocalBackend? _configureLocalBackend() {
+    if (_alternateUrl.isEmpty) return null;
+    if (!kDebugMode ||
+        kIsWeb ||
+        defaultTargetPlatform != TargetPlatform.android ||
+        !const bool.fromEnvironment('LOCAL_DEMO') ||
+        const bool.fromEnvironment('USE_FIREBASE_EMULATOR') ||
+        const bool.fromEnvironment('PUSH_TEST_BUILD') ||
+        forceStandalone) {
+      throw StateError('Two-address Backend selection requires the local Android debug app.');
+    }
+    return LocalBackend(
+      primary: _buildBaseUrl,
+      alternate: _alternateUrl,
+      publicKey: const String.fromEnvironment('LOCAL_LAN_PUBLIC_KEY'),
+    );
   }
 
   static const bool forceStandalone = bool.fromEnvironment(
@@ -161,6 +183,39 @@ class ApiService {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
     };
+  }
+
+  Future<http.Response> _request(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Map<String, dynamic>? payload,
+    required Duration timeout,
+  }) async {
+    Future<Map<String, String>> headers() async {
+      final result = await _headers();
+      if (method == 'GET' &&
+          (path == '/api/fr3/local-ratings' || path.startsWith('/api/fr3/destinations/'))) {
+        result['X-TravelMate-Review-Context'] = 'fyp-v1';
+      }
+      return result;
+    }
+
+    final body = payload == null ? null : jsonEncode(payload);
+    final local = _localBackend;
+    if (local != null) {
+      return local.request(method, path, query: query, headers: headers,
+          body: body, timeout: timeout);
+    }
+    final request = http.Request(method, Uri.parse('$baseUrl$path').replace(queryParameters: query));
+    request.headers.addAll(await headers());
+    if (body != null) request.body = body;
+    final client = http.Client();
+    try {
+      return await client.send(request).then(http.Response.fromStream).timeout(timeout);
+    } finally {
+      client.close();
+    }
   }
 
   bool _isReviewDetailsPath(String path) =>
@@ -261,15 +316,8 @@ class ApiService {
     }
     if (isStandalone) return _standalone.get(path, query);
     try {
-      final uri = Uri.parse('$baseUrl$path').replace(queryParameters: query);
-      debugPrint('GET  → $uri');
-      final headers = await _headers();
-      if (path == '/api/fr3/local-ratings' || path.startsWith('/api/fr3/destinations/')) {
-        headers['X-TravelMate-Review-Context'] = 'fyp-v1';
-      }
-      final response = await http
-          .get(uri, headers: headers)
-          .timeout(RequestTimeouts.forGet(path));
+      final response = await _request('GET', path, query: query,
+          timeout: RequestTimeouts.forGet(path));
       final result = decodeResponse(response);
       if (path.startsWith('/api/fr9/orders/') && path.endsWith('/reconcile') && result is Map && result['ok'] != false) {
         tripChanges.value++;
@@ -301,15 +349,8 @@ class ApiService {
     }
     if (isStandalone) return _standalone.post(path, body);
     try {
-      final uri = Uri.parse('$baseUrl$path');
-      debugPrint('POST → $uri');
-      final response = await http
-          .post(
-            uri,
-            headers: await _headers(),
-            body: jsonEncode(payload),
-          )
-          .timeout(RequestTimeouts.forPost(path));
+      final response = await _request('POST', path, payload: payload,
+          timeout: RequestTimeouts.forPost(path));
       return decodeMutationResponse(path, response);
     } catch (e) {
       debugPrint('Backend POST failed ($path): $e');
@@ -325,13 +366,8 @@ class ApiService {
     }
     if (isStandalone) return _standalone.put(path, body);
     try {
-      final response = await http
-          .put(
-            Uri.parse('$baseUrl$path'),
-            headers: await _headers(),
-            body: jsonEncode(payload),
-          )
-          .timeout(RequestTimeouts.ordinaryRead);
+      final response = await _request('PUT', path, payload: payload,
+          timeout: RequestTimeouts.ordinaryRead);
       return decodeMutationResponse(path, response);
     } catch (e) {
       debugPrint('Backend PUT failed ($path): $e');
@@ -347,9 +383,7 @@ class ApiService {
     }
     if (isStandalone) return _standalone.delete(path);
     try {
-      final response = await http
-          .delete(Uri.parse('$baseUrl$path'), headers: await _headers())
-          .timeout(RequestTimeouts.ordinaryRead);
+      final response = await _request('DELETE', path, timeout: RequestTimeouts.ordinaryRead);
       return decodeMutationResponse(path, response);
     } catch (e) {
       debugPrint('Backend DELETE failed ($path): $e');
@@ -371,15 +405,8 @@ class ApiService {
       throw UnimplementedError('Standalone mode does not support PATCH requests');
     }
     try {
-      final uri = Uri.parse('$baseUrl$path');
-      debugPrint('PATCH → $uri');
-      final response = await http
-          .patch(
-            uri,
-            headers: await _headers(),
-            body: jsonEncode(payload),
-          )
-          .timeout(RequestTimeouts.ordinaryRead);
+      final response = await _request('PATCH', path, payload: payload,
+          timeout: RequestTimeouts.ordinaryRead);
       return decodeMutationResponse(path, response);
     } catch (e) {
       debugPrint('Backend PATCH failed ($path): $e');

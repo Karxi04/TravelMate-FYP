@@ -32,7 +32,8 @@ def guided_requirements(message, state, preferences, dates_supplied=False):
     goal = state.get('planningGoal')
     if detailed == 'ACTIVITY_DISCOVERY':
         goal = 'activities'
-    elif detailed == 'ITINERARY_PLANNING' or (dates_supplied and goal != 'activities'):
+    elif (detailed == 'ITINERARY_PLANNING' or (dates_supplied and goal != 'activities')
+          or (answer == 'regenerate itinerary' and state.get('activePlan'))):
         goal = 'itinerary'
     elif not goal and (state.get('guidedActive') or intent == 'PLANNING_REQUEST'
                        or (state.get('destinationArea') and re.search(r'\b(?:travel|trip|plan)\b', answer))):

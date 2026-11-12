@@ -17,7 +17,7 @@ from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
 from services.review_service import published_review
 from services.recommendation_taxonomy import candidate_concepts
-from services.recommendation_discovery import DISCOVERY_MODE, discovery_annotations, discovery_queries
+from services.recommendation_discovery import DISCOVERY_MODE, discovery_annotations, discovery_queries, enrich_discovery_candidate
 from services.recommendation_snapshot_storage import validation_reason
 from services.preference_learning import (
     apply_explicit_feedback,
@@ -454,6 +454,7 @@ def generate():
     local_ids = {_destination_id(item) for item in DESTINATIONS}
     candidates = [{**item,'ratingSource':'unverified_local_catalog'} if
                   _destination_id(item) in local_ids and item.get('ratingSource') != 'provider' else item for item in candidates]
+    candidates = [enrich_discovery_candidate(item) for item in candidates]
 
     collaborative = [x for x in retrieveRecord('feedback', limit=500) if published_review(x)]
     peer_profiles_raw = retrieveRecord('travel_preferences', limit=500)

@@ -16,6 +16,12 @@ val startupDefines = (project.findProperty("dart-defines") as? String).orEmpty()
 val emulatorBuild = startupDefines.contains("USE_FIREBASE_EMULATOR=true")
 val privateReviewDemo = startupDefines.contains("PRIVATE_REVIEW_DEMO=true")
 val pushTestBuild = startupDefines.contains("PUSH_TEST_BUILD=true")
+val localLanSelection = startupDefines.any { it.startsWith("API_BASE_URL_ALTERNATE=") && it.substringAfter("=").isNotBlank() }
+if (localLanSelection && (!startupDefines.contains("LOCAL_DEMO=true") ||
+        emulatorBuild || pushTestBuild || startupDefines.contains("STANDALONE_MODE=true") ||
+        gradle.startParameter.taskNames.any { !it.contains("debug", ignoreCase = true) })) {
+    throw GradleException("Two-address Backend selection requires the local Android debug app.")
+}
 if (privateReviewDemo && !emulatorBuild) {
     throw GradleException("The private review demo requires Firebase emulators.")
 }
@@ -71,6 +77,7 @@ android {
         applicationId = if ((emulatorBuild && !privateReviewDemo) || pushTestBuild) "org.travelmate.hermetic.travelmate_hermetic" else "com.example.travelmate_traveller"
         buildConfigField("boolean", "USE_FIREBASE_EMULATOR", emulatorBuild.toString())
         buildConfigField("boolean", "PRIVATE_REVIEW_DEMO", privateReviewDemo.toString())
+        buildConfigField("boolean", "LOCAL_LAN_SELECTION", localLanSelection.toString())
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

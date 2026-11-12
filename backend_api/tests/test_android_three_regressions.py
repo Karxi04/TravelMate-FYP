@@ -83,7 +83,7 @@ def test_activity_quick_prompt_and_short_replies_are_grounded(client, mock_trave
     monkeypatch.setattr(routes, 'retrieveDestinationResults', lambda query, area: {
         'local_results': [
             {'place_id': 'ipoh-test', 'title': 'Synthetic Ipoh food stop', 'address': 'Ipoh, Perak, Malaysia',
-             'state': 'Perak', 'category': 'Food'},
+             'state': 'Perak', 'category': 'Food', 'recommendedDurationMinutes': 45},
             {'place_id': 'wrong-city', 'title': 'Synthetic Taiping food stop', 'address': 'Taiping, Perak, Malaysia',
              'state': 'Perak', 'category': 'Food'},
         ] if area == 'Ipoh' else [],
@@ -91,6 +91,8 @@ def test_activity_quick_prompt_and_short_replies_are_grounded(client, mock_trave
     ipoh = send(client, 'Things to do in Ipoh for one day with food', changed['session'])
     assert ipoh['session']['planningState']['tripDays'] == 1
     assert [row['place_id'] for row in ipoh['item']['placeSuggestions']] == ['ipoh-test']
+    assert ipoh['item']['placeSuggestions'][0]['matchedInterests'] == ['Food and local cuisine']
+    assert ipoh['item']['placeSuggestions'][0]['recommendedDurationMinutes'] == 45
     shorter = send(client, 'I only have half a day.', ipoh['session'])
     assert 'half-day' in shorter['reply'] and len(shorter['item']['placeSuggestions']) <= 2
     assert 'tripPlan' not in shorter['item']
@@ -261,6 +263,42 @@ def test_weather_question_keeps_draft_without_restarting_planning(client, mock_t
     assert 'tripPlan' not in answer['item']
     assert answer['session']['planningState']['activePlan'] == plan
     assert send(client, 'show my plan', answer['session'])['item']['tripPlan'] == plan
+
+
+def test_explanation_and_contextual_follow_up_preserve_pending_setup(client, mock_traveller_auth, memory, monkeypatch):
+    initial = send(client, 'I want to travel to Langkawi')
+    state = initial['session']['planningState']
+    calls = []
+    def answer(question, context, **kwargs):
+        calls.append((question, context))
+        return {'reply':'Brief travel explanation.', 'source':'gemini'}
+    monkeypatch.setattr(routes, 'generateFollowUpResponse', answer)
+    question = 'Explain why Ipoh is known for white coffee.'
+    explanation = send(client, question, initial['session'])
+    followup = send(client, 'What was my previous question?', explanation['session'])
+    assert len(calls) == 2 and question in calls[-1][1]
+    assert all(turn['source'] == 'gemini' and not {'tripPlan', 'placeSuggestions'} & turn['item'].keys() and
+               turn['session']['planningState'] == state for turn in (explanation, followup))
+
+
+def test_budget_advice_preserves_a_pending_itinerary(client, mock_traveller_auth, memory):
+    initial = send(client, 'I want to travel to Langkawi')
+    state = initial['session']['planningState']
+    answer = send(client, 'How much budget should I prepare for a 3-day holiday in Melaka?', initial['session'])
+    assert answer['session']['planningState'] == state
+    assert answer['source'] == 'test'
+    assert not {'tripPlan', 'placeSuggestions'} & answer['item'].keys()
+
+
+def test_regenerate_uses_active_dates_and_does_not_create_trip(client, mock_traveller_auth, memory, monkeypatch):
+    response = complete(client, monkeypatch)
+    draft = response['item']['tripPlan']
+    rebuilt = send(client, 'Regenerate itinerary', response['session'])
+    assert rebuilt['source'] == 'travelmate-assistant'
+    new_draft = rebuilt['item']['tripPlan']
+    assert rebuilt['session']['planningState']['activePlan'] == new_draft
+    assert all(new_draft[key] == draft[key] for key in ('startDate', 'endDate', 'destinationArea', 'budgetLimit'))
+    assert not any(key[0] == 'itineraries' for key in memory)
 
 
 def test_foreign_chat_cannot_save_or_expose_another_travellers_draft(client, mock_traveller_auth, memory, monkeypatch):

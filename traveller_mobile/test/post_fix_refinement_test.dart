@@ -227,7 +227,8 @@ void main() {
       await show(tester, find.text('Read full description'));
       await tester.tap(find.text('Read full description'));
       await tester.pumpAndSettle();
-      expect(tester.widget<Text>(find.text(description)).maxLines, isNull);
+      expect(find.text('A short operator introduction.'), findsOneWidget);
+      expect(tester.widget<Text>(find.textContaining('FINAL_DESCRIPTION')).maxLines, isNull);
       await show(tester, find.text('Highlights'));
       await tester.tap(find.text('Highlights'));
       await tester.pumpAndSettle();
@@ -239,14 +240,7 @@ void main() {
       await show(tester, find.text('Day 1 · $dayTitle'));
       await tester.tap(find.text('Day 1 · $dayTitle'));
       await tester.pumpAndSettle();
-      final heading = find.ancestor(
-          of: find.text(dayTitle), matching: find.byType(PackageTextBlock));
-      await show(tester,
-          find.descendant(of: heading, matching: find.text('Read more')));
-      await tester
-          .tap(find.descendant(of: heading, matching: find.text('Read more')));
-      await tester.pumpAndSettle();
-      expect(tester.widget<Text>(find.text(dayTitle)).maxLines, isNull);
+      expect(tester.widget<Text>(find.text('Day 1 · $dayTitle')).maxLines, isNull);
       await show(tester, find.text(dayDescription));
       final day = find
           .ancestor(

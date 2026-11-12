@@ -23,6 +23,9 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        if (BuildConfig.LOCAL_LAN_SELECTION) {
+            configureLocalBackend(flutterEngine.dartExecutor.binaryMessenger)
+        }
         val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(
             NotificationChannel("travelmate_updates", "TravelMate updates", NotificationManager.IMPORTANCE_HIGH)

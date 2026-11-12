@@ -5,7 +5,7 @@ import '../../services/trip_reminders.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/travel_widgets.dart';
-import '../../widgets/ink_card.dart';
+import '../../widgets/ink_card.dart' show showError;
 import '../fr09_payment/payment_history_screen.dart';
 import '../fr05_smart_itinerary_budget_planner/trip_details_screen.dart';
 import '../fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
@@ -200,15 +200,107 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
     }
   }
 
-  String timestamp(dynamic raw) {
-    final date = DateTime.tryParse('$raw');
-    return date == null
-        ? 'Time unavailable'
-        : date
-            .toLocal()
-            .toIso8601String()
-            .replaceFirst('T', ' ')
-            .substring(0, 16);
+  String timestamp(BuildContext context, Map<String, dynamic> item) {
+    final instant = DateTime.tryParse('${item['occurredAt']}') ??
+        DateTime.tryParse('${item['createdAt']}');
+    if (instant == null) return 'Time unavailable';
+    final malaysia = instant.toUtc().add(const Duration(hours: 8));
+    final localizations = MaterialLocalizations.of(context);
+    final date = '${malaysia.day} ${localizations.formatMonthYear(malaysia)}';
+    final time = localizations.formatTimeOfDay(TimeOfDay.fromDateTime(malaysia));
+    return '$date · $time MYT';
+  }
+
+  Widget notificationCard(Map<String, dynamic> item) {
+    final read = item['read'] == true;
+    final colors = Theme.of(context).colorScheme;
+    final typography = Theme.of(context).textTheme;
+    final category = item['category'];
+    final icon = switch (category) {
+      'payment' => Icons.receipt_long_outlined,
+      'arrangements_ready' => Icons.task_alt,
+      'package_booking' => Icons.card_travel_outlined,
+      'arrangements_update' => Icons.assignment_turned_in_outlined,
+      'booking_attention' => Icons.info_outline,
+      'upcoming_trip' => Icons.calendar_month_outlined,
+      'packing' => Icons.backpack_outlined,
+      'weather' => Icons.cloud_outlined,
+      _ => Icons.notifications_outlined
+    };
+    final target = item['target'] as Map? ?? {};
+    var source = '${item['sourceLabel'] ?? ''}';
+    if (category == 'payment') {
+      // Older inbox responses appended the order reference to this label.
+      final reference = 'Order ${target['orderId'] ?? ''}';
+      if (source == reference) {
+        source = '';
+      } else if (source.endsWith(' · $reference')) {
+        source = source.substring(0, source.length - reference.length - 3);
+      }
+    }
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      color: read ? colors.surface : AppColors.primarySoft,
+      child: InkWell(
+        customBorder: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(16))),
+        onTap: () async {
+          final screen = notificationDestination(target, widget.api);
+          if (screen == null) {
+            showError(context, 'This notification has no supported destination.');
+            return;
+          }
+          if (!read && !await mark(item, true)) return;
+          if (context.mounted) {
+            await Navigator.push(
+                context, MaterialPageRoute(builder: (_) => screen));
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(15),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Icon(icon, size: 20, color: colors.primary),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${item['title'] ?? 'Notification'}',
+                        style: typography.titleSmall?.copyWith(
+                            fontWeight: read ? FontWeight.w600 : FontWeight.w800)),
+                    const SizedBox(height: 5),
+                    Text('${item['message'] ?? ''}',
+                        style: typography.bodyMedium?.copyWith(height: 1.4)),
+                    if (source.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(source, style: typography.bodySmall),
+                    ],
+                    const SizedBox(height: 8),
+                    Text(timestamp(context, item),
+                        style: typography.bodySmall
+                            ?.copyWith(color: colors.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: read ? 'Mark unread' : 'Mark read',
+                onPressed: pending.contains('${item['id']}')
+                    ? null
+                    : () => mark(item, !read),
+                color: colors.onSurfaceVariant,
+                iconSize: 17,
+                icon: Icon(read ? Icons.done_all : Icons.mark_email_unread_outlined),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -227,52 +319,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
                     const Padding(
                         padding: EdgeInsets.all(24),
                         child: Text('No notifications yet.')),
-                  for (final item in items)
-                    Card(
-                        child: ListTile(
-                      leading: Icon(switch (item['category']) {
-                        'payment' => Icons.receipt_long_outlined,
-                        'arrangements_ready' => Icons.task_alt,
-                        'package_booking' => Icons.card_travel_outlined,
-                        'arrangements_update' => Icons.assignment_turned_in_outlined,
-                        'booking_attention' => Icons.info_outline,
-                        'upcoming_trip' => Icons.calendar_month_outlined,
-                        'packing' => Icons.backpack_outlined,
-                        'weather' => Icons.cloud_outlined,
-                        _ => Icons.notifications_outlined
-                      }),
-                      title: Text('${item['title'] ?? 'Notification'}',
-                          style: TextStyle(
-                              fontWeight: item['read'] == true
-                                  ? FontWeight.normal
-                                  : FontWeight.bold)),
-                      subtitle: Text(
-                          '${item['message'] ?? ''}\n${item['sourceLabel'] == null ? '' : '${item['sourceLabel']}\n'}${timestamp(item['createdAt'])}'),
-                      trailing: IconButton(
-                          tooltip: item['read'] == true
-                              ? 'Mark unread'
-                              : 'Mark read',
-                          onPressed: pending.contains('${item['id']}')
-                              ? null
-                              : () => mark(item, item['read'] != true),
-                          icon: Icon(item['read'] == true
-                              ? Icons.mark_email_read_outlined
-                              : Icons.mark_email_unread_outlined)),
-                      onTap: () async {
-                        final screen = notificationDestination(
-                            item['target'] as Map? ?? {}, widget.api);
-                        if (screen == null) {
-                          showError(context,
-                              'This notification has no supported destination.');
-                          return;
-                        }
-                        if (item['read'] != true && !await mark(item, true))
-                          return;
-                        if (context.mounted)
-                          await Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => screen));
-                      },
-                    )),
+                  for (final item in items) notificationCard(item),
                 ])),
       );
 }

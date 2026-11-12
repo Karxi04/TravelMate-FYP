@@ -37,8 +37,11 @@ def memory(monkeypatch):
         if documentId:return values.get(str(documentId))
         items = list(values.values())
         for field, operator, expected in filters or []:
-            assert operator == '=='
-            items = [item for item in items if nested(item, field) == expected]
+            if operator == 'array_contains':
+                items = [item for item in items if expected in (nested(item, field) or [])]
+            else:
+                assert operator == '=='
+                items = [item for item in items if nested(item, field) == expected]
         return items[:limit] if limit else items
     def store(collection, data, documentId=None, merge=False):
         key = documentId or data.get('id') or 'new'
@@ -140,6 +143,7 @@ def test_archived_editor_keeps_validation(client,memory,payload):
     ('payment_records',{'packageId':'p1'}),('payment_records',{'bookingId':'p1','bookingType':'package'}),
     ('itineraries',{'packageId':'p1'}),('itineraries',{'packageSnapshot':{'packageId':'p1'}}),
     ('promotional_campaigns',{'packageId':'p1'}),('hotel_bookings',{'packageId':'p1'}),
+    ('promotional_campaigns',{'packageIds':['other','p1']}),
 ])
 def test_delete_blocks_every_supported_dependency(client,memory,collection,record):
     records,_,_ = memory
@@ -246,7 +250,7 @@ def test_transport_attestation_requires_actual_provider_and_preserves_financial_
     order = _sample_order()
     store = {order['id']:deepcopy(order),order['fulfilledTripId']:_trip_for(order)}
     before = deepcopy(order['packageSnapshot'])
-    monkeypatch.setattr(routes,'retrieveRecord',lambda c,i:deepcopy(store.get(i)))
+    monkeypatch.setattr(routes,'retrieveRecord',lambda c,i: None if c == 'package_requirement_clarifications' else deepcopy(store.get(i)))
     monkeypatch.setattr(routes,'commitPackageFulfillment',_memory_commit(store))
     response = client.post('/api/fr12/bookings/'+order['id']+'/fulfillment',headers=AUTH_HEADER,
         json={'serviceType':'transport','reference':'DISPATCH-42','providerName':provider})

@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services.traveller_notifications import derive_events, coordinates
+from services.traveller_notifications import derive_events, coordinates, inbox_presentation
 from services.packing_checklist_service import checklist_id
 
 UID='test_traveller_uid'
@@ -145,6 +145,8 @@ def test_authenticated_reconcile_read_unread_dedup_cache_and_owner_routes(client
     first=client.get('/api/traveller/notifications',headers=AUTH)
     assert first.status_code==200 and first.json['unreadCount']==5
     assert 'private' not in first.get_data(as_text=True)
+    upcoming=next(item for item in first.json['items'] if item['category']=='upcoming_trip')
+    assert upcoming['message']=='Your Penang trip starts in 3 days, on 11 November 2026.'
     nid=first.json['items'][0]['id']
     assert client.patch('/api/traveller/notifications/'+nid,headers=AUTH,json={'read':True}).status_code==200
     second=client.get('/api/traveller/notifications',headers=AUTH)
@@ -157,6 +159,60 @@ def test_authenticated_reconcile_read_unread_dedup_cache_and_owner_routes(client
     assert client.patch('/api/traveller/notifications/foreign',headers=AUTH,json={'read':True}).status_code==404
     assert not any(item['id']=='foreign' for item in client.get('/api/traveller/notifications',headers=AUTH).json['items'])
     for key,value in before.items():assert db[key]==value
+
+
+def test_inbox_words_legacy_trip_and_does_not_use_unverified_payment_amount():
+    item = {'category':'upcoming_trip','message':'Butterworth Heritage & Wildlife Discovery – Full Day Tour starts in 1 day(s), on 2026-11-14.'}
+    inbox_presentation(item)
+    assert item['message']=='Your Butterworth Heritage & Wildlife Discovery trip starts in 1 day, on 14 November 2026.'
+    payment = {'category':'payment','paymentState':'paid','message':'Your recorded payment status is paid.',
+               'sourceLabel':'Order very-long-reference','target':{'orderId':'very-long-reference'}}
+    inbox_presentation(payment, {'status':'payment_mismatch','paymentStatus':'paid','amountMinor':91600,'currency':'MYR'})
+    assert payment['message']=='Your recorded payment status is paid.'
+    assert payment['target']['orderId']=='very-long-reference' and 'sourceLabel' not in payment
+
+
+@pytest.mark.parametrize('changed', [
+    None, {'status': 'cancelled'}, {'deletedAt': 'recorded'}, {'endDate': 'invalid'},
+    {'startDate': '2026-11-12'}, {'travellerId': 'someone-else'},
+])
+def test_stale_trip_reminders_leave_inbox_and_badge_without_deleting_history(
+    client, mock_traveller_auth, notification_store, changed,
+):
+    db, _ = notification_store
+    path = '/api/traveller/notifications'
+    first = client.get(path, headers=AUTH).json
+    reminder_ids = {row['id'] for row in first['items'] if row['category'] in {
+        'upcoming_trip', 'packing', 'weather',
+    }}
+    assert len(reminder_ids) == 3
+    if changed is None:
+        del db[('itineraries', 'own-trip')]
+    else:
+        db[('itineraries', 'own-trip')].update(changed)
+    after = client.get(path, headers=AUTH).json
+    assert not reminder_ids.intersection(row['id'] for row in after['items'])
+    assert after['unreadCount'] == 2
+    for nid in reminder_ids:
+        assert ('traveller_notifications', nid) in db
+        assert client.get(f'{path}/{nid}', headers=AUTH).status_code == 404
+
+
+def test_reopening_inbox_uses_the_current_malaysia_calendar_day(
+    client, mock_traveller_auth, notification_store,
+):
+    db, _ = notification_store
+    path = '/api/traveller/notifications'
+    first = client.get(path, headers=AUTH).json
+    notice = next(row for row in first['items'] if row['category'] == 'upcoming_trip')
+    assert 'starts in 3 days' in notice['message']
+    with patch('modules.traveller_notifications.datetime') as clock:
+        clock.now.return_value = datetime(2026, 11, 8, 16, tzinfo=timezone.utc)
+        refreshed = client.get(path, headers=AUTH).json
+    same = next(row for row in refreshed['items'] if row['id'] == notice['id'])
+    assert same['message'] == 'Your Penang trip starts in 2 days, on 11 November 2026.'
+    assert same['read'] == notice['read']
+    assert 'starts in 3 day(s)' in db[('traveller_notifications', notice['id'])]['message']
 
 
 @pytest.mark.parametrize('role',['anonymous','operator','admin'])

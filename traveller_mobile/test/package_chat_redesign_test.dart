@@ -1,9 +1,15 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/core/operator_content/package_details_screen.dart';
 import 'package:travelmate_traveller/modules/fr11_chatbot_travel_assistant/chat_tab.dart';
+import 'package:travelmate_traveller/modules/fr11_chatbot_travel_assistant/database_chat_cards.dart';
 import 'package:travelmate_traveller/services/api_service.dart';
 import 'package:travelmate_traveller/theme/app_theme.dart';
+import 'package:travelmate_traveller/widgets/local_place_rating.dart';
+import 'package:travelmate_traveller/widgets/recommendation_card.dart';
 
 class _MockRedesignApi extends ApiService {
   final Map<String, dynamic>? sessionResponse = null;
@@ -311,7 +317,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Switch to What's Included tab
-      await tester.tap(find.text("What's Included"));
+      final includedTab = find.text("What's Included");
+      await tester.ensureVisible(includedTab);
+      await tester.pumpAndSettle();
+      await tester.tap(includedTab);
       await tester.pumpAndSettle();
 
       expect(find.text('What is included'), findsOneWidget);
@@ -589,6 +598,40 @@ void main() {
       expect(find.textContaining('[END_OF_POLICY]'), findsOneWidget);
     });
 
+    testWidgets('original Butterworth brochure expands completely at narrow width', (tester) async {
+      final fixture = jsonDecode(File(
+        '../backend_api/tests/fixtures/butterworth_full_original_editor.json',
+      ).readAsStringSync()) as Map;
+      final form = Map<String, dynamic>.from(fixture['form'] as Map);
+      final description = form['fullDescription'] as String;
+      final finalParagraph = description.trim().split('\n\n').last;
+      final inclusions = (form['inclusions'] as String).split('\n');
+      final exclusions = (form['exclusions'] as String).split('\n');
+      tester.view.physicalSize = const Size(320, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(_wrap(TourismPackageDetailsScreen(
+        api: _MockRedesignApi(),
+        item: {...form, 'id':'butterworth-original', 'inclusions':inclusions, 'exclusions':exclusions,
+          'itinerary':[{
+            'dayNumber':1, 'title':(form['itineraryTitle'] as List).first,
+            'description':(form['itineraryDescription'] as List).first,
+            'activities':(form['itineraryActivities'] as List).first,
+          }],
+        },
+      ), width:320, height:1200, textScale:1.5));
+      await tester.pumpAndSettle();
+      final expand = find.text('Read full description');
+      await Scrollable.ensureVisible(tester.element(expand), alignment: 0.5);
+      await tester.pumpAndSettle();
+      await tester.tap(expand);
+      await tester.pumpAndSettle();
+      expect(find.text(finalParagraph), findsOneWidget);
+      expect(find.text('Show less'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
     for (final width in [320.0, 360.0, 390.0, 430.0]) {
       testWidgets('Responsive verification at ${width}px width with 1.4x text scale produces 0 overflows', (tester) async {
         tester.view.physicalSize = Size(width, 1000);
@@ -617,5 +660,231 @@ void main() {
         expect(tester.takeException(), isNull);
       });
     }
+
+    testWidgets('ISSUE 1 modal removes redundant disclosures, deduplicates minimum requirement, and handles narrow keyboard without overflow', (tester) async {
+      tester.view.physicalSize = const Size(320, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+
+      final modalPkg = <String, dynamic>{
+        'id': 'pkg_modal_min4',
+        'title': 'Cameron Tea & Mossy Forest',
+        'destination': 'Cameron Highlands',
+        'priceBasis': 'per_person',
+        'adultPrice': 400,
+        'childPrice': 200,
+        'minimumTravellers': 4,
+        'maximumTravellers': 10,
+        'departureDates': ['2099-06-15', '2000-01-01'],
+      };
+
+      await tester.pumpWidget(_wrap(
+        TourismPackageDetailsScreen(item: modalPkg, api: _MockRedesignApi()),
+        width: 320,
+        height: 800,
+        textScale: 1.4,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('package-book-now-cta')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('package-group-booking')), findsOneWidget);
+      expect(find.textContaining('Academic demonstration'), findsNothing);
+      expect(find.textContaining('Reviewing this package does not create'), findsNothing);
+      expect(find.text('Minimum 4 travellers required. Currently selected: 1.'), findsOneWidget);
+      expect(find.textContaining('Minimum requirement:'), findsNothing);
+      expect(find.textContaining('Minimum group size:'), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      // Simulate soft keyboard opening on promo code field
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      await tester.pumpAndSettle();
+      final promoField = find.byKey(const ValueKey('package-promo-code'));
+      await tester.ensureVisible(promoField);
+      await tester.enterText(promoField, 'SAVE10');
+      await tester.pumpAndSettle();
+      expect(find.text('SAVE10'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('ISSUE 3 LiteAPI accommodation without stars wraps cleanly at 320px 1.4x and expands long notes', (tester) async {
+      tester.view.physicalSize = const Size(320, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final longAccNotes = List.filled(20, 'Check-in begins at 15:00 MYT at the main wing reception.').join(' ') + ' [END_ACC_NOTES]';
+      final pkgUnstarred = <String, dynamic>{
+        'id': 'pkg_unstarred_hotel',
+        'title': 'George Town Boutique Stay',
+        'destination': 'Penang',
+        'priceBasis': 'per_person',
+        'adultPrice': 350,
+        'transportIncluded': true,
+        'guideActivitiesIncluded': false,
+        'roomType': 'Heritage Courtyard Twin',
+        'accommodationNotes': longAccNotes,
+        'accommodationHotel': {
+          'provider': 'liteapi',
+          'name': 'Eighteen Heritage Inn',
+          'city': 'George Town',
+          'country': 'MY',
+          'stars': null,
+          'guestRating': 8.7,
+        },
+      };
+
+      await tester.pumpWidget(_wrap(
+        TourismPackageDetailsScreen(item: pkgUnstarred, api: _MockRedesignApi()),
+        width: 320,
+        height: 1000,
+        textScale: 1.4,
+      ));
+      await tester.pumpAndSettle();
+
+      final includedTab = find.text("What's Included");
+      await tester.ensureVisible(includedTab);
+      await tester.pumpAndSettle();
+      await tester.tap(includedTab);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Service arrangements'), findsOneWidget);
+      expect(find.text('Star classification not supplied'), findsOneWidget);
+      expect(find.text('Guest Rating: 8.7/10'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      final readMore = find.text('Read more').first;
+      await tester.ensureVisible(readMore);
+      await tester.tap(readMore);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('[END_ACC_NOTES]'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('ISSUE 2 DatabasePackageCard and OwnedChatRecords render cleanly at 320px 1.4x', (tester) async {
+      tester.view.physicalSize = const Size(320, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final dbPkg = <String, dynamic>{
+        'id': 'db-pkg-1',
+        'title': 'Langkawi Island & Cable Car Escapade',
+        'destination': 'Langkawi',
+        'durationDays': 3,
+        'operatorName': 'Island Horizons',
+        'inclusions': ['Hotel pickup', 'Cable car ticket'],
+        'serviceInclusions': {'accommodation': true, 'transport': true, 'guideActivities': false},
+        'chatQuote': {
+          'originalSubtotal': 600,
+          'promotionDiscount': 50,
+          'finalPayable': 550,
+          'currency': 'MYR',
+          'priceBasis': 'per_person',
+          'taxIncluded': true,
+          'promotion': {
+            'campaignTitle': 'Seasonal Saver',
+            'startDate': '2026-01-01',
+            'endDate': '2099-12-31',
+            'termsConditions': 'Non-refundable promotional rate.',
+          },
+        },
+        'quoteContext': {
+          'isReference': false,
+          'partyKnown': true,
+          'dateKnown': true,
+          'participants': {'adults': 2, 'children': 0},
+          'departureDate': '2030-05-01',
+        },
+      };
+      final owned = <String, dynamic>{
+        'ownedTrips': [{'title': 'Langkawi Trip', 'startDate': '2030-05-01', 'endDate': '2030-05-03'}],
+        'ownedOrders': [
+          {
+            'title': 'Langkawi Package Order',
+            'orderId': 'ord_9988',
+            'paymentStatus': 'paid',
+            'currency': 'MYR',
+            'amount': 550,
+            'statusOverview': {
+              'travellerTrip': {'label': 'Created'},
+              'operatorReadiness': {'label': 'Pending'},
+              'supplierArrangements': {'label': 'Pending'},
+            },
+          },
+        ],
+      };
+
+      await tester.pumpWidget(_wrap(
+        Scaffold(
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                DatabasePackageCard(package: dbPkg, onDetails: () {}),
+                OwnedChatRecords(item: owned, onTrips: () {}),
+              ],
+            ),
+          ),
+        ),
+        width: 320,
+        height: 1000,
+        textScale: 1.4,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('MYR 550.00'), findsOneWidget);
+      expect(find.text('View Package Details'), findsOneWidget);
+      expect(find.text('Open Saved Trips'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('ISSUE 6 RecommendationCard handles long title/category, clean rating format, and stacks buttons cleanly at 320px 1.5x', (tester) async {
+      LocalReviewRatings.remember('rec-long-place', {'rating': 3.8, 'reviews': 11});
+      addTearDown(LocalReviewRatings.invalidate);
+
+      tester.view.physicalSize = const Size(320, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final rec = <String, dynamic>{
+        'destinationId': 'rec-long-place',
+        'title': 'Sultan Abdul Samad Heritage Complex & Dataran Merdeka Promenade',
+        'address': 'Jalan Raja, City Centre, 50050 Kuala Lumpur, Wilayah Persekutuan Kuala Lumpur',
+        'category': 'Historical Landmark & Colonial Architecture',
+        'discoveryEligible': true,
+        'finalScore': 88,
+        'foodExperienceType': 'culinary_culture',
+        'matchReasons': ['Matches your Culture interests'],
+      };
+
+      await tester.pumpWidget(_wrap(
+        Scaffold(
+          body: SingleChildScrollView(
+            padding: AppSpacing.page,
+            child: RecommendationCard(
+              recommendation: rec,
+              discovery: true,
+              onView: () {},
+              onAddToTrip: () {},
+            ),
+          ),
+        ),
+        width: 320,
+        height: 900,
+        textScale: 1.5,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('3.8 · 11 reviews'), findsOneWidget);
+      expect(find.textContaining('FYP'), findsNothing);
+      expect(find.text('View'), findsOneWidget);
+      expect(find.text('Add to trip'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

@@ -167,7 +167,6 @@ def test_financial_aliases_share_event_but_distinct_purchases_and_transitions_re
     linked=canonical_payment_order(ledger,UID,lambda key:order)
     events=derive_events(UID,[order,linked],[],now=NOW)
     assert len(events)==1 and events[0]['target']['orderId']=='checkout-1'
-    assert events[0]['sourceLabel']=='Butterworth Full Day · Order checkout-1'
     distinct={**order,'id':'checkout-2'}
     assert len(derive_events(UID,[order,linked,distinct],[],now=NOW))==2
     assert len(derive_events(UID,[order,{**order,'paymentStatus':'refunded'}],[],now=NOW))==2
@@ -177,7 +176,8 @@ def test_financial_aliases_share_event_but_distinct_purchases_and_transitions_re
 
 def test_existing_inbox_context_is_response_only_read_and_timestamp_preserved(client,mock_traveller_auth,notification_store):
     db,_provider=notification_store
-    db[('checkout_orders','one')]={'id':'one','travellerId':UID,'paymentStatus':'paid','packageSnapshot':{'title':'Penang package'}}
+    db[('checkout_orders','one')]={'id':'one','travellerId':UID,'paymentStatus':'paid','status':'paid',
+                                   'packageSnapshot':{'title':'Penang package'},'currency':'MYR','amountMinor':91600}
     nid=derive_events(UID,[db[('checkout_orders','one')]],[],now=NOW)[0]['id']
     saved={'id':nid,'travellerId':UID,'category':'payment','title':'Payment status updated','message':'Your recorded payment status is paid.',
         'target':{'screen':'payments','orderId':'one'},'createdAt':'2026-11-01T00:00:00Z','read':True,'readAt':'2026-11-02T00:00:00Z'}
@@ -185,7 +185,9 @@ def test_existing_inbox_context_is_response_only_read_and_timestamp_preserved(cl
     response=client.get('/api/traveller/notifications',headers=AUTH)
     assert response.status_code==200
     item=next(item for item in response.json['items'] if item['id']==nid)
-    assert item['sourceLabel']=='Penang package · Order one'
+    assert item['title']=='Payment Successful'
+    assert item['message']=='Your payment of MYR 916.00 for Penang package was confirmed.'
+    assert 'sourceLabel' not in item and item['target']['orderId']=='one'
     assert item['createdAt']==saved['createdAt'] and item['read'] and item['readAt']==saved['readAt']
     assert db[('traveller_notifications',nid)]==saved
 

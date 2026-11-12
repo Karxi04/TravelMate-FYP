@@ -27,9 +27,13 @@ class SharedGenerationApi extends RecsApi {
 }
 
 class ContextNoticesApi extends NoticesApi {
+  final String orderId = 'order_${List.filled(7, 'ButterworthHeritage2026').join()}';
+  ContextNoticesApi() {
+    items.single['target'] = {'screen':'payments','orderId':orderId};
+  }
   @override
   Future<dynamic> get(String path,[Map<String,String>? query]) async {
-    if(path=='/api/fr9/payments') return {'ok':true,'items':[{'id':'order1','orderReference':'order1','paymentStatus':'paid','productTitle':'Butterworth Full Day','amount':100,'currency':'MYR'}]};
+    if(path=='/api/fr9/payments') return {'ok':true,'items':[{'id':orderId,'orderReference':orderId,'paymentStatus':'paid','productTitle':'Butterworth Full Day','amount':100,'currency':'MYR'}]};
     return super.get(path,query);
   }
 }
@@ -105,16 +109,58 @@ void main() {
 
   testWidgets('payment context remains visible and tap preserves exact order navigation',(tester) async {
     final api=ContextNoticesApi();
-    api.items.single['sourceLabel']='Butterworth Full Day · Order order1';
+    api.items.single['sourceLabel']='Butterworth Full Day · Order ${api.orderId}';
     await tester.pumpWidget(MaterialApp(theme:buildInkWashTheme(),home:NotificationCenterScreen(api:api)));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Butterworth Full Day · Order order1'),findsOneWidget);
+    expect(find.text('Butterworth Full Day'),findsOneWidget);
+    expect(find.textContaining(api.orderId),findsNothing);
     await tester.tap(find.text('Payment status updated'));await tester.pumpAndSettle();
     final screen=tester.widget<PaymentHistoryScreen>(find.byType(PaymentHistoryScreen));
-    expect(screen.focusOrderId,'order1');
+    expect(screen.focusOrderId,api.orderId);
     expect(find.text('Payment Details'),findsOneWidget);
-    expect(find.text('order1'),findsOneWidget);
+    expect(find.text(api.orderId),findsOneWidget);
     expect(api.updates.single['path'],'/api/traveller/notifications/event1');
     expect(api.updates.single['read'],isTrue);
+  });
+
+  testWidgets('inbox cards separate content and remain usable at narrow large text', (tester) async {
+    tester.view.physicalSize = const Size(320, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = NoticesApi();
+    const payment = 'Your payment of MYR 916.00 for Butterworth Heritage & Wildlife Discovery – Full Day Tour was confirmed.';
+    api.items.first['message'] = payment;
+    api.items.add({
+      'id': 'event2', 'title': 'Upcoming trip', 'category': 'upcoming_trip',
+      'message': 'Your Penang trip starts in 3 days, on 14 November 2026.',
+      'createdAt': '2026-11-10T23:00:00Z', 'read': true,
+    });
+    await tester.pumpWidget(MaterialApp(
+      theme: buildInkWashTheme(),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(2)),
+        child: child!,
+      ),
+      home: NotificationCenterScreen(api: api),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text(payment), findsOneWidget);
+    final cards = find.byWidgetPredicate((widget) =>
+        widget is InkWell && widget.customBorder is RoundedRectangleBorder,
+        skipOffstage: false);
+    expect(tester.getTopLeft(cards.at(1)).dy - tester.getBottomLeft(cards.first).dy, 12);
+    expect(find.byTooltip('Mark read'), findsOneWidget);
+    await tester.tap(find.byTooltip('Mark read'));
+    await tester.pumpAndSettle();
+    expect(api.updates.single['read'], true);
+    expect(find.byTooltip('Mark unread', skipOffstage: false), findsNWidgets(2));
+    final dateLabel = find.textContaining('11 November 2026', skipOffstage: false);
+    await Scrollable.ensureVisible(tester.element(dateLabel), alignment: 0.7);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('11 November 2026'), findsOneWidget);
+    expect(tester.widget<Text>(dateLabel).data, contains('7:00'));
+    expect(tester.widget<Text>(dateLabel).data, endsWith('MYT'));
+    expect(tester.takeException(), isNull);
   });
 }

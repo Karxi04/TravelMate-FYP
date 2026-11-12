@@ -7,13 +7,15 @@ class PackageTextBlock extends StatefulWidget {
   final TextStyle? style;
   final int collapsedLines;
   final String expandLabel;
+  final bool separateParagraphs;
   const PackageTextBlock(
       {super.key,
       required this.text,
       this.preview,
       this.style,
       this.collapsedLines = 4,
-      this.expandLabel = 'Read more'});
+      this.expandLabel = 'Read more',
+      this.separateParagraphs = false});
   @override
   State<PackageTextBlock> createState() => _PackageTextBlockState();
 }
@@ -29,8 +31,8 @@ class _PackageTextBlockState extends State<PackageTextBlock> {
   @override
   Widget build(BuildContext context) =>
       LayoutBuilder(builder: (context, constraints) {
-        final style = widget.style ??
-            Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.5);
+        final base = widget.style ?? Theme.of(context).textTheme.bodyMedium;
+        final style = base?.copyWith(height: base.height ?? 1.5);
         final preview = widget.preview ?? widget.text;
         final painter = TextPainter(
             text: TextSpan(text: preview, style: style),
@@ -40,11 +42,21 @@ class _PackageTextBlockState extends State<PackageTextBlock> {
           ..layout(maxWidth: constraints.maxWidth);
         final canExpand = preview != widget.text || painter.didExceedMaxLines;
         painter.dispose();
+        final paragraphs = expanded && widget.separateParagraphs
+            ? widget.text.split(RegExp(r'\r?\n\s*\r?\n'))
+            : const <String>[];
         return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(expanded ? widget.text : preview,
+              if (paragraphs.length > 1)
+                for (final paragraph in paragraphs)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 9),
+                    child: Text(paragraph, style: style),
+                  )
+              else
+                Text(expanded ? widget.text : preview,
                   style: style,
                   softWrap: true,
                   maxLines: expanded ? null : widget.collapsedLines,

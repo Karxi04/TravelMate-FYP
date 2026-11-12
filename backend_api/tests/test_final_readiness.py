@@ -452,7 +452,8 @@ def test_gemini_generate_content_keeps_system_and_traveller_context_separate(mon
         )
     assert result == {"reply": "Malaysia advice", "source": "gemini"}
     sdk.assert_called_once()
-    assert sdk.call_args.kwargs["http_options"].timeout == 30_000
+    assert sdk.call_args.kwargs["http_options"].timeout == 8_000
+    assert sdk.call_args.kwargs["http_options"].headers["X-Server-Timeout"] == "20"
     kwargs = sdk.return_value.models.generate_content.call_args.kwargs
     assert kwargs["model"] == "gemini-3.8-flash"
     assert kwargs["contents"] == (

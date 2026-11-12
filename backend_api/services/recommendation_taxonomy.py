@@ -115,7 +115,10 @@ def primary_concepts(item):
         'title', 'name', 'destinationType', 'types',
     ):
         values.extend(_values((item or {}).get(field)))
-    return concepts_for(values)
+    evidence = (item or {}).get('verifiedDestinationEvidence') or {}
+    if evidence.get('suppliesCategory'):
+        values.append(evidence['category'])
+    return concepts_for(values) - set(evidence.get('excludedConcepts') or [])
 
 
 def candidate_concepts(item):
@@ -123,7 +126,10 @@ def candidate_concepts(item):
     # Generic marketing and nearby amenities are not evidence of the attraction's offering.
     generic = {'food','culture','history','nature','outdoor','leisure','relaxed','social','family',
                'children','kids','shopping','photo','art','education','educational','scenic','scenery','park','market'}
-    for clause in re.split(r'[.;!?]', str((item or {}).get('description') or '')):
+    description = str((item or {}).get('description') or '')
+    if normalize_phrase(description) == normalize_phrase((item or {}).get('address')):
+        description = ''
+    for clause in re.split(r'[.;!?]', description):
         if re.search(r'\b(near|nearby|close to|walking distance)\b|附近|邻近|鄰近',clause,re.I):
             continue
         phrase = ' ' + normalize_phrase(clause) + ' '
@@ -133,7 +139,9 @@ def candidate_concepts(item):
                    for term in terms-generic
                    for match in re.finditer(r'\b'+re.escape(normalize_phrase(term))+r'\b',searchable)):
                 concepts.add(concept)
-    return concepts
+    evidence = (item or {}).get('verifiedDestinationEvidence') or {}
+    concepts.update(evidence.get('concepts') or [])
+    return concepts - set(evidence.get('excludedConcepts') or [])
 
 
 def display_concepts(concepts):

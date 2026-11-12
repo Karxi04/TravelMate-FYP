@@ -45,6 +45,7 @@ def block_live_firebase(monkeypatch):
         "firebase_admin.auth.update_user",
         _blocked_live_service,
     )
+    monkeypatch.setattr("services.gemini_service._provider_retry_at", 0.0)
 
 
 @pytest.fixture
