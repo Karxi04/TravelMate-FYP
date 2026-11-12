@@ -713,16 +713,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
     showError(context, 'Use the order status and hosted Checkout recovery actions.');
   }
 
-  Widget _buildDisclaimer() {
-    return InkCard(
-      color: InkWashColors.cream,
-      child: const Text(
-        '$academicPaymentDisclosure Review the accepted total before continuing. Card details are entered only on hosted Checkout.',
-        style: TextStyle(color: InkWashColors.ink, height: 1.35),
-      ),
-    );
-  }
-
   Widget _buildHostedCheckout() {
     final isPackage = widget.packageAttemptId.isNotEmpty ||
         widget.quoteType == 'package' ||
@@ -838,8 +828,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
             subtitle: 'Card details are entered only on Stripe-hosted Checkout.',
           ),
           const SizedBox(height: 12),
-          _buildDisclaimer(),
-          const SizedBox(height: 14),
           InkCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
