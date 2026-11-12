@@ -16,6 +16,11 @@ load_dotenv()
 app = Flask(__name__)
 from portal_commerce import register_commerce_presentation
 register_commerce_presentation(app)
+try:
+    from package_review_formatter import register_package_review_filters
+except ImportError:
+    from admin_website.package_review_formatter import register_package_review_filters
+register_package_review_filters(app)
 configure_portal_app(app, "travelmate_admin_session", "admin")
 app.register_blueprint(fr01)
 app.register_blueprint(fr13)
