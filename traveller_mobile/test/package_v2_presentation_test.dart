@@ -120,7 +120,9 @@ void main() {
       item: _checkoutPackage, api: api)));
     await tester.pumpAndSettle();
     await _openBookingSheet(tester);
-    expect(find.textContaining('Academic demonstration'), findsOneWidget);
+    expect(find.textContaining('Academic demonstration'), findsNothing);
+    expect(find.textContaining('Reviewing this package does not create'),
+        findsNothing);
     await tester.tap(find.byKey(const ValueKey('package-checkout-btn')));
     await tester.pumpAndSettle();
     expect(api.postedPath, '/api/fr15/package-checkout-attempts');
@@ -128,6 +130,7 @@ void main() {
     expect(api.postedPayload!['participants'], {'adults': 1, 'children': 0});
     expect(api.postedPayload!.containsKey('price'), isFalse);
     expect(find.text('Review Payment'), findsOneWidget);
+    expect(find.textContaining('Academic demonstration'), findsOneWidget);
     expect(api.postedPayloads, hasLength(1));
   });
 
@@ -287,10 +290,12 @@ void main() {
 
     expect(find.text('Adults: 1'), findsOneWidget);
     expect(find.text('Children: 0'), findsOneWidget);
-    expect(find.text('Minimum requirement: 4 travellers'), findsOneWidget);
     expect(
-        find.textContaining('Minimum group size: 4 travellers required (currently 1)'),
-        findsOneWidget);
+      find.text('Minimum 4 travellers required. Currently selected: 1.'),
+      findsOneWidget,
+    );
+    expect(find.text('Minimum requirement: 4 travellers'), findsNothing);
+    expect(find.textContaining('Minimum group size:'), findsNothing);
   });
 
   testWidgets(

@@ -941,15 +941,30 @@ class _ChatTabState extends State<ChatTab> {
                     )),
                   ]),
                   const SizedBox(height: 8),
-                  if (matched.isNotEmpty) Text(matched,
-                      style: const TextStyle(color: AppColors.primaryStrong, fontWeight: FontWeight.w600)),
-                  if (description.isNotEmpty && description != location)
+                  if (matched.isNotEmpty) ...[
+                    Text(matched,
+                        style: const TextStyle(
+                            color: AppColors.primaryStrong,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12.5)),
+                    const SizedBox(height: 4),
+                  ],
+                  if (description.isNotEmpty && description != location) ...[
                     PackageTextBlock(text: description, collapsedLines: 3),
-                  if (duration.isNotEmpty) Text('Estimated $duration',
-                      style: Theme.of(context).textTheme.bodySmall),
+                    const SizedBox(height: 4),
+                  ],
+                  if (duration.isNotEmpty) ...[
+                    Text('Estimated $duration',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: AppColors.textSecondary)),
+                    const SizedBox(height: 4),
+                  ],
                   LocalPlaceRating(place: place),
+                  const SizedBox(height: 6),
                   Wrap(
-                    spacing: 6,
+                    spacing: 8,
                     children: [
                       TextButton(
                         key: ValueKey('chat-place-details-${destinationId(place)}'),
@@ -998,7 +1013,7 @@ class _ChatTabState extends State<ChatTab> {
     }
     return Container(
       margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.all(13),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
           color: InkWashColors.cream,
           borderRadius: BorderRadius.circular(16),
@@ -1011,12 +1026,18 @@ class _ChatTabState extends State<ChatTab> {
             const SizedBox(width: 7),
             Expanded(
                 child: Text((plan['title'] ?? 'Trip plan').toString(),
-                    style: const TextStyle(fontWeight: FontWeight.w900)))
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, fontSize: 15)))
           ]),
-          const SizedBox(height: 7),
-          if (start != null && end != null)
+          const SizedBox(height: 8),
+          if (start != null && end != null) ...[
             Text('${MaterialLocalizations.of(context).formatMediumDate(start)} – ${MaterialLocalizations.of(context).formatMediumDate(end)}',
-                style: Theme.of(context).textTheme.bodySmall),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: AppColors.textSecondary)),
+            const SizedBox(height: 4),
+          ],
           Wrap(spacing: 8, runSpacing: 4, children: [
             if (plan['destinationArea'] != null) Text('${plan['destinationArea']}'),
             if (dayCount > 0) Text('$dayCount ${dayCount == 1 ? 'day' : 'days'}'),
@@ -1026,26 +1047,53 @@ class _ChatTabState extends State<ChatTab> {
           if (plan['budgetLimit'] case final num budget)
             Padding(padding: const EdgeInsets.only(top: 6, bottom: 6),
                 child: Text('Planning budget · MYR $budget',
-                    style: const TextStyle(fontWeight: FontWeight.w700))),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primaryStrong))),
           if ((plan['interests'] ?? plan['requestedInterests']) is List &&
               ((plan['interests'] ?? plan['requestedInterests']) as List)
-                  .isNotEmpty)
+                  .isNotEmpty) ...[
             Text(
                 'Interests: ${((plan['interests'] ?? plan['requestedInterests']) as List).join(', ')}',
-                style: const TextStyle(fontSize: 12)),
-          if ((plan['travelPace'] ?? plan['pace'] ?? '').toString().isNotEmpty)
+                style: const TextStyle(
+                    fontSize: 12.5, color: AppColors.textSecondary)),
+            const SizedBox(height: 2),
+          ],
+          if ((plan['travelPace'] ?? plan['pace'] ?? '').toString().isNotEmpty) ...[
             Text('Pace: ${plan['travelPace'] ?? plan['pace']}',
-                style: const TextStyle(fontSize: 12)),
+                style: const TextStyle(
+                    fontSize: 12.5, color: AppColors.textSecondary)),
+            const SizedBox(height: 2),
+          ],
           if ((plan['travelPersonality'] ?? '').toString().isNotEmpty)
             Text('Travel style: ${plan['travelPersonality']}',
-                style: const TextStyle(fontSize: 12)),
+                style: const TextStyle(
+                    fontSize: 12.5, color: AppColors.textSecondary)),
           if (stale)
-            const Text(
-                'Earlier draft — trip details have changed. Review the current plan before saving.'),
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.warningSoft,
+                borderRadius: BorderRadius.circular(AppRadii.small),
+              ),
+              child: const Text(
+                  'Earlier draft — trip details have changed. Review the current plan before saving.',
+                  style: TextStyle(fontSize: 12, color: InkWashColors.ink)),
+            ),
           if (plan['coverageStatus'] == 'partial')
-            const Text(
-                'Incomplete preview — more verified activities are needed before saving.'),
-          const SizedBox(height: 9),
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.warningSoft,
+                borderRadius: BorderRadius.circular(AppRadii.small),
+              ),
+              child: const Text(
+                  'Incomplete preview — more verified activities are needed before saving.',
+                  style: TextStyle(fontSize: 12, color: InkWashColors.ink)),
+            ),
+          const SizedBox(height: 10),
           ...days.entries.map((entry) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: ExpansionTile(
@@ -1057,8 +1105,11 @@ class _ChatTabState extends State<ChatTab> {
                       style: const TextStyle(fontWeight: FontWeight.w900)),
                   children: [
                     if (entry.value.isEmpty)
-                      const Text(
-                          'No verified activities scheduled for this day.'),
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 6),
+                        child: Text(
+                            'No verified activities scheduled for this day.'),
+                      ),
                     ...entry.value.map((a) {
                       final activity = Map<String, dynamic>.from(a as Map);
                       final duration = durationText(activity);
@@ -1073,22 +1124,50 @@ class _ChatTabState extends State<ChatTab> {
                         child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(timeText(activity), style: Theme.of(context).textTheme.labelMedium),
+                              Text(timeText(activity),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelMedium
+                                      ?.copyWith(
+                                          color: AppColors.primaryStrong)),
+                              const SizedBox(height: 2),
                               Text('${activity['activityName'] ?? ''}',
-                                  style: const TextStyle(fontWeight: FontWeight.w700)),
-                              if (duration.isNotEmpty) Text(duration, style: Theme.of(context).textTheme.bodySmall),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13.5)),
+                              if (duration.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(duration,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                            color: AppColors.textSecondary)),
+                              ],
                               if ((activity['description'] ?? '')
                                   .toString()
-                                  .isNotEmpty)
-                                PackageTextBlock(text: activity['description'].toString(), collapsedLines: 3),
-                              if (notes.isNotEmpty) Text(notes, style: Theme.of(context).textTheme.bodySmall),
+                                  .isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                PackageTextBlock(
+                                    text: activity['description'].toString(),
+                                    collapsedLines: 3),
+                              ],
+                              if (notes.isNotEmpty) ...[
+                                const SizedBox(height: 3),
+                                Text(notes,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                            color: AppColors.textSecondary)),
+                              ],
                             ]),
                       );
                     }),
                   ],
                 ),
               )),
-          const SizedBox(height: 5),
+          const SizedBox(height: 6),
           SizedBox(
               width: double.infinity,
               child: FilledButton.tonalIcon(
@@ -1106,12 +1185,17 @@ class _ChatTabState extends State<ChatTab> {
                       : savingPlanKey == planKey(plan)
                           ? 'Save pending…'
                           : 'Save plan to Trips'))),
-          if (!saved && !stale)
-            TextButton.icon(
-              onPressed: busy ? null : () => send('Regenerate itinerary'),
-              icon: const Icon(Icons.refresh),
-              label: const Text('Regenerate'),
+          if (!saved && !stale) ...[
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: busy ? null : () => send('Regenerate itinerary'),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Regenerate'),
+              ),
             ),
+          ],
         ],
       ),
     );
@@ -1377,7 +1461,7 @@ class _ChatTabState extends State<ChatTab> {
                           label: 'TravelMate response',
                           child: Container(
                             margin:
-                                const EdgeInsets.only(bottom: 16, right: 28),
+                                const EdgeInsets.only(bottom: 16, right: 12),
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
                               color: Colors.white,
@@ -1463,9 +1547,11 @@ class _ChatTabState extends State<ChatTab> {
                                 if (advisory.isNotEmpty)
                                   _buildAdvisoryCard(advisory),
                                 if (item['ownedTrips'] is List ||
-                                    item['ownedOrders'] is List)
+                                    item['ownedOrders'] is List) ...[
+                                  const SizedBox(height: 8),
                                   OwnedChatRecords(
                                       item: item, onTrips: openTrips),
+                                ],
                                 if (item['priceNotice'] != null)
                                   _buildAdvisoryCard(
                                       item['priceNotice'].toString()),

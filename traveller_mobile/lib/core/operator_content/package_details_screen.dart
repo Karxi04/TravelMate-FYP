@@ -626,43 +626,41 @@ class _TourismPackageDetailsScreenState
 
   Widget _participantCounter(String label, int value, VoidCallback? subtract,
       VoidCallback? add, String keyName) {
-    return Expanded(
-      child: Semantics(
-        label: '$label count $value',
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: AppSpacing.xs,
-          ),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: AppRadii.control,
-            border: Border.all(color: AppColors.divider),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '$label: $value',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
+    return Semantics(
+      label: '$label count $value',
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: AppRadii.control,
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$label: $value',
+                style: const TextStyle(fontWeight: FontWeight.w700),
               ),
-              IconButton(
-                key: ValueKey('$keyName-remove'),
-                onPressed: subtract,
-                icon: const Icon(Icons.remove_circle_outline),
-                iconSize: 22,
-                visualDensity: VisualDensity.compact,
-              ),
-              IconButton(
-                key: ValueKey('$keyName-add'),
-                onPressed: add,
-                icon: const Icon(Icons.add_circle_outline),
-                iconSize: 22,
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
-          ),
+            ),
+            IconButton(
+              key: ValueKey('$keyName-remove'),
+              onPressed: subtract,
+              icon: const Icon(Icons.remove_circle_outline),
+              iconSize: 22,
+              visualDensity: VisualDensity.compact,
+            ),
+            IconButton(
+              key: ValueKey('$keyName-add'),
+              onPressed: add,
+              icon: const Icon(Icons.add_circle_outline),
+              iconSize: 22,
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
         ),
       ),
     );
@@ -684,255 +682,45 @@ class _TourismPackageDetailsScreenState
             final canAddChild = canAddParticipant && _childPrice != null;
             final meetsMin = totalTravellers >= _minimumTravellers;
 
-            return Container(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewInsetsOf(context).bottom,
               ),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(AppRadii.large),
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.88,
                 ),
-              ),
-              child: SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Handle and title
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.md,
-                        AppSpacing.sm,
-                        AppSpacing.sm,
-                        AppSpacing.xs,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(AppRadii.large),
+                  ),
+                ),
+                child: SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(height: AppSpacing.xs),
+                      Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.divider,
+                          borderRadius: BorderRadius.circular(AppRadii.pill),
+                        ),
                       ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Select Travellers & Date',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close_rounded),
-                            onPressed: () => Navigator.pop(modalContext),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Flexible(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        child: Container(
-                          key: const ValueKey('package-group-booking'),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _priceBasis == 'per_group'
-                                    ? 'This is a fixed group price within the package capacity.'
-                                    : !_hasVerifiedPriceBasis
-                                        ? 'Pricing basis is not verified for this package. Checkout is disabled.'
-                                        : _childPrice == null
-                                            ? 'Adult pricing is available. Child rate unavailable.'
-                                            : 'Adults: $_currency ${_money(_effectiveAdultPrice!)} · Children: $_currency ${_money(_childPrice!)}',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: AppColors.textSecondary,
-                                    ),
-                              ),
-                              if (_minimumTravellers > 1) ...[
-                                const SizedBox(height: AppSpacing.xs),
-                                Text(
-                                  'Minimum requirement: $_minimumTravellers travellers',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: totalTravellers < _minimumTravellers
-                                        ? AppColors.warning
-                                        : AppColors.textSecondary,
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(height: AppSpacing.sm),
-                              Row(
-                                children: [
-                                  _participantCounter(
-                                    'Adults',
-                                    adults,
-                                    adults > 1
-                                        ? () {
-                                            setState(() => adults -= 1);
-                                            _checkoutIntent.startNewAttempt();
-                                            setModalState(() {});
-                                            _refreshQuote(setModalState, context);
-                                          }
-                                        : null,
-                                    canAddParticipant
-                                        ? () {
-                                            setState(() => adults += 1);
-                                            _checkoutIntent.startNewAttempt();
-                                            setModalState(() {});
-                                            _refreshQuote(setModalState, context);
-                                          }
-                                        : null,
-                                    'package-adults',
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: AppSpacing.xs),
-                              Row(
-                                children: [
-                                  _participantCounter(
-                                    'Children',
-                                    children,
-                                    children > 0
-                                        ? () {
-                                            setState(() => children -= 1);
-                                            _checkoutIntent.startNewAttempt();
-                                            setModalState(() {});
-                                            _refreshQuote(setModalState, context);
-                                          }
-                                        : null,
-                                    canAddChild
-                                        ? () {
-                                            setState(() => children += 1);
-                                            _checkoutIntent.startNewAttempt();
-                                            setModalState(() {});
-                                            _refreshQuote(setModalState, context);
-                                          }
-                                        : null,
-                                    'package-children',
-                                  ),
-                                ],
-                              ),
-                              if (_priceBasis == 'per_person' &&
-                                  _childPrice == null)
-                                const Padding(
-                                  padding:
-                                      EdgeInsets.only(top: AppSpacing.xxs),
-                                  child: Text(
-                                    'Child rate unavailable — children cannot be added to this booking.',
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color: AppColors.textSecondary),
-                                  ),
-                                ),
-                              if (!meetsMin) ...[
-                                const SizedBox(height: AppSpacing.sm),
-                                Container(
-                                  padding:
-                                      const EdgeInsets.all(AppSpacing.sm),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.warningSoft,
-                                    borderRadius: BorderRadius.circular(
-                                        AppRadii.small),
-                                    border:
-                                        Border.all(color: AppColors.warning),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.info_outline,
-                                          size: 18, color: AppColors.warning),
-                                      const SizedBox(width: AppSpacing.xs),
-                                      Expanded(
-                                        child: Text(
-                                          'Minimum group size: $_minimumTravellers travellers required (currently $totalTravellers).',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            color: InkWashColors.ink,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                              if (_departureDates.isNotEmpty) ...[
-                                const SizedBox(height: AppSpacing.sm),
-                                DropdownButtonFormField<String>(
-                                  key: const ValueKey('package-departure-date'),
-                                  initialValue: selectedDepartureDate,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Departure date',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  items: _departureDates
-                                      .map((value) => DropdownMenuItem(
-                                          value: value,
-                                          enabled: packageDepartureAvailable(value),
-                                          child: Text(packageDepartureAvailable(value) ? value : '$value — unavailable')))
-                                      .toList(),
-                                  onChanged: (value) {
-                                    setState(
-                                        () => selectedDepartureDate = value);
-                                    _checkoutIntent.startNewAttempt();
-                                    setModalState(() {});
-                                    _refreshQuote(setModalState, context);
-                                  },
-                                ),
-                                if(packageDepartureError(_departureDates,selectedDepartureDate)!=null)
-                                  Text(packageDepartureError(_departureDates,selectedDepartureDate)!,style:const TextStyle(color:AppColors.warning)),
-                              ],
-                              const Divider(height: AppSpacing.lg),
-                              if (_hasVerifiedPriceBasis &&
-                                  _groupTotal != null) ...[
-                                if (_priceBasis == 'per_person')
-                                  Text(
-                                    '$adults Adult${adults > 1 ? 's' : ''} × $_currency ${_money(_effectiveAdultPrice!)}'
-                                    '${children > 0 && _childPrice != null ? ' + $children Child${children > 1 ? 'ren' : ''} × $_currency ${_money(_childPrice!)}' : ''}',
-                                    style: const TextStyle(
-                                        fontSize: 13,
-                                        color: AppColors.textSecondary),
-                                  ),
-                                if (_calculatedSavings != null) ...[
-                                  const SizedBox(height: AppSpacing.xxs),
-                                  Text(
-                                    'Promotional savings: $_currency ${_money(_calculatedSavings!)}',
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.success,
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(height: AppSpacing.xs),
-                              ],
-                              TextFormField(
-                                initialValue: promoCode,
-                                key: const ValueKey('package-promo-code'),
-                                decoration: const InputDecoration(
-                                    labelText: 'Promo code (optional)'),
-                                textCapitalization:
-                                    TextCapitalization.characters,
-                                onChanged: (value) {
-                                  setState(() => promoCode = value.trim());
-                                  _checkoutIntent.startNewAttempt();
-                                  setModalState(() {});
-                                },
-                              ),
-                              if (_quoteLoading) const Text('Updating authoritative price...'),
-                              if (_quoteError != null) Text(_quoteError!),
-                              TextButton.icon(key: const ValueKey('refresh-package-price'), onPressed: api.isStandalone ? null : () async {
-                                try { await _loadQuote(); if (context.mounted) setModalState(() {}); } catch(error) { if(context.mounted) showError(context, error); }
-                              }, icon: const Icon(Icons.refresh), label: const Text('Update price / apply code')),
-                              if (_currentPricing?['promotion'] is Map && _isPromotionEligible) Text('${_currentPricing!['promotion']['campaignTitle']} · ${_currentPricing!['promotion']['startDate']} to ${_currentPricing!['promotion']['endDate']}\n${_currentPricing!['promotion']['termsConditions'] ?? ''}'),
-                              const Text('One best applicable offer; discounts do not stack. Final price is verified before payment.'),
-                              const SizedBox(height: AppSpacing.sm),
-                              Text(
-                                _groupTotal == null
-                                    ? 'Group total unavailable'
-                                    : '${_currentPricing == null && widget.item['packagePricing'] != null ? 'Estimated base total' : 'Group total'}: $_currency ${_money(_groupTotal!)}',
-                                key: const ValueKey('package-group-total'),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.md,
+                          AppSpacing.xs,
+                          AppSpacing.xs,
+                          AppSpacing.xs,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Select Travellers & Date',
                                 style: Theme.of(context)
                                     .textTheme
                                     .titleLarge
@@ -940,52 +728,370 @@ class _TourismPackageDetailsScreenState
                                       fontWeight: FontWeight.w800,
                                     ),
                               ),
-                              const SizedBox(height: AppSpacing.xs),
-                              const Text(
-                                academicPaymentDisclosure,
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary),
-                              ),
-                              const SizedBox(height: AppSpacing.xxs),
-                              const Text(
-                                'Reviewing this package does not create a reservation or change your Trips.',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary),
-                              ),
-                              const SizedBox(height: AppSpacing.md),
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton.icon(
-                                  key: const ValueKey('package-checkout-btn'),
-                                  onPressed: (!consumerPaymentsAvailable || submitting || _quoteLoading ||
-                                          !_hasVerifiedPriceBasis ||
-                                          !meetsMin ||
-                                          packageDepartureError(_departureDates,selectedDepartureDate)!=null)
-                                      ? null
-                                      : () async {
-                                          Navigator.pop(modalContext);
-                                          await _startCheckout();
-                                        },
-                                  icon: const Icon(Icons.payment_outlined),
-                                  label: Text(
-                                    !consumerPaymentsAvailable
-                                        ? 'Purchase unavailable'
-                                        : submitting
-                                        ? 'Preparing checkout...'
-                                        : !_hasVerifiedPriceBasis
-                                            ? 'Price basis unverified'
-                                            : 'Continue to Payment',
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded),
+                              onPressed: () => Navigator.pop(modalContext),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(AppSpacing.md),
+                          child: Container(
+                            key: const ValueKey('package-group-booking'),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _priceBasis == 'per_group'
+                                      ? 'This is a fixed group price within the package capacity.'
+                                      : !_hasVerifiedPriceBasis
+                                          ? 'Pricing basis is not verified for this package. Checkout is disabled.'
+                                          : _childPrice == null
+                                              ? 'Adult pricing is available. Child rate unavailable.'
+                                              : 'Adults: $_currency ${_money(_effectiveAdultPrice!)} · Children: $_currency ${_money(_childPrice!)}',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: AppColors.textSecondary,
+                                      ),
+                                ),
+                                const SizedBox(height: AppSpacing.sm),
+                                _participantCounter(
+                                  'Adults',
+                                  adults,
+                                  adults > 1
+                                      ? () {
+                                          setState(() => adults -= 1);
+                                          _checkoutIntent.startNewAttempt();
+                                          setModalState(() {});
+                                          _refreshQuote(setModalState, context);
+                                        }
+                                      : null,
+                                  canAddParticipant
+                                      ? () {
+                                          setState(() => adults += 1);
+                                          _checkoutIntent.startNewAttempt();
+                                          setModalState(() {});
+                                          _refreshQuote(setModalState, context);
+                                        }
+                                      : null,
+                                  'package-adults',
+                                ),
+                                const SizedBox(height: AppSpacing.xs),
+                                _participantCounter(
+                                  'Children',
+                                  children,
+                                  children > 0
+                                      ? () {
+                                          setState(() => children -= 1);
+                                          _checkoutIntent.startNewAttempt();
+                                          setModalState(() {});
+                                          _refreshQuote(setModalState, context);
+                                        }
+                                      : null,
+                                  canAddChild
+                                      ? () {
+                                          setState(() => children += 1);
+                                          _checkoutIntent.startNewAttempt();
+                                          setModalState(() {});
+                                          _refreshQuote(setModalState, context);
+                                        }
+                                      : null,
+                                  'package-children',
+                                ),
+                                if (_priceBasis == 'per_person' &&
+                                    _childPrice == null)
+                                  const Padding(
+                                    padding:
+                                        EdgeInsets.only(top: AppSpacing.xs),
+                                    child: Text(
+                                      'Child rate unavailable — children cannot be added to this booking.',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.textSecondary),
+                                    ),
+                                  ),
+                                if (!meetsMin) ...[
+                                  const SizedBox(height: AppSpacing.sm),
+                                  Container(
+                                    padding: const EdgeInsets.all(AppSpacing.sm),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.warningSoft,
+                                      borderRadius: BorderRadius.circular(
+                                          AppRadii.small),
+                                      border:
+                                          Border.all(color: AppColors.warning),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Padding(
+                                          padding: EdgeInsets.only(top: 1),
+                                          child: Icon(Icons.info_outline,
+                                              size: 18,
+                                              color: AppColors.warning),
+                                        ),
+                                        const SizedBox(width: AppSpacing.xs),
+                                        Expanded(
+                                          child: Text(
+                                            'Minimum $_minimumTravellers travellers required. Currently selected: $totalTravellers.',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 13,
+                                              color: InkWashColors.ink,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                if (_departureDates.isNotEmpty) ...[
+                                  const SizedBox(height: AppSpacing.md),
+                                  DropdownButtonFormField<String>(
+                                    key: const ValueKey(
+                                        'package-departure-date'),
+                                    initialValue: selectedDepartureDate,
+                                    isExpanded: true,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Departure date',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    items: _departureDates
+                                        .map((value) => DropdownMenuItem(
+                                            value: value,
+                                            enabled:
+                                                packageDepartureAvailable(
+                                                    value),
+                                            child: Text(
+                                              packageDepartureAvailable(value)
+                                                  ? value
+                                                  : '$value — unavailable',
+                                              overflow: TextOverflow.ellipsis,
+                                            )))
+                                        .toList(),
+                                    onChanged: (value) {
+                                      setState(
+                                          () => selectedDepartureDate = value);
+                                      _checkoutIntent.startNewAttempt();
+                                      setModalState(() {});
+                                      _refreshQuote(setModalState, context);
+                                    },
+                                  ),
+                                  if (packageDepartureError(
+                                          _departureDates,
+                                          selectedDepartureDate) !=
+                                      null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                          top: AppSpacing.xs),
+                                      child: Text(
+                                        packageDepartureError(_departureDates,
+                                            selectedDepartureDate)!,
+                                        style: const TextStyle(
+                                            fontSize: 12.5,
+                                            color: AppColors.warning),
+                                      ),
+                                    ),
+                                ],
+                                const SizedBox(height: AppSpacing.md),
+                                TextFormField(
+                                  initialValue: promoCode,
+                                  key: const ValueKey('package-promo-code'),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Promo code (optional)',
+                                    prefixIcon: Icon(
+                                        Icons.local_offer_outlined,
+                                        size: 18),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  textCapitalization:
+                                      TextCapitalization.characters,
+                                  onChanged: (value) {
+                                    setState(() => promoCode = value.trim());
+                                    _checkoutIntent.startNewAttempt();
+                                    setModalState(() {});
+                                  },
+                                ),
+                                const SizedBox(height: AppSpacing.xs),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TextButton.icon(
+                                    key: const ValueKey('refresh-package-price'),
+                                    onPressed: api.isStandalone
+                                        ? null
+                                        : () async {
+                                            try {
+                                              await _loadQuote();
+                                              if (context.mounted) {
+                                                setModalState(() {});
+                                              }
+                                            } catch (error) {
+                                              if (context.mounted) {
+                                                showError(context, error);
+                                              }
+                                            }
+                                          },
+                                    icon: const Icon(Icons.refresh, size: 18),
+                                    label: const Text(
+                                        'Update price / apply code'),
                                   ),
                                 ),
-                              ),
-                            ],
+                                if (_quoteLoading)
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: AppSpacing.xs),
+                                    child: Row(
+                                      children: [
+                                        SizedBox.square(
+                                          dimension: 14,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2),
+                                        ),
+                                        SizedBox(width: AppSpacing.xs),
+                                        Expanded(
+                                          child: Text(
+                                            'Updating authoritative price...',
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              color: AppColors.textSecondary,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                if (_quoteError != null)
+                                  Padding(
+                                    padding:
+                                        const EdgeInsets.only(top: AppSpacing.xs),
+                                    child: Text(
+                                      _quoteError!,
+                                      style: const TextStyle(
+                                        fontSize: 12.5,
+                                        color: AppColors.error,
+                                      ),
+                                    ),
+                                  ),
+                                const SizedBox(height: AppSpacing.md),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(AppSpacing.sm),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceElevated,
+                                    borderRadius:
+                                        BorderRadius.circular(AppRadii.medium),
+                                    border:
+                                        Border.all(color: AppColors.divider),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (_hasVerifiedPriceBasis &&
+                                          _groupTotal != null) ...[
+                                        if (_priceBasis == 'per_person')
+                                          Text(
+                                            '$adults Adult${adults > 1 ? 's' : ''} × $_currency ${_money(_effectiveAdultPrice!)}'
+                                            '${children > 0 && _childPrice != null ? ' + $children Child${children > 1 ? 'ren' : ''} × $_currency ${_money(_childPrice!)}' : ''}',
+                                            style: const TextStyle(
+                                                fontSize: 13,
+                                                color: AppColors.textSecondary),
+                                          ),
+                                        if (_calculatedSavings != null) ...[
+                                          const SizedBox(height: AppSpacing.xxs),
+                                          Text(
+                                            'Promotional savings: $_currency ${_money(_calculatedSavings!)}',
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.success,
+                                            ),
+                                          ),
+                                        ],
+                                        const SizedBox(height: AppSpacing.xs),
+                                      ],
+                                      if (_currentPricing?['promotion'] is Map &&
+                                          _isPromotionEligible) ...[
+                                        Text(
+                                          '${_currentPricing!['promotion']['campaignTitle']} · ${_currentPricing!['promotion']['startDate']} to ${_currentPricing!['promotion']['endDate']}\n${_currentPricing!['promotion']['termsConditions'] ?? ''}',
+                                          style: const TextStyle(
+                                            fontSize: 12.5,
+                                            color: AppColors.textSecondary,
+                                            height: 1.4,
+                                          ),
+                                        ),
+                                        const SizedBox(height: AppSpacing.xs),
+                                      ],
+                                      Text(
+                                        _groupTotal == null
+                                            ? 'Group total unavailable'
+                                            : '${_currentPricing == null && widget.item['packagePricing'] != null ? 'Estimated base total' : 'Group total'}: $_currency ${_money(_groupTotal!)}',
+                                        key: const ValueKey(
+                                            'package-group-total'),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleLarge
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                              color: AppColors.primaryStrong,
+                                            ),
+                                      ),
+                                      const SizedBox(height: AppSpacing.xs),
+                                      const Text(
+                                        'One best applicable offer; discounts do not stack. Final price is verified before payment.',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.textSecondary,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.md),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: FilledButton.icon(
+                                    key: const ValueKey('package-checkout-btn'),
+                                    onPressed: (!consumerPaymentsAvailable ||
+                                            submitting ||
+                                            _quoteLoading ||
+                                            !_hasVerifiedPriceBasis ||
+                                            !meetsMin ||
+                                            packageDepartureError(
+                                                    _departureDates,
+                                                    selectedDepartureDate) !=
+                                                null)
+                                        ? null
+                                        : () async {
+                                            Navigator.pop(modalContext);
+                                            await _startCheckout();
+                                          },
+                                    icon: const Icon(Icons.payment_outlined),
+                                    label: Text(
+                                      !consumerPaymentsAvailable
+                                          ? 'Purchase unavailable'
+                                          : submitting
+                                              ? 'Preparing checkout...'
+                                              : !_hasVerifiedPriceBasis
+                                                  ? 'Price basis unverified'
+                                                  : 'Continue to Payment',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -1866,14 +1972,74 @@ class _TourismPackageDetailsScreenState
             Icons.remove_circle_outline,
             color: AppColors.textSecondary),
         _bullets('Meals', meals, Icons.restaurant_outlined),
-        if (widget.item['transportIncluded'] is bool)
-          Text(widget.item['transportIncluded'] == true
-              ? 'Operator-arranged transportation included'
-              : 'Operator-arranged transportation not included'),
-        if (widget.item['guideActivitiesIncluded'] is bool)
-          Text(widget.item['guideActivitiesIncluded'] == true
-              ? 'Guide / reserved activities included'
-              : 'Guide / reserved activities not included'),
+        if (widget.item['transportIncluded'] is bool ||
+            widget.item['guideActivitiesIncluded'] is bool)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: InkCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _heading('Service arrangements'),
+                  if (widget.item['transportIncluded'] is bool)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Icon(
+                              widget.item['transportIncluded'] == true
+                                  ? Icons.check_circle_outline
+                                  : Icons.remove_circle_outline,
+                              size: 16,
+                              color: widget.item['transportIncluded'] == true
+                                  ? AppColors.success
+                                  : AppColors.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          Expanded(
+                            child: Text(
+                              widget.item['transportIncluded'] == true
+                                  ? 'Operator-arranged transportation included'
+                                  : 'Operator-arranged transportation not included',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (widget.item['guideActivitiesIncluded'] is bool)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Icon(
+                            widget.item['guideActivitiesIncluded'] == true
+                                ? Icons.check_circle_outline
+                                : Icons.remove_circle_outline,
+                            size: 16,
+                            color: widget.item['guideActivitiesIncluded'] == true
+                                ? AppColors.success
+                                : AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: Text(
+                            widget.item['guideActivitiesIncluded'] == true
+                                ? 'Guide / reserved activities included'
+                                : 'Guide / reserved activities not included',
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
         _bullets('Transport', transport, Icons.directions_bus_outlined),
         _bullets('What to bring', widget.item['whatToBring'],
             Icons.backpack_outlined),
@@ -1926,13 +2092,29 @@ class _TourismPackageDetailsScreenState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: AppSpacing.xs,
+                runSpacing: AppSpacing.xs,
                 children: [
-                  const Icon(Icons.hotel_outlined, size: 18, color: AppColors.primary),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(child: _heading('Accommodation')),
+                  const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.hotel_outlined,
+                          size: 18, color: AppColors.primary),
+                      SizedBox(width: AppSpacing.xs),
+                      Flexible(
+                        child: Text(
+                          'Accommodation',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ],
+                  ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: AppColors.successSoft,
                       borderRadius: BorderRadius.circular(6),
@@ -1981,7 +2163,9 @@ class _TourismPackageDetailsScreenState
                 ),
               ],
               const SizedBox(height: 6),
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
                 children: [
                   Text(
                     starsText,
@@ -1991,8 +2175,7 @@ class _TourismPackageDetailsScreenState
                       color: AppColors.warning,
                     ),
                   ),
-                  if (guestRating != null) ...[
-                    const SizedBox(width: 12),
+                  if (guestRating != null)
                     Text(
                       'Guest Rating: $guestRating/10',
                       style: const TextStyle(
@@ -2000,7 +2183,6 @@ class _TourismPackageDetailsScreenState
                         color: AppColors.textSecondary,
                       ),
                     ),
-                  ],
                 ],
               ),
               if (amenities.isNotEmpty) ...[
@@ -2031,14 +2213,15 @@ class _TourismPackageDetailsScreenState
                     'Room Configuration: $roomType',
                     style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 4),
                 ],
-                if (notes.isNotEmpty) ...[
-                  Text(
-                    notes,
-                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                if (notes.isNotEmpty)
+                  PackageTextBlock(
+                    text: notes,
+                    collapsedLines: 3,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textSecondary),
                   ),
-                ],
               ],
               const SizedBox(height: 8),
               const Text(

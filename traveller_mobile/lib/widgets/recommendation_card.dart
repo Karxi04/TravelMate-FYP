@@ -286,24 +286,75 @@ class RecommendationCard extends StatelessWidget {
                         ),
                     ],
                   ),
-                  if (!discovery && const ['relevance_v2','recovery_v3'].contains(recommendation['scoringVersion']) && !_hasPersonalScore)
-                    Text('Personal match unavailable — interest evidence missing.',style:Theme.of(context).textTheme.bodySmall),
+                  if (!discovery &&
+                      const ['relevance_v2', 'recovery_v3']
+                          .contains(recommendation['scoringVersion']) &&
+                      !_hasPersonalScore)
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xs),
+                      child: Text(
+                        'Personal match unavailable — interest evidence missing.',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: AppColors.textSecondary),
+                      ),
+                    ),
                   if (!discovery && _hasPersonalScore) ...[
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text('Hybrid ranking: ${((recommendation['hybridRankingScore'] ?? recommendation['finalScore']) as num?)?.toStringAsFixed(1) ?? '-'} /100',style:Theme.of(context).textTheme.bodySmall),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Hybrid ranking: ${((recommendation['hybridRankingScore'] ?? recommendation['finalScore']) as num?)?.toStringAsFixed(1) ?? '-'} /100',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: AppColors.textSecondary),
+                    ),
                     if ((recommendation['evidenceConfidence'] as num? ?? 0) < 1)
-                      Text('Limited profile metadata (${((recommendation['evidenceConfidence'] as num? ?? 0)*100).round()}% of requested evidence available)',style:Theme.of(context).textTheme.bodySmall),
-                    if ((recommendation['collaborativeConfidence'] as num? ?? 0) == 0)
-                      Text('No similar-traveller ratings yet',style:Theme.of(context).textTheme.bodySmall),
+                      Padding(
+                        padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                        child: Text(
+                          'Limited profile metadata (${((recommendation['evidenceConfidence'] as num? ?? 0) * 100).round()}% of requested evidence available)',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: AppColors.textSecondary),
+                        ),
+                      ),
+                    if ((recommendation['collaborativeConfidence'] as num? ??
+                            0) ==
+                        0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                        child: Text(
+                          'No similar-traveller ratings yet',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: AppColors.textSecondary),
+                        ),
+                      ),
                   ],
                   if (discovery && recommendation['foodExperienceType'] != null)
-                    Text(switch (recommendation['foodExperienceType']) {
-                      'dining' => 'Food stop / dining',
-                      'food_museum' => 'Food-themed museum; dining is not implied.',
-                      'cooking' => 'Cooking experience; check booking details.',
-                      'culinary_culture' => 'Spices and culinary culture; a cooking class is not implied.',
-                      _ => 'Food-related experience; dining is not confirmed.',
-                    }),
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xs),
+                      child: Text(
+                        switch (recommendation['foodExperienceType']) {
+                          'dining' => 'Food stop / dining',
+                          'food_museum' =>
+                            'Food-themed museum; dining is not implied.',
+                          'cooking' =>
+                            'Cooking experience; check booking details.',
+                          'culinary_culture' =>
+                            'Spices and culinary culture; a cooking class is not implied.',
+                          _ =>
+                            'Food-related experience; dining is not confirmed.',
+                        },
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: AppColors.textSecondary),
+                      ),
+                    ),
                   if (reasons.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.sm),
                     ...reasons.map(
@@ -345,28 +396,45 @@ class RecommendationCard extends StatelessWidget {
                     SourceFallbackBadge(source: _source),
                   ],
                   const SizedBox(height: AppSpacing.md),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SecondaryButton(
-                          key: ValueKey('recommendation-view-$_destinationKey'),
-                          label: 'View',
-                          onPressed: onView,
-                        ),
-                      ),
-                      if (onAddToTrip != null) ...[
-                        const SizedBox(width: AppSpacing.xs),
-                        Expanded(
-                          child: PrimaryButton(
-                            key: ValueKey(
-                              'recommendation-add-$_destinationKey',
-                            ),
-                            label: 'Add to trip',
-                            onPressed: onAddToTrip,
-                          ),
-                        ),
-                      ],
-                    ],
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final stackButtons = onAddToTrip != null &&
+                          (constraints.maxWidth < 290 ||
+                              MediaQuery.textScalerOf(context).scale(14) > 19);
+                      final viewButton = SecondaryButton(
+                        key: ValueKey('recommendation-view-$_destinationKey'),
+                        label: 'View',
+                        onPressed: onView,
+                      );
+                      final addButton = onAddToTrip == null
+                          ? null
+                          : PrimaryButton(
+                              key: ValueKey(
+                                'recommendation-add-$_destinationKey',
+                              ),
+                              label: 'Add to trip',
+                              onPressed: onAddToTrip,
+                            );
+                      if (stackButtons && addButton != null) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            viewButton,
+                            const SizedBox(height: AppSpacing.xs),
+                            addButton,
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: [
+                          Expanded(child: viewButton),
+                          if (addButton != null) ...[
+                            const SizedBox(width: AppSpacing.xs),
+                            Expanded(child: addButton),
+                          ],
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
