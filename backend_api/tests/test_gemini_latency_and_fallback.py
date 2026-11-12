@@ -17,7 +17,7 @@ from services import gemini_service as gs
 
 def test_01_default_timeout(monkeypatch):
     monkeypatch.delenv('GEMINI_TIMEOUT_SECONDS', raising=False)
-    assert gs.get_gemini_timeout_seconds() == 20.0
+    assert gs.get_gemini_timeout_seconds() == 8.0
 
 
 def test_02_valid_custom_timeout(monkeypatch):
@@ -27,17 +27,17 @@ def test_02_valid_custom_timeout(monkeypatch):
 
 def test_03_missing_variable(monkeypatch):
     monkeypatch.setenv('GEMINI_TIMEOUT_SECONDS', '')
-    assert gs.get_gemini_timeout_seconds() == 20.0
+    assert gs.get_gemini_timeout_seconds() == 8.0
 
 
 def test_04_invalid_numeric_value(monkeypatch):
     monkeypatch.setenv('GEMINI_TIMEOUT_SECONDS', 'invalid_str')
-    assert gs.get_gemini_timeout_seconds() == 20.0
+    assert gs.get_gemini_timeout_seconds() == 8.0
 
 
 def test_05_negative_value(monkeypatch):
     monkeypatch.setenv('GEMINI_TIMEOUT_SECONDS', '-10')
-    assert gs.get_gemini_timeout_seconds() == 20.0
+    assert gs.get_gemini_timeout_seconds() == 8.0
 
 
 def test_06_extremely_large_value(monkeypatch):
@@ -175,17 +175,34 @@ def test_empty_and_structured_provider_output_are_rejected(monkeypatch, value, e
 def test_19_correct_source_labeling(monkeypatch):
     monkeypatch.setenv('GEMINI_API_KEY', 'test_key')
     monkeypatch.setenv('FALLBACK_MODE', 'true')
+    now = 100.0
+    monkeypatch.setattr(gs, 'monotonic', lambda: now)
 
-    with patch('services.gemini_service._generate', side_effect=ServerError(504, "504 DEADLINE_EXCEEDED")):
+    with patch('services.gemini_service._generate', side_effect=ServerError(504, "504 DEADLINE_EXCEEDED")) as generate:
         res = gs.generateChatbotResponse("Plan a trip to Langkawi", with_source=True)
         assert res['source'] == 'travelmate-assistant'
         assert isinstance(res['reply'], str)
         assert len(res['reply']) > 20
+        assert gs.generateFollowUpResponse("What else?", with_source=True)['source'] == 'travelmate-assistant'
+        generate.assert_called_once()
 
+    now += gs.PROVIDER_COOLDOWN_SECONDS
     with patch('services.gemini_service._generate', return_value="Live provider response"):
         res = gs.generateChatbotResponse("Plan a trip to Langkawi", with_source=True)
         assert res['source'] == 'gemini'
         assert res['reply'] == "Live provider response"
+
+
+@pytest.mark.parametrize('question', ['Where can I rent a car in Ipoh?', 'How do I hire a car for a two-day trip?'])
+def test_retired_car_rental_cannot_be_advertised_by_provider(monkeypatch, question):
+    monkeypatch.setenv('GEMINI_API_KEY', 'test_key')
+    with patch.object(gs, '_generate') as generate:
+        result = gs.generateChatbotResponse(question, with_source=True)
+    generate.assert_not_called()
+    assert result['source'] == 'travelmate-assistant'
+    assert 'no longer offers car rental' in result['reply']
+    assert 'Smart Packing Checklist' in result['reply']
+    assert 'Home → Car Rental' not in result['reply']
 
 
 def test_20_correct_sanitized_error_handling(monkeypatch, caplog):

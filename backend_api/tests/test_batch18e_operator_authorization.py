@@ -66,6 +66,17 @@ APPROVED_CAMPAIGN = {
 }
 
 
+def read_campaign_and_package(campaign):
+    records = {
+        ('promotional_campaigns', campaign['id']): campaign,
+        ('tourism_packages', campaign['packageId']): {
+            'id': campaign['packageId'], 'operatorId': UID_OP_A,
+            'approvalStatus': 'approved', 'availabilityStatus': 'available',
+        },
+    }
+    return lambda collection, document_id: records.get((collection, document_id))
+
+
 @pytest.fixture
 def temp_upload_dir(monkeypatch):
     temp_dir = tempfile.mkdtemp()
@@ -138,7 +149,7 @@ def test_authorized_campaign_content_update_succeeds(client, mock_multi_auth):
         'discountValue': 20,
         'promoCode': 'SUMMER20',
     }
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=BASE_CAMPAIGN), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=read_campaign_and_package(BASE_CAMPAIGN)), \
          patch('modules.fr12_tourism_operator_management.routes.updateRecord', return_value=updated_record) as update:
         res = client.put(
             f'/api/fr12/campaigns/{BASE_CAMPAIGN["id"]}',
@@ -275,7 +286,7 @@ def test_unauthenticated_user_denied_campaign_update(client, mock_multi_auth):
 
 def test_approved_campaign_editing_resets_to_draft_and_clears_moderation(client, mock_multi_auth):
     """Editing an approved campaign returns reviewStatus and campaignStatus to draft and clears audit fields."""
-    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', return_value=APPROVED_CAMPAIGN), \
+    with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=read_campaign_and_package(APPROVED_CAMPAIGN)), \
          patch('modules.fr12_tourism_operator_management.routes.updateRecord') as update:
         update.side_effect = lambda coll, doc_id, data: {**APPROVED_CAMPAIGN, **data}
         res = client.put(

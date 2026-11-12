@@ -96,8 +96,10 @@ def test_missing_candidate_metadata_is_not_positive_interest_evidence():
 def test_secondary_metadata_remains_weaker_than_primary_evidence():
     output = _scores(['Culture'], [
         {'destinationId': 'direct', 'title': 'Temple'},
-        {'destinationId': 'secondary', 'title': 'Visitor Centre', 'tags': ['Temple']},
+        {'destinationId': 'tagged', 'title': 'Visitor Centre', 'tags': ['Temple']},
+        {'destinationId': 'secondary', 'title': 'Visitor Centre', 'description': 'The site contains a temple.'},
     ])
+    assert output['direct']['contentScore'] == output['tagged']['contentScore']
     assert output['direct']['contentScore'] > output['secondary']['contentScore']
 
 

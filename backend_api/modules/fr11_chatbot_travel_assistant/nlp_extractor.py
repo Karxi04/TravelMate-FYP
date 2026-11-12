@@ -522,8 +522,13 @@ def activity_request(text):
 def conversational_question(text):
     q = text.lower().strip()
     return bool(re.match(r"(?:explain|why|what (?:is|are|was|were)|tell me (?:about|more)|"
-                         r"how (?:does|do|did|can)|could you explain)\b", q)
+                         r"how (?:does|do|did|can|much (?:budget|money))|could you explain)\b", q)
                 and not re.search(r'\b(?:things to do|places to (?:visit|eat)|attractions|must-see|what to see|activities)\b', q))
+
+
+def car_rental_question(text):
+    return bool(re.search(r'\b(?:car rentals?|rent (?:an? )?(?:car|sedan|suv)|car hire|'
+                          r'hire (?:an? )?(?:car|sedan|suv)|rental car|vehicle rental)\b', text, re.I))
 
 
 def classify_detailed_intent(text, planning_state=None):
@@ -540,6 +545,9 @@ def classify_detailed_intent(text, planning_state=None):
     if activity_request(q) and not re.search(r'\b(?:flight|hotel|car rental|forecast|if it rains)\b', q):
         return 'ACTIVITY_DISCOVERY'
 
+    if re.search(r'^how\s+much\s+(?:budget|money)\b', q):
+        return 'BUDGET_ENQUIRY'
+
     # Check for explicit itinerary planning phrases
     is_explicit_planning = (
         any(p in q for p in [
@@ -550,11 +558,13 @@ def classify_detailed_intent(text, planning_state=None):
             'schedule in', 'culinary trip to'
         ]) or (
             any(t in q for t in ['plan', 'itinerary']) and any(d in q for d in ['day', 'trip', 'weekend', 'week', 'holiday', 'vacation', 'pax', 'adults', 'travellers'])
+        ) or (
+            q.startswith('i want to visit ') and geo.get('destination_area') and extract_duration(text) is not None
         )
     ) and not any(k in q for k in ['change our destination', 'switch destination', 'update the plan', 'change our budget', 'reduce our budget'])
 
     # 2. Car rental inquiry
-    if re.search(r'\b(?:car\s+rental|rent\s+a\s+car|car\s+hire|rental\s+car|vehicle\s+rental|rent\s+a\s+sedan|hire\s+an\s+suv)\b', q) or ('rent a car' in q or 'hire a car' in q or 'car rentals' in q):
+    if car_rental_question(q):
         return 'CAR_RENTAL_ENQUIRY'
 
     # 3. Flight search inquiry
@@ -570,7 +580,9 @@ def classify_detailed_intent(text, planning_state=None):
         return 'HOTEL_ENQUIRY'
 
     # 5. Feature explanation
-    if any(f in q for f in ['what can you do', 'what can travelmate do', 'how does travelmate work', 'explain features', 'explain travelmate', 'what functions', 'what are your capabilities', 'what features', 'how travelmate balances']):
+    if any(f in q for f in ['what can you do', 'what can travelmate do', 'how does travelmate work', 'explain features', 'explain travelmate', 'what functions', 'what are your capabilities', 'what features', 'how travelmate balances']) or re.match(
+        r'^how does (?:the )?(?:smart )?itinerary generator work\b', q
+    ):
         return 'FEATURE_EXPLANATION'
 
     # 6. Indoor alternative request vs Weather inquiry
@@ -620,7 +632,7 @@ def classify_detailed_intent(text, planning_state=None):
         return 'DESTINATION_ENQUIRY'
 
     # 13. Social / general conversation
-    if any(t in q for t in ['recommend', 'food', 'eat', 'restaurant', 'attraction']):
+    if re.search(r'\b(?:recommend(?:s|ed|ations?)?|food|eat|restaurants?|attractions?)\b', q):
         return 'DESTINATION_ENQUIRY'
     if re.search(r'\b(?:plan|itinerary|trip)\b', q):
         return 'ITINERARY_PLANNING'

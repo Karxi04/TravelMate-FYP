@@ -4,6 +4,7 @@ import time
 import logging
 import math
 import json
+from time import monotonic
 from google import genai
 from google.genai import types
 from httpx import TimeoutException
@@ -21,15 +22,24 @@ SYSTEM_PREFIX = (
     "flight/hotel planning and general travel questions. Use the traveller context and active trip planning state when supplied. "
     "Never invent Operator packages, availability, campaign discounts, payable amounts or supplier confirmations. "
     "Commercial facts must come from structured TravelMate backend tools; ordinary itinerary estimates are not package offers. "
-    "Never claim a booking or payment is confirmed unless the system context includes an actual reference. "
+    "Never claim a booking or payment is confirmed unless a verified TravelMate record confirms its status. "
     "Use short plain-text paragraphs and compact lists. Answer the specific question and use relevant context. "
     "Never output JSON, internal identifiers, or provider diagnostics. "
     "Give general weather guidance unless a current forecast was supplied. Never present general advice as live data."
+    " TravelMate does not offer car rental. Smart Packing Checklist is available from a saved trip. "
+    "Hotel search results and payment records do not by themselves confirm supplier reservations."
 )
 
-DEFAULT_TIMEOUT_SECONDS = 20
+DEFAULT_TIMEOUT_SECONDS = 8
 MIN_TIMEOUT_SECONDS = 5
 MAX_TIMEOUT_SECONDS = 120
+SERVER_TIMEOUT_FLOOR_SECONDS = 20
+PROVIDER_COOLDOWN_SECONDS = 45
+_provider_retry_at = 0.0
+_CAR_RENTAL_REPLY = (
+    "TravelMate no longer offers car rental. If you already have transport, you can account for it in your trip budget. "
+    "Open a saved trip to use Smart Packing Checklist."
+)
 
 
 def get_gemini_timeout_seconds():
@@ -97,7 +107,12 @@ def _generate(message):
     timeout_sec = get_gemini_timeout_seconds()
     timeout_ms = int(timeout_sec * 1000)
 
-    options = types.HttpOptions(timeout=timeout_ms, retry_options=types.HttpRetryOptions(attempts=1))
+    # The SDK also derives a server deadline from its client timeout unless explicitly supplied.
+    server_timeout = math.ceil(max(timeout_sec, SERVER_TIMEOUT_FLOOR_SECONDS))
+    options = types.HttpOptions(
+        timeout=timeout_ms, headers={'X-Server-Timeout': str(server_timeout)},
+        retry_options=types.HttpRetryOptions(attempts=1),
+    )
     config_kwargs = {'system_instruction': SYSTEM_PREFIX, 'max_output_tokens': 1024}
     if model.startswith('gemini-3') and hasattr(types, 'ThinkingLevel'):
         config_kwargs['thinking_config'] = types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW)
@@ -161,11 +176,18 @@ def _format_tailored_planning_fallback(dest, dest_state, days, budget, traveller
 
 def _local_assistant(question, context='', planning_state=None):
     """A useful local fallback so FR11 remains demonstrable without a paid/live key across Malaysia."""
+    from modules.fr11_chatbot_travel_assistant.nlp_extractor import (
+        activity_request, car_rental_question, conversational_question,
+        extract_duration, extract_geographic_entities,
+    )
+
     q = str(question or '').strip().lower()
     context_lower = str(context or '').lower()
     ps = dict(planning_state or {})
     detailed_intent = ps.get('lastIntent')
     excluded_labels = list(ps.get('excludedInterests') or []) + list(ps.get('excludedActivityTypes') or [])
+    if car_rental_question(q):
+        return _CAR_RENTAL_REPLY
 
     def constrained_indoor_reply(destination):
         exclusion_note = ''
@@ -227,21 +249,14 @@ def _local_assistant(question, context='', planning_state=None):
         return (
             "Use Home → Flights to search by airport code and date across Malaysian hubs (KUL, PEN, BKI, KCH, etc.). "
             "TravelMate can compare price, duration and stops, then attach a selected flight reference and cost to an itinerary. "
-            "With a SerpApi key the results are live; in fallback mode the same selection and comparison flow remains usable."
+            "Check the search result’s source and fare terms before you rely on a price."
         )
 
     # 4. Hotel booking inquiry
-    if any(word in q for word in ['hotel', 'room', 'stay', 'accommodation', 'prebook']) and not is_explicit_planning:
+    if re.search(r'\b(?:hotels?|rooms?|stay|accommodation|prebook)\b', q) and not is_explicit_planning:
         return (
-            "Use Home → Hotels to search by destination and dates across Malaysia. You can filter refundable offers, compare room prices, prebook an offer and complete a safe sandbox/local booking. "
-            "The selected hotel cost can then be included in the itinerary budget."
-        )
-
-    # 4b. Car rental inquiry
-    if re.search(r'\b(?:car\s+rental|rent\s+a\s+car|car\s+hire|rental\s+car|vehicle\s+rental)\b', q) and not is_explicit_planning:
-        return (
-            "Use Home → Car Rental to compare vehicle categories (Economy, Compact, Sedan, SUV, Van) across Malaysian hubs like Kuala Lumpur, Penang, Kota Kinabalu, and Kuching. "
-            "You can choose pickup dates, check simulated rates, and attach a car rental to your trip itinerary."
+            "Use Home → Hotels to search by destination and dates across Malaysia. Compare room prices and cancellation terms, "
+            "and use the selected cost in your trip budget. Check your supplier confirmation before treating a room as reserved."
         )
 
     # 4c. Indoor alternative request
@@ -250,10 +265,13 @@ def _local_assistant(question, context='', planning_state=None):
         return constrained_indoor_reply(dest_name)
 
     # 5. General feature explanation inquiry
-    if any(f in q for f in ['what can you do', 'what can travelmate do', 'how does travelmate work', 'explain features', 'explain travelmate', 'what functions']):
+    if detailed_intent == 'FEATURE_EXPLANATION' or any(f in q for f in [
+        'what can you do', 'what can travelmate do', 'how does travelmate work', 'explain features',
+        'explain travelmate', 'what functions', 'itinerary generator work',
+    ]):
         return (
-            "TravelMate is your smart AI-driven travel planning assistant for Malaysia. I can help you discover destinations, "
-            "build customized daily itineraries, balance your budget, check live weather, search flights, and simulate hotel bookings across all 13 states and 3 Federal Territories."
+            "TravelMate helps you discover places in Malaysia, build daily itineraries from destination, dates and interests, "
+            "and compare estimated trip costs. You can also check weather, search flights and hotels, and use Smart Packing Checklist in a saved trip."
         )
 
     # 6. Pure standalone budget advice inquiry
@@ -268,9 +286,6 @@ def _local_assistant(question, context='', planning_state=None):
             "Open Trips → Budget to see the system's calculated total and alternatives."
         )
 
-    from modules.fr11_chatbot_travel_assistant.nlp_extractor import (
-        activity_request, conversational_question, extract_duration, extract_geographic_entities,
-    )
     geo = extract_geographic_entities(question)
     if conversational_question(str(question or '')):
         return 'I can’t verify an answer to that question right now. Your conversation is still here if you want to retry.'
@@ -305,9 +320,14 @@ def _local_assistant(question, context='', planning_state=None):
 
 
 def generateChatbotResponse(question, context='', *, with_source=False, planning_state=None):
+    from modules.fr11_chatbot_travel_assistant.nlp_extractor import car_rental_question
+
+    global _provider_retry_at
     source = 'travelmate-assistant'
-    start_t = time.perf_counter()
-    if is_gemini_configured():
+    if car_rental_question(str(question or '')):
+        reply = _CAR_RENTAL_REPLY
+    elif is_gemini_configured() and monotonic() >= _provider_retry_at:
+        start_t = time.perf_counter()
         try:
             reply = _generate((context + '\n\n' if context else '') + 'Traveller: ' + str(question))
             source = 'gemini'
@@ -315,6 +335,9 @@ def generateChatbotResponse(question, context='', *, with_source=False, planning
         except Exception as exc:
             elapsed = time.perf_counter() - start_t
             category = _classify_provider_error(exc)
+            if category in {'HTTP_429_RATE_LIMIT_EXHAUSTED', 'HTTP_503_SERVICE_UNAVAILABLE',
+                            'HTTP_504_DEADLINE_EXCEEDED', 'CLIENT_TIMEOUT'}:
+                _provider_retry_at = monotonic() + PROVIDER_COOLDOWN_SECONDS
             logger.warning("[FR11 Gemini] Provider failure: category=%s, elapsed=%.2fs", category, elapsed)
             if _fallback_mode():
                 reply = _local_assistant(question, context, planning_state=planning_state)

@@ -347,8 +347,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Hotel — The Waterfront Hotel Kuching'), findsOneWidget);
-    expect(find.text('Paid (Stripe Test)'), findsOneWidget);
-    expect(find.text('Test Mode — No Room Reserved'), findsOneWidget);
+    expect(find.text('Paid'), findsOneWidget);
+    expect(find.text('Reservation Not Created'), findsOneWidget);
   });
 
   // 13. Missing fulfillmentStatus is handled safely
@@ -396,7 +396,8 @@ void main() {
     await tester.pumpWidget(_wrap(PaymentHistoryScreen(api: api)));
     await tester.pumpAndSettle();
 
-    expect(find.text('Supplier reservation not verified'), findsOneWidget);
+    expect(find.text('Paid'), findsOneWidget);
+    expect(find.text('Reservation Not Confirmed'), findsOneWidget);
     expect(find.text('Confirmed'), findsNothing);
   });
 
@@ -531,9 +532,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Package — Kinabatangan Wildlife River Cruise'), findsOneWidget);
-    expect(find.text('Paid (Stripe Test)'), findsOneWidget);
-    // Package orders must NOT show hotel demo fulfillment chip
-    expect(find.text('Test Mode — No Room Reserved'), findsNothing);
+    expect(find.text('Paid'), findsOneWidget);
+    expect(find.text('Reservation Not Created'), findsNothing);
+    expect(find.text('Reservation Not Confirmed'), findsNothing);
   });
 
   // 21. Flight Order presentation remains unchanged
@@ -558,9 +559,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Flight — Kuala Lumpur to Penang Flight'), findsOneWidget);
-    expect(find.text('Paid (Stripe Test)'), findsOneWidget);
-    // Flight orders must NOT show hotel demo fulfillment chip
-    expect(find.text('Test Mode — No Room Reserved'), findsNothing);
+    expect(find.text('Paid'), findsOneWidget);
+    expect(find.text('Reservation Not Created'), findsNothing);
+    expect(find.text('Reservation Not Confirmed'), findsNothing);
   });
 
   // 22. No supplier booking endpoint is invoked

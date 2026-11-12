@@ -32,6 +32,7 @@ def test_academic_checkout_capability_is_safe_and_provider_free(
     assert response.get_json() == {
         'ok': True, 'mode': 'test', 'hostedCheckout': expected,
         'supportedQuoteTypes': ['hotel', 'package'] if expected else [],
+        'packagePricingContract': 'campaigns_v1',
     }
     create.assert_not_called()
     retrieve.assert_not_called()

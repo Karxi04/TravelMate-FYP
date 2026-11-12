@@ -281,6 +281,15 @@ def test_explanation_and_contextual_follow_up_preserve_pending_setup(client, moc
                turn['session']['planningState'] == state for turn in (explanation, followup))
 
 
+def test_budget_advice_preserves_a_pending_itinerary(client, mock_traveller_auth, memory):
+    initial = send(client, 'I want to travel to Langkawi')
+    state = initial['session']['planningState']
+    answer = send(client, 'How much budget should I prepare for a 3-day holiday in Melaka?', initial['session'])
+    assert answer['session']['planningState'] == state
+    assert answer['source'] == 'test'
+    assert not {'tripPlan', 'placeSuggestions'} & answer['item'].keys()
+
+
 def test_regenerate_uses_active_dates_and_does_not_create_trip(client, mock_traveller_auth, memory, monkeypatch):
     response = complete(client, monkeypatch)
     draft = response['item']['tripPlan']
