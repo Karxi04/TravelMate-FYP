@@ -3,7 +3,10 @@ from datetime import datetime, timezone
 from flask import Blueprint, g, jsonify, request
 from auth_utils import auth_required
 from sequence_contract.firebase_firestore import retrieveRecord, claimRecord, storeRecord, updateRecord
-from services.traveller_notifications import derive_events, event_id, trip_start, active_trip, coordinates, MYT, canonical_payment_order, inbox_presentation, push_presentation
+from services.traveller_notifications import (
+    TRIP_REMINDER_CATEGORIES, MYT, active_trip, canonical_payment_order, coordinates,
+    derive_events, event_id, inbox_presentation, matches_trip_reminder, push_presentation, trip_start,
+)
 from services.packing_checklist_service import checklist_id
 from services.open_meteo_service import retrieveSevenDayForecast
 from services.notification_delivery import enabled, register_device, queue_notification
@@ -64,10 +67,15 @@ def reconcile(uid):
             saved, created = claimRecord('traveller_notifications',event['id'],event)
             queue_notification(saved,created)
         items = retrieveRecord('traveller_notifications',filters=[('travellerId','==',uid)]) or []
-        items = [dict(item) for item in items if item.get('travellerId') == uid]
+        trips_by_id = {str(trip['id']): trip for trip in trips if trip.get('id')}
+        items = [dict(item) for item in items if item.get('travellerId') == uid and (
+            item.get('category') not in TRIP_REMINDER_CATEGORIES or matches_trip_reminder(
+                item, trips_by_id.get(str((item.get('target') or {}).get('tripId') or '')),
+            )
+        )]
         for item in items:
             reference = str((item.get('target') or {}).get('orderId') or '')
-            inbox_presentation(item, checkout_by_reference.get(reference))
+            inbox_presentation(item, checkout_by_reference.get(reference), now=now)
         items.sort(key=lambda item:str(item.get('createdAt') or ''), reverse=True)
         return dict(ok=True,items=items,unreadCount=sum(not item.get('read') for item in items),
                        evaluation='on_open_or_refresh_and_configured_worker',weatherUnavailable=weather_unavailable)
@@ -81,6 +89,11 @@ def notification_detail(notification_id):
     item = retrieveRecord('traveller_notifications',notification_id)
     if not item or item.get('travellerId') != g.uid:
         return jsonify(ok=False,error='Notification not found.'),404
+    if item.get('category') in TRIP_REMINDER_CATEGORIES:
+        trip_id = (item.get('target') or {}).get('tripId')
+        trip = retrieveRecord('itineraries', trip_id) if trip_id else None
+        if not matches_trip_reminder(item, trip):
+            return jsonify(ok=False,error='Notification not found.'),404
     return jsonify(ok=True,item=item,presentation=push_presentation(item))
 
 

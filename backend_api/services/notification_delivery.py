@@ -7,7 +7,10 @@ import re
 from uuid import uuid4
 
 from sequence_contract.firebase_firestore import retrieveRecord, claimRecord, transactNotificationRecord
-from services.traveller_notifications import derive_events, active_trip, trip_start, MYT, canonical_payment_order, push_presentation
+from services.traveller_notifications import (
+    TRIP_REMINDER_CATEGORIES, MYT, active_trip, canonical_payment_order,
+    derive_events, matches_trip_reminder, push_presentation, trip_start,
+)
 
 log = logging.getLogger(__name__)
 
@@ -91,11 +94,10 @@ def still_due(notification, now):
         trip=retrieveRecord('itineraries',tid) if tid else None
         if trip and (trip.get('travellerId')!=uid or (not active_trip(trip) and category!='booking_attention')):return False
         return any(item['id']==notification['id'] for item in derive_events(uid,[order],[trip] if trip else [],now=now))
-    if category not in {'upcoming_trip','packing','weather'}: return True
+    if category not in TRIP_REMINDER_CATEGORIES: return True
     uid=notification['travellerId'];tid=(notification.get('target') or {}).get('tripId')
     trip=retrieveRecord('itineraries',tid) if tid else None
-    if not trip or trip.get('travellerId')!=uid or not active_trip(trip) or not trip_start(trip):return False
-    if trip.get('startDate')!=notification.get('tripStartDate'):return False
+    if not matches_trip_reminder(notification, trip):return False
     delta=(trip_start(trip)-now.astimezone(MYT).date()).days
     if category=='weather':return 0<=delta<=6 and str(notification.get('forecastDate') or '')>=now.astimezone(MYT).date().isoformat()
     if delta not in {1,3}:return False
@@ -116,14 +118,17 @@ def capture_committed_order(order):
         order = canonical_payment_order(order,uid,lambda oid:retrieveRecord('checkout_orders',oid))
         tid = order.get('fulfilledTripId')
         trip = retrieveRecord('itineraries',tid) if tid else None
-        for event in derive_events(uid,[order],[trip] if trip else []):
+        events = derive_events(uid,[order],[trip] if trip else [])
+        for event in events:
             saved, created = claimRecord('traveller_notifications',event['id'],event)
             # Replays repair a missed enqueue, but never revive old expired sends.
             if created or saved.get('createdAt') == event.get('createdAt'):
                 queue_notification(saved,True)
             elif not retrieveRecord('notification_outbox',event['id']):
                 queue_notification(saved,True)
-        dispatch(uid=uid,limit=2,max_sends=2)
+        if events:
+            # Older pending jobs must not crowd a newly committed payment out of the send budget.
+            dispatch(uid=uid,max_sends=2,notification_ids=[event['id'] for event in events])
     except Exception:
         log.warning('Committed notification projection deferred to scheduled reconciliation.')
 
@@ -180,7 +185,7 @@ def _dispatch_log(nid, outcome):
     log.info('notification_dispatch event=%s outcome=%s',safe_id,outcome)
 
 
-def dispatch(uid=None, limit=100, sender=None, max_sends=100):
+def dispatch(uid=None, limit=100, sender=None, max_sends=100, *, notification_ids=None):
     if not dispatch_enabled():
         return {'sent':0,'disabled':True}
     scoped_uid = rollout_traveller()
@@ -193,7 +198,12 @@ def dispatch(uid=None, limit=100, sender=None, max_sends=100):
     filters = [('status','==','pending')]
     if uid: filters.append(('travellerId','==',uid))
     sent = 0; attempts = 0
-    for job in retrieveRecord('notification_outbox',filters=filters,limit=limit) or []:
+    jobs = (retrieveRecord('notification_outbox',filters=filters,limit=limit) or []
+            if notification_ids is None
+            else (retrieveRecord('notification_outbox', nid) for nid in notification_ids))
+    for job in jobs:
+        if not job or job.get('status') != 'pending' or (uid and job.get('travellerId') != uid):
+            continue
         owner = job['travellerId']; nid = job['notificationId']
         if str(job.get('expiresAt') or '') <= now.isoformat():
             transactNotificationRecord('notification_outbox',job['id'],lambda current:{**current,'status':'expired'} if current else None)

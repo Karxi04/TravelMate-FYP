@@ -172,6 +172,49 @@ def test_inbox_words_legacy_trip_and_does_not_use_unverified_payment_amount():
     assert payment['target']['orderId']=='very-long-reference' and 'sourceLabel' not in payment
 
 
+@pytest.mark.parametrize('changed', [
+    None, {'status': 'cancelled'}, {'deletedAt': 'recorded'}, {'endDate': 'invalid'},
+    {'startDate': '2026-11-12'}, {'travellerId': 'someone-else'},
+])
+def test_stale_trip_reminders_leave_inbox_and_badge_without_deleting_history(
+    client, mock_traveller_auth, notification_store, changed,
+):
+    db, _ = notification_store
+    path = '/api/traveller/notifications'
+    first = client.get(path, headers=AUTH).json
+    reminder_ids = {row['id'] for row in first['items'] if row['category'] in {
+        'upcoming_trip', 'packing', 'weather',
+    }}
+    assert len(reminder_ids) == 3
+    if changed is None:
+        del db[('itineraries', 'own-trip')]
+    else:
+        db[('itineraries', 'own-trip')].update(changed)
+    after = client.get(path, headers=AUTH).json
+    assert not reminder_ids.intersection(row['id'] for row in after['items'])
+    assert after['unreadCount'] == 2
+    for nid in reminder_ids:
+        assert ('traveller_notifications', nid) in db
+        assert client.get(f'{path}/{nid}', headers=AUTH).status_code == 404
+
+
+def test_reopening_inbox_uses_the_current_malaysia_calendar_day(
+    client, mock_traveller_auth, notification_store,
+):
+    db, _ = notification_store
+    path = '/api/traveller/notifications'
+    first = client.get(path, headers=AUTH).json
+    notice = next(row for row in first['items'] if row['category'] == 'upcoming_trip')
+    assert 'starts in 3 days' in notice['message']
+    with patch('modules.traveller_notifications.datetime') as clock:
+        clock.now.return_value = datetime(2026, 11, 8, 16, tzinfo=timezone.utc)
+        refreshed = client.get(path, headers=AUTH).json
+    same = next(row for row in refreshed['items'] if row['id'] == notice['id'])
+    assert same['message'] == 'Your Penang trip starts in 2 days, on 11 November 2026.'
+    assert same['read'] == notice['read']
+    assert 'starts in 3 day(s)' in db[('traveller_notifications', notice['id'])]['message']
+
+
 @pytest.mark.parametrize('role',['anonymous','operator','admin'])
 def test_notification_routes_are_traveller_only(client,request,role):
     if role!='anonymous':request.getfixturevalue('mock_'+role+'_auth')

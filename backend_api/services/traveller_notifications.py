@@ -7,6 +7,7 @@ import re
 
 CATEGORIES = {'payment', 'arrangements_ready', 'upcoming_trip', 'packing', 'weather',
               'package_booking', 'arrangements_update', 'booking_attention'}
+TRIP_REMINDER_CATEGORIES = {'upcoming_trip', 'packing', 'weather'}
 MYT = timezone(timedelta(hours=8))
 
 
@@ -28,6 +29,12 @@ def active_trip(trip):
     return not trip.get('deletedAt') and str(trip.get('status') or '').lower() not in {
         'cancelled', 'canceled', 'archived', 'deleted', 'payment_cancelled', 'payment_failed'} and str(
         trip.get('fulfillmentStatus') or '').lower() != 'fulfillment_declined'
+
+
+def matches_trip_reminder(notification, trip):
+    return bool(trip and trip.get('travellerId') == notification.get('travellerId')
+                and active_trip(trip) and trip_start(trip)
+                and trip.get('startDate') == notification.get('tripStartDate'))
 
 
 def coordinates(trip):
@@ -61,7 +68,7 @@ def _inbox_package_name(title):
     return re.sub(r'\s+[–—-]\s+(?:Full|Half) Day Tour$', '', title.strip(), flags=re.I)
 
 
-def inbox_presentation(item, checkout_order=None):
+def inbox_presentation(item, checkout_order=None, *, now=None):
     """Format an inbox copy, including rows written by older app versions."""
     if item.get('category') == 'payment':
         item.pop('sourceLabel', None)
@@ -92,7 +99,14 @@ def inbox_presentation(item, checkout_order=None):
             name = _inbox_package_name(title)
             subject = 'Your trip' if name.casefold() == 'your trip' else f'Your {name}' + (
                 '' if name.casefold().endswith(' trip') else ' trip')
-            item['message'] = f"{subject} starts in {days} {'day' if days == '1' else 'days'}, on {start.day} {start:%B %Y}."
+            remaining = int(days) if now is None else (start - now.astimezone(MYT).date()).days
+            calendar_date = f"{start.day} {start:%B %Y}"
+            if remaining < 0:
+                item['message'] = f"{subject} started on {calendar_date}."
+            elif remaining == 0:
+                item['message'] = f"{subject} starts today, on {calendar_date}."
+            else:
+                item['message'] = f"{subject} starts in {remaining} {'day' if remaining == 1 else 'days'}, on {calendar_date}."
 
 
 def derive_events(uid, orders, trips, checklists=None, forecasts=None, now=None):

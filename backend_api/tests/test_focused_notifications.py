@@ -47,6 +47,25 @@ def test_paid_package_replay_dispatches_once_and_refund_blocks_stale_success(mem
     assert not delivery.still_due(notice,NOW)
 
 
+def test_committed_payment_dispatches_without_worker_even_with_pending_backlog(memory):
+    order = package_order()
+    memory.claim('checkout_orders', order['id'], order)
+    delivery.register_device(UID, registration())
+    for nid in ('old-one', 'old-two'):
+        memory.claim('notification_outbox', nid, {
+            'travellerId': UID, 'notificationId': nid, 'status': 'pending',
+            'expiresAt': (NOW + timedelta(hours=1)).isoformat(),
+        })
+    with patch.object(delivery, '_send') as sender:
+        delivery.capture_committed_order(order)
+        delivery.capture_committed_order(order)
+    sender.assert_called_once()
+    notice = sender.call_args.args[1]
+    assert notice['paymentOrderId'] == order['id']
+    assert memory.read('notification_outbox', notice['id'])['status'] == 'processed'
+    assert memory.read('notification_outbox', 'old-one')['status'] == 'pending'
+
+
 def test_local_reminders_suppress_only_matching_device_upcoming_push(memory):
     trip={'id':'trip','travellerId':UID,'startDate':(NOW.date()+timedelta(days=1)).isoformat()}
     memory.claim('itineraries','trip',trip)
