@@ -100,3 +100,25 @@ def test_duplicate_attachment_is_idempotent(app):
     assert itinerary['hotelBookingId'] == 'booking_1'
     assert all(collection != 'itineraries' for collection, _, _ in writes)
     assert records['hotel_bookings']['booking_1']['hotelCost'] == 200
+
+
+def test_compatible_trip_picker_returns_only_owned_matching_ordinary_trips(client, mock_traveller_auth):
+    snapshot = 'hotel_prebook_' + 'a' * 40
+    record = {
+        'travellerId': 'test_traveller_uid', 'status': 'succeeded',
+        'acceptedPrebookSnapshot': {'id': snapshot, 'expiresAt': '2099-01-01T00:00:00Z'},
+        'criteria': _booking()['stayCriteria'],
+    }
+    trips = [
+        _trip(), _trip(id='foreign', travellerId='someone-else'),
+        _trip(id='outside', endDate='2026-10-15'),
+        _trip(id='different', destinationArea='Kuala Lumpur'),
+        _trip(id='package', packageTrip=True),
+    ]
+    with patch('modules.fr08_hotel_booking.routes.retrieveRecord', side_effect=[record, trips]) as read:
+        response = client.get('/api/fr8/hotels/compatible-trips',
+                              query_string={'acceptedPrebookSnapshotId': snapshot},
+                              headers={'Authorization': 'Bearer valid_test_token'})
+    assert response.status_code == 200, response.json
+    assert [trip['id'] for trip in response.json['items']] == ['trip_1']
+    assert read.call_args.kwargs['filters'] == [('travellerId', '==', 'test_traveller_uid')]

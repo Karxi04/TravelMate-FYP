@@ -17,6 +17,7 @@ class BatchApi extends ApiService {
   final posts = <String>[];
   final bodies = <Map<String, dynamic>>[];
   bool showTargetTrip = false;
+  String hotelName = 'New hotel';
   final trip = <String, dynamic>{'id': 'target', 'title': 'Original trip', 'destinationArea': 'Penang', 'startDate': '2030-01-01', 'endDate': '2030-01-03', 'adults': 2, 'activities': <dynamic>[], 'selectedHotel': {'name': 'Old hotel'}, 'budgetLimit': 1000};
   bool failWrite = false;
   bool failRead = false;
@@ -33,6 +34,7 @@ class BatchApi extends ApiService {
       if (failFlights) throw const ApiException('Flight provider is unavailable. Try again later.', 502, {});
       return {'items': [], 'searchId': 'search'};
     }
+    if (path == '/api/fr8/hotels/compatible-trips') return {'items': [{...trip}]};
     if (path == '/api/fr5/itineraries/target') return {'itinerary': {...trip}};
     if (path == '/api/fr5/itineraries') return {'items': showTargetTrip ? [{...trip}] : [{'id': 'other', 'title': 'Other trip'}]};
     if (path == '/api/fr3/destinations/search') return {'results': [place]};
@@ -48,7 +50,19 @@ class BatchApi extends ApiService {
       records.removeWhere((e) => e['destinationId'] == body!['destinationId']);
       records.add({...body!, 'id': 'owner_place'});
     }
-    if (path == '/api/fr8/hotels/book' && body?['itineraryId'] == 'target') { trip['selectedHotel'] = body!['selectedHotel']; trip['hotelBookingId'] = 'record'; }
+    if (path == '/api/fr8/hotels/search') return {'items': [
+      {'name': hotelName, 'offerId': 'offer', 'quoteId': 'quote', 'price': 200, 'currency': 'MYR'},
+    ]};
+    if (path == '/api/fr8/hotels/prebook') return {
+      'acceptedPrebook': {'id': 'accepted', 'amount': 200, 'currency': 'MYR',
+        'checkin': '2030-01-01', 'checkout': '2030-01-03'},
+      'result': {'validationId': 'validation'},
+    };
+    if (path == '/api/fr8/hotels/book' && body?['itineraryId'] == 'target') {
+      trip['selectedHotel'] = {'name': hotelName};
+      trip['hotelBookingId'] = 'record';
+      trip['hotelCost'] = 200;
+    }
     return {'ok': true, 'booking': {'id': 'record', 'itineraryAttachmentStatus': 'succeeded'}};
   }
   @override
@@ -140,19 +154,34 @@ void main() {
     final api = BatchApi(); await frame(tester, HotelScreen(api: api, targetTripId: 'target'));
     final dynamic state = tester.state(find.byType(HotelScreen));
     expect((await state.chooseItinerary())['id'], 'target');
-    final save = state.completeBooking({'name': 'New hotel', 'price': 200}, 'validation', 'liteapi', 'attempt');
-    await tester.pumpAndSettle(); await tester.tap(find.widgetWithText(FilledButton, 'Confirm & Save Hotel Details'));
-    await tester.pumpAndSettle(); await save;
-    expect(api.bodies.single['itineraryId'], 'target'); expect(api.bodies.single['saveDetailsOnly'], isTrue);
-    expect(api.posts, ['/api/fr8/hotels/book']);
+    state.destination.text = 'Penang';
+    state.checkin.text = '2030-01-01';
+    state.checkout.text = '2030-01-03';
+    await state.search();
+    final save = state.prebook(Map<String, dynamic>.from(state.items.single as Map));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add to Trip'));
+    await tester.pumpAndSettle();
+    await save;
+    expect(api.bodies.last['itineraryId'], 'target');
+    expect(api.bodies.last['saveDetailsOnly'], isTrue);
+    expect(api.posts.where((path) => path == '/api/fr8/hotels/book'), hasLength(1));
   });
   testWidgets('cancelling trip attachment creates no hotel record', (tester) async {
-    final api = BatchApi(); await frame(tester, HotelScreen(api: api)); final dynamic state = tester.state(find.byType(HotelScreen));
-    final save = state.completeBooking({'name': 'New hotel', 'price': 200}, 'validation', 'liteapi', 'attempt');
-    await tester.pumpAndSettle(); await tester.tap(find.widgetWithText(FilledButton, 'Confirm & Save Hotel Details')); await tester.pumpAndSettle();
+    final api = BatchApi();
+    await frame(tester, HotelScreen(api: api, initialDestination: 'Penang',
+        initialCheckin: '2030-01-01', initialCheckout: '2030-01-03'));
+    final dynamic state = tester.state(find.byType(HotelScreen));
+    await state.search();
+    final save = state.prebook(Map<String, dynamic>.from(state.items.single as Map));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add to Trip'));
+    await tester.pumpAndSettle();
     expect(find.text('Add hotel details to which Trip?'), findsOneWidget);
     Navigator.of(tester.element(find.text('Add hotel details to which Trip?'))).pop();
-    await tester.pumpAndSettle(); await save; expect(api.posts, isEmpty);
+    await tester.pumpAndSettle();
+    await save;
+    expect(api.posts, isNot(contains('/api/fr8/hotels/book')));
   });
   testWidgets('Trip Replace forwards its ID and reopens with persisted hotel', (tester) async {
     final api = BatchApi()..showTargetTrip = true;
@@ -164,8 +193,11 @@ void main() {
     await tester.tap(replace.hitTestable()); await tester.pumpAndSettle();
     expect(tester.widget<HotelScreen>(find.byType(HotelScreen)).targetTripId, 'target');
     final dynamic state = tester.state(find.byType(HotelScreen));
-    final save = state.completeBooking({'name': 'Replacement hotel', 'price': 200, 'currency': 'MYR'}, 'v', 'liteapi', 'attempt');
-    await tester.pumpAndSettle(); await tester.tap(find.widgetWithText(FilledButton, 'Confirm & Save Hotel Details'));
+    api.hotelName = 'Replacement hotel';
+    await state.search();
+    final save = state.prebook(Map<String, dynamic>.from(state.items.single as Map));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add to Trip'));
     await tester.pumpAndSettle(); await save;
     await tester.pageBack(); await tester.pumpAndSettle();
     expect(find.text('Replacement hotel'), findsWidgets); expect(find.text('Old hotel'), findsNothing);

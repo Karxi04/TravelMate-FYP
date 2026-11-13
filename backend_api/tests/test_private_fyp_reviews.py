@@ -253,3 +253,22 @@ def test_local_demo_samples_are_explicit_and_community_stays_separate(client, ap
     assert 'sampleSummary' not in client.get(
         path + '?view=unified', headers={**headers('fyp-viewer'), 'X-TravelMate-Review-Context': 'fyp-v1'}
     ).json['result']
+
+
+def test_unified_reviews_keep_community_visible_when_sample_read_fails(client, app, memory, planned_dataset, monkeypatch):
+    app.config['LOCAL_FYP_SAMPLE_REVIEWS'] = True
+    memory['feedback', 'community'] = {
+        'id': 'community', 'travellerId': 'author', 'destinationId': 'penang_hill',
+        'rating': 4, 'moderationStatus': 'approved', 'feedbackStatus': 'visible',
+    }
+
+    def unavailable(*args):
+        raise TimeoutError('fixture details')
+
+    monkeypatch.setattr('modules.fr03_destination_search_information.routes.dataset_reviews', unavailable)
+    auth = {**headers('other'), 'X-TravelMate-Review-Context': 'fyp-v1'}
+    result = client.get('/api/fr3/destinations/local_penang_hill/ratings-reviews?view=unified', headers=auth)
+    assert result.status_code == 200
+    assert result.json['result']['samplesUnavailable'] is True
+    assert result.json['result']['reviews'] == 1
+    assert 'sampleSummary' not in result.json['result']

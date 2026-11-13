@@ -727,21 +727,27 @@ def _ratings_and_reviews(records):
 def ratings_reviews(place_id):
     view = request.args.get('view')
     local_demo = current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS')
-    demo = (_private_review_dataset(discovery=bool(local_demo))
-            if local_demo or view not in {'community', 'unified'} else None)
     canonical = review_destination_id(place_id)
-    has_samples = bool(demo and canonical in demo[1])
     if view == 'unified':
         result = retrieveRatingsAndReviews(canonical)
-        if local_demo and has_samples:
-            records = [item for item in dataset_reviews(*demo) if item['destinationId'] == canonical]
-            samples = _ratings_and_reviews(records)
-            result['sampleSummary'] = {key: samples[key] for key in ('rating', 'reviews')}
-            result['user_reviews'].extend(
-                {**{key: value for key, value in item.items() if key != 'reviewKey'}, 'source': 'sample'}
-                for item in samples['user_reviews']
-            )
+        if local_demo:
+            try:
+                demo = _private_review_dataset(discovery=True)
+                if demo and canonical in demo[1]:
+                    records = [item for item in dataset_reviews(*demo) if item['destinationId'] == canonical]
+                    samples = _ratings_and_reviews(records)
+                    result['sampleSummary'] = {key: samples[key] for key in ('rating', 'reviews')}
+                    result['user_reviews'].extend(
+                        {**{key: value for key, value in item.items() if key != 'reviewKey'}, 'source': 'sample'}
+                        for item in samples['user_reviews']
+                    )
+            except Exception as error:
+                current_app.logger.warning('Sample review retrieval failed: %s', type(error).__name__)
+                result['samplesUnavailable'] = True
         return jsonify(ok=True, source='travelmate_database', result=result)
+    demo = (_private_review_dataset(discovery=bool(local_demo))
+            if local_demo or view != 'community' else None)
+    has_samples = bool(demo and canonical in demo[1])
     if view == 'samples' and not has_samples:
         return jsonify(ok=False, error='Sample reviews are unavailable for this destination.'), 404
     if has_samples and (view == 'samples' if local_demo else view != 'community'):

@@ -452,7 +452,7 @@ def chat():
         planning_state['travelPace'] = 'active'
     if re.search(r'\b(affordable|low[- ]cost|cheap|inexpensive|budget[- ]friendly|on a budget|tight budget)\b', message, re.I):
         planning_state['budgetRange'] = 'Budget'
-    if re.search(r"\b(avoid|don't want|do not want|no)\b.{0,20}\bcrowd", message, re.I):
+    if re.search(r"\b(?:(?:avoid|don't want|do not want|no)\b.{0,20}\bcrowd|less crowded)\b", message, re.I):
         planning_state['avoidCrowds'] = True
     day_pref = extract_day_specific(message)
     detailed_intent = classify_detailed_intent(message, planning_state)
@@ -514,7 +514,8 @@ def chat():
     ):
         _clear_multi_destination_state(planning_state)
 
-    if not is_conversational and (payload.get('guidedPlanning') is True or detailed_intent == 'ACTIVITY_DISCOVERY'):
+    if not is_conversational and (payload.get('guidedPlanning') is True or detailed_intent == 'ACTIVITY_DISCOVERY'
+            or re.fullmatch(r'(?:please )?plan (?:a|my) trip[.!?]*', message.strip(), re.I)):
         planning_state['guidedPlanning'] = True
     guided_check = None
     if existing_plan:

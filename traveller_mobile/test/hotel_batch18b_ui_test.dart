@@ -23,6 +23,10 @@ class _Batch18bMockApi extends ApiService {
       return {'ok': true, 'mode': 'test', 'hostedCheckout': checkoutEnabled,
         'supportedQuoteTypes': ['hotel', 'package']};
     }
+    const trip = {'id': 'trip-penang', 'title': 'My Penang Trip',
+      'startDate': '2026-11-10', 'endDate': '2026-11-12'};
+    if (path == '/api/fr8/hotels/compatible-trips') return {'items': [trip]};
+    if (path == '/api/fr5/itineraries/trip-penang') return {'itinerary': trip};
     if (getHandler != null) {
       return getHandler!(path, query);
     }
@@ -65,6 +69,7 @@ class _Batch18bMockApi extends ApiService {
         'source': 'liteapi',
         'acceptedPrebook': {
           'id': 'snap-authoritative-99',
+          'checkin': '2026-11-10', 'checkout': '2026-11-12',
           'amount': 420.0,
           'currency': 'MYR',
           'expiresAt': '2030-01-01T12:00:00Z',
@@ -74,6 +79,9 @@ class _Batch18bMockApi extends ApiService {
           'validationId': 'val-b18-001',
         }
       };
+    }
+    if (path == '/api/fr8/hotels/book') {
+      return {'booking': {'id': 'selection', 'itineraryAttachmentStatus': 'succeeded'}};
     }
     if (path.contains('/checkout/session')) {
       return {
@@ -108,27 +116,43 @@ Widget _wrap(Widget child) {
 }
 
 void main() {
-  testWidgets('F-F1A-P validated hotel offers independent Save and Pay actions', (tester) async {
+  for (final fromTrip in [false, true]) {
+  testWidgets('F-F1A-P hotel attachment preserves trip context (fromTrip: $fromTrip)', (tester) async {
     _setViewport(tester);
     final api = _Batch18bMockApi()..checkoutEnabled = true;
-    await tester.pumpWidget(_wrap(HotelScreen(api: api, initialDestination: 'Penang')));
+    await tester.pumpWidget(_wrap(HotelScreen(api: api, initialDestination: 'Penang', targetTripId: fromTrip ? 'trip-penang' : null)));
     final dynamic state = tester.state(find.byType(HotelScreen));
     await state.search();
     final pending = state.prebook(Map<String, dynamic>.from(state.items.first as Map));
     await tester.pumpAndSettle();
-    expect(find.text('Save Hotel Details'), findsOneWidget);
-    expect(find.text('Continue to Payment'), findsOneWidget);
+    expect(find.text('Add to Trip'), findsOneWidget);
+    expect(find.text('Continue to Payment'), findsNothing);
+    await tester.tap(find.text('Add to Trip'));
+    await tester.pumpAndSettle();
+    if (!fromTrip) {
+      await tester.tap(find.text('My Penang Trip'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Add to Trip'));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('Add hotel details to which Trip?'), findsNothing);
     expect(find.textContaining('Academic demonstration'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('hotel-continue-payment')));
     await tester.pumpAndSettle();
-    await pending;
     final screen = tester.widget<PaymentScreen>(find.byType(PaymentScreen));
+    expect(screen.itineraryId, 'trip-penang');
     expect(screen.acceptedPrebookSnapshotId, 'snap-authoritative-99');
     expect(screen.quoteId, 'quote-b18-001');
     expect(screen.offerId, 'offer-b18-001');
-    expect(api.postedPaths, isNot(contains('/api/fr8/hotels/book')));
+    final index = api.postedPaths.indexOf('/api/fr8/hotels/book');
+    expect(api.postedBodies[index]?['itineraryId'], 'trip-penang');
+    expect(api.postedBodies[index]?['saveDetailsOnly'], isTrue);
     expect(api.postedPaths.where((p) => p.contains('/checkout/session')), isEmpty);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await pending;
   });
+  }
 
   testWidgets('F-F1A pending validation never claims hotel details are saved', (tester) async {
     _setViewport(tester);
@@ -527,14 +551,13 @@ void main() {
     final future = state.prebook(Map<String, dynamic>.from(state.items.first as Map));
     await tester.pumpAndSettle();
     expect(find.text('Pay with Card (Stripe Test)'), findsNothing);
-    await tester.tap(find.text('Save Hotel Details'));
+    await tester.tap(find.text('Add to Trip'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('My Penang Trip'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Add to Trip'));
     await tester.pumpAndSettle();
     await future;
-    expect(find.text('Confirm & Save Hotel Details'), findsWidgets);
-    await tester.tap(find.byType(SwitchListTile));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Confirm & Save Hotel Details'));
-    await tester.pumpAndSettle();
     final index = api.postedPaths.indexOf('/api/fr8/hotels/book');
     expect(index, greaterThanOrEqualTo(0));
     expect(api.postedBodies[index]?['saveDetailsOnly'], isTrue);
@@ -808,7 +831,7 @@ void main() {
     await state.search();
     final future = state.prebook(Map<String, dynamic>.from(state.items.first as Map));
     await tester.pumpAndSettle();
-    expect(find.text('Save Hotel Details'), findsOneWidget);
+    expect(find.text('Add to Trip'), findsOneWidget);
     expect(api.postedPaths, isNot(contains('/api/fr8/hotels/book')));
     expect(api.postedPaths, isNot(contains('/api/fr9/checkout/session')));
     tester.state<NavigatorState>(find.byType(Navigator).first).pop();

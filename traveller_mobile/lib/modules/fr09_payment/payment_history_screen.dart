@@ -747,16 +747,15 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                       width: double.infinity,
                       child: FilledButton.icon(
                         icon: const Icon(Icons.map_rounded),
-                        label: const Text('View Package Trip Itinerary'),
+                        label: Text(isHotel ? 'View Trip Itinerary' : 'View Package Trip Itinerary'),
                         onPressed: () {
                           Navigator.pop(sheetContext);
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => PackageTripDetailsScreen(
-                                tripId: relatedTripId,
-                                api: api,
-                              ),
+                              builder: (_) => isHotel
+                                  ? TripDetailsScreen(tripId: relatedTripId, api: api)
+                                  : PackageTripDetailsScreen(tripId: relatedTripId, api: api),
                             ),
                           );
                         },

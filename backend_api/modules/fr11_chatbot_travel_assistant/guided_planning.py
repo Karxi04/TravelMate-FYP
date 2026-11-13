@@ -30,9 +30,16 @@ def guided_requirements(message, state, preferences, dates_supplied=False):
     no_preference = answer in {'no preference', 'anything', 'any activities'}
     pending = state.get('guidedQuestion')
     goal = state.get('planningGoal')
-    if detailed == 'ACTIVITY_DISCOVERY':
+    start_itinerary = re.fullmatch(r'(?:please )?plan (?:a|my) trip', answer)
+    upgrade = bool(re.search(r'\b(?:make|turn|convert) (?:this|it|these) into (?:a |an )?(?:complete |full |dated )?(?:trip|itinerary)\b', answer))
+    if (start_itinerary and not state.get('destinationArea')) or upgrade:
+        state['guidedItinerary'] = True
+    if detailed == 'ACTIVITY_DISCOVERY' and not (
+            goal == 'itinerary' and state.get('guidedActive')
+            and not re.search(r'\b(?:just|only|instead|things to do|activity ideas)\b', answer)):
         goal = 'activities'
-    elif (detailed == 'ITINERARY_PLANNING' or (dates_supplied and goal != 'activities')
+    elif (start_itinerary or upgrade or detailed == 'ITINERARY_PLANNING'
+          or (dates_supplied and goal != 'activities')
           or (answer == 'regenerate itinerary' and state.get('activePlan'))):
         goal = 'itinerary'
     elif not goal and (state.get('guidedActive') or intent == 'PLANNING_REQUEST'
@@ -44,6 +51,7 @@ def guided_requirements(message, state, preferences, dates_supplied=False):
         return None
     elif not (pending or intent in {'PLANNING_REQUEST', 'PROVISIONAL_EXPLORATION'} or dates_supplied
               or state.get('guidedActive') or no_preference or extract_interests(message)
+              or (goal == 'itinerary' and re.search(r'\b(?:change|switch|move) (?:it |the trip )?to\b|\bless crowded\b', answer))
               or re.search(r'\b(?:relaxed|moderate|busy|slower|faster|pace)\b', answer)):
         return None
 
@@ -69,7 +77,10 @@ def guided_requirements(message, state, preferences, dates_supplied=False):
         state['planningGoal'] = goal = 'activities'
     if pending == 'startDate' and skip:
         state['planningGoal'] = goal = 'activities'
-    if (pending == 'interests' and skip) or (goal == 'activities' and no_preference):
+    if answer in {'a mix', 'mix', 'a bit of everything'}:
+        state['interests'] = ['Food', 'Culture', 'Nature']
+        state['interestsConfirmed'] = True
+    elif (pending == 'interests' and skip) or (goal == 'activities' and no_preference):
         state['interests'] = []
         state['interestsConfirmed'] = True
     if pending in {'budgetLimit', 'travellerCount'} and skip:
@@ -87,6 +98,8 @@ def guided_requirements(message, state, preferences, dates_supplied=False):
 
     if not state.get('destinationArea'):
         return ask('destinationArea')
+    if goal == 'itinerary' and state.get('guidedItinerary') and not state.get('startDate'):
+        return ask('startDate')
     if not any(state.get(key) for key in ('tripDays', 'activityWindow')):
         return ask('tripDays')
     if goal == 'activities':
@@ -107,9 +120,13 @@ def guided_requirements(message, state, preferences, dates_supplied=False):
         result = ask('startDate', preview=True)
         result['clarification_prompt'] = 'Please choose a future start and end date for your itinerary.'
         return result
-    for key in ('budgetLimit', 'travellerCount'):
+    required = ('travellerCount', 'budgetLimit') if state.get('guidedItinerary') else ('budgetLimit', 'travellerCount')
+    for key in required:
         if not (state.get(key) or state.get(key + 'Skipped')):
             return ask(key)
+    if state.get('guidedItinerary') and not (
+            state.get('interests') or state.get('interestsConfirmed') or state.get('excludedInterests')):
+        return ask('interests')
     state.pop('guidedQuestion', None)
     state['guidedActive'] = False
     return {'clarification_needed': False, 'ready': True, 'missing': []}

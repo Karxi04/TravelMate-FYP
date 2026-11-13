@@ -35,6 +35,10 @@ class _F2BMockApi extends ApiService {
         'supportedQuoteTypes': ['hotel', 'package'],
       };
     }
+    if (path == '/api/fr8/hotels/compatible-trips') {
+      return {'items': [{'id': 'trip-penang-1', 'title': 'Penang Heritage',
+        'startDate': '2026-11-10', 'endDate': '2026-11-12'}]};
+    }
     if (path == '/api/fr5/itineraries') {
       return {'items': [{'id': 'trip-penang-1', 'title': 'Penang Heritage', 'budgetLimit': 2500}]};
     }
@@ -133,6 +137,7 @@ class _F2BMockApi extends ApiService {
       return {
         'status': 'accepted',
         'acceptedPrebook': {
+          'id': 'snap-$offer', 'checkin': '2026-11-10', 'checkout': '2026-11-12',
           'prebookId': 'pb-$offer',
           'offerId': offer,
           'amount': amount,
@@ -142,6 +147,10 @@ class _F2BMockApi extends ApiService {
         },
         'acceptedPrebookSnapshotId': 'snap-$offer',
       };
+    }
+
+    if (path == '/api/fr8/hotels/book') {
+      return {'booking': {'id': 'selection', 'itineraryAttachmentStatus': 'succeeded'}};
     }
 
     if (path == '/api/fr9/checkout/session') {
@@ -358,13 +367,20 @@ void main() {
       expect(find.text('Hotel Offer Validated'), findsOneWidget);
       expect(find.textContaining('MYR 480'), findsWidgets);
 
-      // 4. Tap Continue to Payment on outcome sheet
+      await tester.tap(find.text('Add to Trip'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Penang Heritage'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Add to Trip'));
+      await tester.pumpAndSettle();
+      // Continue to the review screen without creating a checkout session.
       final checkoutNavBtn = find.byKey(const ValueKey('hotel-continue-payment'));
       await tester.ensureVisible(checkoutNavBtn);
       await tester.tap(checkoutNavBtn);
       await tester.pumpAndSettle();
 
       // Payment screen opens with Deluxe Suite quote (480.00)
+      expect(tester.widget<PaymentScreen>(find.byType(PaymentScreen)).itineraryId, 'trip-penang-1');
       expect(find.text('Authoritative quote: MYR 480.00'), findsOneWidget);
       expect(find.textContaining('Deluxe Sea View Suite'), findsWidgets);
       expect(find.text('Ready for Checkout'), findsOneWidget);

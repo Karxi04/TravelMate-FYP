@@ -246,7 +246,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // After re-validation, sheet re-opens with valid snapshot
-      expect(find.text('Save Hotel Details'), findsOneWidget);
+      expect(find.text('Add to Trip'), findsOneWidget);
     });
   });
 }

@@ -1,6 +1,8 @@
 import os
 import hashlib
 import json
+import math
+import re
 import uuid
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
@@ -502,7 +504,8 @@ def _authoritative_offer(record):
     offer = dict(record.get('validatedOffer') or record.get('offer') or {})
     amount = offer.get('price')
     currency = str(offer.get('currency') or '').upper()
-    if offer.get('priceStatus') != 'available' or not isinstance(amount, (int, float)) or amount < 0:
+    if (offer.get('priceStatus') != 'available' or isinstance(amount, bool)
+            or not isinstance(amount, (int, float)) or not math.isfinite(amount) or amount < 0):
         return None, 'The validated hotel price is unavailable; search again.'
     if currency != 'MYR':
         return None, 'Only MYR hotel offers can be attached to the current MYR trip and payment flow.'
@@ -992,6 +995,50 @@ def hotel_prebook():
     })
 
 
+def _hotel_trip_compatibility(trip, criteria):
+    if trip.get('packageTrip') or trip.get('tripType') == 'package':
+        return 'incompatible', 'Select an ordinary saved trip.'
+    criteria = criteria if isinstance(criteria, dict) else {}
+    try:
+        checkin, checkout = (datetime.strptime(str(criteria[key])[:10], '%Y-%m-%d').date()
+                             for key in ('checkin', 'checkout'))
+        start, end = (datetime.strptime(str(trip[key])[:10], '%Y-%m-%d').date()
+                      for key in ('startDate', 'endDate'))
+    except (KeyError, TypeError, ValueError):
+        return 'compatibility_unverified', 'The hotel or trip has no verified stay dates.'
+    if not start <= checkin < checkout <= end:
+        return 'incompatible', 'Hotel dates must fall within the trip dates; checkout on the trip end date is allowed.'
+    stay_scope = normalize_destination_scope(criteria.get('destination'))
+    trip_scope = normalize_destination_scope(trip.get('destinationArea'))
+    if (not stay_scope.get('resolved') or not trip_scope.get('resolved')
+            or not stay_scope.get('state') or not trip_scope.get('state')):
+        return 'compatibility_unverified', 'The hotel or trip destination could not be verified.'
+    if stay_scope['state'] != trip_scope['state'] or (
+            stay_scope.get('city') and trip_scope.get('city') and stay_scope['city'] != trip_scope['city']):
+        return 'incompatible', 'The hotel destination does not match this trip destination.'
+    return 'succeeded', None
+
+
+@bp.get('/hotels/compatible-trips')
+@auth_required(['traveller'])
+def hotel_compatible_trips():
+    snapshot_id = request.args.get('acceptedPrebookSnapshotId', '').strip()
+    if not re.fullmatch(r'hotel_prebook_[a-f0-9]{40}', snapshot_id):
+        return jsonify(ok=False, error='Validate the hotel offer first.'), 400
+    record = retrieveRecord('hotel_prebook_attempts', snapshot_id)
+    if not record or record.get('travellerId') != g.uid:
+        return jsonify(ok=False, error='Accepted hotel offer not found.'), 404
+    accepted = record.get('acceptedPrebookSnapshot') or {}
+    if record.get('status') != 'succeeded' or accepted.get('id') != snapshot_id or _is_expired(accepted):
+        return jsonify(ok=False, error='This hotel offer is no longer valid. Search again.'), 409
+    trips = retrieveRecord('itineraries', filters=[('travellerId', '==', g.uid)]) or []
+    return jsonify(ok=True, items=[
+        {key: trip.get(key) for key in ('id', 'title', 'destinationArea', 'startDate', 'endDate')}
+        for trip in trips
+        if trip.get('travellerId') == g.uid and _hotel_trip_compatibility(trip, record.get('criteria'))[1] is None
+    ])
+
+
 def _attach_booking_to_itinerary(document_id, booking, payload):
     itinerary_id = str(payload.get('itineraryId') or booking.get('itineraryId') or '').strip()
     if not itinerary_id:
@@ -1016,43 +1063,11 @@ def _attach_booking_to_itinerary(document_id, booking, payload):
         }
         updated = updateRecord('hotel_bookings', document_id, patch) or {**booking, **patch}
         return updated, None
-    criteria = booking.get('stayCriteria')
-    criteria = criteria if isinstance(criteria, dict) else {}
-    try:
-        checkin = datetime.strptime(str(criteria['checkin'])[:10], '%Y-%m-%d').date()
-        checkout = datetime.strptime(str(criteria['checkout'])[:10], '%Y-%m-%d').date()
-        trip_start = datetime.strptime(str(current['startDate'])[:10], '%Y-%m-%d').date()
-        trip_end = datetime.strptime(str(current['endDate'])[:10], '%Y-%m-%d').date()
-    except (KeyError, TypeError, ValueError):
-        checkin = checkout = trip_start = trip_end = None
-    if not all((checkin, checkout, trip_start, trip_end)):
-        if not payload.get('acknowledgeCompatibilityUnverified'):
-            patch = {
-                'itineraryId': itinerary_id,
-                'itineraryAttachmentStatus': 'compatibility_unverified',
-                'itineraryAttachmentError': 'This historical booking has no verified stay dates. Confirm before attaching it to this trip.',
-                'updatedAt': utc_now_iso(),
-            }
-            return updateRecord('hotel_bookings', document_id, patch) or {**booking, **patch}, None
-        checkin = checkout = trip_start = trip_end = None
-    if checkin and checkout and trip_start and trip_end and not (trip_start <= checkin < checkout <= trip_end):
-        patch = {
-            'itineraryId': itinerary_id,
-            'itineraryAttachmentStatus': 'incompatible',
-            'itineraryAttachmentError': 'Hotel dates must fall within the trip dates; checkout on the trip end date is allowed.',
-            'updatedAt': utc_now_iso(),
-        }
-        return updateRecord('hotel_bookings', document_id, patch) or {**booking, **patch}, None
-    stay_destination = normalize_destination_scope((criteria or {}).get('destination'))
-    trip_destination = normalize_destination_scope(current.get('destinationArea'))
-    if (stay_destination.get('resolved') and trip_destination.get('resolved') and
-            stay_destination.get('state') != trip_destination.get('state')):
-        patch = {
-            'itineraryId': itinerary_id,
-            'itineraryAttachmentStatus': 'incompatible',
-            'itineraryAttachmentError': 'The hotel destination does not match this trip destination.',
-            'updatedAt': utc_now_iso(),
-        }
+    status, error = _hotel_trip_compatibility(current, booking.get('stayCriteria'))
+    if error and not (status == 'compatibility_unverified' and payload.get('acknowledgeCompatibilityUnverified')
+                      and payload.get('saveDetailsOnly') is not True):
+        patch = {'itineraryId': itinerary_id, 'itineraryAttachmentStatus': status,
+                 'itineraryAttachmentError': error, 'updatedAt': utc_now_iso()}
         return updateRecord('hotel_bookings', document_id, patch) or {**booking, **patch}, None
     if current.get('hotelBookingId') == document_id:
         patch = {
@@ -1068,11 +1083,14 @@ def _attach_booking_to_itinerary(document_id, booking, payload):
         'hotelCost': hotel_cost,
         'hotelCurrency': str(booking.get('hotelCurrency') or selected_hotel.get('currency') or '').upper(),
         'hotelBookingId': document_id,
+        'hotelSelectionStatus': 'selected',
         'accommodationChoice': 'paid_hotel',
     }
     trip_patch['budgetEstimate'] = calculateBudget({**current, **trip_patch})
     try:
         itinerary = updateRecord('itineraries', itinerary_id, trip_patch)
+        if not itinerary:
+            raise RuntimeError('Trip update could not be confirmed.')
         patch = {
             'itineraryId': itinerary_id,
             'itineraryAttachmentStatus': 'succeeded',
@@ -1147,6 +1165,15 @@ def hotel_book():
     selected_hotel, authority_error = _authoritative_offer(prebook_record)
     if authority_error:
         return jsonify({'ok': False, 'error': authority_error}), 409
+    if payload.get('saveDetailsOnly') is True and accepted_snapshot.get('priceBasis') != 'stay_total':
+        return jsonify(ok=False, error='A validated total stay price is required to update the trip budget.'), 409
+    if payload.get('saveDetailsOnly') is True and payload.get('itineraryId'):
+        trip = _own_itinerary(str(payload['itineraryId']).strip())
+        if not trip:
+            return jsonify(ok=False, error='Select an owned trip.'), 404
+        _, compatibility_error = _hotel_trip_compatibility(trip, prebook_record.get('criteria'))
+        if compatibility_error:
+            return jsonify(ok=False, error=compatibility_error), 409
     try:
         hotel_cost = float(accepted_snapshot.get('amount'))
         selected_cost = float(selected_hotel['price'])
@@ -1189,6 +1216,7 @@ def hotel_book():
         'hotelCost': hotel_cost,
         'hotelCurrency': str(selected_hotel.get('currency')).upper(),
         'amountSource': 'validated_offer',
+        'saveDetailsOnly': payload.get('saveDetailsOnly') is True,
         'itineraryId': str(payload.get('itineraryId') or '').strip(),
         'itineraryAttachmentStatus': 'pending' if payload.get('itineraryId') else 'not_requested',
         'createdAt': now,
@@ -1202,6 +1230,15 @@ def hotel_book():
         return jsonify({'ok': False, 'error': 'hotelBookingAttemptId is already bound to another validation'}), 409
     if not created:
         if claimed.get('bookingStatus') in {'confirmed', 'paid'}:
+            if payload.get('saveDetailsOnly') is True and claimed.get('providerMutationCalled') is True:
+                return jsonify(ok=False, error='This attempt already has a supplier booking. Open booking history.'), 409
+            if claimed.get('itineraryAttachmentStatus') == 'succeeded':
+                if claimed.get('itineraryId') != str(payload.get('itineraryId') or claimed.get('itineraryId')):
+                    return jsonify(ok=False, error='This hotel selection is already linked to another trip.'), 409
+                linked = _own_itinerary(claimed.get('itineraryId'))
+                if not linked or linked.get('hotelBookingId') != document_id:
+                    return jsonify(ok=False, error='This selection is no longer attached. Validate a new offer.'), 409
+                return _booking_response(claimed, linked, reused=True)
             updated, itinerary = _attach_booking_to_itinerary(document_id, claimed, payload)
             return _booking_response(updated, itinerary, reused=True)
         if claimed.get('bookingStatus') == 'failed':

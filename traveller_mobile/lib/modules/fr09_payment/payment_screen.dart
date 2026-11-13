@@ -28,6 +28,7 @@ class PaymentScreen extends StatefulWidget {
   final String acceptedPrebookSnapshotId;
   final Map<String, dynamic>? acceptedPrebook;
   final String? hotelBookingAttemptId;
+  final String? itineraryId;
   final ApiService? api;
 
   const PaymentScreen({
@@ -44,6 +45,7 @@ class PaymentScreen extends StatefulWidget {
     this.acceptedPrebookSnapshotId = '',
     this.acceptedPrebook,
     this.hotelBookingAttemptId,
+    this.itineraryId,
     this.api,
   });
 
@@ -362,6 +364,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             'quoteId': widget.quoteId,
             'offerId': widget.offerId,
             'acceptedPrebookSnapshotId': widget.acceptedPrebookSnapshotId,
+            if (widget.itineraryId != null) 'itineraryId': widget.itineraryId,
           },
           if (widget.quoteType == 'flight') ...{
             'searchId': widget.searchId,

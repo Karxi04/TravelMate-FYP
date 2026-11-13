@@ -146,6 +146,29 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       reviewInfo = data['result'] is Map
           ? Map<String, dynamic>.from(data['result'] as Map)
           : null;
+      if (reviewInfo != null &&
+          reviewInfo!['sampleSummary'] == null &&
+          data['sampleReviewsAvailable'] == true) {
+        try {
+          final legacy = await api.get(path, {'view': 'samples'});
+          if (!current()) return;
+          final sample = legacy['result'];
+          if (sample is Map && sample['fypPreview'] == true) {
+            reviewInfo = {
+              ...reviewInfo!,
+              'sampleSummary': {'rating': sample['rating'], 'reviews': sample['reviews']},
+              'user_reviews': [
+                ..._reviews(),
+                for (final row in (sample['user_reviews'] as List? ?? const []).whereType<Map>())
+                  {...row, 'source': 'sample'},
+              ],
+            };
+          }
+        } catch (_) {
+          if (!current()) return;
+          reviewInfo!['samplesUnavailable'] = true;
+        }
+      }
       if (reviewInfo == null) {
         reviewsFailed = true;
       } else if (reviewInfo!['fypPreview'] != true) {
@@ -726,6 +749,8 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
           const Text('Demonstration reviews'),
           LocalReviewRatingBadge(summary: reviewInfo!),
         ],
+        if (reviewInfo?['samplesUnavailable'] == true)
+          const Text('Sample reviews could not be loaded. Refresh to try again.'),
         const SizedBox(height: AppSpacing.sm),
         if (reviewsFailed)
           AppErrorState(

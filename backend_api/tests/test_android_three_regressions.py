@@ -56,6 +56,49 @@ def send(client, message, session=None):
     return response.json
 
 
+def test_plan_a_trip_short_replies_complete_without_gemini(client, mock_traveller_auth, memory, monkeypatch):
+    memory.pop(('travel_preferences', 'test_traveller_uid'))
+
+    def unavailable(*args, **kwargs):
+        pytest.fail('Guided questions and itinerary creation must not depend on Gemini.')
+
+    monkeypatch.setattr(routes, 'generateChatbotResponse', unavailable)
+    monkeypatch.setattr(routes, 'generateFollowUpResponse', unavailable)
+    session = None
+    for message, question in [('Plan a trip', 'destinationArea'), ('Penang', 'startDate'),
+                              ('12 Dec until 16 Dec', 'travellerCount'), ('2', 'budgetLimit'),
+                              ('700', 'interests')]:
+        result = send(client, message, session)
+        session = result['session']
+        assert session['planningState']['guidedQuestion'] == question
+        assert session['planningState']['planningGoal'] == 'itinerary'
+        assert 'tripPlan' not in result['item']
+        if question == 'travellerCount':
+            assert '5 calendar days, 4 nights' in result['reply']
+    result = send(client, 'A mix', session)
+    plan = result['item']['tripPlan']
+    assert plan['coverageStatus'] == 'complete'
+    assert (plan['tripDays'], plan['nights'], plan['numberOfTravellers'], plan['budgetLimit']) == (5, 4, 2, 700)
+    assert plan['interests'] == ['Food', 'Culture', 'Nature']
+    revised = send(client, 'Actually make it 3 travellers.', result['session'])
+    assert revised['item']['tripPlan']['numberOfTravellers'] == 3
+    moved = send(client, 'Change it to Langkawi.', revised['session'])
+    assert moved['session']['planningState']['destinationArea'] == 'Langkawi'
+    assert moved['session']['planningState']['budgetLimit'] == 700
+    assert moved['session']['planningState']['startDate'] == '2026-12-12'
+    assert not any(key[0] == 'itineraries' for key in memory)
+
+
+def test_explicit_upgrade_of_activity_suggestions_preserves_destination(client, mock_traveller_auth, memory):
+    initial = send(client, 'Things to do in Penang for two days with food')
+    assert initial['item']['placeSuggestions'] and 'tripPlan' not in initial['item']
+    upgraded = send(client, 'Make this into a complete itinerary.', initial['session'])
+    state = upgraded['session']['planningState']
+    assert state['destinationArea'] == 'Penang'
+    assert state['planningGoal'] == 'itinerary'
+    assert state['guidedQuestion'] == 'startDate'
+
+
 def test_activity_quick_prompt_and_short_replies_are_grounded(client, mock_traveller_auth, memory, monkeypatch):
     memory.pop(('travel_preferences', 'test_traveller_uid'))
     def unexpected(*args, **kwargs):
