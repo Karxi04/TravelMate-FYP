@@ -325,12 +325,21 @@ class AndroidPushService with WidgetsBindingObserver {
     } catch (_) {}
   }
 
-  void refreshTripReminders() {
+  void refreshTripReminders({List? trips, String? tripsOwner, int? tripsRevision}) {
     final owner = uid;
+    final authRevision = _authRevision;
     if (!supported || owner == null) return;
     serialize(() async {
-      if (uid != owner) return;
-      await tripReminders.refresh(owner, allowed: await platform.permission());
+      if (uid != owner || _authRevision != authRevision) return;
+      final allowed = await platform.permission();
+      if (uid != owner ||
+          _authRevision != authRevision ||
+          (trips != null &&
+              (tripsOwner != owner ||
+                  tripsRevision != ApiService.tripChanges.value))) {
+        return;
+      }
+      await tripReminders.refresh(owner, allowed: allowed, trips: trips);
     }).catchError((Object _) {});
   }
 

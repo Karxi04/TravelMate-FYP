@@ -114,7 +114,7 @@ class TripReminders {
     });
   }
 
-  Future<void> refresh(String owner, {required bool allowed}) async {
+  Future<void> refresh(String owner, {required bool allowed, List? trips}) async {
     final version = revision;
     try {
       if (_owner != owner || !await platform.available()) return;
@@ -127,11 +127,14 @@ class TripReminders {
         });
         return;
       }
-      final data = await api.get('/api/fr5/itineraries');
-      if (data is! Map || data['ok'] != true || data['items'] is! List)
-        throw StateError('Trips unavailable');
-      final plan =
-          tripReminderPlan(owner, data['items'], DateTime.now().toUtc());
+      if (trips == null) {
+        final data = await api.get('/api/fr5/itineraries');
+        if (data is! Map || data['ok'] != true || data['items'] is! List) {
+          throw StateError('Trips unavailable');
+        }
+        trips = data['items'] as List;
+      }
+      final plan = tripReminderPlan(owner, trips, DateTime.now().toUtc());
       await _serialize(() async {
         if (_owner != owner || revision != version) return;
         await platform.replace(reminderOwner(owner), plan);

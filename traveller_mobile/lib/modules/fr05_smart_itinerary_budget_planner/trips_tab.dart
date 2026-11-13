@@ -160,6 +160,9 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
 
   Future<void> load() async {
     final version = ++_loadVersion;
+    final push = AndroidPushService.instance;
+    final tripsOwner = push.uid;
+    final tripsRevision = ApiService.tripChanges.value;
     if (mounted) {
       setState(() {
         loading = true;
@@ -169,7 +172,13 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
     try {
       final data = await api.get('/api/fr5/itineraries');
       if (!mounted || version != _loadVersion) return;
-      AndroidPushService.instance.refreshTripReminders();
+      if (data['ok'] == true && data['items'] is List) {
+        push.refreshTripReminders(
+          trips: data['items'] as List,
+          tripsOwner: tripsOwner,
+          tripsRevision: tripsRevision,
+        );
+      }
       setState(() => items = data['items'] ?? []);
     } catch (_) {
       if (mounted && version == _loadVersion) {
