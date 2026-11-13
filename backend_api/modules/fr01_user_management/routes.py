@@ -32,7 +32,9 @@ def create_or_update_profile():
 
 @bp.get('/me')
 @auth_required()
-def me(): return jsonify({'ok':True,'profile':retrieveRecord('users',g.uid)})
+def me():
+    profile = {'id': g.uid, **g.profile} if g.profile_exists else None
+    return jsonify({'ok': True, 'profile': profile})
 
 @bp.put('/me')
 @auth_required()

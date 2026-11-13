@@ -68,6 +68,25 @@ API_LIMITS = {
 class RateLimitStoreUnavailable(RuntimeError):
     """Raised when a shared rate-limit decision cannot be made safely."""
 
+    def __init__(self, stage):
+        super().__init__("Shared rate-limit storage is unavailable")
+        self.stage = stage
+
+
+def firestore_error_status(error):
+    # Report only SDK error types and numeric HTTP codes, never exception messages.
+    for _ in range(4):
+        if error is None:
+            break
+        code = getattr(error, "code", None)
+        if isinstance(code, int):
+            return type(error).__name__, int(code)
+        cause = getattr(error, "cause", None) or error.__cause__
+        if cause is None:
+            return type(error).__name__, None
+        error = cause
+    return "Unknown", None
+
 
 def _positive_int(value, name, minimum=1):
     try:
@@ -182,14 +201,19 @@ class FirestoreFixedWindowLimiter:
         window_start = now - (now % self.window_seconds)
         window_end = window_start + self.window_seconds
         document_id = self._document_id(category, identity)
+        stage = "client"
         try:
             db = self._db_factory()
             document = db.collection("rate_limit_windows").document(document_id)
 
             def operation(transaction):
+                nonlocal stage
+                stage = "counter_read"
                 current = self._snapshot_data(document.get(transaction=transaction))
+                stage = "counter_evaluation"
                 count = int(current.get("count", 0)) if current.get("windowStart") == window_start else 0
                 if count >= self.limits[category]:
+                    stage = "commit"
                     return max(1, window_end - now)
                 transaction.set(document, {
                     "category": category,
@@ -200,13 +224,15 @@ class FirestoreFixedWindowLimiter:
                         tz=timezone.utc,
                     ),
                 })
+                stage = "commit"
                 return 0
 
+            stage = "begin_transaction"
             return self._run_transaction(db, operation)
         except RateLimitStoreUnavailable:
             raise
         except Exception as exc:
-            raise RateLimitStoreUnavailable("Shared rate-limit storage is unavailable") from exc
+            raise RateLimitStoreUnavailable(stage) from exc
 
 
 def init_rate_limiter(app, db_factory=None):
@@ -259,8 +285,10 @@ def rate_limit_response(category, uid=None):
             category,
             _request_identity(uid),
         )
-    except RateLimitStoreUnavailable:
-        current_app.logger.warning("Shared rate-limit storage is unavailable")
+    except RateLimitStoreUnavailable as error:
+        error_type, status = firestore_error_status(error.__cause__)
+        current_app.logger.warning("rate_limit_storage_unavailable category=%s stage=%s type=%s status=%s",
+                                   category, error.stage, error_type, status)
         return _unavailable_response()
     if not retry_after:
         return None

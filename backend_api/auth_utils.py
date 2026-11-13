@@ -1,8 +1,9 @@
 from functools import wraps
-from flask import request, jsonify, g
+from flask import current_app, request, jsonify, g
 from firebase_admin import auth
+from google.api_core.exceptions import GoogleAPICallError, RetryError
 from firebase_service import get_db
-from request_rate_limit import API_LIMITS, rate_limit_response
+from request_rate_limit import API_LIMITS, rate_limit_response, firestore_error_status
 
 
 APPROVED_OPERATOR_STATUSES = {"approved", "verified"}
@@ -33,9 +34,16 @@ def auth_required(roles=None):
                 return _error("Invalid or expired Firebase ID token")
 
             uid = decoded["uid"]
-            profile_ref = get_db().collection("users").document(uid)
-            snap = profile_ref.get()
-            profile = snap.to_dict() if snap.exists else None
+            try:
+                profile_ref = get_db().collection("users").document(uid)
+                snap = profile_ref.get()
+                profile = snap.to_dict() if snap.exists else None
+            except (GoogleAPICallError, RetryError) as error:
+                error_type, status = firestore_error_status(error)
+                current_app.logger.warning("profile_read_unavailable endpoint=%s type=%s status=%s",
+                                           request.endpoint, error_type, status)
+                return jsonify(ok=False, error="TravelMate account storage is temporarily unavailable.",
+                               code="profile_storage_unavailable"), 503, {"Cache-Control": "no-store"}
 
             if profile and profile.get("status", "active") != "active":
                 return _error("Account is deactivated", 403)
@@ -70,6 +78,7 @@ def auth_required(roles=None):
             g.uid = uid
             g.firebase_user = decoded
             g.profile = profile or {}
+            g.profile_exists = snap.exists
             g.role = role
             limited = rate_limit_response(API_LIMITS.get(request.endpoint), uid)
             if limited is not None:
