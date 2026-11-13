@@ -46,6 +46,51 @@ void main() {
     activities: 250,
   );
 
+  testWidgets('Confirms an applicable activity and displays the saved result', (tester) async {
+    const option = {
+      'alternativeType': 'activity',
+      'title': 'Visit Penang Botanic Gardens instead',
+      'description': 'Replace the paid visit on day 1.',
+      'stateVersion': 'revision-1',
+      'canApply': true,
+      'estimatedSavings': 80,
+    };
+    var applied = false;
+    final api = _FakeAlternativeApi(onPost: (path, [body]) async {
+      if (path.endsWith('/apply')) {
+        expect(body, {'alternative': option});
+        applied = true;
+        return {'itinerary': {'id': 'trip-123', 'activities': ['gardens']}, 'budget': {'total': 820}};
+      }
+      return {
+        'budget': {'total': applied ? 820 : 900, 'limit': 800},
+        'alternatives': applied ? [] : [option],
+      };
+    });
+    Map<String, dynamic>? updated;
+    await tester.pumpWidget(_buildApp(AlternativeScreen(
+      budget: testBudgetModel,
+      userBudget: 800,
+      tripId: 'trip-123',
+      api: api,
+      onApplied: (trip) => updated = trip,
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Estimated reduction: MYR 80.00'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(applied, isFalse);
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm change'));
+    await tester.pumpAndSettle();
+    expect(updated?['activities'], ['gardens']);
+    expect(find.text('Estimated total RM 820 / budget RM 800'), findsOneWidget);
+    expect(find.text('Apply'), findsNothing);
+  });
+
   group('Batch 21E-F2A-U: Budget Alternatives & Activity Advice Presentation', () {
     testWidgets('1. Backend activityAdvice rendering', (tester) async {
       final fakeApi = _FakeAlternativeApi(onPost: (path, [body]) async {
@@ -199,6 +244,7 @@ void main() {
           return {
             'ok': true,
             'budget': {'total': 750.0, 'limit': 800.0},
+            'itinerary': {'id': 'trip-123'},
           };
         }
         return {
@@ -209,9 +255,11 @@ void main() {
               'alternativeType': 'flight',
               'title': 'Switch to AirAsia flight',
               'description': 'Replace current flight with AirAsia flight (MYR 120.00).',
+              'canApply': true,
+              'stateVersion': 'expected-revision',
               'estimatedSavings': 30.0,
               'source': 'fixture_quote',
-              'data': {'quoteId': 'flight-123'},
+              'data': {'searchId': 'flight-123', 'optionId': 'flight-option'},
             }
           ],
         };
@@ -226,13 +274,15 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Switch to AirAsia flight'), findsOneWidget);
-      expect(find.text('Est. save RM 30'), findsOneWidget);
+      expect(find.text('Est. save RM 30.00'), findsOneWidget);
       expect(find.text('Source: fixture_quote'), findsOneWidget);
 
       final applyButton = find.widgetWithText(FilledButton, 'Apply');
       expect(applyButton, findsOneWidget);
 
       await tester.tap(applyButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm change'));
       await tester.pumpAndSettle();
 
       expect(fakeApi.postCalls, contains('/api/fr5/itineraries/trip-123/lower-cost-alternatives/apply'));
@@ -244,6 +294,7 @@ void main() {
           return {
             'ok': true,
             'budget': {'total': 860.0, 'limit': 800.0},
+            'itinerary': {'id': 'trip-123'},
           };
         }
         return {
@@ -254,9 +305,11 @@ void main() {
               'alternativeType': 'hotel',
               'title': 'Switch to Neo Hotel Penang',
               'description': 'Replace current hotel with Neo Hotel Penang (MYR 200.00).',
+              'canApply': true,
+              'stateVersion': 'expected-revision',
               'estimatedSavings': 40.0,
               'source': 'liteapi',
-              'data': {'hotelId': 'hotel-456'},
+              'data': {'hotelBookingId': 'hotel-456'},
             }
           ],
         };
@@ -271,13 +324,15 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Switch to Neo Hotel Penang'), findsOneWidget);
-      expect(find.text('Est. save RM 40'), findsOneWidget);
+      expect(find.text('Est. save RM 40.00'), findsOneWidget);
       expect(find.text('Source: liteapi'), findsOneWidget);
 
       final applyButton = find.widgetWithText(FilledButton, 'Apply');
       expect(applyButton, findsOneWidget);
 
       await tester.tap(applyButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm change'));
       await tester.pumpAndSettle();
 
       expect(fakeApi.postCalls, contains('/api/fr5/itineraries/trip-123/lower-cost-alternatives/apply'));
@@ -291,9 +346,11 @@ void main() {
           'budget': {'total': 900.0, 'limit': 800.0},
           'alternatives': [
             {
-              'alternativeType': 'transport',
-              'title': 'Use public transport / grouped rides',
-              'description': 'Replace repeated e-hailing trips with bus, rail or grouped transfers.',
+              'alternativeType': 'flight',
+              'title': 'Lower-cost flight',
+              'description': 'Same route and dates from a verified planning quote.',
+              'canApply': true,
+              'stateVersion': 'expected-revision',
               'estimatedSavings': 45.0,
             }
           ],
@@ -309,7 +366,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Must be prefixed with Est. save RM, not a guaranteed Save RM
-      expect(find.text('Est. save RM 45'), findsOneWidget);
+      expect(find.text('Est. save RM 45.00'), findsOneWidget);
       expect(find.text('Save RM 45'), findsNothing);
     });
 
@@ -332,8 +389,10 @@ void main() {
           'budget': {'total': 900.0, 'limit': 800.0},
           'alternatives': [
             {
-              'alternativeType': 'transport',
+              'alternativeType': 'activity',
               'title': 'Test Alternative',
+              'canApply': true,
+              'stateVersion': 'expected-revision',
               'estimatedSavings': 20.0,
             }
           ],
@@ -350,6 +409,8 @@ void main() {
 
       final applyButton = find.widgetWithText(FilledButton, 'Apply');
       await tester.tap(applyButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm change'));
       await tester.pumpAndSettle();
 
       expect(
@@ -374,7 +435,8 @@ void main() {
           'ok': true,
           'budget': {'total': 900.0, 'limit': 800.0},
           'alternatives': [
-            {'alternativeType': 'transport', 'title': 'Test Option', 'estimatedSavings': 15.0}
+            {'alternativeType': 'activity', 'title': 'Test Option', 'estimatedSavings': 15.0,
+             'canApply': true, 'stateVersion': 'expected-revision'}
           ],
         };
       });
@@ -388,6 +450,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.widgetWithText(FilledButton, 'Apply'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm change'));
       await tester.pumpAndSettle();
 
       // Only one attempt made; no automatic retry
@@ -407,7 +471,8 @@ void main() {
           'ok': true,
           'budget': {'total': 900.0, 'limit': 800.0},
           'alternatives': [
-            {'alternativeType': 'transport', 'title': 'Test Option', 'estimatedSavings': 15.0}
+            {'alternativeType': 'activity', 'title': 'Test Option', 'estimatedSavings': 15.0,
+             'canApply': true, 'stateVersion': 'expected-revision'}
           ],
         };
       });
@@ -423,6 +488,8 @@ void main() {
       expect(find.text('Estimated total RM 900.0 / budget RM 800.0'), findsOneWidget);
 
       await tester.tap(find.widgetWithText(FilledButton, 'Apply'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm change'));
       await tester.pumpAndSettle();
 
       // Budget subtitle must remain unchanged
@@ -497,6 +564,8 @@ void main() {
               'alternativeType': 'hotel',
               'title': 'Switch to Georgetown Heritage Boutique Hotel with Long Title',
               'description': 'Replace current hotel with a heritage boutique property in the central historic precinct.',
+              'canApply': true,
+              'stateVersion': 'expected-revision',
               'estimatedSavings': 85.0,
               'source': 'liteapi_partner_rates',
             }
@@ -521,7 +590,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('Activity budget guidance'), findsOneWidget);
-      expect(find.text('Est. save RM 85'), findsOneWidget);
+      expect(find.text('Est. save RM 85.00'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Apply'), findsOneWidget);
     });
   });

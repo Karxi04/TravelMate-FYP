@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travelmate_traveller/modules/fr03_destination_search_information/destination_details_screen.dart';
 import 'package:travelmate_traveller/modules/fr10_feedback_rating/feedback_screen.dart';
 import 'package:travelmate_traveller/services/api_service.dart';
 import 'package:travelmate_traveller/services/review_contract.dart';
@@ -19,7 +20,46 @@ class ReviewApi extends ApiService {
   }
 }
 
+class _PreviewApi extends ApiService {
+  int communityReads = 0;
+
+  @override
+  Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (!path.endsWith('/ratings-reviews')) return {'items': <dynamic>[]};
+    final community = query?['view'] == 'community';
+    if (community) communityReads++;
+    return {
+      'result': {
+        'rating': community ? 5.0 : 3.0,
+        'reviews': community ? 1 : 2,
+        if (!community) 'fypPreview': true,
+        'user_reviews': [
+          {'id': 'review', 'rating': 5, 'description': community ? 'Approved community comment.' : 'Private fixture comment.'},
+        ],
+      },
+    };
+  }
+}
+
 void main() {
+  testWidgets('Private preview switches to the separate community view', (tester) async {
+    final api = _PreviewApi();
+    await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,
+        initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
+    await tester.pumpAndSettle();
+    final toggle = find.text('View community reviews');
+    await tester.scrollUntilVisible(toggle, 250);
+    expect(find.text('Fictional reviews for the private FYP demonstration.'), findsOneWidget);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Back to private FYP preview'), 180);
+    expect(api.communityReads, 1);
+    expect(find.text('Private fixture comment.'), findsNothing);
+    expect(find.text('5.0 · 1 review'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Approved community comment.'), 180);
+    expect(find.text('Approved community comment.'), findsOneWidget);
+  });
+
   test('review identity matches backend and safe input rejects metadata spoofing', () {
     expect(ReviewContract.identity('owner', 'synthetic-place'),
         'review_97ae84dea9cd4a877c1397e1cac7d0194daf2c5df7ca99657376eed9ff7dbdde');

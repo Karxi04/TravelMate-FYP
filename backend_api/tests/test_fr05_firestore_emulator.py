@@ -25,7 +25,8 @@ from sequence_contract.domain_functions import calculateBudget, compareBudget
 
 pytestmark = pytest.mark.integration
 PROJECT = 'demo-travelmate-fr05-f2ce'
-HOST = '127.0.0.1:18085'
+HOST = os.getenv('TRAVELMATE_TEST_FIRESTORE_LOOPBACK', '127.0.0.1:18085')
+assert HOST in {'127.0.0.1:18085', '127.0.0.1:18086'}
 HEADERS = {'Authorization': 'Bearer valid_test_token'}
 
 
@@ -251,3 +252,104 @@ def test_server_rejected_atomic_commit_leaves_no_partial_update(client, stay, mo
     after = stay['trip'].get(timeout=10)
     assert after.to_dict() == before.to_dict() and after.update_time == before.update_time
     assert not missing.get(timeout=10).exists
+
+
+def test_package_packing_persists_separately_in_firestore(client, emulator, mock_traveller_auth, monkeypatch):
+    from services import packing_weather, packing_checklist_service
+    trip_id = 'package-' + uuid4().hex
+    uid = 'test_traveller_uid'
+    trip = {'travellerId': uid, 'packageTrip': True, 'tripType': 'package',
+            'destinationArea': 'Butterworth', 'startDate': '2099-11-12', 'endDate': '2099-11-12',
+            'packageSnapshot': {'amount': 75, 'itineraryDays': [{'activities': ['Heritage city walk']}]}}
+    trip_ref = emulator.collection('itineraries').document(trip_id)
+    checklist_ref = emulator.collection('packing_checklists').document(
+        packing_checklist_service.checklist_id(uid, trip_id))
+    path = f'/api/fr5/itineraries/{trip_id}/packing-checklist'
+    monkeypatch.setattr(packing_weather, 'geocode', lambda *a, **kw: pytest.fail('No geocode for distant trips'))
+    trip_ref.set(trip)
+    try:
+        result = client.post(path, headers=HEADERS, json={})
+        assert result.status_code == 200, result.json
+        assert result.json['checklist']['tripId'] == trip_id
+        assert any(row['itemId'] == 'walking_shoes' for row in result.json['checklist']['items'])
+        edited = client.patch(path, headers=HEADERS, json={'action': 'add', 'expectedRevision': 1,
+            'itemId': 'custom_camera', 'name': 'Camera', 'category': 'electronics', 'quantity': 2, 'isPacked': True})
+        assert edited.status_code == 200, edited.json
+        refreshed = client.post(path, headers=HEADERS, json={'action': 'refresh', 'expectedRevision': 2})
+        assert refreshed.status_code == 200, refreshed.json
+        assert client.get(path, headers=HEADERS).json['progress']['packedItems'] == 1
+        assert checklist_ref.get().to_dict()['tripId'] == trip_id
+        assert trip_ref.get().to_dict() == trip
+    finally:
+        checklist_ref.delete()
+        trip_ref.delete()
+
+
+def test_expense_storage_in_firestore_reloads_and_keeps_orders_immutable(client, emulator, mock_traveller_auth):
+    trip_id = 'manual-' + uuid4().hex
+    order_id = 'paid-' + uuid4().hex
+    hotel_id = 'stay-' + uuid4().hex
+    trip = {'travellerId': 'test_traveller_uid', 'title': 'Penang', 'budgetLimit': 100,
+            'hotelBookingId': hotel_id,
+            'startDate': '2026-11-15', 'endDate': '2026-11-15', 'activities': [],
+            'purchasedPackages': [{'checkoutOrderId': order_id}, {'checkoutOrderId': order_id}]}
+    paid = {'travellerId': 'test_traveller_uid', 'fulfilledTripId': trip_id, 'status': 'paid',
+            'paymentStatus': 'paid', 'amountMinor': 4200, 'currency': 'MYR'}
+    trip_ref = emulator.collection('itineraries').document(trip_id)
+    order_ref = emulator.collection('checkout_orders').document(order_id)
+    hotel_ref = emulator.collection('hotel_bookings').document(hotel_id)
+    path = f'/api/fr5/itineraries/{trip_id}/expenses'
+    trip_ref.set(trip)
+    order_ref.set(paid)
+    hotel_ref.set({'travellerId': 'test_traveller_uid', 'bookingStatus': 'confirmed',
+                   'hotelCurrency': 'MYR', 'amountSource': 'validated_offer', 'hotelCost': 40})
+    try:
+        before = client.get(path, headers=HEADERS)
+        assert before.status_code == 200, before.json
+        assert before.json['overview']['verifiedMinor'] == 4200
+        assert before.json['overview']['committedHotelMinor'] == 4000
+        hotel_ref.update({'sandbox': True})
+        assert client.get(path, headers=HEADERS).json['overview']['committedHotelMinor'] == 0
+        row = {'name': 'Breakfast', 'amount': '10.25', 'category': 'Food', 'type': 'actual'}
+        added = client.patch(path, headers=HEADERS,
+                             json={'action': 'add', 'expense': row, 'expectedRevision': 0})
+        assert added.status_code == 200, added.json
+        assert added.json['overview']['balanceAfterRecordedActualMinor'] == 8975
+        assert client.get(path, headers=HEADERS).json == added.json
+        rid = added.json['expenses'][0]['id']
+        stale = client.patch(path, headers=HEADERS, json={'action': 'delete', 'expectedRevision': 0, 'expenseId': rid})
+        assert stale.status_code == 409
+        edited = client.patch(path, headers=HEADERS,
+            json={'action': 'edit', 'expectedRevision': 1, 'expenseId': rid, 'expense': {**row, 'amount': '12.05'}})
+        assert edited.status_code == 200 and edited.json['overview']['actualMinor'] == 1205
+        removed = client.patch(path, headers=HEADERS, json={'action': 'delete', 'expectedRevision': 2, 'expenseId': rid})
+        assert removed.status_code == 200 and removed.json['expenses'] == []
+        assert order_ref.get().to_dict() == paid
+    finally:
+        trip_ref.delete()
+        order_ref.delete()
+        hotel_ref.delete()
+
+
+def test_activity_replacement_persists_and_replay_does_not_write(client, emulator, mock_traveller_auth):
+    from test_fr05_alternative_integrity import _planned_trip
+    trip_id = 'alternative-' + uuid4().hex
+    trip = {**_planned_trip(), 'id': trip_id}
+    ref = emulator.collection('itineraries').document(trip_id)
+    path = f'/api/fr5/itineraries/{trip_id}/lower-cost-alternatives'
+    ref.set(trip)
+    try:
+        preview = client.post(path, headers=HEADERS, json={})
+        assert preview.status_code == 200, preview.json
+        offer = next(row for row in preview.json['alternatives']
+                     if row['data'].get('destinationId') == 'local_botanical_gardens')
+        applied = client.post(path + '/apply', headers=HEADERS, json={'alternative': offer})
+        assert applied.status_code == 200, applied.json
+        saved = ref.get()
+        assert saved.to_dict()['dailySchedule'][1] == trip['dailySchedule'][1]
+        assert saved.to_dict()['activities'][0]['destinationId'] == 'local_botanical_gardens'
+        replay = client.post(path + '/apply', headers=HEADERS, json={'alternative': offer})
+        assert replay.status_code == 409
+        assert ref.get().update_time == saved.update_time
+    finally:
+        ref.delete()

@@ -158,3 +158,81 @@ def test_non_owner_cannot_apply_even_an_advisory_activity_change(client, mock_tr
     assert response.status_code == 404
     update.assert_not_called()
     store.assert_not_called()
+
+
+def _planned_trip():
+    original = {
+        'activityName': 'Paid attraction', 'address': 'Penang', 'estimatedCost': 40,
+        'pricingUnit': 'per_person', 'unitPrice': 40, 'costProvenance': 'user_entered',
+        'gps_coordinates': {'latitude': 5.42, 'longitude': 100.30},
+        'scheduledStartTime': '09:00', 'scheduledEndTime': '11:30', 'timeSlot': '09:00',
+        'dayNo': 1, 'dayDate': '2026-11-01', 'sequenceNo': 1,
+    }
+    value = _trip(original)
+    other = {'activityId': 'A2', 'destinationId': 'separate-day', 'activityName': 'Second day'}
+    value.update(destinationArea='Penang', endDate='2026-11-02', checkoutOrderId='retained',
+                 activities=[*value['activities'], other])
+    value['dailySchedule'] = [
+        {'dayNo': 1, 'dayDate': '2026-11-01', 'activities': [deepcopy(value['activities'][0])]},
+        {'dayNo': 2, 'dayDate': '2026-11-02', 'activities': [other]},
+    ]
+    return value
+
+
+def test_real_catalog_activity_preview_apply_reload_and_replay(client, mock_traveller_auth):
+    data = _planned_trip()
+    original = deepcopy(data)
+    with _isolated(data), patch(PREFIX + '_commit_cost_alternative') as write:
+        def commit(iid, expected, patch):
+            assert iid == original['id'] and expected == data
+            data.update(deepcopy(patch))
+            return deepcopy(data)
+        write.side_effect = commit
+        result = client.post(PATH, headers=HEADERS, json={}).json
+        assert result['activityAlternativeStatus'] == 'available'
+        offer = next(row for row in result['alternatives']
+                     if row['data'].get('destinationId') == 'local_botanical_gardens')
+        assert offer['estimatedSavings'] == 80
+        applied = client.post(PATH + '/apply', headers=HEADERS, json={'alternative': offer})
+        assert applied.status_code == 200, applied.json
+        reloaded = client.get(PATH.rsplit('/', 1)[0], headers=HEADERS).json['itinerary']
+        replacement = reloaded['activities'][0]
+        assert replacement['destinationId'] == 'local_botanical_gardens'
+        assert replacement['activityId'] == 'A1'
+        assert reloaded['dailySchedule'][0]['activities'][0] == replacement
+        assert reloaded['dailySchedule'][1] == original['dailySchedule'][1]
+        assert reloaded['activities'][1] == original['activities'][1]
+        assert reloaded['checkoutOrderId'] == 'retained'
+        assert reloaded['budgetEstimate']['total'] == calculateBudget(original)['total'] - 80
+        replay = client.post(PATH + '/apply', headers=HEADERS, json={'alternative': offer})
+        assert replay.status_code == 409 and replay.json['code'] == 'STALE_ALTERNATIVE'
+        write.assert_called_once()
+
+
+def test_activity_mismatch_stale_and_failed_commit_preserve_trip(client, mock_traveller_auth):
+    data = _planned_trip()
+    with _isolated(data), patch(PREFIX + '_commit_cost_alternative', side_effect=OSError) as write:
+        offer = next(row for row in client.post(PATH, headers=HEADERS).json['alternatives']
+                     if row['alternativeType'] == 'activity')
+        wrong = {**offer, 'alternativeId': 'wrong-activity'}
+        assert client.post(PATH + '/apply', headers=HEADERS, json={'alternative': wrong}).status_code == 409
+        data['title'] = 'Changed after preview'
+        assert client.post(PATH + '/apply', headers=HEADERS, json={'alternative': offer}).status_code == 409
+        assert not write.called
+        before = deepcopy(data)
+        fresh = next(row for row in client.post(PATH, headers=HEADERS).json['alternatives']
+                     if row['alternativeType'] == 'activity')
+        changed_price = {**fresh, 'estimatedSavings': 99}
+        assert client.post(PATH + '/apply', headers=HEADERS, json={'alternative': changed_price}).json['code'] == 'STALE_ALTERNATIVE'
+        write.assert_not_called()
+        assert client.post(PATH + '/apply', headers=HEADERS, json={'alternative': fresh}).status_code == 503
+        assert data == before
+
+
+@pytest.mark.parametrize('start,end', [('03:00', '05:00'), ('09:00', '09:10')])
+def test_activity_without_a_suitable_opening_period_or_duration_is_advisory(client, mock_traveller_auth, start, end):
+    data = _planned_trip()
+    data['dailySchedule'][0]['activities'][0].update(scheduledStartTime=start, scheduledEndTime=end)
+    with _isolated(data):
+        result = client.post(PATH, headers=HEADERS).json
+    assert result['activityAlternativeStatus'] == 'priced_replacement_unavailable'

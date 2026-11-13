@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../widgets/local_place_rating.dart';
 import 'budget_comparison_screen.dart';
 import 'budget_breakdown.dart';
+import 'trip_expenses_screen.dart';
 import 'flight_adjustment_preview_sheet.dart';
 import 'activity_payload_helper.dart';
 import 'models/budget_model.dart';
@@ -933,7 +934,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                 onPressed: () => Navigator.push(context, MaterialPageRoute(
                     builder: (_) => HotelDetailsScreen(hotel: hotel))),
                 icon: const Icon(Icons.info_outline_rounded),
-                label: const Text('View details'),
+                label: const Text('View hotel details'),
               ),
               OutlinedButton.icon(
                 onPressed: busy ? null : () => _replaceHotel(t),
@@ -1450,14 +1451,20 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         }
       });
 
-      Navigator.push(
+      await Navigator.push<void>(
           context,
           MaterialPageRoute(
               builder: (context) => BudgetComparisonScreen(
                     budget: budgetModel,
                     userBudget: budgetModel.budgetLimit,
                     tripId: widget.tripId,
+                    api: api,
+                    onApplied: (updated) {
+                      if (!mounted) return;
+                      setState(() => trip = updated);
+                    },
                   )));
+      if (mounted) await load();
     } catch (e) {
       if (mounted) {
         showError(context, e);
@@ -2235,9 +2242,21 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             child: Text('Trip budget',
                 style: Theme.of(context).textTheme.titleLarge),
           ),
-          TertiaryButton(label: 'View details', onPressed: showBudget),
+          TertiaryButton(label: 'Budget details', onPressed: showBudget),
         ]),
         BudgetBreakdown(budget: budget, limit: budget.budgetLimit),
+        if (!api.isStandalone)
+          SecondaryButton(
+            label: 'Manage trip expenses',
+            icon: Icons.receipt_long_outlined,
+            onPressed: () async {
+              await Navigator.push<void>(
+                context,
+                MaterialPageRoute(builder: (_) => TripExpensesScreen(tripId: widget.tripId, api: api)),
+              );
+              if (mounted) await load();
+            },
+          ),
       ]),
     );
   }
