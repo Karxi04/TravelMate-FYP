@@ -471,13 +471,23 @@ def _public_accepted_snapshot(snapshot):
         'expiresAt': snapshot.get('expiresAt'),
         'amount': snapshot.get('amount'),
         'currency': snapshot.get('currency'),
+        'quoteId': snapshot.get('quoteId'),
+        'offerId': snapshot.get('offerId'),
+        'checkin': snapshot.get('checkin'),
+        'checkout': snapshot.get('checkout'),
+        'roomQuantity': snapshot.get('roomQuantity'),
+        'occupancies': snapshot.get('occupancies'),
+        'hotelBookingAttemptId': snapshot.get('hotelBookingAttemptId'),
         'transactionMode': snapshot.get('transactionMode'),
         'supplierBookingStatus': snapshot.get('supplierBookingStatus'),
         'checkoutEligible': bool(
             not expired and
             snapshot.get('checkin') and snapshot.get('checkout') and
-            snapshot.get('occupancies') and snapshot.get('amount') is not None and
-            snapshot.get('currency') == 'MYR'
+            snapshot.get('occupancies') and snapshot.get('roomQuantity') and
+            isinstance(snapshot.get('amount'), (int, float)) and snapshot['amount'] > 0 and
+            snapshot.get('currency') == 'MYR' and snapshot.get('priceBasis') == 'stay_total' and
+            snapshot.get('taxesAndFeesStatus') in {'included', 'excluded', 'mixed'} and
+            snapshot.get('supplierBookingStatus') == 'not_created'
         ),
     }
 

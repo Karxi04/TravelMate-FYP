@@ -566,6 +566,10 @@ def test_itinerary_attachment_retry_does_not_rebook_provider(
                 'hotelBookingAttemptId': payload['hotelBookingAttemptId'],
             })
         assert prebook.status_code == 200
+        accepted = prebook.json['acceptedPrebook']
+        assert (accepted['checkin'], accepted['checkout'], accepted['roomQuantity']) == ('2026-11-01', '2026-11-03', 1)
+        assert accepted['occupancies'] == [{'adults': 1}]
+        assert accepted['checkoutEligible'] is True
         first = client.post('/api/fr8/hotels/book', headers={
             'Authorization': 'Bearer valid_test_token'}, json=payload)
         second = client.post('/api/fr8/hotels/book', headers={

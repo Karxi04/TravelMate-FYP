@@ -122,13 +122,8 @@ def _verified_costs(db, transaction, iid, uid, trip):
             if booking.get('saveDetailsOnly') or booking.get('confirmationLabel') == 'Hotel Details Saved':
                 hotel_payment = {'status': 'unpaid', 'hotelBookingId': booking_id}
                 if booking.get('itineraryId') == iid and booking.get('itineraryAttachmentStatus') == 'succeeded':
-                    accepted = booking.get('acceptedPrebookSnapshot') or {}
-                    hotel_payment['acceptedPrebook'] = {
-                        key: accepted[key] for key in (
-                            'id', 'quoteId', 'offerId', 'hotelBookingAttemptId', 'amount',
-                            'currency', 'expiresAt', 'checkoutEligible', 'name', 'roomName',
-                        ) if key in accepted
-                    }
+                    from modules.fr08_hotel_booking.routes import _public_accepted_snapshot
+                    hotel_payment['acceptedPrebook'] = _public_accepted_snapshot(booking.get('acceptedPrebookSnapshot'))
             if valid_trip_id(booking.get('checkoutOrderId')):
                 ids.add(booking['checkoutOrderId'])
             if (booking.get('bookingStatus') in {'confirmed', 'paid'}
