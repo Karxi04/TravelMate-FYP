@@ -130,7 +130,8 @@ void main() {
     expect(api.postedPayload!['participants'], {'adults': 1, 'children': 0});
     expect(api.postedPayload!.containsKey('price'), isFalse);
     expect(find.text('Review Payment'), findsOneWidget);
-    expect(find.textContaining('Academic demonstration'), findsOneWidget);
+    expect(find.textContaining('Academic demonstration'), findsNothing);
+    expect(find.text('Continue to Payment'), findsOneWidget);
     expect(api.postedPayloads, hasLength(1));
   });
 

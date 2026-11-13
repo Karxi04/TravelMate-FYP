@@ -692,7 +692,7 @@ class _PackingChecklistScreenState extends State<PackingChecklistScreen> {
         children: [
           _buildHeaderCard(title, checklist, progress),
           const SizedBox(height: AppSpacing.sm),
-          if (resp.weatherContext.isUnavailable)
+          if (resp.weatherContext.isUnavailable || resp.weatherContext.status == 'partial')
             _buildWeatherNotice(resp.weatherContext),
           if (resp.needsRefresh)
             _buildRefreshBanner(),

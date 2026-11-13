@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:travelmate_traveller/modules/fr08_hotel_booking/hotel_details_screen.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/trip_details_screen.dart';
 import 'package:travelmate_traveller/modules/fr07_flight_search/flight_details_screen.dart';
 import 'package:travelmate_traveller/modules/fr07_flight_search/flight_screen.dart';
@@ -407,11 +408,19 @@ void main() {
         scrollable: find.descendant(of: find.byKey(const ValueKey('trip-details-scroll')),
             matching: find.byType(Scrollable)).first);
     expect(find.textContaining('Non-refundable'), findsNothing);
-    await tester.ensureVisible(find.text('View details').last);
-    await tester.tap(find.text('View details').last);
+    final hotelDetails = find.widgetWithText(OutlinedButton, 'View hotel details');
+    final tripScroll = find.descendant(of: find.byKey(const ValueKey('trip-details-scroll')),
+        matching: find.byType(Scrollable)).first;
+    await tester.scrollUntilVisible(hotelDetails, 150, scrollable: tripScroll);
     await tester.pumpAndSettle();
+    await tester.tap(hotelDetails.hitTestable());
+    await tester.pumpAndSettle();
+    expect(find.byType(HotelDetailsScreen), findsOneWidget);
     expect(find.text('Select room'), findsNothing);
-    expect(find.textContaining('2030-01-03'), findsWidgets);
+    final checkout = find.textContaining('2030-01-03');
+    final detailsScroll = find.descendant(of: find.byType(HotelDetailsScreen), matching: find.byType(Scrollable)).first;
+    await tester.scrollUntilVisible(checkout, 200, scrollable: detailsScroll);
+    expect(checkout, findsOneWidget);
     expect(api.postPaths, isEmpty);
   });
 

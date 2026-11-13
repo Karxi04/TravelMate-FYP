@@ -722,7 +722,7 @@ def _ratings_and_reviews(records):
 @bp.get('/destinations/<path:place_id>/ratings-reviews')
 @auth_required(['traveller'])
 def ratings_reviews(place_id):
-    demo = _private_review_dataset()
+    demo = None if request.args.get('view') == 'community' else _private_review_dataset()
     canonical = review_destination_id(place_id)
     if demo and canonical in demo[1]:
         records = [item for item in dataset_reviews(*demo) if item['destinationId'] == canonical]

@@ -121,13 +121,19 @@ void main() {
         }};
       await tester.pumpWidget(buildTestApp(PaymentScreen(api: api,
         quoteType: kind, quoteId: 'owned-quote', offerId: 'owned-offer',
+        initialAmount: 420,
         packageAttemptId: kind == 'package' ? 'owned-package-attempt' : '',
         acceptedPrebookSnapshotId: 'accepted-snapshot',
         acceptedPrebook: const {'expiresAt': '2099-01-01T00:00:00Z'})));
       await tester.pumpAndSettle();
       expect(find.text('Review Payment'), findsOneWidget);
-      expect(find.textContaining('Academic demonstration'), findsOneWidget);
+      expect(find.textContaining('Academic demonstration'), findsNothing);
+      expect(find.text('Card details are entered only on Stripe-hosted Checkout.'),
+          findsOneWidget);
       expect(find.byType(TextField), findsNothing);
+      final continueButton = find.text('Continue to Payment');
+      await tester.scrollUntilVisible(continueButton, 180);
+      expect(continueButton, findsOneWidget);
       final dynamic state = tester.state(find.byType(PaymentScreen));
       await state.launchCheckout();
       await tester.pumpAndSettle();

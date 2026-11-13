@@ -12,6 +12,7 @@ class AlternativeScreen extends StatefulWidget {
   final double userBudget;
   final String? tripId;
   final ApiService? api;
+  final ValueChanged<Map<String, dynamic>>? onApplied;
 
   const AlternativeScreen({
     super.key,
@@ -19,6 +20,7 @@ class AlternativeScreen extends StatefulWidget {
     required this.userBudget,
     this.tripId,
     this.api,
+    this.onApplied,
   });
 
   @override
@@ -91,32 +93,30 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     return (parsed != null && parsed > 0) ? parsed : null;
   }
 
-  bool _canApplyItem(Map<String, dynamic> item) {
-    final type = (item['alternativeType'] ?? item['type'] ?? '')
-        .toString()
-        .toLowerCase();
-    if (type == 'activity' || type == 'activities') return false;
-    if (item['canApply'] == false) return false;
-    if (item['isAdvisory'] == true) return false;
-    return true;
-  }
+  bool _canApplyItem(Map<String, dynamic> item) =>
+      (widget.tripId ?? '').isNotEmpty &&
+      item['canApply'] == true &&
+      item['isAdvisory'] != true &&
+      item['stateVersion'] is String &&
+      _extractSavings(item) != null;
 
   Future<void> applyAlternative(Map<String, dynamic> item) async {
-    final type = (item['alternativeType'] ?? item['type'] ?? '')
-        .toString()
-        .toLowerCase();
-    if (type == 'activity' ||
-        type == 'activities' ||
-        item['canApply'] == false ||
-        item['isAdvisory'] == true) {
-      showError(context,
-          'No validated priced activity replacement is available. Existing activity prices have not been changed.');
-      return;
-    }
-    if ((widget.tripId ?? '').isEmpty) {
-      showError(context, 'Open this from a saved trip to apply changes.');
-      return;
-    }
+    if (busy || !_canApplyItem(item)) return;
+    final savings = _extractSavings(item)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text((item['title'] ?? 'Apply alternative?').toString()),
+        content: Text("${item['description'] ?? ''}\n\n"
+            "Estimated reduction: MYR ${savings.toStringAsFixed(2)}. "
+            "This changes your saved trip plan only."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirm change')),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || busy) return;
     setState(() => busy = true);
     try {
       final data = await api.post(
@@ -124,6 +124,11 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
         {'alternative': item},
       );
       if (!mounted) return;
+      final updated = data['itinerary'];
+      if (updated is! Map || updated['id'] != widget.tripId) {
+        throw StateError('The trip update could not be confirmed.');
+      }
+      widget.onApplied?.call(Map<String, dynamic>.from(updated));
       setState(() {
         budget = data['budget'] is Map
             ? Map<String, dynamic>.from(data['budget'] as Map)
@@ -135,6 +140,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       await load();
     } catch (e) {
       if (mounted) showError(context, e);
+      if (e is ApiException && e.statusCode == 409 && mounted) await load();
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -254,7 +260,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                                   if (savings != null && canApply)
                                     TravelStatusPill(
                                       text:
-                                          'Est. save RM ${savings.toStringAsFixed(0)}',
+                                          'Est. save RM ${savings.toStringAsFixed(2)}',
                                       icon: Icons.payments_outlined,
                                     )
                                   else

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/models/packing_models.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/packing_checklist_screen.dart';
+import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/package_trip_details_screen.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/packing_trip_selector_screen.dart';
 import 'package:travelmate_traveller/services/api_service.dart';
 
@@ -273,6 +274,32 @@ Map<String, dynamic> _sampleReadyData({
     };
 
 void main() {
+  testWidgets('Purchased package opens the checklist for its saved trip ID', (tester) async {
+    final trip = <String, dynamic>{
+      'id': 'trip_penang_1',
+      'title': 'Bought Butterworth tour',
+      'tripType': 'package',
+      'packageTrip': true,
+      'destinationArea': 'Butterworth',
+      'tripDays': 1,
+      'packageSnapshot': {'title': 'Bought Butterworth tour', 'durationDays': 1},
+    };
+    final api = _MockPackingApi(tripsData: [trip]);
+    await tester.pumpWidget(MaterialApp(home: PackageTripDetailsScreen(
+      tripId: 'trip_penang_1', initialTrip: trip, api: api,
+    )));
+    await tester.pumpAndSettle();
+    final action = find.text('Smart Packing Checklist');
+    final list = find.descendant(of: find.byType(PackageTripDetailsScreen), matching: find.byType(ListView)).first;
+    await tester.scrollUntilVisible(action, 200, scrollable: find.descendant(of: list, matching: find.byType(Scrollable)).first);
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    expect(tester.widget<PackingChecklistScreen>(find.byType(PackingChecklistScreen)).tripId, 'trip_penang_1');
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(PackageTripDetailsScreen), findsOneWidget);
+  });
+
   Widget wrap(Widget child) => MaterialApp(
         home: Scaffold(body: child),
       );

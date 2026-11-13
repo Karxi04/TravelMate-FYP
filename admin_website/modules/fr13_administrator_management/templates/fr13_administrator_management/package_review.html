@@ -1,48 +1,114 @@
 {% extends 'portal_base.html' %}
-{% block title %}Package Review | TravelMate{% endblock %}
+{% block title %}Review Package · TravelMate Admin{% endblock %}
+{% block page_title %}Package Review Workspace{% endblock %}
+
+{% macro render_segments(segments) -%}
+  {%- for seg in segments -%}
+    {%- if seg.bold -%}<strong>{{ seg.text }}</strong>{%- else -%}{{ seg.text }}{%- endif -%}
+  {%- endfor -%}
+{%- endmacro %}
+
+{% macro render_block(block) -%}
+  {%- if block.type == 'heading' -%}
+    <h4 class="pkg-prose-heading">{{ render_segments(block.segments) }}</h4>
+  {%- elif block.type == 'list' -%}
+    <ul>
+      {%- for bullet in block['items'] -%}
+        <li>{{ render_segments(bullet) }}</li>
+      {%- endfor -%}
+    </ul>
+  {%- else -%}
+    <p>{{ render_segments(block.segments) }}</p>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro render_prose(raw_text, empty_text='Not provided.', collapsible=true) -%}
+  {% set cleaned_text = (raw_text or '')|string|trim %}
+  {% if not cleaned_text %}
+    <p class="muted">{{ empty_text }}</p>
+  {% else %}
+    {% set blocks = cleaned_text|structured_blocks %}
+    {% set is_long = collapsible and (blocks|length > 2 or cleaned_text|length > 420) %}
+    {% if is_long %}
+      <div class="pkg-prose pkg-collapsible is-collapsed" data-pkg-collapsible>
+        {% for block in blocks[:2] %}{{ render_block(block) }}{% endfor %}
+        {% if blocks|length > 2 %}
+          <div class="pkg-collapsible-extra">
+            {% for block in blocks[2:] %}{{ render_block(block) }}{% endfor %}
+          </div>
+          <button type="button" class="pkg-toggle-btn" data-pkg-toggle aria-expanded="false" data-label-expand="Show full details" data-label-collapse="Show fewer details">Show full details</button>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="pkg-prose">
+        {% for block in blocks %}{{ render_block(block) }}{% endfor %}
+      </div>
+    {% endif %}
+  {% endif %}
+{%- endmacro %}
 
 {% block content %}
-{% set state = item.get('approvalStatus', 'draft') %}
-{% set days = item.get('itineraryDays', []) %}
+{% set state = (item.get('approvalStatus') or item.get('status') or 'submitted')|lower %}
+{% set avail = (item.get('availabilityStatus') or 'available')|lower %}
+{% set is_unavailable = (avail == 'unavailable') %}
+{% set selling_price = item.get('price') if item.get('price') not in (None, '') else item.get('adultPrice') %}
+{% set selling_num = selling_price|parse_float %}
+{% set original_num = item.get('originalPrice')|parse_float %}
+{% set promo_num = item.get('promotionalPrice')|parse_float %}
+{% set child_num = item.get('childPrice')|parse_float %}
+{% set duration_days = item.get('durationDays') %}
+{% set duration_nights = item.get('durationNights') %}
+{% set itinerary_days = item.get('itinerary') or [] %}
+{% set departure_dates = item.get('departureDates') or [] %}
+{% set inclusions = item.get('inclusions') or [] %}
+{% set exclusions = item.get('exclusions') or [] %}
+{% set highlights = item.get('highlights') or [] %}
+{% set what_to_bring = item.get('whatToBring') or [] %}
+{% set transport_types = item.get('transportTypes') or [] %}
+{% set hotel = item.get('accommodationHotel') %}
+{% set hero_url = (item.get('imageUrl') or item.get('coverImage') or '')|trim %}
+{% set gallery_urls = item.get('galleryImages') or [] %}
 
-<div class="page-title">
-  <div>
-    <span class="eyebrow">PACKAGE REVIEW</span>
-    <h1>{{ item.get('title', item.get('packageTitle', 'Package')) }}</h1>
-    <p>{{ item.get('destination', item.get('destinationName', '')) }}{% if item.get('destinationArea') %} · {{ item.get('destinationArea') }}{% endif %}</p>
-  </div>
-  <a class="btn outline" href="{{ url_for('admin_fr13.packages') }}">Back to queue</a>
+<div class="pkg-topbar-nav">
+  <a class="back-link" href="{{ url_for('admin_fr13.packages') }}">&larr; Back to Package Reviews</a>
+  {% if item.get('id') %}
+    <span class="pkg-id-pill">Package ID <code>{{ item.get('id') }}</code></span>
+  {% endif %}
 </div>
 
-{% if item.get('heroImage', item.get('imageUrl')) %}
-  <img class="review-hero" src="{{ item.get('heroImage', item.get('imageUrl')) }}" alt="Package hero image">
-{% endif %}
+{# ========================================================================
+   1. HEADER & PACKAGE IDENTITY + KEY METRICS STRIP
+   ======================================================================== #}
+<section class="pkg-review-header" aria-label="Package Summary">
+  <div class="pkg-header-top">
+    <div class="pkg-header-identity">
+      <div class="pkg-header-badges-row">
+        {% if item.get('category') %}
+          <span class="pkg-category-tag">{{ item.get('category') }}</span>
+        {% endif %}
+        {% if item.get('isActive') is sameas false %}
+          <span class="badge">Inactive listing</span>
+        {% endif %}
+      </div>
+      <h1>{{ item.get('title', 'Untitled Package') }}</h1>
+      <p class="pkg-location-line">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M12 21s-6-5.2-6-11a6 6 0 1 1 12 0c0 5.8-6 11-6 11z"></path>
+          <circle cx="12" cy="10" r="2.5"></circle>
+        </svg>
+        <span>
+          {{ item.get('destination') or 'Destination not specified' }}
+          {% if item.get('area') %} · {{ item.get('area') }}{% endif %}
+        </span>
+      </p>
+    </div>
 
-{% if item.get('galleryImages') %}
-<section class="card" style="margin-bottom: 16px;">
-  <span class="eyebrow">TOUR GALLERY</span>
-  <h3 style="margin: 4px 0 10px;">Gallery Showcase ({{ item.get('galleryImages')|length }} photos)</h3>
-  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px;">
-    {% for g_img in item.get('galleryImages') %}
-      <a href="{{ g_img }}" target="_blank" rel="noopener" style="display: block; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); aspect-ratio: 4/3;">
-        <img src="{{ g_img }}" alt="Gallery photo {{ loop.index }}" style="width: 100%; height: 100%; object-fit: cover;">
-      </a>
-    {% endfor %}
-  </div>
-</section>
-{% endif %}
-
-<div class="grid g2 review-layout">
-  <div>
-    <!-- Left Column: Package Details -->
-    <section class="card">
-      <div class="actions" style="justify-content: space-between; margin-bottom: 12px;">
-        {% if state == 'approved' %}
-          {% if item.get('availabilityStatus') == 'unavailable' %}
-            <span class="status approved-unavailable">Approved (Unavailable)</span>
-          {% else %}
-            <span class="status approved">Published</span>
-          {% endif %}
+    <div class="pkg-header-statuses">
+      <div class="pkg-status-pair">
+        {% if state == 'approved' and is_unavailable %}
+          <span class="status approved-unavailable">Approved (Unavailable)</span>
+        {% elif state == 'approved' %}
+          <span class="status approved">Published</span>
         {% elif state == 'suspended' %}
           <span class="status suspended">Suspended</span>
         {% elif state in ['pending', 'submitted'] %}
@@ -56,386 +122,969 @@
         {% else %}
           <span class="status {{ state }}">{{ state|title }}</span>
         {% endif %}
-        <strong>{{ item.get('currency', 'MYR') }} {{ '%.2f'|format(item.get('promotionalPrice') or item.get('adultPrice') or item.get('price') or 0) }} / {{ 'group' if item.get('priceBasis') == 'per_group' else 'person' }}</strong>
-      </div>
-      <h3>Package summary</h3>
-      {% if item.get('shortDescription') %}
-        <p><strong>{{ item.get('shortDescription') }}</strong></p>
-      {% endif %}
-      <p>{{ item.get('fullDescription', item.get('description', '')) }}</p>
-      <div class="grid g2" style="margin-top: 12px;">
-        <p>
-          <strong>Duration</strong><br>
-          {{ item.get('durationDays', 1) }} day(s){% if item.get('durationNights') is not none %}, {{ item.get('durationNights') }} night(s){% endif %}
-        </p>
-        <p>
-          <strong>Capacity</strong><br>
-          {{ item.get('minimumTravellers', '—') }}–{{ item.get('maximumTravellers', item.get('maxTravellers', '—')) }} travellers
-        </p>
-      </div>
-    </section>
 
-    {% if days %}
-    <section class="card">
-      <h3>Day-by-day itinerary</h3>
-      {% for day in days %}
-        <article class="review-day">
-          <strong>Day {{ day.get('dayNumber', loop.index) }} · {{ day.get('title', '') }}</strong>
-          <p>{{ day.get('description', '') }}</p>
-          {% if day.get('activities') %}
-            <p><b>Activities:</b> {{ day.get('activities')|join(', ') }}</p>
-          {% endif %}
-          {% if day.get('meals') %}
-            <p><b>Meals:</b> {{ day.get('meals')|join(', ') }}</p>
-          {% endif %}
-          {% if day.get('accommodation') %}
-            <p><b>Stay:</b> {{ day.get('accommodation') }}</p>
-          {% endif %}
-          {% if day.get('transportNotes') %}
-            <p><b>Transport:</b> {{ day.get('transportNotes') }}</p>
-          {% endif %}
-        </article>
-      {% endfor %}
-    </section>
-    {% endif %}
+        {% if is_unavailable %}
+          <span class="badge warn">Availability: Unavailable</span>
+        {% else %}
+          <span class="badge ok">Availability: Available</span>
+        {% endif %}
+      </div>
 
-    {% for field, label in [('highlights','Highlights'), ('inclusions','Included'), ('exclusions','Not included'), ('whatToBring','What to bring')] %}
-      {% if item.get(field) %}
-        <section class="card">
-          <h3>{{ label }}</h3>
-          <ul>
-            {% for value in item.get(field) %}
-              <li>{{ value }}</li>
-            {% endfor %}
-          </ul>
-        </section>
-      {% endif %}
-    {% endfor %}
+      <span class="pkg-availability-note">
+        {% if state == 'approved' and not is_unavailable %}
+          Approved and publicly visible in traveller discovery.
+        {% elif state == 'approved' and is_unavailable %}
+          Approved by admin, but hidden from travellers while availability is Unavailable.
+        {% elif state == 'suspended' %}
+          Unpublished and blocked from public discovery until resolved.
+        {% elif state in ['pending', 'submitted'] %}
+          Awaiting administrator moderation before publication.
+        {% elif state == 'rejected' %}
+          Returned to operator for revisions; hidden from travellers.
+        {% elif state == 'draft' %}
+          Operator draft not yet submitted for moderation.
+        {% elif state == 'archived' %}
+          Archived package; not shown in public traveller discovery.
+        {% else %}
+          Hidden from public traveller discovery.
+        {% endif %}
+      </span>
+    </div>
   </div>
 
-  <div>
-    <!-- Right Column: Operator, Moderation Decision, Actions -->
-    <section class="card cream">
-      <span class="eyebrow">PUBLISHER</span>
-      <h3 style="margin: 2px 0 6px;">Operator Details</h3>
-      <p style="margin: 0;"><strong>{{ item.get('operatorName', 'Tourism Operator') }}</strong></p>
-      {% if item.get('operatorEmail') %}
-        <p class="muted" style="margin: 2px 0 0; font-size: 13px;">{{ item.get('operatorEmail') }}</p>
-      {% endif %}
-      {% if item.get('operatorId') %}
-        <p class="muted" style="margin: 2px 0 0; font-size: 11px;">ID: <code>{{ item.get('operatorId') }}</code></p>
-      {% endif %}
-    </section>
+  <div class="pkg-summary-grid">
+    <div class="pkg-summary-item">
+      <span class="pkg-summary-label">Selling Price</span>
+      <span class="pkg-summary-value">
+        {% if selling_num is not none %}
+          RM {{ "%.2f"|format(selling_num) }}
+        {% elif selling_price not in (None, '') %}
+          RM {{ selling_price }}
+        {% else %}
+          Not set
+        {% endif %}
+      </span>
+      <span class="pkg-summary-sub">
+        {{ item.get('pricingBasis') or 'Per Person' }}
+        {% if original_num is not none and selling_num is not none and original_num > selling_num %}
+          · <span class="pkg-price-strike">RM {{ "%.2f"|format(original_num) }}</span>
+        {% endif %}
+        {% if promo_num is not none and (selling_num is none or promo_num != selling_num) %}
+          · Promo RM {{ "%.2f"|format(promo_num) }}
+        {% endif %}
+        {% if child_num is not none and child_num > 0 %}
+          · Child RM {{ "%.2f"|format(child_num) }}
+        {% endif %}
+      </span>
+    </div>
 
-    {% if state == 'suspended' %}
-    <section class="card" style="border-left: 4px solid var(--danger); background: var(--danger-bg); margin-bottom: 16px;">
-      <div style="display: flex; align-items: center; gap: 8px; color: var(--danger); margin-bottom: 6px;">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <strong style="font-size: 15px;">Package Suspended &amp; Unpublished</strong>
+    <div class="pkg-summary-item">
+      <span class="pkg-summary-label">Duration</span>
+      <span class="pkg-summary-value">
+        {% if duration_days %}
+          {{ duration_days }} {{ 'Day' if duration_days == 1 else 'Days' }}
+        {% else %}
+          {{ item.get('duration') or 'Flexible' }}
+        {% endif %}
+      </span>
+      <span class="pkg-summary-sub">
+        {% if duration_nights %}
+          {{ duration_nights }} {{ 'Night' if duration_nights == 1 else 'Nights' }}
+        {% else %}
+          Day trip / stays flexible
+        {% endif %}
+      </span>
+    </div>
+
+    <div class="pkg-summary-item">
+      <span class="pkg-summary-label">Group Size</span>
+      <span class="pkg-summary-value">
+        {% if item.get('minPax') or item.get('maxPax') %}
+          {{ item.get('minPax') or 1 }}–{{ item.get('maxPax') or '∞' }} pax
+        {% else %}
+          Not specified
+        {% endif %}
+      </span>
+      <span class="pkg-summary-sub">Traveller capacity range</span>
+    </div>
+
+    <div class="pkg-summary-item">
+      <span class="pkg-summary-label">Departures</span>
+      <span class="pkg-summary-value">
+        {% if departure_dates %}
+          {{ departure_dates|length }} {{ 'Date' if departure_dates|length == 1 else 'Dates' }}
+        {% else %}
+          Upon request
+        {% endif %}
+      </span>
+      <span class="pkg-summary-sub">
+        {% if item.get('validFrom') or item.get('validUntil') %}
+          {{ (item.get('validFrom') or 'Open')[:10] }} to {{ (item.get('validUntil') or 'Open')[:10] }}
+        {% else %}
+          Validity window open
+        {% endif %}
+      </span>
+    </div>
+
+    <div class="pkg-summary-item">
+      <span class="pkg-summary-label">Itinerary Scope</span>
+      <span class="pkg-summary-value">
+        {% if itinerary_days %}
+          {{ itinerary_days|length }} {{ 'Day Planned' if itinerary_days|length == 1 else 'Days Planned' }}
+        {% else %}
+          0 Days
+        {% endif %}
+      </span>
+      <span class="pkg-summary-sub">
+        {% set ns_count = namespace(total=0) %}
+        {% for d in itinerary_days %}
+          {% set ns_count.total = ns_count.total + ((d.get('activities') or [])|length) %}
+        {% endfor %}
+        {{ ns_count.total }} scheduled {{ 'activity' if ns_count.total == 1 else 'activities' }}
+      </span>
+    </div>
+  </div>
+</section>
+
+<div class="pkg-review-workspace">
+  <div class="pkg-review-main">
+
+    {# ====================================================================
+       2. PACKAGE GALLERY
+       ==================================================================== #}
+    <section class="card" aria-label="Package Gallery">
+      <div class="pkg-section-head">
+        <h2>Package Gallery</h2>
+        {% set total_media = (1 if hero_url else 0) + (gallery_urls|reject('equalto', hero_url)|list|length) %}
+        <span class="pkg-count-pill">{{ total_media }} {{ 'image' if total_media == 1 else 'images' }}</span>
       </div>
-      <p style="margin: 6px 0; color: var(--ink);"><strong>Suspension Reason:</strong> {{ item.get('suspensionReason', 'Compliance or policy violation') }}</p>
-      <div style="font-size: 12px; color: var(--ink-secondary);">
-        Suspended by {{ item.get('suspendedByName', 'Administrator') }}{% if item.get('suspendedAt') %} on {{ item.get('suspendedAt')[:10] }}{% endif %}.
-        This package is currently blocked from search, mobile listings, and new bookings until the operator resolves these issues and resubmits for review.
-      </div>
-    </section>
-    {% endif %}
 
-    {% if item.get('reviewedAt') %}
-    <section class="card">
-      <h3>Review record</h3>
-      <p>{{ item.get('reviewedByName', 'Administrator') }} · {{ item.get('reviewedAt')[:10] }}</p>
-      {% if item.get('suspensionResolvedAt') %}
-        <p style="font-size: 12px; color: var(--success); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border);">
-          <strong>Suspension Resolved:</strong> Re-approved on {{ item.get('suspensionResolvedAt')[:10] }}{% if item.get('suspensionResolvedByName') %} by {{ item.get('suspensionResolvedByName') }}{% endif %}
-        </p>
-      {% endif %}
-    </section>
-    {% endif %}
-
-    {% if item.get('departureDates') or item.get('departureLocation') or item.get('meetingPoint') %}
-    <section class="card">
-      <h3>Departure</h3>
-      {% if item.get('departureDates') %}
-        <p><strong>Dates</strong><br>{{ item.get('departureDates')|join(', ') }}</p>
-      {% endif %}
-      {% if item.get('departureLocation') %}
-        <p><strong>Location</strong><br>{{ item.get('departureLocation') }}</p>
-      {% endif %}
-      {% if item.get('meetingPoint') %}
-        <p><strong>Meeting point</strong><br>{{ item.get('meetingPoint') }}</p>
-      {% endif %}
-      {% if item.get('departureNotes') %}
-        <p>{{ item.get('departureNotes') }}</p>
-      {% endif %}
-    </section>
-    {% endif %}
-
-    {% set hotel = item.get('accommodationHotel') %}
-    {% if hotel or item.get('accommodationName') or item.get('transportTypes') %}
-    <section class="card">
-      {% if hotel %}
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px;">
-          <h3 style="margin: 0;">Accommodation Details</h3>
-          <span class="status approved" style="font-size: 11px;">Hotel Information from LiteAPI</span>
-        </div>
-
-        <div style="display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; background: #f9fbf9; border: 1px solid #e1efe2; border-radius: 8px; padding: 12px;">
-          {% if hotel.get('mainPhoto') %}
-            <img src="{{ hotel.get('mainPhoto') }}" alt="{{ hotel.get('name') }}" style="width: 90px; height: 75px; object-fit: cover; border-radius: 6px; flex-shrink: 0;">
-          {% endif %}
-          <div>
-            <strong style="font-size: 15px; color: var(--charcoal, #202124);">{{ hotel.get('name') }}</strong>
-            <p style="margin: 2px 0 6px; font-size: 12.5px; color: var(--ink-secondary, #5f6368);">
-              {{ [hotel.get('address'), hotel.get('city'), hotel.get('country')]|select|join(', ') }}
-            </p>
-            <div style="display: flex; gap: 12px; font-size: 12.5px; align-items: center; flex-wrap: wrap;">
-              <span style="font-weight: 600; color: #e37400;">
-                {% if hotel.get('stars') is not none %}
-                  ⭐ {{ hotel.get('stars') }}-Star
-                {% else %}
-                  Star classification not supplied
-                {% endif %}
-              </span>
-              {% if hotel.get('guestRating') is not none %}
-                <span style="color: var(--ink-secondary, #5f6368);">Guest Rating: {{ hotel.get('guestRating') }}/10</span>
-              {% endif %}
+      {% if hero_url %}
+        <div class="pkg-hero-frame">
+          <img src="{{ hero_url }}" alt="{{ item.get('title', 'Package') }} cover photo" loading="eager" data-pkg-img onerror="this.parentElement.classList.add('is-broken')">
+          <div class="pkg-img-fallback" role="img" aria-label="Cover image unavailable">
+            <div>
+              <strong>Image preview unavailable</strong>
+              <p class="muted">The submitted cover URL could not be loaded in this view.</p>
             </div>
-            {% if hotel.get('amenities') %}
-              <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px;">
-                {% for am in hotel.get('amenities')[:6] %}
-                  <span style="font-size: 10.5px; background: #e8f0fe; color: #1a73e8; padding: 2px 6px; border-radius: 4px;">{{ am }}</span>
-                {% endfor %}
-              </div>
-            {% endif %}
           </div>
         </div>
+        <div class="pkg-hero-bar">
+          <span>Primary cover media</span>
+          <a class="pkg-hero-link" href="{{ hero_url }}" target="_blank" rel="noopener">Open full image &nearr;</a>
+        </div>
+      {% else %}
+        <div class="empty">No cover image was submitted for this package.</div>
+      {% endif %}
 
-        <div style="margin-bottom: 12px; padding: 10px 12px; background: var(--canvas, #f8f9fa); border-radius: 6px;">
-          <strong style="font-size: 13px; color: var(--charcoal, #202124);">Operator Arrangement Details:</strong>
-          <p style="margin: 4px 0 0; font-size: 13px;">
-            <b>Room Configuration:</b> {{ item.get('roomType') or 'Not specified' }}<br>
-            {% if item.get('accommodationNotes') %}
-              <b>Guidelines & Notes:</b> {{ item.get('accommodationNotes') }}
+      {% set secondary_images = gallery_urls|reject('equalto', hero_url)|list %}
+      {% if secondary_images %}
+        <div class="pkg-subblock">
+          <span class="pkg-sublabel">Additional Gallery Photos ({{ secondary_images|length }})</span>
+          <div class="pkg-gallery-thumbs">
+            {% for img_url in secondary_images %}
+              <a class="pkg-gallery-thumb" href="{{ img_url }}" target="_blank" rel="noopener" title="Open gallery image {{ loop.index }} in new tab">
+                <img src="{{ img_url }}" alt="Package gallery photo {{ loop.index }}" loading="lazy" data-pkg-img onerror="this.parentElement.classList.add('is-broken')">
+                <span class="pkg-img-fallback">Image unavailable</span>
+              </a>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    </section>
+
+    {# ====================================================================
+       3. PACKAGE OVERVIEW & HIGHLIGHTS
+       ==================================================================== #}
+    <section class="card" aria-label="Package Overview">
+      <div class="pkg-section-head">
+        <h2>Package Overview</h2>
+        {% if highlights %}
+          <span class="pkg-count-pill">{{ highlights|length }} highlights</span>
+        {% endif %}
+      </div>
+
+      {% if item.get('shortDescription') %}
+        <div class="pkg-lead-callout">
+          {{ item.get('shortDescription') }}
+        </div>
+      {% endif %}
+
+      <div class="pkg-subblock">
+        <span class="pkg-sublabel">Detailed Description</span>
+        {{ render_prose(item.get('fullDescription') or item.get('description'), 'No detailed overview provided by the operator.') }}
+      </div>
+
+      {% if highlights %}
+        <div class="pkg-subblock">
+          <span class="pkg-sublabel">Package Highlights</span>
+          <ul class="pkg-icon-list">
+            {% for hl in highlights %}
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>{{ render_segments(hl|inline_segments) }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    </section>
+
+    {# ====================================================================
+       4. DAY-BY-DAY ITINERARY
+       ==================================================================== #}
+    <section class="card" aria-label="Day-by-day itinerary">
+      <div class="pkg-section-head">
+        <h2>Day-by-day itinerary</h2>
+        <span class="pkg-count-pill">{{ itinerary_days|length }} {{ 'day' if itinerary_days|length == 1 else 'days' }}</span>
+      </div>
+
+      {% if itinerary_days %}
+        <div class="pkg-days-stack">
+          {% for day in itinerary_days %}
+            {% set day_num = day.get('dayNumber') or loop.index %}
+            {% set raw_activities = day.get('activities') or [] %}
+            {% set parsed_ns = namespace(items=[], has_timed=false) %}
+            {% for raw_act in raw_activities %}
+              {% set parsed = raw_act|parse_activity %}
+              {% if parsed.title %}
+                {% set parsed_ns.items = parsed_ns.items + [parsed] %}
+                {% if parsed.time %}
+                  {% set parsed_ns.has_timed = true %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+
+            <article class="pkg-day-card">
+              <div class="pkg-day-header">
+                <span class="pkg-day-badge">Day {{ day_num }}</span>
+                <h3 class="pkg-day-title">{{ day.get('title') or ('Day ' ~ day_num) }}</h3>
+              </div>
+
+              {% if day.get('description') %}
+                {{ render_prose(day.get('description'), '', true) }}
+              {% endif %}
+
+              {% if parsed_ns.items %}
+                <div class="pkg-activity-timeline {{ 'is-timed' if parsed_ns.has_timed else 'is-untimed' }}">
+                  {% for act in parsed_ns.items %}
+                    <div class="pkg-activity-row">
+                      {% if parsed_ns.has_timed %}
+                        <div class="pkg-activity-time">{{ act.time or ('Step ' ~ loop.index) }}</div>
+                      {% else %}
+                        <div class="pkg-activity-step">Step {{ loop.index }}</div>
+                      {% endif %}
+                      <div class="pkg-activity-track" aria-hidden="true">
+                        <span class="pkg-activity-dot"></span>
+                      </div>
+                      <div class="pkg-activity-card">
+                        <strong>{{ act.title }}</strong>
+                        {% if act.location %}
+                          <div class="pkg-activity-sub">Location: {{ act.location }}</div>
+                        {% endif %}
+                        {% if act.description %}
+                          <div class="pkg-activity-sub">{{ render_segments(act.description|inline_segments) }}</div>
+                        {% endif %}
+                      </div>
+                    </div>
+                  {% endfor %}
+                </div>
+              {% elif not day.get('description') %}
+                <p class="muted">No scheduled activities listed for Day {{ day_num }}.</p>
+              {% endif %}
+
+              {% set meals_val = day.get('meals') %}
+              {% if meals_val or day.get('accommodation') or day.get('transportNotes') %}
+                <div class="pkg-day-meta">
+                  {% if meals_val %}
+                    <div class="pkg-day-meta-box">
+                      <strong>Meals</strong>
+                      <span>
+                        {% if meals_val is iterable and meals_val is not string %}
+                          {{ meals_val|join(', ') }}
+                        {% else %}
+                          {{ meals_val }}
+                        {% endif %}
+                      </span>
+                    </div>
+                  {% endif %}
+                  {% if day.get('accommodation') %}
+                    <div class="pkg-day-meta-box">
+                      <strong>Overnight Stay</strong>
+                      <span>{{ day.get('accommodation') }}</span>
+                    </div>
+                  {% endif %}
+                  {% if day.get('transportNotes') %}
+                    <div class="pkg-day-meta-box">
+                      <strong>Day Transport</strong>
+                      <span>{{ day.get('transportNotes') }}</span>
+                    </div>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty">No day-by-day itinerary submitted yet.</div>
+      {% endif %}
+    </section>
+
+    {# ====================================================================
+       5. INCLUSIONS & EXCLUSIONS
+       ==================================================================== #}
+    <section class="card" aria-label="Inclusions and Exclusions">
+      <div class="pkg-section-head">
+        <h2>Inclusions &amp; Exclusions</h2>
+        <span class="pkg-count-pill">{{ inclusions|length }} included · {{ exclusions|length }} excluded</span>
+      </div>
+
+      {% if item.get('transportIncluded') is sameas true or item.get('guideActivitiesIncluded') is sameas true or item.get('accommodationIncluded') is sameas true or item.get('transportIncluded') is sameas false or item.get('guideActivitiesIncluded') is sameas false or item.get('accommodationIncluded') is sameas false %}
+        <div class="pkg-bool-chips" aria-label="Core service arrangements">
+          {% if item.get('accommodationIncluded') is sameas true %}
+            <span class="badge ok">Accommodation Included</span>
+          {% elif item.get('accommodationIncluded') is sameas false %}
+            <span class="badge">Accommodation Not Included</span>
+          {% endif %}
+          {% if item.get('transportIncluded') is sameas true %}
+            <span class="badge ok">Transport Included</span>
+          {% elif item.get('transportIncluded') is sameas false %}
+            <span class="badge">Transport Not Included</span>
+          {% endif %}
+          {% if item.get('guideActivitiesIncluded') is sameas true %}
+            <span class="badge ok">Guide &amp; Activities Included</span>
+          {% elif item.get('guideActivitiesIncluded') is sameas false %}
+            <span class="badge">Guide &amp; Activities Not Included</span>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      <div class="pkg-inc-exc-grid" style="margin-top: 14px;">
+        <div class="pkg-service-box included">
+          <div class="pkg-service-title">What Is Included ({{ inclusions|length }})</div>
+          {% if inclusions %}
+            <ul class="pkg-icon-list">
+              {% for inc in inclusions %}
+                <li>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#166534" stroke-width="2.4" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                  <span>{{ render_segments(inc|inline_segments) }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="muted">No specific inclusions listed.</p>
+          {% endif %}
+        </div>
+
+        <div class="pkg-service-box excluded">
+          <div class="pkg-service-title">What Is Excluded ({{ exclusions|length }})</div>
+          {% if exclusions %}
+            <ul class="pkg-icon-list">
+              {% for exc in exclusions %}
+                <li>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B91C1C" stroke-width="2.2" aria-hidden="true">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                  <span>{{ render_segments(exc|inline_segments) }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="muted">No exclusions listed.</p>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    {# ====================================================================
+       6. DEPARTURE & MEETING INFORMATION
+       ==================================================================== #}
+    <section class="card" aria-label="Departure and Meeting Information">
+      <div class="pkg-section-head">
+        <h2>Departure &amp; Meeting Information</h2>
+        {% if departure_dates %}
+          <span class="pkg-count-pill">{{ departure_dates|length }} scheduled dates</span>
+        {% endif %}
+      </div>
+
+      <div class="pkg-subblock">
+        <span class="pkg-sublabel">Scheduled Departure Dates</span>
+        {% if departure_dates %}
+          <div class="pkg-date-chips">
+            {% for d_date in departure_dates %}
+              <span class="pkg-date-chip">{{ d_date }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="muted">Flexible or upon-request departure dates.</p>
+        {% endif %}
+      </div>
+
+      <div class="pkg-logistics-grid">
+        <div class="pkg-info-tile">
+          <span class="pkg-sublabel">Valid Window</span>
+          <p>
+            {% if item.get('validFrom') or item.get('validUntil') %}
+              {{ (item.get('validFrom') or 'Immediate')[:10] }} to {{ (item.get('validUntil') or 'Ongoing')[:10] }}
+            {% else %}
+              Not restricted
             {% endif %}
           </p>
         </div>
+        <div class="pkg-info-tile">
+          <span class="pkg-sublabel">Departure Location</span>
+          <p>{{ item.get('departureLocation') or 'Not specified' }}</p>
+        </div>
+        <div class="pkg-info-tile">
+          <span class="pkg-sublabel">Meeting Point</span>
+          <p>{{ item.get('meetingPoint') or 'Confirmed upon booking' }}</p>
+        </div>
+      </div>
 
-        <p style="font-size: 11.5px; color: var(--ink-secondary, #5f6368); font-style: italic; margin-top: 0;">
-          Hotel information is provided for package planning. Selecting a property does not create or confirm a room reservation.
-        </p>
-      {% elif item.get('accommodationName') %}
-        <h3>Stay</h3>
-        <p>
-          <strong>{{ item.get('accommodationName') }}</strong>
-          {% if item.get('accommodationCategory') %} · {{ item.get('accommodationCategory') }}{% endif %}
-          {% if item.get('roomType') %}<br>{{ item.get('roomType') }}{% endif %}
-        </p>
-        {% if item.get('accommodationNotes') %}
-          <p>{{ item.get('accommodationNotes') }}</p>
-        {% endif %}
-      {% endif %}
-
-      {% if item.get('transportTypes') or item.get('transportNotes') %}
-        <div style="{% if hotel or item.get('accommodationName') %}margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border);{% endif %}">
-          {% if item.get('transportTypes') %}
-            <p><strong>Transport</strong><br>{{ item.get('transportTypes')|join(', ') }}</p>
-          {% endif %}
-          {% if item.get('transportNotes') %}
-            <p>{{ item.get('transportNotes') }}</p>
-          {% endif %}
+      {% if item.get('departureNotes') %}
+        <div class="pkg-subblock">
+          <span class="pkg-sublabel">Departure &amp; Check-In Instructions</span>
+          {{ render_prose(item.get('departureNotes'), '') }}
         </div>
       {% endif %}
+
+      <div class="pkg-disclosure-note">
+        Schedules and meeting instructions listed above reflect operator-submitted planning details for moderation review.
+      </div>
     </section>
-    {% endif %}
 
-    {% for field, label in [('cancellationPolicy','Cancellation policy'), ('refundPolicy','Refund policy'), ('bookingTerms','Booking terms'), ('importantNotes','Important notes')] %}
-      {% if item.get(field) %}
-        <section class="card">
-          <h3>{{ label }}</h3>
-          <p>{{ item.get(field) }}</p>
-        </section>
-      {% endif %}
-    {% endfor %}
+    {# ====================================================================
+       7. ACCOMMODATION & TRANSPORTATION
+       ==================================================================== #}
+    <section class="card" aria-label="Accommodation and Transportation">
+      <div class="pkg-section-head">
+        <h2>Accommodation &amp; Transportation</h2>
+      </div>
 
-    {% if state in ['pending', 'submitted'] %}
-      <form class="card review-decision" method="post" action="{{ url_for('admin_fr13.review_package', package_id=item.id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <span class="eyebrow">MODERATION DECISION</span>
-        <h3 style="margin: 2px 0 10px;">Review decision</h3>
-        {% if item.get('availabilityStatus') == 'unavailable' %}
-          <div class="warning-callout" style="background: var(--warning-bg); border-left: 4px solid var(--warning); padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 14px; font-size: 13px; color: #78350F; line-height: 1.5;">
-            <strong>Notice:</strong> This package will be approved but will remain hidden from travellers because its availability is currently set to Unavailable. The operator must activate availability before it can appear in public discovery.
+      <div class="pkg-subblock">
+        <span class="pkg-sublabel">Accommodation Details</span>
+        {% if hotel %}
+          <div class="pkg-liteapi-box">
+            {% set hotel_photo = hotel.get('photoUrl') or hotel.get('mainPhoto') %}
+            {% if hotel_photo %}
+              <div class="pkg-liteapi-photo">
+                <img src="{{ hotel_photo }}" alt="{{ hotel.get('name', 'Hotel') }}" loading="lazy" data-pkg-img onerror="this.parentElement.classList.add('is-broken')">
+                <span class="pkg-img-fallback">Hotel photo unavailable</span>
+              </div>
+            {% endif %}
+            <div class="pkg-liteapi-meta">
+              <span class="badge ok">Hotel Information from LiteAPI</span>
+              <h3 class="pkg-liteapi-name">{{ hotel.get('name') }}</h3>
+              {% set hotel_addr = [hotel.get('address'), hotel.get('city'), hotel.get('country')]|select|join(', ') %}
+              {% if hotel_addr %}
+                <p class="pkg-liteapi-address">{{ hotel_addr }}</p>
+              {% endif %}
+              <div class="pkg-hotel-rating-row">
+                {% if hotel.get('stars') %}
+                  <span>⭐ {{ hotel.get('stars') }}-Star</span>
+                {% else %}
+                  <span>Star classification not supplied</span>
+                {% endif %}
+                {% if hotel.get('guestRating') %}
+                  <span>Guest Rating: {{ hotel.get('guestRating') }}/10</span>
+                {% endif %}
+              </div>
+              {% if hotel.get('amenities') %}
+                <div class="pkg-amenities-row">
+                  {% for amenity in (hotel.get('amenities') or [])[:10] %}
+                    <span class="pkg-amenity-chip">{{ amenity }}</span>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="pkg-arrangement-box">
+            <strong>Operator Arrangement Details:</strong>
+            <div class="pkg-logistics-grid" style="margin-top: 10px;">
+              <div>
+                <span class="pkg-sublabel">Room Type</span>
+                <p>{{ item.get('roomType') or 'Not specified' }}</p>
+              </div>
+              <div>
+                <span class="pkg-sublabel">Accommodation Category</span>
+                <p>{{ item.get('accommodationCategory') or 'Paired via LiteAPI' }}</p>
+              </div>
+            </div>
+            {% if item.get('accommodationNotes') %}
+              <div style="margin-top: 10px;">
+                <span class="pkg-sublabel">Operator Accommodation Notes</span>
+                {{ render_prose(item.get('accommodationNotes'), '') }}
+              </div>
+            {% endif %}
+          </div>
+
+          <div class="pkg-disclosure-note">
+            Hotel information is provided for package planning. Selecting a property does not create or confirm a room reservation.
+          </div>
+        {% elif item.get('accommodationName') %}
+          <div class="pkg-arrangement-box">
+            <strong>Operator-Entered Accommodation</strong>
+            <div class="pkg-logistics-grid" style="margin-top: 10px;">
+              <div class="pkg-info-tile">
+                <span class="pkg-sublabel">Property Name</span>
+                <p>{{ item.get('accommodationName') }}</p>
+              </div>
+              <div class="pkg-info-tile">
+                <span class="pkg-sublabel">Category / Rating</span>
+                <p>{{ item.get('accommodationCategory') or 'Not specified' }}</p>
+              </div>
+              <div class="pkg-info-tile">
+                <span class="pkg-sublabel">Room Type</span>
+                <p>{{ item.get('roomType') or 'Not specified' }}</p>
+              </div>
+            </div>
+            {% if item.get('accommodationNotes') %}
+              <div style="margin-top: 10px;">
+                <span class="pkg-sublabel">Accommodation Notes</span>
+                {{ render_prose(item.get('accommodationNotes'), '') }}
+              </div>
+            {% endif %}
+          </div>
+        {% elif item.get('roomType') or item.get('accommodationCategory') or item.get('accommodationNotes') %}
+          <div class="pkg-arrangement-box">
+            <strong>Accommodation Arrangements</strong>
+            <div class="pkg-logistics-grid" style="margin-top: 10px;">
+              {% if item.get('accommodationCategory') %}
+                <div class="pkg-info-tile">
+                  <span class="pkg-sublabel">Category</span>
+                  <p>{{ item.get('accommodationCategory') }}</p>
+                </div>
+              {% endif %}
+              {% if item.get('roomType') %}
+                <div class="pkg-info-tile">
+                  <span class="pkg-sublabel">Room Type</span>
+                  <p>{{ item.get('roomType') }}</p>
+                </div>
+              {% endif %}
+            </div>
+            {% if item.get('accommodationNotes') %}
+              <div style="margin-top: 10px;">
+                <span class="pkg-sublabel">Accommodation Notes</span>
+                {{ render_prose(item.get('accommodationNotes'), '') }}
+              </div>
+            {% endif %}
+          </div>
+        {% else %}
+          <p class="muted">No specific accommodation property listed for this package.</p>
+        {% endif %}
+      </div>
+
+      <div class="pkg-subblock">
+        <span class="pkg-sublabel">Transportation &amp; Taxes</span>
+        {% if transport_types %}
+          <div class="pkg-transport-chips">
+            {% for t_type in transport_types %}
+              <span class="pkg-transport-chip">{{ t_type }}</span>
+            {% endfor %}
           </div>
         {% endif %}
-        <div class="field">
-          <label for="reviewCommentInput">Reason for changes</label>
-          <textarea id="reviewCommentInput" class="input" name="comment" placeholder="Required when requesting changes" rows="3"></textarea>
+        {% if item.get('transportNotes') %}
+          <div style="margin-top: 10px;">
+            <span class="pkg-sublabel">Transport Notes</span>
+            {{ render_prose(item.get('transportNotes'), '') }}
+          </div>
+        {% endif %}
+        {% if item.get('taxNotes') %}
+          <div style="margin-top: 10px;">
+            <span class="pkg-sublabel">Tax &amp; Fee Notes</span>
+            {{ render_prose(item.get('taxNotes'), '') }}
+          </div>
+        {% endif %}
+        {% if not transport_types and not item.get('transportNotes') and not item.get('taxNotes') %}
+          <p class="muted">No specific transportation or tax notes provided.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    {# ====================================================================
+       8. BOOKING POLICIES, IMPORTANT NOTES & WHAT TO BRING
+       ==================================================================== #}
+    <section class="card" aria-label="Booking Policies and Terms">
+      <div class="pkg-section-head">
+        <h2>Booking Policies &amp; Traveller Notes</h2>
+      </div>
+
+      {% set has_policies = item.get('cancellationPolicy') or item.get('refundPolicy') or item.get('bookingTerms') or item.get('importantNotes') or what_to_bring %}
+      {% if has_policies %}
+        <div class="pkg-policy-stack">
+          {% if item.get('cancellationPolicy') %}
+            <div class="pkg-policy-item">
+              <h4>Cancellation Policy</h4>
+              {{ render_prose(item.get('cancellationPolicy'), '') }}
+            </div>
+          {% endif %}
+          {% if item.get('refundPolicy') %}
+            <div class="pkg-policy-item">
+              <h4>Refund Policy</h4>
+              {{ render_prose(item.get('refundPolicy'), '') }}
+            </div>
+          {% endif %}
+          {% if item.get('bookingTerms') %}
+            <div class="pkg-policy-item">
+              <h4>Booking Terms</h4>
+              {{ render_prose(item.get('bookingTerms'), '') }}
+            </div>
+          {% endif %}
+          {% if item.get('importantNotes') %}
+            <div class="pkg-policy-item">
+              <h4>Important Notes</h4>
+              {{ render_prose(item.get('importantNotes'), '') }}
+            </div>
+          {% endif %}
+          {% if what_to_bring %}
+            <div class="pkg-policy-item">
+              <h4>What to Bring ({{ what_to_bring|length }})</h4>
+              <ul class="pkg-bring-grid">
+                {% for bring_item in what_to_bring %}
+                  <li>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <polyline points="9 11 12 14 22 4"></polyline>
+                      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                    </svg>
+                    <span>{{ bring_item }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
         </div>
-        <div class="actions" style="margin-top: 12px;">
-          <button class="btn primary" name="decision" value="approved">{{ 'Approve package' if item.get('availabilityStatus') == 'unavailable' else 'Approve and publish' }}</button>
-          <button class="btn danger" name="decision" value="rejected">Request changes</button>
+      {% else %}
+        <div class="empty">No cancellation policies, booking terms, or packing advisories submitted.</div>
+      {% endif %}
+    </section>
+
+  </div>
+
+  {# ======================================================================
+     9 & 10. ADMINISTRATOR REVIEW SIDEBAR & MODERATION CONTROLS
+     ====================================================================== #}
+  <aside class="pkg-review-sidebar" aria-label="Administrator Review Sidebar">
+
+    <section class="card" aria-label="Package Status Breakdown">
+      <div class="pkg-section-head">
+        <h3>Moderation Status</h3>
+      </div>
+      <div class="pkg-sidebar-status-list">
+        <div class="pkg-sidebar-row">
+          <span>Approval State</span>
+          {% if state == 'approved' and is_unavailable %}
+            <strong>Approved (Unavailable)</strong>
+          {% elif state == 'approved' %}
+            <strong>Published</strong>
+          {% elif state == 'suspended' %}
+            <strong>Suspended</strong>
+          {% elif state in ['pending', 'submitted'] %}
+            <strong>Under review</strong>
+          {% elif state == 'rejected' %}
+            <strong>Needs changes</strong>
+          {% else %}
+            <strong>{{ state|title }}</strong>
+          {% endif %}
         </div>
-      </form>
-    {% elif item.get('reviewReason', item.get('reviewComment')) and state != 'suspended' %}
-      <section class="review-feedback">
-        <strong>Review feedback</strong>
-        <p>{{ item.get('reviewReason', item.get('reviewComment')) }}</p>
+        <div class="pkg-sidebar-row">
+          <span>Operator Availability</span>
+          <strong>{{ 'Unavailable' if is_unavailable else 'Available' }}</strong>
+        </div>
+        <div class="pkg-sidebar-row">
+          <span>Traveller Discovery</span>
+          {% if state == 'approved' and not is_unavailable %}
+            <strong>Publicly Visible</strong>
+          {% elif state == 'approved' and is_unavailable %}
+            <strong>Hidden (Unavailable)</strong>
+          {% elif state == 'suspended' %}
+            <strong>Hidden (Suspended)</strong>
+          {% elif state == 'rejected' %}
+            <strong>Hidden (Needs changes)</strong>
+          {% elif state == 'draft' %}
+            <strong>Hidden (Draft)</strong>
+          {% elif state == 'archived' %}
+            <strong>Hidden (Archived)</strong>
+          {% else %}
+            <strong>Hidden (Under review)</strong>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="card cream" aria-label="Operator Details">
+      <div class="pkg-section-head">
+        <h3>Operator Details</h3>
+      </div>
+      <div class="pkg-sidebar-status-list">
+        <div class="pkg-sidebar-row">
+          <span>Operator</span>
+          <strong>{{ item.get('operatorName') or 'Operator' }}</strong>
+        </div>
+        {% if item.get('operatorEmail') %}
+          <div class="pkg-sidebar-row">
+            <span>Contact Email</span>
+            <strong>{{ item.get('operatorEmail') }}</strong>
+          </div>
+        {% endif %}
+        {% if item.get('operatorId') %}
+          <div class="pkg-sidebar-row">
+            <span>Operator ID</span>
+            <strong><code>{{ item.get('operatorId') }}</code></strong>
+          </div>
+        {% endif %}
+        {% if item.get('createdAt') %}
+          <div class="pkg-sidebar-row">
+            <span>Created</span>
+            <strong>{{ item.get('createdAt')[:10] }}</strong>
+          </div>
+        {% endif %}
+        {% if item.get('updatedAt') %}
+          <div class="pkg-sidebar-row">
+            <span>Last Updated</span>
+            <strong>{{ item.get('updatedAt')[:10] }}</strong>
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    {% if state == 'suspended' %}
+      <section class="card pkg-suspension-card" aria-label="Suspension Alert">
+        <div class="pkg-section-head">
+          <h3>Package Suspended &amp; Unpublished</h3>
+        </div>
+        <p><strong>Reason:</strong> {{ item.get('suspensionReason', 'Compliance or policy violation') }}</p>
+        <p class="muted" style="margin-top: 8px;">
+          Suspended by {{ item.get('suspendedByName', 'Administrator') }}{% if item.get('suspendedAt') %} on {{ item.get('suspendedAt')[:10] }}{% endif %}.
+        </p>
       </section>
     {% endif %}
 
-    {% if state == 'approved' %}
-    <section class="card" style="border-left: 4px solid var(--danger);">
-      <span class="eyebrow" style="color: var(--danger);">ADMINISTRATIVE OVERRIDE</span>
-      <h3 style="margin: 2px 0 6px;">Administrative Actions</h3>
-      <p style="font-size: 13px; color: var(--ink-secondary); margin-bottom: 12px;">
-        Need to unpublish this package due to safety concerns, regulatory compliance, or operator policy violations?
-      </p>
-      <button class="btn danger" type="button" id="openSuspendModalBtn" aria-haspopup="dialog" aria-controls="suspendModal">
-        Suspend / Unpublish Package
-      </button>
-    </section>
+    {% set feedback_text = item.get('reviewReason') or item.get('reviewComment') %}
+    {% if item.get('reviewedAt') or item.get('suspensionResolvedAt') or feedback_text %}
+      <section class="card review-feedback" aria-label="Review Record">
+        <div class="pkg-section-head">
+          <h3>Review Audit &amp; Feedback</h3>
+        </div>
+        {% if item.get('reviewedAt') %}
+          <p class="muted" style="margin-bottom: 10px;">
+            {{ item.get('reviewedByName', 'Administrator') }} · {{ item.get('reviewedAt')[:10] }}
+          </p>
+        {% endif %}
+        {% if item.get('suspensionResolvedAt') %}
+          <div class="badge ok" style="display: block; margin-bottom: 10px; white-space: normal; line-height: 1.45;">
+            <strong>Suspension Resolved:</strong> Re-approved on {{ item.get('suspensionResolvedAt')[:10] }}{% if item.get('suspensionResolvedByName') %} by {{ item.get('suspensionResolvedByName') }}{% endif %}
+          </div>
+        {% endif %}
+        {% if feedback_text %}
+          <div>
+            <span class="pkg-sublabel">Latest Review Comment</span>
+            {{ render_prose(feedback_text, '', false) }}
+          </div>
+        {% endif %}
+      </section>
     {% endif %}
-  </div>
+
+    {% if state in ['pending', 'submitted'] %}
+      <form class="card review-decision" method="post" action="{{ url_for('admin_fr13.review_package', package_id=item.id) }}" id="moderationDecisionForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="pkg-section-head">
+          <h3>Moderation Decision</h3>
+        </div>
+
+        {% if is_unavailable %}
+          <div class="pkg-warning-callout">
+            <strong>Notice:</strong> This package will be approved but will remain hidden from travellers because its availability is currently set to Unavailable. The operator must activate availability before it can appear in public discovery.
+          </div>
+        {% endif %}
+
+        <label class="pkg-sublabel" for="reviewCommentInput">Administrator Comment</label>
+        <textarea id="reviewCommentInput" class="input" name="comment" placeholder="Required when requesting changes" rows="3"></textarea>
+
+        <div class="actions" style="margin-top: 12px;">
+          <button class="btn primary" type="submit" name="decision" value="approved">{{ 'Approve package' if is_unavailable else 'Approve and publish' }}</button>
+          <button class="btn danger" type="submit" name="decision" value="rejected">Request changes</button>
+        </div>
+      </form>
+    {% elif state == 'approved' %}
+      <section class="card review-decision" aria-label="Published Moderation Override">
+        <div class="pkg-section-head">
+          <h3>Moderation Override</h3>
+        </div>
+        <p class="muted" style="margin-bottom: 14px;">
+          If this package violates platform policies, contains inaccurate descriptions, or raises safety concerns, suspend and unpublish it immediately.
+        </p>
+        <button class="btn danger" type="button" id="openSuspendModalBtn" aria-haspopup="dialog" aria-controls="suspendModal" style="width: 100%; justify-content: center;">Suspend / Unpublish Package</button>
+      </section>
+    {% elif state == 'draft' %}
+      <section class="card" aria-label="Draft Status Notice">
+        <div class="pkg-section-head">
+          <h3>Operator Draft</h3>
+        </div>
+        <p class="muted">This package is currently saved as an operator draft and has not been submitted for moderation.</p>
+      </section>
+    {% elif state == 'archived' %}
+      <section class="card" aria-label="Archived Status Notice">
+        <div class="pkg-section-head">
+          <h3>Archived Package</h3>
+        </div>
+        <p class="muted">This package is archived and hidden from public traveller discovery.</p>
+      </section>
+    {% endif %}
+
+  </aside>
 </div>
 
 {% if state == 'approved' %}
-<!-- Suspend Modal Dialog -->
-<div id="suspendModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="suspendModalTitle" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); z-index: 1000; align-items: center; justify-content: center; padding: 20px;">
-  <div class="modal-dialog card" style="max-width: 560px; width: 100%; max-height: 90vh; overflow-y: auto; background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 24px; position: relative;">
-    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
-      <div>
-        <span class="eyebrow" style="color: var(--danger);">ADMINISTRATIVE OVERRIDE</span>
-        <h2 id="suspendModalTitle" style="margin: 4px 0 0; font-size: 18px; color: var(--ink);">Suspend &amp; Unpublish Package</h2>
-      </div>
-      <button type="button" id="closeSuspendModalBtn" class="btn outline" style="padding: 4px 8px; font-size: 14px;" aria-label="Close modal">&times;</button>
+<div id="suspendModal" class="pkg-modal-backdrop modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="suspendModalTitle" aria-hidden="true">
+  <div class="pkg-modal-dialog modal-dialog">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px;">
+      <h2 id="suspendModalTitle" style="margin: 0; font-size: 18px; color: var(--ink);">Suspend &amp; Unpublish Package</h2>
+      <button type="button" id="closeSuspendModalBtn" aria-label="Close modal" style="background: none; border: none; font-size: 20px; line-height: 1; cursor: pointer; color: var(--ink-muted); padding: 4px;">&times;</button>
     </div>
 
-    <div style="padding: 12px; background: var(--canvas); border-radius: var(--radius-sm); margin-bottom: 16px; border: 1px solid var(--border);">
-      <strong style="color: var(--ink); font-size: 14px;">{{ item.get('title', item.get('packageTitle', 'Package')) }}</strong>
-      <div style="font-size: 11px; color: var(--ink-muted); margin-top: 2px;">Package ID: <code>{{ item.id }}</code> · Operator: {{ item.get('operatorName', 'Tourism Operator') }}</div>
-    </div>
-
-    <div style="background: var(--warning-bg); border-left: 4px solid var(--warning); padding: 12px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 12.5px; line-height: 1.5; color: #78350F;">
-      <strong>Impact Notice:</strong>
-      <ul style="margin: 4px 0 0; padding-left: 18px;">
-        <li>Package will immediately be unpublished and removed from public traveller search/discovery.</li>
-        <li>New bookings and checkout sessions will be blocked immediately.</li>
-        <li>Existing paid bookings, confirmed itineraries, and traveller trips will <strong>NOT</strong> be cancelled or refunded automatically.</li>
-        <li>Operator can view the suspension notice, modify package details, and resubmit for Administrator review.</li>
-      </ul>
+    <div class="pkg-warning-callout">
+      <strong>Impact Notice:</strong> Suspending this package will immediately remove it from public traveller discovery and block new bookings. Existing paid bookings, confirmed itineraries, and traveller trips will <strong>NOT</strong> be cancelled.
     </div>
 
     <form method="post" action="{{ url_for('admin_fr13.suspend_package', package_id=item.id) }}" id="suspendPackageForm">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-      <div class="field" style="margin-bottom: 16px;">
-        <label for="suspensionReasonInput" style="display: flex; justify-content: space-between; font-weight: 600;">
-          <span>Reason for Suspension (required)</span>
-          <span id="suspendCharCounter" style="font-weight: 400; font-size: 12px; color: var(--ink-muted);">0 / 500 characters (min 10)</span>
-        </label>
-        <textarea id="suspensionReasonInput" name="reason" class="input" style="min-height: 100px; width: 100%; resize: vertical;" minlength="10" maxlength="500" required placeholder="Detail the safety, regulatory, policy violation, or misleading content issue that requires suspension..."></textarea>
+      <div style="margin-bottom: 16px;">
+        <label class="pkg-sublabel" for="suspensionReasonInput">Suspension Reason <span style="color: var(--danger);">*</span></label>
+        <textarea id="suspensionReasonInput" name="reason" class="input" rows="4" placeholder="Enter a clear policy or compliance reason (10 to 500 characters)..." minlength="10" maxlength="500" required style="width: 100%; resize: vertical;"></textarea>
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-muted); margin-top: 6px;">
+          <span>Minimum 10 characters. Visible to the operator for resolution.</span>
+          <span id="suspendCharCounter">0 / 500</span>
+        </div>
       </div>
 
       <div style="margin-bottom: 20px;">
-        <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
-          <input type="checkbox" id="suspendConfirmCheckbox" style="margin-top: 3px;">
-          <span>I confirm this action will immediately unpublish this package from TravelMate and make the suspension notice visible in the Operator Portal.</span>
+        <label style="display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: var(--ink); cursor: pointer;">
+          <input type="checkbox" id="suspendConfirmCheckbox" style="margin-top: 3px; width: 16px; height: 16px;">
+          <span>I confirm that this package should be suspended and unpublished immediately from public discovery.</span>
         </label>
       </div>
 
-      <div class="actions" style="justify-content: flex-end; gap: 10px;">
-        <button type="button" id="cancelSuspendModalBtn" class="btn outline">Cancel</button>
-        <button type="submit" id="confirmSuspendSubmitBtn" class="btn danger" disabled>
-          <span>Confirm Suspension</span>
-        </button>
+      <div style="display: flex; justify-content: flex-end; gap: 12px;">
+        <button type="button" class="btn secondary" id="cancelSuspendModalBtn">Cancel</button>
+        <button type="submit" class="btn danger" id="confirmSuspendSubmitBtn" disabled>Confirm Suspension</button>
       </div>
     </form>
   </div>
 </div>
-
-<script>
-(function() {
-  const modal = document.getElementById('suspendModal');
-  const openBtn = document.getElementById('openSuspendModalBtn');
-  const closeBtn = document.getElementById('closeSuspendModalBtn');
-  const cancelBtn = document.getElementById('cancelSuspendModalBtn');
-  const form = document.getElementById('suspendPackageForm');
-  const reasonInput = document.getElementById('suspensionReasonInput');
-  const counter = document.getElementById('suspendCharCounter');
-  const checkbox = document.getElementById('suspendConfirmCheckbox');
-  const submitBtn = document.getElementById('confirmSuspendSubmitBtn');
-
-  function openModal() {
-    if (modal) {
-      modal.style.display = 'flex';
-      if (reasonInput) reasonInput.focus();
-    }
-  }
-
-  function closeModal() {
-    if (modal) {
-      modal.style.display = 'none';
-      if (openBtn) openBtn.focus();
-    }
-  }
-
-  function validate() {
-    const len = reasonInput ? reasonInput.value.trim().length : 0;
-    if (counter) {
-      counter.textContent = `${len} / 500 characters (min 10)`;
-      counter.style.color = (len >= 10 && len <= 500) ? 'var(--success)' : 'var(--danger)';
-    }
-    const isValid = len >= 10 && len <= 500 && checkbox && checkbox.checked;
-    if (submitBtn) {
-      submitBtn.disabled = !isValid;
-    }
-  }
-
-  if (openBtn) openBtn.addEventListener('click', openModal);
-  if (closeBtn) closeBtn.addEventListener('click', closeModal);
-  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
-
-  if (modal) {
-    modal.addEventListener('click', function(e) {
-      if (e.target === modal) closeModal();
-    });
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape' && modal.style.display === 'flex') closeModal();
-    });
-  }
-
-  if (reasonInput) {
-    reasonInput.addEventListener('input', validate);
-  }
-  if (checkbox) {
-    checkbox.addEventListener('change', validate);
-  }
-
-  if (form) {
-    form.addEventListener('submit', function(e) {
-      const len = reasonInput ? reasonInput.value.trim().length : 0;
-      if (len < 10 || len > 500 || !checkbox || !checkbox.checked) {
-        e.preventDefault();
-        return;
-      }
-      if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Suspending...';
-      }
-    });
-  }
-})();
-</script>
 {% endif %}
 
 <script>
-document.querySelector('.review-decision')?.addEventListener('submit', e => {
-  const reason = e.currentTarget.querySelector('[name=comment]');
-  reason.required = e.submitter?.value === 'rejected';
-  if (reason.required && !reason.value.trim()) {
-    e.preventDefault();
-    reason.reportValidity();
+document.addEventListener('DOMContentLoaded', function () {
+  // Progressive expand/collapse for lengthy operator prose blocks
+  document.querySelectorAll('[data-pkg-toggle]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var container = btn.closest('[data-pkg-collapsible]');
+      if (!container) return;
+      var collapsed = container.classList.toggle('is-collapsed');
+      btn.setAttribute('aria-expanded', String(!collapsed));
+      btn.textContent = collapsed
+        ? (btn.dataset.labelExpand || 'Show full details')
+        : (btn.dataset.labelCollapse || 'Show fewer details');
+    });
+  });
+
+  // Catch images that failed before DOMContentLoaded attached error listeners
+  document.querySelectorAll('[data-pkg-img]').forEach(function (img) {
+    if (img.complete && img.naturalWidth === 0 && img.parentElement) {
+      img.parentElement.classList.add('is-broken');
+    }
+  });
+
+  // Pending moderation: require explanation comment when requesting changes
+  var decisionForm = document.getElementById('moderationDecisionForm');
+  var commentInput = document.getElementById('reviewCommentInput');
+  if (decisionForm && commentInput) {
+    decisionForm.addEventListener('submit', function (e) {
+      var submitter = e.submitter;
+      if (submitter && submitter.value === 'rejected') {
+        if (!commentInput.value || !commentInput.value.trim()) {
+          e.preventDefault();
+          commentInput.focus();
+          commentInput.setCustomValidity('Please provide feedback explaining the requested changes.');
+          commentInput.reportValidity();
+        } else {
+          commentInput.setCustomValidity('');
+        }
+      } else {
+        commentInput.setCustomValidity('');
+      }
+    });
+    commentInput.addEventListener('input', function () {
+      commentInput.setCustomValidity('');
+    });
+  }
+
+  // Approved override: accessible Suspend / Unpublish modal controls
+  var openBtn = document.getElementById('openSuspendModalBtn');
+  var modal = document.getElementById('suspendModal');
+  if (openBtn && modal) {
+    var closeBtn = document.getElementById('closeSuspendModalBtn');
+    var cancelBtn = document.getElementById('cancelSuspendModalBtn');
+    var reasonInput = document.getElementById('suspensionReasonInput');
+    var charCounter = document.getElementById('suspendCharCounter');
+    var confirmBox = document.getElementById('suspendConfirmCheckbox');
+    var submitBtn = document.getElementById('confirmSuspendSubmitBtn');
+    var suspendForm = document.getElementById('suspendPackageForm');
+
+    var validateSuspend = function () {
+      var len = reasonInput ? reasonInput.value.trim().length : 0;
+      if (charCounter) {
+        charCounter.textContent = (reasonInput ? reasonInput.value.length : 0) + ' / 500';
+      }
+      if (submitBtn) {
+        submitBtn.disabled = !(len >= 10 && len <= 500 && confirmBox && confirmBox.checked);
+      }
+    };
+
+    var openModal = function () {
+      modal.style.display = 'flex';
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      validateSuspend();
+      if (reasonInput) reasonInput.focus();
+    };
+
+    var closeModal = function () {
+      modal.style.display = 'none';
+      modal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+      openBtn.focus();
+    };
+
+    openBtn.addEventListener('click', openModal);
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal.style.display === 'flex') closeModal();
+    });
+    if (reasonInput) reasonInput.addEventListener('input', validateSuspend);
+    if (confirmBox) confirmBox.addEventListener('change', validateSuspend);
+    if (suspendForm) {
+      suspendForm.addEventListener('submit', function (e) {
+        if (submitBtn && submitBtn.disabled) {
+          e.preventDefault();
+          return;
+        }
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Suspending...';
+        }
+      });
+    }
   }
 });
 </script>

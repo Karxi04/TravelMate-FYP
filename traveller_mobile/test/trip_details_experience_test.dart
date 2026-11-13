@@ -461,8 +461,8 @@ void main() {
     await _pumpTrip(tester, api);
     await _show(tester, find.byKey(const ValueKey('trip-budget-progress')));
     expect(find.text('Known estimated subtotal: RM 770.00'), findsOneWidget);
-    await _show(tester, find.text('View details'));
-    await tester.tap(find.text('View details'));
+    await _show(tester, find.text('Budget details'));
+    await tester.tap(find.text('Budget details'));
     await tester.pumpAndSettle();
     expect(find.byType(BudgetComparisonScreen), findsOneWidget);
     expect(find.text('Known estimated subtotal: RM 770.00'), findsOneWidget);
@@ -478,8 +478,8 @@ void main() {
   testWidgets('budget response error stays on the trip with retryable message', (tester) async {
     final api = _TripApi()..budgetUnavailable = true;
     await _pumpTrip(tester, api);
-    await _show(tester, find.text('View details'));
-    await tester.tap(find.text('View details'));
+    await _show(tester, find.text('Budget details'));
+    await tester.tap(find.text('Budget details'));
     await tester.pumpAndSettle();
     expect(find.byType(BudgetComparisonScreen), findsNothing);
     expect(find.textContaining('Budget details are unavailable'), findsOneWidget);

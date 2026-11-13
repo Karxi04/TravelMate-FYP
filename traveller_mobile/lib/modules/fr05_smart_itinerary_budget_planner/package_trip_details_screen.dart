@@ -5,6 +5,7 @@ import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
+import 'packing_checklist_screen.dart';
 
 class PackageActivityItem {
   final String name;
@@ -534,6 +535,24 @@ class _PackageTripDetailsScreenState extends State<PackageTripDetailsScreen> {
             ),
             const SizedBox(height: 16),
           ],
+
+          SecondaryButton(
+            label: 'Smart Packing Checklist',
+            icon: Icons.checklist_rounded,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PackingChecklistScreen(
+                  tripId: widget.tripId,
+                  tripTitle: title,
+                  destination: (trip!['destinationArea'] ?? snap['destination'] ?? '').toString(),
+                  durationDays: totalDays,
+                  api: api,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
 
           // 4. Day-by-Day Itinerary Section
           _buildItinerarySection(totalDays),

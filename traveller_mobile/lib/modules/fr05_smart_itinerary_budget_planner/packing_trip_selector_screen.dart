@@ -74,7 +74,7 @@ class _PackingTripSelectorScreenState extends State<PackingTripSelectorScreen> {
     final tripId = (trip['id'] ?? trip['tripId'] ?? '').toString();
     final title = (trip['title'] ?? 'Trip').toString();
     final dest = (trip['destinationArea'] ?? trip['destination'] ?? '').toString();
-    final duration = trip['durationDays'] as int?;
+    final duration = int.tryParse('${trip['durationDays'] ?? trip['tripDays'] ?? ''}');
 
     Navigator.push(
       context,

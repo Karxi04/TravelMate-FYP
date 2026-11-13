@@ -4,7 +4,7 @@ import json
 import math
 import re
 from copy import deepcopy
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 CATEGORIES = [
     {'id': 'documents', 'name': 'Travel Documents'},
@@ -18,6 +18,8 @@ CATEGORIES = [
 CATEGORY_IDS = {category['id'] for category in CATEGORIES}
 MAX_ITEMS = 100
 RULE_VERSION = 1
+FORECAST_DAYS = 7
+MYT = timezone(timedelta(hours=8))
 
 
 class PackingError(Exception):
@@ -64,7 +66,8 @@ def weather_context(trip, now):
     context = _object(trip.get('generationContext'))
     forecast = _object(context.get('forecastData'))
     unavailable = {'status': 'unavailable', 'source': None, 'dates': [],
-                   'message': 'Current trip weather is unavailable; weather items are general precautions.'}
+                   'message': trip.get('_packingWeatherMessage') or
+                   'Current trip weather is unavailable; weather items are general precautions.'}
     source = forecast.get('source')
     if not isinstance(source, str) or source not in {'open-meteo', 'open_meteo'} or forecast.get('unavailable'):
         return unavailable, {}
@@ -83,6 +86,7 @@ def weather_context(trip, now):
     start, end = _date(trip.get('startDate')), _date(trip.get('endDate'))
     if not start or not end or end < start or (end - start).days > 365:
         return unavailable, {}
+    today = now.astimezone(MYT).date()
     daily = _object(forecast.get('daily'))
     dates = daily.get('time')
     if not isinstance(dates, list):
@@ -90,7 +94,7 @@ def weather_context(trip, now):
     usable = {}
     for index, raw in enumerate(dates[:16]):
         day = _date(raw)
-        if not day or not max(start, now.date()) <= day <= end:
+        if not day or not max(start, today) <= day <= end:
             continue
         row = {}
         for key, bounds in [('weather_code', (0, 99)), ('precipitation_probability_max', (0, 100)),
@@ -106,7 +110,8 @@ def weather_context(trip, now):
     all_days = (end - start).days + 1
     return {'status': 'available' if len(usable) == all_days else 'partial', 'source': source,
             'fetchedAt': stamp.isoformat(), 'dates': sorted(usable),
-            'message': 'Weather suggestions use only the listed covered dates.'}, usable
+            'message': ('Weather suggestions use only the covered trip dates. Other days are outside the available forecast.'
+                        if len(usable) < all_days else 'Weather suggestions use the covered trip dates.')}, usable
 
 
 def suggestions(trip, preferences, now):
@@ -120,8 +125,15 @@ def suggestions(trip, preferences, now):
     for day in trip.get('dailySchedule', []) if isinstance(trip.get('dailySchedule'), list) else []:
         if isinstance(day, dict) and isinstance(day.get('activities'), list):
             activities.extend(row for row in day['activities'] if isinstance(row, dict))
-    text = ' '.join(str(row.get(k) or '')[:300] for row in activities[:500]
-                    for k in ('activityName', 'title', 'name', 'category', 'type')).lower()
+    snapshot = _object(trip.get('packageSnapshot'))
+    days_in_snapshot = snapshot.get('itineraryDays')
+    if isinstance(days_in_snapshot, list):
+        for day in days_in_snapshot:
+            if isinstance(day, dict) and isinstance(day.get('activities'), list):
+                activities.extend(row for row in day['activities'] if isinstance(row, (dict, str)))
+    text = ' '.join((row[:300] if isinstance(row, str) else ' '.join(
+        str(row.get(key) or '')[:300] for key in ('activityName', 'title', 'name', 'category', 'type')
+    )) for row in activities[:500]).lower()
     pref = _object(preferences)
     interests = pref.get('interests')
     preference_text = ' '.join(str(x)[:100] for x in interests[:30]).lower() if isinstance(interests, list) else ''
@@ -181,7 +193,7 @@ def suggestions(trip, preferences, now):
     if themes and any(r.get('weather_code') in (0, 1) for r in rows.values()):
         add('sun_hat', 'Sun hat', 'weather', source='weather', reason='Sunny conditions are forecast; useful for outdoor activities.')
         add('sunscreen', 'Sunscreen', 'weather', source='weather', reason='Sunny conditions are forecast; useful for outdoor activities.')
-    context = {'destination': str(trip.get('destinationArea') or trip.get('destinationName') or '')[:160],
+    context = {'destination': str(trip.get('destinationArea') or trip.get('destinationName') or snapshot.get('destination') or '')[:160],
                'startDate': start.isoformat() if start else None, 'endDate': end.isoformat() if end else None,
                'durationDays': days, 'international': international}
     fingerprint = hashlib.sha256(json.dumps([RULE_VERSION, context, list(items.values()), weather],

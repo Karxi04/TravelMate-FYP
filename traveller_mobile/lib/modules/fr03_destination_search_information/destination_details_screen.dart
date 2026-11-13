@@ -41,6 +41,8 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   bool get saved => favourites.contains(destinationId);
   void _favouritesChanged() { if (mounted) setState(() {}); }
   bool showAllReviews = false;
+  bool communityReviews = false;
+  bool hasPrivateReviewPreview = false;
   bool detailsFailed = false;
   bool reviewsFailed = false;
   bool nearbyFailed = false;
@@ -133,14 +135,18 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     try {
       final reviewId = Uri.encodeComponent(reviewDestinationId);
       final reviewOwner = LocalReviewRatings.accountUid;
-      final data = await api.get('/api/fr3/destinations/$reviewId/ratings-reviews');
+      final path = '/api/fr3/destinations/$reviewId/ratings-reviews';
+      final data = communityReviews
+          ? await api.get(path, {'view': 'community'})
+          : await api.get(path);
       if (!mounted || reviewOwner != LocalReviewRatings.accountUid) return;
       reviewInfo = data['result'] is Map
           ? Map<String, dynamic>.from(data['result'] as Map)
           : null;
       if (reviewInfo == null) {
         reviewsFailed = true;
-      } else {
+      } else if (!communityReviews) {
+        hasPrivateReviewPreview = reviewInfo!['fypPreview'] == true;
         LocalReviewRatings.remember(reviewDestinationId, reviewInfo!);
       }
     } catch (_) {
@@ -703,7 +709,17 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             padding: const EdgeInsets.only(top: AppSpacing.xs),
             child: LocalReviewRatingBadge(summary: reviewInfo!),
           ),
-        if (privatePreview) const Text('Fictional reviews for the private FYP demonstration.'),
+        if (privatePreview)
+          const Text('Fictional reviews for the private FYP demonstration.'),
+        if (privatePreview || (communityReviews && hasPrivateReviewPreview))
+          TertiaryButton(
+            label: communityReviews ? 'Back to private FYP preview' : 'View community reviews',
+            onPressed: loading ? null : () {
+              communityReviews = !communityReviews;
+              showAllReviews = false;
+              loadDetails();
+            },
+          ),
         const SizedBox(height: AppSpacing.sm),
         if (reviewsFailed)
           AppErrorState(
