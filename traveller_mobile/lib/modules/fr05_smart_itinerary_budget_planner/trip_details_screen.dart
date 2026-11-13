@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../widgets/local_place_rating.dart';
 import 'alternative_screen.dart';
 import 'budget_comparison_screen.dart';
-import 'budget_breakdown.dart';
 import 'trip_expenses_screen.dart';
 import 'flight_adjustment_preview_sheet.dart';
 import 'activity_payload_helper.dart';
@@ -60,6 +59,35 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   bool editingItinerary = false;
   int selectedDay = 1;
   String? loadError;
+  Map<String, dynamic>? expenseSnapshot;
+  int _expenseLoad = 0;
+  bool _expenseFailed = false;
+
+  void _showExpenseSnapshot(Map<String, dynamic> snapshot) {
+    if (!mounted || snapshot['overview'] is! Map) return;
+    ++_expenseLoad;
+    setState(() {
+      expenseSnapshot = snapshot;
+      _expenseFailed = false;
+    });
+  }
+
+  Future<void> _loadExpenseSummary() async {
+    if (api.isStandalone) return;
+    final version = ++_expenseLoad;
+    try {
+      final response = await api.get('/api/fr5/itineraries/${widget.tripId}/expenses');
+      if (!mounted || version != _expenseLoad) return;
+      if (response is! Map || response['overview'] is! Map) {
+        throw StateError('Expense summary is unavailable');
+      }
+      _showExpenseSnapshot(Map<String, dynamic>.from(response));
+    } catch (_) {
+      if (mounted && version == _expenseLoad) {
+        setState(() => _expenseFailed = true);
+      }
+    }
+  }
 
   Future<void> load() async {
     if (mounted) {
@@ -88,6 +116,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           selectedDay = selectedDay.clamp(1, _tripDays(found));
         }
       });
+      if (found != null && found['packageTrip'] != true && found['tripType'] != 'package') {
+        unawaited(_loadExpenseSummary());
+      }
     } catch (_) {
       if (mounted) {
         setState(() => loadError = 'We could not load this trip right now.');
@@ -2235,16 +2266,69 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           : <String, dynamic>{},
       fallbackLimit: double.tryParse('${t['budgetLimit']}') ?? 0,
     );
+    final expenses = expenseSnapshot?['overview'] as Map?;
+    final rows = (expenseSnapshot?['expenses'] as List? ?? const [])
+        .whereType<Map>().toList()
+      ..sort((a, b) => '${b['updatedAt'] ?? b['createdAt'] ?? ''}'
+          .compareTo('${a['updatedAt'] ?? a['createdAt'] ?? ''}'));
+    final limit = (expenses?['budgetLimitMinor'] as num?)?.toDouble() ??
+        budget.budgetLimit * 100;
+    final planned = expenses?['plannedMinor'] as num?;
+    final actual = expenses?['actualMinor'] as num?;
+    final verified = expenses?['verifiedMinor'] as num?;
+    final hotel = expenses?['committedHotelMinor'] as num?;
+    final balance = expenses?['balanceAfterRecordedActualMinor'] as num?;
+    final known = budget.knownSubtotal ?? budget.authoritativeTotal;
+    final estimate = (expenses?['systemEstimateMinor'] as num?) ??
+        (known == null ? null : known * 100);
+    final over = limit > 0 && [estimate, planned, actual, verified, hotel]
+        .whereType<num>().any((value) => value > limit);
+    final within = budget.isComplete && !_expenseFailed &&
+        (api.isStandalone || (planned == 0 && actual == 0 && verified == 0 && hotel == 0));
+    final status = limit <= 0 ? 'Budget not set' : over ? 'Over budget'
+        : within ? 'Within recorded budget' : null;
+    String money(num? minor) => minor == null ? 'Unavailable' : 'MYR ${(minor / 100).toStringAsFixed(2)}';
+    Widget amount(String label, num? minor) => Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xs),
+      child: Text('$label · ${money(minor)}'),
+    );
     return InkCard(
       key: const ValueKey('trip-budget-progress'),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(
-            child: Text('Trip budget',
-                style: Theme.of(context).textTheme.titleLarge),
+        Text('Trip budget', style: Theme.of(context).textTheme.titleLarge),
+        if (status != null)
+          StatusChip(text: status, tone: over ? AppStatusTone.warning : AppStatusTone.neutral),
+        amount('Total budget', limit > 0 ? limit : null),
+        amount('Known estimated cost', estimate),
+        if (!api.isStandalone) ...[
+          amount('Planned expenses', planned),
+          amount('Recorded actual expenses', actual),
+          if (verified != null && verified > 0) amount('Verified payments', verified),
+          if (hotel != null && hotel > 0) amount('Confirmed hotel cost', hotel),
+          if (balance != null) amount('Remaining after recorded actuals only', balance),
+          if (_expenseFailed) const Text('Expense summary could not be refreshed.'),
+          if (rows.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            const Text('Recent expenses'),
+            for (final row in rows.take(3))
+              Text('${row['name']} · ${row['type'] == 'actual' ? 'Actual' : 'Planned'} · ${money(row['amountMinor'] as num?)}'),
+          ],
+        ],
+        if (!budget.isComplete) const Text('Some costs are unpriced or outside this estimate.'),
+        if (planned != null || actual != null)
+          const Text('Estimates, recorded expenses and payments may overlap.'),
+        const SizedBox(height: AppSpacing.sm),
+        if (!api.isStandalone)
+          SecondaryButton(
+            label: 'Manage trip expenses',
+            icon: Icons.receipt_long_outlined,
+            onPressed: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(builder: (_) => TripExpensesScreen(
+                tripId: widget.tripId, api: api, onChanged: _showExpenseSnapshot,
+              )),
+            ),
           ),
-          TertiaryButton(label: 'Budget details', onPressed: showBudget),
-        ]),
         if (!api.isStandalone)
           SecondaryButton(
             label: 'Lower-Cost Alternatives',
@@ -2254,7 +2338,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               await Navigator.push<void>(
                 context,
                 MaterialPageRoute(builder: (_) => AlternativeScreen(
-                  budget: budget, userBudget: budget.budgetLimit,
+                  budget: budget, userBudget: limit / 100,
                   tripId: widget.tripId, api: api,
                   onApplied: (updated) {
                     applied = true;
@@ -2265,19 +2349,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               if (mounted && applied) await load();
             },
           ),
-        BudgetBreakdown(budget: budget, limit: budget.budgetLimit),
-        if (!api.isStandalone)
-          SecondaryButton(
-            label: 'Manage trip expenses',
-            icon: Icons.receipt_long_outlined,
-            onPressed: () async {
-              await Navigator.push<void>(
-                context,
-                MaterialPageRoute(builder: (_) => TripExpensesScreen(tripId: widget.tripId, api: api)),
-              );
-              if (mounted) await load();
-            },
-          ),
+        TertiaryButton(label: 'Budget details', onPressed: showBudget),
       ]),
     );
   }

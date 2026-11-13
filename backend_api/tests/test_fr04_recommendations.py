@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from modules.fr04_hybrid_recommendation.routes import (
     _filter_for_destination,
+    _page,
     _provider_destinations,
 )
 from services.malaysian_locality import (
@@ -11,6 +12,24 @@ from services.malaysian_locality import (
 )
 from services.serpapi_service import retrieveDestinationResults
 from services.recommendation_taxonomy import concepts_for
+from modules.fr05_smart_itinerary_budget_planner.routes import _destination_candidates
+
+
+def test_planning_excludes_glazing_supplier_before_pagination_and_generation():
+    rows = [
+        {'title': 'GE GLASS & ALUMINIUM', 'address': 'George Town, Penang', 'finalScore': 95},
+        {'title': 'Penang Heritage Museum', 'category': 'Museum',
+         'address': 'George Town, Penang', 'finalScore': 81},
+    ]
+    snapshot = {'recommendationResults': rows, 'requestedDestination': 'Penang'}
+    ordinary = _page(snapshot, {'limit': 1})
+    planning = _page(snapshot, {'limit': 1, 'purpose': 'trip_planning'})
+    assert ordinary['recommendationResults'][0]['title'] == 'GE GLASS & ALUMINIUM'
+    assert planning['pagination']['qualifiedCount'] == 1
+    assert planning['recommendationResults'][0]['finalScore'] == 81
+    generated, _ = _destination_candidates({'destinationArea': 'Penang'}, snapshot)
+    assert [item['title'] for item in generated] == ['Penang Heritage Museum']
+    assert snapshot['recommendationResults'] == rows
 from sequence_contract.domain_functions import (
     applyCollaborativeFiltering,
     applyContentBasedFiltering,

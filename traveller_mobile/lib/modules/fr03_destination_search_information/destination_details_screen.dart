@@ -41,10 +41,6 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   bool get saved => favourites.contains(destinationId);
   void _favouritesChanged() { if (mounted) setState(() {}); }
   bool showAllReviews = false;
-  bool communityReviews = false;
-  bool hasPrivateReviewPreview = false;
-  bool hasLocalSampleReviews = false;
-  bool sampleReviews = false;
   int _loadRevision = 0;
   bool detailsFailed = false;
   bool reviewsFailed = false;
@@ -145,24 +141,15 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     try {
       final reviewId = Uri.encodeComponent(reviewDestinationId);
       final path = '/api/fr3/destinations/$reviewId/ratings-reviews';
-      final data = sampleReviews
-          ? await api.get(path, {'view': 'samples'})
-          : communityReviews
-              ? await api.get(path, {'view': 'community'})
-              : await api.get(path);
+      final data = await api.get(path, {'view': 'unified'});
       if (!current()) return;
-      hasLocalSampleReviews = data['sampleReviewsAvailable'] == true;
       reviewInfo = data['result'] is Map
           ? Map<String, dynamic>.from(data['result'] as Map)
           : null;
       if (reviewInfo == null) {
         reviewsFailed = true;
-      } else {
-        final preview = reviewInfo!['fypPreview'] == true;
-        if (!hasLocalSampleReviews && preview) hasPrivateReviewPreview = true;
-        if (!preview && !communityReviews && !sampleReviews) {
-          LocalReviewRatings.remember(reviewDestinationId, reviewInfo!);
-        }
+      } else if (reviewInfo!['fypPreview'] != true) {
+        LocalReviewRatings.remember(reviewDestinationId, reviewInfo!);
       }
     } catch (_) {
       if (!current()) return;
@@ -662,7 +649,12 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     final body = _text(
       review['description'] ?? review['text'] ?? review['snippet'],
     );
-    final date = _text(review['date'] ?? review['relative_date']);
+    final rawDate = _text(review['date'] ?? review['relative_date']);
+    final calendarDate = DateTime.tryParse(rawDate.split('T').first);
+    final date = calendarDate == null
+        ? rawDate
+        : MaterialLocalizations.of(context).formatShortDate(calendarDate);
+    final sample = review['source'] == 'sample' || reviewInfo?['fypPreview'] == true;
     final reviewRating = num.tryParse('${review['rating'] ?? ''}');
     return InkCard(
       child: Column(
@@ -680,6 +672,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(author, style: Theme.of(context).textTheme.titleSmall),
+                    if (sample) const Text('Sample review'),
                     if (date.isNotEmpty)
                       Text(
                         date,
@@ -714,41 +707,25 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   Widget _reviewsSection() {
     final reviews = _reviews();
     final visible = showAllReviews ? reviews : reviews.take(3).toList();
-    final privatePreview = reviewInfo?['fypPreview'] == true;
+    final sampleSummary = reviewInfo?['sampleSummary'];
+    final legacySample = reviewInfo?['fypPreview'] == true;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AppSectionHeader(
-          title: 'Local Reviews',
-          subtitle: reviewInfo?['rating'] == null ? 'TravelMate community reviews' : null,
-        ),
-        if (reviewInfo?['rating'] != null)
-          Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.xs),
-            child: LocalReviewRatingBadge(summary: reviewInfo!),
-          ),
-        if (privatePreview)
-          Text(hasLocalSampleReviews
-              ? 'FYP sample reviews · fictional demonstration content'
-              : 'Fictional reviews for the private FYP demonstration.'),
-        if (hasLocalSampleReviews || sampleReviews)
-          TertiaryButton(
-            label: sampleReviews ? 'View community reviews' : 'View FYP sample reviews',
-            onPressed: loading ? null : () {
-              sampleReviews = !sampleReviews;
-              showAllReviews = false;
-              loadDetails();
-            },
-          )
-        else if (privatePreview || (communityReviews && hasPrivateReviewPreview))
-          TertiaryButton(
-            label: communityReviews ? 'Back to private FYP preview' : 'View community reviews',
-            onPressed: loading ? null : () {
-              communityReviews = !communityReviews;
-              showAllReviews = false;
-              loadDetails();
-            },
-          ),
+        const AppSectionHeader(title: 'Local Reviews'),
+        if (reviewInfo?['rating'] != null && !legacySample) ...[
+          const Text('Community reviews'),
+          LocalReviewRatingBadge(summary: reviewInfo!),
+        ] else if (!reviewsFailed)
+          const Text('No community reviews yet.'),
+        if (sampleSummary is Map && sampleSummary['rating'] != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          const Text('Demonstration reviews'),
+          LocalReviewRatingBadge(summary: Map<String, dynamic>.from(sampleSummary)),
+        ] else if (legacySample) ...[
+          const Text('Demonstration reviews'),
+          LocalReviewRatingBadge(summary: reviewInfo!),
+        ],
         const SizedBox(height: AppSpacing.sm),
         if (reviewsFailed)
           AppErrorState(
@@ -782,7 +759,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             ),
         ],
         const SizedBox(height: AppSpacing.xs),
-        if (!privatePreview && !sampleReviews) SecondaryButton(
+        if (!legacySample) SecondaryButton(
           label: 'Write a review',
           icon: Icons.rate_review_outlined,
           onPressed: () async { await Navigator.push(

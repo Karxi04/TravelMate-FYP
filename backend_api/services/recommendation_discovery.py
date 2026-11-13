@@ -32,6 +32,25 @@ _EVIDENCE_BY_ALIAS = {alias: (category, description, concepts, url)
                       for aliases, category, description, concepts, url in _PENANG_EVIDENCE for alias in aliases}
 _GENERIC_CATEGORY = {'', 'attraction', 'tourist attraction', 'point of interest', 'establishment', 'place'}
 
+_NON_VISITOR_CATEGORY = re.compile(
+    r'\b(?:manufacturer|manufacturing|wholesaler|industrial supplier|building materials|'
+    r'glass supplier|glass shop|aluminium supplier|aluminum supplier|contractor|corporate office)\b'
+)
+_GLAZING_TRADE_NAME = re.compile(r'\bglass (?:and )?(?:aluminium|aluminum)\b')
+
+
+def is_planning_candidate(item):
+    """Reject specific trade evidence without excluding visitor-facing shops or food."""
+    types = item.get('types')
+    categories = [item.get('category'), item.get('type'),
+                  *(types if isinstance(types, (list, tuple)) else [types])]
+    if any(_NON_VISITOR_CATEGORY.search(normalize_phrase(value)) for value in categories if value):
+        return False
+    title = normalize_phrase(item.get('title') or item.get('name'))
+    return not _GLAZING_TRADE_NAME.search(title) or any(
+        term in title.split() for term in ('museum', 'gallery', 'workshop')
+    )
+
 
 def enrich_discovery_candidate(item):
     """Keep provider fields intact and attach separately sourced scoring evidence."""

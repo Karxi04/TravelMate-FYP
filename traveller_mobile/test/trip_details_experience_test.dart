@@ -443,10 +443,10 @@ void main() {
     await _pumpTrip(tester, _TripApi());
 
     await _show(tester, find.byKey(const ValueKey('trip-budget-progress')));
-    expect(find.text('Known estimated subtotal: RM 720.00'), findsOneWidget);
-    expect(find.text('Incomplete estimate'), findsOneWidget);
-    expect(find.text('RM 290.00'), findsOneWidget);
-    expect(find.text('RM 160.00'), findsOneWidget);
+    expect(find.text('Known estimated cost · MYR 720.00'), findsOneWidget);
+    expect(find.text('Incomplete estimate'), findsNothing);
+    expect(find.text('Some costs are unpriced or outside this estimate.'), findsOneWidget);
+    expect(find.text('Within recorded budget'), findsNothing);
     expect(find.textContaining('confirmed ·'), findsNothing);
 
     await _show(tester, find.text('Couldn’t fit into your schedule'));
@@ -476,7 +476,7 @@ void main() {
     budget.addAll({'totalEstimatedCost': 770, 'total': 770, 'carRental': 50});
     await _pumpTrip(tester, api);
     await _show(tester, find.byKey(const ValueKey('trip-budget-progress')));
-    expect(find.text('Known estimated subtotal: RM 770.00'), findsOneWidget);
+    expect(find.text('Known estimated cost · MYR 770.00'), findsOneWidget);
     await _show(tester, find.text('Budget details'));
     await tester.tap(find.text('Budget details'));
     await tester.pumpAndSettle();

@@ -189,18 +189,25 @@ class _PersonalizedPlanningScreenState
     TextEditingController controller,
     String field,
   ) async {
-    final initial = DateTime.tryParse(controller.text) ??
-        DateTime.now().add(const Duration(days: 30));
+    final now = DateUtils.dateOnly(DateTime.now());
+    final earliest = now.subtract(const Duration(days: 1));
+    final start = DateTime.tryParse(startDate.text);
+    final first = field == 'endDate' && start != null && start.isAfter(earliest)
+        ? start
+        : earliest;
+    final last = now.add(const Duration(days: 730));
+    final current = DateTime.tryParse(controller.text) ?? first;
     final picked = await showDatePicker(
       context: context,
-      initialDate: initial,
-      firstDate: DateTime.now().subtract(const Duration(days: 1)),
-      lastDate: DateTime.now().add(const Duration(days: 730)),
+      initialDate: current.isBefore(first) ? first : current.isAfter(last) ? last : current,
+      firstDate: first,
+      lastDate: last,
     );
     if (picked == null || !mounted) return;
     setState(() {
       controller.text = dateText(picked);
       touchedFields.add(field);
+      if (field == 'startDate') touchedFields.add('endDate');
       _clearGenerationState();
     });
   }
@@ -229,9 +236,11 @@ class _PersonalizedPlanningScreenState
       final dynamic data = regenerate
           ? await api.post('/api/fr4/recommendations/generate', {
               'destinationArea': requestedDestination,
+              'purpose': 'trip_planning',
             })
           : await api.get('/api/fr4/recommendations', {
               'destinationArea': requestedDestination,
+              'purpose': 'trip_planning',
             });
       if (!mounted || data is! Map) return;
 
@@ -488,6 +497,10 @@ class _PersonalizedPlanningScreenState
   }
 
   Widget _tripBasics() {
+    final dateErrors = [
+      _fieldError('startDate'),
+      _fieldError('endDate'),
+    ].whereType<String>();
     return InkCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -519,7 +532,6 @@ class _PersonalizedPlanningScreenState
                   controller: startDate,
                   label: 'Start date',
                   prefixIcon: Icons.calendar_month_outlined,
-                  errorText: _fieldError('startDate'),
                   readOnly: true,
                   onTap: () => _pickDate(startDate, 'startDate'),
                 ),
@@ -531,13 +543,20 @@ class _PersonalizedPlanningScreenState
                   controller: endDate,
                   label: 'End date',
                   prefixIcon: Icons.event_outlined,
-                  errorText: _fieldError('endDate'),
                   readOnly: true,
                   onTap: () => _pickDate(endDate, 'endDate'),
                 ),
               ),
             ],
           ),
+          for (final error in dateErrors)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              child: Semantics(
+                liveRegion: true,
+                child: Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              ),
+            ),
           const SizedBox(height: AppSpacing.sm),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -759,14 +778,6 @@ class _PersonalizedPlanningScreenState
     );
   }
 
-  num? _score(Map<String, dynamic> item) {
-    final value = item['finalScore'] ?? item['score'];
-    if (value == null || value == '') return null;
-    final num? val = value is num ? value : num.tryParse(value.toString());
-    if (val == null || !val.isFinite) return null;
-    return val.clamp(0, 100);
-  }
-
   static bool _isScoreOrMatchToken(String value) {
     final lower = value.toLowerCase().trim();
     return RegExp(r'^\d+(\.\d+)?%\s*match$').hasMatch(lower) ||
@@ -806,14 +817,12 @@ class _PersonalizedPlanningScreenState
   Widget _suggestionTile(Map<String, dynamic> item, int index) {
     final title =
         (item['title'] ?? item['name'] ?? 'Recommended place').toString();
-    final score = _score(item);
     final reasons = _reasons(item);
     return Padding(
       padding: EdgeInsets.only(top: index == 0 ? 0 : AppSpacing.xs),
       child: Semantics(
         container: true,
         selected: true,
-        label: '$title, selected for your trip',
         child: Container(
           padding: AppSpacing.card,
           decoration: BoxDecoration(
@@ -827,7 +836,6 @@ class _PersonalizedPlanningScreenState
               const Icon(
                 Icons.check_circle_rounded,
                 color: AppColors.success,
-                semanticLabel: 'Selected',
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
@@ -839,13 +847,6 @@ class _PersonalizedPlanningScreenState
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     LocalPlaceRating(place:item),
-                    if (score != null) ...[
-                      const SizedBox(height: AppSpacing.xs),
-                      StatusChip(
-                        text: 'Recommendation score: ${score.round()}/100',
-                        icon: Icons.auto_awesome_rounded,
-                      ),
-                    ],
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
                       reasons.isEmpty
@@ -853,13 +854,6 @@ class _PersonalizedPlanningScreenState
                           : reasons.join(' · '),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: AppColors.textSecondary,
-                          ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      'Selected for planning',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: AppColors.success,
                           ),
                     ),
                   ],

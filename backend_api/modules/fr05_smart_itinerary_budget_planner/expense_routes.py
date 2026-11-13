@@ -167,6 +167,7 @@ def _transact_expenses(iid, uid, payload):
             transaction.update(ref, patch)
         return {'ok': True, 'expenses': updated.get('manualExpenses', []),
                 'revision': updated.get('manualExpenseRevision', 0), 'overview': overview,
+                'startDate': updated.get('startDate'), 'endDate': updated.get('endDate'),
                 'budgetLimit': updated.get('budgetLimit', 0)}
 
     return commit(db.transaction())

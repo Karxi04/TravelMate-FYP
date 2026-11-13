@@ -48,6 +48,8 @@ def _fixture():
         if collection == 'itineraries':
             return deepcopy(trip)
         if collection == 'hotel_bookings':
+            if doc_id is None:
+                return [{'id': key, **deepcopy(row)} for key, row in bookings.items()]
             return deepcopy(bookings.get(doc_id))
         return None
 
@@ -59,7 +61,7 @@ def _fixture():
     with patch(P + 'retrieveRecord', side_effect=retrieve), \
          patch(P + '_commit_cost_alternative', side_effect=lambda iid, expected, changes: persist('itineraries', iid, changes)) as update, \
          patch(P + 'storeRecord') as store, \
-         patch(P + 'retrieveLowerCostFlights', side_effect=AssertionError('No provider calls')), \
+         patch('services.serpapi_service.retrieveFlightOptions', side_effect=AssertionError('No provider calls')), \
          patch(P + '_fallback_mode', return_value=True), \
          patch.dict(F + '_FLIGHT_QUOTES', {'search': quote}, clear=True), \
          patch(F + 'retrieveRecord', return_value=None):
@@ -67,14 +69,13 @@ def _fixture():
 
 
 @pytest.mark.parametrize('kind,old_saving', [('transport', 45), ('food', 35), ('schedule', 25)])
-def test_strategies_are_advisory_without_money_or_apply(client, mock_traveller_auth, kind, old_saving):
+def test_empty_preview_has_one_guidance_message_and_legacy_strategies_cannot_apply(client, mock_traveller_auth, kind, old_saving):
     with _fixture() as (trip, _, _, update, store):
+        trip.update(hotelBookingId=None, accommodationChoice='undecided', hotelCost=0)
         original = deepcopy(trip)
         response = client.post(PATH, headers=HEADERS, json={})
         assert response.status_code == 200
-        item = next(item for item in response.json['alternatives'] if item['alternativeType'] == kind)
-        assert item['isAdvisory'] is True and item['canApply'] is False
-        assert 'estimatedSavings' not in item and 'saving' not in item
+        assert response.json['alternatives'] == []
         assert response.json['activityAlternativeStatus'] == 'priced_replacement_unavailable'
         for _ in range(2):
             result = client.post(PATH + '/apply', headers=HEADERS,
@@ -183,12 +184,16 @@ def test_raw_prices_and_negative_or_unknown_prices_cannot_create_savings():
 
 def test_preview_resolves_authoritative_prices_and_rejects_changed_state(client, mock_traveller_auth):
     with _fixture() as (trip, _, _, update, store), \
-         patch(P + 'FLIGHTS', [{'searchId': 'search', 'optionId': 'option', 'price': 1}]), \
-         patch(P + 'LOCAL_HOTEL_ITEMS', [{'hotelBookingId': 'new', 'price': 1}]):
+         patch(P + '_flight_alternative_options', return_value=[
+             {'searchId': 'search', 'optionId': 'option', 'price': 1},
+             {'searchId': 'search', 'optionId': 'option', 'price': 1},
+         ]):
         original = deepcopy(trip)
         response = client.post(PATH, headers=HEADERS, json={})
         assert response.status_code == 200
         actionable = [item for item in response.json['alternatives'] if item['canApply']]
+        assert len(actionable) == 2
+        assert response.json['duplicateAlternativeCount'] == 1
         assert {item['alternativeType'] for item in actionable} == {'flight', 'hotel'}
         assert all(item['estimatedSavings'] == 80 and item['data']['price'] == 120 for item in actionable)
         assert all(item['data']['source'] for item in actionable)

@@ -51,7 +51,7 @@ def emulator(monkeypatch, block_live_firebase):
     monkeypatch.setattr('google.auth.default', forbidden)
     monkeypatch.setattr('firebase_service.init_firebase', forbidden)
     monkeypatch.setattr('sequence_contract.firebase_firestore.get_db', lambda: db)
-    monkeypatch.setattr(routes, 'retrieveLowerCostFlights', forbidden)
+    monkeypatch.setattr('services.serpapi_service.retrieveFlightOptions', forbidden)
     monkeypatch.setattr(flights, 'retrieveFlightOptions', forbidden)
     monkeypatch.setattr(flights, '_FLIGHT_QUOTES', {})
     monkeypatch.setattr(flights, '_TEST_DURABLE_QUOTES', {})

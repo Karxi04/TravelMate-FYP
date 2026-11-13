@@ -33,6 +33,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   Map<String, dynamic>? budget;
   String? activityAdvice;
   String? activityAlternativeStatus;
+  String? loadError;
   bool busy = false;
 
   @override
@@ -61,7 +62,10 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       });
       return;
     }
-    setState(() => busy = true);
+    setState(() {
+      busy = true;
+      loadError = null;
+    });
     try {
       final data = await api.post(
           '/api/fr5/itineraries/${widget.tripId}/lower-cost-alternatives');
@@ -79,7 +83,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
             data['activityAlternativeStatus']?.toString();
       });
     } catch (e) {
-      if (mounted) showError(context, e);
+      if (mounted) setState(() => loadError = userFacingApiError(e));
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -219,22 +223,24 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
               subtitle: 'Estimated total RM $currentTotal / budget RM $limit',
             ),
             const SizedBox(height: 12),
-            if (hasAdvice) _buildAdviceCard(),
-            if (busy && alternatives.isEmpty)
+            if (loadError != null)
+              AppErrorState(
+                title: 'Alternatives unavailable',
+                message: loadError!,
+                onRetry: load,
+              )
+            else if (busy && alternatives.isEmpty)
               const SizedBox(
                   height: 160,
                   child: Center(child: CircularProgressIndicator()))
             else if (alternatives.isEmpty)
               TravelEmptyState(
                 icon: Icons.savings_outlined,
-                title: hasAdvice
-                    ? 'No specific alternative options'
-                    : 'No alternatives available',
-                message: hasAdvice
-                    ? 'Follow the guidance above or check other categories to reduce costs.'
-                    : 'TravelMate could not build lower-cost options for this trip yet.',
+                title: 'No priced replacements are available for this itinerary yet.',
+                message: hasAdvice ? activityAdvice! : 'Check prices for the items already in this trip.',
               )
-            else
+            else ...[
+              if (hasAdvice) _buildAdviceCard(),
               ...alternatives.map((item) {
                 final savings = _extractSavings(item);
                 final canApply = _canApplyItem(item);
@@ -316,6 +322,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                   ),
                 );
               }),
+            ],
           ],
         ),
       ),
