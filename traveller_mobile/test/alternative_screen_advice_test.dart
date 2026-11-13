@@ -112,7 +112,7 @@ void main() {
       )));
       await tester.pumpAndSettle();
 
-      expect(find.text('Activity budget guidance'), findsOneWidget);
+      expect(find.text('Activity budget guidance'), findsNothing);
       expect(
         find.textContaining(
             'Consider a less expensive attraction only after checking its price'),
@@ -139,7 +139,7 @@ void main() {
       )));
       await tester.pumpAndSettle();
 
-      expect(find.text('Priced replacement unavailable'), findsOneWidget);
+      expect(find.text('No priced replacements are available for this itinerary yet.'), findsOneWidget);
     });
 
     testWidgets('3. Activity advice without numeric savings', (tester) async {
@@ -545,12 +545,12 @@ void main() {
       )));
       await tester.pumpAndSettle();
 
-      expect(find.text('Activity budget guidance'), findsOneWidget);
+      expect(find.text('Activity budget guidance'), findsNothing);
       expect(
         find.text('Review admission tickets directly with venue operators.'),
         findsOneWidget,
       );
-      expect(find.text('No specific alternative options'), findsOneWidget);
+      expect(find.text('No priced replacements are available for this itinerary yet.'), findsOneWidget);
     });
 
     testWidgets('15. Narrow-screen (320px) and accessibility (1.8x) layouts',

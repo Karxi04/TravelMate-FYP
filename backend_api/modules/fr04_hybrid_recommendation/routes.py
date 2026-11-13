@@ -17,7 +17,7 @@ from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
 from services.review_service import published_review
 from services.recommendation_taxonomy import candidate_concepts
-from services.recommendation_discovery import DISCOVERY_MODE, discovery_annotations, discovery_queries, enrich_discovery_candidate
+from services.recommendation_discovery import DISCOVERY_MODE, discovery_annotations, discovery_queries, enrich_discovery_candidate, is_planning_candidate
 from services.recommendation_snapshot_storage import validation_reason
 from services.preference_learning import (
     apply_explicit_feedback,
@@ -300,6 +300,8 @@ def _page(record, options):
     all_items = view['recommendationResults']
     qualified = []
     for item in all_items:
+        if options.get('purpose') == 'trip_planning' and not is_planning_candidate(item):
+            continue
         if discovery:
             if item.get('discoveryEligible') is True:qualified.append(item)
             continue

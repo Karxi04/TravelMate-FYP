@@ -29,8 +29,23 @@ def _isolated(data):
          patch(PREFIX + 'updateRecord') as update, \
          patch(PREFIX + 'storeRecord') as store, \
          patch(PREFIX + '_fallback_mode', return_value=False), \
-         patch(PREFIX + 'retrieveLowerCostFlights', side_effect=AssertionError('No provider calls')):
+         patch('services.serpapi_service.retrieveFlightOptions', side_effect=AssertionError('No provider calls')):
         yield update, store
+
+
+def test_own_vehicle_pending_hotel_has_no_fixture_alternatives(client, mock_traveller_auth):
+    trip = {**_trip({'estimatedCost': 100}), 'travelMode': 'own_vehicle',
+            'destinationArea': 'Penang', 'accommodationChoice': 'undecided'}
+    with _isolated(trip) as (update, store), patch(PREFIX + '_fallback_mode', return_value=True):
+        response = client.post(PATH, headers=HEADERS, json={
+            'departure_id': 'KUL', 'arrival_id': 'PEN', 'outbound_date': '2026-11-15',
+        })
+    assert response.status_code == 200
+    assert response.json['alternatives'] == []
+    assert response.json['duplicateAlternativeCount'] == 0
+    assert response.json['activityAdvice']
+    update.assert_not_called()
+    store.assert_not_called()
 
 
 @pytest.mark.parametrize('activity', [

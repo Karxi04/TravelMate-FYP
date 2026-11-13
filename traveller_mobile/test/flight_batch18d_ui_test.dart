@@ -385,7 +385,9 @@ void main() {
         scrollable: find.descendant(of: find.byKey(const ValueKey('trip-details-scroll')),
             matching: find.byType(Scrollable)).first);
     final reads = api.getPaths.where((path) => path == '/api/fr5/itineraries').length;
-    await tester.tap(find.text('Flights'));
+    await tester.ensureVisible(find.text('Flights'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Flights').hitTestable());
     await tester.pumpAndSettle();
     expect(tester.widget<FlightScreen>(find.byType(FlightScreen)).api, same(api));
     tester.state<NavigatorState>(find.byType(Navigator).first).pop();

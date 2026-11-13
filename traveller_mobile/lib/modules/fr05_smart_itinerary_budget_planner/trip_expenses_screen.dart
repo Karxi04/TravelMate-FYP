@@ -14,8 +14,9 @@ String _money(num minor) => (minor / 100).toStringAsFixed(2);
 class TripExpensesScreen extends StatefulWidget {
   final String tripId;
   final ApiService api;
+  final ValueChanged<Map<String, dynamic>>? onChanged;
 
-  const TripExpensesScreen({super.key, required this.tripId, required this.api});
+  const TripExpensesScreen({super.key, required this.tripId, required this.api, this.onChanged});
 
   @override
   State<TripExpensesScreen> createState() => _TripExpensesScreenState();
@@ -41,7 +42,11 @@ class _TripExpensesScreenState extends State<TripExpensesScreen> {
     });
     try {
       final response = await widget.api.get(path);
-      if (mounted) setState(() => data = Map<String, dynamic>.from(response as Map));
+      if (mounted) {
+        final updated = Map<String, dynamic>.from(response as Map);
+        setState(() => data = updated);
+        widget.onChanged?.call(updated);
+      }
     } catch (e) {
       if (mounted) setState(() => error = userFacingApiError(e));
     } finally {
@@ -58,7 +63,11 @@ class _TripExpensesScreenState extends State<TripExpensesScreen> {
         ...action,
         'expectedRevision': revision,
       });
-      if (mounted) setState(() => data = Map<String, dynamic>.from(response as Map));
+      if (mounted) {
+        final updated = Map<String, dynamic>.from(response as Map);
+        setState(() => data = updated);
+        widget.onChanged?.call(updated);
+      }
     } catch (e) {
       if (!mounted) return;
       if (e is ApiException && e.statusCode == 409) await load();
@@ -71,7 +80,11 @@ class _TripExpensesScreenState extends State<TripExpensesScreen> {
   Future<void> edit(Map? row) async {
     final expense = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) => _ExpenseDialog(row: row),
+      builder: (_) => _ExpenseDialog(
+        row: row,
+        startDate: DateTime.tryParse('${data?['startDate'] ?? ''}'.split('T').first),
+        endDate: DateTime.tryParse('${data?['endDate'] ?? ''}'.split('T').first),
+      ),
     );
     if (!mounted || expense == null) return;
     await change({
@@ -184,8 +197,9 @@ class _TripExpensesScreenState extends State<TripExpensesScreen> {
 class _ExpenseDialog extends StatefulWidget {
   final Map? row;
   final double? limit;
+  final DateTime? startDate, endDate;
 
-  const _ExpenseDialog({this.row, this.limit});
+  const _ExpenseDialog({this.row, this.limit, this.startDate, this.endDate});
 
   @override
   State<_ExpenseDialog> createState() => _ExpenseDialogState();
@@ -196,6 +210,37 @@ class _ExpenseDialogState extends State<_ExpenseDialog> {
   late final TextEditingController name, amount, description, date;
   late String category, type;
   bool get editingLimit => widget.limit != null;
+  bool get hasTripDates => widget.startDate != null && widget.endDate != null &&
+      !widget.endDate!.isBefore(widget.startDate!);
+
+  Future<void> pickDate() async {
+    final first = widget.startDate!;
+    final last = widget.endDate!;
+    final previous = DateTime.tryParse(date.text);
+    final selected = await showDatePicker(
+      context: context,
+      firstDate: first,
+      lastDate: last,
+      initialDate: previous != null && !previous.isBefore(first) && !previous.isAfter(last)
+          ? previous : first,
+    );
+    if (!mounted || selected == null) return;
+    setState(() => date.text = selected.toIso8601String().split('T').first);
+  }
+
+  InputDecoration input({String? hint}) => InputDecoration(hintText: hint, errorMaxLines: 3);
+
+  Widget field(String label, Widget control) => Padding(
+    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: AppSpacing.xs),
+        control,
+      ],
+    ),
+  );
 
   @override
   void initState() {
@@ -230,54 +275,70 @@ class _ExpenseDialogState extends State<_ExpenseDialog> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (!editingLimit)
-                  TextFormField(
+                  field('Expense name', TextFormField(
                     controller: name,
-                    decoration: const InputDecoration(labelText: 'Expense name'),
-                    validator: (text) => (text ?? '').trim().isEmpty ? 'Enter a name.' : null,
-                  ),
-                TextFormField(
+                    decoration: input(),
+                    textInputAction: TextInputAction.next,
+                    validator: (text) => (text ?? '').trim().isEmpty
+                        ? 'Enter a name.'
+                        : text!.trim().length > 100 ? 'Use 100 characters or fewer.' : null,
+                  )),
+                field(editingLimit ? 'Budget limit (MYR)' : 'Amount (MYR)', TextFormField(
                   controller: amount,
-                  decoration: InputDecoration(labelText: editingLimit ? 'Budget limit (MYR)' : 'Amount (MYR)'),
+                  decoration: input(hint: '0.00'),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   validator: (text) {
                     final value = (text ?? '').trim();
                     final valid = RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(value);
-                    if (!valid || (!editingLimit && double.tryParse(value) == 0)) {
+                    final parsed = double.tryParse(value);
+                    if (!valid || parsed == null || parsed > 1000000 || (!editingLimit && parsed == 0)) {
                       return editingLimit ? 'Enter zero or a valid MYR amount.' : 'Enter a positive MYR amount.';
                     }
                     return null;
                   },
-                ),
+                )),
                 if (!editingLimit) ...[
-                  DropdownButtonFormField<String>(
+                  field('Category', DropdownButtonFormField<String>(
                     initialValue: category,
-                    decoration: const InputDecoration(labelText: 'Category'),
+                    decoration: input(),
+                    isExpanded: true,
                     items: _categories.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
                     onChanged: (value) => category = value!,
-                  ),
-                  DropdownButtonFormField<String>(
+                  )),
+                  field('Expense type', DropdownButtonFormField<String>(
                     initialValue: type,
-                    decoration: const InputDecoration(labelText: 'Expense type'),
+                    decoration: input(),
+                    isExpanded: true,
                     items: const [
                       DropdownMenuItem(value: 'planned', child: Text('Planned')),
                       DropdownMenuItem(value: 'actual', child: Text('Actual')),
                     ],
                     onChanged: (value) => type = value!,
-                  ),
-                  TextFormField(
+                  )),
+                  field('Description (optional)', TextFormField(
                     controller: description,
-                    decoration: const InputDecoration(labelText: 'Description (optional)'),
+                    decoration: input(),
+                    minLines: 2,
+                    maxLines: 4,
                     maxLength: 500,
-                  ),
-                  TextFormField(
+                  )),
+                  field('Trip date (optional)', TextFormField(
                     controller: date,
-                    decoration: const InputDecoration(labelText: 'Trip date (optional)', hintText: 'YYYY-MM-DD'),
+                    readOnly: true,
+                    onTap: hasTripDates ? pickDate : null,
+                    decoration: input(hint: hasTripDates ? 'Choose a trip date' : 'Trip dates unavailable').copyWith(
+                      suffixIcon: date.text.isNotEmpty
+                          ? IconButton(tooltip: 'Clear trip date', onPressed: () => setState(date.clear),
+                              icon: const Icon(Icons.close))
+                          : const Icon(Icons.calendar_today_outlined),
+                    ),
                     validator: (text) {
-                      final value = (text ?? '').trim();
-                      return value.isEmpty || RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)
-                          ? null : 'Enter the date as YYYY-MM-DD.';
+                      if ((text ?? '').isEmpty || !hasTripDates) return null;
+                      final selected = DateTime.tryParse(text!);
+                      return selected != null && !selected.isBefore(widget.startDate!) &&
+                          !selected.isAfter(widget.endDate!) ? null : 'Choose a date within this trip.';
                     },
-                  ),
+                  )),
                 ],
               ],
             ),

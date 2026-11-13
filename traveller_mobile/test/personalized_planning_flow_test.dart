@@ -354,12 +354,9 @@ void main() {
       expect(find.byType(TripDetailsScreen), findsOneWidget);
       await _scrollTo(
           tester, find.byKey(const ValueKey('trip-budget-progress')));
-      expect(find.text('Incomplete estimate'), findsOneWidget);
-      expect(find.text('Within budget'), findsNothing);
+      expect(find.text('Some costs are unpriced or outside this estimate.'), findsOneWidget);
+      expect(find.text('Within recorded budget'), findsNothing);
       expect(find.textContaining('Estimated balance'), findsNothing);
-      if (scenario.$1 == 'B') {
-        expect(find.text('Pending price'), findsNWidgets(2));
-      }
       expect(tester.takeException(), isNull);
     });
   }
@@ -494,6 +491,12 @@ void main() {
 
   testWidgets('shows inline validation for an invalid date range',
       (tester) async {
+    tester.view.physicalSize = const Size(320, 650);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.8;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     await _pumpPlanning(tester, _FakeApiService());
 
     final start = tester.widget<TextField>(
@@ -508,17 +511,21 @@ void main() {
         .split('T')
         .first;
 
-    await _scrollTo(
-      tester,
-      find.byKey(const ValueKey('build-itinerary-button')),
-    );
-    await tester.tap(find.byKey(const ValueKey('build-itinerary-button')));
-    await tester.pump();
-
-    await _scrollTo(
-        tester, find.text('End date must be on or after start date.'));
+    final startField = _textField('planning-start-date');
+    await _scrollTo(tester, startField);
+    await tester.tap(startField.hitTestable());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
     expect(
         find.text('End date must be on or after start date.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(_textField('planning-end-date'));
+    await tester.tap(_textField('planning-end-date').hitTestable());
+    await tester.pumpAndSettle();
+    final picker = tester.widget<DatePickerDialog>(find.byType(DatePickerDialog));
+    expect(picker.firstDate, DateTime.parse(start.controller!.text));
+    expect(end.controller!.text, isNot(start.controller!.text));
   });
 
   testWidgets(
@@ -533,9 +540,9 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Penang Hill'), findsOneWidget);
-    expect(find.text('Recommendation score: 91/100'), findsOneWidget);
+    expect(find.text('Recommendation score: 91/100'), findsNothing);
     expect(find.textContaining('% match'), findsNothing);
-    expect(find.text('Selected for planning'), findsNWidgets(2));
+    expect(find.text('Selected for planning'), findsNothing);
     expect(api.recommendationReads, 1);
     expect(api.recommendationCalls, 0);
 

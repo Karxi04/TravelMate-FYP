@@ -21,23 +21,27 @@ class ReviewApi extends ApiService {
 }
 
 class _PreviewApi extends ApiService {
-  int communityReads = 0;
+  int reads = 0;
   final bool localDemo;
-  _PreviewApi({this.localDemo = false});
+  _PreviewApi({this.localDemo = true});
 
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
     if (!path.endsWith('/ratings-reviews')) return {'items': <dynamic>[]};
-    final community = query?['view'] == 'community' || (localDemo && query?['view'] != 'samples');
-    if (community) communityReads++;
+    expect(query, {'view': 'unified'});
+    reads++;
     return {
-      if (localDemo) 'sampleReviewsAvailable': true,
       'result': {
-        'rating': community ? 5.0 : 3.0,
-        'reviews': community ? 1 : 2,
-        if (!community) 'fypPreview': true,
+        'rating': 5.0,
+        'reviews': 1,
+        if (localDemo) 'sampleSummary': {'rating': 3.0, 'reviews': 3},
         'user_reviews': [
-          {'id': 'review', 'rating': 5, 'description': community ? 'Approved community comment.' : 'Private fixture comment.'},
+          {'id': 'review', 'rating': 5, 'description': 'Approved community comment.',
+           'date': '2026-11-11T09:00:00+08:00'},
+          if (localDemo)
+            for (var i = 1; i <= 3; i++)
+              {'id': 'sample-$i', 'rating': 3, 'source': 'sample',
+               'description': 'Sample comment $i.'},
         ],
       },
     };
@@ -45,50 +49,50 @@ class _PreviewApi extends ApiService {
 }
 
 void main() {
-  testWidgets('Private preview switches to the separate community view', (tester) async {
+  testWidgets('unified reviews disclose sample source and expand without another request', (tester) async {
     final api = _PreviewApi();
     await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,
         initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
     await tester.pumpAndSettle();
-    final toggle = find.text('View community reviews');
-    await tester.scrollUntilVisible(toggle, 250);
-    expect(find.text('Fictional reviews for the private FYP demonstration.'), findsOneWidget);
-    await tester.tap(toggle);
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Back to private FYP preview'), 180);
-    expect(api.communityReads, 1);
-    expect(find.text('Private fixture comment.'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Local Reviews'), 220);
     expect(find.text('5.0 · 1 review'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Approved community comment.'), 180);
-    expect(find.text('Approved community comment.'), findsOneWidget);
-  });
-
-  testWidgets('Local demo starts with community ratings and labels opted-in samples', (tester) async {
-    final api = _PreviewApi(localDemo: true);
-    await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,
-        initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
-    await tester.pumpAndSettle();
-    final samples = find.text('View FYP sample reviews');
-    await tester.scrollUntilVisible(samples, 220);
-    expect(find.text('5.0 · 1 review'), findsOneWidget);
-    await tester.ensureVisible(samples);
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -160));
-    await tester.pumpAndSettle();
-    await tester.tap(samples.hitTestable());
-    await tester.pumpAndSettle();
-    final community = find.text('View community reviews');
-    await tester.scrollUntilVisible(community, 180);
-    await tester.ensureVisible(find.text('FYP sample reviews · fictional demonstration content'));
-    expect(find.text('FYP sample reviews · fictional demonstration content'), findsOneWidget);
-    expect(find.text('3.0 · 2 reviews'), findsOneWidget);
-    await tester.ensureVisible(community);
+    expect(find.text('3.0 · 3 reviews'), findsOneWidget);
+    expect(find.text('Community reviews'), findsOneWidget);
+    expect(find.text('Demonstration reviews'), findsOneWidget);
+    expect(find.textContaining('FYP'), findsNothing);
+    expect(find.text('View community reviews'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Nov 11, 2026'), 150);
+    expect(find.text('2026-11-11T09:00:00+08:00'), findsNothing);
+    expect(find.text('Sample comment 3.'), findsNothing);
+    final all = find.text('View all 4 reviews');
+    await tester.scrollUntilVisible(all, 180);
+    await tester.ensureVisible(all);
     await tester.drag(find.byType(Scrollable).first, const Offset(0, -120));
     await tester.pumpAndSettle();
-    await tester.tap(community.hitTestable());
+    await tester.tap(all.hitTestable());
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(samples, 180);
+    await tester.scrollUntilVisible(find.text('Sample comment 3.'), 150);
+    expect(find.text('Sample comment 3.'), findsOneWidget);
+    final fewer = find.text('Show fewer reviews');
+    await tester.scrollUntilVisible(fewer, 150);
+    await tester.ensureVisible(fewer);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -120));
+    await tester.pumpAndSettle();
+    await tester.tap(fewer.hitTestable());
+    await tester.pumpAndSettle();
+    expect(find.text('Sample comment 3.'), findsNothing);
+    expect(api.reads, 1);
+  });
+
+  testWidgets('ordinary authenticated response shows only community reviews', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(
+        api: _PreviewApi(localDemo: false),
+        initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Local Reviews'), 220);
     expect(find.text('5.0 · 1 review'), findsOneWidget);
-    expect(find.text('3.0 · 2 reviews'), findsNothing);
+    expect(find.text('Demonstration reviews'), findsNothing);
+    expect(find.text('Sample review'), findsNothing);
   });
 
   test('review identity matches backend and safe input rejects metadata spoofing', () {

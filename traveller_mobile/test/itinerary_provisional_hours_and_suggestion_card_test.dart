@@ -481,7 +481,7 @@ void main() {
 
       await _show(tester, find.text('Trip budget'));
       expect(find.text('Trip budget'), findsOneWidget);
-      expect(find.text('Total group budget: RM 1500.00'), findsOneWidget);
+      expect(find.text('Total budget · MYR 1500.00'), findsOneWidget);
     });
   });
 
@@ -524,7 +524,7 @@ void main() {
       // Usable horizontal width on 360px screen with card padding and icon is > 200px
       expect(renderBox.size.width, greaterThan(200));
 
-      expect(find.text('Recommendation score: 79/100'), findsOneWidget);
+      expect(find.text('Recommendation score: 79/100'), findsNothing);
     });
 
     testWidgets('10. StatusChip remains visible without compressing attraction title',
@@ -554,8 +554,8 @@ void main() {
       await _scrollToPlanning(tester, find.text('Fort Cornwallis'));
 
       expect(find.text('Fort Cornwallis'), findsOneWidget);
-      expect(find.text('Recommendation score: 84/100'), findsOneWidget);
-      expect(find.text('Selected for planning'), findsOneWidget);
+      expect(find.text('Recommendation score: 84/100'), findsNothing);
+      expect(find.text('Selected for planning'), findsNothing);
     });
 
     testWidgets('11. Narrow-screen layout (320px) renders without RenderFlex overflow',
@@ -625,7 +625,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('Kek Lok Si Temple'), findsOneWidget);
-      expect(find.text('Recommendation score: 88/100'), findsOneWidget);
+      expect(find.text('Recommendation score: 88/100'), findsNothing);
     });
   });
 }

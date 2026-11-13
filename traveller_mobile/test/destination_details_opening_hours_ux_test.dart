@@ -105,7 +105,8 @@ void main() {
     await _scrollIntoView(tester, find.text('Local Reviews'));
     expect(find.text('3.0 · 3 reviews'), findsOneWidget);
     expect(find.textContaining('FYP ·'), findsNothing);
-    expect(find.text('Fictional reviews for the private FYP demonstration.'), findsOneWidget);
+    expect(find.text('Demonstration reviews'), findsOneWidget);
+    expect(find.text('Sample review'), findsNWidgets(3));
     for (final stars in [1, 3, 5]) {
       expect(find.text('Reviewer $stars'), findsOneWidget);
       expect(find.text('Comment for $stars stars.'), findsOneWidget);

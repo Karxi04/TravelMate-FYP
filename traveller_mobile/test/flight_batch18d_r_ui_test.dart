@@ -647,8 +647,8 @@ void main() {
 
       await _pumpTripDetails(tester, trip, api);
 
-      expect(find.text('RM 256.00'), findsOneWidget);
-      expect(find.text('Incomplete estimate'), findsOneWidget);
+      expect(find.text('Some costs are unpriced or outside this estimate.'), findsOneWidget);
+      expect(find.text('Incomplete estimate'), findsNothing);
       expect(find.text('confirmed · RM 256'), findsNothing);
     });
 
@@ -664,7 +664,7 @@ void main() {
 
       await _pumpTripDetails(tester, trip, api);
 
-      expect(find.text('Known estimated subtotal: RM 556.00'), findsOneWidget);
+      expect(find.text('Known estimated cost · MYR 556.00'), findsOneWidget);
     });
 
     testWidgets('20. Hotel and Package budget labels are unaffected', (tester) async {
@@ -680,8 +680,8 @@ void main() {
 
       await _pumpTripDetails(tester, trip, api);
 
-      expect(find.text('Hotel'), findsOneWidget);
-      expect(find.text('RM 300.00'), findsOneWidget);
+      expect(find.text('Budget details'), findsOneWidget);
+      expect(find.textContaining('Confirmed hotel cost'), findsNothing);
       expect(find.text('confirmed · RM 300'), findsNothing);
     });
 

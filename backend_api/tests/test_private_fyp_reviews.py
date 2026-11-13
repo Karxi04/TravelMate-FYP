@@ -230,6 +230,14 @@ def test_local_demo_samples_are_explicit_and_community_stays_separate(client, ap
     path = '/api/fr3/destinations/penang_hill/ratings-reviews'
     for uid in ('fyp-viewer', 'other', 'new-traveller'):
         auth = {**headers(uid), 'X-TravelMate-Review-Context': 'fyp-v1'}
+        unified = client.get(path + '?view=unified', headers=auth)
+        assert unified.status_code == 200
+        assert 'no-store' in unified.headers['Cache-Control']
+        combined = unified.json['result']
+        assert (combined['rating'], combined['reviews']) == (4, 1)
+        assert combined['sampleSummary'] == {'rating': 3.0, 'reviews': 3}
+        assert [row['source'] for row in combined['user_reviews']] == ['travelmate', 'sample', 'sample', 'sample']
+        assert all('reviewKey' not in row for row in combined['user_reviews'][1:])
         samples = client.get(path + '?view=samples', headers=auth)
         assert samples.status_code == 200 and samples.json['result']['reviews'] == 3
         assert samples.json['result']['fypPreview'] is True
@@ -239,5 +247,9 @@ def test_local_demo_samples_are_explicit_and_community_stays_separate(client, ap
         assert client.get(path, headers=auth).json['source'] == 'travelmate_database'
         assert client.get('/api/fr3/local-ratings', headers=auth).json['items']['penang_hill'] == {'rating': 4, 'reviews': 1}
     assert client.get(path + '?view=samples').status_code == 401
+    assert client.get(path + '?view=unified').status_code == 401
     app.config['LOCAL_FYP_SAMPLE_REVIEWS'] = False
     assert client.get(path + '?view=samples', headers=auth).status_code == 404
+    assert 'sampleSummary' not in client.get(
+        path + '?view=unified', headers={**headers('fyp-viewer'), 'X-TravelMate-Review-Context': 'fyp-v1'}
+    ).json['result']

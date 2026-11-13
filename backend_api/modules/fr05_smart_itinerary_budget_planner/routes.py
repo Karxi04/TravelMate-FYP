@@ -9,9 +9,10 @@ from utils import utc_now_iso
 from services.activity_pricing import (
     activity_pricing, pricing_snapshot, refresh_activity_costs, traveller_count,
 )
-from services.serpapi_service import retrieveLocationAndTravelTime, retrieveLowerCostFlights, retrieveDestinationResults
+from services.serpapi_service import retrieveLocationAndTravelTime, retrieveDestinationResults
+from services.recommendation_discovery import is_planning_candidate
 from services.open_meteo_service import retrieveSevenDayForecast, geocode
-from services.local_catalog import DESTINATIONS, FLIGHTS, LOCAL_HOTEL_ITEMS
+from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
 from services.budget_aware_generation import generate_with_budget_selection, qualify_selection_budget
 from services.itinerary_write_contract import validate_trip_write
@@ -20,7 +21,7 @@ from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, up
 from sequence_contract.domain_functions import (
     createItinerary, addActivity, removeActivity, rearrangeActivity, updateActivity,
     checkDestinationExists, checkDestinationLimit, calculateBudget, compareBudget,
-    buildLowerCostAlternatives, generateItinerary, groupNearbyActivities,
+    generateItinerary, groupNearbyActivities,
     checkOpeningHoursAndTravelTime, adjustWeatherSensitiveActivities, recalculateItinerary,
     _alternative_savings, _activity_duration, _activity_opening, _distance_km,
     _format_time, _parse_time_minutes, _travel_leg,
@@ -216,6 +217,7 @@ def _requested_area(value):
 
 
 def _filter_destination_candidates(items, destination_area):
+    items = [item for item in (items or []) if isinstance(item, dict) and is_planning_candidate(item)]
     requested = _requested_area(destination_area)
     if not requested or requested in {'malaysia', 'my'}:
         return [dict(item) for item in (items or []) if isinstance(item, dict)]
@@ -834,22 +836,21 @@ def _alternative_state(current):
 
 
 def _commit_cost_alternative(iid, expected, patch):
-    from firebase_admin import firestore
+    from google.api_core.exceptions import FailedPrecondition, NotFound
     from sequence_contract.firebase_firestore import get_db
     db = get_db()
     ref = db.collection('itineraries').document(iid)
-
-    @firestore.transactional
-    def commit(transaction):
-        snapshot = ref.get(transaction=transaction)
-        current = {'id': snapshot.id, **(snapshot.to_dict() or {})}
-        if (not snapshot.exists or current.get('travellerId') != g.uid
-                or _alternative_state(current) != _alternative_state(expected)):
-            raise _AlternativeConflict('This itinerary changed during verification. Reload alternatives.')
-        transaction.update(ref, patch)
-        return {**current, **patch}
-
-    return commit(db.transaction())
+    snapshot = ref.get()
+    current = {'id': snapshot.id, **(snapshot.to_dict() or {})}
+    stale = 'This itinerary changed during verification. Reload alternatives.'
+    if (not snapshot.exists or current.get('travellerId') != g.uid
+            or _alternative_state(current) != _alternative_state(expected)):
+        raise _AlternativeConflict(stale)
+    try:
+        ref.update(patch, option=db.write_option(last_update_time=snapshot.update_time))
+    except (FailedPrecondition, NotFound) as error:
+        raise _AlternativeConflict(stale) from error
+    return {**current, **patch}
 
 
 def _activity_identity(row):
@@ -989,17 +990,16 @@ def _flight_cabin(current):
     return next(iter(cabins)) if len(cabins) == 1 else None
 
 
-def _flight_alternative_options(current, payload):
+def _flight_alternative_options(current):
     from modules.fr07_flight_search.routes import _criteria, _provider_route_matches, _store_quote
     from services.serpapi_service import retrieveFlightOptions
     from sequence_contract.validators import flightSearchValidationError
 
     flight = current.get('selectedFlight') or {}
     legs = flight.get('outboundSegments') or []
-    if current.get('travelMode') != 'flight' or not legs or flight.get('returnSegments'):
-        if all(payload.get(key) for key in ('departure_id', 'arrival_id', 'outbound_date')):
-            return retrieveLowerCostFlights(payload['departure_id'], payload['arrival_id'],
-                                            payload['outbound_date'], payload.get('return_date'))
+    if (current.get('travelMode') != 'flight' or not legs or flight.get('returnSegments')
+            or current.get('flightCurrency') != 'MYR' or not current.get('flightPriceBasis')
+            or not current.get('flightCost') or flight.get('price') != current.get('flightCost')):
         return []
     route = {'departure_id': legs[0].get('departureAirportCode') or '',
              'arrival_id': legs[-1].get('arrivalAirportCode') or '',
@@ -1024,6 +1024,8 @@ def _flight_alternative_options(current, payload):
 def _resolve_cost_alternative(kind, data, current):
     """Resolve existing owned references; never accept client replacement prices."""
     if kind == 'flight':
+        if current.get('travelMode') != 'flight' or not (current.get('selectedFlight') or {}).get('outboundSegments'):
+            raise _AlternativeConflict('This itinerary has no comparable selected flight.')
         from modules.fr07_flight_search.routes import (
             _quote_item, _flight_trip_date_error, _flight_conflicts, _sanitize_flight_snapshot,
         )
@@ -1124,38 +1126,60 @@ def lower_cost_alternatives(iid):
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     if _is_package_trip(current):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
-    payload = request.get_json(silent=True) or {}
     try:
-        flights = _flight_alternative_options(current, payload)
+        flights = _flight_alternative_options(current)
     except Exception:
         flights = []
-    if not flights and _fallback_mode():
-        current_price = float(current.get('flightCost', 999999) or 999999)
-        flights = [dict(x) for x in FLIGHTS if float(x.get('price', 0) or 0) < current_price][:3]
 
     hotels = []
-    if current.get('hotelBookingId'):
+    if (current.get('accommodationChoice') == 'paid_hotel' and current.get('hotelBookingId')
+            and current.get('hotelCurrency') == 'MYR' and current.get('hotelCost')):
         owned = retrieveRecord('hotel_bookings', filters=[('travellerId', '==', g.uid)], limit=40) or []
-        if isinstance(owned, list):
-            hotels = [{'hotelBookingId': row['id'], 'name': (row.get('selectedHotel') or {}).get('name', 'Hotel'),
-                       'price': row.get('hotelCost')}
-                      for row in owned if row.get('id') and row['id'] != current['hotelBookingId']
-                      and row.get('bookingStatus') in {'confirmed', 'paid'}]
-    if not hotels and _fallback_mode():
-        current_hotel = float(current.get('hotelCost', 999999) or 999999)
-        hotels = [dict(x) for x in LOCAL_HOTEL_ITEMS if float(x.get('price', 0) or 0) < current_hotel][:3]
+        hotels = [{'hotelBookingId': row['id']} for row in owned
+                  if row.get('id') and row['id'] != current['hotelBookingId']
+                  and row.get('bookingStatus') in {'confirmed', 'paid'}]
 
     budget = calculateBudget(current)
-    resolved = {'flight': [], 'hotel': []}
-    comparison = current
+    alternatives = []
+    seen = set()
+    duplicate_count = 0
     for kind, options in (('flight', flights), ('hotel', hotels)):
         for option in options:
             try:
-                trusted, _, _, comparison = _resolve_cost_alternative(kind, option, current)
-                resolved[kind].append(trusted)
+                trusted, _, reference, comparison = _resolve_cost_alternative(kind, option, current)
             except (ValueError, KeyError, TypeError):
-                resolved[kind].append({key: value for key, value in option.items() if key != '_validatedAlternative'})
-    alternatives = buildLowerCostAlternatives(resolved['flight'], resolved['hotel'], budget, comparison)
+                continue
+            savings = _alternative_savings(kind, trusted, comparison)
+            if savings is None:
+                continue
+            if kind == 'flight':
+                identity = tuple(
+                    tuple(segment.get(key) for key in (
+                        'flightNumber', 'departureDate', 'departureTime', 'arrivalDate', 'arrivalTime'))
+                    for segment in trusted.get('outboundSegments') or []
+                )
+                identity = identity if any(any(segment) for segment in identity) else reference
+            else:
+                selection = trusted.get('selectedHotel') or {}
+                identity = (selection.get('hotelId'), selection.get('offerId')) if selection.get('offerId') else reference
+            key = (kind, trusted.get('source'), identity)
+            if key in seen:
+                duplicate_count += 1
+                continue
+            seen.add(key)
+            original = current.get('selectedFlight' if kind == 'flight' else 'selectedHotel') or {}
+            name = trusted.get('airline' if kind == 'flight' else 'name') or kind.title()
+            original_name = original.get('airline' if kind == 'flight' else 'name') or f'selected {kind}'
+            comparison_basis = ('Same travel dates, route and traveller count.' if kind == 'flight'
+                                else 'Same stay dates, guests and rooms.')
+            alternatives.append({
+                'alternativeType': kind, 'alternativeId': reference, 'canApply': True, 'isAdvisory': False,
+                'title': f'Lower-cost {kind}: {name}',
+                'description': f'Replace {original_name}. {comparison_basis}',
+                'estimatedSavings': savings, 'currentEstimatedCost': current[f'{kind}Cost'],
+                'replacementEstimatedCost': trusted['price'],
+                'data': {key: value for key, value in trusted.items() if key != '_validatedAlternative'},
+            })
     activity_items = []
     rejection_reasons = {}
     activities = current.get('activities') or []
@@ -1175,6 +1199,11 @@ def lower_cost_alternatives(iid):
                     rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
                     continue
                 current_cost = activity_pricing(row, current.get('travellerCount'))['effectiveCost']
+                reference = f"activity:{data['activityId']}:{identity}"
+                if reference in seen:
+                    duplicate_count += 1
+                    continue
+                seen.add(reference)
                 activity_items.append({
                     'alternativeType': 'activity', 'canApply': True, 'isAdvisory': False,
                     'title': f"Visit {replacement['activityName']} instead",
@@ -1182,7 +1211,7 @@ def lower_cost_alternatives(iid):
                                    'Savings compare estimated admission only. Check opening hours before visiting.',
                     'estimatedSavings': savings, 'data': data,
                     'currentEstimatedCost': current_cost, 'replacementEstimatedCost': replacement['effectiveCost'],
-                    'alternativeId': f"activity:{data['activityId']}:{identity}",
+                    'alternativeId': reference,
                 })
                 if len(activity_items) == 8:
                     break
@@ -1193,7 +1222,9 @@ def lower_cost_alternatives(iid):
         reasons = ' '.join(sorted(rejection_reasons, key=rejection_reasons.get, reverse=True)[:2])
         activity_advice += (' ' + reasons) if reasons else ''
         activity_advice += ' Check the admission price, pricing unit and suitability before changing a visit.'
-    alternatives = activity_items + alternatives
+        if budget.get('expenseBreakdown', {}).get('hotel', {}).get('state') in {'undecided', 'not_selected'}:
+            activity_advice += ' Choose accommodation before comparing hotel costs.'
+    alternatives = sorted(activity_items + alternatives, key=lambda item: -item['estimatedSavings'])
     for alternative in alternatives:
         alternative['stateVersion'] = _alternative_state(current)
     return jsonify({
@@ -1201,6 +1232,7 @@ def lower_cost_alternatives(iid):
         'activityAlternativeStatus': 'available' if activity_items else 'priced_replacement_unavailable',
         'activityAdvice': None if activity_items else activity_advice,
         'activityCandidateCount': len(candidates),
+        'duplicateAlternativeCount': duplicate_count,
         'activityRejectionCounts': rejection_reasons,
     })
 
