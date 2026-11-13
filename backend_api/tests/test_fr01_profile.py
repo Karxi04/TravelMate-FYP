@@ -36,9 +36,14 @@ def test_create_traveller_profile(client, mock_traveller_auth):
         assert data['profile']['role'] == 'traveller'
 
 
-def test_get_me_profile(client, mock_traveller_auth):
-    with patch('modules.fr01_user_management.routes.retrieveRecord') as mock_retrieve:
-        mock_retrieve.return_value = {
+def test_get_me_profile_reuses_authenticated_firestore_snapshot(client, mock_traveller_auth):
+    with patch('auth_utils.get_db') as db, patch(
+        'modules.fr01_user_management.routes.retrieveRecord'
+    ) as duplicate_read:
+        document = db.return_value.collection.return_value.document.return_value
+        snapshot = document.get.return_value
+        snapshot.exists = True
+        snapshot.to_dict.return_value = {
             'uid': 'test_traveller_uid',
             'name': 'Stored Traveller',
             'email': 'traveller@test.com',
@@ -52,17 +57,35 @@ def test_get_me_profile(client, mock_traveller_auth):
             'emergencyRelationship': 'Family',
             'travelBio': 'I love Penang food and beach walks.'
         }
-        res = client.get(
-            '/api/fr1/me',
-            headers={'Authorization': 'Bearer valid_test_token'}
-        )
-        assert res.status_code == 200
-        data = res.get_json()
-        assert data['ok'] is True
-        assert data['profile']['name'] == 'Stored Traveller'
-        assert data['profile']['dateOfBirth'] == '1995-05-15'
-        assert data['profile']['nationality'] == 'Malaysia'
-        assert data['profile']['currentCity'] == 'George Town'
+        response = client.get('/api/fr1/me', headers={'Authorization': 'Bearer valid_test_token'})
+        assert response.status_code == 200
+        assert response.json['profile'] == {'id': 'test_traveller_uid', **snapshot.to_dict.return_value}
+        document.get.assert_called_once_with()
+        duplicate_read.assert_not_called()
+
+
+def test_profile_quota_error_fails_closed_without_exposing_details(client, mock_traveller_auth, caplog):
+    from google.api_core.exceptions import ResourceExhausted
+
+    with patch('auth_utils.get_db') as db, patch('auth_utils.rate_limit_response') as limiter:
+        document = db.return_value.collection.return_value.document.return_value
+        document.get.side_effect = ResourceExhausted('private-value')
+        response = client.get('/api/fr1/me', headers={'Authorization': 'Bearer valid_test_token'})
+    assert response.status_code == 503
+    assert response.json['code'] == 'profile_storage_unavailable'
+    assert response.headers['Cache-Control'] == 'no-store'
+    assert 'profile' not in response.json
+    assert 'ResourceExhausted status=429' in caplog.text
+    assert 'private-value' not in caplog.text and 'private-value' not in response.text
+    limiter.assert_not_called()
+
+
+def test_missing_profile_remains_null(client, mock_traveller_auth):
+    with patch('auth_utils.get_db') as db:
+        db.return_value.collection.return_value.document.return_value.get.return_value.exists = False
+        response = client.get('/api/fr1/me', headers={'Authorization': 'Bearer valid_test_token'})
+    assert response.status_code == 200
+    assert response.json == {'ok': True, 'profile': None}
 
 
 def test_update_traveller_profile_all_fields(client, mock_traveller_auth):

@@ -157,8 +157,11 @@ void main() {
   testWidgets('Trip Replace forwards its ID and reopens with persisted hotel', (tester) async {
     final api = BatchApi()..showTargetTrip = true;
     await frame(tester, TripDetailsScreen(api: api, tripId: 'target', referenceDate: DateTime(2030, 1, 1)));
-    await tester.scrollUntilVisible(find.text('Replace'), 300, scrollable: find.byType(Scrollable).first);
-    await tester.tap(find.text('Replace')); await tester.pumpAndSettle();
+    final replace = find.text('Replace');
+    await tester.scrollUntilVisible(replace, 300, scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(replace);
+    await tester.pumpAndSettle();
+    await tester.tap(replace.hitTestable()); await tester.pumpAndSettle();
     expect(tester.widget<HotelScreen>(find.byType(HotelScreen)).targetTripId, 'target');
     final dynamic state = tester.state(find.byType(HotelScreen));
     final save = state.completeBooking({'name': 'Replacement hotel', 'price': 200, 'currency': 'MYR'}, 'v', 'liteapi', 'attempt');

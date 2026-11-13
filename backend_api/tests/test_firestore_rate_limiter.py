@@ -176,6 +176,33 @@ def test_health_and_stripe_webhook_are_not_rate_limited_when_store_is_unavailabl
         assert client.post("/api/fr9/webhooks/stripe", data=b"{}").status_code == 200
 
 
+def test_limiter_diagnostics_log_only_safe_stage_category_and_status(caplog):
+    from google.api_core.exceptions import ResourceExhausted
+
+    def fail_on_counter_read(operation):
+        return operation(None)
+
+    class UnavailableDocument(_Document):
+        def get(self, transaction=None):
+            raise ResourceExhausted('private-provider-detail')
+
+    class UnavailableCollection(_Collection):
+        def document(self, document_id):
+            return UnavailableDocument(self.store, document_id)
+
+    store = MemoryFirestore()
+    store.collection = lambda name: UnavailableCollection(store)
+    limiter = FirestoreFixedWindowLimiter(lambda: store, transaction_runner=fail_on_counter_read)
+    app = Flask("safe-diagnostics")
+    app.extensions["request_rate_limiter"] = limiter
+    with app.test_request_context("/api/fr1/me"):
+        response = rate_limit_response("authentication", uid="private-account")
+    assert response.status_code == 503
+    assert "category=authentication stage=counter_read type=ResourceExhausted status=429" in caplog.text
+    assert "private-provider-detail" not in caplog.text
+    assert "private-account" not in caplog.text
+
+
 def test_unknown_store_failure_is_reported_as_closed_limiter():
     limiter = FirestoreFixedWindowLimiter(lambda: (_ for _ in ()).throw(OSError("offline")))
     with pytest.raises(RateLimitStoreUnavailable):

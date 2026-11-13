@@ -22,9 +22,11 @@ Map<String, dynamic> trip(
 class TripsApi extends ApiService {
   List items = [trip()];
   bool offline = false;
+  int listReads = 0;
   Completer<dynamic>? gate;
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (path == '/api/fr5/itineraries') listReads++;
     if (offline) throw StateError('private connection details');
     if (gate != null) return gate!.future;
     return path == '/api/fr5/itineraries'
@@ -142,6 +144,27 @@ void main() {
     api.items = [];
     await service.refresh('owner', allowed: true);
     expect(alarms.items, isEmpty);
+  });
+  test('Trips response refreshes owned alarms without a second itinerary read',
+      () async {
+    final api = TripsApi(), alarms = Alarms();
+    final service = TripReminders(api: api, platform: alarms);
+    await service.changeOwner('owner');
+    final response = await api.get('/api/fr5/itineraries');
+    await service.refresh('owner', allowed: true, trips: [
+      ...response['items'] as List,
+      trip(owner: 'foreign'),
+    ]);
+    expect(api.listReads, 1);
+    expect(alarms.items.single['tripId'], 'penang-trip');
+
+    await service.refresh('owner', allowed: true, trips: []);
+    expect(api.listReads, 1);
+    expect(alarms.items, isEmpty);
+
+    await service.refresh('owner', allowed: true);
+    expect(api.listReads, 2);
+    expect(alarms.items, hasLength(1));
   });
   test(
       'permission denial cancels scheduled alarms; logout clears the device plan',
