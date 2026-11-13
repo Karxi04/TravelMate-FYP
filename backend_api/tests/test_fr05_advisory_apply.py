@@ -249,6 +249,7 @@ def test_atomic_commit_rejects_concurrent_stale_budget_updates(app):
     from threading import Barrier, Lock
     from types import SimpleNamespace
     from flask import g
+    from google.api_core.exceptions import FailedPrecondition
     from modules.fr05_smart_itinerary_budget_planner.routes import _commit_cost_alternative
 
     initial = {'id': 'trip', 'travellerId': 'test_traveller_uid', 'flightCost': 200}
@@ -265,34 +266,33 @@ def test_atomic_commit_rejects_concurrent_stale_budget_updates(app):
             assert iid == 'trip'
             return self
 
-        def transaction(self):
-            return self
-
-        def get(self, transaction):
-            return SimpleNamespace(id='trip', exists=True, to_dict=lambda: deepcopy(saved))
-
-        def update(self, ref, values):
-            saved.update(deepcopy(values))
-            writes.append(deepcopy(values))
-
-    def serializable_transaction(function):
-        def run(transaction):
+        def get(self):
             with lock:
-                return function(transaction)
-        return run
+                value = deepcopy(saved)
+                version = len(writes)
+            barrier.wait(timeout=5)
+            return SimpleNamespace(id='trip', exists=True, update_time=version, to_dict=lambda: value)
+
+        def write_option(self, *, last_update_time):
+            return last_update_time
+
+        def update(self, values, *, option):
+            with lock:
+                if option != len(writes):
+                    raise FailedPrecondition('Stale version')
+                saved.update(deepcopy(values))
+                writes.append(deepcopy(values))
 
     def worker(cost):
         with app.test_request_context():
             g.uid = 'test_traveller_uid'
-            barrier.wait(timeout=5)
             try:
                 return _commit_cost_alternative('trip', initial,
                     {'flightCost': cost, 'budgetEstimate': {'flight': cost, 'total': cost}})
             except ValueError:
                 return 'stale'
 
-    with patch('sequence_contract.firebase_firestore.get_db', return_value=TransactionDatabase()), \
-         patch('firebase_admin.firestore.transactional', side_effect=serializable_transaction):
+    with patch('sequence_contract.firebase_firestore.get_db', return_value=TransactionDatabase()):
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(worker, [100, 120]))
     assert results.count('stale') == 1

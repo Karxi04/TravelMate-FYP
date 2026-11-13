@@ -836,22 +836,21 @@ def _alternative_state(current):
 
 
 def _commit_cost_alternative(iid, expected, patch):
-    from firebase_admin import firestore
+    from google.api_core.exceptions import FailedPrecondition, NotFound
     from sequence_contract.firebase_firestore import get_db
     db = get_db()
     ref = db.collection('itineraries').document(iid)
-
-    @firestore.transactional
-    def commit(transaction):
-        snapshot = ref.get(transaction=transaction)
-        current = {'id': snapshot.id, **(snapshot.to_dict() or {})}
-        if (not snapshot.exists or current.get('travellerId') != g.uid
-                or _alternative_state(current) != _alternative_state(expected)):
-            raise _AlternativeConflict('This itinerary changed during verification. Reload alternatives.')
-        transaction.update(ref, patch)
-        return {**current, **patch}
-
-    return commit(db.transaction())
+    snapshot = ref.get()
+    current = {'id': snapshot.id, **(snapshot.to_dict() or {})}
+    stale = 'This itinerary changed during verification. Reload alternatives.'
+    if (not snapshot.exists or current.get('travellerId') != g.uid
+            or _alternative_state(current) != _alternative_state(expected)):
+        raise _AlternativeConflict(stale)
+    try:
+        ref.update(patch, option=db.write_option(last_update_time=snapshot.update_time))
+    except (FailedPrecondition, NotFound) as error:
+        raise _AlternativeConflict(stale) from error
+    return {**current, **patch}
 
 
 def _activity_identity(row):

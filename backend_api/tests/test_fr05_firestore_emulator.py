@@ -16,7 +16,7 @@ from uuid import uuid4
 import pytest
 from google.auth.credentials import AnonymousCredentials
 from google.cloud import firestore
-from google.cloud.firestore_v1.transaction import Transaction
+from google.cloud.firestore_v1.document import DocumentReference
 
 from modules.fr05_smart_itinerary_budget_planner import routes
 from modules.fr07_flight_search import routes as flights
@@ -235,19 +235,20 @@ def test_real_concurrent_transactions_allow_only_one_state_change(app, stay, mon
 
 
 def test_server_rejected_atomic_commit_leaves_no_partial_update(client, stay, monkeypatch):
-    real_commit = Transaction._commit
+    real_update = DocumentReference.update
     missing = stay['db'].collection('itineraries').document('f2ce-missing-' + uuid4().hex)
     assert not missing.get(timeout=10).exists
 
-    def commit_with_missing_document(transaction):
-        # The emulator must reject this actual multi-write commit atomically.
-        transaction.update(missing, {'mustNotExist': True})
-        return real_commit(transaction)
+    def commit_with_missing_document(ref, values, option=None, **kwargs):
+        # Send the real conditional write to a missing document to verify server rejection.
+        if ref.path == stay['trip'].path:
+            return real_update(missing, values, option=option, **kwargs)
+        return real_update(ref, values, option=option, **kwargs)
 
-    monkeypatch.setattr(Transaction, '_commit', commit_with_missing_document)
+    monkeypatch.setattr(DocumentReference, 'update', commit_with_missing_document)
     before = stay['trip'].get(timeout=10)
     response = _apply(client, stay, 'flight')
-    assert response.status_code == 503 and response.json['ok'] is False
+    assert response.status_code == 409 and response.json['code'] == 'STALE_ALTERNATIVE'
     assert missing.id not in response.get_data(as_text=True)
     after = stay['trip'].get(timeout=10)
     assert after.to_dict() == before.to_dict() and after.update_time == before.update_time
