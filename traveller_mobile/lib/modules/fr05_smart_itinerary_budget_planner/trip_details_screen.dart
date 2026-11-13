@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../widgets/local_place_rating.dart';
+import 'alternative_screen.dart';
 import 'budget_comparison_screen.dart';
 import 'budget_breakdown.dart';
 import 'trip_expenses_screen.dart';
@@ -2244,6 +2245,26 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           ),
           TertiaryButton(label: 'Budget details', onPressed: showBudget),
         ]),
+        if (!api.isStandalone)
+          SecondaryButton(
+            label: 'Lower-Cost Alternatives',
+            icon: Icons.savings_outlined,
+            onPressed: () async {
+              var applied = false;
+              await Navigator.push<void>(
+                context,
+                MaterialPageRoute(builder: (_) => AlternativeScreen(
+                  budget: budget, userBudget: budget.budgetLimit,
+                  tripId: widget.tripId, api: api,
+                  onApplied: (updated) {
+                    applied = true;
+                    if (mounted) setState(() => trip = updated);
+                  },
+                )),
+              );
+              if (mounted && applied) await load();
+            },
+          ),
         BudgetBreakdown(budget: budget, limit: budget.budgetLimit),
         if (!api.isStandalone)
           SecondaryButton(

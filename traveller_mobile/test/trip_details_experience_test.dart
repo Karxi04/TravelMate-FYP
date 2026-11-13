@@ -159,6 +159,7 @@ Map<String, dynamic> _richTrip({String status = 'planned'}) {
 class _TripApi extends ApiService {
   final Map<String, dynamic> trip;
   int listReads = 0;
+  int alternativeReads = 0;
   int generationCalls = 0;
   int rearrangeCalls = 0;
   int deleteCalls = 0;
@@ -226,6 +227,10 @@ class _TripApi extends ApiService {
 
   @override
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
+    if (path == '/api/fr5/itineraries/trip_target/lower-cost-alternatives') {
+      alternativeReads++;
+      return {'ok': true, 'alternatives': [], 'activityAdvice': 'No comparable admission prices.'};
+    }
     if (path == '/api/fr5/itineraries/trip_target/activities') {
       activityPosts.add(Map<String, dynamic>.from(body ?? const {}));
       return {'ok': true, 'itinerary': trip};
@@ -451,6 +456,17 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('available time, travel'), findsNothing);
+  });
+
+  testWidgets('Trip Details exposes alternatives directly for an under-budget saved trip', (tester) async {
+    final api = _TripApi();
+    await _pumpTrip(tester, api);
+    final action = find.text('Lower-Cost Alternatives');
+    await _show(tester, action);
+    await tester.tap(action.hitTestable());
+    await tester.pumpAndSettle();
+    expect(api.alternativeReads, 1);
+    expect(find.text('No comparable admission prices.'), findsOneWidget);
   });
 
   testWidgets('budget navigation retains authoritative flight and rental totals', (tester) async {

@@ -99,12 +99,19 @@ def packing_weather_trip(trip, now, *, fetch=True):
         trip.get('destinationCoordinates'), package.get('destinationCoordinates'),
         context.get('destinationCoordinates'), trip.get('gps_coordinates'),
     ) if (value := _coordinates(raw, scope))), None)
+    regional = False
     if not coords and scope.get('state'):
-        coords = _cached(('location', scope['scopeKey']), lambda: _geocoded(scope), fetch)
+        if not scope.get('city') and scope.get('latitude') is not None:
+            coords = {'latitude': scope['latitude'], 'longitude': scope['longitude']}
+            regional = True
+        else:
+            coords = _cached(('location', scope['scopeKey']), lambda: _geocoded(scope), fetch)
     if not coords:
         return unavailable('The trip destination does not have a confirmed forecast location.')
 
     view = {**trip, 'generationContext': {**context, 'destinationCoordinates': coords}}
+    if regional:
+        view['_packingForecastArea'] = scope['state']
     if weather_context(view, now)[1]:
         return view
 

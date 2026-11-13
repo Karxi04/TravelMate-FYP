@@ -1,7 +1,7 @@
 import os
 import math
 import re
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, current_app, request, jsonify, g
 
 from auth_utils import auth_required
 from utils import utc_now_iso
@@ -26,7 +26,7 @@ from sequence_contract.firebase_firestore import (
 )
 from services.public_content_projection import public_review
 from services.review_service import approved_reviews
-from services.fyp_reviews import dataset_for, dataset_reviews
+from services.fyp_reviews import dataset_for, dataset_reviews, private_dataset
 from services.review_destination import review_destination_id, review_destination_ids
 from services.malaysian_locality import (
     normalize_destination_scope,
@@ -39,9 +39,12 @@ bp = Blueprint('fr03_destinations', __name__, url_prefix='/api/fr3')
 REVIEW_CONTEXT_HEADER = 'X-TravelMate-Review-Context'
 
 
-def _private_review_dataset():
-    # Older clients do not label the fictional dataset in the review section.
-    if request.headers.get(REVIEW_CONTEXT_HEADER) == 'fyp-v1':
+def _private_review_dataset(*, discovery=False):
+    if request.headers.get(REVIEW_CONTEXT_HEADER) != 'fyp-v1':
+        return None
+    if current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS'):
+        return private_dataset() if discovery else None
+    if request.args.get('view') != 'samples':
         return dataset_for(g.uid)
     return None
 
@@ -473,7 +476,7 @@ def _merge_destination(cached, provider):
 @bp.get('/local-ratings')
 @auth_required(['traveller'])
 def local_ratings():
-    demo = _private_review_dataset()
+    demo = None if current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS') else _private_review_dataset()
     private_ids = set(demo[1]) if demo else set()
     # One read pass for a page of cards; retain the existing approval/dedup policy.
     grouped = {}
@@ -535,8 +538,8 @@ def search_destinations():
                 'error': f"Requested destination '{location}' could not be resolved as a Malaysian destination.",
             }), 400
 
-    demo = _private_review_dataset()
-    if demo and offset == 0:
+    demo = _private_review_dataset(discovery=True) if offset == 0 else None
+    if demo:
         matches = [place for place in demo[1].values()
                    if _search_text(q) == _search_text(place['title'])]
         matches, _ = filter_candidates(matches, requested_scope)
@@ -634,7 +637,7 @@ def search_destinations():
 @bp.get('/destinations/<path:place_id>')
 @auth_required(['traveller'])
 def destination_details(place_id):
-    demo = _private_review_dataset()
+    demo = _private_review_dataset(discovery=True)
     place = demo[1].get(review_destination_id(place_id)) if demo else None
     if place:
         return jsonify({'ok': True, 'destination': _private_destination(place),
@@ -722,15 +725,22 @@ def _ratings_and_reviews(records):
 @bp.get('/destinations/<path:place_id>/ratings-reviews')
 @auth_required(['traveller'])
 def ratings_reviews(place_id):
-    demo = None if request.args.get('view') == 'community' else _private_review_dataset()
+    view = request.args.get('view')
+    local_demo = current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS')
+    demo = _private_review_dataset(discovery=bool(local_demo)) if view != 'community' or local_demo else None
     canonical = review_destination_id(place_id)
-    if demo and canonical in demo[1]:
+    has_samples = bool(demo and canonical in demo[1])
+    if view == 'samples' and not has_samples:
+        return jsonify(ok=False, error='Sample reviews are unavailable for this destination.'), 404
+    if has_samples and (view == 'samples' if local_demo else view != 'community'):
         records = [item for item in dataset_reviews(*demo) if item['destinationId'] == canonical]
         result = {**_ratings_and_reviews(records), 'fypPreview': True,
                   'review_summary': 'Private FYP reviews. Fictional fixtures.'}
-        return jsonify({'ok': True, 'source': 'fyp_private', 'result': result})
+        return jsonify({'ok': True, 'source': 'fyp_private', 'result': result,
+                        **({'sampleReviewsAvailable': True} if local_demo else {})})
     result = retrieveRatingsAndReviews(place_id)
-    return jsonify({'ok': True, 'source': 'travelmate_database', 'result': result})
+    return jsonify({'ok': True, 'source': 'travelmate_database', 'result': result,
+                    **({'sampleReviewsAvailable': has_samples} if local_demo else {})})
 
 
 @bp.get('/destinations/<path:place_id>/nearby')

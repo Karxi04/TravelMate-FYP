@@ -43,6 +43,9 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   bool showAllReviews = false;
   bool communityReviews = false;
   bool hasPrivateReviewPreview = false;
+  bool hasLocalSampleReviews = false;
+  bool sampleReviews = false;
+  int _loadRevision = 0;
   bool detailsFailed = false;
   bool reviewsFailed = false;
   bool nearbyFailed = false;
@@ -95,6 +98,11 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       );
 
   Future<void> loadDetails() async {
+    if (!mounted) return;
+    final revision = ++_loadRevision;
+    final reviewOwner = LocalReviewRatings.accountUid;
+    bool current() => mounted && revision == _loadRevision &&
+        reviewOwner == LocalReviewRatings.accountUid;
     final id = destinationId;
     if (id.isEmpty) {
       setState(() {
@@ -116,6 +124,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
 
     try {
       final data = await api.get('/api/fr3/destinations/$encoded');
+      if (!current()) return;
       if (data['destination'] is Map) {
         final fetched = Map<String, dynamic>.from(data['destination'] as Map);
         final hours = OpeningHoursUtils.parse(fetched);
@@ -129,27 +138,34 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       source = (data['source'] ?? '').toString();
       providerFallback = data['providerWarning'] != null;
     } catch (_) {
+      if (!current()) return;
       detailsFailed = true;
     }
 
     try {
       final reviewId = Uri.encodeComponent(reviewDestinationId);
-      final reviewOwner = LocalReviewRatings.accountUid;
       final path = '/api/fr3/destinations/$reviewId/ratings-reviews';
-      final data = communityReviews
-          ? await api.get(path, {'view': 'community'})
-          : await api.get(path);
-      if (!mounted || reviewOwner != LocalReviewRatings.accountUid) return;
+      final data = sampleReviews
+          ? await api.get(path, {'view': 'samples'})
+          : communityReviews
+              ? await api.get(path, {'view': 'community'})
+              : await api.get(path);
+      if (!current()) return;
+      hasLocalSampleReviews = data['sampleReviewsAvailable'] == true;
       reviewInfo = data['result'] is Map
           ? Map<String, dynamic>.from(data['result'] as Map)
           : null;
       if (reviewInfo == null) {
         reviewsFailed = true;
-      } else if (!communityReviews) {
-        hasPrivateReviewPreview = reviewInfo!['fypPreview'] == true;
-        LocalReviewRatings.remember(reviewDestinationId, reviewInfo!);
+      } else {
+        final preview = reviewInfo!['fypPreview'] == true;
+        if (!hasLocalSampleReviews && preview) hasPrivateReviewPreview = true;
+        if (!preview && !communityReviews && !sampleReviews) {
+          LocalReviewRatings.remember(reviewDestinationId, reviewInfo!);
+        }
       }
     } catch (_) {
+      if (!current()) return;
       reviewsFailed = true;
     }
 
@@ -158,15 +174,17 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         '/api/fr3/destinations/$encoded/nearby',
         {'radiusKm': '12'},
       );
+      if (!current()) return;
       nearbyPlaces = (data['items'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
           .toList();
     } catch (_) {
+      if (!current()) return;
       nearbyFailed = true;
     }
 
-    if (mounted) setState(() => loading = false);
+    if (current()) setState(() => loading = false);
   }
 
   @override
@@ -710,8 +728,19 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             child: LocalReviewRatingBadge(summary: reviewInfo!),
           ),
         if (privatePreview)
-          const Text('Fictional reviews for the private FYP demonstration.'),
-        if (privatePreview || (communityReviews && hasPrivateReviewPreview))
+          Text(hasLocalSampleReviews
+              ? 'FYP sample reviews · fictional demonstration content'
+              : 'Fictional reviews for the private FYP demonstration.'),
+        if (hasLocalSampleReviews || sampleReviews)
+          TertiaryButton(
+            label: sampleReviews ? 'View community reviews' : 'View FYP sample reviews',
+            onPressed: loading ? null : () {
+              sampleReviews = !sampleReviews;
+              showAllReviews = false;
+              loadDetails();
+            },
+          )
+        else if (privatePreview || (communityReviews && hasPrivateReviewPreview))
           TertiaryButton(
             label: communityReviews ? 'Back to private FYP preview' : 'View community reviews',
             onPressed: loading ? null : () {
@@ -753,7 +782,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             ),
         ],
         const SizedBox(height: AppSpacing.xs),
-        if (!privatePreview) SecondaryButton(
+        if (!privatePreview && !sampleReviews) SecondaryButton(
           label: 'Write a review',
           icon: Icons.rate_review_outlined,
           onPressed: () async { await Navigator.push(

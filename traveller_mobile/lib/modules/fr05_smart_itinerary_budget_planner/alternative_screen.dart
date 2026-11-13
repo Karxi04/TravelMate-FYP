@@ -100,6 +100,13 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       item['stateVersion'] is String &&
       _extractSavings(item) != null;
 
+  String? _comparison(Map<String, dynamic> item) {
+    final before = item['currentEstimatedCost'];
+    final after = item['replacementEstimatedCost'];
+    if (before is! num || after is! num) return null;
+    return 'Estimated admission: MYR ${before.toStringAsFixed(2)} → MYR ${after.toStringAsFixed(2)}';
+  }
+
   Future<void> applyAlternative(Map<String, dynamic> item) async {
     if (busy || !_canApplyItem(item)) return;
     final savings = _extractSavings(item)!;
@@ -108,6 +115,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       builder: (context) => AlertDialog(
         title: Text((item['title'] ?? 'Apply alternative?').toString()),
         content: Text("${item['description'] ?? ''}\n\n"
+            "${_comparison(item) == null ? '' : '${_comparison(item)}\n'}"
             "Estimated reduction: MYR ${savings.toStringAsFixed(2)}. "
             "This changes your saved trip plan only."),
         actions: [
@@ -276,6 +284,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                         const SizedBox(height: 8),
                         Text((item['description'] ?? item['data'] ?? '')
                             .toString()),
+                        if (canApply && _comparison(item) != null)
+                          Text(_comparison(item)!),
                         if (source != null && source.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
