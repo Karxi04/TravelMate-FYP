@@ -858,10 +858,11 @@ def _activity_identity(row):
 
 
 def _activity_options(current):
-    snapshot, error = _recommendation_snapshot(current, {})
-    if error:
-        return {}
     raw = list(DESTINATIONS)
+    if current.get('recommendationGenerationId'):
+        snapshot, _ = _recommendation_snapshot(current, {})
+    else:
+        snapshot = None
     if snapshot:
         raw.extend(snapshot.get('recommendationResults') or snapshot.get('items') or [])
     candidates = {}
@@ -1156,35 +1157,51 @@ def lower_cost_alternatives(iid):
                 resolved[kind].append({key: value for key, value in option.items() if key != '_validatedAlternative'})
     alternatives = buildLowerCostAlternatives(resolved['flight'], resolved['hotel'], budget, comparison)
     activity_items = []
-    if current.get('dailySchedule') and any(row.get('estimatedCost') or row.get('unitPrice')
-                                            for row in current.get('activities') or []):
-        candidates = _activity_options(current)
-        for row in current.get('activities') or []:
+    rejection_reasons = {}
+    activities = current.get('activities') or []
+    candidates = _activity_options(current) if activities else {}
+    if not current.get('dailySchedule'):
+        activity_advice = 'A saved day and visit time are needed before a replacement can be checked; savings cannot be calculated.'
+    elif not candidates:
+        activity_advice = 'There are no activities with verified replacement admission prices in this destination.'
+    else:
+        for row in activities:
             for identity in candidates:
                 data = {'activityId': row.get('activityId'), 'destinationId': identity}
                 try:
                     replacement, _, savings = _resolve_activity_alternative(current, data, candidates)
-                except (ValueError, TypeError, KeyError):
+                except (ValueError, TypeError, KeyError) as error:
+                    reason = str(error) if isinstance(error, _AlternativeConflict) else 'The saved activity information is incomplete.'
+                    rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
                     continue
+                current_cost = activity_pricing(row, current.get('travellerCount'))['effectiveCost']
                 activity_items.append({
                     'alternativeType': 'activity', 'canApply': True, 'isAdvisory': False,
                     'title': f"Visit {replacement['activityName']} instead",
                     'description': f"Replace {row.get('activityName', 'this activity')} on day {replacement.get('dayNo')} at {replacement.get('scheduledStartTime')}. "
                                    'Savings compare estimated admission only. Check opening hours before visiting.',
                     'estimatedSavings': savings, 'data': data,
+                    'currentEstimatedCost': current_cost, 'replacementEstimatedCost': replacement['effectiveCost'],
                     'alternativeId': f"activity:{data['activityId']}:{identity}",
                 })
                 if len(activity_items) == 8:
                     break
             if len(activity_items) == 8:
                 break
+        activity_advice = 'No comparable priced activity replacement is available here; savings cannot be calculated.'
+    if not activity_items:
+        reasons = ' '.join(sorted(rejection_reasons, key=rejection_reasons.get, reverse=True)[:2])
+        activity_advice += (' ' + reasons) if reasons else ''
+        activity_advice += ' Check the admission price, pricing unit and suitability before changing a visit.'
     alternatives = activity_items + alternatives
     for alternative in alternatives:
         alternative['stateVersion'] = _alternative_state(current)
     return jsonify({
         'ok': True, 'budget': budget, 'alternatives': alternatives,
         'activityAlternativeStatus': 'available' if activity_items else 'priced_replacement_unavailable',
-        'activityAdvice': (None if activity_items else 'Consider a less expensive attraction only after checking its price, pricing unit and suitability. No comparable priced activity replacement is available here; savings cannot be calculated.'),
+        'activityAdvice': None if activity_items else activity_advice,
+        'activityCandidateCount': len(candidates),
+        'activityRejectionCounts': rejection_reasons,
     })
 
 

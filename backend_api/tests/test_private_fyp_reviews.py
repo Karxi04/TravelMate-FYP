@@ -218,3 +218,26 @@ def test_firestore_expansion_and_private_moderation(client, memory, monkeypatch)
     assert all(db.document(path).get().to_dict() == row for path, row in {**base, **expansion}.items())
     assert _create_expansion(db, base, expansion, firestore) == 'already_applied'
     assert list(db.collection('public_destination_reviews').stream()) == []
+
+
+def test_local_demo_samples_are_explicit_and_community_stays_separate(client, app, memory, planned_dataset):
+    app.config['LOCAL_FYP_SAMPLE_REVIEWS'] = True
+    memory['feedback', 'genuine'] = {
+        'id': 'genuine', 'travellerId': 'author', 'destinationId': 'local_penang_hill',
+        'rating': 4, 'moderationStatus': 'reviewed', 'feedbackStatus': 'visible',
+        'comment': 'A genuine review.',
+    }
+    path = '/api/fr3/destinations/penang_hill/ratings-reviews'
+    for uid in ('fyp-viewer', 'other', 'new-traveller'):
+        auth = {**headers(uid), 'X-TravelMate-Review-Context': 'fyp-v1'}
+        samples = client.get(path + '?view=samples', headers=auth)
+        assert samples.status_code == 200 and samples.json['result']['reviews'] == 3
+        assert samples.json['result']['fypPreview'] is True
+        community = client.get(path + '?view=community', headers=auth).json
+        assert community['sampleReviewsAvailable'] is True
+        assert (community['result']['rating'], community['result']['reviews']) == (4, 1)
+        assert client.get(path, headers=auth).json['source'] == 'travelmate_database'
+        assert client.get('/api/fr3/local-ratings', headers=auth).json['items']['penang_hill'] == {'rating': 4, 'reviews': 1}
+    assert client.get(path + '?view=samples').status_code == 401
+    app.config['LOCAL_FYP_SAMPLE_REVIEWS'] = False
+    assert client.get(path + '?view=samples', headers=auth).status_code == 404

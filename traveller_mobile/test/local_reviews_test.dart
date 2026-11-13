@@ -22,13 +22,16 @@ class ReviewApi extends ApiService {
 
 class _PreviewApi extends ApiService {
   int communityReads = 0;
+  final bool localDemo;
+  _PreviewApi({this.localDemo = false});
 
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
     if (!path.endsWith('/ratings-reviews')) return {'items': <dynamic>[]};
-    final community = query?['view'] == 'community';
+    final community = query?['view'] == 'community' || (localDemo && query?['view'] != 'samples');
     if (community) communityReads++;
     return {
+      if (localDemo) 'sampleReviewsAvailable': true,
       'result': {
         'rating': community ? 5.0 : 3.0,
         'reviews': community ? 1 : 2,
@@ -58,6 +61,34 @@ void main() {
     expect(find.text('5.0 · 1 review'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Approved community comment.'), 180);
     expect(find.text('Approved community comment.'), findsOneWidget);
+  });
+
+  testWidgets('Local demo starts with community ratings and labels opted-in samples', (tester) async {
+    final api = _PreviewApi(localDemo: true);
+    await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,
+        initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
+    await tester.pumpAndSettle();
+    final samples = find.text('View FYP sample reviews');
+    await tester.scrollUntilVisible(samples, 220);
+    expect(find.text('5.0 · 1 review'), findsOneWidget);
+    await tester.ensureVisible(samples);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -160));
+    await tester.pumpAndSettle();
+    await tester.tap(samples.hitTestable());
+    await tester.pumpAndSettle();
+    final community = find.text('View community reviews');
+    await tester.scrollUntilVisible(community, 180);
+    await tester.ensureVisible(find.text('FYP sample reviews · fictional demonstration content'));
+    expect(find.text('FYP sample reviews · fictional demonstration content'), findsOneWidget);
+    expect(find.text('3.0 · 2 reviews'), findsOneWidget);
+    await tester.ensureVisible(community);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -120));
+    await tester.pumpAndSettle();
+    await tester.tap(community.hitTestable());
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(samples, 180);
+    expect(find.text('5.0 · 1 review'), findsOneWidget);
+    expect(find.text('3.0 · 2 reviews'), findsNothing);
   });
 
   test('review identity matches backend and safe input rejects metadata spoofing', () {

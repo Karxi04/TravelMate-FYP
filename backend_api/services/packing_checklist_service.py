@@ -108,9 +108,11 @@ def weather_context(trip, now):
     if not usable:
         return unavailable, {}
     all_days = (end - start).days + 1
+    area = trip.get('_packingForecastArea')
+    prefix = f'Regional forecast for {area}. ' if area else ''
     return {'status': 'available' if len(usable) == all_days else 'partial', 'source': source,
             'fetchedAt': stamp.isoformat(), 'dates': sorted(usable),
-            'message': ('Weather suggestions use only the covered trip dates. Other days are outside the available forecast.'
+            'message': prefix + ('Weather suggestions use only the covered trip dates. Other days are outside the available forecast.'
                         if len(usable) < all_days else 'Weather suggestions use the covered trip dates.')}, usable
 
 

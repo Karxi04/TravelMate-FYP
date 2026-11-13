@@ -45,6 +45,7 @@ def create_app():
     lan_origins = local_lan_origins(networks)
     lan_sign = load_lan_signer(os.getenv("LOCAL_LAN_IDENTITY_KEY", "")) if lan_origins else None
     app.config["LOCAL_LAN_ORIGINS"] = lan_origins
+    app.config["LOCAL_FYP_SAMPLE_REVIEWS"] = bool(networks)
     if networks:
         @app.before_request
         def allow_only_trusted_lan():

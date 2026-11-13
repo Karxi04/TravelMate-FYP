@@ -117,3 +117,18 @@ def test_concurrent_reads_share_the_same_forecast_request(isolated_provider):
     with ThreadPoolExecutor(max_workers=2) as pool:
         assert list(pool.map(lambda _: check(), range(2))) == ['available', 'available']
     provider.assert_called_once()
+
+
+def test_state_only_penang_package_uses_labeled_regional_forecast(isolated_provider):
+    geo, provider = isolated_provider
+    provider.return_value = forecast(latitude=5.448155, longitude=100.28998)
+    purchased = trip(packageTrip=True, destinationArea='Penang, Malaysia',
+                     packageSnapshot={'destination': 'Penang, Malaysia'})
+    before = deepcopy(purchased)
+    hydrated = packing_weather.packing_weather_trip(purchased, NOW)
+    weather, rows = service.weather_context(hydrated, NOW)
+    assert weather['status'] == 'available' and len(rows) == 3
+    assert weather['message'].startswith('Regional forecast for Penang.')
+    provider.assert_called_once_with({'latitude': 5.4141, 'longitude': 100.3288}, timeout=5)
+    geo.assert_not_called()
+    assert purchased == before

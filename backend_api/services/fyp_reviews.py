@@ -23,7 +23,7 @@ def dataset_for(uid):
 
 
 def private_dataset():
-    """Call only after authorizing the configured Traveller or an Administrator."""
+    """Call only from an authorized local demo, UID preview or Administrator route."""
     db = get_db()
     if db.project != PROJECT or os.getenv('FIRESTORE_EMULATOR_HOST'):
         return None
