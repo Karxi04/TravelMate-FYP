@@ -45,7 +45,7 @@ CONCEPT_TERMS = {
         'viewpoints', 'panoramic view', 'panoramic views', 'murals', 'mural',
     },
     'family': {
-        'family', 'children', 'kids', 'wildlife', 'education',
+        'family', 'children', 'kids', 'education',
         'educational', 'theme park', 'aquarium', 'zoo',
     },
     'social': {
@@ -106,6 +106,29 @@ def concepts_for(value):
             if any(f' {normalize_phrase(term)} ' in searchable for term in terms):
                 concepts.add(concept)
     return concepts
+
+
+# Conversational phrases describe traveller intent. Do not use them as evidence
+# about a provider destination or its facilities.
+PREFERENCE_PHRASES = {
+    'photography': r'\b(?:tak(?:e|ing)|snap(?:ping)?) (?:some )?(?:pictures|photos)\b',
+    'culture': r'\b(?:historical|old) (?:places|sites|buildings)\b',
+    'family': r'\b(?:child|kid|family) friendly\b|\b(?:suitable|good) for (?:kids|children)\b',
+    'leisure': r'\b(?:peaceful|quiet|unhurried|laid back|relaxing)\b',
+}
+
+
+def preference_concepts(value):
+    result = set()
+    for entry in _values(value):
+        for clause in re.split(r'[.!?;,]|\bbut\b', str(entry).lower()):
+            phrase = normalize_phrase(clause)
+            if re.search(r'\b(?:avoid|do not|don t|dislike|without|no|not)\b', phrase):
+                continue
+            result.update(concepts_for(phrase))
+            result.update(concept for concept, pattern in PREFERENCE_PHRASES.items()
+                          if re.search(pattern, phrase))
+    return result
 
 
 def primary_concepts(item):
