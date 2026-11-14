@@ -112,7 +112,7 @@ def test_frontend_backend_catalogue_parity_and_real_regional_expansion():
     assert labels == expected
     assert len(SUPPORTED_AIRPORTS) == 4008
     assert sum(row['country']=='MY' for row in AIRPORT_CATALOG.values()) == 34
-    assert set(CITY_TO_IATA.values()) <= SUPPORTED_AIRPORTS
+    assert set(CITY_TO_IATA.values()) <= SUPPORTED_AIRPORTS | MALAYSIAN_AIRPORT_CATALOG.keys()
     assert {'SZB','KBR','TGG','KUA','MYY','SBW','TWU','SDK','LBU','SFO','JFK','CDG','DEL','LAX'} <= SUPPORTED_AIRPORTS
     assert 'ZZZ' not in SUPPORTED_AIRPORTS
 

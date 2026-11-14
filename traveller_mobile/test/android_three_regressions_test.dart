@@ -275,6 +275,8 @@ void main() {
   testWidgets(
       'all Malaysian airports reachable by IATA; international names excluded; city/state aliases work',
       (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final api = ContractApi();
     await frame(tester, FlightScreen(api: api));
     final from = find.byType(TextField).first;
@@ -294,6 +296,9 @@ void main() {
       'Kota Kinabalu': 'BKI',
       'Subang': 'SZB',
       'Sarawak': 'MYY',
+      'Kedah': 'LGK',
+      'Long Akah': 'LKH',
+      'Tanjong Manis': 'TGC',
       'Sultan Haji Ahmad Shah': 'KUA'
     }.entries) {
       await tester.enterText(from, entry.key);
@@ -316,7 +321,10 @@ void main() {
     }
     await tester.enterText(from, 'Subang');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('${flightAirportLabels['SZB']} (SZB)'));
+    final subang = find.text('${flightAirportLabels['SZB']} (SZB)');
+    await tester.ensureVisible(subang);
+    await tester.pumpAndSettle();
+    await tester.tap(find.ancestor(of: subang, matching: find.byType(ListTile)));
     await tester.pumpAndSettle();
     final dynamic state = tester.state(find.byType(FlightScreen));
     expect(state.from.text, 'SZB');

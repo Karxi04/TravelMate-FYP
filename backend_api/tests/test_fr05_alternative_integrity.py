@@ -251,3 +251,26 @@ def test_activity_without_a_suitable_opening_period_or_duration_is_advisory(clie
     with _isolated(data):
         result = client.post(PATH, headers=HEADERS).json
     assert result['activityAlternativeStatus'] == 'priced_replacement_unavailable'
+
+
+@pytest.mark.parametrize('changes', [
+    {'paymentStatus': 'paid'}, {'status': 'completed'}, {'currency': 'USD'},
+    {'unitPrice': 0}, {'pricingUnit': 'unknown'},
+])
+def test_activity_without_comparable_replaceable_admission(client, mock_traveller_auth, changes):
+    data = _planned_trip()
+    data['activities'][0].update(changes)
+    with _isolated(data):
+        response = client.post(PATH, headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json['alternatives'] == []
+
+
+def test_registry_opening_hours_override_wider_local_hours_for_alternatives(client, mock_traveller_auth):
+    data = _planned_trip()
+    data['dailySchedule'][0]['activities'][0].update(
+        scheduledStartTime='17:40', scheduledEndTime='19:50')
+    with _isolated(data):
+        response = client.post(PATH, headers=HEADERS)
+    assert response.status_code == 200
+    assert not response.json['alternatives']

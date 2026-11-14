@@ -25,8 +25,8 @@ REGISTRY = (
         'unitPrice': 0.0, 'pricingUnit': 'per_person', 'currency': 'MYR',
         'applicability': 'applicable', 'eligibility': 'all_visitors',
         'priceSourceUrl': 'https://botanicalgardens.penang.gov.my/index.php/hubungi-kami/soalan-lazim-faq',
-        'verifiedAt': '2026-11-08', 'openingHours': '06:30-19:30',
-        'limitations': 'General entry only. Official tram availability statements conflict; availability and optional charges are not established.',
+        'verifiedAt': '2026-11-14', 'openingHours': '06:30-19:00',
+        'limitations': 'General entry only. The department publishes two closing times; use the earlier one. Tram charges are excluded.',
     },
     {
         'venueId': 'local_kek_lok_si', 'googlePlaceId': 'ChIJZYb8XRjCSjARxD5Df-qEkCw',
@@ -36,6 +36,7 @@ REGISTRY = (
         'unitPrice': 0.0, 'pricingUnit': 'per_person', 'currency': 'MYR',
         'applicability': 'applicable', 'eligibility': 'all_visitors',
         'priceSourceUrl': 'https://mypenang.gov.my/view_directory.php?id=c2pkMG9tMEw2UUwzUk1hVTNWV3ZXZz09',
+        'verifiedAt': '2026-11-14', 'openingHours': '08:30-17:30',
         'limitations': 'Grounds only. Optional pagoda and lift access are separate, excluded and unpriced here; reported optional tariffs disagree.',
     },
     {
@@ -192,4 +193,6 @@ def enrich_candidate_pricing(candidate):
     if record.get('openingHours') and not item.get('openingHours') and not item.get('opening_hours'):
         item.update({'openingHours':record['openingHours'],'openingHoursSourceUrl':record['priceSourceUrl'],
                      'openingHoursVerifiedAt':checked_at})
+    if record.get('openingHours'):
+        evidence['openingHours'] = record['openingHours']
     return item

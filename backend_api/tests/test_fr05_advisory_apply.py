@@ -208,6 +208,38 @@ def test_preview_resolves_authoritative_prices_and_rejects_changed_state(client,
         update.assert_not_called()
 
 
+def test_round_trip_uses_final_return_fare_and_preserves_both_legs(client, mock_traveller_auth):
+    from test_f2_flight_quotes import _outbound, _return
+    from services.serpapi_service import normalizeFlightResult
+
+    outbound = normalizeFlightResult(_outbound(price=1), traveller_count=2)
+    inbound = normalizeFlightResult(_return(price=420), traveller_count=2)
+    price_basis = 'provider_round_trip_ticket_price_requested_adults'
+    with _fixture() as (trip, _, _, update, _):
+        existing = {**outbound, 'price': 550, 'priceBasis': price_basis,
+                    'returnSegments': inbound['outboundSegments'], 'requestedTravelClass': 1}
+        trip.update(
+            startDate='2027-02-10', endDate='2027-02-12', flightCost=550,
+            selectedFlight=existing, flightPriceBasis=price_basis, hotelBookingId=None,
+        )
+        for segment in existing['outboundSegments']:
+            segment['travelClass'] = 'Economy'
+        with patch('services.serpapi_service.retrieveFlightOptions', return_value={'items': [outbound]}) as search, \
+             patch('services.serpapi_service.retrieveFlightReturns', return_value={'items': [inbound]}) as returns:
+            preview = client.post(PATH, headers=HEADERS)
+        assert preview.status_code == 200
+        offer = next(option for option in preview.json['alternatives'] if option['alternativeType'] == 'flight')
+        assert offer['replacementEstimatedCost'] == 420 and offer['estimatedSavings'] == 130
+        assert 'departureToken' not in offer['data']
+        assert search.call_args.args[3] == '2027-02-12'
+        assert returns.call_args.kwargs['adults'] == 2
+        applied = client.post(PATH + '/apply', headers=HEADERS, json={'alternative': offer})
+        assert applied.status_code == 200, applied.json
+        assert applied.json['budget']['flight'] == 420
+        assert applied.json['itinerary']['selectedFlight']['returnSegments'][0]['departureAirportCode'] == 'PEN'
+        update.assert_called_once()
+
+
 @pytest.mark.parametrize('price', [True, 0, -10, float('nan'), float('inf'), 250])
 def test_invalid_or_not_cheaper_server_prices_are_not_applied(client, mock_traveller_auth, price):
     with _fixture() as (trip, quote, _, update, _):
@@ -218,6 +250,31 @@ def test_invalid_or_not_cheaper_server_prices_are_not_applied(client, mock_trave
         assert result.status_code == 409
         assert trip == original
         update.assert_not_called()
+
+
+@pytest.mark.parametrize('state,expected', [('accepted', 200), ('expired', 409), ('paid', 409)])
+def test_unpaid_validated_hotel_selection_requires_a_current_quote(client, mock_traveller_auth, state, expected):
+    with _fixture() as (trip, _, bookings, update, _):
+        bookings['new'].update(
+            saveDetailsOnly=True, itineraryId='trip', acceptedPrebookSnapshotId='new-prebook',
+            acceptedPrebookSnapshot={
+                'id': 'new-prebook', 'status': 'accepted', 'amount': 120, 'currency': 'MYR',
+                'priceBasis': 'stay_total',
+                'expiresAt': (datetime.now(timezone.utc) + timedelta(
+                    hours=-1 if state == 'expired' else 1)).isoformat(),
+            },
+        )
+        if state == 'paid':
+            bookings['new']['bookingStatus'] = 'paid'
+        response = client.post(PATH + '/apply', headers=HEADERS,
+                               json={'type': 'hotel', 'data': {'hotelBookingId': 'new'}})
+        assert response.status_code == expected, response.json
+        if expected == 200:
+            assert response.json['budget']['hotel'] == 120 and trip['hotelBookingId'] == 'new'
+            update.assert_called_once()
+        else:
+            assert trip['hotelBookingId'] == 'old'
+            update.assert_not_called()
 
 
 def test_different_hotel_identity_with_same_validated_pricing_scope_is_allowed(client, mock_traveller_auth):

@@ -4,8 +4,21 @@
   "licenseUrl": "https://ourairports.com/data/",
   "sourceSha256": "55bd82106c8ac1c9559cf5879ae9b69eb9c6e748df01514632dd5fbbb9e8b474",
   "retrievedOn": "2026-11-05",
-  "reviewedOn": "2026-11-06",
-  "included": 34,
-  "scope": "Existing bundled Malaysian land-airport identities; region names mapped from source iso_region codes. Malaysian state and spelling search aliases are included.",
-  "availability": "Identity only; no route, fare or active service guarantee. Worldwide shared dataset is unchanged."
+  "reviewedOn": "2026-11-14",
+  "included": 36,
+  "scope": "Malaysian passenger search catalogue. Long Akah and Tanjung Manis were added using Malaysian aviation and rural air service references. Previously supported identities remain usable for historical searches.",
+  "availability": "Identity only; no route, fare or active service guarantee. Worldwide shared dataset is unchanged.",
+  "categories": {
+    "mot_designated_international": ["BKI", "JHB", "KCH", "KUL", "LGK", "PEN"],
+    "domestic_passenger": ["AOR", "BTU", "IPH", "KBR", "KUA", "LBU", "LMN", "MKZ", "MYY", "SBW", "SDK", "SZB", "TGG", "TWU"],
+    "regional_or_stol": ["BBN", "BKM", "LDU", "LGL", "LKH", "LBP", "LWY", "MKM", "MUR", "MZV", "ODN", "TGC"],
+    "retained_identity_current_service_unconfirmed": ["KUD", "PKG", "TMG", "TOD"]
+  },
+  "officialReviewSources": [
+    "https://www.mot.gov.my/en/aviation/infrastructure/list-of-airports",
+    "https://aip.caam.gov.my/aip/eAIP/2026-10-29-AIRAC/html/eAIP/WM-AD-1.3-en-MS.html",
+    "https://mot.sarawak.gov.my/web/subpage/news_view/778",
+    "https://mot.sarawak.gov.my/web/subpage/webpage_view/116",
+    "https://mot.sarawak.gov.my/web/subpage/news_view/794"
+  ]
 }

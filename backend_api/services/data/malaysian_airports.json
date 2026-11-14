@@ -116,7 +116,14 @@
   },
   "LGL": {
     "name": "Long Lellang Airport",
-    "city": "Long Datih",
+    "city": "Long Lellang",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
+  },
+  "LKH": {
+    "name": "Long Akah Airport",
+    "city": "Long Akah",
     "country": "MY",
     "state": "Sarawak",
     "region": "MY-13"
@@ -211,6 +218,13 @@
     "country": "MY",
     "state": "Selangor",
     "region": "MY-10"
+  },
+  "TGC": {
+    "name": "Tanjung Manis Airport",
+    "city": "Tanjung Manis",
+    "country": "MY",
+    "state": "Sarawak",
+    "region": "MY-13"
   },
   "TGG": {
     "name": "Sultan Mahmud Airport",

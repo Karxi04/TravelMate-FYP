@@ -25,7 +25,7 @@ def test_existing_evidence_qualified_free_entry_used_only_for_matching_fresh_can
     activity=plan['activities'][0]
     assert activity['unitPrice']==0 and activity['costProvenance']=='verified_ticket'
     assert activity['priceSourceUrl'].startswith('https://botanicalgardens.penang.gov.my/')
-    assert activity['priceVerifiedAt']=='2026-11-08' and activity['openingHours']=='06:30-19:30'
+    assert activity['priceVerifiedAt']=='2026-11-14' and activity['openingHours']=='06:30-19:00'
     assert activity['openingHoursSourceUrl']==activity['priceSourceUrl']
     assert 'unitPrice' not in candidate
     unknown={**candidate,'destinationId':'unknown','title':'Other park'}

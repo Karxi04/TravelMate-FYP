@@ -242,10 +242,24 @@ def normalizeFlightResult(item, index=0, currency='MYR', traveller_count=None, p
 
 def normalizeFlightResults(data, currency='MYR', traveller_count=None, price_basis=None):
     raw = list((data or {}).get('best_flights', []) or []) + list((data or {}).get('other_flights', []) or [])
-    return [normalizeFlightResult(item, index, currency, traveller_count, price_basis) for index, item in enumerate(raw)]
+    items = []
+    seen = set()
+    for index, row in enumerate(raw):
+        item = normalizeFlightResult(row, index, currency, traveller_count, price_basis)
+        signature = (
+            tuple(tuple(segment.get(key) for key in ('flightNumber', 'departureAirportCode',
+                'arrivalAirportCode', 'departureDate', 'departureTime', 'arrivalDate', 'arrivalTime', 'travelClass'))
+                for leg in ('outboundSegments', 'returnSegments') for segment in item[leg]),
+            item['price'], item['currency'], item['departureToken'], item['bookingToken'],
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        items.append(item)
+    return items
 
 
-def retrieveFlightOptions(departureId, arrivalId, outboundDate, returnDate=None, currency='MYR', travelClass=1, stops=None, adults=1, departureToken=None):
+def retrieveFlightOptions(departureId, arrivalId, outboundDate, returnDate=None, currency='MYR', travelClass=1, stops=None, adults=1, departureToken=None, *, deepSearch=False, showHidden=False):
     # SerpApi requires type=2 for a one-way search. Round trip type=1 requires return_date.
     params = {
         'engine': 'google_flights',
@@ -265,6 +279,10 @@ def retrieveFlightOptions(departureId, arrivalId, outboundDate, returnDate=None,
         params['departure_token'] = departureToken
     if stops not in (None, ''):
         params['stops'] = stops
+    if deepSearch:
+        params['deep_search'] = 'true'
+    if showHidden:
+        params['show_hidden'] = 'true'
     data = _request(params)
     return {
         'items': normalizeFlightResults(data, currency, adults),

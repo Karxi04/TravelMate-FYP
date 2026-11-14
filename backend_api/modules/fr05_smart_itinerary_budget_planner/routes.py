@@ -889,8 +889,10 @@ def _resolve_activity_alternative(current, data, candidates):
     if not scope['state'] or not filter_candidates([candidate], scope)[0]:
         raise _AlternativeConflict('The replacement location is not verified for this trip.')
     before = activity_pricing(original, current.get('travellerCount'))
-    if original.get('costCategory') not in (None, '', 'admission') or original.get('paymentStatus') in {'paid', 'succeeded'}:
-        raise _AlternativeConflict('Only a comparable planning admission cost can be replaced.')
+    if (original.get('costCategory') not in (None, '', 'admission')
+            or original.get('paymentStatus') in {'paid', 'succeeded'}
+            or original.get('status') == 'completed' or original.get('completedAt')):
+        raise _AlternativeConflict('Only unpaid, incomplete planned admissions can be replaced.')
     replacement = _activity_from_destination(candidate, 0)
     after = activity_pricing(replacement, current.get('travellerCount'))
     if (before['pricingIssues'] or after['pricingIssues'] or before['overlapsAllowance'] or after['overlapsAllowance']
@@ -917,6 +919,9 @@ def _resolve_activity_alternative(current, data, candidates):
     slot = day_rows[index]
     if _activity_identity(slot) != _activity_identity(original):
         raise _AlternativeConflict('The saved itinerary and daily schedule do not match.')
+    if (slot.get('paymentStatus') in {'paid', 'succeeded'}
+            or slot.get('status') == 'completed' or slot.get('completedAt')):
+        raise _AlternativeConflict('An already paid or completed visit cannot be replaced.')
     start, old_end = (_parse_time_minutes(slot.get(key)) for key in ('scheduledStartTime', 'scheduledEndTime'))
     try:
         day_date = date.fromisoformat(day.get('dayDate') or day.get('date') or slot.get('dayDate'))
@@ -925,7 +930,10 @@ def _resolve_activity_alternative(current, data, candidates):
     except (KeyError, TypeError, ValueError):
         raise _AlternativeConflict('The selected day does not match the saved trip dates.') from None
     duration, duration_source = _activity_duration(replacement)
-    opening = _activity_opening(replacement, day_date)
+    evidence = candidate.get('pricingEvidence') or {}
+    registry_hours = evidence.get('openingHours')
+    opening = _activity_opening(
+        {**replacement, 'openingHours': registry_hours} if registry_hours else replacement, day_date)
     distance = _distance_km(slot, replacement)
     if (start is None or old_end is None or distance is None or not 0 <= distance <= 10
             or opening['provisional'] or not any(a <= start and start + duration <= b for a, b in opening.get('periods', []))
@@ -991,19 +999,26 @@ def _flight_cabin(current):
 
 
 def _flight_alternative_options(current):
-    from modules.fr07_flight_search.routes import _criteria, _provider_route_matches, _store_quote
-    from services.serpapi_service import retrieveFlightOptions
+    from modules.fr07_flight_search.routes import (
+        _FLIGHT_QUOTES, _completed_option, _criteria, _persist_quote,
+        _provider_route_matches, _return_segments, _store_quote,
+    )
+    from services.serpapi_service import retrieveFlightOptions, retrieveFlightReturns
     from sequence_contract.validators import flightSearchValidationError
 
     flight = current.get('selectedFlight') or {}
     legs = flight.get('outboundSegments') or []
-    if (current.get('travelMode') != 'flight' or not legs or flight.get('returnSegments')
+    if (current.get('travelMode') != 'flight' or not legs
             or current.get('flightCurrency') != 'MYR' or not current.get('flightPriceBasis')
             or not current.get('flightCost') or flight.get('price') != current.get('flightCost')):
         return []
+    return_legs = flight.get('returnSegments') or []
+    return_date = return_legs[0].get('departureDate') if return_legs else None
+    if return_legs and not return_date:
+        return []
     route = {'departure_id': legs[0].get('departureAirportCode') or '',
              'arrival_id': legs[-1].get('arrivalAirportCode') or '',
-             'outbound_date': legs[0].get('departureDate') or '', 'return_date': None}
+             'outbound_date': legs[0].get('departureDate') or '', 'return_date': return_date}
     if flightSearchValidationError(route):
         return []
     count = traveller_count(current.get('travellerCount'))
@@ -1011,14 +1026,39 @@ def _flight_alternative_options(current):
     if travel_class not in {1, 2, 3, 4}:
         return []
     result = retrieveFlightOptions(route['departure_id'], route['arrival_id'], route['outbound_date'],
+                                   return_date,
                                    currency='MYR', travelClass=travel_class, adults=count)
     criteria = _criteria(route, 'MYR', count, travel_class, None)
     items = [{**row, 'source': 'serpapi', 'planningOnly': True}
              for row in result.get('items', []) if _provider_route_matches(row, criteria)][:5]
     if not items:
         return []
+    # Limit provider calls. Outbound candidate fares are not completed totals.
+    outbound = next((option for option in items if option.get('departureToken')), None) if return_date else None
+    return_rows = []
+    if outbound:
+        returns = retrieveFlightReturns(outbound['departureToken'], route['departure_id'], route['arrival_id'],
+                                        route['outbound_date'], return_date, adults=count, travelClass=travel_class)
+        return_rows = returns.get('items', [])[:8]
     search_id, options = _store_quote(criteria, items, 'serpapi')
-    return [{**row, 'searchId': search_id} for row in options]
+    if not return_date:
+        return [{**row, 'searchId': search_id} for row in options]
+
+    quote = _FLIGHT_QUOTES[search_id]
+    if outbound:
+        stored_outbound = options[items.index(outbound)]
+        for index, row in enumerate(return_rows):
+            segments = _return_segments(row, criteria)
+            if segments:
+                _completed_option(quote, stored_outbound, {
+                    **row, 'optionId': f"return_{stored_outbound['optionId']}_{index}", 'returnSegments': segments,
+                })
+    for option in options:
+        if option.get('returnSegments') and _return_segments(option, criteria):
+            _completed_option(quote, option, option)
+    if quote['completedOptions']:
+        _persist_quote(quote)
+    return list(quote['completedOptions'].values())
 
 
 def _resolve_cost_alternative(kind, data, current):
@@ -1027,7 +1067,7 @@ def _resolve_cost_alternative(kind, data, current):
         if current.get('travelMode') != 'flight' or not (current.get('selectedFlight') or {}).get('outboundSegments'):
             raise _AlternativeConflict('This itinerary has no comparable selected flight.')
         from modules.fr07_flight_search.routes import (
-            _quote_item, _flight_trip_date_error, _flight_conflicts, _sanitize_flight_snapshot,
+            _quote_item, _flight_trip_date_error, _flight_conflicts, _sanitize_flight_snapshot, _return_segments,
         )
         quote, option, error = _quote_item({
             'searchId': data.get('searchId') or data.get('flightSearchId'),
@@ -1042,7 +1082,7 @@ def _resolve_cost_alternative(kind, data, current):
                 or option.get('travellerCount') != criteria.get('traveller_count')
                 or option.get('quoteCompleteness') != 'complete'
                 or option.get('budgetEligible') is False
-                or (criteria.get('return_date') and not option.get('returnSegments'))):
+                or (criteria.get('return_date') and not _return_segments(option, criteria))):
             raise _AlternativeConflict('Flight quote is incomplete or its traveller count no longer matches this trip.')
         for field, segments, segment_field in (
                 ('outbound_date', 'outboundSegments', 'departureDate'),
@@ -1077,9 +1117,12 @@ def _resolve_cost_alternative(kind, data, current):
             'flightPriceSemanticsStatus': option.get('priceSemanticsStatus'),
             'flightSelectedAt': utc_now_iso(), 'flightConflicts': [], 'flightConflictStatus': 'none',
         }
+        from services.flight_itinerary_adjustment import flight_selection_change_patch
+        patch.update(flight_selection_change_patch(current, patch['selectedFlight']))
         reference = f"flight:{quote['id']}:{patch['flightOptionId']}"
         return trusted, patch, reference, current
     if kind == 'hotel':
+        from modules.fr08_hotel_booking.routes import _hotel_trip_compatibility, _is_expired
         from services.malaysian_locality import normalize_destination_scope
         booking_id = str(data.get('hotelBookingId') or '').strip()
         booking = retrieveRecord('hotel_bookings', booking_id) if booking_id else None
@@ -1088,6 +1131,28 @@ def _resolve_cost_alternative(kind, data, current):
             raise _AlternativeConflict(error)
         criteria = booking.get('stayCriteria') or {}
         old_booking = retrieveRecord('hotel_bookings', current.get('hotelBookingId')) if current.get('hotelBookingId') else None
+        if any(record and (record.get('bookingStatus') == 'paid' or record.get('providerMutationCalled') is True)
+               for record in (booking, old_booking)):
+            raise _AlternativeConflict('Paid or supplier-booked stays must be managed through the original booking.')
+        for record, reference in ((booking, booking_id), (old_booking, current.get('hotelBookingId'))):
+            if record and record.get('saveDetailsOnly') is True and record.get('itineraryId') not in (None, '', current.get('id')):
+                raise _AlternativeConflict('The hotel selection belongs to another trip.')
+            if reference and record and record.get('saveDetailsOnly') is True:
+                orders = retrieveRecord('checkout_orders', filters=[
+                    ('travellerId', '==', g.uid), ('hotelBookingId', '==', reference),
+                ], limit=20) or []
+                if any(order.get('quoteType') == 'hotel' and (order.get('paymentStatus') == 'paid'
+                       or order.get('status') in {'paid', 'checkout_open', 'checkout_pending', 'payment_pending',
+                                                 'payment_mismatch'})
+                       for order in orders):
+                    raise _AlternativeConflict('An active or paid hotel checkout must be managed through the original selection.')
+        snapshot = booking.get('acceptedPrebookSnapshot') or {}
+        if booking.get('saveDetailsOnly') is True and (
+                snapshot.get('id') != booking.get('acceptedPrebookSnapshotId')
+                or not snapshot.get('id') or snapshot.get('status') != 'accepted' or _is_expired(snapshot)
+                or snapshot.get('priceBasis') != 'stay_total' or snapshot.get('currency') != 'MYR'
+                or snapshot.get('amount') != booking.get('hotelCost')):
+            raise _AlternativeConflict('The validated replacement hotel price expired or no longer matches.')
         old_criteria = (old_booking or {}).get('stayCriteria') or {}
         _, old_error = _trusted_hotel_update(current, {'hotelBookingId': current.get('hotelBookingId')}, booking=old_booking or {})
         required = ('checkin', 'checkout', 'adults', 'roomQuantity')
@@ -1104,8 +1169,10 @@ def _resolve_cost_alternative(kind, data, current):
             compatible = False
         stay_scope = normalize_destination_scope(criteria.get('destination'))
         trip_scope = normalize_destination_scope(current.get('destinationArea'))
-        if (not compatible or not stay_scope.get('resolved') or not trip_scope.get('resolved')
-                or stay_scope.get('state') != trip_scope.get('state')):
+        old_scope = normalize_destination_scope(old_criteria.get('destination'))
+        if (not compatible or _hotel_trip_compatibility(current, criteria)[1]
+                or not stay_scope.get('resolved') or not trip_scope.get('resolved')
+                or (stay_scope.get('state'), stay_scope.get('city')) != (old_scope.get('state'), old_scope.get('city'))):
             raise _AlternativeConflict('The hotel stay no longer matches this trip. Use hotel attachment to review compatibility.')
         trusted = {'price': patch['hotelCost'], 'currency': patch['hotelCurrency'],
                    'name': (patch['selectedHotel'] or {}).get('name') or 'Hotel',
@@ -1126,10 +1193,12 @@ def lower_cost_alternatives(iid):
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     if _is_package_trip(current):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
+    flight_advice = None
     try:
         flights = _flight_alternative_options(current)
     except Exception:
         flights = []
+        flight_advice = 'The flight provider or quote store could not verify comparable fares. Try searching again.'
 
     hotels = []
     if (current.get('accommodationChoice') == 'paid_hotel' and current.get('hotelBookingId')
@@ -1156,7 +1225,8 @@ def lower_cost_alternatives(iid):
                 identity = tuple(
                     tuple(segment.get(key) for key in (
                         'flightNumber', 'departureDate', 'departureTime', 'arrivalDate', 'arrivalTime'))
-                    for segment in trusted.get('outboundSegments') or []
+                    for leg in ('outboundSegments', 'returnSegments')
+                    for segment in trusted.get(leg) or []
                 )
                 identity = identity if any(any(segment) for segment in identity) else reference
             else:
@@ -1170,7 +1240,7 @@ def lower_cost_alternatives(iid):
             original = current.get('selectedFlight' if kind == 'flight' else 'selectedHotel') or {}
             name = trusted.get('airline' if kind == 'flight' else 'name') or kind.title()
             original_name = original.get('airline' if kind == 'flight' else 'name') or f'selected {kind}'
-            comparison_basis = ('Same travel dates, route and traveller count.' if kind == 'flight'
+            comparison_basis = ('Same travel dates, route, cabin and traveller count.' if kind == 'flight'
                                 else 'Same stay dates, guests and rooms.')
             alternatives.append({
                 'alternativeType': kind, 'alternativeId': reference, 'canApply': True, 'isAdvisory': False,
@@ -1178,6 +1248,8 @@ def lower_cost_alternatives(iid):
                 'description': f'Replace {original_name}. {comparison_basis}',
                 'estimatedSavings': savings, 'currentEstimatedCost': current[f'{kind}Cost'],
                 'replacementEstimatedCost': trusted['price'],
+                'source': 'SerpApi planning fare' if kind == 'flight' and trusted.get('source') == 'serpapi'
+                else trusted.get('source'),
                 'data': {key: value for key, value in trusted.items() if key != '_validatedAlternative'},
             })
     activity_items = []
@@ -1210,6 +1282,7 @@ def lower_cost_alternatives(iid):
                     'description': f"Replace {row.get('activityName', 'this activity')} on day {replacement.get('dayNo')} at {replacement.get('scheduledStartTime')}. "
                                    'Savings compare estimated admission only. Check opening hours before visiting.',
                     'estimatedSavings': savings, 'data': data,
+                    'source': replacement.get('priceSourceUrl'),
                     'currentEstimatedCost': current_cost, 'replacementEstimatedCost': replacement['effectiveCost'],
                     'alternativeId': reference,
                 })
@@ -1231,6 +1304,16 @@ def lower_cost_alternatives(iid):
         'ok': True, 'budget': budget, 'alternatives': alternatives,
         'activityAlternativeStatus': 'available' if activity_items else 'priced_replacement_unavailable',
         'activityAdvice': None if activity_items else activity_advice,
+        'flightAdvice': (
+            flight_advice or 'No cheaper complete flight quote matched this trip. Search Flights for more options.'
+            if current.get('selectedFlight') and not any(item['alternativeType'] == 'flight' for item in alternatives)
+            else None
+        ),
+        'hotelAdvice': (
+            'No cheaper validated hotel selection matched these dates, guests and rooms. Use Hotels to validate another stay.'
+            if current.get('hotelBookingId') and not any(item['alternativeType'] == 'hotel' for item in alternatives)
+            else None
+        ),
         'activityCandidateCount': len(candidates),
         'duplicateAlternativeCount': duplicate_count,
         'activityRejectionCounts': rejection_reasons,

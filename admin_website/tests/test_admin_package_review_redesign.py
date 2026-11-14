@@ -110,6 +110,21 @@ def test_formatter_parses_activities_without_inventing_missing_times():
     assert parse_float(True) is None
 
 
+def test_current_brochure_renders_canonical_itinerary_and_not_stale_legacy_days(auth_client):
+    package = {
+        'id': 'canonical-package', 'title': 'Heritage package', 'approvalStatus': 'pending',
+        'itineraryDays': [{'dayNumber': 1, 'title': 'George Town heritage day',
+                           'activities': ['Guided heritage walking tour']}],
+        'itinerary': [{'dayNumber': 1, 'title': 'Old itinerary'}],
+    }
+    with _patch_admin_api(MagicMock(return_value=_mock_pkg_response(package))):
+        page = auth_client.get('/admin/packages/canonical-package')
+    assert page.status_code == 200
+    assert b'George Town heritage day' in page.data
+    assert b'Guided heritage walking tour' in page.data
+    assert b'Old itinerary' not in page.data
+
+
 @pytest.mark.parametrize(
     "pkg_state,availability,expected_status,expected_discovery,has_decision_form,has_suspend_btn",
     [

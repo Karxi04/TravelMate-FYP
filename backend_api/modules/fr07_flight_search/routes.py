@@ -486,10 +486,13 @@ def search_flights():
     try:
         stops = request.args.get('provider_stops') or None
         criteria = _criteria(data, currency, travellers, travel_class, stops)
+        more_results = request.args.get('more_results') == 'true'
+        search_options = {'deepSearch': True, 'showHidden': True} if more_results else {}
         result = retrieveFlightOptions(
             data['departure_id'], data['arrival_id'], data['outbound_date'], return_date,
             currency=currency,
             travelClass=travel_class, stops=stops, adults=travellers,
+            **search_options,
         )
         items = [
             x if isinstance(x, dict) and ('outboundSegments' in x or 'priceBasis' in x)
@@ -511,7 +514,8 @@ def search_flights():
         source = 'sample_fixture'
 
     if source == 'serpapi':
-        items = [item for item in items if _provider_route_matches(item, criteria)]
+        items = [item for item in items if _provider_route_matches(item, criteria)
+                 and (not item.get('returnSegments') or (return_date and _return_segments(item, criteria)))]
         criteria['airportValidationStatus'] = 'provider_result' if items else 'unverified_no_provider_result'
     else:
         criteria['airportValidationStatus'] = 'sample_fixture'
@@ -543,6 +547,7 @@ def search_flights():
         'freshnessStatus': stored_quote['freshnessStatus'],
         'planningOnly': True,
         'searchId': search_id,
+        'moreResultsSearched': more_results and source == 'serpapi',
         'criteria': criteria,
         'tripType': 'round_trip' if return_date else 'one_way',
         'quoteCompleteness': 'complete' if complete_round_trip or not return_date else 'return_selection_pending',

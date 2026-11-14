@@ -32,6 +32,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   List<Map<String, dynamic>> alternatives = [];
   Map<String, dynamic>? budget;
   String? activityAdvice;
+  String? flightAdvice;
+  String? hotelAdvice;
   String? activityAlternativeStatus;
   String? loadError;
   bool busy = false;
@@ -79,6 +81,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
             ? Map<String, dynamic>.from(data['budget'] as Map)
             : null;
         activityAdvice = data['activityAdvice']?.toString();
+        flightAdvice = data['flightAdvice']?.toString();
+        hotelAdvice = data['hotelAdvice']?.toString();
         activityAlternativeStatus =
             data['activityAlternativeStatus']?.toString();
       });
@@ -108,7 +112,12 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     final before = item['currentEstimatedCost'];
     final after = item['replacementEstimatedCost'];
     if (before is! num || after is! num) return null;
-    return 'Estimated admission: MYR ${before.toStringAsFixed(2)} → MYR ${after.toStringAsFixed(2)}';
+    final basis = switch (item['alternativeType']) {
+      'flight' => 'Estimated fare',
+      'hotel' => 'Estimated stay total',
+      _ => 'Estimated admission',
+    };
+    return '$basis: MYR ${before.toStringAsFixed(2)} → MYR ${after.toStringAsFixed(2)}';
   }
 
   Future<void> applyAlternative(Map<String, dynamic> item) async {
@@ -210,6 +219,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     final limit = budget?['limit'] ?? widget.userBudget;
     final hasAdvice =
         activityAdvice != null && activityAdvice!.trim().isNotEmpty;
+    final supplierAdvice = [flightAdvice, hotelAdvice].whereType<String>();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Lower-cost alternatives')),
@@ -237,10 +247,15 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
               TravelEmptyState(
                 icon: Icons.savings_outlined,
                 title: 'No priced replacements are available for this itinerary yet.',
-                message: hasAdvice ? activityAdvice! : 'Check prices for the items already in this trip.',
+                message: [if (hasAdvice) activityAdvice!, ...supplierAdvice].join('\n\n'),
               )
             else ...[
               if (hasAdvice) _buildAdviceCard(),
+              for (final advice in supplierAdvice)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: InkCard(child: Text(advice)),
+                ),
               ...alternatives.map((item) {
                 final savings = _extractSavings(item);
                 final canApply = _canApplyItem(item);

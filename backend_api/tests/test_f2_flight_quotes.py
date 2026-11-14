@@ -50,6 +50,27 @@ def test_return_request_forwards_owner_criteria_token_and_adults():
     assert params['type'] == 1
 
 
+def test_expanded_search_is_explicit_and_provider_duplicates_are_removed(client, mock_traveller_auth):
+    initial = _outbound()
+    additional = _outbound('DA202', 'second-token')
+    request_path = ('/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN'
+                    '&outbound_date=2027-02-10&return_date=2027-02-12'
+                    '&traveller_count=2&travel_class=3')
+    headers = {'Authorization': 'Bearer valid_test_token'}
+    with patch('services.serpapi_service._request', side_effect=[
+        {'best_flights': [initial], 'other_flights': [initial]},
+        {'best_flights': [initial, additional], 'other_flights': [initial]},
+    ]) as provider:
+        normal = client.get(request_path, headers=headers)
+        expanded = client.get(request_path + '&more_results=true', headers=headers)
+    assert normal.status_code == expanded.status_code == 200
+    assert len(normal.json['items']) == 1 and len(expanded.json['items']) == 2
+    assert normal.json['moreResultsSearched'] is False and expanded.json['moreResultsSearched'] is True
+    first, second = [call.args[0] for call in provider.call_args_list]
+    assert second == {**first, 'deep_search': 'true', 'show_hidden': 'true'}
+    assert second['adults'] == 2 and second['travel_class'] == 3 and second['currency'] == 'MYR'
+
+
 def test_round_trip_requires_return_selection_and_selects_one_authoritative_total(client, mock_traveller_auth):
     reset_flight_quotes()
     with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [_outbound()]}):
