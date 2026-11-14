@@ -381,7 +381,8 @@ def test_duration_alone_does_not_invent_selected_dates(client, mock_traveller_au
 
 
 def test_malaysia_only_selection_parity():
-    assert len(MALAYSIAN_AIRPORTS) == 34
+    assert len(MALAYSIAN_AIRPORTS) == 36
+    assert {'LKH', 'TGC'} <= MALAYSIAN_AIRPORTS
     required = set('KUL SZB PEN LGK JHB BKI KCH KBR TGG KUA IPH AOR MYY SBW BTU TWU SDK LBU'.split())
     assert required <= MALAYSIAN_AIRPORTS
     assert all(row['country'] == 'MY' and row['state'] for row in MALAYSIAN_AIRPORT_CATALOG.values())

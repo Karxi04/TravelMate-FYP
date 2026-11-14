@@ -53,6 +53,7 @@ class _FlightScreenState extends State<FlightScreen> {
   String? retrievedAt;
   String? expiresAt;
   String freshnessStatus = '';
+  bool moreResultsSearched = false;
   bool planningOnly = true;
   String quoteCompleteness = '';
   String selectionStage = '';
@@ -64,6 +65,7 @@ class _FlightScreenState extends State<FlightScreen> {
     roundTrip, travelClass, nonstopOnly, sort].join('|');
 
   void _clearResults() {
+    moreResultsSearched = false;
     items = [];
     compareIds.clear();
     searchId = '';
@@ -179,6 +181,12 @@ class _FlightScreenState extends State<FlightScreen> {
     'IPOH': 'IPH',
     'MELAKA': 'MKZ',
     'MALACCA': 'MKZ',
+    'ALOR SATAR': 'AOR',
+    'KOTA BAHARU': 'KBR',
+    'SULTAN HAJI AHMAD SHAH': 'KUA',
+    'PULAU PINANG': 'PEN',
+    'LONG DATIH': 'LGL',
+    'TANJONG MANIS': 'TGC',
     'LONDON': 'LHR',
     'HEATHROW': 'LHR',
     'SYDNEY': 'SYD',
@@ -193,7 +201,16 @@ class _FlightScreenState extends State<FlightScreen> {
 
   String resolveIata(String input) {
     final cleaned = input.trim().toUpperCase();
-    return cityToIata[cleaned] ?? cleaned;
+    final known = cityToIata[cleaned];
+    if (known != null || flightAirportLabels.containsKey(cleaned)) {
+      return known ?? cleaned;
+    }
+    final matches = flightAirportLabels.entries.where((entry) {
+      final labels = entry.value.split(', ');
+      return labels.take(2).any((label) => label.toUpperCase() == cleaned) ||
+          flightAirportAliases[entry.key]?.toUpperCase() == cleaned;
+    }).toList();
+    return matches.length == 1 ? matches.single.key : cleaned;
   }
 
   final fromFocus = FocusNode();
@@ -207,8 +224,12 @@ class _FlightScreenState extends State<FlightScreen> {
       focusNode: focus,
       optionsBuilder: (value) {
         final query = value.text.trim().toUpperCase();
-        return codes.where((code) => code.contains(query) || name(code).toUpperCase().contains(query) || (flightAirportAliases[code] ?? '').toUpperCase().contains(query) ||
-            cityToIata.entries.any((e) => e.value == code && e.key.contains(query))).take(30);
+        final exact = resolveIata(query);
+        final matches = codes.where((code) => code != exact &&
+            (code.contains(query) || name(code).toUpperCase().contains(query) ||
+             (flightAirportAliases[code] ?? '').toUpperCase().contains(query) ||
+             cityToIata.entries.any((e) => e.value == code && e.key.contains(query))));
+        return [if (codes.contains(exact)) exact, ...matches].take(30);
       },
       fieldViewBuilder: (context, text, node, submit) => TextField(
         controller: text, focusNode: node,
@@ -218,7 +239,10 @@ class _FlightScreenState extends State<FlightScreen> {
       optionsViewBuilder: (context, select, options) => Align(
         alignment: Alignment.topLeft,
         child: Material(elevation: 4, child: SizedBox(width: constraints.maxWidth, height: 220,
-          child: ListView(padding: EdgeInsets.zero, children: options.map((code) => ListTile(
+          child: ListView(
+            key: ValueKey(controller.text.trim().toUpperCase()),
+            padding: EdgeInsets.zero,
+            children: options.map((code) => ListTile(
             title: Text('${name(code)} ($code)'), onTap: () => select(code),
           )).toList()),
         )),
@@ -226,7 +250,7 @@ class _FlightScreenState extends State<FlightScreen> {
     ));
   }
 
-  Future<void> search() async {
+  Future<void> search({bool moreResults = false}) async {
     final departure = resolveIata(from.text);
     final arrival = resolveIata(to.text);
     if (departure.length == 3) from.text = departure;
@@ -268,7 +292,7 @@ class _FlightScreenState extends State<FlightScreen> {
     final requestedCriteria = _criteriaKey();
     setState(() {
       busy = true;
-      _clearResults();
+      if (!moreResults) _clearResults();
       returnLoading = false;
     });
 
@@ -280,6 +304,7 @@ class _FlightScreenState extends State<FlightScreen> {
         'currency': 'MYR',
         'traveller_count': travellerCount.toString(),
         'travel_class': travelClass.toString(),
+        if (moreResults) 'more_results': 'true',
         if (roundTrip) 'return_date': returnDate.text.trim(),
         if (nonstopOnly) 'nonstop': 'true',
         if (sort == 'price') 'sort': 'price_low',
@@ -288,6 +313,15 @@ class _FlightScreenState extends State<FlightScreen> {
       final data = await api.get('/api/fr7/flights/search', query);
       if (!mounted) return;
       if (requestedCriteria != _criteriaKey()) return;
+      if (moreResults && data['moreResultsSearched'] != true) {
+        showError(context, 'More provider results are unavailable.');
+        return;
+      }
+      if (moreResults && (data['items'] as List?)?.isEmpty == true) {
+        setState(() => moreResultsSearched = true);
+        showError(context, 'No matching flights were returned by the expanded search.');
+        return;
+      }
       setState(() {
         _quotedCriteria = requestedCriteria;
         items = data['items'] ?? data['best_flights'] ?? [];
@@ -300,6 +334,8 @@ class _FlightScreenState extends State<FlightScreen> {
         planningOnly = data['planningOnly'] != false;
         quoteCompleteness = (data['quoteCompleteness'] ?? '').toString();
         selectionStage = (data['selectionStage'] ?? '').toString();
+        moreResultsSearched = data['moreResultsSearched'] == true;
+        compareIds.clear();
       });
     } on ApiException catch (e) {
       if (mounted) {
@@ -1074,6 +1110,11 @@ class _FlightScreenState extends State<FlightScreen> {
               onPressed: busy ? null : search,
               icon: const Icon(Icons.search_rounded),
               label: Text(busy ? 'Searching...' : 'Search flights')),
+          if (source == 'serpapi' && !moreResultsSearched)
+            OutlinedButton(
+              onPressed: busy ? null : () => search(moreResults: true),
+              child: const Text('More results'),
+            ),
           if (searchId.isNotEmpty) ...[
             const SizedBox(height: 10),
             if (isQuoteExpired())

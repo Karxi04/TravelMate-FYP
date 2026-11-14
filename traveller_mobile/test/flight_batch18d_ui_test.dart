@@ -457,6 +457,30 @@ void main() {
   });
 
   // 2. Round-trip search results render
+  testWidgets('More results sends the same search criteria with explicit opt-in',
+      (tester) async {
+    _setViewport(tester);
+    final api = _MockFlightApi();
+    await tester.pumpWidget(_wrap(FlightScreen(api: api,
+        initialReturnDate: '2027-02-12')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Search flights'));
+    await tester.pumpAndSettle();
+    final more = find.widgetWithText(OutlinedButton, 'More results');
+    await tester.ensureVisible(more);
+    api.searchResponse = {
+      'items': <Map<String, dynamic>>[],
+      'source': 'serpapi',
+      'moreResultsSearched': true,
+    };
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(api.getQueries, hasLength(2));
+    expect(api.getQueries.last, {...api.getQueries.first!, 'more_results': 'true'});
+    expect(find.text('Malaysia Airlines MH1138'), findsOneWidget);
+    expect(more, findsNothing);
+  });
+
   testWidgets('2. Round-trip search results render', (tester) async {
     _setViewport(tester);
     final api = _MockFlightApi();

@@ -27,6 +27,12 @@ CITY_TO_IATA = {
     'IPOH': 'IPH',
     'MELAKA': 'MKZ',
     'MALACCA': 'MKZ',
+    'ALOR SATAR': 'AOR',
+    'KOTA BAHARU': 'KBR',
+    'SULTAN HAJI AHMAD SHAH': 'KUA',
+    'PULAU PINANG': 'PEN',
+    'LONG DATIH': 'LGL',
+    'TANJONG MANIS': 'TGC',
     'LONDON': 'LHR',
     'HEATHROW': 'LHR',
     'SYDNEY': 'SYD',
@@ -43,8 +49,12 @@ AIRPORT_CATALOG = json.loads((Path(__file__).parent / 'data' / 'flight_airports.
 SUPPORTED_AIRPORTS = frozenset(AIRPORT_CATALOG)
 MALAYSIAN_AIRPORT_CATALOG = json.loads((Path(__file__).parent / 'data' / 'malaysian_airports.json').read_text(encoding='utf-8'))
 MALAYSIAN_AIRPORTS = frozenset(MALAYSIAN_AIRPORT_CATALOG)
-assert set(CITY_TO_IATA.values()) <= SUPPORTED_AIRPORTS
+assert set(CITY_TO_IATA.values()) <= SUPPORTED_AIRPORTS | MALAYSIAN_AIRPORTS
 
 def resolve_airport(value):
     code = str(value or '').strip().upper()
-    return CITY_TO_IATA.get(code, code)
+    if code in CITY_TO_IATA or code in MALAYSIAN_AIRPORTS:
+        return CITY_TO_IATA.get(code, code)
+    matches = [iata for iata, airport in MALAYSIAN_AIRPORT_CATALOG.items()
+               if code in {airport['name'].upper(), airport['city'].upper()}]
+    return matches[0] if len(matches) == 1 else code

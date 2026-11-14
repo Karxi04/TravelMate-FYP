@@ -336,6 +336,16 @@ def test_activity_replacement_persists_and_replay_does_not_write(client, emulato
     from test_fr05_alternative_integrity import _planned_trip
     trip_id = 'alternative-' + uuid4().hex
     trip = {**_planned_trip(), 'id': trip_id}
+    # Two adults planning a visit using the mansion's published RM30 adult tariff.
+    original = {
+        **trip['activities'][0], 'destinationId': 'local_peranakan_mansion',
+        'activityName': 'Pinang Peranakan Mansion', 'estimatedCost': 30, 'unitPrice': 30,
+        'priceSourceUrl': 'https://www.pinangperanakanmansion.com.my/',
+        'gps_coordinates': {'latitude': 5.4187, 'longitude': 100.3416},
+        'scheduledStartTime': '09:30', 'timeSlot': '09:30',
+    }
+    trip['activities'][0] = original
+    trip['dailySchedule'][0]['activities'][0] = deepcopy(original)
     ref = emulator.collection('itineraries').document(trip_id)
     path = f'/api/fr5/itineraries/{trip_id}/lower-cost-alternatives'
     ref.set(trip)
@@ -344,11 +354,19 @@ def test_activity_replacement_persists_and_replay_does_not_write(client, emulato
         assert preview.status_code == 200, preview.json
         offer = next(row for row in preview.json['alternatives']
                      if row['data'].get('destinationId') == 'local_botanical_gardens')
+        assert offer['currentEstimatedCost'] == 60
+        assert offer['replacementEstimatedCost'] == 0
+        assert offer['estimatedSavings'] == 60
+        assert offer['source'].startswith('https://botanicalgardens.penang.gov.my/')
         applied = client.post(path + '/apply', headers=HEADERS, json={'alternative': offer})
         assert applied.status_code == 200, applied.json
         saved = ref.get()
         assert saved.to_dict()['dailySchedule'][1] == trip['dailySchedule'][1]
         assert saved.to_dict()['activities'][0]['destinationId'] == 'local_botanical_gardens'
+        reopened = client.get(f'/api/fr5/itineraries/{trip_id}', headers=HEADERS).json['itinerary']
+        assert reopened['id'] == trip_id
+        assert reopened['activities'][0]['destinationId'] == 'local_botanical_gardens'
+        assert reopened['budgetEstimate']['total'] == calculateBudget(trip)['total'] - 60
         replay = client.post(path + '/apply', headers=HEADERS, json={'alternative': offer})
         assert replay.status_code == 409
         assert ref.get().update_time == saved.update_time

@@ -58,7 +58,7 @@
 {% set child_num = item.get('childPrice')|parse_float %}
 {% set duration_days = item.get('durationDays') %}
 {% set duration_nights = item.get('durationNights') %}
-{% set itinerary_days = item.get('itinerary') or [] %}
+{% set itinerary_days = item.get('itineraryDays', item.get('itinerary')) or [] %}
 {% set departure_dates = item.get('departureDates') or [] %}
 {% set inclusions = item.get('inclusions') or [] %}
 {% set exclusions = item.get('exclusions') or [] %}

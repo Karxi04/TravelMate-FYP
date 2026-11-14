@@ -22,6 +22,8 @@ class RequestTimeouts {
   }
 
   static Duration forPost(String path) {
+    if (path.endsWith('/lower-cost-alternatives')) return providerMutation;
+    if (path == '/api/fr7/flights/returns') return longProviderRead;
     if (path == '/api/fr5/personalised-trips/generate') {
       return personalisedGeneration;
     }
