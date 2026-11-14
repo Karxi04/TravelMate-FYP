@@ -1,6 +1,6 @@
 """Evidence-based discovery selection; hybrid scoring and legacy thresholds stay intact."""
 import re
-from services.recommendation_taxonomy import concepts_for, candidate_concepts, normalize_phrase
+from services.recommendation_taxonomy import concepts_for, candidate_concepts, normalize_phrase, preference_concepts
 
 DISCOVERY_MODE = 'relevant_v1'
 
@@ -81,7 +81,7 @@ def enrich_discovery_candidate(item):
 
 def discovery_queries(preference, candidates):
     excluded = concepts_for(preference.get('excludedInterests') or [])
-    requested = concepts_for(preference.get('interests') or []) - excluded
+    requested = preference_concepts(preference.get('interests') or []) - excluded
     covered = set()
     for item in candidates:
         did = str(item.get('destinationId') or item.get('id') or '')
@@ -91,14 +91,18 @@ def discovery_queries(preference, candidates):
         if not concepts & excluded:
             covered.update(concepts)
     missing = requested - covered
-    queries = [query for concept,query in [('photography','street art'),('food','hawker centres')]
-               if concept in missing]
-    return queries or ['tourist attractions']
+    queries = [query for concept, query in (
+        ('photography', 'street art'), ('food', 'hawker centres'),
+        ('adventure', 'outdoor adventure activities'), ('nature', 'nature parks'),
+        ('family', 'family attractions'), ('leisure', 'gardens and leisure attractions'),
+        ('culture', 'heritage sites and museums'),
+    ) if concept in missing]
+    return queries[:2] or ['tourist attractions']
 
 
 def discovery_annotations(item, preference):
     concepts = set(item.get('destinationConcepts') or [])
-    requested = concepts_for(preference.get('interests') or [])
+    requested = preference_concepts(preference.get('interests') or [])
     if not requested and not preference.get('interests'):
         requested = concepts_for(preference.get('travelType'))
     matched = concepts & requested

@@ -480,7 +480,7 @@ def generate():
     unique_candidates = deduplicateRecommendations(scored)
     ranked_candidates = diversifyRecommendations(
         rankRecommendations(unique_candidates),
-        pref,
+        effective_pref,
         limit=150,
     )
     final_candidates, rejected_final = filter_candidates(

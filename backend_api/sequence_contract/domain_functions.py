@@ -6,6 +6,7 @@ from datetime import datetime, date
 from math import radians, sin, cos, sqrt, atan2, isfinite
 from utils import utc_now_iso
 from services.recommendation_taxonomy import (
+    preference_concepts,
     candidate_concepts,
     primary_concepts,
     concepts_for,
@@ -118,7 +119,7 @@ def applyContentBasedFiltering(recommendationInput):
     raw_interests = [
         value for value in pref.get('interests', []) if _text(value)
     ]
-    interest_concepts = concepts_for(raw_interests)
+    interest_concepts = preference_concepts(raw_interests)
     excluded_concepts = concepts_for(pref.get('excludedInterests', []))
     travel_type_concepts = concepts_for(pref.get('travelType'))
     requested_budget = normalize_budget(pref.get('budgetRange'))
@@ -531,7 +532,7 @@ def diversifyRecommendations(items, preferenceProfile=None, limit=12):
     remaining = [dict(item) for item in (items or [])]
     selected = []
     category_counts = {}
-    preferred = concepts_for((preferenceProfile or {}).get('interests', []))
+    preferred = preference_concepts((preferenceProfile or {}).get('interests', []))
     while remaining and len(selected) < max(0, int(limit or 0)):
         best_index = 0
         best_adjusted = float('-inf')
@@ -540,7 +541,7 @@ def diversifyRecommendations(items, preferenceProfile=None, limit=12):
         for index, item in enumerate(remaining):
             concepts = set(item.get('destinationConcepts') or candidate_concepts(item))
             preferred_matches = sorted(concepts.intersection(preferred))
-            category = preferred_matches[0] if preferred_matches else (
+            category = min(preferred_matches, key=lambda value: (category_counts.get(value, 0), value)) if preferred_matches else (
                 sorted(concepts)[0] if concepts else 'general')
             repeated = category_counts.get(category, 0)
             penalty_rate = 2.0 if category in preferred else 7.0

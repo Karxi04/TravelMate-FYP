@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../core/utils/destination_utils.dart';
@@ -10,7 +8,6 @@ import '../../widgets/local_place_rating.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import '../fr04_hybrid_recommendation/recommendation_screen.dart';
-import '../fr08_hotel_booking/hotel_screen.dart';
 import 'destination_details_screen.dart';
 import 'destination_trip_actions.dart';
 import 'favourites_screen.dart';
@@ -44,7 +41,6 @@ class _ExploreTabState extends State<ExploreTab> {
   void _favouritesChanged() { if (mounted) setState(() {}); }
   bool loading = false;
   bool hasSearched = false;
-  String category = 'All';
   String sort = 'relevance';
   String locationUsed = '';
   String resultSource = '';
@@ -54,16 +50,8 @@ class _ExploreTabState extends State<ExploreTab> {
   int visibleLimit = 20;
   int? nextOffset;
   String? _resultCriteria;
-  Timer? searchDebounce;
-
-  final categories = const [
-    ('All', Icons.explore_outlined),
-    ('Food', Icons.restaurant_outlined),
-    ('Culture', Icons.museum_outlined),
-    ('Nature', Icons.park_outlined),
-    ('Shopping', Icons.shopping_bag_outlined),
-    ('Hotels', Icons.hotel_outlined),
-  ];
+  String? _pendingCriteria;
+  String get _criteria => '${query.text.trim()}|${location.text.trim()}|$sort';
 
   final suggestions = const [
     'Malaysia attractions',
@@ -86,7 +74,6 @@ class _ExploreTabState extends State<ExploreTab> {
   void dispose() {
     favourites.removeListener(_favouritesChanged);
     favourites.dispose();
-    searchDebounce?.cancel();
     query.dispose();
     location.dispose();
     super.dispose();
@@ -107,15 +94,16 @@ class _ExploreTabState extends State<ExploreTab> {
   }
 
   Future<void> search({bool loadMore = false}) async {
-    searchDebounce?.cancel();
     final text = query.text.trim();
     if (text.isEmpty) {
       setState(
           () => queryError = 'Enter a place, food, or activity to search.');
       return;
     }
-    if (loadMore && (_resultCriteria != '${query.text.trim()}|${location.text.trim()}|$category|$sort' || nextOffset == null)) return;
-    final requestedCriteria = '${query.text.trim()}|${location.text.trim()}|$category|$sort';
+    if (loadMore && (_resultCriteria != _criteria || nextOffset == null)) return;
+    final requestedCriteria = _criteria;
+    if (loading && _pendingCriteria == requestedCriteria) return;
+    _pendingCriteria = requestedCriteria;
     final version = ++searchVersion;
     final previous = loadMore ? List<Map<String, dynamic>>.from(results) : <Map<String, dynamic>>[];
     FocusManager.instance.primaryFocus?.unfocus();
@@ -124,6 +112,11 @@ class _ExploreTabState extends State<ExploreTab> {
       hasSearched = true;
       queryError = null;
       searchError = null;
+      if (!loadMore) {
+        results = [];
+        nextOffset = null;
+        _resultCriteria = null;
+      }
     });
 
     final requestedLocation =
@@ -133,12 +126,11 @@ class _ExploreTabState extends State<ExploreTab> {
       'location': requestedLocation,
       if (loadMore) 'offset': '$nextOffset',
     };
-    if (category != 'All') params['filter'] = category.toLowerCase();
     if (sort != 'relevance') params['sort'] = sort;
 
     try {
       final data = await api.get('/api/fr3/destinations/search', params);
-      if (!mounted || version != searchVersion || requestedCriteria != '${query.text.trim()}|${location.text.trim()}|$category|$sort') return;
+      if (!mounted || version != searchVersion || requestedCriteria != _criteria) return;
       setState(() {
         final incoming = (data['results'] as List? ?? const [])
             .whereType<Map>()
@@ -155,7 +147,7 @@ class _ExploreTabState extends State<ExploreTab> {
         resultSource = (data['source'] ?? '').toString();
       });
     } catch (error) {
-      if (!mounted || version != searchVersion) return;
+      if (!mounted || version != searchVersion || requestedCriteria != _criteria) return;
       setState(() {
         searchError = userFacingApiError(error);
       });
@@ -164,20 +156,17 @@ class _ExploreTabState extends State<ExploreTab> {
     }
   }
 
-  void _scheduleSearch(String value) {
-    searchDebounce?.cancel();
-    if (value.trim().isEmpty) {
-      searchVersion += 1;
-      setState(() {
-        loading = false;
-        hasSearched = false;
-        queryError = null;
-        searchError = null;
-        results = [];
-      });
-      return;
-    }
-    searchDebounce = Timer(const Duration(milliseconds: 450), search);
+  void _onCriteriaEdited(String _) {
+    if (!hasSearched && queryError == null) return;
+    searchVersion++;
+    setState(() {
+      loading = false;
+      hasSearched = false;
+      results = [];
+      nextOffset = null;
+      queryError = null;
+      searchError = null;
+    });
   }
 
   Future<void> _addToTrip(Map<String, dynamic> item) async {
@@ -223,21 +212,6 @@ class _ExploreTabState extends State<ExploreTab> {
     );
   }
 
-  void _selectCategory(String value) {
-    if (value == 'Hotels') {
-      final queryText = query.text.trim();
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => HotelScreen(
-          initialDestination: queryText.isNotEmpty ? queryText : null,
-        )),
-      );
-      return;
-    }
-    setState(() => category = value);
-    if (query.text.trim().isNotEmpty) search();
-  }
-
   void _useSuggestion(String value) {
     query.text = value;
     query.selection = TextSelection.collapsed(offset: value.length);
@@ -251,18 +225,11 @@ class _ExploreTabState extends State<ExploreTab> {
             key: const ValueKey('explore-search-field'),
             controller: query,
             hint: 'Search places, food, attractions…',
-            onChanged: _scheduleSearch,
+            onChanged: _onCriteriaEdited,
             onSubmitted: (_) => search(),
             onClear: () {
-              searchDebounce?.cancel();
-              searchVersion += 1;
               query.clear();
-              setState(() {
-                queryError = null;
-                searchError = null;
-                hasSearched = false;
-                results = [];
-              });
+              _onCriteriaEdited('');
             },
           ),
           if (queryError != null) ...[
@@ -283,6 +250,7 @@ class _ExploreTabState extends State<ExploreTab> {
             hint: 'Penang, Kuala Lumpur…',
             prefixIcon: Icons.location_on_outlined,
             textInputAction: TextInputAction.search,
+            onChanged: _onCriteriaEdited,
             onSubmitted: (_) => search(),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -301,27 +269,6 @@ class _ExploreTabState extends State<ExploreTab> {
   Widget _filters() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Interests', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: AppSpacing.xs),
-          SizedBox(
-            height: 44,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: categories.length,
-              separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.xs),
-              itemBuilder: (context, index) {
-                final item = categories[index];
-                return ChoiceChip(
-                  key: ValueKey('explore-category-${item.$1.toLowerCase()}'),
-                  selected: category == item.$1,
-                  avatar: Icon(item.$2, size: AppSizes.iconSmall),
-                  label: Text(item.$1),
-                  onSelected: (_) => _selectCategory(item.$1),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
               Expanded(
@@ -401,13 +348,7 @@ class _ExploreTabState extends State<ExploreTab> {
       return TravelEmptyState(
         icon: Icons.search_off_rounded,
         title: 'No places found',
-        message:
-            'Try a broader search term, another area, or remove the selected interest.',
-        actionLabel: 'Clear interest filter',
-        onAction: () {
-          setState(() => category = 'All');
-          search();
-        },
+        message: 'Try a broader search term or another area.',
       );
     }
 
@@ -454,11 +395,7 @@ class _ExploreTabState extends State<ExploreTab> {
             const DropdownMenuItem(value: 20, child: Text('20 places')), const DropdownMenuItem(value: 40, child: Text('40 places')),
             if (![10,20,40].contains(visibleLimit)) DropdownMenuItem(value: visibleLimit, child: Text('$visibleLimit places'))],
           onChanged: (value) { if (value != null) setState(() => visibleLimit = value); }),
-        if (results.length > visibleLimit || nextOffset != null) OutlinedButton(
-          onPressed: loading ? null : () {
-            if (results.length > visibleLimit) { setState(() => visibleLimit += 20); }
-            else { search(loadMore: true); }
-          }, child: Text(loading ? 'Loading...' : 'Load more places')),
+        const SizedBox(height: AppSpacing.md),
         ...results.take(visibleLimit).map(
           (item) => Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -477,6 +414,20 @@ class _ExploreTabState extends State<ExploreTab> {
             ),
           ),
         ),
+        const SizedBox(height: AppSpacing.md),
+        if (results.length > visibleLimit || nextOffset != null)
+          OutlinedButton(
+            onPressed: loading ? null : () {
+              if (results.length > visibleLimit) {
+                setState(() => visibleLimit += 20);
+              } else {
+                search(loadMore: true);
+              }
+            },
+            child: Text(loading ? 'Loading more places…' : 'Load more places'),
+          )
+        else
+          const Center(child: Text('All matching places shown')),
       ],
     );
   }

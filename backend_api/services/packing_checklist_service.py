@@ -6,6 +6,8 @@ import re
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 
+from services.malaysian_locality import normalize_destination_scope
+
 CATEGORIES = [
     {'id': 'documents', 'name': 'Travel Documents'},
     {'id': 'clothing', 'name': 'Clothing'},
@@ -17,7 +19,7 @@ CATEGORIES = [
 ]
 CATEGORY_IDS = {category['id'] for category in CATEGORIES}
 MAX_ITEMS = 100
-RULE_VERSION = 1
+RULE_VERSION = 2
 FORECAST_DAYS = 7
 MYT = timezone(timedelta(hours=8))
 
@@ -139,13 +141,19 @@ def suggestions(trip, preferences, now):
     pref = _object(preferences)
     interests = pref.get('interests')
     preference_text = ' '.join(str(x)[:100] for x in interests[:30]).lower() if isinstance(interests, list) else ''
+    destination = str(trip.get('destinationArea') or trip.get('destinationName') or snapshot.get('destination') or '')[:160]
+    environment = str(trip.get('destinationEnvironment') or snapshot.get('destinationEnvironment') or '')[:100]
     themes = {}
     for theme, pattern in [('beach', r'\b(beach|swimming|snorkel\w*|pantai)\b'),
-                           ('hiking', r'\b(hik\w*|trek\w*|trail|nature)\b'),
-                           ('city', r'\b(city|heritage|culture|cultural|museum|walking|sightseeing)\b')]:
+                           ('hiking', r'\b(hik\w*|trek\w*|trail|jungle)\b'),
+                           ('nature', r'\b(nature|forest|wildlife|outdoors?)\b'),
+                           ('city', r'\b(city|heritage|culture|cultural|museum|walking|sightseeing)\b'),
+                           ('religious site', r'\b(temple|mosque|religious|church|monastery)\b')]:
         if re.search(pattern, text):
             themes[theme] = 'activity'
-        elif re.search(pattern, preference_text):
+        elif re.search(pattern, f'{destination} {environment}', re.I):
+            themes[theme] = 'trip'
+        elif not activities and re.search(pattern, preference_text):
             themes[theme] = 'preference'
     items = {}
 
@@ -155,38 +163,56 @@ def suggestions(trip, preferences, now):
                           'isPacked': False, 'isCustom': False, 'source': source, 'reason': reason,
                           'suppressed': False, 'applicable': True, 'userEditedFields': []}
 
-    add('travel_documents', 'Identification and travel confirmations', 'documents')
+    origin_country = _country(trip.get('originCountry') or _object(trip.get('originLocation')).get('country'))
+    declared_country = trip.get('destinationCountry') or snapshot.get('destinationCountry')
+    destination_country = _country(declared_country)
+    if not declared_country and normalize_destination_scope(destination).get('country') == 'Malaysia':
+        destination_country = 'MY'
+    international = bool(origin_country and destination_country and origin_country != destination_country)
+    identity = ('Passport and border-entry documents' if international else
+                'MyKad (Malaysian citizens) or valid identity document' if destination_country == 'MY'
+                else 'Valid identity document and travel confirmations')
+    # Keep the existing identity item ID so a refresh preserves packing progress.
+    add('passport' if international else 'travel_documents', identity, 'documents', source='trip')
+    add('medication', 'Personal medication, if needed', 'personal_care')
     add('clothing_changes', 'Clothing changes', 'clothing', min(days, 14), 'trip',
         f'Approximately one change per day for your {days}-day trip; adjust for laundry.')
     add('toiletries', 'Everyday toiletries', 'personal_care')
     add('phone_charger', 'Phone charger', 'electronics')
     for theme, origin in themes.items():
-        reason = f'Suggested for {theme} activities in your itinerary.' if origin == 'activity' else f'Suggested for your declared {theme} interest.'
+        reason = {
+            'activity': f'Suggested for {theme} activities in your itinerary.',
+            'trip': f'Suggested for the {theme} environment of your destination.',
+            'preference': f'Suggested for your declared interest in {theme}.',
+        }[origin]
         if theme == 'beach':
             add('swimwear', 'Swimwear', 'activity', source=origin, reason=reason)
             add('towel', 'Towel', 'activity', source=origin, reason=reason)
             add('sunscreen', 'Sunscreen', 'personal_care', source=origin, reason=reason)
             add('beach_footwear', 'Suitable beach footwear', 'activity', source=origin, reason=reason)
-        if theme in {'hiking', 'city'}:
-            add('walking_shoes', 'Comfortable walking shoes', 'activity', source=origin, reason=reason)
+            add('waterproof_pouch', 'Waterproof phone pouch', 'activity', source=origin, reason=reason)
+        if theme in {'hiking', 'nature', 'city', 'religious site'}:
+            add('walking_shoes', 'Hiking shoes with grip' if 'hiking' in themes else 'Comfortable walking shoes',
+                'activity', source=origin, reason=reason)
             add('water_bottle', 'Refillable water bottle', 'activity', source=origin, reason=reason)
-        if theme == 'hiking':
+        if theme in {'hiking', 'nature'}:
+            add('insect_repellent', 'Insect repellent', 'personal_care', source=origin, reason=reason)
+            add('water_bottle', 'Refillable water bottle', 'activity', source=origin, reason=reason)
             add('outdoor_clothing', 'Comfortable outdoor clothing', 'clothing', source=origin, reason=reason)
+        if theme == 'religious site':
+            add('modest_clothing', 'Clothing that covers shoulders and knees', 'clothing', source=origin, reason=reason)
         if theme == 'city':
             add('day_bag', 'Small day bag', 'activity', source=origin, reason=reason)
             add('power_bank', 'Power bank', 'electronics', source=origin, reason=reason)
-    origin_country = _country(trip.get('originCountry') or _object(trip.get('originLocation')).get('country'))
-    destination_country = _country(trip.get('destinationCountry'))
-    international = bool(origin_country and destination_country and origin_country != destination_country)
     if international:
-        add('passport', 'Passport and border-entry documents', 'documents', source='trip',
-            reason='Your declared origin and destination countries differ; check entry requirements.')
         add('adapter', 'Check whether a travel adapter is needed', 'electronics', source='trip',
             reason='Check socket compatibility for your international journey.')
     weather, rows = weather_context(trip, now)
     if any(r.get('precipitation_probability_max', -1) >= 55 or r.get('weather_code', -1) in range(51, 100) for r in rows.values()):
         add('rain_protection', 'Umbrella or raincoat', 'weather', source='weather', reason='Rain is forecast on a covered trip date.')
-    else:
+        add('waterproof_bag', 'Waterproof bag for valuables', 'weather', source='weather',
+            reason='Rain is forecast on a covered trip date.')
+    elif weather['status'] != 'available':
         add('rain_protection', 'Compact umbrella or raincoat', 'weather', reason='General rain precaution; not a forecast.')
     if any(r.get('temperature_2m_max', -99) >= 30 for r in rows.values()):
         add('water_bottle', 'Refillable water bottle', 'weather', source='weather', reason='Hot conditions are forecast on a covered trip date.')
@@ -195,7 +221,7 @@ def suggestions(trip, preferences, now):
     if themes and any(r.get('weather_code') in (0, 1) for r in rows.values()):
         add('sun_hat', 'Sun hat', 'weather', source='weather', reason='Sunny conditions are forecast; useful for outdoor activities.')
         add('sunscreen', 'Sunscreen', 'weather', source='weather', reason='Sunny conditions are forecast; useful for outdoor activities.')
-    context = {'destination': str(trip.get('destinationArea') or trip.get('destinationName') or snapshot.get('destination') or '')[:160],
+    context = {'destination': destination,
                'startDate': start.isoformat() if start else None, 'endDate': end.isoformat() if end else None,
                'durationDays': days, 'international': international}
     fingerprint = hashlib.sha256(json.dumps([RULE_VERSION, context, list(items.values()), weather],

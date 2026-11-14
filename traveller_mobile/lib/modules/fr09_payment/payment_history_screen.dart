@@ -293,6 +293,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
               pricingBreakdown: attempt['pricingBreakdown'] is Map
                   ? Map<String, dynamic>.from(attempt['pricingBreakdown'])
                   : null,
+              initialProductName: item['productTitle']?.toString(),
               initialAmount: amount.toDouble(),
               api: api,
             ),

@@ -181,6 +181,8 @@ class ActionApi extends ApiService {
         'title': 'Sent chat',
         'planningState': {},
         'messages': [
+          for (final row in sessions.where((row) => row['id'] == body?['sessionId']))
+            ...row['messages'] as List,
           {'message': body!['message'], 'reply': 'Reply to ${body['message']}',
             if (suggestedReplies != null) 'suggestedReplies': suggestedReplies}
         ]
@@ -319,6 +321,33 @@ void main() {
     });
     expect(find.widgetWithText(ActionChip, 'Not sure'), findsNothing);
   });
+  testWidgets('latest assistant reply and quick action scroll into reach', (tester) async {
+    final api = ActionApi()
+      ..suggestedReplies = ['Choose two travellers']
+      ..sessions = [
+        {
+          'id': 'sent-session',
+          'title': 'Existing planning session',
+          'messages': List.generate(14, (index) => {
+            'message': 'Question $index',
+            'reply': 'Earlier reply $index with planning details.',
+          }),
+        },
+      ];
+    await frame(tester, ChatTab(api: api));
+    final field = find.byType(TextField);
+    await tester.enterText(field, 'Plan for two days');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('Reply to Plan for two days').hitTestable(), findsOneWidget);
+    final quick = find.widgetWithText(ActionChip, 'Choose two travellers').hitTestable();
+    expect(quick, findsOneWidget);
+    expect(field.hitTestable(), findsOneWidget);
+    await tester.tap(quick);
+    await tester.pumpAndSettle();
+    expect(api.posts.last['body']['sessionId'], 'sent-session');
+  });
+
   for (final tool in ['Flights', 'Hotels', 'Packing', 'Weather', 'Trips']) {
     testWidgets(
         'travel tool $tool opens the correct existing screen with the same API',

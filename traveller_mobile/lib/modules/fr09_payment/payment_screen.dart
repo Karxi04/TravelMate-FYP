@@ -18,6 +18,7 @@ import 'payment_status.dart';
 class PaymentScreen extends StatefulWidget {
   final String initialBookingReference;
   final double? initialAmount;
+  final String? initialProductName;
   final Map<String, dynamic>? pricingBreakdown;
   final String quoteType;
   final String quoteId;
@@ -35,6 +36,7 @@ class PaymentScreen extends StatefulWidget {
     super.key,
     this.initialBookingReference = '',
     this.initialAmount,
+    this.initialProductName,
     this.pricingBreakdown,
     this.quoteType = '',
     this.quoteId = '',
@@ -720,18 +722,27 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final isPackage = widget.packageAttemptId.isNotEmpty ||
         widget.quoteType == 'package' ||
         activeOrder?['quoteType'] == 'package';
-    final isHotel = widget.quoteType == 'hotel';
+    final isHotel = widget.quoteType == 'hotel' || activeOrder?['quoteType'] == 'hotel';
     final snapshot = activeOrder?['packageSnapshot'] is Map
         ? Map<String, dynamic>.from(activeOrder!['packageSnapshot'] as Map)
         : (activeOrder?['quoteSnapshot'] is Map
             ? Map<String, dynamic>.from(activeOrder!['quoteSnapshot'] as Map)
             : null);
-    final productTitle = (snapshot?['title'] ??
-            snapshot?['name'] ??
-            snapshot?['roomName'] ??
-            widget.initialBookingReference)
-        .toString()
-        .trim();
+    final productTitle = [
+      if (isHotel) ...[
+        snapshot?['name'],
+        snapshot?['hotelName'],
+        activeOrder?['hotelName'],
+        widget.acceptedPrebook?['name'],
+        widget.acceptedPrebook?['hotelName'],
+      ],
+      if (!isHotel) ...[snapshot?['title'], snapshot?['name'], activeOrder?['packageTitle']],
+      activeOrder?['productTitle'],
+      widget.initialProductName,
+      isHotel ? 'Hotel stay' : 'Tourism package',
+    ].whereType<String>().map((name) => name.trim()).firstWhere((name) =>
+        name.isNotEmpty && !RegExp(r'^TravelMate (hotel|package) test order',
+            caseSensitive: false).hasMatch(name));
 
     final departure =
         (activeOrder?['departureDate'] ?? snapshot?['selectedDepartureDate'])

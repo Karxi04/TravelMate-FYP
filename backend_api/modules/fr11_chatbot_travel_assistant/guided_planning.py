@@ -38,7 +38,7 @@ def guided_requirements(message, state, preferences, dates_supplied=False):
             goal == 'itinerary' and state.get('guidedActive')
             and not re.search(r'\b(?:just|only|instead|things to do|activity ideas)\b', answer)):
         goal = 'activities'
-    elif (start_itinerary or upgrade or detailed == 'ITINERARY_PLANNING'
+    elif (start_itinerary or upgrade or detailed in {'ITINERARY_PLANNING', 'ITINERARY_MODIFICATION'}
           or (dates_supplied and goal != 'activities')
           or (answer == 'regenerate itinerary' and state.get('activePlan'))):
         goal = 'itinerary'

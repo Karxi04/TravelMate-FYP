@@ -327,3 +327,16 @@ def test_repository_retries_only_sdk_wrapped_contention_not_arbitrary_value_erro
             repository.transactPackingChecklist('trip', 'uid', MagicMock())
         assert decorate.return_value.call_count == 1
         sleep.assert_not_called()
+
+
+def test_packing_keeps_identity_and_activity_suggestions_specific():
+    domestic, _, _, _ = service.suggestions(trip(activities=[{'title': 'Temple and beach visit'}]), {}, NOW)
+    items = {item['itemId']: item for item in domestic}
+    assert 'MyKad' in items['travel_documents']['name']
+    assert 'passport' not in items
+    assert {'modest_clothing', 'waterproof_pouch'} <= items.keys()
+    assert items['rain_protection']['source'] == 'general'
+    international, _, _, _ = service.suggestions(
+        trip(originCountry='Malaysia', destinationCountry='Singapore', activities=[]), {}, NOW)
+    assert {item['itemId'] for item in international}.isdisjoint({'travel_documents', 'swimwear', 'modest_clothing'})
+    assert any(item['itemId'] == 'passport' for item in international)

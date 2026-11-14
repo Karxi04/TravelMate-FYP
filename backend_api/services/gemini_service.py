@@ -5,6 +5,8 @@ import logging
 import math
 import json
 from time import monotonic
+from threading import Lock
+from hashlib import sha256
 from google import genai
 from google.genai import types
 from httpx import TimeoutException
@@ -19,7 +21,8 @@ SYSTEM_PREFIX = (
     "If a traveller requests a destination outside Malaysia (e.g. Singapore, Tokyo, Bangkok, Bali), politely explain that "
     "TravelMate is dedicated exclusively to Malaysia travel planning, but offer to assist with any Malaysian destination. "
     "Help with destinations, personalised itinerary ideas, budget planning, weather interpretation, "
-    "flight/hotel planning and general travel questions. Use the traveller context and active trip planning state when supplied. "
+    "flight/hotel planning and general travel questions. Briefly answer ordinary unrelated questions without steering them into trip planning. "
+    "Use the traveller context and active trip planning state when relevant. "
     "Never invent Operator packages, availability, campaign discounts, payable amounts or supplier confirmations. "
     "Commercial facts must come from structured TravelMate backend tools; ordinary itinerary estimates are not package offers. "
     "Never claim a booking or payment is confirmed unless a verified TravelMate record confirms its status. "
@@ -35,7 +38,12 @@ MIN_TIMEOUT_SECONDS = 5
 MAX_TIMEOUT_SECONDS = 120
 SERVER_TIMEOUT_FLOOR_SECONDS = 20
 PROVIDER_COOLDOWN_SECONDS = 45
+DEFAULT_MODELS = ('gemini-4-hydrogen', 'gemini-3.8-flash', 'gemini-3.5-flash-lite')
+MAX_TOTAL_WAIT_SECONDS = 18
+_model_retry_at = {}
 _provider_retry_at = 0.0
+_pending_prompts = set()
+_provider_lock = Lock()
 _CAR_RENTAL_REPLY = (
     "TravelMate no longer offers car rental. If you already have transport, you can account for it in your trip budget. "
     "Open a saved trip to use Smart Packing Checklist."
@@ -70,6 +78,7 @@ def _classify_provider_error(exc):
             404: 'HTTP_404_MODEL_OR_RESOURCE_NOT_FOUND',
             429: 'HTTP_429_RATE_LIMIT_EXHAUSTED',
             500: 'HTTP_500_PROVIDER_ERROR',
+            502: 'HTTP_502_BAD_GATEWAY',
             503: 'HTTP_503_SERVICE_UNAVAILABLE',
             504: 'HTTP_504_DEADLINE_EXCEEDED',
         }.get(status_code, 'OTHER_PROVIDER_HTTP_ERROR')
@@ -99,12 +108,12 @@ class InvalidProviderResponse(RuntimeError):
     pass
 
 
-def _generate(message):
+def _generate(message, model=None, timeout_sec=None):
     key = os.getenv('GEMINI_API_KEY', '').strip()
     if not key:
         raise RuntimeError('GEMINI_API_KEY is not configured')
-    model = os.getenv('GEMINI_MODEL', 'gemini-3.7-flash').strip() or 'gemini-3.7-flash'
-    timeout_sec = get_gemini_timeout_seconds()
+    model = model or os.getenv('GEMINI_MODEL', 'gemini-3.7-flash').strip() or 'gemini-3.7-flash'
+    timeout_sec = timeout_sec if timeout_sec is not None else get_gemini_timeout_seconds()
     timeout_ms = int(timeout_sec * 1000)
 
     # The SDK also derives a server deadline from its client timeout unless explicitly supplied.
@@ -235,6 +244,9 @@ def _local_assistant(question, context='', planning_state=None):
     if is_weather and not is_explicit_planning:
         if ps.get('preferIndoor') or excluded_labels:
             return constrained_indoor_reply(ps.get('destinationArea') or 'your destination')
+        if re.search(r"\b(?:weather|climate)\b.{0,25}\bmalaysia\b", q) and not re.search(r"\b(?:today|tomorrow|this week|forecast)\b", q):
+            return ("Malaysia is generally warm and humid, with rain possible throughout the year. "
+                    "Rainfall patterns vary by region and season. Use Weather for your destination and dates.")
         return (
             "Check the Weather tool for the live Open-Meteo forecast. TravelMate's smart itinerary generator treats museums, malls and indoor food experiences "
             "as safer wet-weather choices, while beaches, gardens, hill viewpoints and outdoor adventure stops stay flexible when rain probability is high."
@@ -273,6 +285,15 @@ def _local_assistant(question, context='', planning_state=None):
             "TravelMate helps you discover places in Malaysia, build daily itineraries from destination, dates and interests, "
             "and compare estimated trip costs. You can also check weather, search flights and hotels, and use Smart Packing Checklist in a saved trip."
         )
+
+    if re.search(r'\bstripe\b', q) and re.search(r'\b(?:pay|payment|checkout|work)\b', q):
+        return ('TravelMate opens Stripe-hosted Checkout for eligible orders. Enter card details there. '
+                'TravelMate shows Paid after the Backend verifies the payment. Test Mode uses test transactions '
+                'and does not confirm a supplier reservation.')
+    if detailed_intent == 'BUDGET_ENQUIRY':
+        return ('Start with a total group budget for travel, accommodation, meals and admission. '
+                'Allow extra for costs you have not verified. Open Budget in a saved Trip to see '
+                'your estimates and lower-cost alternatives.')
 
     # 6. Pure standalone budget advice inquiry
     is_pure_budget = any(p in q for p in ['how to budget', 'how should i budget', 'save money', 'budget tips', 'affordable tips', 'how much should i budget']) or (
@@ -319,6 +340,43 @@ def _local_assistant(question, context='', planning_state=None):
     )
 
 
+def _model_order():
+    configured = os.getenv('GEMINI_FALLBACK_MODELS', ','.join(DEFAULT_MODELS))
+    return tuple(dict.fromkeys(model.strip() for model in configured.split(',')
+                               if model.strip() in DEFAULT_MODELS))
+
+
+def _candidate_reply(prompt):
+    retryable = {
+        'HTTP_404_MODEL_OR_RESOURCE_NOT_FOUND', 'HTTP_429_RATE_LIMIT_EXHAUSTED', 'HTTP_500_PROVIDER_ERROR',
+        'HTTP_502_BAD_GATEWAY', 'HTTP_503_SERVICE_UNAVAILABLE', 'HTTP_504_DEADLINE_EXCEEDED', 'CLIENT_TIMEOUT',
+        'EMPTY_PROVIDER_RESPONSE', 'INVALID_PROVIDER_RESPONSE',
+    }
+    deadline = monotonic() + MAX_TOTAL_WAIT_SECONDS
+    model_order = _model_order()
+    for index, model in enumerate(model_order):
+        now = monotonic()
+        with _provider_lock:
+            if now < _model_retry_at.get(model, 0):
+                continue
+        remaining = deadline - now
+        if remaining <= 0:
+            break
+        timeout = min(get_gemini_timeout_seconds(), remaining / (len(model_order) - index))
+        try:
+            reply = _generate(prompt, model=model, timeout_sec=timeout)
+            logger.info('[FR11 Gemini] Provider text received: model=%s, elapsed=%.2fs', model, monotonic()-now)
+            return reply
+        except Exception as exc:
+            category = _classify_provider_error(exc)
+            logger.warning('[FR11 Gemini] Provider failure: model=%s, category=%s', model, category)
+            if category not in retryable:
+                break
+            with _provider_lock:
+                _model_retry_at[model] = monotonic() + PROVIDER_COOLDOWN_SECONDS
+    return None
+
+
 def generateChatbotResponse(question, context='', *, with_source=False, planning_state=None):
     from modules.fr11_chatbot_travel_assistant.nlp_extractor import car_rental_question
 
@@ -326,27 +384,39 @@ def generateChatbotResponse(question, context='', *, with_source=False, planning
     source = 'travelmate-assistant'
     if car_rental_question(str(question or '')):
         reply = _CAR_RENTAL_REPLY
-    elif is_gemini_configured() and monotonic() >= _provider_retry_at:
-        start_t = time.perf_counter()
-        try:
-            reply = _generate((context + '\n\n' if context else '') + 'Traveller: ' + str(question))
-            source = 'gemini'
-            logger.info("[FR11 Gemini] Provider text received: elapsed=%.2fs", time.perf_counter() - start_t)
-        except Exception as exc:
-            elapsed = time.perf_counter() - start_t
-            category = _classify_provider_error(exc)
-            if category in {'HTTP_429_RATE_LIMIT_EXHAUSTED', 'HTTP_503_SERVICE_UNAVAILABLE',
-                            'HTTP_504_DEADLINE_EXCEEDED', 'CLIENT_TIMEOUT'}:
-                _provider_retry_at = monotonic() + PROVIDER_COOLDOWN_SECONDS
-            logger.warning("[FR11 Gemini] Provider failure: category=%s, elapsed=%.2fs", category, elapsed)
-            if _fallback_mode():
-                reply = _local_assistant(question, context, planning_state=planning_state)
-            else:
-                raise RuntimeError('Gemini service is unavailable') from None
-    elif _fallback_mode():
-        reply = _local_assistant(question, context, planning_state=planning_state)
     else:
-        raise RuntimeError('Gemini service is unavailable')
+        prompt = (context + '\n\n' if context else '') + 'Traveller: ' + str(question)
+        reply = None
+        free_confirmed = os.getenv('GEMINI_FREE_TIER_CONFIRMED', '').lower() in {'1', 'true', 'yes'}
+        if is_gemini_configured():
+            fingerprint = sha256(prompt.encode()).digest()
+            with _provider_lock:
+                already_pending = fingerprint in _pending_prompts
+                if not already_pending:
+                    _pending_prompts.add(fingerprint)
+            if not already_pending:
+                try:
+                    if free_confirmed:
+                        reply = _candidate_reply(prompt)
+                    elif monotonic() >= _provider_retry_at:
+                        # Preserve the existing single-model configuration.
+                        try:
+                            reply = _generate(prompt)
+                        except Exception as exc:
+                            category = _classify_provider_error(exc)
+                            if category in {'HTTP_429_RATE_LIMIT_EXHAUSTED', 'HTTP_503_SERVICE_UNAVAILABLE',
+                                            'HTTP_504_DEADLINE_EXCEEDED', 'CLIENT_TIMEOUT'}:
+                                _provider_retry_at = monotonic() + PROVIDER_COOLDOWN_SECONDS
+                            logger.warning('[FR11 Gemini] Provider failure: category=%s', category)
+                finally:
+                    with _provider_lock:
+                        _pending_prompts.discard(fingerprint)
+        if reply:
+            source = 'gemini'
+        elif free_confirmed or _fallback_mode():
+            reply = _local_assistant(question, context, planning_state=planning_state)
+        else:
+            raise RuntimeError('Gemini service is unavailable')
     return {'reply': reply, 'source': source} if with_source else reply
 
 

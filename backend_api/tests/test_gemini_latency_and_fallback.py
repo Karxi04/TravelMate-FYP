@@ -173,6 +173,8 @@ def test_empty_and_structured_provider_output_are_rejected(monkeypatch, value, e
 
 
 def test_19_correct_source_labeling(monkeypatch):
+    monkeypatch.setenv('GEMINI_MODEL', 'gemini-3.8-flash')
+    monkeypatch.delenv('GEMINI_FREE_TIER_CONFIRMED', raising=False)
     monkeypatch.setenv('GEMINI_API_KEY', 'test_key')
     monkeypatch.setenv('FALLBACK_MODE', 'true')
     now = 100.0
@@ -206,6 +208,8 @@ def test_retired_car_rental_cannot_be_advertised_by_provider(monkeypatch, questi
 
 
 def test_20_correct_sanitized_error_handling(monkeypatch, caplog):
+    monkeypatch.setenv('GEMINI_MODEL', 'gemini-3.8-flash')
+    monkeypatch.delenv('GEMINI_FREE_TIER_CONFIRMED', raising=False)
     monkeypatch.setenv('GEMINI_API_KEY', 'secret_gemini_api_key_12345')
     monkeypatch.setenv('FALLBACK_MODE', 'true')
 
@@ -483,3 +487,23 @@ def test_section_6_melaka_multi_turn_scenario(client, mock_traveller_auth):
         assert "Culture" in final_ps.get('interests', [])
         assert "Food" in final_ps.get('interests', [])
         assert final_ps.get('budgetLimit') == 1000.0
+
+
+@pytest.mark.parametrize('failure', [TimeoutError(), ServerError(429, {}), ServerError(503, {}), ServerError(504, {})])
+def test_free_tier_fallback_keeps_context_and_is_bounded(monkeypatch, failure):
+    monkeypatch.setenv('GEMINI_API_KEY', 'fixture')
+    monkeypatch.setenv('GEMINI_FREE_TIER_CONFIRMED', 'true')
+    monkeypatch.delenv('GEMINI_FALLBACK_MODELS', raising=False)
+    monkeypatch.setattr(gs, '_model_retry_at', {})
+    with patch.object(gs, '_generate', side_effect=[failure, 'Melaka']) as generate:
+        result = gs.generateChatbotResponse('Which city?', 'Traveller: Melaka', with_source=True)
+    assert result == {'source': 'gemini', 'reply': 'Melaka'}
+    assert [call.kwargs['model'] for call in generate.call_args_list] == list(gs.DEFAULT_MODELS[:2])
+    assert generate.call_args_list[0].args == generate.call_args_list[1].args
+    assert 'Traveller: Melaka' in generate.call_args.args[0]
+    assert sum(call.kwargs['timeout_sec'] for call in generate.call_args_list) <= gs.MAX_TOTAL_WAIT_SECONDS
+
+
+def test_paid_configured_fallback_model_is_filtered(monkeypatch):
+    monkeypatch.setenv('GEMINI_FALLBACK_MODELS', 'paid-model, gemini-3.5-flash-lite, gemini-3.5-flash-lite')
+    assert gs._model_order() == ('gemini-3.5-flash-lite',)

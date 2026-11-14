@@ -29,6 +29,17 @@ class ChatTab extends StatefulWidget {
 
 class _ChatTabState extends State<ChatTab> {
   final message = TextEditingController();
+  final conversationScroll = ScrollController();
+  bool followReply = true;
+  String? pendingMessage;
+
+  void _showLatest() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && followReply && conversationScroll.hasClients) {
+        conversationScroll.jumpTo(conversationScroll.position.maxScrollExtent);
+      }
+    });
+  }
   final scaffoldKey = GlobalKey<ScaffoldState>();
   late final ApiService api;
 
@@ -112,6 +123,7 @@ class _ChatTabState extends State<ChatTab> {
     final active = planningState['activePlan'];
     if (plan['draftId'] != null &&
         (active is! Map || active['draftId'] != plan['draftId'])) return true;
+    if (plan['adjustmentTripId'] != null) return false;
     return planningState['startDate'] != null &&
         (planningState['startDate'] != plan['startDate'] ||
             planningState['endDate'] != plan['endDate']);
@@ -202,6 +214,7 @@ class _ChatTabState extends State<ChatTab> {
       final data = await api.get('/api/fr11/sessions/$id');
       final session = Map<String, dynamic>.from(data['session'] as Map);
       if (!mounted) return;
+      followReply = true;
       setState(() {
         activeSessionId = id;
         messages = session['messages'] as List? ?? [];
@@ -209,6 +222,7 @@ class _ChatTabState extends State<ChatTab> {
         sendError = null;
         failedMessage = null;
       });
+      _showLatest();
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -264,11 +278,14 @@ class _ChatTabState extends State<ChatTab> {
     if (text.isEmpty || busy) return;
 
     message.clear();
+    followReply = true;
     setState(() {
       busy = true;
       sendError = null;
       failedMessage = text;
+      pendingMessage = text;
     });
+    _showLatest();
     try {
       final data = await api.post('/api/fr11/chat', {
         'message': text,
@@ -288,7 +305,13 @@ class _ChatTabState extends State<ChatTab> {
       } else if (data['item'] is Map && mounted) {
         setState(() => messages = [...messages, data['item']]);
       }
-      await loadSessions(openNewest: false);
+      if (mounted && data['session'] is Map) {
+        final summary = Map<String, dynamic>.from(data['session'] as Map)
+          ..remove('messages');
+        setState(() {
+          sessions = [summary, ...sessions.where((row) => row is Map && row['id'].toString() != activeSessionId)];
+        });
+      }
     } catch (error) {
       if (error is ApiException &&
           error.statusCode == 409 &&
@@ -316,7 +339,13 @@ class _ChatTabState extends State<ChatTab> {
         });
       }
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() {
+          busy = false;
+          pendingMessage = null;
+        });
+        _showLatest();
+      }
     }
   }
 
@@ -325,7 +354,7 @@ class _ChatTabState extends State<ChatTab> {
         stalePlan(plan) ||
         savedPlans.containsKey(planKey(plan)) ||
         plan['coverageStatus'] == 'partial' ||
-        (plan['activities'] as List? ?? []).isEmpty) return;
+        (plan['adjustmentTripId'] == null && (plan['activities'] as List? ?? []).isEmpty)) return;
     setState(() {
       busy = true;
       savingPlanKey = planKey(plan);
@@ -333,7 +362,7 @@ class _ChatTabState extends State<ChatTab> {
     final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialog) => AlertDialog(
-              title: const Text('Save this trip?'),
+              title: Text(plan['adjustmentTripId'] == null ? 'Save this trip?' : 'Apply changes to this trip?'),
               content: Text(
                   '${plan['title'] ?? plan['destinationArea']}\n${plan['startDate'] ?? ''} to ${plan['endDate'] ?? ''}\nBudget: MYR ${plan['budgetLimit'] ?? '-'}\nReview the draft before saving. This does not book or pay for anything.'),
               actions: [
@@ -998,6 +1027,8 @@ class _ChatTabState extends State<ChatTab> {
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
     final days = <int, List<Map<String, dynamic>>>{};
+    final estimate = plan['budgetEstimate'] as Map?;
+    final estimatedTotal = estimate?['knownEstimatedSubtotal'] ?? estimate?['total'];
     final start = DateTime.tryParse('${plan['startDate']}');
     final end = DateTime.tryParse('${plan['endDate']}');
     final dayCount =
@@ -1050,6 +1081,12 @@ class _ChatTabState extends State<ChatTab> {
                     style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         color: AppColors.primaryStrong))),
+          if (estimatedTotal is num)
+            Text('Estimated costs so far · MYR ${estimatedTotal.toStringAsFixed(2)}'),
+          if (estimate?['overBy'] case final num excess when excess > 0)
+            Text('Known estimates exceed the budget by MYR ${excess.toStringAsFixed(2)}.'),
+          if (estimate?['incomplete'] == true)
+            const Text('Some expenses still need prices.'),
           if ((plan['interests'] ?? plan['requestedInterests']) is List &&
               ((plan['interests'] ?? plan['requestedInterests']) as List)
                   .isNotEmpty) ...[
@@ -1113,6 +1150,17 @@ class _ChatTabState extends State<ChatTab> {
                     ...entry.value.map((a) {
                       final activity = Map<String, dynamic>.from(a as Map);
                       final duration = durationText(activity);
+                      final address = (activity['address'] ?? '').toString().trim();
+                      final verifiedHours = activity['openingHoursVerifiedAt'] != null &&
+                              (activity['openingHoursSourceUrl'] ?? '').toString().isNotEmpty &&
+                              activity['openingHours'] is String
+                          ? (activity['openingHours'] as String).trim()
+                          : '';
+                      final cost = activity['effectiveCost'] ?? activity['estimatedCost'];
+                      final priced = activity['pricingUnit'] != null &&
+                          activity['pricingUnit'] != 'unknown' &&
+                          activity['costProvenance'] != null &&
+                          activity['costProvenance'] != 'unverified';
                       final notes = (activity['scheduleNotes'] as List? ?? [])
                           .take(1)
                           .join(' ');
@@ -1135,6 +1183,11 @@ class _ChatTabState extends State<ChatTab> {
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 13.5)),
+                              if (address.isNotEmpty) Text(address),
+                              if (verifiedHours.isNotEmpty) Text('Hours · $verifiedHours'),
+                              Text(priced && cost is num
+                                  ? 'Activity estimate · MYR ${cost.toStringAsFixed(2)}'
+                                  : 'Activity price unverified'),
                               if (duration.isNotEmpty) ...[
                                 const SizedBox(height: 2),
                                 Text(duration,
@@ -1175,7 +1228,7 @@ class _ChatTabState extends State<ChatTab> {
                       ? openTrips
                       : busy ||
                               stale ||
-                              activities.isEmpty ||
+                              (plan['adjustmentTripId'] == null && activities.isEmpty) ||
                               plan['coverageStatus'] == 'partial'
                           ? null
                           : () => savePlan(plan),
@@ -1184,8 +1237,10 @@ class _ChatTabState extends State<ChatTab> {
                       ? 'Open saved trip in Trips'
                       : savingPlanKey == planKey(plan)
                           ? 'Save pending…'
-                          : 'Save plan to Trips'))),
-          if (!saved && !stale) ...[
+                          : plan['adjustmentTripId'] == null
+                              ? 'Save plan to Trips'
+                              : 'Apply changes'))),
+          if (!saved && !stale && plan['adjustmentTripId'] == null) ...[
             const SizedBox(height: 6),
             SizedBox(
               width: double.infinity,
@@ -1210,6 +1265,7 @@ class _ChatTabState extends State<ChatTab> {
 
   @override
   void dispose() {
+    conversationScroll.dispose();
     message.dispose();
     super.dispose();
   }
@@ -1241,7 +1297,16 @@ class _ChatTabState extends State<ChatTab> {
       body: Column(
         children: [
           Expanded(
-            child: ListView(
+            child: NotificationListener<ScrollUpdateNotification>(
+              onNotification: (notification) {
+                if (notification.dragDetails != null) {
+                  followReply = notification.metrics.extentAfter < 80;
+                }
+                return false;
+              },
+              child: ListView(
+              key: const ValueKey('assistant-conversation-scroll'),
+              controller: conversationScroll,
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               children: [
                 if (loadingSessions)
@@ -1251,7 +1316,7 @@ class _ChatTabState extends State<ChatTab> {
                     message: screenError!,
                     onRetry: loadSessions,
                   )
-                else if (messages.isEmpty) ...[
+                else if (messages.isEmpty && pendingMessage == null && sendError == null) ...[
                   InkCard(
                     color: InkWashColors.cream,
                     child: Column(
@@ -1290,7 +1355,6 @@ class _ChatTabState extends State<ChatTab> {
                             onPressed: busy ? null : () => send(item)))
                         .toList(),
                   ),
-                  _buildThinkingOrError(),
                   const SizedBox(height: 16),
                   const Text(
                     'Curated planning prompts',
@@ -1562,8 +1626,14 @@ class _ChatTabState extends State<ChatTab> {
                       ),
                     ];
                   }),
-                if (messages.isNotEmpty) _buildThinkingOrError(),
+                if (pendingMessage != null)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Chip(label: Text(pendingMessage!)),
+                  ),
+                _buildThinkingOrError(),
               ],
+            ),
             ),
           ),
           SafeArea(

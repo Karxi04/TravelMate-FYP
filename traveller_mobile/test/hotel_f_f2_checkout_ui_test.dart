@@ -206,12 +206,12 @@ void main() {
           'expiresAt': '2099-01-01T00:00:00Z',
         },
         initialAmount: 650.00,
-        initialBookingReference: 'Grand Resort Penang - Executive Suite',
+        initialProductName: 'Grand Resort Penang',
       )));
       await tester.pumpAndSettle();
 
       expect(find.text('Authoritative quote: MYR 650.00'), findsOneWidget);
-      expect(find.text('Grand Resort Penang - Executive Suite'), findsOneWidget);
+      expect(find.text('Grand Resort Penang'), findsOneWidget);
       expect(find.text('Continue to Payment'), findsOneWidget);
     });
 

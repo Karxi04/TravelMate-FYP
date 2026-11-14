@@ -124,6 +124,7 @@ def test_package_checkout_session_is_owned_immutable_and_idempotent(client, pack
     assert order['quoteType'] == 'package' and order['amountMinor'] == 45025
     assert order['packageSnapshot'] == snapshot and repeat.get_json()['reused'] is True
     assert create.call_count == 1
+    assert create.call_args.kwargs['product_name'] == snapshot['title']
     assert create.call_args.kwargs['idempotency_key']
     assert create.call_args.args[4].startswith(
         'http://172.20.10.5:5000/api/fr9/checkout/return/success?')

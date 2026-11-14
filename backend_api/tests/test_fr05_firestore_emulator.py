@@ -372,3 +372,44 @@ def test_activity_replacement_persists_and_replay_does_not_write(client, emulato
         assert ref.get().update_time == saved.update_time
     finally:
         ref.delete()
+
+
+def test_chat_adjustment_updates_only_the_owned_trip_after_confirmation(client, mock_traveller_auth, emulator):
+    trip_id = 'b19-adjust-' + uuid4().hex
+    trip = emulator.collection('itineraries').document(trip_id)
+    trip.set({'travellerId': 'test_traveller_uid', 'destinationArea': 'Penang', 'title': 'Isolated adjustment',
+              'startDate': '2030-12-12', 'endDate': '2030-12-14',
+              'budgetLimit': 900, 'notes': 'Unchanged itinerary notes', 'activities': []})
+    session_id = None
+
+    def talk(message):
+        nonlocal session_id
+        reply = client.post('/api/fr11/chat', headers=HEADERS, json={
+            'message': message, 'guidedPlanning': True,
+            **({'sessionId': session_id} if session_id else {}),
+        })
+        assert reply.status_code == 200, reply.json
+        session_id = reply.json['session']['id']
+        return reply.json['item']
+
+    try:
+        opened = talk('Adjust my itinerary')
+        if opened.get('suggestedReplies'):
+            matching = next(line for line in opened['reply'].splitlines() if 'Isolated adjustment' in line)
+            opened = talk('Adjust trip ' + matching.split('.', 1)[0])
+        assert 'Isolated adjustment' in opened['reply']
+        draft = talk('Change the budget to RM700')['tripPlan']
+        assert trip.get().to_dict()['budgetLimit'] == 900
+        payload = {'sessionId': session_id, 'plan': draft, 'confirmed': True}
+        response = client.post('/api/fr11/save-plan', headers=HEADERS, json=payload)
+        assert response.status_code == 200 and response.json['id'] == trip_id
+        repeat = client.post('/api/fr11/save-plan', headers=HEADERS, json=payload)
+        assert repeat.status_code == 200 and repeat.json['alreadySaved']
+        data = trip.get().to_dict()
+        assert (data['budgetLimit'], data['notes'], data['endDate']) == (700, 'Unchanged itinerary notes', '2030-12-14')
+    finally:
+        trip.delete()
+        if session_id:
+            for doc in emulator.collection('chat_messages').where('sessionId', '==', session_id).stream():
+                doc.reference.delete()
+            emulator.collection('chat_sessions').document(session_id).delete()
