@@ -400,3 +400,22 @@ def test_international_and_unknown_routes_rejected_at_api_boundary(client, mock_
     monkeypatch.setattr(routes, 'retrieveDestinationResults', lambda *a: pytest.fail('Not a destination lookup'))
     response = client.get('/api/fr7/flights/search', headers=AUTH, query_string={'departure_id': 'KUL', 'arrival_id': code, 'outbound_date': '2030-12-12'})
     assert response.status_code == 400 and 'Malaysian' in response.json['error']
+
+
+def test_cultural_template_preserves_duration_theme_and_context(client, mock_traveller_auth, memory):
+    first = send(client, 'Plan a 3-day cultural trip')
+    assert first['session']['planningState']['guidedQuestion'] == 'destinationArea'
+    assert first['session']['planningState']['tripDays'] == 3
+    second = send(client, 'Melaka', first['session'])
+    assert second['session']['planningState']['guidedQuestion'] == 'startDate'
+    assert second['session']['planningState']['destinationArea'] == 'Melaka City'
+    dates = send(client, '12 Dec 2030', second['session'])
+    assert dates['session']['planningState']['tripDays'] == 3
+    budget = send(client, 'RM700 for two people', dates['session'])
+    plan = budget['item']['tripPlan']
+    assert plan['destinationArea'] == 'Melaka City'
+    assert plan['tripDays'] == 3 and plan['budgetLimit'] == 700
+    assert plan['numberOfTravellers'] == 2 and plan['interests'] == ['Culture']
+    assert (plan['startDate'], plan['endDate']) == ('2030-12-12', '2030-12-14')
+    assert plan['activities']
+    assert not [key for key in memory if key[0] == 'itineraries']

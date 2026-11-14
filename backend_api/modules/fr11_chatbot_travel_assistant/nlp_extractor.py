@@ -337,12 +337,13 @@ NEGATION_CUES = r'\b(?:not|no|never|don\'?t|dont|do\s+not|instead\s+of|rather\s+
 INTEREST_MAPPING = {
     'Food': ['food', 'culinary', 'eat', 'hawker', 'dining', 'cuisine', 'seafood'],
     'Culture': ['culture', 'cultural', 'heritage', 'history', 'historical', 'museum', 'temple', 'colonial', 'mosque'],
-    'Nature': ['nature', 'adventure', 'hiking', 'mountain', 'wildlife', 'jungle', 'park'],
+    'Nature': ['nature', 'hiking', 'mountain', 'wildlife', 'jungle', 'park', 'outdoors', 'outdoor activities'],
+    'Adventure': ['adventure', 'adventurous', 'kayaking', 'climbing'],
     'Beach': ['beach', 'island', 'coastal', 'snorkeling', 'sea', 'diving'],
     'Relaxation': ['relax', 'relaxing', 'relaxation', 'chill', 'peaceful', 'spa', 'calm'],
     'Shopping': ['shopping', 'mall', 'market', 'bazaar'],
-    'Family': ['family', 'kid', 'kids', 'children', 'child'],
-    'Photography': ['photo', 'photography', 'viewpoint'],
+    'Family': ['family', 'kid', 'kids', 'children', 'child', 'kid-friendly', 'child-friendly'],
+    'Photography': ['photo', 'photography', 'viewpoint', 'taking pictures', 'take pictures', 'taking photos'],
 }
 
 SPECIFIC_ACTIVITY_TYPES = {
@@ -545,7 +546,7 @@ def classify_detailed_intent(text, planning_state=None):
     if activity_request(q) and not re.search(r'\b(?:flight|hotel|car rental|forecast|if it rains)\b', q):
         return 'ACTIVITY_DISCOVERY'
 
-    if re.search(r'^how\s+much\s+(?:budget|money)\b', q):
+    if re.search(r'^how\s+much\s+(?:budget|money)\b|^help with (?:my|our) budget$', q):
         return 'BUDGET_ENQUIRY'
 
     # Check for explicit itinerary planning phrases
@@ -555,7 +556,7 @@ def classify_detailed_intent(text, planning_state=None):
             'plan one', 'plan two', 'plan three', 'plan four', 'plan five',
             'create an itinerary', 'create a ', 'build an itinerary', 'build a ', 'build an ',
             'trip to', 'holiday in', 'vacation in', 'getaway to', 'tour in', 'days in', 'day trip to',
-            'schedule in', 'culinary trip to'
+            'schedule in', 'culinary trip to', 'vacation on'
         ]) or (
             any(t in q for t in ['plan', 'itinerary']) and any(d in q for d in ['day', 'trip', 'weekend', 'week', 'holiday', 'vacation', 'pax', 'adults', 'travellers'])
         ) or (
@@ -620,7 +621,7 @@ def classify_detailed_intent(text, planning_state=None):
         return 'INTEREST_MODIFICATION'
 
     # 10. Destination recommendation vs Explicit Planning
-    if any(e in q for e in ['somewhere relaxing', 'where should i go', 'recommend somewhere', 'suggest a destination', 'any nice place', 'recommend a place', 'best destination', 'best malaysian destination', 'where should i visit']):
+    if any(e in q for e in ['somewhere relaxing', 'somewhere nice', 'somewhere peaceful', 'where should i go', 'recommend somewhere', 'suggest a destination', 'any nice place', 'recommend a place', 'best destination', 'best malaysian destination', 'where should i visit']):
         return 'DESTINATION_RECOMMENDATION'
 
     # 11. Explicit planning
