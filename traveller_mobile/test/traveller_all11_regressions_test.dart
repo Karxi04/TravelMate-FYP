@@ -94,7 +94,11 @@ void main() {
     final api = AllApi(); await frame(tester, ExploreTab(api: api, initialQuery: 'temple'), width: 1200);
     final dynamic state = tester.state(find.byType(ExploreTab));
     expect(state.results.length, 2);
-    await tester.ensureVisible(find.text('Load more places')); await tester.tap(find.text('Load more places')); await tester.pumpAndSettle();
+    final more = find.widgetWithText(OutlinedButton, 'Load more places');
+    await tester.scrollUntilVisible(more, 180, scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    await tester.tap(more.hitTestable());
+    await tester.pumpAndSettle();
     expect(state.results.length, 3); expect(state.results.map((e) => e['destinationId']).toSet().length, 3);
     expect(api.queries.any((q) => q['offset'] == '20'), isTrue);
   });

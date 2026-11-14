@@ -220,12 +220,12 @@ void main() {
 
     expect(find.text('Explore Malaysia'), findsOneWidget);
     expect(find.text('Search places, food, attractions…'), findsOneWidget);
-    expect(find.text('Interests'), findsOneWidget);
+    expect(find.text('Interests'), findsNothing);
     expect(find.text('Find somewhere memorable'), findsOneWidget);
     expect(api.searchCalls, 0);
   });
 
-  testWidgets('typing is debounced and stale responses are ignored',
+  testWidgets('typing does not submit and explicit searches discard stale results',
       (tester) async {
     final api = _ExploreApi();
     final first = Completer<List<Map<String, dynamic>>>();
@@ -235,13 +235,17 @@ void main() {
     await _pumpExplore(tester, api);
 
     await tester.enterText(find.byType(TextField).first, 'first');
-    await tester.pump(const Duration(milliseconds: 449));
+    await tester.pump(const Duration(seconds: 1));
     expect(api.searchCalls, 0);
-    await tester.pump(const Duration(milliseconds: 1));
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
     expect(api.searchCalls, 1);
 
     await tester.enterText(find.byType(TextField).first, 'second');
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump(const Duration(seconds: 1));
+    expect(api.searchCalls, 1);
+    await tester.tap(find.byKey(const ValueKey('explore-search-button')));
+    await tester.pump();
     expect(api.searchCalls, 2);
 
     second.complete([

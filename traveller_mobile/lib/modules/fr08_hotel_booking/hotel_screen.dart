@@ -803,6 +803,7 @@ class _HotelScreenState extends State<HotelScreen> {
         acceptedPrebook: acceptedPrebook,
         hotelBookingAttemptId: attemptId,
         initialAmount: double.tryParse('$amount'),
+        initialProductName: hotel['name']?.toString(),
         initialBookingReference: [
           hotel['name'] ?? 'Hotel',
           if (hotel['roomName'] != null) hotel['roomName'],

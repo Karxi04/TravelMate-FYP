@@ -81,7 +81,7 @@ def _finite_amount(value):
 
 def _safe_quote_snapshot(quote):
     allowed = {
-        'quoteId', 'offerId', 'hotelId', 'name', 'roomName', 'boardName',
+        'quoteId', 'offerId', 'hotelId', 'name', 'hotelName', 'roomName', 'boardName',
         'price', 'currency', 'priceBasis', 'priceScope',
         'priceSemanticsStatus', 'taxesAndFeesStatus', 'taxesAndFees', 'cancellation',
         'refundable', 'source', 'sourceLabel', 'quoteCompleteness',
@@ -284,13 +284,24 @@ def _safe_order(record, session_verified=False):
 
 
 def _payment_history_title(record):
+    kind = record.get('quoteType')
     package = record.get('packageSnapshot')
-    if isinstance(package, dict):
-        return package.get('title') or package.get('name')
     quote = record.get('quoteSnapshot')
-    if isinstance(quote, dict):
-        return quote.get('name') or quote.get('roomName') or quote.get('title')
-    return record.get('productTitle')
+    package = package if isinstance(package, dict) else {}
+    quote = quote if isinstance(quote, dict) else {}
+    if kind == 'package' or package:
+        names = (package.get('title'), package.get('name'), record.get('packageTitle'))
+        fallback = 'Tourism package'
+    elif kind == 'hotel':
+        names = (quote.get('name'), quote.get('hotelName'), record.get('hotelName'), quote.get('title'))
+        fallback = 'Hotel stay'
+    else:
+        names = (quote.get('name'), quote.get('title'))
+        fallback = None
+    return next((name.strip() for name in (*names, record.get('productTitle'))
+                 if isinstance(name, str) and name.strip()
+                 and not name.strip().lower().startswith(('travelmate hotel test order',
+                                                          'travelmate package test order'))), fallback)
 
 
 def _payment_history_provider(record):
@@ -836,6 +847,7 @@ def create_package_checkout_session(attempt_id):
         'packageAttemptId': attempt_id, 'quoteType': 'package',
         'packageId': snapshot.get('packageId'), 'operatorId': snapshot.get('operatorId'),
         'packageSnapshot': snapshot, 'amount': minor_units / 100,
+        'stripeProductName': _payment_history_title({'quoteType': 'package', 'packageSnapshot': snapshot}),
         'pricingBreakdown': snapshot.get('pricingBreakdown'),
         'amountMinor': minor_units, 'currency': 'MYR', 'taxIncluded': snapshot.get('taxIncluded'),
         'taxNotes': snapshot.get('taxNotes'), 'status': 'checkout_pending',
@@ -875,7 +887,8 @@ def create_package_checkout_session(attempt_id):
             _checkout_return_url('cancel'),
             metadata={'packageAttemptId': attempt_id, 'quoteType': 'package'},
             idempotency_key=claimed['providerIdempotencyKey'],
-            product_name=f"TravelMate package test order: {snapshot.get('title') or snapshot.get('packageId')}",
+            product_name=claimed.get('stripeProductName') or
+            f"TravelMate package test order: {snapshot.get('title') or snapshot.get('packageId')}",
         )
         session_id, checkout_url = str(_stripe_value(session, 'id', '') or ''), str(_stripe_value(session, 'url', '') or '')
         if not session_id or not checkout_url:
@@ -932,6 +945,7 @@ def create_checkout_session():
         'travellerId': g.uid,
         'orderAttemptId': attempt_id,
         **quote,
+        'stripeProductName': _payment_history_title(quote),
         'status': 'checkout_pending',
         'paymentStatus': 'unpaid',
         'provider': 'stripe_checkout_test',
@@ -991,7 +1005,7 @@ def create_checkout_session():
                 'quoteId': quote['quoteId'],
             },
             idempotency_key=claimed['providerIdempotencyKey'],
-            product_name=f"TravelMate {quote['quoteType']} test order",
+            product_name=claimed.get('stripeProductName') or f"TravelMate {quote['quoteType']} test order",
         )
         session_id = str(_stripe_value(session, 'id', '') or '')
         checkout_url = str(_stripe_value(session, 'url', '') or '')

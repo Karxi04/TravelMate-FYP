@@ -230,6 +230,7 @@ class _TourismPackageDetailsScreenState
               builder: (_) => PaymentScreen(
                 packageAttemptId: attemptId,
                 initialAmount: amount,
+                initialProductName: _text('title', 'packageTitle'),
                 api: api,
               ),
             ),
@@ -402,6 +403,7 @@ class _TourismPackageDetailsScreenState
           builder: (_) => PaymentScreen(
             packageAttemptId: attemptId,
             initialAmount: serverAmount,
+            initialProductName: _text('title', 'packageTitle'),
             pricingBreakdown: attempt['pricingBreakdown'] is Map
                 ? Map<String, dynamic>.from(attempt['pricingBreakdown'])
                 : null,

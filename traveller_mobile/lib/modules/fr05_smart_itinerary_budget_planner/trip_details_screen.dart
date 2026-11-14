@@ -947,7 +947,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
       final accepted = payment?['acceptedPrebook'];
       final expires = accepted is Map ? DateTime.tryParse('${accepted['expiresAt']}') : null;
       final hotelPaymentLabel = payment is! Map ? null : switch (payment['status']) {
-        'paid' when payment['paymentStatus'] == 'paid' => 'Paid — Stripe Test Mode',
+        'paid' when payment['paymentStatus'] == 'paid' => 'Paid · Stripe',
         'checkout_open' || 'checkout_pending' || 'payment_pending' => 'Payment pending',
         'payment_mismatch' => 'Payment needs verification',
         _ => 'Selected — Not Paid',
@@ -999,6 +999,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                       acceptedPrebook: Map<String, dynamic>.from(accepted),
                       hotelBookingAttemptId: accepted['hotelBookingAttemptId'] as String?,
                       initialAmount: (accepted['amount'] as num?)?.toDouble(),
+                      initialProductName: hotel['name']?.toString(),
                       initialBookingReference: (hotel['name'] ?? 'Hotel').toString(),
                     )));
                     if (mounted) await _loadExpenseSummary();
@@ -2373,7 +2374,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             ),
           ),
         if (!api.isStandalone)
-          SecondaryButton(
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.sm),
+            child: SecondaryButton(
             label: 'Lower-Cost Alternatives',
             icon: Icons.savings_outlined,
             onPressed: () async {
@@ -2391,7 +2394,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               );
               if (mounted && applied) await load();
             },
-          ),
+          )),
         TertiaryButton(label: 'Budget details', onPressed: showBudget),
       ]),
     );
@@ -2442,19 +2445,23 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   Widget _tripEssentials(Map<String, dynamic> t) {
     final list = activities;
     final attachments = _attachedTravelCards(t);
+    final showFlights = t['selectedFlight'] != null ||
+        !const {'own_vehicle', 'bus', 'rail', 'walk', 'public_transport'}.contains(t['travelMode']);
+    final showHotels = t['selectedHotel'] != null ||
+        !const {'return_home', 'staying_with_family', 'no_stay', 'not_required'}.contains(t['accommodationChoice']);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const AppSectionHeader(
           title: 'Trip essentials',
           subtitle: 'Bookings and supporting travel tools.'),
       if (attachments.isNotEmpty) ...[
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AppSpacing.md),
         ...attachments.map((card) => Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.xs),
               child: card,
             )),
       ],
-      const SizedBox(height: AppSpacing.sm),
-      Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: [
+      const SizedBox(height: AppSpacing.md),
+      Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: [
         SecondaryButton(
           label: 'Weather',
           icon: Icons.cloud_outlined,
@@ -2470,7 +2477,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             ),
           ),
         ),
-        SecondaryButton(
+        if (showFlights) SecondaryButton(
           label: 'Flights',
           icon: Icons.flight_takeoff_rounded,
           onPressed: () async {
@@ -2487,7 +2494,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             if (mounted) await load();
           },
         ),
-        SecondaryButton(
+        if (showHotels) SecondaryButton(
           label: 'Hotels',
           icon: Icons.hotel_rounded,
           onPressed: () async {
