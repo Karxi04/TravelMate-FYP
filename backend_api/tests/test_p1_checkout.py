@@ -204,6 +204,58 @@ def test_checkout_claims_owned_hotel_quote_and_reuses_session(client, mock_trave
     )
 
 
+def test_attached_hotel_keeps_trip_and_one_order_through_reconciliation(client, mock_traveller_auth):
+    from services.transaction_reliability import operation_document_id
+    memory = MemoryPersistence()
+    _seed_hotel_checkout(memory)
+    uid = 'test_traveller_uid'
+    booking_id = operation_document_id('hotel_book', uid, 'hotel_attempt_p1')
+    memory.collections['hotel_prebook_attempts']['accepted_prebook_p1']['criteria']['destination'] = 'Penang'
+    memory.seed('itineraries', 'penang-trip', {
+        'travellerId': uid, 'hotelBookingId': booking_id, 'hotelCost': 220,
+        'destinationArea': 'Penang', 'startDate': '2026-11-10', 'endDate': '2026-11-12',
+    })
+    memory.seed('hotel_bookings', booking_id, {
+        'travellerId': uid, 'itineraryId': 'penang-trip', 'itineraryAttachmentStatus': 'succeeded',
+        'acceptedPrebookSnapshotId': 'accepted_prebook_p1', 'providerMutationCalled': False,
+    })
+    auth = {'Authorization': 'Bearer valid_test_token'}
+    session = SimpleNamespace(id='cs_attached', url='https://checkout.stripe.test/cs_attached')
+    paid = SimpleNamespace(status='complete', payment_status='paid', amount_total=22000,
+                           currency='myr', payment_intent='pi_attached')
+    with patch.dict('os.environ', {'STRIPE_SECRET_KEY': 'sk_test_fixture'}), \
+         _patch_persistence(memory)[0], _patch_persistence(memory)[1], _patch_persistence(memory)[2], \
+         patch('modules.fr09_payment.routes.createCheckoutSession', return_value=session) as create, \
+         patch('modules.fr09_payment.routes.retrieveCheckoutSession', return_value=paid):
+        wrong = client.post('/api/fr9/checkout/session', headers=auth,
+                            json={**_hotel_checkout_payload(), 'itineraryId': 'another-trip'})
+        assert wrong.status_code == 409
+        first = client.post('/api/fr9/checkout/session', headers=auth,
+                            json={**_hotel_checkout_payload(), 'itineraryId': 'penang-trip', 'amount': 1})
+        assert first.status_code == 200, first.json
+        order = first.json['order']
+        assert (order['itineraryId'], order['hotelBookingId'], order['amountMinor']) == ('penang-trip', booking_id, 22000)
+        duplicate = client.post('/api/fr9/checkout/session', headers=auth,
+                                json=_hotel_checkout_payload('different_device_attempt'))
+        assert duplicate.json['order']['id'] == order['id']
+        assert duplicate.json['order']['paymentStatus'] == 'paid'
+        assert duplicate.json['order']['supplierBookingStatus'] == 'not_created'
+        assert memory.collections['hotel_bookings'][booking_id]['checkoutOrderId'] == order['id']
+        assert memory.collections['itineraries']['penang-trip']['hotelCost'] == 220
+        create.assert_called_once()
+
+
+def test_unmatched_stripe_amount_never_looks_like_verified_hotel_payment():
+    from modules.fr09_payment.routes import _apply_hotel_payment
+    order = {'status': 'checkout_open', 'amount': 220, 'amountMinor': 22000, 'currency': 'MYR'}
+    session = SimpleNamespace(status='complete', payment_status='paid', amount_total=1,
+                              currency='myr', payment_intent='pi_mismatch')
+    result = _apply_hotel_payment(order, session)
+    assert result['status'] == 'payment_mismatch'
+    assert result['paymentStatus'] == 'unverified'
+    assert result['fulfillmentStatus'] == 'not_started'
+
+
 def test_checkout_rejects_missing_hotel_currency_and_ambiguous_basis(client, mock_traveller_auth):
     memory = MemoryPersistence()
     _seed_hotel_checkout(memory, currency='')

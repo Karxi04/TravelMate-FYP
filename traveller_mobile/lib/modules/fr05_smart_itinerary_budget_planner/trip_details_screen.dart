@@ -18,6 +18,8 @@ import '../fr06_weather_forecast/weather_screen.dart';
 import '../fr07_flight_search/flight_screen.dart';
 import '../fr08_hotel_booking/hotel_screen.dart';
 import '../fr08_hotel_booking/hotel_details_screen.dart';
+import '../fr09_payment/payment_screen.dart';
+import '../fr09_payment/payment_status.dart';
 import 'packing_checklist_screen.dart';
 import '../fr09_payment/payment_history_screen.dart';
 
@@ -938,6 +940,18 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     }
     if (t['selectedHotel'] is Map) {
       final hotel = Map<String, dynamic>.from(t['selectedHotel'] as Map);
+      final overview = expenseSnapshot?['overview'];
+      final rawPayment = overview is Map ? overview['hotelPayment'] : null;
+      final payment = rawPayment is Map && rawPayment['hotelBookingId'] == t['hotelBookingId']
+          ? rawPayment : null;
+      final accepted = payment?['acceptedPrebook'];
+      final expires = accepted is Map ? DateTime.tryParse('${accepted['expiresAt']}') : null;
+      final hotelPaymentLabel = payment is! Map ? null : switch (payment['status']) {
+        'paid' when payment['paymentStatus'] == 'paid' => 'Paid — Stripe Test Mode',
+        'checkout_open' || 'checkout_pending' || 'payment_pending' => 'Payment pending',
+        'payment_mismatch' => 'Payment needs verification',
+        _ => 'Selected — Not Paid',
+      };
       cards.add(InkCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -947,6 +961,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             const SizedBox(height: 6),
             Text((hotel['name'] ?? 'Hotel').toString(),
                 style: const TextStyle(fontWeight: FontWeight.w700)),
+            if (hotelPaymentLabel != null) ...[
+              Text(hotelPaymentLabel),
+              const Text('Provider confirmation not available.'),
+            ],
             Text(
               '${hotel['roomName'] ?? 'Room'} - ${hotel['refundable'] == true ? 'Refundable' : hotel['refundable'] == false ? 'Non-refundable' : 'Cancellation terms unavailable'}',
               style:
@@ -962,6 +980,31 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                       fontSize: 12, color: InkWashColors.mutedInk)),
             const SizedBox(height: 10),
             Wrap(spacing: 8, children: [
+              if (accepted is Map && accepted['checkoutEligible'] == true &&
+                  accepted['id'] is String && payment?['status'] != 'paid' &&
+                  expires != null && expires.isAfter(DateTime.now()))
+                OutlinedButton(
+                  onPressed: () async {
+                    final supported = (await loadHostedCheckoutCapabilities(api)).contains('hotel');
+                    if (!mounted) return;
+                    if (!supported) {
+                      showError(context, 'Hotel Test Checkout is currently unavailable.');
+                      return;
+                    }
+                    await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => PaymentScreen(
+                      api: api, quoteType: 'hotel', itineraryId: widget.tripId,
+                      acceptedPrebookSnapshotId: accepted['id'] as String,
+                      quoteId: '${accepted['quoteId']}',
+                      offerId: '${accepted['offerId']}',
+                      acceptedPrebook: Map<String, dynamic>.from(accepted),
+                      hotelBookingAttemptId: accepted['hotelBookingAttemptId'] as String?,
+                      initialAmount: (accepted['amount'] as num?)?.toDouble(),
+                      initialBookingReference: (hotel['name'] ?? 'Hotel').toString(),
+                    )));
+                    if (mounted) await _loadExpenseSummary();
+                  },
+                  child: const Text('Continue to Payment'),
+                ),
               OutlinedButton.icon(
                 onPressed: () => Navigator.push(context, MaterialPageRoute(
                     builder: (_) => HotelDetailsScreen(hotel: hotel))),

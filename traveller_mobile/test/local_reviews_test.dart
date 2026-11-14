@@ -23,22 +23,30 @@ class ReviewApi extends ApiService {
 class _PreviewApi extends ApiService {
   int reads = 0;
   final bool localDemo;
-  _PreviewApi({this.localDemo = true});
+  final bool oldServer;
+  _PreviewApi({this.localDemo = true, this.oldServer = false});
 
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
     if (!path.endsWith('/ratings-reviews')) return {'items': <dynamic>[]};
+    if (oldServer && query?['view'] == 'samples') {
+      reads++;
+      return {'result': {'rating': 3.0, 'reviews': 1, 'fypPreview': true, 'user_reviews': [
+        {'id': 'sample', 'rating': 3, 'description': 'Previously available sample.'},
+      ]}};
+    }
     expect(query, {'view': 'unified'});
     reads++;
     return {
+      if (oldServer) 'sampleReviewsAvailable': true,
       'result': {
         'rating': 5.0,
         'reviews': 1,
-        if (localDemo) 'sampleSummary': {'rating': 3.0, 'reviews': 3},
+        if (localDemo && !oldServer) 'sampleSummary': {'rating': 3.0, 'reviews': 3},
         'user_reviews': [
           {'id': 'review', 'rating': 5, 'description': 'Approved community comment.',
            'date': '2026-11-11T09:00:00+08:00'},
-          if (localDemo)
+          if (localDemo && !oldServer)
             for (var i = 1; i <= 3; i++)
               {'id': 'sample-$i', 'rating': 3, 'source': 'sample',
                'description': 'Sample comment $i.'},
@@ -49,6 +57,19 @@ class _PreviewApi extends ApiService {
 }
 
 void main() {
+  testWidgets('older local Backend samples still appear in one Local Reviews section', (tester) async {
+    final api = _PreviewApi(oldServer: true);
+    await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,
+        initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Local Reviews'), 220);
+    expect(find.text('3.0 · 1 review'), findsOneWidget);
+    expect(find.text('5.0 · 1 review'), findsOneWidget);
+    expect(find.text('View community reviews'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Previously available sample.'), 140);
+    expect(find.text('Sample review'), findsOneWidget);
+    expect(api.reads, 2);
+  });
   testWidgets('unified reviews disclose sample source and expand without another request', (tester) async {
     final api = _PreviewApi();
     await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,

@@ -70,6 +70,8 @@ def _order_document_id(attempt_id):
 
 
 def _finite_amount(value):
+    if isinstance(value, bool):
+        return None
     try:
         amount = float(value)
     except (TypeError, ValueError):
@@ -152,13 +154,39 @@ def _hotel_checkout_quote(payload):
         'quoteId': quote_id,
         'offerId': offer_id,
     })
+    itinerary_id = str(payload.get('itineraryId') or '').strip()
+    attempt = accepted.get('hotelBookingAttemptId')
+    booking_id = operation_document_id('hotel_book', g.uid, attempt) if attempt else None
+    booking = retrieveRecord('hotel_bookings', booking_id) if booking_id else None
+    if booking and booking.get('travellerId') == g.uid and booking.get('itineraryAttachmentStatus') == 'succeeded':
+        itinerary_id = itinerary_id or booking.get('itineraryId')
+    attachment = {}
+    if itinerary_id:
+        from modules.fr08_hotel_booking.routes import _hotel_trip_compatibility
+        if not attempt:
+            raise ValueError('Validate and add the hotel to the trip before Checkout.')
+        trip = retrieveRecord('itineraries', itinerary_id)
+        if (not trip or trip.get('travellerId') != g.uid
+                or trip.get('packageTrip') or trip.get('tripType') == 'package'
+                or trip.get('hotelBookingId') != booking_id or not booking
+                or _finite_amount(trip.get('hotelCost')) != amount
+                or booking.get('travellerId') != g.uid
+                or booking.get('itineraryId') != itinerary_id
+                or booking.get('itineraryAttachmentStatus') != 'succeeded'
+                or booking.get('acceptedPrebookSnapshotId') != accepted_id
+                or booking.get('providerMutationCalled') is not False
+                or _hotel_trip_compatibility(trip, criteria)[1]):
+            raise ValueError('The selected hotel is no longer attached to this trip. Reopen Hotels before Checkout.')
+        attachment = {'itineraryId': itinerary_id, 'hotelBookingId': booking_id}
     return {
         'quoteType': 'hotel', 'quoteId': quote_id, 'offerId': offer_id,
         'acceptedPrebookSnapshotId': accepted_id,
         'hotelBookingAttemptId': accepted.get('hotelBookingAttemptId'),
         'amount': amount, 'currency': currency, 'quoteSnapshot': snapshot,
+        'amountMinor': round(amount * 100),
         'amountBasis': 'provider_offer_total_includes_base_and_included_taxes_fees',
         'sandbox': accepted.get('transactionMode') == 'provider_sandbox',
+        **attachment,
     }
 
 
@@ -316,6 +344,9 @@ def _payment_history_item(record, source):
             item['pricingBreakdown'] = public_pricing_breakdown((record.get('packageSnapshot') or {}).get('pricingBreakdown'))
             item['promoCode'] = (record.get('packageSnapshot') or {}).get('requestedPromoCode', '')
         if booking_type == 'hotel':
+            item['itineraryId'] = record.get('itineraryId')
+            item['hotelBookingId'] = record.get('hotelBookingId')
+            item['relatedTripId'] = record.get('itineraryId')
             item['fulfillmentStatus'] = record.get('fulfillmentStatus') or (
                 'demo_only' if payment_status == 'paid' else 'not_started'
             )
@@ -466,7 +497,13 @@ def _apply_hotel_payment(order, session):
     now = utc_now_iso()
     status = str(patch.get('status') or '').lower()
     payment_status = str(patch.get('paymentStatus') or '').lower()
-    is_paid = status == 'paid' or payment_status == 'paid'
+    if status == payment_status == 'paid' and order.get('status') != 'paid' and (
+            _stripe_value(session, 'amount_total') is None or not _stripe_value(session, 'currency', '')):
+        status = patch['status'] = 'payment_mismatch'
+        patch['reconciliationRequired'] = True
+    is_paid = status == 'paid' and payment_status == 'paid'
+    if status == 'payment_mismatch':
+        patch['paymentStatus'] = 'unverified'
     if is_paid:
         patch.update({
             'fulfillmentStatus': 'demo_only',
@@ -882,6 +919,12 @@ def create_checkout_session():
             'code': 'flight_ticketing_unavailable',
             'error': 'TravelMate can save this fare as a planning estimate, but cannot issue or reserve an airline ticket.',
         }), 409
+    if quote.get('hotelBookingId'):
+        # A linked accepted stay has one order even across app reinstalls or taps.
+        attempt_id = quote['hotelBookingId']
+        prior_id = (retrieveRecord('hotel_prebook_attempts', quote['acceptedPrebookSnapshotId']) or {}).get('orderId')
+        if prior_id and prior_id != _order_document_id(attempt_id):
+            return jsonify(ok=False, error='This hotel offer already has an order. Open Payment History.'), 409
     order_id = _order_document_id(attempt_id)
     now = utc_now_iso()
     record = {
@@ -917,9 +960,15 @@ def create_checkout_session():
         return jsonify({'ok': False, 'error': 'This Checkout order has already been paid.'}), 409
     for key in (
             'quoteType', 'quoteId', 'offerId', 'optionId', 'amount', 'currency',
-            'acceptedPrebookSnapshotId'):
+            'acceptedPrebookSnapshotId', 'itineraryId', 'hotelBookingId'):
         if key in record and str(claimed.get(key)) != str(record.get(key)):
             return jsonify({'ok': False, 'error': 'Order attempt is already bound to another quote.'}), 409
+    if record.get('hotelBookingId') and (created or not claimed.get('checkoutSessionId')):
+        try:
+            if not updateRecord('hotel_bookings', record['hotelBookingId'], {'checkoutOrderId': order_id}):
+                raise RuntimeError('Hotel payment link unavailable')
+        except Exception:
+            return jsonify(ok=False, error='The hotel payment link is unavailable. Try again.'), 503
     if claimed.get('checkoutSessionId') and claimed.get('checkoutUrl'):
         try:
             reconciled, verified = _reconcile_checkout_order(claimed)

@@ -10,6 +10,7 @@ import '../../widgets/travel_widgets.dart';
 import 'hotel_details_screen.dart';
 import 'room_offer_photo.dart';
 import 'hotel_trip_attachment.dart';
+import '../fr05_smart_itinerary_budget_planner/personalized_planning_screen.dart';
 import '../fr09_payment/payment_history_screen.dart';
 import '../fr09_payment/payment_screen.dart';
 import '../fr09_payment/payment_status.dart';
@@ -436,17 +437,44 @@ class _HotelScreenState extends State<HotelScreen> {
     );
   }
 
-  Future<Map<String, dynamic>?> chooseItinerary() async {
+  bool _compatibleTrip(Map trip, Map stay) {
+    if (trip['packageTrip'] == true || trip['tripType'] == 'package') return false;
+    final checkIn = DateTime.tryParse('${stay['checkin'] ?? ''}');
+    final checkOut = DateTime.tryParse('${stay['checkout'] ?? ''}');
+    final start = DateTime.tryParse('${trip['startDate'] ?? ''}');
+    final end = DateTime.tryParse('${trip['endDate'] ?? ''}');
+    return checkIn != null && checkOut != null && start != null && end != null &&
+        !checkIn.isBefore(start) && checkIn.isBefore(checkOut) && !checkOut.isAfter(end);
+  }
+
+  Future<Map<String, dynamic>?> chooseItinerary({Map<String, dynamic>? stay}) async {
     if (widget.targetTripId != null) {
       final data = await api.get('/api/fr5/itineraries/${Uri.encodeComponent(widget.targetTripId!)}');
       return Map<String, dynamic>.from(data['itinerary'] as Map);
     }
-    final data = await api.get('/api/fr5/itineraries');
-    final trips = data['items'] as List? ?? [];
+    final data = stay != null && stay['id'] != null && !api.isStandalone
+        ? await api.get('/api/fr8/hotels/compatible-trips', {'acceptedPrebookSnapshotId': '${stay['id']}'})
+        : await api.get('/api/fr5/itineraries');
+    final trips = (data['items'] as List? ?? []).whereType<Map>()
+        .where((trip) => stay == null || _compatibleTrip(trip, stay)).toList();
     if (!mounted) return null;
     if (trips.isEmpty) {
-      showError(context,
-          'Create an itinerary first if you want the hotel cost added to the budget.');
+      final create = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('No compatible trips'),
+          content: const Text('Choose a saved trip in the hotel destination that covers the whole stay, or plan a new trip.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Plan a trip')),
+          ],
+        ),
+      );
+      if (mounted && create == true) {
+        await Navigator.push<void>(context, MaterialPageRoute(
+          builder: (_) => PersonalizedPlanningScreen(api: api),
+        ));
+      }
       return null;
     }
     return showModalBottomSheet<Map<String, dynamic>>(
@@ -461,7 +489,7 @@ class _HotelScreenState extends State<HotelScreen> {
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
             ...trips.map((raw) {
-              final trip = Map<String, dynamic>.from(raw as Map);
+              final trip = Map<String, dynamic>.from(raw);
               return ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const CircleAvatar(
@@ -471,7 +499,24 @@ class _HotelScreenState extends State<HotelScreen> {
                 title: Text((trip['title'] ?? 'Trip').toString()),
                 subtitle: Text(
                     '${trip['destinationArea'] ?? ''} • Budget RM ${trip['budgetLimit'] ?? 0}'),
-                onTap: () => Navigator.pop(context, trip),
+                onTap: () async {
+                  if (stay == null) {
+                    Navigator.pop(context, trip);
+                    return;
+                  }
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Add hotel to this trip?'),
+                      content: Text((trip['title'] ?? 'Trip').toString()),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Add to Trip')),
+                      ],
+                    ),
+                  );
+                  if (context.mounted && confirmed == true) Navigator.pop(context, trip);
+                },
               );
             }),
           ],
@@ -641,7 +686,6 @@ class _HotelScreenState extends State<HotelScreen> {
         acceptedPrebook: acceptedPrebook,
         acceptedPrebookSnapshotId: acceptedPrebookSnapshotId,
         attemptId: attemptId,
-        source: (data['source'] ?? source).toString(),
         validationId: validationId,
       );
     } on TimeoutException {
@@ -668,14 +712,14 @@ class _HotelScreenState extends State<HotelScreen> {
     required Map<String, dynamic>? acceptedPrebook,
     required String acceptedPrebookSnapshotId,
     required String attemptId,
-    required String source,
     required String validationId,
   }) async {
-    final canPay = (await loadHostedCheckoutCapabilities(api)).contains('hotel');
+    final canPay = acceptedPrebook?['checkoutEligible'] != false &&
+        (await loadHostedCheckoutCapabilities(api)).contains('hotel');
     if (!mounted) return;
     final currency = acceptedPrebook?['currency'] ?? hotel['currency'] ?? 'Unknown currency';
     final amount = acceptedPrebook?['amount'] ?? hotel['price'];
-    await showModalBottomSheet<void>(
+    final action = await showModalBottomSheet<bool>(
       context: context, showDragHandle: true, isScrollControlled: true,
       builder: (ctx) => SafeArea(child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
@@ -685,57 +729,92 @@ class _HotelScreenState extends State<HotelScreen> {
             const SizedBox(height: 8),
             Text('${hotel['name']} • ${hotel['roomName']}'),
             Text('Selected stay total: $currency ${amount ?? 'Unavailable'}'),
-            Text('Dates: ${hotel['checkin'] ?? checkin.text} → ${hotel['checkout'] ?? checkout.text} • ${hotel['roomQuantity'] ?? rooms.length} room(s)'),
+            Text('Dates: ${acceptedPrebook?['checkin'] ?? checkin.text} → ${acceptedPrebook?['checkout'] ?? checkout.text} • ${acceptedPrebook?['roomQuantity'] ?? rooms.length} room(s)'),
             if (acceptedPrebook?['expiresAt'] != null)
               _buildQuoteFreshnessPill('${acceptedPrebook!['expiresAt']}'),
             const SizedBox(height: 12),
-            const Text('Saving these details does not reserve a room or take payment. Confirm your reservation directly with the property or booking provider.'),
+            const Text('Adding this selection updates the trip estimate. It does not reserve a room or take payment.'),
             if (acceptedPrebookSnapshotId.isEmpty)
               const Text('Please validate this offer again before saving.'),
-            const SizedBox(height: 12),
-            if (canPay && acceptedPrebookSnapshotId.isNotEmpty) ...[
-              const Text(academicPaymentDisclosure),
-              FilledButton.icon(
-                key: const ValueKey('hotel-continue-payment'),
-                icon: const Icon(Icons.payment_outlined),
-                label: const Text('Continue to Payment'),
-                onPressed: () {
-                  final rawAmount = acceptedPrebook?['amount'] ?? hotel['price'];
-                  final double? parsedAmount = rawAmount is num
-                      ? rawAmount.toDouble()
-                      : (rawAmount != null ? double.tryParse(rawAmount.toString()) : null);
-                  final bookingTitle = '${hotel['name'] ?? ''}${hotel['roomName'] != null ? ' - ${hotel['roomName']}' : ''}'.trim();
-                  Navigator.pop(ctx);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => PaymentScreen(
-                    api: api, quoteType: 'hotel',
-                    quoteId: (acceptedPrebook?['quoteId'] ?? hotel['quoteId'] ?? '').toString(),
-                    offerId: (acceptedPrebook?['offerId'] ?? hotel['offerId'] ?? '').toString(),
-                    acceptedPrebookSnapshotId: acceptedPrebookSnapshotId,
-                    acceptedPrebook: acceptedPrebook,
-                    hotelBookingAttemptId: attemptId,
-                    initialAmount: parsedAmount,
-                    initialBookingReference: bookingTitle,
-                  )));
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
             FilledButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                if (acceptedPrebookSnapshotId.isEmpty) {
-                  prebook(hotel);
-                } else {
-                  completeBooking(hotel, validationId, source, attemptId);
-                }
-              },
+              onPressed: () => Navigator.pop(ctx, true),
               icon: Icon(acceptedPrebookSnapshotId.isEmpty ? Icons.refresh_rounded : Icons.bookmark_add_outlined),
-              label: Text(acceptedPrebookSnapshotId.isEmpty ? 'Re-validate Quote' : 'Save Hotel Details'),
+              label: Text(acceptedPrebookSnapshotId.isEmpty ? 'Re-validate Quote' : 'Add to Trip'),
             ),
           ],
         ),
       )),
     );
+    if (!mounted || action != true) return;
+    if (acceptedPrebookSnapshotId.isEmpty) {
+      await prebook(hotel);
+      return;
+    }
+    if (busy) return;
+    setState(() => busy = true);
+    try {
+      final trip = await chooseItinerary(stay: acceptedPrebook);
+      if (!mounted || trip == null) return;
+      final tripId = (trip['id'] ?? '').toString();
+      if (tripId.isEmpty) throw StateError('Select a saved trip.');
+      final data = await api.post('/api/fr8/hotels/book', {
+        'hotelBookingAttemptId': attemptId,
+        'validationId': validationId,
+        'saveDetailsOnly': true,
+        'itineraryId': tripId,
+      });
+      if (!mounted) return;
+      final booking = data['booking'] as Map?;
+      if (hotelTripAttachmentOutcome(booking?['itineraryAttachmentStatus']) !=
+          HotelTripAttachmentOutcome.attached) {
+        showError(context, booking?['itineraryAttachmentError'] ??
+            'The hotel could not be added. Check the saved trip before trying again.');
+        return;
+      }
+      setState(() => lastBooking = Map<String, dynamic>.from(booking!));
+      ApiService.tripChanges.value++;
+      if (!canPay) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Hotel selection added to the trip budget.'),
+        ));
+        return;
+      }
+      final pay = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Hotel added to trip'),
+          content: Text('${trip['title'] ?? 'Trip'} • $currency ${amount ?? 'Unavailable'}\n\n$academicPaymentDisclosure'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Done')),
+            FilledButton(
+              key: const ValueKey('hotel-continue-payment'),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Continue to Payment'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || pay != true) return;
+      await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => PaymentScreen(
+        api: api, quoteType: 'hotel', itineraryId: tripId,
+        quoteId: (acceptedPrebook?['quoteId'] ?? hotel['quoteId'] ?? '').toString(),
+        offerId: (acceptedPrebook?['offerId'] ?? hotel['offerId'] ?? '').toString(),
+        acceptedPrebookSnapshotId: acceptedPrebookSnapshotId,
+        acceptedPrebook: acceptedPrebook,
+        hotelBookingAttemptId: attemptId,
+        initialAmount: double.tryParse('$amount'),
+        initialBookingReference: [
+          hotel['name'] ?? 'Hotel',
+          if (hotel['roomName'] != null) hotel['roomName'],
+        ].join(' - '),
+      )));
+    } on TimeoutException {
+      if (mounted) showError(context, 'The hotel selection may have been saved. Reopen the trip to check before retrying.');
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
   }
 
   Widget _buildQuoteFreshnessPill(String expiresAtStr) {
@@ -749,212 +828,6 @@ class _HotelScreenState extends State<HotelScreen> {
       text: isExpired ? 'Quote expired' : 'Quote valid until $timeStr',
       icon: isExpired ? Icons.timer_off_outlined : Icons.timer_outlined,
     );
-  }
-
-  Future<void> completeBooking(Map<String, dynamic> hotel, String validationId,
-      String prebookSource, String attemptId) async {
-    bool attachToTrip = true;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Confirm & Save Hotel Details'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('${hotel['name']} • ${hotel['roomName']}'),
-                const SizedBox(height: 6),
-                Text('${hotel['currency'] ?? 'MYR'} ${hotel['price'] ?? 0}',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w900, fontSize: 18)),
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: attachToTrip,
-                  title: const Text('Add hotel cost to itinerary budget'),
-                  onChanged: widget.targetTripId != null ? null : (v) => setDialogState(() => attachToTrip = v),
-                ),
-                Text(
-                  prebookSource == 'liteapi'
-                      ? 'Offer checked. No room is reserved; arrange your booking directly with the property.'
-                      : 'Sample offer for planning only. Room availability has not been checked.',
-                  style: const TextStyle(
-                      fontSize: 12, color: InkWashColors.mutedInk),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel')),
-            FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Confirm & Save Hotel Details')),
-          ],
-        ),
-      ),
-    );
-    if (confirmed != true) return;
-
-    Map<String, dynamic>? itinerary;
-    if (attachToTrip) {
-      try {
-        itinerary = await chooseItinerary();
-      } catch (error) {
-        if (mounted) showError(context, error);
-        return;
-      }
-      if (!mounted || itinerary == null) return;
-    }
-
-    setState(() => busy = true);
-    try {
-      final bookingRequest = <String, dynamic>{
-        'hotelBookingAttemptId': attemptId,
-        'validationId': validationId,
-        'saveDetailsOnly': true,
-        'itineraryId': itinerary?['id'],
-        'selectedHotel': hotel,
-        'roomQuantity': hotel['roomQuantity'] ??
-            int.tryParse(roomQuantity.text.trim()) ??
-            1,
-        'hotelCost': hotel['price'] ?? 0,
-      };
-      var data = await api.post('/api/fr8/hotels/book', bookingRequest);
-      if (!mounted) return;
-      setState(() => lastBooking = data['booking'] is Map
-          ? Map<String, dynamic>.from(data['booking'] as Map)
-          : null);
-      if (lastBooking?['bookingStatus'] == 'pending') {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text(
-            'Booking outcome pending verification. The provider request was not submitted again.',
-          ),
-        ));
-        return;
-      }
-      if (itinerary != null) {
-        var attachmentOutcome = hotelTripAttachmentOutcome(
-            lastBooking?['itineraryAttachmentStatus']);
-        if (attachmentOutcome == HotelTripAttachmentOutcome.unverified) {
-          final acknowledge = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Compatibility cannot be verified'),
-              content: const Text(
-                  'This hotel booking was created before Trip compatibility information was recorded. We cannot verify that its dates and destination match your selected Trip.'),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Cancel')),
-                FilledButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Add Anyway')),
-              ],
-            ),
-          );
-          if (acknowledge == true) {
-            data = await api.post('/api/fr8/hotels/book', {
-              ...bookingRequest,
-              'acknowledgeCompatibilityUnverified': true,
-            });
-            if (!mounted) return;
-            setState(() => lastBooking = data['booking'] is Map
-                ? Map<String, dynamic>.from(data['booking'] as Map)
-                : lastBooking);
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Booking created, but it was not added to the trip.'),
-            ));
-          }
-        }
-        attachmentOutcome = hotelTripAttachmentOutcome(
-            lastBooking?['itineraryAttachmentStatus']);
-        final attachmentError =
-            lastBooking?['itineraryAttachmentError']?.toString();
-        if (attachmentOutcome == HotelTripAttachmentOutcome.attached) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Hotel details added to the trip budget.'),
-          ));
-        } else if (attachmentOutcome == HotelTripAttachmentOutcome.incompatible ||
-            attachmentOutcome == HotelTripAttachmentOutcome.failed) {
-          final chooseAnotherTrip = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Hotel was not added to this trip'),
-              content: Text(attachmentError?.isNotEmpty == true
-                  ? attachmentError!
-                  : 'The hotel booking could not be added to the selected trip.'),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Choose another trip')),
-                FilledButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Continue')),
-              ],
-            ),
-          );
-          if (chooseAnotherTrip == true) {
-            final replacement = await chooseItinerary();
-            if (replacement != null) {
-              data = await api.post('/api/fr8/hotels/book', {
-                ...bookingRequest,
-                'itineraryId': replacement['id'],
-              });
-              if (!mounted) return;
-              setState(() => lastBooking = data['booking'] is Map
-                  ? Map<String, dynamic>.from(data['booking'] as Map)
-                  : lastBooking);
-              if (hotelTripAttachmentOutcome(
-                      lastBooking?['itineraryAttachmentStatus']) ==
-                  HotelTripAttachmentOutcome.attached) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Hotel details added to the trip budget.'),
-                ));
-              } else {
-                showError(context,
-                    lastBooking?['itineraryAttachmentError'] ??
-                        'The hotel booking was not added to the selected trip.');
-              }
-            }
-          }
-        }
-      }
-      final ref = lastBooking?['id'] ?? '-';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Hotel Details Saved · Record $ref')));
-    } on TimeoutException {
-      try {
-        final data = await api.get('/api/fr8/bookings/attempts/$attemptId');
-        if (mounted && data['booking'] is Map) {
-          setState(() =>
-              lastBooking = Map<String, dynamic>.from(data['booking'] as Map));
-        }
-      } catch (_) {
-        if (mounted) {
-          setState(() => lastBooking = {
-                'hotelBookingAttemptId': attemptId,
-                'bookingStatus': 'pending',
-                'confirmationLabel': 'Verification pending',
-              });
-        }
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text(
-            'The booking outcome is being verified. Retrying will reuse this attempt and will not create a second provider booking.',
-          ),
-        ));
-      }
-    } catch (e) {
-      if (mounted) showError(context, e);
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
   }
 
   Future<void> compare() async {

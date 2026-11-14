@@ -114,10 +114,16 @@ def _verified_costs(db, transaction, iid, uid, trip):
            if isinstance(row, dict) and valid_trip_id(row.get('checkoutOrderId'))}
     booking_id = trip.get('hotelBookingId')
     committed_hotel = 0
+    hotel_payment = None
     if valid_trip_id(booking_id):
         snap = db.collection('hotel_bookings').document(booking_id).get(transaction=transaction)
         booking = snap.to_dict() or {}
         if booking.get('travellerId') == uid:
+            if booking.get('saveDetailsOnly') or booking.get('confirmationLabel') == 'Hotel Details Saved':
+                hotel_payment = {'status': 'unpaid', 'hotelBookingId': booking_id}
+                if booking.get('itineraryId') == iid and booking.get('itineraryAttachmentStatus') == 'succeeded':
+                    from modules.fr08_hotel_booking.routes import _public_accepted_snapshot
+                    hotel_payment['acceptedPrebook'] = _public_accepted_snapshot(booking.get('acceptedPrebookSnapshot'))
             if valid_trip_id(booking.get('checkoutOrderId')):
                 ids.add(booking['checkoutOrderId'])
             if (booking.get('bookingStatus') in {'confirmed', 'paid'}
@@ -135,13 +141,18 @@ def _verified_costs(db, transaction, iid, uid, trip):
     for identity in sorted(key for key in ids if valid_trip_id(key)):
         snap = db.collection('checkout_orders').document(identity).get(transaction=transaction)
         order = snap.to_dict() or {}
+        if (hotel_payment is not None and order.get('travellerId') == uid
+                and order.get('quoteType') == 'hotel' and order.get('hotelBookingId') == booking_id
+                and order.get('itineraryId') == iid):
+            hotel_payment.update(status=order.get('status'), paymentStatus=order.get('paymentStatus'),
+                                 orderId=identity)
         if (order.get('travellerId') == uid and order.get('status') == order.get('paymentStatus') == 'paid'
                 and order.get('currency') == 'MYR' and type(order.get('amountMinor')) is int
                 and order['amountMinor'] >= 0
                 and (order.get('fulfilledTripId') == iid
                      or (valid_trip_id(booking_id) and order.get('hotelBookingId') == booking_id))):
             paid_orders.append(order)
-    return paid_orders, committed_hotel
+    return paid_orders, committed_hotel, hotel_payment
 
 
 def _transact_expenses(iid, uid, payload):
@@ -161,8 +172,10 @@ def _transact_expenses(iid, uid, payload):
             raise ExpenseError('Manual expenses are available for ordinary saved trips.', 409)
         patch = update_expenses(trip, payload, new_id) if payload is not None else {}
         updated = {**trip, **patch}
-        paid_orders, committed_hotel = _verified_costs(db, transaction, iid, uid, trip)
+        paid_orders, committed_hotel, hotel_payment = _verified_costs(db, transaction, iid, uid, trip)
         overview = expense_overview(updated, paid_orders, committed_hotel)
+        if hotel_payment:
+            overview['hotelPayment'] = hotel_payment
         if patch:
             transaction.update(ref, patch)
         return {'ok': True, 'expenses': updated.get('manualExpenses', []),
