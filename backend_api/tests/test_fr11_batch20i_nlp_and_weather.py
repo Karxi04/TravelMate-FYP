@@ -247,7 +247,7 @@ def test_24_gemini_response_source():
     # When _generate succeeds, source must be 'gemini'
     with patch('services.gemini_service.is_gemini_configured', return_value=True):
         with patch('services.gemini_service._generate', return_value='Authentic Gemini response'):
-            res = generateChatbotResponse("Hello", with_source=True)
+            res = generateChatbotResponse("Tell me about Melaka", with_source=True)
             assert isinstance(res, dict)
             assert res['source'] == 'gemini'
             assert res['reply'] == 'Authentic Gemini response'

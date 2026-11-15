@@ -17,6 +17,9 @@ from .travel_dates import parse_date_range
 CATALOGUE_LIMIT = 200
 RESULT_LIMIT = 6
 _FLAGS = {'accommodation': 'accommodationIncluded', 'transport': 'transportIncluded', 'guideActivities': 'guideActivitiesIncluded'}
+_BUDGET_AMOUNT = r'([\d,]+(?:\.\d{1,2})?)'
+_SHORT_BUDGET = re.compile(r'^(?:rm|myr)?\s*' + _BUDGET_AMOUNT +
+                           r'\s+(per (?:person|pax)|(?:in )?total)(?:\s+one)?[.!?]*$')
 
 def conversation_action(message, state):
     text = message.lower()
@@ -32,7 +35,7 @@ def conversation_action(message, state):
         return 'itinerary'
     if state.get('assistantMode') == 'packages' and (extract_geographic_entities(message).get('destination_area') or extract_duration(message) or extract_interests(message)):
         return 'packages'
-    if state.get('assistantMode') == 'packages' and re.search(r'\b(?:under|below|above|budget|actually|instead|only|without|with|cheaper|cheapest|compare|first|second|third|which|show|find|make|adults?|children|child|next|on|reset|start over|code|rm|myr|food|photography|hotel|transport|guided)\b', text):
+    if state.get('assistantMode') == 'packages' and (_SHORT_BUDGET.fullmatch(text.strip()) or re.search(r'\b(?:under|below|above|budget|actually|instead|only|without|with|cheaper|cheapest|compare|first|second|third|which|show|find|make|adults?|children|child|next|on|reset|start over|code|rm|myr|food|photography|hotel|transport|guided)\b', text)):
         return 'packages'
     if re.search(r'\b(?:find|want|looking for|show).{0,25}\btours?\b', text):
         return 'clarify'
@@ -94,19 +97,27 @@ def update_filters(message, previous):
     if re.search(r'\b(?:any date|no date preference|flexible dates)\b', text):
         filters.pop('startDate', None)
         filters.pop('endDate', None)
-    budget = re.search(r'\b(?:under|below|less than|up to|maximum|max(?:imum)? budget|budget(?: of| is)?)\s*(?:rm|myr)?\s*([\d,]+(?:\.\d{1,2})?)', text)
-    if not budget and re.search(r'\b(?:under|below|up to|budget)\s*(?:rm|myr)\b', text):
+    budget = re.search(r'\b(?:under|below|less than|up to|maximum|max(?:imum)? budget|budget(?: of| is)?)\s*(?:rm|myr)?\s*' + _BUDGET_AMOUNT, text)
+    short_budget = _SHORT_BUDGET.fullmatch(text.strip())
+    amount_match = budget or short_budget
+    if not amount_match and re.search(r'\b(?:under|below|up to|budget)\s*(?:rm|myr)\b', text):
         raise ValueError('Please give a positive numeric budget in MYR.')
-    if budget:
-        amount = Decimal(budget[1].replace(',', ''))
-        if amount <= 0 or amount > Decimal('100000000'):
+    if amount_match:
+        digits = amount_match[1].replace(',', '')
+        if not digits or not 0 < Decimal(digits) <= Decimal('100000000'):
             raise ValueError('Please give a positive MYR budget.')
-        filters['budgetMax'] = float(amount)
-        filters['budgetStrict'] = bool(re.search(r'\b(?:under|below|less than)\b', budget[0]))
+        if re.search(r'\bper adult\b', text):
+            raise ValueError('Should I use a budget per traveller or a total for the whole party?')
+        filters['budgetMax'] = float(Decimal(digits))
+        if budget:
+            filters['budgetStrict'] = bool(re.search(r'\b(?:under|below|less than)\b', budget[0]))
+        if re.search(r'\bper (?:person|pax)\b', text):
+            filters['budgetBasis'] = 'per_person'
+        else:
+            filters.pop('budgetBasis', None)
     if re.search(r'\b(?:no budget limit|remove budget|any budget)\b', text):
-        filters.pop('budgetMax', None)
-    if budget and re.search(r'\bper (?:person|adult)\b', text):
-        raise ValueError('Should I compare the total party budget? Tell me the adult/child counts and maximum total in MYR so fixed and per-person offers are comparable.')
+        for key in ('budgetMax', 'budgetStrict', 'budgetBasis'):
+            filters.pop(key, None)
     if re.search(r'-\d+\s*(?:adults?|children|child|kids?)\b', text):
         raise ValueError('Participant counts cannot be negative.')
     party = dict(filters.get('participants') or {})
@@ -208,6 +219,11 @@ def search_packages(filters, read, uid, selected_ids=None):
     party_known = isinstance(party.get('adults'), int) and isinstance(party.get('children'), int)
     if party and (not party_known):
         raise ValueError('How many adults are travelling with the children?')
+    limit = Decimal(str(filters['budgetMax'])) if 'budgetMax' in filters else None
+    if limit is not None and filters.get('budgetBasis') == 'per_person':
+        if not party_known:
+            raise ValueError('How many adults and children are travelling? I’ll compare the average per person using each verified party total.')
+        limit *= party['adults'] + party['children']
     profiles = {}
     rows = []
     unquotable = 0
@@ -251,7 +267,7 @@ def search_packages(filters, read, uid, selected_ids=None):
             continue
         quote = snapshot['pricingBreakdown']
         amount = Decimal(str(quote['finalPayable']))
-        if 'budgetMax' in filters and (amount >= Decimal(str(filters['budgetMax'])) if filters.get('budgetStrict') else amount > Decimal(str(filters['budgetMax']))):
+        if limit is not None and (amount >= limit if filters.get('budgetStrict') else amount > limit):
             continue
         if filters.get('discountOnly') and quote['promotionDiscount'] <= 0:
             continue
@@ -337,6 +353,12 @@ def respond(message, state, read, uid):
         reply += f' Showing the first {RESULT_LIMIT}; comparisons refer to these displayed packages.'
     if not rows:
         reply = 'No published packages match all verified filters. Try another area, travel date, party size or budget, or remove an inclusion requirement.'
+    if filters.get('budgetBasis') == 'per_person':
+        cap = filters['budgetMax']
+        area = f" in {filters['destination']}" if filters.get('destination') else ''
+        comparison = 'under' if filters.get('budgetStrict') else 'up to'
+        reply += (f' I used a budget{area} of {comparison} MYR {cap:,.2f} per person, '
+                  'calculated from the verified total for your party. Package cards show the party total.')
     if meta['unquotableCount']:
         reply += ' Some packages could not supply a supported quote for this selection and were excluded.'
     if meta['catalogueLimited']:

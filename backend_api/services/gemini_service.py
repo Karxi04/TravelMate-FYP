@@ -382,7 +382,11 @@ def generateChatbotResponse(question, context='', *, with_source=False, planning
 
     global _provider_retry_at
     source = 'travelmate-assistant'
-    if car_rental_question(str(question or '')):
+    if re.fullmatch(r'(?:hi|hello|hey|hai|good morning|good afternoon|good evening)[!?.]*',
+                    str(question or '').strip(), re.IGNORECASE):
+        reply = ('Hi! I’m TravelMate. I can help you plan a trip in Malaysia, find published packages, '
+                 'check weather options or adjust a saved itinerary. What would you like to do?')
+    elif car_rental_question(str(question or '')):
         reply = _CAR_RENTAL_REPLY
     else:
         prompt = (context + '\n\n' if context else '') + 'Traveller: ' + str(question)
