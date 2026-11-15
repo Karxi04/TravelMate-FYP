@@ -55,6 +55,7 @@ class _ChatTabState extends State<ChatTab> {
   final Map<String, String> savedPlans = {};
   final Set<String> openingPackageIds = {};
   final Set<String> addingPlaceIds = {};
+  final Set<String> expandedRecommendationMessages = {};
   String? savingPlanKey;
 
   String packageId(Map<String, dynamic> package) =>
@@ -935,6 +936,48 @@ class _ChatTabState extends State<ChatTab> {
     );
   }
 
+  String recommendationSignature(List<Map<String, dynamic>> places, List<Map<String, dynamic>> packages) {
+    dynamic stable(dynamic value) {
+      if (value is Map) {
+        final keys = value.keys.map((key) => key.toString()).toList()..sort();
+        return {for (final key in keys) key: stable(value[key])};
+      }
+      if (value is List) return value.map(stable).toList();
+      return value;
+    }
+    return jsonEncode(stable([places, packages]));
+  }
+
+  Widget recommendationCards(List<Map<String, dynamic>> places,
+      List<Map<String, dynamic>> packages, String messageKey, bool duplicate) {
+    final expanded = expandedRecommendationMessages.contains(messageKey);
+    if (duplicate && !expanded) {
+      return TextButton.icon(
+        key: ValueKey('chat-results-$messageKey'),
+        onPressed: () => setState(() => expandedRecommendationMessages.add(messageKey)),
+        icon: const Icon(Icons.unfold_more),
+        label: const Text('View results again'),
+      );
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      if (places.isNotEmpty) placeSuggestionsCard(expanded ? places : places.take(3).toList()),
+      if (packages.isNotEmpty) packageRecommendationsCard(expanded ? packages : packages.take(3).toList()),
+      if (places.length > 3 || packages.length > 3 || duplicate)
+        TextButton.icon(
+          key: ValueKey('chat-results-$messageKey'),
+          onPressed: () => setState(() {
+            if (expanded) {
+              expandedRecommendationMessages.remove(messageKey);
+            } else {
+              expandedRecommendationMessages.add(messageKey);
+            }
+          }),
+          icon: Icon(expanded ? Icons.unfold_less : Icons.unfold_more),
+          label: Text(expanded ? 'Show fewer results' : 'Show all ${places.length + packages.length} results'),
+        ),
+    ]);
+  }
+
   Widget placeSuggestionsCard(List<Map<String, dynamic>> places) {
     return Container(
       margin: const EdgeInsets.only(top: 12),
@@ -1281,6 +1324,7 @@ class _ChatTabState extends State<ChatTab> {
 
   @override
   Widget build(BuildContext context) {
+    final seenRecommendationSets = <String>{};
     return Scaffold(
       key: scaffoldKey,
       drawer: historyDrawer(),
@@ -1480,6 +1524,10 @@ class _ChatTabState extends State<ChatTab> {
                             .map((e) => Map<String, dynamic>.from(e))
                             .toList()
                         : <Map<String, dynamic>>[];
+                    final hasResults = placeSuggestions.isNotEmpty || packages.isNotEmpty;
+                    final duplicateResults = hasResults && !seenRecommendationSets.add(
+                        recommendationSignature(placeSuggestions, packages));
+                    final resultMessageKey = '${activeSessionId ?? 'new'}-${item['id'] ?? messages.indexOf(raw)}';
                     final advisory =
                         (item['weatherAdvice'] ?? item['advisory'] ?? '')
                             .toString();
@@ -1611,12 +1659,22 @@ class _ChatTabState extends State<ChatTab> {
                                     ],
                                   ),
                                 ],
-                                if (placeSuggestions.isNotEmpty)
-                                  placeSuggestionsCard(placeSuggestions),
+                                if (item['weatherAction'] is Map)
+                                  TextButton.icon(
+                                    key: ValueKey('chat-weather-$resultMessageKey'),
+                                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WeatherScreen(
+                                      api: api, initialPlace: (item['weatherAction']['destination'] ?? '').toString()))),
+                                    icon: const Icon(Icons.cloud_outlined),
+                                    label: const Text('View Weather'),
+                                  ),
+                                if (hasResults)
+                                  recommendationCards(placeSuggestions, packages, resultMessageKey, duplicateResults),
                                 if (plan is Map)
                                   planCard(Map<String, dynamic>.from(plan)),
-                                if (packages.isNotEmpty)
-                                  packageRecommendationsCard(packages),
+                                if (item['proposedPlan'] is Map) ...[
+                                  const Text('Proposed changes (not saved)'),
+                                  planCard(Map<String, dynamic>.from(item['proposedPlan'])),
+                                ],
                                 if (advisory.isNotEmpty)
                                   _buildAdvisoryCard(advisory),
                                 if (item['ownedTrips'] is List ||

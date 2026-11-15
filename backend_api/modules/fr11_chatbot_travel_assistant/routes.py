@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from auth_utils import auth_required
 from utils import utc_now_iso
-from services.gemini_service import generateChatbotResponse, generateFollowUpResponse
+from services.gemini_service import generateChatbotResponse, generateFollowUpResponse, interpretChatbotIntent
 from sequence_contract.validators import validateQuestion
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, deleteRecord, updateRecord, claimRecord
 from sequence_contract.domain_functions import createItinerary, calculateBudget, recalculateItinerary
@@ -36,6 +36,7 @@ from .nlp_extractor import (
     filter_constraint_candidates,
 )
 from .guided_planning import guided_requirements
+from .contextual_intent import resolve_turn, prompt_context, remember_results, decorate_reply
 from .travel_dates import malaysian_today
 from services.review_service import ReviewConflict
 from .package_assistant import respond as commerce_response, public_details
@@ -128,48 +129,9 @@ def _sorted_sessions():
 
 
 def _context(session=None):
-    preference = effective_preference_profile(retrieveRecord('travel_preferences', g.uid) or {}, retrieveRecord('learned_preference_profiles', g.uid))
-    itineraries = retrieveRecord('itineraries', filters=[('travellerId', '==', g.uid)], limit=5) or []
-    latest = itineraries[-1] if itineraries else {}
-    base_context = (
-        f"Traveller preferences: personality={preference.get('travelPersonality')}, "
-        f"interests={preference.get('interests')}, budget={preference.get('budgetRange')}, "
-        f"pace={preference.get('travelPace')}, purpose={preference.get('travelPurpose')}.\n"
-        f"Learned concept affinities (bounded; questionnaire unchanged): {preference.get('learnedAffinities')}.\n"
-        f"Current/latest itinerary: title={latest.get('title')}, destination={latest.get('destinationArea')}, "
-        f"budgetLimit={latest.get('budgetLimit')}, budgetEstimate={latest.get('budgetEstimate')}, "
-        f"activities={[x.get('activityName') for x in latest.get('activities', [])[:8]]}."
-    )
-    planning = (session or {}).get('planningState') or {}
-    if planning:
-        parts = []
-        if planning.get('destinationArea'):
-            parts.append(f"Destination: {planning.get('destinationArea')} ({planning.get('destinationState', 'Malaysia')})")
-        if planning.get('tripMode') == 'road_trip':
-            parts.append(
-                f"Road trip: {planning.get('originDestination')} to {planning.get('targetDestination')} "
-                f"via {planning.get('multipleDestinations')}"
-            )
-        if planning.get('tripDays'):
-            parts.append(f"Duration: {planning.get('tripDays')} days")
-        if planning.get('budgetLimit'):
-            parts.append(f"Budget: RM{planning.get('budgetLimit')}")
-        if planning.get('travellerCount'):
-            parts.append(f"Travellers: {planning.get('travellerCount')}")
-        if planning.get('startDate'):
-            parts.append(f"Dates: {planning.get('startDate')} to {planning.get('endDate')}")
-        if planning.get('interests'):
-            parts.append(f"Interests: {', '.join(planning.get('interests'))}")
-        if planning.get('excludedInterests'):
-            parts.append(f"Excluded/Disliked: {', '.join(planning.get('excludedInterests'))}")
-        if planning.get('excludedActivityTypes'):
-            parts.append(f"Excluded activity types: {', '.join(planning.get('excludedActivityTypes'))}")
-        if planning.get('preferIndoor'):
-            parts.append("Weather preference: Prefers indoor / rain-safe activities")
-        if planning.get('daySpecificPreferences'):
-            parts.append(f"Day preferences: {planning.get('daySpecificPreferences')}")
-        base_context += f"\nActive trip planning state: {'; '.join(parts)}."
-    return base_context
+    session = session or {}
+    return 'Relevant conversation context (not reservation proof): ' + prompt_context(
+        session.get('planningState') or {}, session.get('messages') or [])
 
 
 def _extract_plan_from_message(message, planning_state=None):
@@ -282,7 +244,7 @@ def _extract_place_suggestions(message, destination_area=None, prefer_indoor=Fal
     return matches[:4]
 
 
-def _planning_catalog(area, state, interests=None):
+def _planning_catalog(area, state, interests=None, *, allow_provider=True):
     scope = normalize_destination_scope(area)
     cached = retrieveRecord('destination_cache',
                             filters=[('canonicalDestinationScope', '==', scope.get('scopeKey'))],
@@ -305,7 +267,7 @@ def _planning_catalog(area, state, interests=None):
     matching = find_matching_catalog_destinations(area, state, catalog)
     food_focus = concepts_for(interests or []) == {'food'}
     needs_search = not matching or (food_focus and not any('food' in candidate_concepts(row) for row in matching))
-    if needs_search and os.getenv('SERPAPI_KEY', '').strip():
+    if allow_provider and needs_search and os.getenv('SERPAPI_KEY', '').strip():
         try:
             query = 'local food and hawker centres' if food_focus else 'tourist attractions'
             result = retrieveDestinationResults(f'{query} in {area}', area)
@@ -399,6 +361,11 @@ def _trip_fingerprint(trip):
     return hashlib.sha256(json.dumps(trip, default=str, sort_keys=True).encode()).hexdigest()
 
 
+def _trip_context(trip):
+    return {key: trip[key] for key in ('destinationArea', 'destinationState', 'startDate', 'endDate',
+                                      'budgetLimit', 'travellerCount') if key in trip}
+
+
 def _saved_activities(trip):
     activities = trip.get('activities')
     if not isinstance(activities, list) or not activities:
@@ -481,7 +448,8 @@ def _adjust_trip(message, state):
                       for i, trip in enumerate(eligible, 1)]
             return {'reply': 'Which saved trip do you want to adjust? Reply with its number.\n' + '\n'.join(labels),
                     'suggestedReplies': [f'Adjust trip {i}' for i in range(1, min(5, len(labels)) + 1)]}
-        state['adjustment'] = {'tripId': eligible[0]['id'], 'fingerprint': _trip_fingerprint(eligible[0])}
+        state['adjustment'] = {'tripId': eligible[0]['id'], 'fingerprint': _trip_fingerprint(eligible[0]),
+                               'tripContext': _trip_context(eligible[0])}
         return {'reply': f"What would you like to change in {eligible[0].get('title') or 'your saved trip'}? "
                          'You can change the budget, dates, duration, activities, destination or pace.'}
     adjustment = state.get('adjustment')
@@ -511,12 +479,24 @@ def _adjust_trip(message, state):
         return {'reply': 'That trip is no longer available for editing.'}
     if selected_now:
         adjustment['fingerprint'] = _trip_fingerprint(trip)
+        adjustment['tripContext'] = _trip_context(trip)
         return {'reply': f"What would you like to change in {trip.get('title') or 'this trip'}?"}
     fingerprint = _trip_fingerprint(trip)
     changed_elsewhere = adjustment.get('fingerprint', fingerprint) != fingerprint
     if changed_elsewhere:
-        state['adjustment'] = adjustment = {'tripId': trip['id'], 'fingerprint': fingerprint}
+        state['adjustment'] = adjustment = {'tripId': trip['id'], 'fingerprint': fingerprint, 'tripContext': _trip_context(trip)}
         state.pop('activePlan', None)
+    if re.search(r'\b(?:undo|discard (?:the )?(?:draft|unconfirmed changes))\b', message, re.I):
+        state.pop('activePlan', None)
+        state['adjustment'] = {key: value for key, value in adjustment.items()
+                               if key not in {'patch', 'pendingPreferences', 'pendingActivity', 'pendingOperation'}}
+        return {'reply': 'The unconfirmed changes were discarded. Your saved trip is unchanged.',
+                'tripPlan': _saved_trip_preview(trip)}
+    if re.search(r'\bcompare\b', message, re.I) and re.search(r'\b(?:saved|old|original|proposed|revision)\b', message, re.I):
+        if not changed_elsewhere and state.get('activePlan'):
+            return {'reply': 'Here are the saved itinerary and the unconfirmed proposal. Nothing is applied until you confirm.',
+                    'tripPlan': _saved_trip_preview(trip), 'proposedPlan': state['activePlan']}
+        return {'reply': 'There is no current proposal to compare. Your saved trip is unchanged.', 'tripPlan': _saved_trip_preview(trip)}
     if _show_plan_request(message):
         if re.search(r'\b(?:draft|revision|proposed changes)\b', message, re.I) and not changed_elsewhere:
             if state.get('activePlan'):
@@ -539,6 +519,27 @@ def _adjust_trip(message, state):
                 'tripPlan': _saved_trip_preview(trip, day)}
     if changed_elsewhere:
         return {'reply': 'The saved trip changed elsewhere. Tell me what to revise using its latest details.'}
+    if re.search(r'\bwhy\b', message, re.I) and re.search(r'\b(?:activity|stop|place|recommended|picked|chosen)\b', message, re.I):
+        day = extract_itinerary_day(message) or adjustment.get('pendingDay') or adjustment.get('viewDay')
+        position = extract_activity_position(message) or adjustment.get('pendingActivity')
+        source = {**trip, **adjustment.get('patch', {})} if re.search(r'\b(?:proposed|draft|new)\b', message, re.I) else trip
+        options = [a for a in _saved_activities(source) if day is None or str(a.get('dayNo')) == str(day)]
+        if day is None or position is None or not 1 <= position <= len(options):
+            adjustment['pendingExplanation'] = {'day': day, 'position': position}
+            return {'reply': f'Which activity on Day {day} would you like me to explain?' if day else
+                             'Which itinerary day would you like me to explain?'}
+        if state.get('activePlan') and not re.search(r'\b(?:saved|original|old|proposed|draft|new)\b', message, re.I):
+            proposed = [a for a in _saved_activities({**trip, **adjustment.get('patch', {})}) if str(a.get('dayNo')) == str(day)]
+            if len(proposed) != len(options) or proposed[position - 1].get('destinationId') != options[position - 1].get('destinationId'):
+                adjustment['pendingExplanation'] = {'day': day, 'position': position}
+                return {'reply': 'Do you mean the saved activity or its proposed replacement?'}
+        adjustment.pop('pendingExplanation', None)
+        activity = options[position - 1]
+        reason = activity.get('recommendationReason')
+        if not isinstance(reason, str) or not reason:
+            matched = display_concepts(candidate_concepts(activity) & concepts_for(source.get('interests') or []))
+            reason = f'Matches the recorded interests: {", ".join(matched)}.' if matched else 'No specific recommendation reason is stored.'
+        return {'reply': f'{activity.get("activityName") or "This saved activity"}: {reason}'}
     if re.search(r'\b(?:back|return|resume|continue)\b.*\b(?:trip|editing|adjustment|day)\b', message, re.I):
         day = adjustment.get('pendingDay') or adjustment.get('viewDay')
         return {'reply': f'What would you like to change on Day {day}?' if day else
@@ -672,6 +673,9 @@ def _adjust_trip(message, state):
     if day and not interests and not {'travelPace', 'excludedInterests', 'excludedActivityTypes', 'preferIndoor'} & change.keys() and local_operation != 'remove':
         return {'reply': f'What kind of activities would you like for Day {day}?'}
     if not change and not day:
+        known_day = adjustment.get('pendingDay') or adjustment.get('viewDay')
+        if known_day:
+            return {'reply': f'Which activity or preference would you like to change on Day {known_day}?'}
         return {'reply': 'Which day or activity would you like to change? You can ask to see the saved plan first.'}
 
     draft = {**draft, **change}
@@ -743,6 +747,7 @@ def chat():
     if not isinstance(payload,dict):
         return jsonify({'ok':False,'error':'Chat data must be an object.'}),400
     message = str(payload.get('message', '')).strip()
+    user_message = message
     if not validateQuestion(message):
         return jsonify({'ok': False, 'error': 'message is required'}), 400
 
@@ -765,8 +770,26 @@ def chat():
     if payload.get('commerceRevision') is not None and payload['commerceRevision'] != planning_state.get('commerceRevision',0):
         return jsonify({'ok':False,'error':'This conversation changed. Reopen the chat before sending the next message.','code':'stale_chat_context'}),409
     try:
-        adjustment = _adjust_trip(message, planning_state)
+        def nearby_catalog(focus):
+            area = focus.get('city') or planning_state.get('destinationArea') or focus.get('state')
+            if not area:
+                return []
+            return find_matching_catalog_destinations(area, focus.get('state'),
+                _planning_catalog(area, focus.get('state'), allow_provider=False))
+        routing = resolve_turn(message, planning_state, messages, interpret=interpretChatbotIntent, lookup=nearby_catalog)
+        if routing and routing.get('message'):
+            message = routing['message']
+        if routing and routing.get('response') is not None:
+            adjustment = routing['response']
+        elif routing and routing.get('commerce'):
+            adjustment = None
+        else:
+            adjustment = _adjust_trip(message, planning_state)
         commerce = adjustment if adjustment is not None else commerce_response(message, planning_state, retrieveRecord, g.uid)
+        if commerce is None and routing and routing.get('commerce'):
+            commerce = {'reply': 'I cannot verify a booking or payment from conversation text. Open Trips or Orders for the verified record.'
+                        if routing['commerce'] == 'records' else
+                        'Which published package would you like to filter or compare? Please use its displayed name or number.'}
     except (ValueError, TypeError, KeyError, OverflowError):
         return jsonify(ok=False, error='The saved trip or conversation could not be read. Reopen it and try again.'), 409
     discovery = False
@@ -775,10 +798,12 @@ def chat():
         commerce = _destination_discovery(message, planning_state)
         discovery = True
     if commerce is not None:
-        item = {'message':message,'createdAt':utc_now_iso(),'travellerId':g.uid,'source':'travelmate-assistant' if adjustment is not None or discovery else 'travelmate-data',**commerce}
+        item = {'message':user_message,'createdAt':utc_now_iso(),'travellerId':g.uid,'source':'travelmate-assistant' if adjustment is not None or discovery else 'travelmate-data',**commerce}
+        decorate_reply(item, planning_state)
         try:
             record=storeRecord('chat_messages',{**item,'sessionId':session['id']})
             item['id']=record['id']
+            remember_results(planning_state, item)
             messages.append(item)
             session=updateRecord('chat_sessions',session['id'],{'messages':messages,'planningState':planning_state,'updatedAt':utc_now_iso()},expected=expected_session)
         except Exception:
@@ -938,7 +963,7 @@ def chat():
         item = {
             'id': 'chat_' + utc_now_iso().replace(':', '').replace('-', '').replace('.', ''),
             'travellerId': g.uid,
-            'message': message,
+            'message': user_message,
             'reply': foreign_reply,
             'source': 'travelmate-assistant',
             'createdAt': utc_now_iso(),
@@ -972,7 +997,7 @@ def chat():
         item = {
             'id': 'chat_' + utc_now_iso().replace(':', '').replace('-', '').replace('.', ''),
             'travellerId': g.uid,
-            'message': message,
+            'message': user_message,
             'reply': clarification_reply,
             'source': 'travelmate-assistant',
             'createdAt': utc_now_iso(),
@@ -1012,8 +1037,7 @@ def chat():
     else:
         try:
             history = [item for item in messages[-20:] if item.get('source') != 'travelmate-data']
-            recent = '\n'.join(f"Traveller: {x.get('message')}\nTravelMate: {x.get('reply')}" for x in history[-3:])
-            context = _context(session) + ('\nRecent conversation:\n' + recent if recent else '')
+            context = _context({**session, 'planningState': planning_state, 'messages': messages})
             response = (
                 generateFollowUpResponse(message, context, with_source=True, planning_state=planning_state)
                 if history else generateChatbotResponse(message, context, with_source=True, planning_state=planning_state)
@@ -1032,7 +1056,7 @@ def chat():
     item = {
         'id': 'chat_' + utc_now_iso().replace(':', '').replace('-', '').replace('.', ''),
         'travellerId': g.uid,
-        'message': message,
+        'message': user_message,
         'reply': reply,
         'source': source,
         'createdAt': utc_now_iso(),
@@ -1156,8 +1180,10 @@ def chat():
     if suggestions and not plan:
         item['placeSuggestions'] = suggestions
 
+    decorate_reply(item, planning_state)
     record = storeRecord('chat_messages', {**item, 'sessionId': session['id']})
     item['id'] = record['id']
+    remember_results(planning_state, item)
     messages.append(item)
     updates = {
         'messages': messages,

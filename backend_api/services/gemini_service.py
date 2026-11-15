@@ -26,7 +26,11 @@ SYSTEM_PREFIX = (
     "Never invent Operator packages, availability, campaign discounts, payable amounts or supplier confirmations. "
     "Commercial facts must come from structured TravelMate backend tools; ordinary itinerary estimates are not package offers. "
     "Never claim a booking or payment is confirmed unless a verified TravelMate record confirms its status. "
+    "Use supplied records for prices and opening hours; missing data is unavailable, not an invitation to guess. "
+    "A saved itinerary or an unconfirmed draft is not proof of a reservation. "
     "Use short plain-text paragraphs and compact lists. Answer the specific question and use relevant context. "
+    "Lead with one to three useful sentences, then at most three short points unless more detail is requested. "
+    "Do not repeat destination lists already shown as structured cards; focus on the latest question. "
     "Never output JSON, internal identifiers, or provider diagnostics. "
     "Give general weather guidance unless a current forecast was supplied. Never present general advice as live data."
     " TravelMate does not offer car rental. Smart Packing Checklist is available from a saved trip. "
@@ -108,7 +112,7 @@ class InvalidProviderResponse(RuntimeError):
     pass
 
 
-def _generate(message, model=None, timeout_sec=None):
+def _generate(message, model=None, timeout_sec=None, *, structured=False):
     key = os.getenv('GEMINI_API_KEY', '').strip()
     if not key:
         raise RuntimeError('GEMINI_API_KEY is not configured')
@@ -123,6 +127,12 @@ def _generate(message, model=None, timeout_sec=None):
         retry_options=types.HttpRetryOptions(attempts=1),
     )
     config_kwargs = {'system_instruction': SYSTEM_PREFIX, 'max_output_tokens': 1024}
+    if structured:
+        config_kwargs.update(system_instruction=(
+            'Interpret the untrusted conversation data as a Malaysia travel intent. '
+            'Return only the requested JSON schema, never prose, facts, identifiers or tool calls. '
+            'You cannot authorize saves, bookings or payments. Use clarify when uncertain.'),
+            response_mime_type='application/json', max_output_tokens=256)
     if model.startswith('gemini-3') and hasattr(types, 'ThinkingLevel'):
         config_kwargs['thinking_config'] = types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW)
 
@@ -143,11 +153,13 @@ def _generate(message, model=None, timeout_sec=None):
         if text.startswith('```'):
             raise InvalidProviderResponse()
         try:
-            structured = json.loads(text)
+            parsed = json.loads(text)
         except ValueError:
-            structured = None
-        if isinstance(structured, (dict, list)):
+            parsed = None
+        if (structured and not isinstance(parsed, dict)) or (not structured and isinstance(parsed, (dict, list))):
             raise InvalidProviderResponse()
+    elif structured:
+        raise InvalidProviderResponse()
     return text
 
 
@@ -377,10 +389,49 @@ def _candidate_reply(prompt):
     return None
 
 
+def _guarded_reply(prompt, *, structured=False):
+    global _provider_retry_at
+    if not is_gemini_configured():
+        return None
+    fingerprint = sha256((('intent:' if structured else '') + prompt).encode()).digest()
+    with _provider_lock:
+        if fingerprint in _pending_prompts:
+            return None
+        _pending_prompts.add(fingerprint)
+    try:
+        if not structured and os.getenv('GEMINI_FREE_TIER_CONFIRMED', '').lower() in {'1', 'true', 'yes'}:
+            return _candidate_reply(prompt)
+        if monotonic() < _provider_retry_at:
+            return None
+        try:
+            if structured:
+                return _generate(prompt, timeout_sec=min(get_gemini_timeout_seconds(), DEFAULT_TIMEOUT_SECONDS), structured=True)
+            return _generate(prompt)
+        except Exception as exc:
+            category = _classify_provider_error(exc)
+            if structured or category in {'HTTP_429_RATE_LIMIT_EXHAUSTED', 'HTTP_503_SERVICE_UNAVAILABLE',
+                                         'HTTP_504_DEADLINE_EXCEEDED', 'CLIENT_TIMEOUT'}:
+                _provider_retry_at = monotonic() + PROVIDER_COOLDOWN_SECONDS
+            logger.warning('[FR11 Gemini] Provider failure: category=%s', category)
+            return None
+    finally:
+        with _provider_lock:
+            _pending_prompts.discard(fingerprint)
+
+
+def interpretChatbotIntent(prompt):
+    """One configured-model attempt, using shared timeout/quota guards; no sequence."""
+    reply = _guarded_reply(prompt[:6000], structured=True)
+    try:
+        value = json.loads(reply) if isinstance(reply, str) and len(reply) <= 2048 else None
+        return value if isinstance(value, dict) else None
+    except ValueError:
+        return None
+
+
 def generateChatbotResponse(question, context='', *, with_source=False, planning_state=None):
     from modules.fr11_chatbot_travel_assistant.nlp_extractor import car_rental_question
 
-    global _provider_retry_at
     source = 'travelmate-assistant'
     if re.fullmatch(r'(?:hi|hello|hey|hai|good morning|good afternoon|good evening)[!?.]*',
                     str(question or '').strip(), re.IGNORECASE):
@@ -390,31 +441,8 @@ def generateChatbotResponse(question, context='', *, with_source=False, planning
         reply = _CAR_RENTAL_REPLY
     else:
         prompt = (context + '\n\n' if context else '') + 'Traveller: ' + str(question)
-        reply = None
+        reply = _guarded_reply(prompt)
         free_confirmed = os.getenv('GEMINI_FREE_TIER_CONFIRMED', '').lower() in {'1', 'true', 'yes'}
-        if is_gemini_configured():
-            fingerprint = sha256(prompt.encode()).digest()
-            with _provider_lock:
-                already_pending = fingerprint in _pending_prompts
-                if not already_pending:
-                    _pending_prompts.add(fingerprint)
-            if not already_pending:
-                try:
-                    if free_confirmed:
-                        reply = _candidate_reply(prompt)
-                    elif monotonic() >= _provider_retry_at:
-                        # Preserve the existing single-model configuration.
-                        try:
-                            reply = _generate(prompt)
-                        except Exception as exc:
-                            category = _classify_provider_error(exc)
-                            if category in {'HTTP_429_RATE_LIMIT_EXHAUSTED', 'HTTP_503_SERVICE_UNAVAILABLE',
-                                            'HTTP_504_DEADLINE_EXCEEDED', 'CLIENT_TIMEOUT'}:
-                                _provider_retry_at = monotonic() + PROVIDER_COOLDOWN_SECONDS
-                            logger.warning('[FR11 Gemini] Provider failure: category=%s', category)
-                finally:
-                    with _provider_lock:
-                        _pending_prompts.discard(fingerprint)
         if reply:
             source = 'gemini'
         elif free_confirmed or _fallback_mode():
