@@ -22,6 +22,10 @@ from .nlp_extractor import (
     extract_excluded_activity_types,
     extract_indoor_preference,
     extract_day_specific,
+    extract_itinerary_day,
+    extract_activity_position,
+    itinerary_view_request,
+    clean_text,
     classify_user_intent,
     classify_detailed_intent,
     conversational_question,
@@ -52,7 +56,7 @@ def _plan_id(plan):
 
 
 def _show_plan_request(message):
-    return bool(re.search(r'\b(?:show (?:my |the )?(?:plan|itinerary|trip)|where (?:is |are )?(?:my |the )?trips?|can i see my trip)\b', message, re.I))
+    return itinerary_view_request(message)
 
 
 def _session_title(message):
@@ -395,6 +399,66 @@ def _trip_fingerprint(trip):
     return hashlib.sha256(json.dumps(trip, default=str, sort_keys=True).encode()).hexdigest()
 
 
+def _saved_activities(trip):
+    activities = trip.get('activities')
+    if not isinstance(activities, list) or not activities:
+        activities = [{**activity, 'dayNo': row.get('dayNo', row.get('dayNumber'))}
+                      for row in (trip.get('dailySchedule') or []) if isinstance(row, dict)
+                      for activity in (row.get('activities') or []) if isinstance(activity, dict)]
+    return [deepcopy(a) for a in activities if isinstance(a, dict)]
+
+
+def _saved_trip_preview(trip, day=None):
+    preview = {key: deepcopy(trip[key]) for key in (
+        'title', 'destinationArea', 'destinationState', 'startDate', 'endDate', 'budgetLimit',
+        'budgetEstimate', 'travellerCount', 'numberOfTravellers', 'tripDays') if key in trip}
+    activities = _saved_activities(trip)
+    preview.update(viewOnly=True, savedTripId=trip['id'], activities=[deepcopy(a) for a in activities
+                   if isinstance(a, dict) and (day is None or str(a.get('dayNo')) == str(day))])
+    if day is not None:
+        preview['previewDay'] = day
+    return preview
+
+
+def _day_activities(draft, trip_id, day, operation, position, interests):
+    """Prepare only the selected day's activities; reuse the existing verified planner."""
+    current = _saved_activities(draft)
+    selected = [a for a in current if str(a.get('dayNo')) == str(day)]
+    if position is not None and not 1 <= position <= len(selected):
+        return None, f'That activity is not on Day {day}. Which saved activity should I change?'
+    affected = [selected[position - 1]] if position is not None else selected
+    if any(a.get(key) for a in affected for key in ('bookingId', 'supplierArrangementId', 'checkoutOrderId')):
+        return None, 'That activity has booking details attached. Review it in Trip Details before changing it.'
+    if operation == 'remove':
+        revised = [a for a in selected if a not in affected]
+    elif operation == 'relax':
+        revised = selected[:2]
+    else:
+        used = {a.get('destinationId') for a in current}
+        names = {clean_text(a.get('activityName')) for a in current}
+        requested = concepts_for(interests or [])
+        catalog = [a for a in _planning_catalog(draft['destinationArea'], draft.get('destinationState'), interests)
+                   if (a.get('destinationId') or a.get('place_id')) not in used
+                   and clean_text(a.get('title') or a.get('name')) not in names
+                   and (not requested or candidate_concepts(a) & requested)]
+        target_date = (date.fromisoformat(str(draft['startDate'])[:10]) + timedelta(days=day - 1)).isoformat()
+        planned, status = build_structured_trip_plan(
+            draft['destinationArea'], draft.get('destinationState'), days=1,
+            budget_limit=draft.get('budgetLimit'), traveller_count=draft.get('travellerCount') or 1,
+            start_date=target_date, end_date=target_date, interests=interests,
+            excluded_interests=draft.get('excludedInterests'), excluded_activity_types=draft.get('excludedActivityTypes'),
+            prefer_indoor=draft.get('preferIndoor', False), catalog=catalog,
+            preference_profile={key: draft[key] for key in ('travelPace', 'travelPersonality') if key in draft})
+        if status != 'ready' or not planned.get('activities'):
+            return None, f'I could not verify an unused activity for Day {day} that fits. Your saved trip is unchanged; try another theme.'
+        count = 1 if operation in {'add', 'replace'} else max(1, min(len(selected), 3))
+        replacements = [{**a, 'dayNo': day, 'activityId': 'chat_' + _plan_id({'trip': trip_id, 'day': day, 'place': a['destinationId']})}
+                        for a in planned['activities'][:count]]
+        revised = (selected + replacements if operation == 'add' else
+                   selected[:position - 1] + replacements + selected[position:] if position is not None else replacements)
+    return [a for a in current if str(a.get('dayNo')) != str(day)] + revised, None
+
+
 def _adjust_trip(message, state):
     request_adjustment = bool(re.search(
         r'\b(?:adjust|edit|revise|modify) (?:my|an existing|a saved) (?:itinerary|trip)\b', message, re.I))
@@ -417,7 +481,7 @@ def _adjust_trip(message, state):
                       for i, trip in enumerate(eligible, 1)]
             return {'reply': 'Which saved trip do you want to adjust? Reply with its number.\n' + '\n'.join(labels),
                     'suggestedReplies': [f'Adjust trip {i}' for i in range(1, min(5, len(labels)) + 1)]}
-        state['adjustment'] = {'tripId': eligible[0]['id']}
+        state['adjustment'] = {'tripId': eligible[0]['id'], 'fingerprint': _trip_fingerprint(eligible[0])}
         return {'reply': f"What would you like to change in {eligible[0].get('title') or 'your saved trip'}? "
                          'You can change the budget, dates, duration, activities, destination or pace.'}
     adjustment = state.get('adjustment')
@@ -427,15 +491,11 @@ def _adjust_trip(message, state):
         state.pop('adjustment', None)
         state.pop('activePlan', None)
         return None
-    if re.fullmatch(r'(?:cancel|stop)(?: (?:the )?adjustment)?[.!]?', message, re.I):
+    if re.fullmatch(r'(?:cancel|stop)(?: (?:the )?(?:adjustment|changes|editing))?[.!]?|'
+                    r'(?:never\s*mind|nvm|leave it unchanged)[.!]?', message, re.I):
         state.pop('adjustment', None)
         state.pop('activePlan', None)
         return {'reply': 'The adjustment draft was discarded. Your saved trip is unchanged.'}
-    if _show_plan_request(message) and state.get('activePlan'):
-        return {'reply': 'Here is the itinerary revision you can review and confirm.', 'tripPlan': state['activePlan']}
-    if conversational_question(message) or classify_detailed_intent(message) in {
-            'WEATHER_ENQUIRY', 'HOTEL_ENQUIRY', 'FLIGHT_ENQUIRY', 'FEATURE_EXPLANATION'}:
-        return None
     if 'choices' in adjustment:
         match = re.fullmatch(r'(?:adjust trip\s+)?(\d{1,2})[.!]?', message, re.I)
         if not match or not 1 <= int(match[1]) <= len(adjustment['choices']):
@@ -450,13 +510,52 @@ def _adjust_trip(message, state):
         state.pop('activePlan', None)
         return {'reply': 'That trip is no longer available for editing.'}
     if selected_now:
+        adjustment['fingerprint'] = _trip_fingerprint(trip)
         return {'reply': f"What would you like to change in {trip.get('title') or 'this trip'}?"}
     fingerprint = _trip_fingerprint(trip)
-    if adjustment.get('fingerprint', fingerprint) != fingerprint:
-        state['adjustment'] = {'tripId': trip['id']}
+    changed_elsewhere = adjustment.get('fingerprint', fingerprint) != fingerprint
+    if changed_elsewhere:
+        state['adjustment'] = adjustment = {'tripId': trip['id'], 'fingerprint': fingerprint}
         state.pop('activePlan', None)
+    if _show_plan_request(message):
+        if re.search(r'\b(?:draft|revision|proposed changes)\b', message, re.I) and not changed_elsewhere:
+            if state.get('activePlan'):
+                return {'reply': 'Here are the proposed changes. Your saved trip has not been updated.',
+                        'tripPlan': state['activePlan']}
+            return {'reply': 'There is no proposed revision yet. What would you like to change?'}
+        day = extract_itinerary_day(message)
+        if day is not None:
+            try:
+                count = (date.fromisoformat(str(trip['endDate'])[:10]) - date.fromisoformat(str(trip['startDate'])[:10])).days + 1
+            except (KeyError, ValueError, TypeError):
+                count = max([extract_itinerary_day('day ' + str(a.get('dayNo'))) or 0
+                             for a in _saved_trip_preview(trip)['activities']] or [0])
+            if not 1 <= day <= count:
+                return {'reply': 'That day is outside the saved trip. Which itinerary day would you like to see?'}
+            adjustment['viewDay'] = day
+        prefix = 'The saved trip changed elsewhere; the earlier draft was discarded. ' if changed_elsewhere else ''
+        return {'reply': prefix + (f'Here is the saved Day {day} itinerary.' if day else 'Here is your saved itinerary.')
+                         + ' This is read-only; nothing has been changed.',
+                'tripPlan': _saved_trip_preview(trip, day)}
+    if changed_elsewhere:
         return {'reply': 'The saved trip changed elsewhere. Tell me what to revise using its latest details.'}
+    if re.search(r'\b(?:back|return|resume|continue)\b.*\b(?:trip|editing|adjustment|day)\b', message, re.I):
+        day = adjustment.get('pendingDay') or adjustment.get('viewDay')
+        return {'reply': f'What would you like to change on Day {day}?' if day else
+                         'Which day or activity would you like to change?'}
+    if conversational_question(message) or classify_detailed_intent(message) in {
+            'WEATHER_ENQUIRY', 'HOTEL_ENQUIRY', 'FLIGHT_ENQUIRY', 'CAR_RENTAL_ENQUIRY', 'FEATURE_EXPLANATION'}:
+        return None
+    if (re.search(r'\b(?:packages?|tourism packages?)\b', message, re.I)
+            or (classify_detailed_intent(message) == 'GENERAL_CONVERSATION'
+                and not re.search(r'\b(?:change|replace|remove|reduce|keep|relax|walking|cancel)\b', message, re.I)
+                and not extract_interests(message) and extract_budget(message) is None
+                and extract_itinerary_day(message) is None
+                and extract_activity_position(message, allow_short=bool(adjustment.get('pendingOperation'))) is None
+                and not extract_travellers(message) and not re.fullmatch(r'\d+(?:\.\d+)?', message))):
+        return None
 
+    previous_adjustment = deepcopy(adjustment)
     patch = dict(adjustment.get('patch') or {})
     draft = {**trip, **patch}
     change = {}
@@ -507,28 +606,84 @@ def _adjust_trip(message, state):
     indoor = extract_indoor_preference(message)
     if indoor is not None:
         change['preferIndoor'] = indoor
-    if re.search(r'\b(?:relaxed|slower|less walking|not too much walking|peaceful)\b', message, re.I):
+    if re.search(r'\b(?:relaxing|relaxed|slower|reduce walking|less walking|not too much walking|peaceful)\b', message, re.I):
         change['travelPace'] = 'relaxed'
     if re.search(r'\b(?:more active|faster|active pace)\b', message, re.I):
         change['travelPace'] = 'active'
+    preference_fields = ('interests', 'excludedInterests', 'excludedActivityTypes', 'preferIndoor', 'travelPace')
+    preferences = {key: change[key] for key in preference_fields if key in change}
+    if preferences:
+        adjustment['pendingPreferences'] = {**adjustment.get('pendingPreferences', {}), **preferences}
+    if budget is None:
+        change = {**adjustment.get('pendingPreferences', {}), **change}
+        interests = change.get('interests')
 
-    day_target = re.search(r'\b(?:day\s+(\d+)|(first|second|third|fourth|fifth)\s+day)\b', message, re.I)
-    if day_target and re.search(r'\b(?:change|replace|revise|adjust)\b', message, re.I):
-        words = ('first', 'second', 'third', 'fourth', 'fifth')
-        day = int(day_target[1]) if day_target[1] else words.index(day_target[2].lower()) + 1
-        if not 1 <= day <= (old_end - old_start).days + 1:
+    day_target = extract_itinerary_day(message)
+    if day_target is not None and re.search(r'\bkeep\b.*\bunchanged\b', message, re.I):
+        adjustment['protectedDays'] = sorted(set(adjustment.get('protectedDays', [])) | {day_target})
+        if not change:
+            return {'reply': f'I will keep Day {day_target} unchanged. Which other day or activity should I change?'}
+        day_target = None
+    operation = re.search(r'\b(replace|remove|delete|add)\b', message, re.I)
+    if operation:
+        adjustment['pendingOperation'] = 'remove' if operation[1].lower() == 'delete' else operation[1].lower()
+    position = extract_activity_position(message, allow_short=bool(adjustment.get('pendingOperation')))
+    if position is not None:
+        adjustment['pendingActivity'] = position
+        adjustment.setdefault('pendingOperation', 'replace')
+    named = [a for a in _saved_activities(draft) if len(clean_text(a.get('activityName'))) > 2
+             and clean_text(a.get('activityName')) in clean_text(message)] if operation else []
+    if len(named) == 1:
+        day_target = int(named[0].get('dayNo') or 1)
+        adjustment['pendingActivity'] = [a for a in _saved_activities(draft)
+                                         if str(a.get('dayNo')) == str(day_target)].index(named[0]) + 1
+    if day_target is not None:
+        if not 1 <= day_target <= (old_end - old_start).days + 1:
             return {'reply': 'That day is outside the saved trip. Which itinerary day should I change?'}
-        adjustment['pendingDay'] = day
-        if not interests:
-            return {'reply': f'What kind of activities would you like for Day {day}?'}
-    day = adjustment.get('pendingDay')
-    if day and not interests:
-        return {'reply': f'Tell me what kind of activities you prefer for Day {day}, such as culture or nature.'}
-    if not change:
-        return {'reply': 'Tell me what to change, for example “Set the budget to RM700” or “Change the second day.”'}
+        if day_target in adjustment.get('protectedDays', []):
+            state['adjustment'] = previous_adjustment
+            return {'reply': f'You asked to keep Day {day_target} unchanged. Which other day should I edit?'}
+        if day_target != adjustment.get('pendingDay') and re.search(r'\b(?:no|actually|instead|sorry)\b', message, re.I):
+            for key in ('activities', 'dailySchedule', 'unscheduledSuggestions', 'budgetEstimate'):
+                patch.pop(key, None)
+            draft = {**trip, **patch}
+            adjustment['patch'] = patch
+            state.pop('activePlan', None)
+        adjustment['pendingDay'] = day_target
+    activity_change = bool(interests or operation or position is not None or day_target or
+                           {'travelPace', 'excludedInterests', 'excludedActivityTypes', 'preferIndoor'} & change.keys()
+                           or adjustment.get('pendingOperation'))
+    if change and set(change) <= {'budgetLimit', 'travellerCount', 'numberOfTravellers'} and not (interests or operation or position is not None or day_target):
+        activity_change = False
+    day = (adjustment.get('pendingDay') or adjustment.get('viewDay')) if activity_change else None
+    if activity_change and not day and 'destinationArea' not in change:
+        return {'reply': 'Which day would you like to change? You can ask to see the saved plan first.'}
+    if adjustment.get('protectedDays') and {'destinationArea', 'startDate', 'endDate'} & change.keys():
+        state['adjustment'] = previous_adjustment
+        return {'reply': 'Those changes could affect the days you asked to keep. Please review that restriction before changing the destination or dates.'}
+    if day and day in adjustment.get('protectedDays', []):
+        state['adjustment'] = previous_adjustment
+        return {'reply': f'You asked to keep Day {day} unchanged. Which other day should I edit?'}
+    local_operation = adjustment.get('pendingOperation', 'day')
+    if change.get('travelPace') == 'relaxed' and not operation and not (concepts_for(interests or []) - {'leisure'}):
+        local_operation = 'relax'
+    if day and local_operation in {'replace', 'remove'} and adjustment.get('pendingActivity') is None:
+        return {'reply': f'Which activity on Day {day} should I {local_operation}? Reply with its name or position.'}
+    if day and not interests and not {'travelPace', 'excludedInterests', 'excludedActivityTypes', 'preferIndoor'} & change.keys() and local_operation != 'remove':
+        return {'reply': f'What kind of activities would you like for Day {day}?'}
+    if not change and not day:
+        return {'reply': 'Which day or activity would you like to change? You can ask to see the saved plan first.'}
 
     draft = {**draft, **change}
-    if 'destinationArea' in change or day:
+    if day and 'destinationArea' not in change:
+        activities, error = _day_activities(draft, trip['id'], day, local_operation,
+                                           adjustment.get('pendingActivity'), interests)
+        if error:
+            return {'reply': error}
+        change['activities'] = activities
+        change.pop('interests', None)
+        draft = {**trip, **patch, **change}
+    elif 'destinationArea' in change:
         planned, status = build_structured_trip_plan(
             draft['destinationArea'], draft.get('destinationState'), budget_limit=draft.get('budgetLimit'),
             traveller_count=draft.get('travellerCount') or draft.get('numberOfTravellers') or 1,
@@ -539,35 +694,27 @@ def _adjust_trip(message, state):
             catalog=_planning_catalog(draft['destinationArea'], draft.get('destinationState'), draft.get('interests')))
         if status != 'ready' or planned.get('coverageStatus') != 'complete':
             return {'reply': 'I could not verify enough activities for those changes. Your saved trip is unchanged.'}
-        if day and 'destinationArea' not in change:
-            kept = [dict(row) for row in draft.get('activities', []) if row.get('dayNo') != day]
-            used = {row.get('destinationId') for row in draft.get('activities', [])}
-            requested = concepts_for(interests)
-            replacements = [row for row in planned['activities']
-                            if row.get('destinationId') not in used and candidate_concepts(row) & requested][:2]
-            if not replacements:
-                return {'reply': f'I could not verify an unused stop for Day {day} with those interests. Try another theme.'}
-            change['activities'] = kept + [{**row, 'activityId': f'chat_day_{day}_{index}', 'dayNo': day}
-                                          for index, row in enumerate(replacements, 1)]
-            change.pop('interests', None)
-        else:
-            change['activities'] = planned['activities']
+        change['activities'] = planned['activities']
         draft = {**trip, **patch, **change}
     if {'startDate', 'destinationArea', 'activities', 'travelPace'} & change.keys():
         revised = recalculateItinerary(draft)
         if day and 'destinationArea' not in change:
-            other_days = [row for row in draft.get('dailySchedule', []) if row.get('dayNo') != day]
+            other_days = [row for row in (draft.get('dailySchedule') or []) if str(row.get('dayNo')) != str(day)]
             if other_days:
                 revised['dailySchedule'] = sorted(
                     other_days + [row for row in revised['dailySchedule'] if row.get('dayNo') == day],
-                    key=lambda row: row['dayNo'])
-                revised['activities'] = [row for row in draft['activities'] if row.get('dayNo') != day] + [
-                    row for row in revised['activities'] if row.get('dayNo') == day]
+                    key=lambda row: int(row['dayNo']))
+            revised['activities'] = [row for row in draft['activities'] if str(row.get('dayNo')) != str(day)] + [
+                row for row in revised['activities'] if row.get('dayNo') == day]
+            for key in preference_fields:
+                change.pop(key, None)
         for key in ('dailySchedule', 'activities', 'unscheduledSuggestions', 'tripDays', 'durationDays'):
             if key in revised:
                 change[key] = revised[key]
     if 'travellerCount' in change:
         change.update(refresh_activity_costs({**draft, **change}))
+    if day and local_operation != 'remove' and calculateBudget({**draft, **change}).get('overBy', 0) > 0:
+        return {'reply': 'Those activities would exceed your trip budget. Your saved trip is unchanged; try a lower-cost theme or remove a stop.'}
     patch.update(change)
     draft = {**trip, **patch}
     patch['budgetEstimate'] = draft['budgetEstimate'] = calculateBudget(draft)
@@ -579,7 +726,13 @@ def _adjust_trip(message, state):
     preview['adjustmentRevision'] = fingerprint
     preview['draftId'] = _plan_id(preview)
     state['activePlan'] = preview
-    state['adjustment'] = {'tripId': trip['id'], 'fingerprint': fingerprint, 'patch': patch}
+    adjustment.update(tripId=trip['id'], fingerprint=fingerprint, patch=patch)
+    if day:
+        for key in ('pendingOperation', 'pendingActivity', 'pendingPreferences'):
+            adjustment.pop(key, None)
+    if budget is not None:
+        adjustment.pop('pendingBudget', None)
+    state['adjustment'] = adjustment
     return {'reply': 'Review the revised itinerary below. Confirm to update the same Trip.', 'tripPlan': preview}
 
 
@@ -1022,6 +1175,8 @@ def chat():
 def save_plan():
     payload = request.get_json(silent=True) or {}
     plan = payload.get('plan')
+    if isinstance(plan, dict) and (plan.get('viewOnly') is True or 'savedTripId' in plan):
+        return jsonify(ok=False, error='This is a read-only saved-trip preview, not a revision to save.'), 400
     save_session = None
     if payload.get('sessionId'):
         save_session = _session_ref(payload['sessionId'])

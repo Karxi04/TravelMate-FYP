@@ -119,6 +119,7 @@ class _ChatTabState extends State<ChatTab> {
       (plan['draftId'] ?? jsonEncode(plan)).toString();
 
   bool stalePlan(Map<String, dynamic> plan) {
+    if (plan['viewOnly'] == true) return false;
     if (planningState['dateClarification'] != null) return true;
     final active = planningState['activePlan'];
     if (plan['draftId'] != null &&
@@ -350,7 +351,7 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   Future<void> savePlan(Map<String, dynamic> plan) async {
-    if (busy ||
+    if (plan['viewOnly'] == true || busy ||
         stalePlan(plan) ||
         savedPlans.containsKey(planKey(plan)) ||
         plan['coverageStatus'] == 'partial' ||
@@ -1020,6 +1021,8 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   Widget planCard(Map<String, dynamic> plan) {
+    final viewOnly = plan['viewOnly'] == true;
+    final previewDay = plan['previewDay'] is int ? plan['previewDay'] as int : null;
     final saved = savedPlans.containsKey(planKey(plan));
     final stale = stalePlan(plan);
     final activities = (plan['activities'] as List? ?? [])
@@ -1035,7 +1038,7 @@ class _ChatTabState extends State<ChatTab> {
         start != null && end != null ? end.difference(start).inDays + 1 : 0;
     if (dayCount > 0 && dayCount <= 14) {
       for (var day = 1; day <= dayCount; day++) {
-        days[day] = [];
+        if (previewDay == null || previewDay == day) days[day] = [];
       }
     }
     for (final a in activities) {
@@ -1061,6 +1064,9 @@ class _ChatTabState extends State<ChatTab> {
                         fontWeight: FontWeight.w900, fontSize: 15)))
           ]),
           const SizedBox(height: 8),
+          if (viewOnly)
+            const Text('Saved itinerary (read-only)',
+                style: TextStyle(color: AppColors.textSecondary)),
           if (start != null && end != null) ...[
             Text('${MaterialLocalizations.of(context).formatMediumDate(start)} – ${MaterialLocalizations.of(context).formatMediumDate(end)}',
                 style: Theme.of(context)
@@ -1136,16 +1142,17 @@ class _ChatTabState extends State<ChatTab> {
                 child: ExpansionTile(
                   key: PageStorageKey('chat-${planKey(plan)}-day-${entry.key}'),
                   tilePadding: EdgeInsets.zero,
-                  initiallyExpanded: entry.key == 1,
+                  initiallyExpanded: entry.key == (previewDay ?? 1),
                   title: Text(
                       'Day ${entry.key}${start == null ? '' : ' — ${start.add(Duration(days: entry.key - 1)).toIso8601String().substring(0, 10)}'}',
                       style: const TextStyle(fontWeight: FontWeight.w900)),
                   children: [
                     if (entry.value.isEmpty)
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.only(bottom: 6),
                         child: Text(
-                            'No verified activities scheduled for this day.'),
+                            viewOnly ? 'No activities saved for this day.'
+                                : 'No verified activities scheduled for this day.'),
                       ),
                     ...entry.value.map((a) {
                       final activity = Map<String, dynamic>.from(a as Map);
@@ -1220,27 +1227,29 @@ class _ChatTabState extends State<ChatTab> {
                   ],
                 ),
               )),
-          const SizedBox(height: 6),
-          SizedBox(
-              width: double.infinity,
-              child: FilledButton.tonalIcon(
-                  onPressed: saved
-                      ? openTrips
-                      : busy ||
-                              stale ||
-                              (plan['adjustmentTripId'] == null && activities.isEmpty) ||
-                              plan['coverageStatus'] == 'partial'
-                          ? null
-                          : () => savePlan(plan),
-                  icon: const Icon(Icons.bookmark_add_outlined),
-                  label: Text(saved
-                      ? 'Open saved trip in Trips'
-                      : savingPlanKey == planKey(plan)
-                          ? 'Save pending…'
-                          : plan['adjustmentTripId'] == null
-                              ? 'Save plan to Trips'
-                              : 'Apply changes'))),
-          if (!saved && !stale && plan['adjustmentTripId'] == null) ...[
+          if (!viewOnly) ...[
+            const SizedBox(height: 6),
+            SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                    onPressed: saved
+                        ? openTrips
+                        : busy ||
+                                stale ||
+                                (plan['adjustmentTripId'] == null && activities.isEmpty) ||
+                                plan['coverageStatus'] == 'partial'
+                            ? null
+                            : () => savePlan(plan),
+                    icon: const Icon(Icons.bookmark_add_outlined),
+                    label: Text(saved
+                        ? 'Open saved trip in Trips'
+                        : savingPlanKey == planKey(plan)
+                            ? 'Save pending…'
+                            : plan['adjustmentTripId'] == null
+                                ? 'Save plan to Trips'
+                                : 'Apply changes'))),
+          ],
+          if (!viewOnly && !saved && !stale && plan['adjustmentTripId'] == null) ...[
             const SizedBox(height: 6),
             SizedBox(
               width: double.infinity,

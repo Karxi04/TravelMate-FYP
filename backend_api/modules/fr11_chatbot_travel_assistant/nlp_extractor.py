@@ -31,6 +31,45 @@ def clean_text(text):
     return re.sub(r'[^a-z0-9]+', ' ', v.lower()).strip()
 
 
+def extract_itinerary_day(text):
+    q = clean_text(text)
+    ordinals = ('first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh',
+                'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth', 'thirteenth', 'fourteenth')
+    match = re.search(r'\bday\s*(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)\b', q)
+    if match:
+        return int(match[1]) if match[1].isdigit() else NUMBER_WORDS[match[1]]
+    match = re.search(r'\b(' + '|'.join(ordinals) + r')\s+day\b', q)
+    return ordinals.index(match[1]) + 1 if match else None
+
+
+def itinerary_view_request(text):
+    """Combine an inspection intent with its object, independent of polite word order."""
+    q = clean_text(text)
+    aliases = {'shw': 'show', 'shwo': 'show', 'itenary': 'itinerary',
+               'itinery': 'itinerary', 'itinarary': 'itinerary', 'itenirary': 'itinerary'}
+    q = ' '.join(aliases.get(word, word) for word in q.split())
+    if re.search(r'\b(?:dont|don t|do not|no need to)\s+(?:show|display|check|view)\b', q):
+        return False
+    object_present = bool(re.search(r'\b(?:plan|itinerary|trip|schedule|draft|revision|proposed changes)\b', q)
+                          or extract_itinerary_day(q) is not None)
+    inspect = re.search(r'\b(?:show|see|view|check|display|inspect|read|look at|remind)\b', q)
+    planned_question = re.search(r'\bwhat (?:have (?:i|we) planned|(?:is |s )?(?:on|planned|scheduled))\b', q)
+    if re.search(r'\b(?:weather|forecast|flights?|hotels?|packages?)\b', q) and not re.search(
+            r'\b(?:plan|trip|itinerary|schedule|draft|revision)\b', q):
+        return False
+    return bool((object_present and (inspect or planned_question)) or re.search(r'\bwhat have (?:i|we) planned\b', q)
+                or re.search(r'\bwhere (?:is|are) (?:my |the )?trips?\b', q))
+
+
+def extract_activity_position(text, allow_short=False):
+    q = clean_text(text)
+    ordinal = r'(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d{1,3})'
+    match = re.search(r'\b(' + ordinal + r')(?:st|nd|rd|th)?\s+(?:activity|attraction|stop|place)\b|'
+                      r'\b(?:activity|attraction|stop|place)\s+(?:number\s+)?(' + ordinal + r')\b', q)
+    token = (match[1] or match[2]) if match else q if allow_short and re.fullmatch(ordinal, q) else None
+    return (int(token) if token.isdigit() else extract_itinerary_day(token + ' day')) if token else None
+
+
 def _ordered_malaysian_mentions(text):
     """Return canonical Malaysian places in the order the traveller wrote them."""
     mentions = []
