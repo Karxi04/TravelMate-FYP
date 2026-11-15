@@ -386,7 +386,7 @@ def test_missing_credentials_use_local_recommendations_or_controlled_unavailable
     original = deepcopy(journey.collections["recommendation_snapshots"])
     monkeypatch.setenv("FALLBACK_MODE", "false")
     assert client.post("/api/fr4/recommendations/generate", headers=AUTH, json={"destinationArea": "Penang"}).status_code == 502
-    assert client.post("/api/fr11/chat", headers=AUTH, json={"message": "Hello"}).status_code == 502
+    assert client.post("/api/fr11/chat", headers=AUTH, json={"message": "Tell me about Melaka"}).status_code == 502
     assert client.post("/api/fr8/hotels/search", headers=AUTH, json={
         "destination": "Penang", "checkin": "2026-11-01", "checkout": "2026-11-03",
     }).status_code == 502
@@ -435,7 +435,7 @@ def test_gemini_adapter_accepts_generate_content_text_without_live_requests(monk
     response = SimpleNamespace(text="Live test text")
     with patch.object(gemini_service.genai, "Client") as client:
         client.return_value.models.generate_content.return_value = response
-        result = gemini_service.generateChatbotResponse("Hello", with_source=True)
+        result = gemini_service.generateChatbotResponse("Tell me about Melaka", with_source=True)
     assert result == {"reply": "Live test text", "source": "gemini"}
     client.return_value.models.generate_content.assert_called_once()
     client.return_value.interactions.create.assert_not_called()
@@ -471,7 +471,7 @@ def test_gemini_rejects_empty_or_invalid_response(monkeypatch, text):
     with patch.object(gemini_service.genai, "Client") as sdk:
         sdk.return_value.models.generate_content.return_value = SimpleNamespace(text=text)
         with pytest.raises(RuntimeError, match="Gemini service is unavailable"):
-            gemini_service.generateChatbotResponse("Hello")
+            gemini_service.generateChatbotResponse("Tell me about Melaka")
 
 
 @pytest.mark.parametrize("failure", [

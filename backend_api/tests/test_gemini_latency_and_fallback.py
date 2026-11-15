@@ -215,7 +215,7 @@ def test_20_correct_sanitized_error_handling(monkeypatch, caplog):
 
     with patch('services.gemini_service._generate', side_effect=ServerError(504, "504 DEADLINE_EXCEEDED key=secret_gemini_api_key_12345")):
         with caplog.at_level('WARNING'):
-            res = gs.generateChatbotResponse("Hello", with_source=True)
+            res = gs.generateChatbotResponse("Tell me about Melaka", with_source=True)
             assert res['source'] == 'travelmate-assistant'
             log_text = caplog.text
             assert 'secret_gemini_api_key_12345' not in log_text
@@ -507,3 +507,19 @@ def test_free_tier_fallback_keeps_context_and_is_bounded(monkeypatch, failure):
 def test_paid_configured_fallback_model_is_filtered(monkeypatch):
     monkeypatch.setenv('GEMINI_FALLBACK_MODELS', 'paid-model, gemini-3.5-flash-lite, gemini-3.5-flash-lite')
     assert gs._model_order() == ('gemini-3.5-flash-lite',)
+
+
+@pytest.mark.parametrize('question', ['hi', 'Hello!', 'hai'])
+def test_greeting_is_answered_without_a_provider_request(monkeypatch, question):
+    from services import gemini_service
+
+    def unexpected_provider(*args, **kwargs):
+        pytest.fail('A plain greeting must not contact a provider')
+
+    monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-greeting-fixture')
+    monkeypatch.setattr(gemini_service, '_generate', unexpected_provider)
+    response = gemini_service.generateChatbotResponse(
+        question, context='Traveller: Please help with Penang.', with_source=True)
+    assert response['source'] == 'travelmate-assistant'
+    assert response['reply'].startswith('Hi!')
+    assert 'plan a trip in Malaysia' in response['reply']

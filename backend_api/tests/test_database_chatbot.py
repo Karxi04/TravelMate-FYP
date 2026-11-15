@@ -141,8 +141,34 @@ def test_filters_dates_corrections_and_reset(monkeypatch):
     assert f['participants']['adults']==4 and f['budgetMax']==500
     assert update_filters('Start over anywhere',f)=={}
     assert update_filters('12 Dec until 16 Dec',{})['days']==5
-    for message in ['Find package on 31 Feb 2027','Find package for -1 adult','Find package for 0 adults','Find package for 4 people','Find package under RM200 per person']:
+    for message in ['Find package on 31 Feb 2027','Find package for -1 adult','Find package for 0 adults','Find package for 4 people','Find package under RM200 per adult']:
         with pytest.raises(ValueError):update_filters(message,{})
+
+
+
+def test_short_per_person_budget_correction_keeps_penang_and_checks_the_party_total(commerce):
+    memory, _, chat = commerce
+    memory.update('tourism_packages', 'p1', {'adultPrice': 229, 'minimumTravellers': 4})
+    memory.update('promotional_campaigns', 'c1', {'reviewStatus': 'pending'})
+    initial = chat('Find a Penang package under RM500')
+    session_id = initial['session']['id']
+    assert all(card['id'] != 'p1' for card in initial['item']['packages'])
+
+    clarification = chat('500 per person one', session_id)
+    assert clarification['item']['clarificationRequired']
+    assert 'adults and children' in clarification['reply']
+    filters = clarification['session']['planningState']['packageSearch']
+    assert (filters['destination'], filters['budgetMax'], filters['budgetBasis']) == ('Penang', 500, 'per_person')
+
+    result = chat('4 adults', session_id)
+    card = next(row for row in result['item']['packages'] if row['id'] == 'p1')
+    assert card['chatQuote']['finalPayable'] == 916
+    assert 'MYR 500.00 per person' in result['reply'] and 'party total' in result['reply']
+
+    for correction in ('under RM229 per person', '500 total'):
+        result = chat(correction, session_id)
+        assert all(row['id'] != 'p1' for row in result['item']['packages'])
+    assert not memory.retrieve('checkout_orders') and not memory.retrieve('package_checkout_attempts')
 
 
 def test_real_cross_role_create_approve_offer_chat_details(client,commerce,monkeypatch):
