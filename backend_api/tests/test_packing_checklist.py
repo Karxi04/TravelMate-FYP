@@ -340,3 +340,113 @@ def test_packing_keeps_identity_and_activity_suggestions_specific():
         trip(originCountry='Malaysia', destinationCountry='Singapore', activities=[]), {}, NOW)
     assert {item['itemId'] for item in international}.isdisjoint({'travel_documents', 'swimwear', 'modest_clothing'})
     assert any(item['itemId'] == 'passport' for item in international)
+
+
+@pytest.mark.parametrize('count', [1, 4, 4.0])
+def test_personal_packing_tracks_group_without_multiplying_essentials(count):
+    current = generated(trip(travellerCount=count))
+    items = {item['itemId']: item for item in current['items']}
+    assert current['tripContext']['travellerCount'] == count
+    assert items['clothing_changes']['quantity'] == 3
+    assert all(items[key]['quantity'] == 1 for key in ('travel_documents', 'medication', 'toiletries'))
+    assert ('group_shared_supplies' in items) == (count > 1)
+    if count > 1:
+        assert items['group_shared_supplies']['quantity'] == 1
+        assert 'group of 4' in items['group_shared_supplies']['reason']
+    assert len(items) == len(current['items'])
+
+
+def test_group_size_refresh_preserves_packed_custom_and_manual_quantities():
+    original = weather_trip(forecast())
+    original['travellerCount'] = 1
+    current = generated(original)
+    first_fingerprint = current['contextFingerprint']
+    current, _ = service.mutate(current, original, None, 'test_traveller_uid', 'packing-trip',
+        {'action': 'update', 'expectedRevision': current['revision'], 'itemId': 'clothing_changes',
+         'quantity': 7, 'isPacked': True}, NOW)
+    current, _ = service.mutate(current, original, None, 'test_traveller_uid', 'packing-trip',
+        {'action': 'add', 'expectedRevision': current['revision'], 'itemId': 'custom_group_book',
+         'name': 'My book', 'category': 'miscellaneous', 'quantity': 2, 'isPacked': True}, NOW)
+    before = deepcopy(current)
+    changed = {**original, 'travellerCount': 4}
+    dto = service.response_dto(current, changed, None, NOW)
+    assert dto['needsRefresh'] and current == before
+    refreshed, _ = service.mutate(current, changed, None, 'test_traveller_uid', 'packing-trip',
+        {'action': 'refresh', 'expectedRevision': current['revision']}, NOW)
+    items = {item['itemId']: item for item in refreshed['items']}
+    assert refreshed['contextFingerprint'] != first_fingerprint
+    assert refreshed['tripContext']['travellerCount'] == 4
+    assert refreshed['revision'] == before['revision'] + 1
+    assert items['clothing_changes']['quantity'] == 7 and items['clothing_changes']['isPacked']
+    assert items['custom_group_book'] == next(i for i in before['items'] if i['itemId'] == 'custom_group_book')
+    assert items['rain_protection']['source'] == 'weather'
+    for item in before['items']:
+        assert items[item['itemId']] == item
+    assert not service.response_dto(refreshed, changed, None, NOW)['needsRefresh']
+    assert service.mutate(refreshed, changed, None, 'test_traveller_uid', 'packing-trip',
+        {'action': 'refresh', 'expectedRevision': refreshed['revision']}, NOW)[0] == refreshed
+
+
+def test_group_item_reappears_once_with_user_state_intact():
+    group = trip(travellerCount=4)
+    current = generated(group)
+    current, _ = service.mutate(current, group, None, 'test_traveller_uid', 'packing-trip',
+        {'action': 'update', 'expectedRevision': current['revision'], 'itemId': 'group_shared_supplies',
+         'isPacked': True, 'quantity': 2}, NOW)
+    for count in (1, 4, 2, 4):
+        current, _ = service.mutate(current, trip(travellerCount=count), None, 'test_traveller_uid', 'packing-trip',
+            {'action': 'refresh', 'expectedRevision': current['revision']}, NOW)
+        matching = [i for i in current['items'] if i['itemId'] == 'group_shared_supplies']
+        assert len(matching) == 1 and matching[0]['applicable'] == (count > 1)
+        assert matching[0]['isPacked'] and matching[0]['quantity'] == 2
+
+
+@pytest.mark.parametrize('count', [None, 0, -1, True, False, '4', 'unknown', 1.5, float('nan'), float('inf'), [], {}])
+def test_unreliable_legacy_group_size_remains_unknown_and_usable(count):
+    current = generated(trip(travellerCount=count))
+    assert current['tripContext']['travellerCount'] is None
+    assert not any(i['itemId'] == 'group_shared_supplies' for i in current['items'])
+    assert next(i for i in current['items'] if i['itemId'] == 'clothing_changes')['quantity'] == 3
+
+
+def test_rule_two_checklist_is_read_only_until_explicit_refresh():
+    value = trip(travellerCount=4)
+    current = generated(value)
+    current.update(ruleVersion=2, contextFingerprint='previous-rule-fingerprint')
+    current['tripContext'].pop('travellerCount', None)
+    current['items'] = [i for i in current['items'] if i['itemId'] != 'group_shared_supplies']
+    current['items'][0].update(isPacked=True, quantity=2, userEditedFields=['quantity'])
+    before = deepcopy(current)
+    assert service.response_dto(current, value, None, NOW)['needsRefresh']
+    assert current == before
+    assert service.mutate(current, value, None, 'test_traveller_uid', 'packing-trip', {}, NOW)[0] == before
+    refreshed, _ = service.mutate(current, value, None, 'test_traveller_uid', 'packing-trip',
+        {'action': 'refresh', 'expectedRevision': current['revision']}, NOW)
+    assert refreshed['ruleVersion'] == 3 and refreshed['schemaVersion'] == 1
+    assert refreshed['items'][0]['isPacked'] and refreshed['items'][0]['quantity'] == 2
+
+
+def test_http_group_change_refresh_reopen_and_stale_revision(client, mock_traveller_auth, packing_store):
+    packing_store['trip']['travellerCount'] = 1
+    created = client.post(PATH, headers=TOKEN, json={})
+    assert created.status_code == 200
+    assert created.json['checklist']['tripContext']['travellerCount'] == 1
+    client.patch(PATH, headers=TOKEN, json={'action': 'update', 'itemId': 'phone_charger',
+        'isPacked': True, 'quantity': 2, 'expectedRevision': 1})
+    client.patch(PATH, headers=TOKEN, json={'action': 'add', 'itemId': 'custom_acceptance_group',
+        'name': 'My book', 'category': 'miscellaneous', 'expectedRevision': 2})
+    packing_store['trip']['travellerCount'] = 4
+    before = deepcopy(packing_store['current'])
+    writes = packing_store['writes']
+    assert client.get(PATH, headers=TOKEN).json['needsRefresh']
+    assert packing_store['current'] == before and packing_store['writes'] == writes
+    stale = client.post(PATH, headers=TOKEN, json={'action': 'refresh', 'expectedRevision': 1})
+    assert stale.status_code == 409 and packing_store['current'] == before
+    refreshed = client.post(PATH, headers=TOKEN, json={'action': 'refresh', 'expectedRevision': 3})
+    assert refreshed.status_code == 200 and refreshed.json['checklist']['revision'] == 4
+    reopened = client.get(PATH, headers=TOKEN).json
+    assert reopened['checklist'] == refreshed.json['checklist']
+    assert reopened['checklist']['tripContext']['travellerCount'] == 4
+    items = {i['itemId']: i for i in reopened['checklist']['items']}
+    assert items['phone_charger']['isPacked'] and items['phone_charger']['quantity'] == 2
+    assert items['custom_acceptance_group']['isCustom'] and items['group_shared_supplies']['quantity'] == 1

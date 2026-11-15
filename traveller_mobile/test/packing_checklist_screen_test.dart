@@ -378,6 +378,27 @@ void main() {
   });
 
   group('Packing Checklist Screen UI & Workflow Tests', () {
+    for (final count in <int?>[1, 4, null]) {
+      testWidgets('Personal packing context renders group size $count on compact screen', (tester) async {
+        tester.view.physicalSize = const Size(320, 640);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+        final data = _sampleReadyData();
+        if (count != null) data['checklist']['tripContext']['travellerCount'] = count;
+        final api = _MockPackingApi(initialData: data);
+        await tester.pumpWidget(wrap(PackingChecklistScreen(tripId: 'trip_penang_1', api: api)));
+        await tester.pumpAndSettle();
+        expect(find.text(count == null ? 'Personal packing - group size unconfirmed'
+            : count == 1 ? 'Personal packing - 1 traveller' : 'Personal packing - group of 4'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        expect(api.postCalls, isEmpty);
+        expect(api.patchCalls, isEmpty);
+      });
+    }
+
     testWidgets('Displays not generated state and triggers generation action', (tester) async {
       final api = _MockPackingApi(initialData: _sampleNotGeneratedData());
 

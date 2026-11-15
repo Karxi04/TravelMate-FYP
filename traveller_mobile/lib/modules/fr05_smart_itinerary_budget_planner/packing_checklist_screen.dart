@@ -746,6 +746,13 @@ class _PackingChecklistScreenState extends State<PackingChecklistScreen> {
     final dest = widget.destination ?? checklist.tripContext['destination']?.toString() ?? '';
     final duration = widget.durationDays ?? checklist.tripContext['durationDays'] as int?;
     final durationText = duration != null ? '$duration ${duration == 1 ? 'Day' : 'Days'}' : '';
+    final rawCount = checklist.tripContext['travellerCount'];
+    final count = rawCount is int && rawCount > 0 ? rawCount : null;
+    final groupText = count == null
+        ? 'Personal packing - group size unconfirmed'
+        : count == 1
+            ? 'Personal packing - 1 traveller'
+            : 'Personal packing - group of $count';
 
     return InkCard(
       child: Column(
@@ -759,6 +766,7 @@ class _PackingChecklistScreenState extends State<PackingChecklistScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(title, style: Theme.of(context).textTheme.titleLarge),
+                    Text(groupText, style: const TextStyle(color: AppColors.textSecondary)),
                     if (dest.isNotEmpty || durationText.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(

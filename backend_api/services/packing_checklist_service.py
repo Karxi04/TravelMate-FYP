@@ -19,7 +19,7 @@ CATEGORIES = [
 ]
 CATEGORY_IDS = {category['id'] for category in CATEGORIES}
 MAX_ITEMS = 100
-RULE_VERSION = 2
+RULE_VERSION = 3
 FORECAST_DAYS = 7
 MYT = timezone(timedelta(hours=8))
 
@@ -119,6 +119,13 @@ def weather_context(trip, now):
 
 
 def suggestions(trip, preferences, now):
+    raw_count = trip.get('travellerCount')
+    if type(raw_count) is int and raw_count > 0:
+        traveller_count = raw_count
+    elif type(raw_count) is float and math.isfinite(raw_count) and raw_count >= 1 and raw_count.is_integer():
+        traveller_count = int(raw_count)
+    else:
+        traveller_count = None
     start, end = _date(trip.get('startDate')), _date(trip.get('endDate'))
     days = (end - start).days + 1 if start and end and end >= start else None
     if days is None:
@@ -179,6 +186,10 @@ def suggestions(trip, preferences, now):
         f'Approximately one change per day for your {days}-day trip; adjust for laundry.')
     add('toiletries', 'Everyday toiletries', 'personal_care')
     add('phone_charger', 'Phone charger', 'electronics')
+    if traveller_count is not None and traveller_count > 1:
+        add('group_shared_supplies', 'Coordinate shared supplies', 'miscellaneous', source='trip',
+            reason=f'For your group of {traveller_count}, agree who brings shared chargers, power banks and activity supplies. '
+                   'Each traveller still packs their own clothing, identity documents, medication and toiletries.')
     for theme, origin in themes.items():
         reason = {
             'activity': f'Suggested for {theme} activities in your itinerary.',
@@ -223,7 +234,7 @@ def suggestions(trip, preferences, now):
         add('sunscreen', 'Sunscreen', 'weather', source='weather', reason='Sunny conditions are forecast; useful for outdoor activities.')
     context = {'destination': destination,
                'startDate': start.isoformat() if start else None, 'endDate': end.isoformat() if end else None,
-               'durationDays': days, 'international': international}
+               'durationDays': days, 'international': international, 'travellerCount': traveller_count}
     fingerprint = hashlib.sha256(json.dumps([RULE_VERSION, context, list(items.values()), weather],
                                            sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return list(items.values()), context, weather, fingerprint
