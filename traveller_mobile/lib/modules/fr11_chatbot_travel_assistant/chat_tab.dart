@@ -364,7 +364,8 @@ class _ChatTabState extends State<ChatTab> {
     final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialog) => AlertDialog(
-              title: Text(plan['adjustmentTripId'] == null ? 'Save this trip?' : 'Apply changes to this trip?'),
+              title: Text(plan['restoresVersion'] != null ? 'Restore this saved version?' :
+                  plan['adjustmentTripId'] == null ? 'Save this trip?' : 'Apply changes to this trip?'),
               content: Text(
                   '${plan['title'] ?? plan['destinationArea']}\n${plan['startDate'] ?? ''} to ${plan['endDate'] ?? ''}\nBudget: MYR ${plan['budgetLimit'] ?? '-'}\nReview the draft before saving. This does not book or pay for anything.'),
               actions: [
@@ -1108,8 +1109,9 @@ class _ChatTabState extends State<ChatTab> {
           ]),
           const SizedBox(height: 8),
           if (viewOnly)
-            const Text('Saved itinerary (read-only)',
-                style: TextStyle(color: AppColors.textSecondary)),
+            Text(plan['historyVersion'] == null ? 'Saved itinerary (read-only)' :
+                'Itinerary version ${plan['historyVersion']} (read-only)',
+                style: const TextStyle(color: AppColors.textSecondary)),
           if (start != null && end != null) ...[
             Text('${MaterialLocalizations.of(context).formatMediumDate(start)} – ${MaterialLocalizations.of(context).formatMediumDate(end)}',
                 style: Theme.of(context)
@@ -1290,7 +1292,7 @@ class _ChatTabState extends State<ChatTab> {
                             ? 'Save pending…'
                             : plan['adjustmentTripId'] == null
                                 ? 'Save plan to Trips'
-                                : 'Apply changes'))),
+                                : plan['restoresVersion'] == null ? 'Apply changes' : 'Restore version ${plan['restoresVersion']}'))),
           ],
           if (!viewOnly && !saved && !stale && plan['adjustmentTripId'] == null) ...[
             const SizedBox(height: 6),
@@ -1672,7 +1674,7 @@ class _ChatTabState extends State<ChatTab> {
                                 if (plan is Map)
                                   planCard(Map<String, dynamic>.from(plan)),
                                 if (item['proposedPlan'] is Map) ...[
-                                  const Text('Proposed changes (not saved)'),
+                                  Text((item['comparisonLabel'] ?? 'Proposed changes (not saved)').toString()),
                                   planCard(Map<String, dynamic>.from(item['proposedPlan'])),
                                 ],
                                 if (advisory.isNotEmpty)

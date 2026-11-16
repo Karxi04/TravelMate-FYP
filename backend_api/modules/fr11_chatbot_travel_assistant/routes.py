@@ -37,6 +37,8 @@ from .nlp_extractor import (
 )
 from .guided_planning import guided_requirements
 from .contextual_intent import resolve_turn, prompt_context, remember_results, decorate_reply, place_cards
+from .history_conversation import is_history_request, history_turn
+from services.itinerary_history import HistoryConflict, restore_patch
 from .travel_dates import malaysian_today
 from services.review_service import ReviewConflict
 from .package_assistant import respond as commerce_response, public_details
@@ -49,6 +51,11 @@ from services.serpapi_service import retrieveDestinationResults
 from datetime import date, timedelta
 
 bp = Blueprint('fr11_chatbot', __name__, url_prefix='/api/fr11')
+
+
+@bp.errorhandler(HistoryConflict)
+def history_conflict(error):
+    return jsonify(ok=False, error=str(error)), 409
 
 
 def _plan_id(plan):
@@ -365,8 +372,10 @@ def _trip_fingerprint(trip):
 
 
 def _trip_context(trip):
-    return {key: trip[key] for key in ('destinationArea', 'destinationState', 'startDate', 'endDate',
-                                      'budgetLimit', 'travellerCount') if key in trip}
+    return {**{key: trip[key] for key in ('destinationArea', 'destinationState', 'startDate', 'endDate',
+                                      'budgetLimit', 'travellerCount') if key in trip},
+            'itineraryRevision': trip.get('itineraryRevision', 1),
+            'retainedVersions': [r['version'] for r in trip.get('itineraryHistory') or []]}
 
 
 def _saved_activities(trip):
@@ -478,6 +487,9 @@ def _adjust_trip(message, state):
                          'You can change the budget, dates, duration, activities, destination or pace.'}
     adjustment = state.get('adjustment')
     if not adjustment:
+        if is_history_request(message):
+            return {'reply': 'Select the saved trip whose history you want to inspect or restore.',
+                    'suggestedReplies': ['Adjust my saved trip']}
         return None
     if re.match(r'(?:plan|create|start) (?:a )?new (?:trip|itinerary)', message, re.I):
         state.pop('adjustment', None)
@@ -510,11 +522,17 @@ def _adjust_trip(message, state):
     if changed_elsewhere:
         state['adjustment'] = adjustment = {'tripId': trip['id'], 'fingerprint': fingerprint, 'tripContext': _trip_context(trip)}
         state.pop('activePlan', None)
+    if (state.get('activePlan') or {}).get('draftId') == trip.get('lastChatAdjustmentId') and trip.get('lastChatAdjustmentId'):
+        state.pop('activePlan', None)
+        adjustment.pop('patch', None)
+    historical = history_turn(message, trip, state, compare=_comparison_summary, read=retrieveRecord)
+    if historical is not None:
+        return historical
     if re.search(r'\b(?:undo|discard (?:the )?(?:draft|unconfirmed changes))\b', message, re.I):
         had_draft = bool(state.get('activePlan') or adjustment.get('patch'))
         state.pop('activePlan', None)
         state['adjustment'] = {key: value for key, value in adjustment.items()
-                               if key not in {'patch', 'pendingPreferences', 'pendingActivity', 'pendingOperation', 'pendingExplanation'}}
+                               if key not in {'patch', 'pendingPreferences', 'pendingActivity', 'pendingOperation', 'pendingExplanation', 'pendingHistoryDay'}}
         return {'reply': ('The unconfirmed changes were discarded. Your saved trip is unchanged.' if had_draft else
                           'There is no unconfirmed proposal to undo. Your saved trip is unchanged.'),
                 'tripPlan': _saved_trip_preview(trip)}
@@ -1258,14 +1276,35 @@ def save_plan():
                 if adjustment.get('fingerprint') != _trip_fingerprint(trip):
                     return jsonify(ok=False, error='This trip changed. Review it before applying the revision.'), 409
                 try:
-                    updated = updateRecord('itineraries', iid, {**adjustment['patch'],
+                    patch = adjustment['patch']
+                    if active.get('restoresVersion') is not None:
+                        verified = restore_patch(trip, active['restoresVersion'],
+                            scope=active['restorationScope'], day=active.get('restorationDay'))
+                        if verified != patch:
+                            raise HistoryConflict('The restoration preview changed. Review it again before confirming.')
+                        patch = {**patch, 'restoredFromRevision': active['restoresVersion'], '_restoreVersion': active['restoresVersion']}
+                    updated = updateRecord('itineraries', iid, {**patch,
                                            'lastChatAdjustmentId': draft_id, 'updatedAt': utc_now_iso()}, expected=trip)
+                except HistoryConflict as error:
+                    return jsonify(ok=False, error=str(error)), 409
                 except ReviewConflict:
                     return jsonify(ok=False, error='This trip changed. Review it before applying the revision.'), 409
+                except Exception:
+                    if active.get('restoresVersion') is not None:
+                        current_app.logger.warning('Restoration result unavailable; reopen the trip before retrying.')
+                        return jsonify(ok=False, error='The restoration outcome could not be verified. Reopen the trip before retrying.'), 503
+                    raise
                 if not updated:
                     return jsonify(ok=False, error='The trip could not be updated.'), 409
             try:
-                updateRecord('chat_sessions', save_session['id'], {'planningState': {'savedPlans': {draft_id: iid}}})
+                if active.get('restoresVersion') is not None:
+                    receipt_state = {**current_state,
+                        'savedPlans': {**(current_state.get('savedPlans') or {}), draft_id: iid},
+                        'adjustment': {'tripId': iid, 'fingerprint': _trip_fingerprint(updated), 'tripContext': _trip_context(updated)}}
+                    updateRecord('chat_sessions', save_session['id'],
+                        {'messages': save_session.get('messages') or [], 'planningState': receipt_state}, expected=save_session)
+                else:
+                    updateRecord('chat_sessions', save_session['id'], {'planningState': {'savedPlans': {draft_id: iid}}})
             except Exception:
                 current_app.logger.warning('Trip adjustment saved. Conversation receipt is temporarily unavailable.')
             return jsonify(ok=True, id=iid, itinerary=updated, budget=updated.get('budgetEstimate'),

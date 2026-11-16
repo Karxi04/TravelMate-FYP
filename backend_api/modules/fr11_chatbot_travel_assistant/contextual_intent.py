@@ -12,14 +12,17 @@ from .nlp_extractor import (clean_text, extract_itinerary_day, extract_activity_
                             extract_geographic_entities, extract_interests, itinerary_view_request,
                             extract_budget, extract_travellers, conversational_question, classify_detailed_intent,
                             find_matching_catalog_destinations, filter_constraint_candidates)
+from .history_conversation import is_history_request
 
-INTENTS = {'view_trip', 'edit_day', 'edit_activity', 'resume', 'weather', 'reference', 'compare', 'clarify'}
+INTENTS = {'view_trip', 'edit_day', 'edit_activity', 'resume', 'weather', 'reference', 'compare', 'clarify', 'history', 'restore_version'}
 INTERESTS = {'Food', 'Culture', 'Nature', 'Adventure', 'Relaxation', 'Photography', 'Family', 'Shopping', 'History'}
 SCHEMA = {'intent': sorted(INTENTS), 'confidence': 'number 0..1; use clarify below 0.85',
           'day': 'optional integer 1..14', 'activityIndex': 'optional integer 1..20',
           'resultIndices': 'optional one or two displayed indices, starting at 1',
           'interests': 'optional list from ' + ', '.join(sorted(INTERESTS)),
           'operation': 'optional replace/add/remove/relax'}
+SCHEMA['version'] = 'optional integer retained itinerary version, 1..1000000000'
+SCHEMA['restoreScope'] = 'optional trip/day/budget; use budget for a monetary-limit-only restoration'
 
 
 def redact(value, limit=300):
@@ -74,13 +77,16 @@ def decorate_reply(item, state):
 def prompt_context(state, messages):
     adjustment = state.get('adjustment') or {}
     fields = ('destinationArea', 'destinationState', 'startDate', 'endDate', 'tripDays', 'budgetLimit',
-              'travellerCount', 'interests', 'excludedInterests', 'preferIndoor', 'travelPace', 'guidedQuestion')
+              'travellerCount', 'interests', 'excludedInterests', 'preferIndoor', 'travelPace', 'guidedQuestion',
+              'itineraryRevision', 'retainedVersions')
     relevant = {**state, **{key: value for key, value in (adjustment.get('tripContext') or {}).items() if key in fields}}
     context = {}
     for key in fields:
         value = relevant.get(key)
         if key in {'interests', 'excludedInterests'} and isinstance(value, list):
             context[key] = [redact(v, 80) for v in value[:8] if isinstance(v, str)]
+        elif key == 'retainedVersions' and isinstance(value, list):
+            context[key] = [v for v in value[-5:] if type(v) is int and 1 <= v <= 1_000_000_000]
         elif isinstance(value, str):
             context[key] = redact(value, 100)
         elif type(value) in (int, float, bool) and math.isfinite(value):
@@ -135,6 +141,14 @@ def validate_interpretation(value, state, rows):
     if intent == 'view_trip' and not (active_trip or (state.get('activePlan') and not state.get('dateClarification'))):
         return None
     if intent in {'edit_day', 'edit_activity'} and not active_trip:
+        return None
+    if 'version' in value and (type(value['version']) is not int or not 1 <= value['version'] <= 1_000_000_000):
+        return None
+    if intent in {'history', 'restore_version'} and (not active_trip or (intent == 'restore_version' and 'version' not in value)):
+        return None
+    if 'restoreScope' in value and (not isinstance(value['restoreScope'], str) or value['restoreScope'] not in {'trip', 'day', 'budget'}):
+        return None
+    if value.get('restoreScope') == 'day' and 'day' not in value:
         return None
     if intent == 'resume' and not (active_trip or state.get('guidedQuestion') or rows):
         return None
@@ -344,6 +358,8 @@ def resolve_turn(message, state, messages, *, interpret=None, lookup=None):
     geo = extract_geographic_entities(message)
     if geo.get('is_foreign') or geo.get('is_multi_destination') or itinerary_view_request(message):
         return None
+    if is_history_request(message):
+        return {'message': message}
     if re.search(r'\b(?:undo|discard)\b', q) or (re.search(r'\bcompare\b', q) and re.search(
             r'\b(?:old|new|saved|original|proposed|draft|revision)\b', q)):
         if adjustment:
@@ -535,6 +551,10 @@ def resolve_turn(message, state, messages, *, interpret=None, lookup=None):
             prompt = f'Which activity or theme should I change on Day {day}?' if day else 'Which displayed result or planning detail do you mean?'
         return {'response': {'reply': prompt, 'suggestedReplies': [f'Show Day {day}', 'Nature', 'Food'] if day else []}}
     intent = value['intent']
+    if intent in {'history', 'restore_version'}:
+        return {'message': ('Restore version ' + str(value['version']) + (' budget' if value.get('restoreScope') == 'budget' else
+                            f' Day {value["day"]}' if value.get('day') else '')) if intent == 'restore_version' else
+                ('Show version ' + str(value['version']) if value.get('version') else 'Show itinerary history')}
     day = value.get('day') or adjustment.get('pendingDay') or adjustment.get('viewDay')
     if intent in {'reference', 'compare'}:
         return {'response': _reference_reply(value['resultIndices'], kind, rows, state, intent == 'compare')}
