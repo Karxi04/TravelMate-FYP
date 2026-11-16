@@ -22,7 +22,7 @@ def offline_chat(client, mock_traveller_auth):
         database.setdefault(collection, {})[record_id] = record
         return deepcopy(record)
 
-    def retrieve(collection, record_id=None, filters=None, limit=None):
+    def retrieve(collection, record_id=None, filters=None, limit=None, orderBy=None):
         if record_id is not None:
             value = database.get(collection, {}).get(record_id)
             return deepcopy(value) if value else None

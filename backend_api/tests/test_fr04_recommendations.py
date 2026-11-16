@@ -128,7 +128,7 @@ def test_provider_destinations_assigns_raw_before_normalising():
     ):
         items = _provider_destinations('attractions', 'Penang')
 
-    assert items == [{
+    expected = [{
         'place_id': 'penang_1',
         'title': 'Penang Hill',
         'address': 'Air Itam, Penang, Malaysia',
@@ -137,6 +137,10 @@ def test_provider_destinations_assigns_raw_before_normalising():
         'category': 'Tourist attraction',
         'description': 'Tourist attraction',
     }]
+    assert [{key: item[key] for key in expected[0]} for item in items['items']] == expected
+    assert items['hasMore'] is False and items['nextOffset'] is None
+    assert items['items'][0]['metadataEvidence']['source'] == 'live_provider'
+
 
 
 def test_destination_filter_rejects_other_areas():
@@ -256,7 +260,7 @@ def test_generate_recommendations_success(client, mock_traveller_auth):
     with patch.dict('os.environ', {'FALLBACK_MODE': 'true'}), \
          patch('modules.fr04_hybrid_recommendation.routes.retrieveRecord') as mock_retrieve, \
          patch('modules.fr04_hybrid_recommendation.routes.storeRecord') as mock_store:
-        def fake_retrieve(coll, doc_id=None, limit=None, filters=None):
+        def fake_retrieve(coll, doc_id=None, limit=None, filters=None, orderBy=None):
             if coll == 'travel_preferences' and doc_id == 'test_traveller_uid':
                 return sample_pref
             if coll == 'travel_preferences':
@@ -333,7 +337,7 @@ def test_live_provider_results_are_scoped_and_marked(client, mock_traveller_auth
         'updatedAt': '2026-10-03T10:00:00+00:00',
     }
 
-    def fake_retrieve(collection, document_id=None, limit=None, filters=None):
+    def fake_retrieve(collection, document_id=None, limit=None, filters=None, orderBy=None):
         if collection == 'travel_preferences' and document_id:
             return sample_pref
         if collection == 'travel_preferences':
@@ -396,7 +400,7 @@ def test_cache_is_queried_by_canonical_destination_scope(client, mock_traveller_
     sample_pref = {'interests': ['Culture'], 'travelType': 'Culture'}
     observed_filters = []
 
-    def fake_retrieve(collection, document_id=None, limit=None, filters=None):
+    def fake_retrieve(collection, document_id=None, limit=None, filters=None, orderBy=None):
         if collection == 'travel_preferences' and document_id:
             return sample_pref
         if collection == 'travel_preferences':
@@ -427,7 +431,8 @@ def test_cache_is_queried_by_canonical_destination_scope(client, mock_traveller_
 
     assert response.status_code == 200
     assert response.get_json()['source'] == 'cache'
-    assert observed_filters == [('canonicalDestinationScope', '==', 'my:penang')]
+    assert observed_filters == [('canonicalDestinationScope', '==', 'my:penang'),
+                                ('normalizedGeography.state', '==', 'Penang')]
     assert response.get_json()['recommendations'][0]['destinationId'] == 'cached_georgetown'
 
 
@@ -435,7 +440,7 @@ def test_rejected_provider_candidate_never_enters_scoring(client, mock_traveller
     sample_pref = {'interests': ['Nature'], 'travelType': 'Nature'}
     captured_candidates = []
 
-    def fake_retrieve(collection, document_id=None, limit=None, filters=None):
+    def fake_retrieve(collection, document_id=None, limit=None, filters=None, orderBy=None):
         if collection == 'travel_preferences' and document_id:
             return sample_pref
         if collection == 'travel_preferences':
@@ -485,7 +490,7 @@ def test_rejected_provider_candidate_never_enters_scoring(client, mock_traveller
 def test_final_guard_removes_out_of_scope_ranked_candidate(client, mock_traveller_auth):
     sample_pref = {'interests': ['Food'], 'travelType': 'Food'}
 
-    def fake_retrieve(collection, document_id=None, limit=None, filters=None):
+    def fake_retrieve(collection, document_id=None, limit=None, filters=None, orderBy=None):
         if collection == 'travel_preferences' and document_id:
             return sample_pref
         if collection == 'travel_preferences':

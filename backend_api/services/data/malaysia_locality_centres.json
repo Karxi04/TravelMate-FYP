@@ -1,0 +1,328 @@
+{
+  "source": "https://download.geonames.org/export/dump/MY.zip",
+  "archiveSha256": "2aa59873685eec78699183008fbae15c0b4b9345b1b4e17e39133da72957c137",
+  "license": "https://www.geonames.org/about.html",
+  "localities": {
+    "George Town": {
+      "matches": [
+        "George Town"
+      ],
+      "id": "1735106",
+      "name": "George Town",
+      "latitude": 5.41123,
+      "longitude": 100.33543,
+      "feature": "PPLA",
+      "admin1": "09",
+      "population": 158336,
+      "sourceUrl": "https://www.geonames.org/1735106/"
+    },
+    "Butterworth": {
+      "matches": [
+        "Butterworth"
+      ],
+      "id": "1735076",
+      "name": "Butterworth",
+      "latitude": 5.3991,
+      "longitude": 100.36382,
+      "feature": "PPL",
+      "admin1": "09",
+      "population": 107591,
+      "sourceUrl": "https://www.geonames.org/1735076/"
+    },
+    "Bukit Mertajam": {
+      "matches": [
+        "Bukit Mertajam"
+      ],
+      "id": "1735079",
+      "name": "Bukit Mertajam",
+      "latitude": 5.36301,
+      "longitude": 100.4667,
+      "feature": "PPL",
+      "admin1": "09",
+      "population": 212329,
+      "sourceUrl": "https://www.geonames.org/1735079/"
+    },
+    "Ipoh": {
+      "matches": [
+        "Ipoh"
+      ],
+      "id": "1734634",
+      "name": "Ipoh",
+      "latitude": 4.5841,
+      "longitude": 101.0829,
+      "feature": "PPLA",
+      "admin1": "07",
+      "population": 759952,
+      "sourceUrl": "https://www.geonames.org/1734634/"
+    },
+    "Taiping": {
+      "matches": [
+        "Taiping"
+      ],
+      "id": "1734586",
+      "name": "Taiping",
+      "latitude": 4.85,
+      "longitude": 100.73333,
+      "feature": "PPL",
+      "admin1": "07",
+      "population": 217647,
+      "sourceUrl": "https://www.geonames.org/1734586/"
+    },
+    "Johor Bahru": {
+      "matches": [
+        "Johor Bahru"
+      ],
+      "id": "1732752",
+      "name": "Johor Bahru",
+      "latitude": 1.4655,
+      "longitude": 103.7578,
+      "feature": "PPLA",
+      "admin1": "01",
+      "population": 858118,
+      "sourceUrl": "https://www.geonames.org/1732752/"
+    },
+    "Langkawi": {
+      "matches": [
+        "Langkawi"
+      ],
+      "id": "1222381",
+      "name": "Langkawi",
+      "latitude": 6.35608,
+      "longitude": 99.78375,
+      "feature": "ADM2",
+      "admin1": "02",
+      "population": 64792,
+      "sourceUrl": "https://www.geonames.org/1222381/"
+    },
+    "Alor Setar": {
+      "matches": [
+        "Alor Setar"
+      ],
+      "id": "1736309",
+      "name": "Alor Setar",
+      "latitude": 6.12104,
+      "longitude": 100.36014,
+      "feature": "PPLA",
+      "admin1": "02",
+      "population": 417800,
+      "sourceUrl": "https://www.geonames.org/1736309/"
+    },
+    "Melaka City": {
+      "matches": [
+        "Malacca"
+      ],
+      "id": "1734759",
+      "name": "Malacca",
+      "latitude": 2.196,
+      "longitude": 102.2405,
+      "feature": "PPLA",
+      "admin1": "04",
+      "population": 579000,
+      "sourceUrl": "https://www.geonames.org/1734759/"
+    },
+    "Kota Kinabalu": {
+      "matches": [
+        "Kota Kinabalu"
+      ],
+      "id": "1733432",
+      "name": "Kota Kinabalu",
+      "latitude": 5.9749,
+      "longitude": 116.0724,
+      "feature": "PPLA",
+      "admin1": "16",
+      "population": 500421,
+      "sourceUrl": "https://www.geonames.org/1733432/"
+    },
+    "Kuching": {
+      "matches": [
+        "Kuching"
+      ],
+      "id": "1735634",
+      "name": "Kuching",
+      "latitude": 1.55,
+      "longitude": 110.33333,
+      "feature": "PPLA",
+      "admin1": "11",
+      "population": 402738,
+      "sourceUrl": "https://www.geonames.org/1735634/"
+    },
+    "Miri": {
+      "matches": [
+        "Miri"
+      ],
+      "id": "1738050",
+      "name": "Miri",
+      "latitude": 4.39928,
+      "longitude": 113.99163,
+      "feature": "PPL",
+      "admin1": "11",
+      "population": 300543,
+      "sourceUrl": "https://www.geonames.org/1738050/"
+    },
+    "Cameron Highlands": {
+      "matches": [
+        "Cameron Highlands"
+      ],
+      "id": "1735261",
+      "name": "Cameron Highlands",
+      "latitude": 4.4709,
+      "longitude": 101.3764,
+      "feature": "ADM2",
+      "admin1": "06",
+      "population": 0,
+      "sourceUrl": "https://www.geonames.org/1735261/"
+    },
+    "Kuantan": {
+      "matches": [
+        "Kuantan"
+      ],
+      "id": "1735227",
+      "name": "Kuantan",
+      "latitude": 3.8077,
+      "longitude": 103.326,
+      "feature": "PPLA",
+      "admin1": "06",
+      "population": 548014,
+      "sourceUrl": "https://www.geonames.org/1735227/"
+    },
+    "Putrajaya": {
+      "matches": [
+        "Putrajaya"
+      ],
+      "id": "6697380",
+      "name": "Putrajaya",
+      "latitude": 2.93527,
+      "longitude": 101.69112,
+      "feature": "PPLG",
+      "admin1": "17",
+      "population": 50000,
+      "sourceUrl": "https://www.geonames.org/6697380/"
+    },
+    "Labuan": {
+      "matches": [
+        "Labuan"
+      ],
+      "id": "1733782",
+      "name": "Labuan",
+      "latitude": 5.28028,
+      "longitude": 115.2475,
+      "feature": "PPLA",
+      "admin1": "15",
+      "population": 95120,
+      "sourceUrl": "https://www.geonames.org/1733782/"
+    },
+    "Kangar": {
+      "matches": [
+        "Kangar"
+      ],
+      "id": "1736278",
+      "name": "Kangar",
+      "latitude": 6.4414,
+      "longitude": 100.19862,
+      "feature": "PPLA",
+      "admin1": "08",
+      "population": 63869,
+      "sourceUrl": "https://www.geonames.org/1736278/"
+    },
+    "Kuala Terengganu": {
+      "matches": [
+        "Kuala Terengganu"
+      ],
+      "id": "1734705",
+      "name": "Kuala Terengganu",
+      "latitude": 5.3302,
+      "longitude": 103.1408,
+      "feature": "PPLA",
+      "admin1": "13",
+      "population": 426500,
+      "sourceUrl": "https://www.geonames.org/1734705/"
+    },
+    "Kota Bharu": {
+      "matches": [
+        "Kota Bharu"
+      ],
+      "id": "1736376",
+      "name": "Kota Bharu",
+      "latitude": 6.12361,
+      "longitude": 102.24333,
+      "feature": "PPLA",
+      "admin1": "03",
+      "population": 568900,
+      "sourceUrl": "https://www.geonames.org/1736376/"
+    },
+    "Seremban": {
+      "matches": [
+        "Seremban"
+      ],
+      "id": "1734810",
+      "name": "Seremban",
+      "latitude": 2.7297,
+      "longitude": 101.9381,
+      "feature": "PPLA",
+      "admin1": "05",
+      "population": 372917,
+      "sourceUrl": "https://www.geonames.org/1734810/"
+    },
+    "Muar": {
+      "id": "1732869",
+      "name": "Muar",
+      "latitude": 2.0442,
+      "longitude": 102.5689,
+      "feature": "PPL",
+      "admin1": "01",
+      "population": 314776,
+      "sourceUrl": "https://www.geonames.org/1732869/"
+    },
+    "Kuala Selangor": {
+      "id": "1732891",
+      "name": "Kuala Selangor",
+      "latitude": 3.35,
+      "longitude": 101.25,
+      "feature": "PPL",
+      "admin1": "12",
+      "population": 55887,
+      "sourceUrl": "https://www.geonames.org/1732891/"
+    },
+    "Semporna": {
+      "id": "1733697",
+      "name": "Semporna",
+      "latitude": 4.48178,
+      "longitude": 118.61119,
+      "feature": "PPL",
+      "admin1": "16",
+      "population": 62641,
+      "sourceUrl": "https://www.geonames.org/1733697/"
+    },
+    "Kuala Kangsar": {
+      "id": "1734599",
+      "name": "Kuala Kangsar",
+      "latitude": 4.76667,
+      "longitude": 100.93333,
+      "feature": "PPL",
+      "admin1": "07",
+      "population": 39331,
+      "sourceUrl": "https://www.geonames.org/1734599/"
+    },
+    "Sungai Petani": {
+      "id": "1735498",
+      "name": "Sungai Petani",
+      "latitude": 5.647,
+      "longitude": 100.48772,
+      "feature": "PPL",
+      "admin1": "02",
+      "population": 544851,
+      "sourceUrl": "https://www.geonames.org/1735498/"
+    },
+    "Sibu": {
+      "id": "1735902",
+      "name": "Sibu",
+      "latitude": 2.3,
+      "longitude": 111.81667,
+      "feature": "PPL",
+      "admin1": "11",
+      "population": 198239,
+      "sourceUrl": "https://www.geonames.org/1735902/"
+    }
+  },
+  "additionalArchiveSha256": "2aa59873685eec78699183008fbae15c0b4b9345b1b4e17e39133da72957c137"
+}

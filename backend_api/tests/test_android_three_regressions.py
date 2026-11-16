@@ -17,7 +17,7 @@ AUTH = {'Authorization': 'Bearer valid_test_token'}
 @pytest.fixture
 def memory(monkeypatch):
     db = {('travel_preferences', 'test_traveller_uid'): {'interests': ['Culture'], 'travelPace': 'relaxed', 'travelPersonality': 'Explorer'}}
-    def read(collection, identity=None, filters=None, limit=None):
+    def read(collection, identity=None, filters=None, limit=None, orderBy=None):
         if identity:
             return deepcopy(db.get((collection, str(identity))))
         result = [dict(value, id=key) for (coll, key), value in db.items() if coll == collection]
@@ -123,13 +123,13 @@ def test_activity_quick_prompt_and_short_replies_are_grounded(client, mock_trave
     assert state['interests'] == ['Food', 'Culture']
     assert 'Ipoh' in changed['reply'] and not changed['item'].get('placeSuggestions')
     monkeypatch.setenv('SERPAPI_KEY', 'synthetic-test-only')
-    monkeypatch.setattr(routes, 'retrieveDestinationResults', lambda query, area: {
+    monkeypatch.setattr(routes, 'retrieveDestinationResults', lambda query, area, coordinates: {
         'local_results': [
             {'place_id': 'ipoh-test', 'title': 'Synthetic Ipoh food stop', 'address': 'Ipoh, Perak, Malaysia',
              'state': 'Perak', 'category': 'Food', 'recommendedDurationMinutes': 45},
             {'place_id': 'wrong-city', 'title': 'Synthetic Taiping food stop', 'address': 'Taiping, Perak, Malaysia',
              'state': 'Perak', 'category': 'Food'},
-        ] if area == 'Ipoh' else [],
+        ] if area == 'Ipoh, Perak, Malaysia' else [],
     })
     ipoh = send(client, 'Things to do in Ipoh for one day with food', changed['session'])
     assert ipoh['session']['planningState']['tripDays'] == 1
@@ -319,8 +319,9 @@ def test_explanation_and_contextual_follow_up_preserve_pending_setup(client, moc
     question = 'Explain why Ipoh is known for white coffee.'
     explanation = send(client, question, initial['session'])
     followup = send(client, 'What was my previous question?', explanation['session'])
-    assert len(calls) == 2 and question in calls[-1][1]
-    assert all(turn['source'] == 'gemini' and not {'tripPlan', 'placeSuggestions'} & turn['item'].keys() and
+    assert len(calls) == 1 and explanation['source'] == 'gemini'
+    assert followup['source'] == 'travelmate-assistant' and question in followup['reply']
+    assert all(not {'tripPlan', 'placeSuggestions'} & turn['item'].keys() and
                turn['session']['planningState'] == state for turn in (explanation, followup))
 
 

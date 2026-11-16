@@ -110,17 +110,18 @@ def test_missing_interest_retrieval_is_bounded_and_never_writes_query_tags(clien
     repository.update('travel_preferences',UID,{'interests':['Photography','Food']})
     monkeypatch.setenv('SERPAPI_KEY','isolated-test-provider')
     def discover(query,scope,offset):
-        return [{'destinationId':query,'title':'Street Art' if query=='street art' else 'Hawker centre','address':'Penang, Malaysia'}]
+        return {'items': [{'destinationId':query,'title':'Street Art' if query=='street art' else 'Hawker centre','address':'Penang, Malaysia'}],
+                'hasMore': False, 'nextOffset': None}
     with patch.object(routes,'_provider_destinations',side_effect=discover) as provider:
         result=client.post('/api/fr4/recommendations/generate',headers=AUTH,json={'destinationArea':'Penang','discoveryMode':'relevant_v1'})
     assert result.status_code==200,result.json
-    assert [call.args[0] for call in provider.call_args_list]==['street art','hawker centres']
+    assert [call.args[0] for call in provider.call_args_list]==['hawker centres','street art']
     assert {row['destinationId'] for row in result.json['recommendations']}=={'street art','hawker centres'}
-    assert discovery_queries({'interests':['Photography','Food']},[{'title':'Street art'}])==['hawker centres']
-    assert discovery_queries({'interests':['Photography','Food']},[{'title':'Street art hawker food'}])==['tourist attractions']
+    assert discovery_queries({'interests':['Photography','Food']},[{'title':'Street art'}])==['hawker centres', 'street art']
+    assert 'tourist attractions' not in discovery_queries({'interests':['Photography','Food']},[{'title':'Street art hawker food'}])
     assert discovery_queries({'interests':['Photography','Food'],'excludedInterests':['Food']},[])==['street art']
     assert discovery_queries({'interests':['Photography','Food'],'destinationFeedback':{'no':'not_for_me'}},
-                             [{'destinationId':'no','title':'Street art'}])==['street art','hawker centres']
+                             [{'destinationId':'no','title':'Street art'}])==['hawker centres','street art']
     assert all('tags' not in row for row in repository.read('destination_cache'))
 
 

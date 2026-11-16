@@ -8,7 +8,7 @@ CAPABILITIES = {
     'preferences': ('FR2 saved/effective preferences', 'preferences',
         'Preferences records your interests and travel style. Explicit chat preferences apply to this conversation; they do not change your saved questionnaire.'),
     'recommendations': ('FR4 owned saved snapshots', 'recommendations',
-        'For You uses the existing 60% content, 30% collaborative and 10% context weighting. Available candidate metadata and your recorded preferences limit the matches; a recommendation is not verified availability.'),
+        'For You uses the existing 60% content, 30% collaborative and 10% popularity weighting. Available candidate metadata and your recorded preferences limit the matches; a recommendation is not verified availability.'),
     'saved': ('FR3 owned favourites', 'saved',
         'Open Saved Places to see destinations you saved. Saving a place does not book it or add a paid service.'),
     'itinerary': ('FR5 owned trip preview; FR11 confirmed draft/history', 'trips',

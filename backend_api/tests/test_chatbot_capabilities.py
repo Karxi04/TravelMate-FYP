@@ -179,6 +179,8 @@ def test_unavailable_interpretation_gives_grounded_clarification_once(conversati
 def test_semantic_discovery_uses_profile_and_grounded_catalogue_without_mutation(conversation, monkeypatch):
     records, writes, providers, talk = conversation
     records['travel_preferences'] = {'test_traveller_uid': {'interests': ['Nature']}}
+    from services.local_catalog import DESTINATIONS
+    monkeypatch.setattr(routes, '_planning_catalog', lambda *a, **kw: deepcopy(DESTINATIONS))
     monkeypatch.setattr(routes, 'interpretChatbotIntent', lambda p: {'intent': 'discover', 'confidence': .96})
     result = talk('Suggest somewhere suitable for my personality')
     assert result['item']['placeSuggestions']

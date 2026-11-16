@@ -8,6 +8,48 @@ to the same canonical concepts before FR04 calculates suitability.
 import re
 import unicodedata
 
+# Provider identifiers describe an experience, never affordability, pace or access.
+# IDs follow Google's Places category vocabulary; SerpApi also returns type/type_ids.
+PROVIDER_CATEGORIES = {
+    'restaurant': ('dining', {'food'}), 'pizza_restaurant': ('dining', {'food'}),
+    'food_court': ('dining', {'food'}), 'cafe': ('cafe', {'food'}),
+    'market': ('market', {'shopping'}), 'shopping_mall': ('shopping', {'shopping'}),
+    'night_market': ('night_market', {'shopping', 'social'}),
+    'museum': ('museum', {'culture'}), 'art_museum': ('art_museum', {'culture'}),
+    'art_gallery': ('art_gallery', {'culture'}), 'historical_landmark': ('heritage', {'culture'}),
+    'cultural_landmark': ('heritage', {'culture'}), 'cultural_center': ('culture', {'culture'}),
+    'hindu_temple': ('religious_site', {'culture'}), 'mosque': ('religious_site', {'culture'}),
+    'botanical_garden': ('botanical_garden', {'nature'}), 'garden': ('garden', {'nature'}),
+    'national_park': ('national_park', {'nature'}), 'park': ('park', {'nature'}),
+    'hiking_area': ('hiking', {'nature', 'adventure'}), 'beach': ('beach', {'nature', 'leisure'}),
+    'observation_deck': ('viewpoint', {'photography'}), 'scenic_spot': ('viewpoint', {'photography'}),
+    'wildlife_park': ('wildlife', {'nature'}), 'zoo': ('zoo', {'family'}),
+    'aquarium': ('aquarium', {'family'}), 'amusement_park': ('theme_park', {'adventure', 'family', 'leisure'}),
+    'adventure_sports_center': ('adventure_sports', {'adventure'}),
+    'community_center': ('community', {'social'}), 'event_venue': ('event_venue', {'social'}),
+}
+
+
+def provider_categories(item):
+    values = [item.get('type_id'), *(item.get('type_ids') if isinstance(item.get('type_ids'), list) else [])]
+    return sorted({value for value in values if isinstance(value, str) and value in PROVIDER_CATEGORIES})
+
+
+def experience_types(item):
+    types = {PROVIDER_CATEGORIES[key][0] for key in provider_categories(item)}
+    text = normalize_phrase(' '.join(str(item.get(k) or '') for k in ('category', 'type', 'subtype')))
+    evidence = item.get('verifiedDestinationEvidence') or {}
+    if evidence.get('suppliesCategory'):
+        text += ' ' + normalize_phrase(evidence.get('category'))
+    for phrase, kind in (('botanical', 'botanical_garden'), ('botanic', 'botanical_garden'),
+                        ('national park', 'national_park'), ('hiking', 'hiking'), ('beach', 'beach'),
+                        ('wildlife', 'wildlife'), ('viewpoint', 'viewpoint'), ('museum', 'museum'),
+                        ('heritage', 'heritage'), ('temple', 'religious_site'), ('street art', 'street_art'),
+                        ('hawker', 'dining'), ('restaurant', 'dining'), ('night market', 'night_market')):
+        if phrase in text:
+            types.add(kind)
+    return sorted(types)
+
 
 CONCEPT_TERMS = {
     'food': {
@@ -141,7 +183,8 @@ def primary_concepts(item):
     evidence = (item or {}).get('verifiedDestinationEvidence') or {}
     if evidence.get('suppliesCategory'):
         values.append(evidence['category'])
-    return concepts_for(values) - set(evidence.get('excludedConcepts') or [])
+    provider = set().union(*(PROVIDER_CATEGORIES[key][1] for key in provider_categories(item))) if provider_categories(item) else set()
+    return (concepts_for(values) | provider) - set(evidence.get('excludedConcepts') or [])
 
 
 def candidate_concepts(item):

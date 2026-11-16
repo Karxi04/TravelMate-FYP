@@ -1,6 +1,7 @@
 import os
 import re
 import requests
+from urllib.parse import urlparse, parse_qs
 
 SERP_ENDPOINT = "https://serpapi.com/search"
 
@@ -28,12 +29,15 @@ def _request(params):
 
 
 def retrieveDestinationResults(searchInput, location="Malaysia", coordinates=None, start=0):
+    if type(start) is not int or not 0 <= start <= 200 or start % 20:
+        raise ValueError('Invalid destination search page')
     query = (searchInput or "").strip()
     loc = (location or "").strip()
     if loc and loc.lower() not in query.lower():
         query = f"{query} in {loc}"
     params = {
         'engine': 'google_maps',
+        'type': 'search',
         'q': query,
         'hl': 'en',
         'gl': 'my',
@@ -45,7 +49,39 @@ def retrieveDestinationResults(searchInput, location="Malaysia", coordinates=Non
     longitude = coordinates.get('longitude')
     if latitude is not None and longitude is not None:
         params['ll'] = f'@{latitude},{longitude},11z'
-    return _request(params)
+    try:
+        data = _request(params)
+        if not isinstance(data, dict) or not isinstance(data.get('local_results'), list):
+            raise ValueError('Malformed destination response')
+    except Exception:
+        raise RuntimeError('Destination search is temporarily unavailable') from None
+    return {'local_results': [row for row in data['local_results'] if isinstance(row, dict)],
+            'pagination': destination_pagination(data, start)}
+
+
+def destination_pagination(data, start=0):
+    """Normalise Maps pagination without following or exposing provider URLs."""
+    normalized = data.get('pagination') if isinstance(data, dict) else None
+    if isinstance(normalized, dict):
+        value = normalized.get('nextOffset')
+        return {'hasMore': type(value) is int and value == start + 20 and start < 200,
+                'nextOffset': value if type(value) is int and value == start + 20 and start < 200 else None}
+    # Never follow or return a provider URL: it may carry credentials or arbitrary parameters.
+    next_offset = None
+    pagination = data.get('serpapi_pagination')
+    next_url = pagination.get('next') if isinstance(pagination, dict) else None
+    if isinstance(next_url, str):
+        try:
+            parsed = urlparse(next_url)
+            value = parse_qs(parsed.query).get('start', [])
+            if (parsed.scheme == 'https' and parsed.hostname == 'serpapi.com'
+                    and parsed.path in ('/search', '/search.json') and not parsed.username
+                    and len(value) == 1 and value[0].isdigit()
+                    and int(value[0]) == start + 20 and start < 200):
+                next_offset = int(value[0])
+        except ValueError:
+            pass
+    return {'hasMore': next_offset is not None, 'nextOffset': next_offset}
 
 
 def retrieveDestinationDetails(placeId, referenceType='place_id'):

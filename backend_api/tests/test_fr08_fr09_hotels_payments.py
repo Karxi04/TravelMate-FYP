@@ -61,15 +61,21 @@ class MemoryPersistence:
         records[document_id] = {'id': document_id, **data}
         return dict(records[document_id]), True
 
-    def retrieve(self, collection, document_id=None, filters=None, limit=None):
+    def retrieve(self, collection, document_id=None, filters=None, limit=None, orderBy=None):
         records = self.collections.setdefault(collection, {})
         if document_id:
             value = records.get(str(document_id))
             return dict(value) if value else None
         values = [dict(value) for value in records.values()]
+        def field_value(row, key):
+            for part in key.split('.'):
+                row = row.get(part) if isinstance(row, dict) else None
+            return row
         for field, operator, expected in filters or []:
             assert operator == '=='
-            values = [value for value in values if value.get(field) == expected]
+            values = [value for value in values if field_value(value, field) == expected]
+        for key, direction in reversed(orderBy or []):
+            values.sort(key=lambda row: str(row.get('id') if key == '__name__' else field_value(row, key)), reverse=direction == 'DESCENDING')
         return values[:limit] if limit else values
 
     def update(self, collection, document_id, data):

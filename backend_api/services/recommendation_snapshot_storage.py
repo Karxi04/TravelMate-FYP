@@ -6,6 +6,37 @@ from zlib import error as ZlibError
 from google.api_core.exceptions import DataLoss, InvalidArgument
 
 
+def latest_snapshot(read, hydrate, uid, scope=None):
+    """Order on the server before limiting; inspect headers before loading payload parts."""
+    from services.destination_candidates import timestamp
+    from services.malaysian_locality import normalize_destination_scope
+    filters = [('travellerId', '==', uid)]
+    if scope:
+        filters.append(('canonicalDestinationScope.scopeKey', '==', scope['scopeKey']))
+    headers = read('recommendation_snapshots', filters=filters,
+                   orderBy=[('generatedAt', 'DESCENDING')], limit=50) or []
+    if scope:
+        # Legacy snapshots predate the indexed scope field. This fallback is bounded and newest-first.
+        headers += read('recommendation_snapshots', filters=[('travellerId', '==', uid)],
+                        orderBy=[('generatedAt', 'DESCENDING')], limit=150) or []
+    eligible = [h for h in headers if isinstance(h, dict) and h.get('travellerId') == uid
+                and (not scope or normalize_destination_scope(h.get('requestedDestination') or h.get('destinationArea'))['scopeKey'] == scope['scopeKey'])]
+    seen = set()
+    for header in sorted(eligible, key=lambda h: (timestamp(h.get('generatedAt')), str(h.get('id') or '')), reverse=True):
+        if header.get('id') in seen:
+            continue
+        seen.add(header.get('id'))
+        try:
+            value = hydrate(header)
+            if isinstance(value, dict) and value.get('travellerId') == uid and isinstance(value.get('recommendationResults'), list):
+                return value
+        except DataLoss:
+            continue
+    if eligible:
+        raise DataLoss('No valid recommendation payload in the newest bounded window')
+    return {}
+
+
 _FORMAT = 'json_gzip_v1'
 _PART_BYTES = 512 * 1024
 _MAX_PARTS = 16  # Leave room under Firestore's 10 MiB atomic commit limit.

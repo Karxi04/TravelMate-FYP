@@ -1,6 +1,7 @@
 """Evidence-based discovery selection; hybrid scoring and legacy thresholds stay intact."""
 import re
-from services.recommendation_taxonomy import concepts_for, candidate_concepts, normalize_phrase, preference_concepts
+import os
+from services.recommendation_taxonomy import concepts_for, candidate_concepts, normalize_phrase, preference_concepts, experience_types
 
 DISCOVERY_MODE = 'relevant_v1'
 
@@ -79,25 +80,48 @@ def enrich_discovery_candidate(item):
     return result
 
 
-def discovery_queries(preference, candidates):
+QUERY_TEMPLATES = {
+    'photography': ('street art', 'scenic viewpoints', 'photography locations'),
+    'food': ('hawker centres', 'local food markets', 'food streets'),
+    'adventure': ('outdoor adventure activities', 'hiking trails', 'adventure attractions'),
+    'nature': ('nature parks', 'botanical gardens', 'wildlife attractions'),
+    'family': ('family attractions', 'zoos and aquariums', 'family experiences'),
+    'leisure': ('gardens and leisure attractions', 'relaxation attractions', 'leisure experiences'),
+    'culture': ('heritage sites and museums', 'cultural attractions', 'heritage trails'),
+    'shopping': ('shopping districts', 'local markets', 'shopping attractions'),
+    'social': ('night markets', 'community attractions', 'social experiences'),
+}
+
+
+def discovery_queries(preference, candidates, target=None, budget=3):
     excluded = concepts_for(preference.get('excludedInterests') or [])
     requested = preference_concepts(preference.get('interests') or []) - excluded
-    covered = set()
+    try:
+        target = max(1, min(10, int(target or os.getenv('RECOMMENDATION_COVERAGE_TARGET', '3'))))
+    except (ValueError, TypeError):
+        target = 3
+    covered = {key: set() for key in requested}
+    kinds = {key: set() for key in requested}
     for item in candidates:
+        if (item.get('normalizedGeography') or {}).get('conflict') or (item.get('geographicEligibility') or {}).get('eligible') is False:
+            continue
         did = str(item.get('destinationId') or item.get('id') or '')
         if (preference.get('destinationFeedback') or {}).get(did) == 'not_for_me':
             continue
         concepts = candidate_concepts(enrich_discovery_candidate(item))
-        if not concepts & excluded:
-            covered.update(concepts)
-    missing = requested - covered
-    queries = [query for concept, query in (
-        ('photography', 'street art'), ('food', 'hawker centres'),
-        ('adventure', 'outdoor adventure activities'), ('nature', 'nature parks'),
-        ('family', 'family attractions'), ('leisure', 'gardens and leisure attractions'),
-        ('culture', 'heritage sites and museums'),
-    ) if concept in missing]
-    return queries[:2] or ['tourist attractions']
+        if not is_planning_candidate(item) or concepts & excluded or item.get('cacheFreshness') in {'stale', 'unknown'}:
+            continue
+        identity = normalize_phrase(item.get('title') or item.get('name')) or did
+        for concept in concepts & requested:
+            if identity:
+                covered[concept].add(identity)
+                kinds[concept].update(experience_types(item))
+    weak = sorted((key for key in requested if key in QUERY_TEMPLATES and (
+        len(covered[key]) < target or len(kinds[key]) < min(target, 2))),
+        key=lambda key: (len(covered[key]), len(kinds[key]), key))
+    # One template per weak interest first; rotate by observed experience coverage.
+    queries = [QUERY_TEMPLATES[key][min(len(kinds[key]), 2)] for key in weak]
+    return queries[:max(0, min(3, int(budget)))] if requested else ([] if preference.get('interests') else ['tourist attractions'])
 
 
 def discovery_annotations(item, preference):

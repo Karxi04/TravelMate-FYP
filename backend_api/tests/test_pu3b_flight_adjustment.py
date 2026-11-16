@@ -195,7 +195,7 @@ def lifecycle_store(monkeypatch):
                 target[key] = deepcopy(value)
 
     def document(key):
-        def get():
+        def get(transaction=None):
             snapshot = deepcopy(records.get(key))
             return SimpleNamespace(id=key, exists=snapshot is not None,
                                    to_dict=lambda: deepcopy(snapshot))
@@ -211,8 +211,25 @@ def lifecycle_store(monkeypatch):
         assert name == 'itineraries'
         return SimpleNamespace(document=document)
 
+    # The shared adapter now commits ordinary edits and history atomically.
+    # Stage writes until the existing production commit callback completes.
+    def transaction():
+        staged = []
+        return SimpleNamespace(staged=staged,
+            set=lambda ref, data, merge=False: staged.append((ref, deepcopy(data))),
+            update=lambda ref, data: staged.append((ref, deepcopy(data))))
+
+    def transactional(callback):
+        def commit(tx):
+            result = callback(tx)
+            for ref, values in tx.staged:
+                ref.set(values, merge=True)
+            return result
+        return commit
+
     monkeypatch.setattr('sequence_contract.firebase_firestore.get_db',
-                        lambda: SimpleNamespace(collection=collection))
+                        lambda: SimpleNamespace(collection=collection, transaction=transaction))
+    monkeypatch.setattr('google.cloud.firestore.transactional', transactional)
     yield SimpleNamespace(records=records, writes=writes)
     reset_flight_adjustment_previews()
 

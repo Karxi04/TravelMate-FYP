@@ -1,5 +1,15 @@
 import 'recommendation_taxonomy.dart';
 
+/// Append a continuation of one destination search without resetting visible results.
+List<Map<String, dynamic>> appendRecommendationResults(List previous, List received) {
+  String identity(Map row) => '${row['destinationId'] ?? row['place_id'] ?? row['id'] ?? ''}';
+  final seen = <String>{};
+  return [...previous, ...received].whereType<Map>().where((row) {
+    final id = identity(row);
+    return id.isNotEmpty && seen.add(id);
+  }).map((row) => Map<String, dynamic>.from(row)).toList();
+}
+
 bool recommendationQualifies(Map item, num minimum, [String scoreBasis = 'hybrid_v1']) {
   final score = double.tryParse('${scoreBasis == 'personal_v2' ? item['personalSuitabilityScore'] : item['finalScore'] ?? item['score'] ?? 0}');
   return score != null &&
