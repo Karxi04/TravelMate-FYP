@@ -1302,14 +1302,13 @@ def save_plan():
                 if not updated:
                     return jsonify(ok=False, error='The trip could not be updated.'), 409
             try:
-                if active.get('restoresVersion') is not None:
-                    receipt_state = {**current_state,
-                        'savedPlans': {**(current_state.get('savedPlans') or {}), draft_id: iid},
-                        'adjustment': {'tripId': iid, 'fingerprint': _trip_fingerprint(updated), 'tripContext': _trip_context(updated)}}
-                    updateRecord('chat_sessions', save_session['id'],
-                        {'messages': save_session.get('messages') or [], 'planningState': receipt_state}, expected=save_session)
-                else:
-                    updateRecord('chat_sessions', save_session['id'], {'planningState': {'savedPlans': {draft_id: iid}}})
+                # A successful own save is not an external edit on the next conversation turn.
+                receipt_state = {**current_state,
+                    'savedPlans': {**(current_state.get('savedPlans') or {}), draft_id: iid},
+                    'adjustment': {**({} if active.get('restoresVersion') is not None else adjustment),
+                                   'tripId': iid, 'fingerprint': _trip_fingerprint(updated), 'tripContext': _trip_context(updated)}}
+                updateRecord('chat_sessions', save_session['id'],
+                    {'messages': save_session.get('messages') or [], 'planningState': receipt_state}, expected=save_session)
             except Exception:
                 current_app.logger.warning('Trip adjustment saved. Conversation receipt is temporarily unavailable.')
             return jsonify(ok=True, id=iid, itinerary=updated, budget=updated.get('budgetEstimate'),
