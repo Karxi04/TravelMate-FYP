@@ -166,7 +166,8 @@ def test_multiturn_route_preserves_constraints_and_returns_explicit_conflict(cli
             values = [value for value in values if value.get(field) == expected]
         return deepcopy(values[:limit] if limit else values)
 
-    def update(collection, record_id, changes):
+    def update(collection, record_id, changes, expected=None):
+        assert expected is None or database[collection][record_id] == expected
         current = database[collection][record_id]
         current.update(deepcopy(changes))
         return deepcopy(current)
