@@ -42,6 +42,7 @@ from services.itinerary_history import HistoryConflict, restore_patch
 from .travel_dates import malaysian_today
 from services.review_service import ReviewConflict
 from .package_assistant import respond as commerce_response, public_details
+from .personal_questions import respond as personal_response, PersonalReadUnavailable
 import re
 import os
 import json
@@ -820,7 +821,9 @@ def chat():
                 return []
             return find_matching_catalog_destinations(area, focus.get('state'),
                 _planning_catalog(area, focus.get('state'), allow_provider=False))
-        routing = resolve_turn(message, planning_state, messages, interpret=interpretChatbotIntent, lookup=nearby_catalog)
+        personal = personal_response(message, planning_state, retrieveRecord, g.uid)
+        routing = ({'response': personal} if personal is not None else
+                   resolve_turn(message, planning_state, messages, interpret=interpretChatbotIntent, lookup=nearby_catalog))
         if routing and routing.get('message'):
             message = routing['message']
         if routing and routing.get('response') is not None:
@@ -834,6 +837,8 @@ def chat():
             commerce = {'reply': 'I cannot verify a booking or payment from conversation text. Open Trips or Orders for the verified record.'
                         if routing['commerce'] == 'records' else
                         'Which published package would you like to filter or compare? Please use its displayed name or number.'}
+    except PersonalReadUnavailable:
+        return jsonify(ok=False, error='Your saved records are temporarily unavailable. Please retry; no trip or financial data was changed.'), 503
     except (ValueError, TypeError, KeyError, OverflowError):
         return jsonify(ok=False, error='The saved trip or conversation could not be read. Reopen it and try again.'), 409
     discovery = False

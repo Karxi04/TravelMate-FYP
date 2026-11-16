@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'database_chat_cards.dart';
+import 'personal_assistant_actions.dart';
 import '../../widgets/local_place_rating.dart';
 
 import '../../services/api_service.dart';
@@ -1679,6 +1680,10 @@ class _ChatTabState extends State<ChatTab> {
                                 ],
                                 if (advisory.isNotEmpty)
                                   _buildAdvisoryCard(advisory),
+                                if (item['assistantActions'] is List) ...[
+                                  const SizedBox(height: 8),
+                                  PersonalAssistantActions(actions: item['assistantActions'] as List, api: api),
+                                ],
                                 if (item['ownedTrips'] is List ||
                                     item['ownedOrders'] is List) ...[
                                   const SizedBox(height: 8),
