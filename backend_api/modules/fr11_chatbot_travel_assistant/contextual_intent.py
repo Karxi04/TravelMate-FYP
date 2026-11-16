@@ -4,12 +4,14 @@ import math
 import re
 
 from sequence_contract.domain_functions import _distance_km
-from services.activity_pricing import activity_pricing
+from services.activity_pricing import activity_pricing, PRICING_FIELDS
+from services.pricing_registry import enrich_candidate_pricing
+from services.malaysian_locality import normalize_candidate_geography
 from services.recommendation_taxonomy import candidate_concepts, concepts_for, display_concepts
 from .nlp_extractor import (clean_text, extract_itinerary_day, extract_activity_position,
                             extract_geographic_entities, extract_interests, itinerary_view_request,
                             extract_budget, extract_travellers, conversational_question, classify_detailed_intent,
-                            find_matching_catalog_destinations)
+                            find_matching_catalog_destinations, filter_constraint_candidates)
 
 INTENTS = {'view_trip', 'edit_day', 'edit_activity', 'resume', 'weather', 'reference', 'compare', 'clarify'}
 INTERESTS = {'Food', 'Culture', 'Nature', 'Adventure', 'Relaxation', 'Photography', 'Family', 'Shopping', 'History'}
@@ -156,11 +158,20 @@ def _price(row, kind):
             return f'{prefix}: MYR {amount:.2f}; not a booking or a guarantee of current availability.'
         return 'Verified package pricing is unavailable; open the package details for a current quote.'
     pricing = activity_pricing(row, 1)
-    if pricing['pricingIssues'] or row.get('currency', 'MYR') != 'MYR':
+    if pricing['pricingIssues'] or _currency(row) != 'MYR':
         return 'Verified activity pricing is unavailable for this place.'
     basis = pricing['pricingUnit'].replace('_', ' ')
     label = 'Recorded ticket price' if pricing['costProvenance'] == 'verified_ticket' else 'Recorded planning estimate'
-    return f'{label}: MYR {pricing["effectiveCost"]:.2f} ({basis}), not a live quote.'
+    evidence = row.get('pricingEvidence') or {}
+    product = evidence.get('ticketProduct')
+    limits = evidence.get('limitations')
+    qualifier = (f' Product: {product[:160]}.' if isinstance(product, str) else '')
+    qualifier += (f' {limits[:350]}' if isinstance(limits, str) else '')
+    return f'{label}: MYR {pricing["effectiveCost"]:.2f} ({basis}), not a live quote.' + qualifier
+
+
+def _currency(row):
+    return row.get('currency') or (row.get('pricingEvidence') or {}).get('currency')
 
 
 def _focused(state, messages, kind, rows):
@@ -181,6 +192,131 @@ def _known_distance(a, b):
     return _distance_km(a, b)
 
 
+def _place_key(row):
+    return result_id(row, 'place') or clean_text(row.get('title') or row.get('name'))
+
+
+def place_cards(candidates, state, interests=None):
+    """Public descriptive data, not synthetic ratings, hours or ticket assumptions."""
+    desired = concepts_for(interests if interests is not None else state.get('interests') or [])
+    cards, seen_ids, seen_names = [], set(), set()
+    for raw in filter_constraint_candidates(candidates, excluded_interests=state.get('excludedInterests'),
+            excluded_activity_types=state.get('excludedActivityTypes'), prefer_indoor=state.get('preferIndoor', False)):
+        name = raw.get('title') or raw.get('name')
+        key, name_key = _place_key(raw), clean_text(name)
+        if not result_id(raw, 'place') or not name or key in seen_ids or name_key in seen_names:
+            continue
+        seen_ids.add(key)
+        seen_names.add(name_key)
+        row = enrich_candidate_pricing(raw)
+        geo = normalize_candidate_geography(row)
+        if geo.get('conflict'):
+            continue
+        fields = ('destinationId', 'place_id', 'id', 'title', 'name', 'address', 'category', 'type',
+                  'description', 'recommendationReason', 'thumbnail', 'imageUrl', 'photoAttribution', 'imageSource', 'indoor',
+                  'recommendedDurationMinutes', 'familyFriendly', 'openingHours', 'currency', 'estimatedCost',
+                  'openingHoursSourceUrl', 'openingHoursVerifiedAt', *PRICING_FIELDS)
+        card = {k: row[k] for k in fields if k in row}
+        card.update(city=geo.get('city') or row.get('city') or '', state=geo.get('state') or row.get('state') or '')
+        if geo.get('latitude') is not None and geo.get('longitude') is not None:
+            card['gps_coordinates'] = {'latitude': geo['latitude'], 'longitude': geo['longitude']}
+        card['matchedInterests'] = display_concepts(candidate_concepts(row) & desired)
+        cards.append(card)
+    # Prefer relevant concepts, then diversity among equally relevant catalogue entries.
+    ranked, covered = [], set()
+    while cards:
+        best = max(range(len(cards)), key=lambda i: (
+            len(candidate_concepts(cards[i]) & desired), len(candidate_concepts(cards[i]) - covered)))
+        card = cards.pop(best)
+        ranked.append(card)
+        covered.update(candidate_concepts(card))
+    return ranked
+
+
+def _place_facts(row, question, state):
+    name = row.get('title') or row.get('name') or 'This place'
+    category = str(row.get('category') or row.get('type') or '')[:120]
+    location = row.get('address') or row.get('city') or row.get('state')
+    description = str(row.get('description') or '')[:600]
+    duration = row.get('recommendedDurationMinutes')
+    details = [f'{name}.']
+    if 'why' in question:
+        stored = row.get('matchedInterests')
+        matched = [v for v in stored if isinstance(v, str)] if isinstance(stored, list) else []
+        matched = matched or display_concepts(candidate_concepts(row) & concepts_for(state.get('interests') or []))
+        reason = row.get('recommendationReason')
+        details.append(reason if isinstance(reason, str) and reason else
+            (f'Matches your stated interests: {", ".join(matched)}.' if matched else
+             f'It matches the requested destination; its recorded category is {category or "not supplied"}.'))
+    elif re.search(r'\bfamil(?:y|ies)\b', question):
+        known = row.get('familyFriendly')
+        details.append('Recorded as family-friendly.' if known is True else
+                       'Recorded as not family-friendly.' if known is False else
+                       'Family suitability is not verified; check access, facilities and age restrictions in the place details.')
+    if category:
+        details.append(f'Catalogue category: {category}.')
+    if description:
+        details.append(f'Local catalogue description: {description}')
+    if location:
+        details.append(f'Location: {location}.')
+    if type(duration) is int and duration > 0:
+        details.append(f'Suggested visit: {duration} minutes (planning estimate).')
+    if not description and not category:
+        details.append('Further descriptive details are unavailable; open the place details for supported information.')
+    return {'reply': '\n'.join(details)}
+
+
+def _browse_places(message, state, messages, rows, focus, lookup, geo):
+    q = re.sub(r'\bothe\b', 'other', clean_text(message))
+    place_word = bool(re.search(r'\b(?:places?|attractions?|spots?)\b', q))
+    more = bool(re.search(r'\b(?:other|another|different|more)\b', q))
+    rejected = bool(re.search(r'\b(?:don t want|dont want|not these)\b.*\b(?:these|places|results)\b', q))
+    similar = 'similar' in q
+    search = state.get('placeSearch') or {}
+    # Pronouns/questions about a selected result are not new result-page requests.
+    page_request = (place_word and more and not re.search(r'\b(?:nearby|cheaper)\b', q)) or rejected or (
+        bool(rows) and re.fullmatch(r'(?:got |any |show |give me )?(?:more|another one)(?: lah| ah)?', q))
+    interests = extract_interests(message)
+    explicit = (place_word or (focus and not (state.get('adjustment') or {}).get('tripId'))) and (
+        geo.get('destination_area') or interests) and bool(re.search(r'\b(?:show|suggest|recommend|give|find|want|prefer)\b', q))
+    if not (page_request or explicit):
+        return None
+    area = geo.get('destination_area') or search.get('area') or state.get('destinationArea')
+    region = geo.get('destination_state') or search.get('state')
+    if not area and rows:
+        regions = {r.get('state') or normalize_candidate_geography(r).get('state') for r in rows}
+        regions.discard(None)
+        area = next(iter(regions)) if len(regions) == 1 else None
+    if not area:
+        return {'reply': 'Which Malaysian destination should I use for the other places?'}
+    interests = interests or (display_concepts(candidate_concepts(focus)) if similar and focus else
+                              search.get('interests') or state.get('interests') or [])
+    state['placeSearch'] = {'area': area, 'state': region, 'interests': interests}
+    if rejected:
+        entries = [{'kind': 'place', 'id': result_id(r, 'place')} for r in rows]
+        state['rejectedResults'] = [*(state.get('rejectedResults') or []), *entries][-50:]
+    candidates = lookup({'city': area, 'state': region}) if lookup else rows
+    cards = place_cards(find_matching_catalog_destinations(area, region, candidates), state, interests)
+    desired = concepts_for(interests)
+    if desired:
+        cards = [r for r in cards if candidate_concepts(r) & desired]
+    shown = [r for m in messages if isinstance(m, dict) and isinstance(m.get('placeSuggestions'), list)
+             for r in m['placeSuggestions'] if isinstance(r, dict)] if page_request else []
+    shown_keys = {_place_key(r) for r in shown}
+    shown_names = {clean_text(r.get('title') or r.get('name')) for r in shown}
+    rejects = {r.get('id') for r in state.get('rejectedResults', []) if r.get('kind') == 'place'}
+    cards = [r for r in cards if _place_key(r) not in shown_keys and result_id(r, 'place') not in rejects
+             and clean_text(r.get('title') or r.get('name')) not in shown_names]
+    count = re.search(r'\b([1-5]|one|two|three|four|five)\b', q)
+    limit = (int(count[1]) if count[1].isdigit() else
+             {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5}[count[1]]) if count else 3
+    selected = cards[:limit]
+    return {'reply': (f'Here are {len(selected)} {"other " if page_request else ""}recorded places in {area}.' if selected else
+                     f'There are no further verified results in the available catalogue for {area} with these preferences.'),
+            'placeSuggestions': selected,
+            'suggestedReplies': ['Show me the same results', f'Show nature places in {area}']}
+
+
 def _reference_reply(indices, kind, rows, state, compare=False):
     if not kind or not indices or any(not 1 <= i <= len(rows) for i in indices):
         return {'reply': 'Which result do you mean? Please use its displayed name or number.'}
@@ -190,6 +326,8 @@ def _reference_reply(indices, kind, rows, state, compare=False):
         if state.get('rejectedResults'):
             state['rejectedResults'] = [entry for entry in state['rejectedResults']
                                        if entry != state['selectedResult']]
+        if kind == 'place':
+            return _place_facts(chosen[0], '', state)
     lines = [f'{r.get("title") or r.get("name") or "Selected result"}: {_price(r, kind)}' for r in chosen]
     if compare:
         lines = [line + (f' Category: {row["category"]}.' if row.get('category') else '')
@@ -206,6 +344,11 @@ def resolve_turn(message, state, messages, *, interpret=None, lookup=None):
     geo = extract_geographic_entities(message)
     if geo.get('is_foreign') or geo.get('is_multi_destination') or itinerary_view_request(message):
         return None
+    if re.search(r'\b(?:undo|discard)\b', q) or (re.search(r'\bcompare\b', q) and re.search(
+            r'\b(?:old|new|saved|original|proposed|draft|revision)\b', q)):
+        if adjustment:
+            return None  # Trip compare/undo must outrank public-result comparisons.
+        return {'response': {'reply': 'There is no unconfirmed proposal to compare or undo. Select a saved trip first.'}}
     named = [i for i, row in enumerate(rows, 1) if len(clean_text(row.get('title') or row.get('name'))) > 3
              and clean_text(row.get('title') or row.get('name')) in q]
     if len(named) == 1:
@@ -252,24 +395,11 @@ def resolve_turn(message, state, messages, *, interpret=None, lookup=None):
     if kind == 'place' and rows and re.search(r'\b(?:same|again|repeat)\b', q) and re.search(
             r'\b(?:places|results|options|recommendations)\b', q) and not re.search(r'\b(?:new|different|cheaper)\b', q):
         return {'response': {'reply': 'These are the same recorded results; no new search was needed.', 'placeSuggestions': rows}}
-    if lookup and geo.get('destination_area') and re.search(r'\b(?:show|suggest|recommend|give|find)\b', q) and re.search(
-            r'\b(?:places|attractions|spots)\b', q) and not re.search(r'\b(?:change|replace|remove|day|plan|itinerary)\b', q):
-        from .nlp_extractor import filter_constraint_candidates
-        candidates = lookup({'city': geo['destination_area'], 'state': geo.get('destination_state')})
-        interests = concepts_for(extract_interests(message))
-        candidates = filter_constraint_candidates(candidates, excluded_interests=state.get('excludedInterests'),
-            excluded_activity_types=state.get('excludedActivityTypes'), prefer_indoor=state.get('preferIndoor', False))
-        unique = {}
-        for row in candidates:
-            if not interests or candidate_concepts(row) & interests:
-                unique.setdefault(result_id(row, 'place') or clean_text(row.get('title')), row)
-        count_match = re.search(r'\b([1-5]|one|two|three|four|five) (?:places|attractions|spots)\b', q)
-        count = (int(count_match[1]) if count_match[1].isdigit() else
-                 {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5}[count_match[1]]) if count_match else 3
-        shortlist = list(unique.values())[:count]
-        return {'response': {'reply': f'Here are {len(shortlist)} recorded places in {geo["destination_area"]}. Which one interests you?' if shortlist else
-                             'I could not verify places matching those constraints.', 'placeSuggestions': shortlist}}
-    if re.search(r'\b(?:resume|continue|back to|return to)\b', q):
+    if kind != 'package' and not re.search(r'\b(?:change|replace|remove|day|plan|itinerary)\b', q):
+        browse = _browse_places(message, state, messages, rows, focus, lookup, geo)
+        if browse is not None:
+            return {'response': browse}
+    if re.search(r'\b(?:resume|continue|back to|return to)\b', q) and not re.search(r'\b(?:place|option|result)\b', q):
         if adjustment.get('tripId'):
             return {'message': 'Back to editing my trip'}
         if state.get('guidedQuestion'):
@@ -283,7 +413,7 @@ def resolve_turn(message, state, messages, *, interpret=None, lookup=None):
         return {'commerce': 'packages'}  # Existing package filters/quotes own financial semantics.
     if adjustment.get('tripId'):
         day = extract_itinerary_day(message) or adjustment.get('pendingDay') or adjustment.get('viewDay')
-        if re.search(r'\b(?:boring|dull|not fun|change some|change a place)\b', q):
+        if (focus is None or extract_itinerary_day(message) is not None) and re.search(r'\b(?:boring|dull|not fun|change some|change a place)\b', q):
             return {'message': f'Change Day {day}' if day else 'Change some places'}
         if re.search(r'\b(?:walking|walk)\b', q) and re.search(r'\b(?:too much|less|reduce|don t want|dont want)\b', q):
             return {'message': 'Reduce walking' + (f' on Day {day}' if day else '')}
@@ -299,13 +429,22 @@ def resolve_turn(message, state, messages, *, interpret=None, lookup=None):
     if not indices:
         indices = [i for word, i in [('first', 1), ('second', 2), ('third', 3), ('fourth', 4), ('fifth', 5)]
                    if re.search(r'\b' + word + r'\b', q)]
-    reference = bool(re.search(r'\b(?:one|option|result|which|compare|better|prefer)\b', q))
+    reference = bool(re.search(r'\b(?:one|option|result|which|compare|better|prefer|place)\b', q))
+    if kind == 'place' and reference and len(indices) == 1 and 1 <= indices[0] <= len(rows) and not re.search(
+            r'\b(?:day|activity|stop|budget|rm|adults?|travellers?)\b', q) and re.search(
+            r'\b(?:expensive|price|cost|why|about|activities|hours|families|family)\b', q):
+        focus = rows[indices[0] - 1]
+        state['selectedResult'] = {'kind': kind, 'id': result_id(focus, kind)}
     if rows and re.search(r'\bcompare\b', q) and not indices:
         return {'response': {'reply': 'Which two displayed results would you like to compare?'}}
-    if rows and indices and reference and not re.search(r'\b(?:day|activity|stop|budget|rm|adults?|travellers?)\b', q):
+    if rows and indices and reference and not re.search(r'\b(?:day|activity|stop|budget|rm|adults?|travellers?|expensive|price|cost|why|about|activities|families|family|hours)\b', q):
         compare = bool(re.search(r'\b(?:compare|versus|vs)\b', q) or (len(indices) == 2 and re.search(r'\b(?:which|better)\b', q)))
         return {'response': _reference_reply(indices[:2] if compare else indices[:1], kind, rows, state, compare)}
-    if rows and re.search(r'\b(?:why|expensive|price|cost|cheaper|nearby|not this|different one|indoor|indoors|sheltered|hours|opens|closes)\b', q):
+    if kind == 'place' and rows and re.search(r'\b(?:why|about|activities|families|family)\b', q):
+        if focus is None:
+            return {'response': {'reply': 'Which result do you mean? Choose its name or displayed number first.'}}
+        return {'response': _place_facts(focus, q, state)}
+    if rows and re.search(r'\b(?:why|expensive|price|cost|cheaper|nearby|not this|don t want|dont want|boring|different one|indoor|indoors|sheltered)\b|\bhours\b|\bopens\b|\bcloses\b', q):
         if focus is None:
             return {'response': {'reply': 'Which result do you mean? Choose its name or displayed number first.'}}
         if re.search(r'\bwhy\b', q):
@@ -321,23 +460,22 @@ def resolve_turn(message, state, messages, *, interpret=None, lookup=None):
             if isinstance(hours, str) and hours and focus.get('openingHoursSourceUrl') and focus.get('openingHoursVerifiedAt'):
                 return {'response': {'reply': f'Recorded opening hours for {focus.get("title")}: {hours}. Recheck with the venue before travelling.'}}
             return {'response': {'reply': 'Verified opening hours are unavailable for this place; I will not infer them.'}}
-        if re.search(r'\b(?:nearby|cheaper|not this|different one|indoor|indoors|sheltered)\b', q):
+        if re.search(r'\b(?:nearby|cheaper|not this|don t want|dont want|boring|different one|indoor|indoors|sheltered)\b', q):
             if kind != 'place':
                 return {'message': 'Find cheaper packages' if 'cheaper' in q else 'Find other packages'}
             cheaper = 'cheaper' in q
             base = activity_pricing(focus, 1)
-            if cheaper and (base['pricingIssues'] or focus.get('currency', 'MYR') != 'MYR'):
-                return {'response': {'reply': 'I cannot verify which option is cheaper because this place has no reliable price.'}}
-            if re.search(r'\b(?:not this|different one)\b', q):
+            base_known = not base['pricingIssues'] and _currency(focus) == 'MYR'
+            if re.search(r'\b(?:not this|don t want|dont want|boring|different one)\b', q):
                 rejected = state.get('rejectedResults', [])
                 entry = {'kind': kind, 'id': result_id(focus, kind)}
                 state['rejectedResults'] = (rejected + [entry] if entry not in rejected else rejected)[-10:]
-            candidates = lookup(focus) if lookup else rows
-            from .nlp_extractor import filter_constraint_candidates
-            candidates = filter_constraint_candidates(candidates, excluded_interests=state.get('excludedInterests'),
-                excluded_activity_types=state.get('excludedActivityTypes'),
-                prefer_indoor=state.get('preferIndoor', False) or bool(re.search(r'\bindoor|indoors|sheltered\b', q)))
-            alternatives = []
+            scope = state.get('placeSearch') or {}
+            area = scope.get('area') or focus.get('state') or focus.get('city')
+            candidates = lookup({'city': area, 'state': scope.get('state') or focus.get('state')}) if lookup else rows
+            candidates = place_cards(filter_constraint_candidates(candidates,
+                prefer_indoor=bool(re.search(r'\b(?:indoor|indoors|sheltered)\b', q))), state)
+            alternatives, verified_cheaper = [], []
             for row in candidates:
                 if result_id(row, 'place') == result_id(focus, 'place'):
                     continue
@@ -345,16 +483,31 @@ def resolve_turn(message, state, messages, *, interpret=None, lookup=None):
                     continue
                 distance = _known_distance(focus, row)
                 price = activity_pricing(row, 1)
-                if ('nearby' in q and (distance is None or distance > 5)) or (cheaper and (
-                    price['pricingIssues'] or row.get('currency', 'MYR') != 'MYR' or price['pricingUnit'] != base['pricingUnit'] or
-                    price['effectiveCost'] >= base['effectiveCost'])):
+                if 'nearby' in q and (distance is None or distance > 5):
                     continue
                 alternatives.append(row)
+                if base_known and not price['pricingIssues'] and _currency(row) == 'MYR' and (
+                        price['pricingUnit'] == base['pricingUnit'] and price['effectiveCost'] < base['effectiveCost']):
+                    verified_cheaper.append(row)
+            verified = cheaper and bool(verified_cheaper)
+            if verified:
+                alternatives = verified_cheaper
             if not alternatives:
-                return {'response': {'reply': 'I could not verify suitable alternatives with the available location and price data.'}}
-            return {'response': {'reply': 'Here are other recorded options' + (' within 5 km straight-line distance, not walking distance.' if 'nearby' in q else '.'),
-                                 'placeSuggestions': alternatives[:5]}}
-        return {'response': {'reply': f'{focus.get("title") or focus.get("name")}: {_price(focus, kind)}'}}
+                return {'response': {'reply': 'I cannot verify suitable nearby or cheaper alternatives with the available location and price data. Try more places in the same destination instead.',
+                                     'suggestedReplies': ['Show me other 3 places', 'Show another similar place']}}
+            selected = alternatives[:5]
+            ticket_prices = base['costProvenance'] == 'verified_ticket' and all(
+                activity_pricing(r, 1)['costProvenance'] == 'verified_ticket' for r in selected)
+            label = ('Here are verified cheaper recorded options' if ticket_prices else
+                     'Here are lower recorded planning amounts, not live prices') if verified else 'Here are other recorded options'
+            if cheaper and not verified:
+                label = 'I cannot verify that these are cheaper; here are alternatives instead'
+            reply = label + (' within 5 km straight-line distance, not walking distance.' if 'nearby' in q else '.')
+            reply += '\n' + '\n'.join(f'{r.get("title") or r.get("name")}: {_price(r, "place")}' for r in selected)
+            return {'response': {'reply': reply, 'placeSuggestions': selected}}
+        reply = f'{focus.get("title") or focus.get("name")}: {_price(focus, kind)}'
+        return {'response': {'reply': reply + ' Check place details for the applicable ticket or choose nearby alternatives.',
+                             'suggestedReplies': ['Tell me about this place', 'Anything nearby?', 'Show another similar place']}}
     if not rows and re.search(r'\b(?:ticket prices?|opening hours|admission prices?|expensive)\b', q):
         return {'response': {'reply': 'Which place do you mean? Choose a recorded place so I can check its available price or hours.'}}
     # Explicit commands, package budgets and useful short clarification answers stay deterministic.
