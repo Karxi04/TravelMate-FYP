@@ -60,6 +60,7 @@ def test_missing_prices_and_coordinates_are_not_invented(conversation, monkeypat
     rows = places()
     rows[1].pop('pricingUnit')
     rows[0].pop('gps_coordinates')
+    monkeypatch.setattr(routes, '_planning_catalog', lambda *args, **kwargs: rows)
     sid = seed_results(conversation, rows=rows)
     talk('The second one', sid)
     assert 'unavailable' in talk('What does it cost?', sid)['reply']
@@ -212,7 +213,12 @@ def test_nearby_cheaper_never_guesses_distance_or_currency(conversation, monkeyp
     else:
         candidates[0]['currency'] = 'USD'
     monkeypatch.setattr(routes, '_planning_catalog', lambda *args, **kwargs: candidates)
-    assert 'could not verify' in talk('Anything cheaper nearby?', sid)['reply']
+    result = talk('Anything cheaper nearby?', sid)
+    if missing == 'coordinates':
+        assert 'cannot verify' in result['reply'] and not result['item'].get('placeSuggestions')
+    else:
+        assert 'cannot verify' in result['reply'] and 'USD' not in result['reply']
+        assert 'MYR 10.00' not in result['reply'] and result['item']['placeSuggestions'][0]['currency'] == 'USD'
 
 
 def test_interest_correction_weather_and_resume_preserve_guided_requirements(conversation):

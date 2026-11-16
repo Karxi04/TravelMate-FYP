@@ -36,7 +36,7 @@ from .nlp_extractor import (
     filter_constraint_candidates,
 )
 from .guided_planning import guided_requirements
-from .contextual_intent import resolve_turn, prompt_context, remember_results, decorate_reply
+from .contextual_intent import resolve_turn, prompt_context, remember_results, decorate_reply, place_cards
 from .travel_dates import malaysian_today
 from services.review_service import ReviewConflict
 from .package_assistant import respond as commerce_response, public_details
@@ -241,7 +241,8 @@ def _extract_place_suggestions(message, destination_area=None, prefer_indoor=Fal
     if not matches and is_rain_indoor:
         matches = candidates
 
-    return matches[:4]
+    return place_cards(matches, {'excludedInterests': excluded_interests,
+        'excludedActivityTypes': excluded_activity_types, 'preferIndoor': is_rain_indoor})[:4]
 
 
 def _planning_catalog(area, state, interests=None, *, allow_provider=True):
@@ -299,7 +300,7 @@ def _activity_preview(state):
         geography = normalize_candidate_geography(row)
         display = {key: row[key] for key in (
             'destinationId', 'place_id', 'title', 'name', 'address', 'category', 'type', 'description',
-            'thumbnail', 'imageUrl', 'photoAttribution', 'imageSource', 'estimatedCost',
+            'thumbnail', 'imageUrl', 'photoAttribution', 'imageSource', 'estimatedCost', 'currency', 'familyFriendly',
             'openingHoursSourceUrl', 'openingHoursVerifiedAt',
         ) if isinstance(row.get(key), (str, int, float))}
         if geography['latitude'] is not None and geography['longitude'] is not None:
@@ -347,8 +348,10 @@ def _destination_discovery(message, planning_state):
     for matched, row in scored:
         if not matched or not row.get('destinationId') or not row.get('title'):
             continue
-        matches.append({key: row[key] for key in ('destinationId', 'title', 'address', 'category', 'imageUrl')
-                        if row.get(key)})
+        cards = place_cards([row], planning_state, interests)
+        if not cards:
+            continue
+        matches.append(cards[0])
         matches[-1]['matchedInterests'] = display_concepts(matched)
         if len(matches) == 4:
             break
@@ -373,6 +376,27 @@ def _saved_activities(trip):
                       for row in (trip.get('dailySchedule') or []) if isinstance(row, dict)
                       for activity in (row.get('activities') or []) if isinstance(activity, dict)]
     return [deepcopy(a) for a in activities if isinstance(a, dict)]
+
+
+def _comparison_summary(saved, proposed):
+    days = sorted({int(a['dayNo']) for trip in (saved, proposed) for a in _saved_activities(trip)
+                   if str(a.get('dayNo', '')).isdigit()})
+    lines = ['Saved itinerary compared with the unconfirmed proposal:']
+    for day in days:
+        old = [a for a in _saved_activities(saved) if str(a.get('dayNo')) == str(day)]
+        new = [a for a in _saved_activities(proposed) if str(a.get('dayNo')) == str(day)]
+        if old == new:
+            lines.append(f'Day {day}: unchanged.')
+        else:
+            def stops(activities):
+                return ', '.join(str(a.get('activityName') or 'Unnamed stop') +
+                    (f' ({a["timeSlot"]})' if a.get('timeSlot') else '') for a in activities) or 'no stops'
+            lines.append(f'Day {day}: changed from {stops(old)} to {stops(new)}. Check the previews for times and details.')
+    for key, label in (('budgetLimit', 'Total trip budget'), ('startDate', 'Start date'), ('endDate', 'End date'),
+                       ('travellerCount', 'Traveller count'), ('destinationArea', 'Destination')):
+        if saved.get(key) != proposed.get(key):
+            lines.append(f'{label}: {saved.get(key, "unset")} -> {proposed.get(key, "unset")}.')
+    return '\n'.join([*lines, 'Nothing is saved until you explicitly confirm.'])
 
 
 def _saved_trip_preview(trip, day=None):
@@ -487,14 +511,16 @@ def _adjust_trip(message, state):
         state['adjustment'] = adjustment = {'tripId': trip['id'], 'fingerprint': fingerprint, 'tripContext': _trip_context(trip)}
         state.pop('activePlan', None)
     if re.search(r'\b(?:undo|discard (?:the )?(?:draft|unconfirmed changes))\b', message, re.I):
+        had_draft = bool(state.get('activePlan') or adjustment.get('patch'))
         state.pop('activePlan', None)
         state['adjustment'] = {key: value for key, value in adjustment.items()
-                               if key not in {'patch', 'pendingPreferences', 'pendingActivity', 'pendingOperation'}}
-        return {'reply': 'The unconfirmed changes were discarded. Your saved trip is unchanged.',
+                               if key not in {'patch', 'pendingPreferences', 'pendingActivity', 'pendingOperation', 'pendingExplanation'}}
+        return {'reply': ('The unconfirmed changes were discarded. Your saved trip is unchanged.' if had_draft else
+                          'There is no unconfirmed proposal to undo. Your saved trip is unchanged.'),
                 'tripPlan': _saved_trip_preview(trip)}
     if re.search(r'\bcompare\b', message, re.I) and re.search(r'\b(?:saved|old|original|proposed|revision)\b', message, re.I):
         if not changed_elsewhere and state.get('activePlan'):
-            return {'reply': 'Here are the saved itinerary and the unconfirmed proposal. Nothing is applied until you confirm.',
+            return {'reply': _comparison_summary(trip, state['activePlan']),
                     'tripPlan': _saved_trip_preview(trip), 'proposedPlan': state['activePlan']}
         return {'reply': 'There is no current proposal to compare. Your saved trip is unchanged.', 'tripPlan': _saved_trip_preview(trip)}
     if _show_plan_request(message):

@@ -21,6 +21,21 @@ ActionApi history(List<Map<String, dynamic>> messages) {
 }
 
 void main() {
+  testWidgets('no-proposal compare and undo show honest replies without save actions', (tester) async {
+    final api = history([
+      {'id': 'compare', 'message': 'Compare old and new',
+       'reply': 'There is no current proposal to compare. Your saved trip is unchanged.'},
+      {'id': 'undo', 'message': 'Undo changes',
+       'reply': 'There is no unconfirmed proposal to undo. Your saved trip is unchanged.'},
+    ]);
+    await frame(tester, ChatTab(api: api), width: 320);
+    expect(find.textContaining('no current proposal'), findsOneWidget);
+    expect(find.textContaining('no unconfirmed proposal'), findsOneWidget);
+    expect(find.text('Apply changes'), findsNothing);
+    expect(api.posts, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
       'unchanged results collapse and each shortlist can expand locally',
       (tester) async {
