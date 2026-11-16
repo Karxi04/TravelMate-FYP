@@ -110,14 +110,20 @@ def update_expenses(trip, payload, new_id):
 
 
 def _verified_costs(db, transaction, iid, uid, trip):
+    def read(collection, identity):
+        return db.collection(collection).document(identity).get(transaction=transaction).to_dict() or {}
+    return recorded_costs(trip, iid, uid, read)
+
+
+def recorded_costs(trip, iid, uid, read):
+    """The same owned linked-cost projection for a transaction or read-only chat."""
     ids = {row.get('checkoutOrderId') for row in trip.get('purchasedPackages') or []
            if isinstance(row, dict) and valid_trip_id(row.get('checkoutOrderId'))}
     booking_id = trip.get('hotelBookingId')
     committed_hotel = 0
     hotel_payment = None
     if valid_trip_id(booking_id):
-        snap = db.collection('hotel_bookings').document(booking_id).get(transaction=transaction)
-        booking = snap.to_dict() or {}
+        booking = read('hotel_bookings', booking_id) or {}
         if booking.get('travellerId') == uid:
             if booking.get('saveDetailsOnly') or booking.get('confirmationLabel') == 'Hotel Details Saved':
                 hotel_payment = {'status': 'unpaid', 'hotelBookingId': booking_id}
@@ -139,8 +145,7 @@ def _verified_costs(db, transaction, iid, uid, trip):
                     pass
     paid_orders = []
     for identity in sorted(key for key in ids if valid_trip_id(key)):
-        snap = db.collection('checkout_orders').document(identity).get(transaction=transaction)
-        order = snap.to_dict() or {}
+        order = read('checkout_orders', identity) or {}
         if (hotel_payment is not None and order.get('travellerId') == uid
                 and order.get('quoteType') == 'hotel' and order.get('hotelBookingId') == booking_id
                 and order.get('itineraryId') == iid):
