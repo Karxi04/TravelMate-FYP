@@ -94,7 +94,8 @@ def offline_chat(client, mock_traveller_auth):
             values = [value for value in values if value.get(field) == expected]
         return deepcopy(values[:limit] if limit else values)
 
-    def update(collection, record_id, changes):
+    def update(collection, record_id, changes, expected=None):
+        assert expected is None or database[collection][record_id] == expected
         database[collection][record_id].update(deepcopy(changes))
         return deepcopy(database[collection][record_id])
 

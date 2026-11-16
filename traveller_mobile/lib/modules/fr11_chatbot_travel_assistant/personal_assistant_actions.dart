@@ -6,6 +6,7 @@ import '../fr03_destination_search_information/favourites_screen.dart';
 import '../fr05_smart_itinerary_budget_planner/trip_details_screen.dart';
 import '../fr05_smart_itinerary_budget_planner/trip_expenses_screen.dart';
 import '../fr05_smart_itinerary_budget_planner/trips_tab.dart';
+import '../fr05_smart_itinerary_budget_planner/packing_trip_selector_screen.dart';
 import '../fr09_payment/payment_history_screen.dart';
 
 /// Fixed internal destinations only. Chat cannot supply URLs, mutations or checkout actions.
@@ -40,6 +41,10 @@ class PersonalAssistantActions extends StatelessWidget {
               ),
             'preferences' => ('Open Preferences', PreferencesScreen(api: api)),
             'saved' => ('Open Saved Places', FavouritesScreen(api: api)),
+            'packing' => (
+                'Open Smart Packing',
+                PackingTripSelectorScreen(api: api)
+              ),
             _ => null,
           };
           if (destination == null) return const SizedBox.shrink();

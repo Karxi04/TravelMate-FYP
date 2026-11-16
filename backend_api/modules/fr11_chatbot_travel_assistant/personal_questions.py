@@ -4,10 +4,11 @@ from decimal import Decimal
 
 from services.commerce_money import record_money
 from services.preference_learning import effective_preference_profile
-from .nlp_extractor import clean_text, extract_itinerary_day
+from .nlp_extractor import clean_text, extract_itinerary_day, NUMBER_WORDS
 from .history_conversation import is_history_request
 from .contextual_intent import redact
 from .personal_budget import count, explain_budget, money, what_if, cheaper_activity_previews
+from .capabilities import personal_intent, READ_TOOLS
 
 
 class PersonalReadUnavailable(Exception):
@@ -30,6 +31,11 @@ def _intent(q, state):
         return None
     if re.match(r'(?:please )?(?:plan|create|build|generate|start)\b|i (?:want|need) to (?:plan|create|build)\b', q):
         return None
+    natural = personal_intent(q)
+    if natural:
+        return natural
+    if re.search(r'^(?:what|which)\b.*\b(?:remove|cut|skip)\b.*\b(?:save money|costs|spending)\b', q):
+        return 'alternatives'
     if re.search(r'\b(?:my|i|saved|selected|attached|this trip)\b', q):
         if 'notifications' in q:
             return 'notifications'
@@ -37,7 +43,7 @@ def _intent(q, state):
             return 'orders'
         if re.search(r'\b(?:recommendations?|recommended|for you|ranking)\b', q):
             return 'recommendations'
-        if re.search(r'\b(?:preferences|personality|travel style|interests)\b', q) and (not re.search(r'\b(?:change|prefer|instead|plan)\b', q) or re.search(r'\b(?:saved|permanent|questionnaire|profile)\b', q)):
+        if re.search(r'\b(?:preferences|personality|travel style|interests)\b', q) and not re.search(r'\b(?:suggest|recommend|find)\b', q) and (not re.search(r'\b(?:change|prefer|instead|plan)\b', q) or re.search(r'\b(?:saved|permanent|questionnaire|profile)\b', q)):
             return 'preferences'
         if re.search(r'\b(?:favourites|favorites|favourite|favorite|saved places|saved items)\b', q):
             return 'saved'
@@ -64,10 +70,10 @@ def _action(kind, trip=None):
     return {'kind': kind, **({'tripId': trip['id']} if trip else {})}
 
 
-def respond(message, state, read, uid):
+def respond(message, state, read, uid, *, tool=None):
     q = clean_text(message)
     context = state.get('personalContext') or {}
-    intent = _intent(q, state)
+    intent = tool if tool in READ_TOOLS.values() else _intent(q, state)
     if intent is not None and context.get('pendingIntent') not in (None, intent):
         for key in ('choices', 'choiceKind', 'pendingIntent', 'pendingMessage'):
             context.pop(key, None)
@@ -77,6 +83,10 @@ def respond(message, state, read, uid):
         intent = context.get('pendingIntent')
         message = context.get('pendingMessage', message)
     elif intent is None and context.get('tripId') and followup:
+        intent = 'budget'
+    elif (intent is None and context.get('tripId') and context.get('lastReadIntent') in {'budget', 'what_if', 'alternatives'}
+          and not state.get('selectedResult')
+          and re.search(r'\b(?:including|included|enough|unknown|unavailable|estimates|actually spent|total so high)\b', q)):
         intent = 'budget'
     elif intent is None and context.get('tripId') and re.search(r'\b(?:is it|was it|has it been) paid\b', q):
         intent = 'orders'
@@ -122,6 +132,14 @@ def respond(message, state, read, uid):
         legacy = [r for r in rows('payment_records') if (r.get('checkoutOrderId') or r.get('orderId')) not in ids]
         return [(r, 'checkout_orders') for r in checkout] + [(r, 'payment_records') for r in legacy]
 
+    if intent == 'trips':
+        trips = rows('itineraries')[:20]
+        safe = [{'id': r['id'], 'title': redact(r.get('title') or 'Saved trip', 120),
+                 'startDate': redact(r.get('startDate'), 30), 'endDate': redact(r.get('endDate'), 30)} for r in trips]
+        return reply('Your saved trips (up to 20):\n' + ('\n'.join(
+            f'{r["title"]}: {r["startDate"] or "dates unset"} – {r["endDate"] or "dates unset"}' for r in safe) or 'No saved trips found.')
+            + '\nOpen a trip to inspect it, or ask to adjust a saved itinerary for a confirmation-gated preview.',
+            [_action('trips')], savedTrips=safe, ownedTrips=safe)
     if intent == 'notifications':
         return reply('Open Home → Notifications (the bell) to inspect your inbox. That workflow reconciles events and can write notification/cache records, so I have not called it as a read-only assistant lookup.')
     if intent == 'preferences':
@@ -288,18 +306,24 @@ def respond(message, state, read, uid):
     if intent == 'what_if':
         if re.search(r'\b(?:food|meal|hotel|flight|daily|per day)\b', q):
             return reply('Do you mean the total group budget, a per-person trip budget, or a daily food allowance? I have not changed or repriced anything.', actions)
-        match = re.search(r'\b(?:rm|myr)\s*([\d,]+(?:\.\d{1,2})?)\b', clean_text(message))
-        travellers = re.search(r'\b(\d{1,3})\s+(?:travellers|travelers|people|persons|pax)\b', clean_text(message))
-        if not match and not travellers:
-            return reply('What total budget in MYR or traveller count should I compare? This will be a read-only scenario.', actions)
+        # Keep punctuation here: clean_text removes decimal points and changes money/counts.
+        match = re.search(r'\b(?:rm|myr)\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)(?![\w.,])', message, re.I)
+        traveller_nouns = r'(?:travellers|travelers|people|persons|pax)\b'
+        travellers = re.search(r'(?<![\w.,+-])(' + '|'.join(NUMBER_WORDS) + r'|\d{1,3})\s+' + traveller_nouns, message, re.I)
+        if re.search(r'[\d.,+-]+\s+' + traveller_nouns, message, re.I) and not travellers:
+            return reply('Use a whole traveller count from 1 to 100 for this comparison.', actions)
+        if re.search(r'\b(?:rm|myr)\s*[\d+-]', message, re.I) and not match:
+            return reply('Use a non-negative MYR amount with at most two decimal places.', actions)
         previous = context.get('scenarioInputs') or {}
         if previous.get('tripId') != trip['id']:
             previous = {}
-        party = int(travellers[1]) if travellers else previous.get('travellers')
+        if not match and not travellers and not previous:
+            return reply('What total budget in MYR or traveller count should I compare? This will be a read-only scenario.', actions)
+        party = (int(travellers[1]) if travellers[1].isdigit() else NUMBER_WORDS[travellers[1].lower()]) if travellers else previous.get('travellers')
         if party is not None and not 1 <= party <= 100:
             return reply('Use a traveller count from 1 to 100 for this comparison.', actions)
         budget = money(match[1].replace(',', '')) if match else money(previous.get('budget'))
-        per_person = bool(re.search(r'per (?:person|pax)', clean_text(message))) if match else previous.get('perPerson', False)
+        per_person = bool(re.search(r'(?:per|each) (?:person|pax)', clean_text(message))) if match else previous.get('perPerson', False)
         context['scenarioInputs'] = {'tripId': trip['id'], 'budget': str(budget) if budget is not None else None,
                                      'perPerson': per_person, 'travellers': party}
         result = what_if(trip, budget=budget, per_person=per_person, travellers=party)

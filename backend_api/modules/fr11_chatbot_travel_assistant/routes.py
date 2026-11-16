@@ -43,6 +43,7 @@ from .travel_dates import malaysian_today
 from services.review_service import ReviewConflict
 from .package_assistant import respond as commerce_response, public_details
 from .personal_questions import respond as personal_response, PersonalReadUnavailable
+from .capabilities import normalize_message
 import re
 import os
 import json
@@ -331,9 +332,11 @@ def _activity_preview(state):
     return reply, suggestions
 
 
-def _destination_discovery(message, planning_state):
+def _destination_discovery(message, planning_state, interests=None):
     profile = retrieveRecord('travel_preferences', g.uid) or {}
-    interests = extract_interests(message)
+    if not isinstance(profile, dict) or profile.get('travellerId', g.uid) != g.uid:
+        profile = {}
+    interests = interests or extract_interests(message)
     if not interests and re.search(r'\b(?:couples?|romantic)\b', message, re.I):
         interests = ['Relaxation']
     interests = interests or planning_state.get('interests') or profile.get('interests') or []
@@ -793,6 +796,7 @@ def chat():
         return jsonify({'ok':False,'error':'Chat data must be an object.'}),400
     message = str(payload.get('message', '')).strip()
     user_message = message
+    message = normalize_message(message)
     if not validateQuestion(message):
         return jsonify({'ok': False, 'error': 'message is required'}), 400
 
@@ -824,10 +828,15 @@ def chat():
         personal = personal_response(message, planning_state, retrieveRecord, g.uid)
         routing = ({'response': personal} if personal is not None else
                    resolve_turn(message, planning_state, messages, interpret=interpretChatbotIntent, lookup=nearby_catalog))
+        if routing and routing.get('personalTool'):
+            routing = {'response': personal_response(message, planning_state, retrieveRecord, g.uid,
+                                                     tool=routing['personalTool'])}
         if routing and routing.get('message'):
             message = routing['message']
         if routing and routing.get('response') is not None:
             adjustment = routing['response']
+        elif routing and routing.get('discovery'):
+            adjustment = _destination_discovery(message, planning_state, interests=routing.get('interests'))
         elif routing and routing.get('commerce'):
             adjustment = None
         else:
@@ -1302,14 +1311,13 @@ def save_plan():
                 if not updated:
                     return jsonify(ok=False, error='The trip could not be updated.'), 409
             try:
-                if active.get('restoresVersion') is not None:
-                    receipt_state = {**current_state,
-                        'savedPlans': {**(current_state.get('savedPlans') or {}), draft_id: iid},
-                        'adjustment': {'tripId': iid, 'fingerprint': _trip_fingerprint(updated), 'tripContext': _trip_context(updated)}}
-                    updateRecord('chat_sessions', save_session['id'],
-                        {'messages': save_session.get('messages') or [], 'planningState': receipt_state}, expected=save_session)
-                else:
-                    updateRecord('chat_sessions', save_session['id'], {'planningState': {'savedPlans': {draft_id: iid}}})
+                # A successful own save is not an external edit on the next conversation turn.
+                receipt_state = {**current_state,
+                    'savedPlans': {**(current_state.get('savedPlans') or {}), draft_id: iid},
+                    'adjustment': {**({} if active.get('restoresVersion') is not None else adjustment),
+                                   'tripId': iid, 'fingerprint': _trip_fingerprint(updated), 'tripContext': _trip_context(updated)}}
+                updateRecord('chat_sessions', save_session['id'],
+                    {'messages': save_session.get('messages') or [], 'planningState': receipt_state}, expected=save_session)
             except Exception:
                 current_app.logger.warning('Trip adjustment saved. Conversation receipt is temporarily unavailable.')
             return jsonify(ok=True, id=iid, itinerary=updated, budget=updated.get('budgetEstimate'),
