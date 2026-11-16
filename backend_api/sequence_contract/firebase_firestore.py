@@ -141,6 +141,8 @@ def transactPreferenceLearning(uid, transform):
 
 def updateRecord(collectionName, documentId, data, expected=None):
     """Exact sequence-diagram name for Firestore update."""
+    if collectionName == 'itineraries':
+        return commitItineraryUpdate(documentId, data, expected)
     if collectionName == 'feedback' and expected is not None:
         from services.review_service import commit_feedback
         return commit_feedback(documentId, expected, data)
@@ -170,6 +172,40 @@ def updateRecord(collectionName, documentId, data, expected=None):
     _public_projection_changed(collectionName, documentId, result)
     _notify_committed(collectionName, documentId, result)
     return result
+
+
+def commitItineraryUpdate(document_id, patch, expected=None):
+    """A trip edit and its bounded prior version share one Firestore transaction."""
+    from google.cloud import firestore
+    from services.itinerary_history import history_patch, ensure_restorable, HistoryConflict
+    db = get_db()
+    ref = db.collection('itineraries').document(str(document_id))
+
+    @firestore.transactional
+    def commit(transaction):
+        snapshot = ref.get(transaction=transaction)
+        if not snapshot.exists:
+            return None
+        current = {'id': str(document_id), **(snapshot.to_dict() or {})}
+        if expected is not None and current != expected:
+            raise HistoryConflict('This itinerary changed. Review the latest version before saving.')
+        if '_restoreVersion' in patch:
+            if expected is None:
+                raise HistoryConflict('Restoration requires a current, confirmed preview.')
+            ensure_restorable(current)
+            for collection in ('hotel_bookings', 'checkout_orders'):
+                query = db.collection(collection).where('travellerId', '==', current['travellerId']).where(
+                    'itineraryId', '==', str(document_id)).limit(1)
+                if list(query.stream(transaction=transaction)):
+                    raise HistoryConflict('This trip has linked booking or order records. Restoration is blocked.')
+        updated = history_patch(current, patch)
+        if expected is None:
+            transaction.set(ref, updated, merge=True)
+        else:
+            transaction.update(ref, updated)
+        return {**current, **updated}
+
+    return commit(db.transaction())
 
 
 def commitPackageFulfillment(document_id, expected, patch, clarification_revision=None):

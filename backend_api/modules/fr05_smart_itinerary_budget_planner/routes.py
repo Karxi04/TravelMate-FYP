@@ -16,6 +16,7 @@ from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
 from services.budget_aware_generation import generate_with_budget_selection, qualify_selection_budget
 from services.itinerary_write_contract import validate_trip_write
+from services.itinerary_history import history_patch, history_metadata, HistoryConflict
 from sequence_contract.validators import validateItineraryInput, validateItineraryForSaving, validateSelectedDestination
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord, deleteRecord
 from sequence_contract.domain_functions import (
@@ -32,6 +33,22 @@ from services.flight_itinerary_adjustment import (
 )
 
 bp = Blueprint('fr05_itineraries', __name__, url_prefix='/api/fr5')
+
+
+@bp.errorhandler(HistoryConflict)
+def history_conflict(error):
+    return jsonify(ok=False, error=str(error)), 409
+
+
+@bp.get('/itineraries/<iid>/history')
+@auth_required(['traveller'])
+def itinerary_history(iid):
+    current = _own(iid)
+    if not current:
+        return jsonify(ok=False, error='Itinerary not found'), 404
+    return jsonify(ok=True, currentVersion=current.get('itineraryRevision', 1),
+                   retention=5, versions=history_metadata(current),
+                   limitation='History begins with the first captured edit; pre-feature versions are unavailable.')
 
 
 def _fallback_mode():
@@ -847,6 +864,7 @@ def _commit_cost_alternative(iid, expected, patch):
             or _alternative_state(current) != _alternative_state(expected)):
         raise _AlternativeConflict(stale)
     try:
+        patch = history_patch(current, patch)
         ref.update(patch, option=db.write_option(last_update_time=snapshot.update_time))
     except (FailedPrecondition, NotFound) as error:
         raise _AlternativeConflict(stale) from error
