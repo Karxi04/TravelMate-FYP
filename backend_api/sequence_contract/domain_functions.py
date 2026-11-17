@@ -521,7 +521,7 @@ def deduplicateRecommendations(items):
     return output
 
 
-def diversifyRecommendations(items, preferenceProfile=None, limit=12):
+def diversifyRecommendations(items, preferenceProfile=None, limit=12, coverageAware=False):
     """Greedy lightweight reranking that keeps strong preferences dominant."""
     remaining = sorted([dict(item) for item in (items or [])],
                        key=lambda item: (-_score_number(item.get('score')), _destination_id(item)))
@@ -529,12 +529,23 @@ def diversifyRecommendations(items, preferenceProfile=None, limit=12):
     category_counts = {}
     experience_counts, geography_counts = {}, {}
     preferred = preference_concepts((preferenceProfile or {}).get('interests', []))
+    coverage_counts = dict.fromkeys(preferred, 0)
     while remaining and len(selected) < max(0, int(limit or 0)):
         best_index = 0
         best_adjusted = float('-inf')
         best_category = 'general'
         best_penalty = 0.0
+        # Early prefix: strongest primary matches for underserved interests, then normal diversity.
+        # Reuse the existing 80/100 strong-interest signal; hybrid scores are never changed.
+        strong = {i: set(primary_concepts(row)) & preferred for i, row in enumerate(remaining)
+                  if row.get('interestEvidenceSource') == 'primary_metadata'
+                  and _score_number(((row.get('contentSignals') or {}).get('interests') or {}).get('score')) >= 80} if coverageAware else {}
+        available = {c for matches in strong.values() for c in matches if coverage_counts[c] < 2}
+        target = min(available, key=lambda c: (coverage_counts[c], c)) if (
+            coverageAware and len(preferred) > 1 and len(selected) < max(6, 2 * len(preferred)) and available) else None
         for index, item in enumerate(remaining):
+            if target and target not in strong.get(index, set()):
+                continue
             concepts = set(item.get('destinationConcepts') or candidate_concepts(item))
             preferred_matches = sorted(concepts.intersection(preferred))
             category = min(preferred_matches, key=lambda value: (category_counts.get(value, 0), value)) if preferred_matches else (
@@ -559,9 +570,14 @@ def diversifyRecommendations(items, preferenceProfile=None, limit=12):
         chosen['diversityAdjustedScore'] = round(best_adjusted, 2)
         chosen['diversityPenalty'] = round(best_penalty, 2)
         chosen['experienceTypes'] = experience_types(chosen)
+        if coverageAware:
+            chosen['selectionPolicy'] = 'strong_interest_coverage_v1'
+            chosen['selectionReason'] = ('Early coverage of a strongly evidenced selected interest' if target else 'Hybrid score with bounded diversity')
         if best_penalty:
             chosen['diversityReason'] = 'Bounded category, experience and geographic repetition penalty; hybrid score unchanged'
         selected.append(chosen)
+        for concept in (primary_concepts(chosen) & preferred if coverageAware else set()):
+            coverage_counts[concept] += 1
         category_counts[best_category] = category_counts.get(best_category, 0) + 1
         for kind in experience_types(chosen):
             experience_counts[kind] = experience_counts.get(kind, 0) + 1

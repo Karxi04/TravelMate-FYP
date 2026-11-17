@@ -55,6 +55,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   List<Map<String, dynamic>> locations = [];
   Map<String, dynamic>? selectedLocation;
   String? searchMessage;
+  String? coverageNotice;
 
   @override
   void initState() {
@@ -108,6 +109,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
           pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
           discoveryNotice = data['snapshot']?['cacheFallbackNotice']?.toString();
           searchMessage = data['snapshot']?['searchMessage']?.toString();
+          coverageNotice = data['snapshot']?['coverageNotice']?.toString();
           nearbyAvailable = data['snapshot']?['nearbyAvailable'] == true;
           generatedScope = Map<String, dynamic>.from(data['snapshot']?['canonicalDestinationScope'] as Map? ?? {});
           geographicMode = generatedScope['geographicMode'] == 'nearby' ? 'nearby' : 'strict';
@@ -199,6 +201,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         items = expand ? appendRecommendationResults(items, received) : received;
         discoveryNotice = data['discoveryMessage']?.toString();
         searchMessage = data['snapshot']?['searchMessage']?.toString();
+        coverageNotice = data['snapshot']?['coverageNotice']?.toString();
         nearbyAvailable = data['snapshot']?['nearbyAvailable'] == true;
         generatedScope = Map<String, dynamic>.from(data['snapshot']?['canonicalDestinationScope'] as Map? ?? {});
         source = (data['source'] ?? '').toString();
@@ -222,6 +225,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       lookupMatches = []; locationLookupBusy = false; locationNotice = null;
       if (selectedLocation?['canonicalName'] != value.trim()) selectedLocation = null;
       if (value.trim() != generatedDestination) {
+        coverageNotice = null;
         geographicMode = 'strict';
         nearbyAvailable = false;
         ++requestVersion;
@@ -243,6 +247,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     if (busy || loadingMore || generationInFlight || !nearbyAvailable) return;
     setState(() {
       geographicMode = mode;
+      coverageNotice = null;
       items = []; pagination = {}; recommendationGenerationId = '';
       generatedScope = {}; generatedDestination = ''; searchMessage = null;
     });
@@ -621,6 +626,9 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
                   ),
                 );
               }),
+            if (coverageNotice != null) Text(coverageNotice!),
+            if ((preferences['interests'] as List? ?? []).length > 1 && items.any((row) => row is Map && row['selectionPolicy'] == 'strong_interest_coverage_v1'))
+              const Text('Order balances strongly evidenced interests. Hybrid scores remain unchanged.'),
             if (nearbyAvailable) ...[
               const SizedBox(height: AppSpacing.sm),
               Text(geographicMode == 'nearby'

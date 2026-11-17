@@ -42,6 +42,9 @@ _GLAZING_TRADE_NAME = re.compile(r'\bglass (?:and )?(?:aluminium|aluminum)\b')
 
 def is_planning_candidate(item):
     """Reject specific trade evidence without excluding visitor-facing shops or food."""
+    if str(item.get('feature') or '').startswith(('PPL','ADM')) or (
+            item.get('locationId') and item.get('kind') in {'locality','state','district','country','subdistrict','region'}):
+        return False
     types = item.get('types')
     categories = [item.get('category'), item.get('type'),
                   *(types if isinstance(types, (list, tuple)) else [types])]

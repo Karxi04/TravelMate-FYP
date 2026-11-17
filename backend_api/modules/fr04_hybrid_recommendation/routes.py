@@ -17,7 +17,7 @@ from services.destination_candidates import provider_page, cached_candidates, di
 from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
 from services.review_service import published_review
-from services.recommendation_taxonomy import candidate_concepts
+from services.recommendation_taxonomy import candidate_concepts, preference_concepts, display_concepts
 from services.recommendation_discovery import DISCOVERY_MODE, discovery_annotations, discovery_queries, enrich_discovery_candidate, is_planning_candidate
 from services.recommendation_snapshot_storage import validation_reason, latest_snapshot
 from services.preference_learning import (
@@ -296,7 +296,15 @@ def _page(record, options):
                       else f'No attractions could be verified within the exact locality {area}. You can explicitly explore nearby places.' if search_status == 'no_exact_locality_matches'
                       else f'No verified destination candidates are available for {area}.')
     diagnostics.update(preferenceMatchCount=len(qualified), displayedCount=len(qualified[offset:end]))
+    coverage = {concept: {'eligible': sum(concept in r.get('discoveryMatchedConcepts',[]) for r in all_items),
+                          'displayed': sum(concept in r.get('discoveryMatchedConcepts',[]) for r in qualified[offset:end])}
+                for concept in record.get('requestedInterestConcepts',[])}
+    missing = [c for c,v in coverage.items() if not v['eligible']]
+    elsewhere = [c for c,v in coverage.items() if v['eligible'] and not v['displayed']]
     return {**view, 'searchStatus': search_status, 'searchMessage': search_message,
+        'interestCoverage': coverage,
+        'coverageNotice': ('No verified eligible candidates for: '+', '.join(display_concepts(missing))+'. The geographic scope has not been expanded.') if missing else (
+            'This page has no matches for: '+', '.join(display_concepts(elsewhere))+'. Matching candidates exist elsewhere in this saved generation.' if elsewhere else None),
         'nearbyAvailable': bool(isinstance(stored_scope, dict) and stored_scope.get('city')
                                 and stored_scope.get('coordinateStatus') == 'verified_locality'),
         'discoveryDiagnostics': diagnostics,
@@ -462,6 +470,7 @@ def generate():
         rankRecommendations(unique_candidates),
         effective_pref,
         limit=150,
+        coverageAware=payload.get('discoveryMode') == DISCOVERY_MODE,
     )
     ranked_ids = {_destination_id(row) for row in ranked_candidates}
     ranked_candidates += [row for row in unique_candidates if _destination_id(row) in displayed
@@ -470,7 +479,7 @@ def generate():
         ranked_candidates,
         destination_scope,
     )
-    if destination_scope.get('geographicMode') == 'nearby':
+    if destination_scope.get('geographicMode') == 'nearby' and len(preference_concepts(effective_pref.get('interests') or [])) <= 1:
         final_candidates.sort(key=lambda row: (-float(row.get('score') or 0), row['nearbyDistanceKm']))
     if rejected_final:
         logger.warning(
@@ -509,11 +518,13 @@ def generate():
         'providerCursors': pool['cursors'],
         'providerRequestsUsed': pool['providerRequestsUsed'],
         'previousGenerationId': previous_id or None,
+        'requestedInterestConcepts': sorted(preference_concepts(effective_pref.get('interests') or [])),
         'discoveryDiagnostics': {'providerRequests': pool['providerRequests'], 'providerErrors': pool['providerErrors'],
                                  **pool['diagnostics'], 'candidateCount': len(ranked), 'retainedDisplayedCount': len(retained)},
         'engine': {
             'discoveryVersion': DISCOVERY_MODE,
             'scoringVersion':'recovery_v3',
+            'listSelection': 'strong_interest_coverage_v1' if payload.get('discoveryMode') == DISCOVERY_MODE else 'bounded_diversity',
             'contentBasedFiltering': True,
             'collaborativeFiltering': True,
             'weightedScoring': {'content': 0.60, 'collaborative': 0.30, 'popularity': 0.10},
