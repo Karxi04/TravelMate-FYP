@@ -184,7 +184,23 @@ def primary_concepts(item):
     if evidence.get('suppliesCategory'):
         values.append(evidence['category'])
     provider = set().union(*(PROVIDER_CATEGORIES[key][1] for key in provider_categories(item))) if provider_categories(item) else set()
-    return (concepts_for(values) | provider) - set(evidence.get('excludedConcepts') or [])
+    concepts = concepts_for(values) | provider
+    name_words = set(normalize_phrase((item or {}).get('title') or (item or {}).get('name')).split())
+    marketing = {'nature','shopping','family','culture','food','social','leisure','photography','adventure'}
+    if not provider and len(name_words & marketing) >= 3 and not concepts_for(' '.join(name_words - marketing)):
+        concepts = concepts_for([v for field in ('category','type','tags','interests') for v in _values((item or {}).get(field))])
+    if provider_categories(item):
+        # Generic brand words do not extend an explicit provider category.
+        factual = [v for field in ('interests','tags','categories','category','type','subtype','destinationType','types')
+                   for v in _values((item or {}).get(field))]
+        generic_title = {'nature','shopping','family','culture','food','social','leisure','photography','adventure'}
+        title = normalize_phrase((item or {}).get('title') or (item or {}).get('name'))
+        title = ' '.join(word for word in title.split() if word not in generic_title)
+        concepts = concepts_for([*factual,title]) | provider
+    text = normalize_phrase(' '.join(map(str, values)))
+    if 'nature' not in provider and not concepts_for(re.sub(r'\b(?:theme|car) parks?\b','',text)) & {'nature'}:
+        concepts.discard('nature')
+    return concepts - set(evidence.get('excludedConcepts') or [])
 
 
 def candidate_concepts(item):
