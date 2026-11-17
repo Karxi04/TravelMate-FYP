@@ -334,9 +334,11 @@ class _ChatTabState extends State<ChatTab> {
       deliveryUnknown = false;
     } catch (error) {
       if (!mounted || version != conversationVersion) return;
-      if (isBackendConnectionFailure(error) ||
+      final rejectedBeforeExecution = error is ApiException &&
+          error.statusCode == 503 && error.code == 'profile_storage_unavailable';
+      if (!rejectedBeforeExecution && (isBackendConnectionFailure(error) ||
           (error is ApiException && (error.statusCode >= 500 ||
-              (error.statusCode == 409 && error.code != 'stale_chat_context')))) {
+              (error.statusCode == 409 && error.code != 'stale_chat_context'))))) {
         await reconcileDelivery(version);
         return;
       }
@@ -356,7 +358,10 @@ class _ChatTabState extends State<ChatTab> {
       }
       if (mounted && version == conversationVersion) {
         setState(() {
-          sendError = switch (error) {
+          if (rejectedBeforeExecution) pendingRequestId = null;
+          sendError = rejectedBeforeExecution
+              ? 'Your message was not accepted because account storage is temporarily unavailable. Try again after the service recovers.'
+              : switch (error) {
             ApiException(statusCode: 409) =>
               'This conversation changed. Review the refreshed chat and retry your message.',
             ApiException(statusCode: 502) =>
