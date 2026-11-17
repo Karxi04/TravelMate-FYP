@@ -1,5 +1,6 @@
 import os
-from services.destination_candidates import normalise, same_place
+from services.destination_candidates import normalise, same_place, discovery_diagnostics
+from services.recommendation_discovery import is_planning_candidate
 from services.serpapi_service import destination_pagination
 import math
 import re
@@ -36,6 +37,7 @@ from services.malaysian_locality import (
     normalize_candidate_geography,
     filter_candidates,
     FOREIGN_DESTINATIONS,
+    discovery_scope,
 )
 
 bp = Blueprint('fr03_destinations', __name__, url_prefix='/api/fr3')
@@ -498,6 +500,15 @@ def search_destinations():
         return jsonify({'ok': False, 'error': 'Invalid filter or sort option'}), 400
 
     requested_scope, target_scope, provider_location = _search_scope(location)
+    interpretation = 'keyword'
+    query_area = normalize_destination_scope(q)
+    if location.lower() == 'malaysia' and query_area.get('resolved') and query_area.get('city'):
+        requested_scope, target_scope, provider_location = _search_scope(q)
+        interpretation = 'locality'
+    try:
+        requested_scope = discovery_scope(requested_scope, request.args.get('geographicMode'))
+    except ValueError:
+        return jsonify(ok=False, error='Nearby search needs a verified Malaysian locality. Choose strict or nearby discovery.'), 400
 
     if location_param is not None and location != '':
         if target_scope is None or not requested_scope.get('resolved') or requested_scope.get('country') != 'Malaysia':
@@ -524,7 +535,9 @@ def search_destinations():
                             'source': 'fyp_private', 'nextOffset': None,
                             'locationUsed': requested_scope.get('canonicalName') or provider_location})
 
-    interpreted_query = _provider_query(q)
+    interpreted_query = 'tourist attractions' if interpretation == 'locality' else _provider_query(q)
+    if requested_scope.get('geographicMode') == 'nearby':
+        interpreted_query = f'{interpreted_query} near {provider_location}'
     coordinates = {
         'latitude': requested_scope.get('latitude'),
         'longitude': requested_scope.get('longitude'),
@@ -538,6 +551,7 @@ def search_destinations():
             return jsonify({
                 'ok': False,
                 'error': 'Place search is temporarily unavailable. Please try again.',
+                'code': 'destination_provider_unavailable',
             }), 502
         provider_unavailable = True
         normalized_query = _search_text(q)
@@ -556,6 +570,7 @@ def search_destinations():
             return jsonify({
                 'ok': False,
                 'error': 'Live place search is temporarily unavailable. Please try again.',
+                'code': 'destination_provider_unavailable',
             }), 502
     else:
         try:
@@ -564,9 +579,11 @@ def search_destinations():
             return jsonify({
                 'ok': False,
                 'error': 'Place search returned an unsupported response. Please try again.',
+                'code': 'destination_provider_unavailable',
             }), 502
         source = 'serpapi'
 
+    raw_provider_count = len(results) if source == 'serpapi' else 0
     # Always merge matching admin-managed destinations from Firestore
     try:
         admin_items = retrieveRecord('admin_destinations') or []
@@ -580,13 +597,18 @@ def search_destinations():
     except Exception:
         pass
 
-    results = _deduplicate_results(_enrich_search_result(item) for item in results)
+    results = [_enrich_search_result(item) for item in results]
+    diagnostics = {**discovery_diagnostics(results, requested_scope),
+                   'rawCandidateCount': len(results), 'rawProviderCount': raw_provider_count}
+    results = _deduplicate_results(results)
     results, _rejected = filter_candidates(results, requested_scope)
+    results = [item for item in results if is_planning_candidate(item)]
     results = _filter_by_category(results, filterOption)
     results = (
         applyDestinationSorting(results, sortOption)
         if sortOption
-        else sorted(results, key=lambda item: _relevance_rank(item, q))
+        else sorted(results, key=lambda item: (_relevance_rank(item, q)[0], item.get('nearbyDistanceKm', 0), _relevance_rank(item, q)[1:])
+                    if requested_scope.get('geographicMode') == 'nearby' else _relevance_rank(item, q))
     )
 
     has_more = destination_pagination(data, offset)['hasMore'] if source == 'serpapi' else len(results) > offset + 20
@@ -600,12 +622,29 @@ def search_destinations():
             item['destinationId'] = did
         _cache(item)
 
+    diagnostics.update(keywordMatchCount=len(results), displayedCount=len(results))
+    if provider_unavailable and not results:
+        return jsonify(ok=False, code='destination_provider_unavailable',
+                       error='Live place search is temporarily unavailable; no verified saved matches are available for this locality.',
+                       discoveryDiagnostics=diagnostics), 502
+    status = ('matches' if results else 'provider_unavailable' if provider_unavailable else
+              'no_exact_locality_matches' if diagnostics['rawProviderCount'] and not diagnostics['geographicallyValidCount']
+              else 'no_matching_attractions' if diagnostics['rawProviderCount'] else 'no_candidates')
+    message = (None if results else 'Live place search is temporarily unavailable.' if provider_unavailable else
+               'No verified attractions within 10 km straight-line distance of the selected locality.' if requested_scope.get('geographicMode') == 'nearby' else
+               'Places were returned, but none could be verified within this exact locality. You can explicitly explore nearby places.' if status == 'no_exact_locality_matches' else
+               'No attractions found for this search. Try another keyword or explicitly explore nearby places.')
+
     return jsonify({
         'ok': True,
         'results': results,
         'source': source,
         'locationUsed': requested_scope.get('canonicalName') or provider_location,
         'providerUnavailable': provider_unavailable,
+        'searchStatus': status, 'searchMessage': message, 'discoveryDiagnostics': diagnostics,
+        'queryInterpretation': interpretation, 'queryUsed': interpreted_query,
+        'canonicalDestinationScope': requested_scope,
+        'nearbyAvailable': bool(requested_scope.get('city') and requested_scope.get('coordinateStatus') == 'verified_locality'),
         'nextOffset': offset + 20 if has_more and offset < 200 else None,
     })
 

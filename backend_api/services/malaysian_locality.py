@@ -318,8 +318,16 @@ def _labelled_location(value):
         return None
     row = locations.by_id(marker[1])
     scope = location_scope(row) if row else None
-    return scope if scope and _text(value) == _text(scope['canonicalName']) else {
+    return scope if scope and _scope_label_matches(value, scope) else {
         **_legacy_destination_scope(''), 'canonicalName': str(value or '').strip()}
+
+
+def _scope_label_matches(value, scope):
+    marker = re.search(r'\bgeonames\s+([0-9]+)\b', _text(value))
+    if marker and scope.get('locationId') != 'geonames:' + marker[1]:
+        return False
+    plain = re.sub(r'\[?GeoNames\s+[0-9]+\]?', '', str(value), flags=re.I)
+    return _text(plain) == _text(scope['canonicalName'])
 
 
 @lru_cache(maxsize=1)
@@ -337,7 +345,7 @@ def destination_locations():
         if row['scopeKey'] not in known:
             rows.append(row)
             known.add(row['scopeKey'])
-    return rows
+    return locations.unambiguous_labels(rows)
 
 
 def resolve_destination_scope(value, scope_key=None):
@@ -347,7 +355,7 @@ def resolve_destination_scope(value, scope_key=None):
         if not match and re.fullmatch(r'my:geonames:[0-9]{1,16}', str(scope_key)):
             record = locations.by_id(str(scope_key).split(':')[-1])
             match = location_scope(record) if record else None
-        if not match or _text(value) != _text(match['canonicalName']):
+        if not match or not _scope_label_matches(value, match):
             raise ValueError('Choose a supported destination area')
         if match.get('locationId'):
             return dict(match)
@@ -383,7 +391,7 @@ def resolve_selected_scope(value, scope_key=None, location_id=None):
         if not record:
             raise ValueError('The location could not be verified in Malaysia')
         selected = location_scope(record)
-        if _text(value) != _text(selected['canonicalName']) or (scope_key and scope_key != selected['scopeKey']):
+        if not _scope_label_matches(value, selected) or (scope_key and scope_key != selected['scopeKey']):
             raise ValueError('Choose the matching verified location')
         return selected
     return resolve_destination_scope(value, scope_key)
@@ -400,7 +408,7 @@ def search_destination_locations(value, *, remote=False):
     unique = {}
     for row in found:
         unique.setdefault(row['scopeKey'], row)
-    return list(unique.values())[:30]
+    return locations.unambiguous_labels(list(unique.values()))[:30]
 
 
 def resolve_area_query(value, *, remote=False):
@@ -498,6 +506,43 @@ def normalize_candidate_geography(item):
     }
 
 
+NEARBY_RADIUS_KM = 10
+
+
+def discovery_scope(scope, mode=None):
+    if mode not in (None, '', 'strict', 'nearby'):
+        raise ValueError('Choose strict or nearby discovery')
+    if mode != 'nearby':
+        return dict(scope)
+    if (not scope.get('city') or scope.get('coordinateStatus') != 'verified_locality'
+            or coordinate_state(scope.get('latitude'), scope.get('longitude')) != scope.get('state')):
+        raise ValueError('Nearby discovery needs a verified locality centre')
+    return {**scope, 'originScopeKey': scope['scopeKey'],
+            'scopeKey': scope['scopeKey'] + ':nearby:10km',
+            'geographicMode': 'nearby', 'nearbyRadiusKm': NEARBY_RADIUS_KM}
+
+
+def _distance_km(left, right):
+    lat1, lat2 = math.radians(left['latitude']), math.radians(right['latitude'])
+    value = math.sin((lat2 - lat1) / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(
+        math.radians(right['longitude'] - left['longitude']) / 2)**2
+    return 12742 * math.asin(min(1, math.sqrt(value)))
+
+
+def _explicit_locality(item, scope, geography):
+    # Postal cities can contain neighbourhoods; proximity alone is never membership evidence.
+    if geography.get('latitude') is None or geography.get('longitude') is None or not scope.get('city'):
+        return False
+    names = [item.get(key) for key in ('neighborhood', 'neighbourhood', 'suburb')]
+    for key in ('address', 'formatted_address', 'formattedAddress'):
+        names.extend(str(item.get(key) or '').split(','))
+    for name in names:
+        rows = locations.exact(re.sub(r'^\s*\d{5}\s+', '', str(name or '')).strip(), state=scope.get('state'))
+        if len(rows) == 1 and location_scope(rows[0])['scopeKey'] == scope['scopeKey']:
+            return True
+    return False
+
+
 def validate_candidate(item, requested_scope):
     scope = requested_scope if isinstance(requested_scope, dict) else normalize_destination_scope(requested_scope)
     geography = normalize_candidate_geography(item)
@@ -510,8 +555,17 @@ def validate_candidate(item, requested_scope):
         reason = 'conflicting_candidate_geography'
     elif not geography.get('resolved'):
         reason = 'unresolved_candidate_geography'
+    elif scope.get('geographicMode') == 'nearby':
+        if geography.get('latitude') is None or geography.get('longitude') is None:
+            reason = 'missing_nearby_coordinates'
+        elif _distance_km(scope, geography) > NEARBY_RADIUS_KM:
+            reason = 'nearby_distance_out_of_scope'
+        else:
+            eligible, reason = True, 'verified_nearby_coordinates'
     elif scope.get('state') and geography.get('state') != scope.get('state'):
         reason = 'state_out_of_scope'
+    elif _explicit_locality(item, scope, geography):
+        eligible, reason = True, 'explicit_locality_evidence'
     elif (scope.get('kind') == 'locality' and scope.get('locationId') and geography.get('locationId')
           and scope['locationId'] != geography['locationId']):
         reason = 'locality_identity_out_of_scope'
@@ -524,6 +578,7 @@ def validate_candidate(item, requested_scope):
         reason = 'geographically_eligible'
 
     enriched = dict(item or {})
+    enriched.pop('nearbyDistanceKm', None)
     enriched['normalizedGeography'] = geography
     enriched['geographicEligibility'] = {
         'eligible': eligible,
@@ -531,6 +586,8 @@ def validate_candidate(item, requested_scope):
         'evidence': geography.get('evidence'),
         'requestedScope': scope.get('scopeKey'),
     }
+    if eligible and scope.get('geographicMode') == 'nearby':
+        enriched['nearbyDistanceKm'] = round(_distance_km(scope, geography), 2)
     return eligible, enriched
 
 

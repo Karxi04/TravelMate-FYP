@@ -10,8 +10,11 @@ absent from both that table and its selectable list.
 The pinned GeoNames Malaysian country extract supplies 22,219 validated records:
 populated places, administrative districts/subdistricts and named islands.
 3,894 source records qualify for the fast list. After legacy identity merging,
-the authenticated autocomplete returns 3,910 unique areas, including states and
-Malaysia. The explicit extended lookup searches all 22,219 records locally first.
+the catalogue produces 3,910 fast candidates, including states and Malaysia.
+The selector now presents 3,792: 118 entries whose remaining human-readable
+labels cannot distinguish them are withheld from selection, without deleting
+any geographic record or stable ID. The explicit extended lookup searches all
+22,219 records locally first and applies the same presentation rule.
 This measures included geographic records, not verified tourist attractions or
 proof that every settlement in Malaysia is covered.
 
@@ -69,7 +72,9 @@ No other conflicting record is silently reassigned using its point alone.
 
 Exact legacy names keep their previous scope keys. New locations use
 `my:geonames:<id>` and `geonames:<id>`. Same-named places require state/district
-qualification; remaining identical labels display their source ID. A generic
+qualification; remaining identical labels are withheld instead of displaying
+raw source IDs as separate choices. Existing source-ID-bearing saved labels
+remain readable without rewriting records. A generic
 prefix such as Bukit or Tanjung provides suggestions, not an automatic area.
 District/region queries may use verified parent-district evidence; selecting a
 town does not silently broaden to its district or state. Recognizing a locality

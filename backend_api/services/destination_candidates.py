@@ -1,6 +1,7 @@
 """Shared facts/discovery, independent of FR3 relevance, FR4 scores and FR11 conversation."""
 import hashlib
 import json
+from collections import Counter
 from datetime import datetime, timezone, timedelta
 from math import cos, radians, sin, asin, sqrt, isfinite
 
@@ -14,6 +15,13 @@ CACHE_DAYS = 7
 PAGE_SIZE = 20
 MAX_GENERATION_REQUESTS = 3
 MAX_DISCOVERY_REQUESTS = 6  # Existing two queries × three pages; expansion cannot increase this chain budget.
+
+
+def discovery_diagnostics(items, scope):
+    accepted, rejected = filter_candidates(items, scope)
+    return {'rawProviderCount': len(items), 'geographicallyValidCount': len(accepted),
+            'geographicRejections': dict(Counter(row['geographicEligibility']['reason'] for row in rejected)),
+            'tourismCandidateCount': sum(is_planning_candidate(row) for row in accepted)}
 
 
 def destination_id(item):
@@ -145,6 +153,8 @@ def provider_page(provider, query, scope, start=0):
     if not scope.get('resolved'):
         raise ValueError('Unresolved Malaysian search scope')
     coords = {'latitude': scope.get('latitude'), 'longitude': scope.get('longitude')}
+    if scope.get('geographicMode') == 'nearby':
+        query = f"{query} near {scope['canonicalName']}"
     data = provider(query, scope['canonicalName'], coords, **({'start': start} if start else {}))
     if not isinstance(data, dict) or not isinstance(data.get('local_results'), list):
         raise ValueError('Malformed destination response')
@@ -153,6 +163,7 @@ def provider_page(provider, query, scope, start=0):
             **({'ratingSource': 'provider'} if 'rating' in row else {})}
            for row in data['local_results'] if isinstance(row, dict)]
     return {'items': normalise(raw, scope, source='live_provider'),
+            'diagnostics': discovery_diagnostics(raw, scope),
             **destination_pagination(data, start)}
 
 
@@ -161,6 +172,8 @@ def discovery_pool(read, provider, scope, preference, *, local=(), previous=(), 
     pool = merge_candidates(normalise(local, scope, source='local_catalog'),
                             normalise(previous, scope, source='snapshot'), cached if cached is not None else cached_candidates(read, scope))
     pages, calls, errors, live, failure_types = dict(cursors or {}), 0, 0, [], set()
+    diagnostics = {'rawProviderCount': 0, 'geographicallyValidCount': 0, 'tourismCandidateCount': 0,
+                   'geographicRejections': {}}
     for query in queries[:MAX_GENERATION_REQUESTS]:
         if not allow_provider or calls >= min(MAX_GENERATION_REQUESTS, MAX_DISCOVERY_REQUESTS - used):
             break
@@ -170,6 +183,10 @@ def discovery_pool(read, provider, scope, preference, *, local=(), previous=(), 
         calls += 1
         try:
             page = provider(query, scope, offset)
+            for key in ('rawProviderCount', 'geographicallyValidCount', 'tourismCandidateCount'):
+                diagnostics[key] += (page.get('diagnostics') or {}).get(key, 0)
+            diagnostics['geographicRejections'] = dict(Counter(diagnostics['geographicRejections']) +
+                Counter((page.get('diagnostics') or {}).get('geographicRejections', {})))
             live += page['items']
             pool = merge_candidates(pool, page['items'])
             pages[query] = page['nextOffset'] if page.get('hasMore') else None
@@ -181,6 +198,7 @@ def discovery_pool(read, provider, scope, preference, *, local=(), previous=(), 
             [destination_id(r), *(r.get('identityAliases') or [])]) and is_planning_candidate(r)]
     total = used + calls
     return {'items': pool, 'cursors': pages, 'providerRequestsUsed': total, 'providerRequests': calls,
+            'diagnostics': {**diagnostics, 'uniqueEligiblePoolCount': len(pool)},
             'providerItems': live,
             'providerFailureTypes': sorted(failure_types),
             'providerErrors': errors, 'providerHasMore': bool(total < MAX_DISCOVERY_REQUESTS and any(v is not None for v in pages.values())),

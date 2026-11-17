@@ -172,9 +172,12 @@ def test_ambiguous_labels_preserve_identity_and_reject_another_same_named_locali
     assert resolve_selected_scope(catalogue.label(first), scope['scopeKey'], scope['locationId']) == scope
     assert not validate_candidate({'city': other['name'], 'district': other['district'], 'state': other['state']}, scope)[0]
     marked = location_scope(catalogue.by_id('1732544'))
-    assert resolve_destination_scope(marked['canonicalName'])['scopeKey'] == marked['scopeKey']
-    assert extract_geographic_entities('Show places in ' + marked['canonicalName'])['destination_area'] == marked['canonicalName']
-    assert not resolve_destination_scope(marked['canonicalName'].replace('Sengkuang', 'Kulim'))['resolved']
+    legacy_label = marked['canonicalName'].replace('Sengkuang', 'Sengkuang [GeoNames 1732544]')
+    assert resolve_destination_scope(legacy_label)['scopeKey'] == marked['scopeKey']
+    assert extract_geographic_entities('Show places in ' + legacy_label)['destination_area'] == marked['canonicalName']
+    assert not resolve_destination_scope(legacy_label.replace('Sengkuang', 'Kulim'))['resolved']
+    assert not any('GeoNames ' in row['canonicalName'] for row in destination_locations())
+    assert all(row['locationId'] not in {'geonames:1732544', 'geonames:1736883'} for row in destination_locations() if row.get('locationId'))
 
 
 @pytest.mark.parametrize('message,expected,state', [
