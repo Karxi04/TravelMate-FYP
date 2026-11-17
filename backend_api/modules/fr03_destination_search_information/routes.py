@@ -63,6 +63,12 @@ def _prevent_shared_review_caching(response):
         response.headers['Cache-Control'] = 'private, no-store'
         response.vary.add('Authorization')
         response.vary.add(REVIEW_CONTEXT_HEADER)
+    if request.endpoint == 'fr03_destinations.destination_details' and response.status_code == 200:
+        payload = response.get_json(silent=True)
+        if isinstance(payload, dict) and isinstance(payload.get('destination'), dict):
+            from services.place_summary import place_summary
+            payload['destination']['placeSummary'] = place_summary(payload['destination'])
+            response.set_data(current_app.json.dumps(payload))
     return response
 
 
@@ -444,6 +450,8 @@ def _merge_destination(cached, provider):
             elif isinstance(attributes, list):
                 highlights.extend(value for value in attributes if isinstance(value, str))
     merged['highlights'] = list(dict.fromkeys(highlights))[:12] or cached.get('highlights', [])
+    if highlights:
+        merged['highlightsSource'] = 'provider_about'
     did = cached.get('destinationId') or _destination_id(cached) or _destination_id(merged)
     if did:
         merged['destinationId'] = did

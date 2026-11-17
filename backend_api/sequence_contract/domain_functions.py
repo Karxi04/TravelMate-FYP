@@ -1454,6 +1454,9 @@ def _travel_leg(previous, activity):
     provider = activity.get('providerTravelDurationMinutes') or activity.get('travelDurationMinutes')
     if provider not in (None, '') and _text(activity.get('travelTimeSource')).lower() in {'provider', 'confirmed'}:
         return int(max(1, _float(provider))), _float(activity.get('travelDistanceKm')), 'provider'
+    if activity.get('supportingAccess') or previous.get('supportingAccess'):
+        # Existing default buffer is not a funicular/transfer journey-time claim.
+        return 25, None, 'unverified_access_buffer'
     distance = _distance_km(previous, activity)
     if distance is None:
         return 25, None, 'estimated_default'
@@ -1600,6 +1603,9 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
             chosen['scheduledEndTime'] = _format_time(end_minutes)
             chosen['timeRangeLabel'] = f"{chosen['scheduledStartTime']} - {chosen['scheduledEndTime']}"
             notes = []
+            if chosen.get('travelTimeSource') == 'unverified_access_buffer':
+                chosen['scheduleFeasibility'] = 'provisional'
+                notes.append('Access transfer requires confirmation; 25 minutes is a planning buffer, not a verified journey time or walking route.')
             if previous and chosen.get('travelTimeSource') == 'estimated_haversine':
                 notes.append('Grouped with a nearby attraction to reduce estimated travel time.')
             period_end = chosen.pop('_openingPeriodEnd')

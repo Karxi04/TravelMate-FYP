@@ -1,3 +1,4 @@
+import '../../core/utils/place_summary.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/utils/destination_utils.dart';
@@ -864,8 +865,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       );
     }
 
-    final description =
-        _text(detail['description'] ?? detail['snippet'] ?? detail['about']);
+    final summary = destinationSummary(detail);
     final reasons = _personalReasons();
 
     return TravelMatePageScaffold(
@@ -946,13 +946,18 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
               _personalContext(),
             ],
             const SizedBox(height: AppSpacing.lg),
-            const AppSectionHeader(title: 'About'),
+            const AppSectionHeader(title: 'About this place'),
             const SizedBox(height: AppSpacing.sm),
             InkCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(description.isNotEmpty ? description : 'A detailed description is not available from this source.'),
+              Text(summary['text'].toString()),
+              if ((summary['additionalText'] ?? '').toString().isNotEmpty) ExpansionTile(
+                tilePadding: EdgeInsets.zero, title: const Text('Read more'),
+                children: [Text(summary['additionalText'].toString())]),
+              if (detail['highlightsSource'] == 'provider_about' || detail['highlightsVerified'] == true)
+                for (final highlight in (detail['highlights'] as List? ?? []).whereType<String>().take(6))
+                  Text(highlight),
               if (category.isNotEmpty) Text('Category: $category'),
               if (address.isNotEmpty) Text('Location: $address'),
-              for (final highlight in (detail['highlights'] as List? ?? []).whereType<String>()) Text('• $highlight'),
             ])),
             const SizedBox(height: AppSpacing.lg),
             _visitInformation(),

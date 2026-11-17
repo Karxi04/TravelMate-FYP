@@ -841,12 +841,8 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
     if not matching:
         return None, 'constraint_conflict'
 
-    unique = {}
-    for candidate in matching:
-        key = candidate.get('destinationId') or candidate.get('place_id') or clean_text(candidate.get('title'))
-        if key:
-            unique.setdefault(key, candidate)
-    matching = list(unique.values())
+    from services.itinerary_identity import consolidate_generated_candidates, IDENTITY_FIELDS
+    matching = consolidate_generated_candidates(matching)
     from sequence_contract.domain_functions import (applyContentBasedFiltering, applyCollaborativeFiltering,
         calculateRecommendationScore, rankRecommendations, recalculateItinerary, calculateBudget)
     from services.recommendation_taxonomy import normalize_pace
@@ -879,6 +875,7 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
         day_slot = sum(a['dayNo'] == day_no for a in activities)
         slot = time_slots[day_slot]
         activities.append({
+                **{key: d[key] for key in IDENTITY_FIELDS if key in d},
                 'activityId': f'A{len(activities) + 1}',
                 'activityName': d.get('title') or d.get('name') or f'Stop {len(activities) + 1}',
                 'destinationId': d.get('destinationId') or d.get('place_id') or f'dest_{len(activities) + 1}',

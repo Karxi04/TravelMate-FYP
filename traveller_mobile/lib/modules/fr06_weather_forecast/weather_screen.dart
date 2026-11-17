@@ -1,4 +1,4 @@
-import 'dart:async';
+import '../../core/utils/malaysian_locations.dart';
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
 import '../../widgets/ink_card.dart';
@@ -23,56 +23,101 @@ class _WeatherScreenState extends State<WeatherScreen> {
   Map<String, dynamic>? selectedLocation;
   Map<String, dynamic>? weather;
   String? error;
+  Future<void> Function()? retryAction;
   bool busy = false;
   int version = 0;
+  List<Map<String, dynamic>> catalogue = [];
+  bool loadingLocations = true;
+  String? stateNotice;
   int suggestionVersion = 0;
-  Timer? suggestionTimer;
-  Completer<Iterable<Map<String, dynamic>>>? pendingSuggestions;
-  String locationName(Map<String, dynamic> item) => [item['name'], item['admin1'], item['country']]
-      .where((v) => v != null && v.toString().isNotEmpty).join(', ');
+  String locationName(Map<String, dynamic> item) => (item['label'] ??
+      [item['name'], item['admin1'], item['country']].where((v) => v != null && '$v'.isNotEmpty).join(', ')).toString();
+
+  Future<void> loadLocations() async {
+    setState(() { loadingLocations = true; error = null; });
+    try {
+      final data = await api.get('/api/fr6/locations');
+      if (!mounted) return;
+      setState(() => catalogue = (data['results'] as List? ?? []).whereType<Map>()
+          .where((v) => v['country'] == 'Malaysia')
+          .map((v) => Map<String, dynamic>.from(v)).toList());
+    } catch (e) {
+      if (mounted) setState(() { error = userFacingApiError(e); retryAction = loadLocations; });
+    } finally {
+      if (mounted) setState(() => loadingLocations = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState(); api = widget.api ?? ApiService();
     place = TextEditingController(text: widget.initialPlace ?? '');
+    loadLocations();
     place.addListener(() {
       version++;
-      if (selectedLocation != null && place.text != locationName(selectedLocation!)) {
-        setState(() { selectedLocation = null; weather = null; });
-      }
+      setState(() {
+        busy = false;
+        if (selectedLocation != null && place.text != locationName(selectedLocation!)) {
+          selectedLocation = null; weather = null;
+        }
+      });
     });
   }
   @override
   void dispose() {
-    version++; suggestionVersion++; suggestionTimer?.cancel();
-    if (pendingSuggestions?.isCompleted == false) pendingSuggestions!.complete(const []);
+    version++; suggestionVersion++;
     place.dispose(); focus.dispose(); super.dispose();
   }
 
-  Future<Iterable<Map<String, dynamic>>> locations(TextEditingValue value) {
-    suggestionTimer?.cancel();
-    if (pendingSuggestions?.isCompleted == false) pendingSuggestions!.complete(const []);
-    final pending = Completer<Iterable<Map<String, dynamic>>>();
-    pendingSuggestions = pending;
+  Iterable<Map<String, dynamic>> locations(TextEditingValue value) {
+    if (value.text.trim().length < 2) return const [];
+    return matchingMalaysianLocations(catalogue.map((v) => {...v,
+      'city': v['name'], 'state': v['admin1'], 'canonicalName': locationName(v)}).toList(), value.text);
+  }
+
+  Future<void> findMore() async {
+    final query = place.text.trim();
+    if (query.length < 3) { setState(() => error = 'Enter at least three letters.'); return; }
     final request = ++suggestionVersion;
-    if (value.text.trim().length < 2) { pending.complete(const []); return pending.future; }
-    suggestionTimer = Timer(const Duration(milliseconds: 300), () async {
-      try {
-        final data = await api.get('/api/fr6/locations/search', {'q': value.text.trim()});
-        if (!mounted || request != suggestionVersion) { if (!pending.isCompleted) pending.complete(const []); return; }
-        final items = (data['results'] as List? ?? []).whereType<Map>()
-          .where((v) => v['latitude'] is num && v['longitude'] is num)
-          .map((v) => Map<String, dynamic>.from(v)).toList();
-        if (!pending.isCompleted) pending.complete(items);
-      } catch (_) {
-        if (mounted && request == suggestionVersion) setState(() => error = 'Location search is unavailable. Try typing again.');
-        if (!pending.isCompleted) pending.complete(const []);
-      }
+    final inputVersion = version;
+    setState(() { loadingLocations = true; error = null; });
+    try {
+      final data = await api.get('/api/fr6/locations/search', {'q': query, 'remote': 'true'});
+      if (!mounted || request != suggestionVersion || inputVersion != version) return;
+      final rows = (data['results'] as List? ?? []).whereType<Map>()
+          .where((v) => v['country'] == 'Malaysia').map((v) => Map<String, dynamic>.from(v)).toList();
+      setState(() {
+        final ids = catalogue.map((v) => v['id']).toSet();
+        catalogue.addAll(rows.where((v) => ids.add(v['id'])));
+        stateNotice = rows.isEmpty ? 'No verified Malaysian location found. Try a nearby named locality.' : null;
+      });
+      if (rows.isNotEmpty && mounted) await showModalBottomSheet<void>(context: context,
+        builder: (context) => SafeArea(child: ListView(shrinkWrap: true, children: [
+          for (final row in rows) ListTile(title: Text(locationName(row)),
+            onTap: () { Navigator.pop(context); selectLocation(row); }),
+        ])));
+    } catch (e) {
+      if (mounted && inputVersion == version) setState(() { error = userFacingApiError(e); retryAction = findMore; });
+    } finally {
+      if (mounted && request == suggestionVersion) setState(() => loadingLocations = false);
+    }
+  }
+
+  void selectLocation(Map<String, dynamic> location) {
+    place.text = locationName(location);
+    setState(() {
+      selectedLocation = location; weather = null; error = null;
+      stateNotice = location['pointDescription']?.toString();
     });
-    return pending.future;
+    if (location['requiresCity'] == true) {
+      // Retain the state as a query so its verified localities are offered next.
+      place.text = (location['admin1'] ?? location['name']).toString();
+      focus.requestFocus();
+    }
   }
 
   Future<void> search() async {
-    if (selectedLocation == null || place.text != locationName(selectedLocation!)) {
+    if (selectedLocation == null || selectedLocation!['requiresCity'] == true || place.text != locationName(selectedLocation!)) {
       setState(() { error = 'Search for and select a location from the suggestions.'; weather = null; });
       return;
     }
@@ -80,14 +125,16 @@ class _WeatherScreenState extends State<WeatherScreen> {
     setState(() { busy = true; error = null; weather = null; });
     try {
       final data = await api.get('/api/fr6/weather', {
-        'latitude': '${selectedLocation!['latitude']}', 'longitude': '${selectedLocation!['longitude']}'
+        'latitude': '${selectedLocation!['latitude']}', 'longitude': '${selectedLocation!['longitude']}',
+        if (selectedLocation!['id'] != null) 'locationId': '${selectedLocation!['id']}',
+        'locationName': locationName(selectedLocation!)
       });
       if (!mounted || request != version) return;
       setState(() => weather = Map<String, dynamic>.from(data['weather'] as Map));
     } catch (e) {
-      if (mounted && request == version) setState(() => error = userFacingApiError(e));
+      if (mounted && request == version) setState(() { error = userFacingApiError(e); retryAction = search; });
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted && request == version) setState(() => busy = false);
     }
   }
 
@@ -138,21 +185,27 @@ class _WeatherScreenState extends State<WeatherScreen> {
     final outdoorStops = widget.tripActivities.where((a) => a['indoor'] != true).length;
     return Scaffold(appBar: AppBar(title: const Text('Weather Forecast')),
       body: ListView(padding: const EdgeInsets.all(18), children: [
-        const SectionTitle('Destination weather', subtitle: 'Search and select a location. Forecast data: Open-Meteo.'),
+        const SectionTitle('Destination weather', subtitle: 'Choose a Malaysian city or locality. Forecast data: Open-Meteo.'),
         LayoutBuilder(builder: (context, constraints) => RawAutocomplete<Map<String, dynamic>>(
           textEditingController: place, focusNode: focus, displayStringForOption: locationName,
           optionsBuilder: locations,
-          onSelected: (location) { setState(() { selectedLocation = location; weather = null; error = null; }); },
+          onSelected: selectLocation,
           fieldViewBuilder: (_, controller, node, submit) => TextField(controller: controller, focusNode: node,
-            decoration: const InputDecoration(labelText: 'Destination', hintText: 'Search city or place'), onSubmitted: (_) => search()),
+            decoration: const InputDecoration(labelText: 'Destination', hintText: 'Search Malaysian city or locality'), onSubmitted: (_) => submit()),
           optionsViewBuilder: (_, select, options) => Align(alignment: Alignment.topLeft,
             child: Material(elevation: 4, child: SizedBox(width: constraints.maxWidth, height: 210,
               child: ListView(padding: EdgeInsets.zero, children: options.map((item) => ListTile(
-                title: Text(locationName(item)), onTap: () => select(item))).toList())))),
+                title: Text(locationName(item)),
+                subtitle: Text(item['requiresCity'] == true ? 'State or territory — choose a locality' : 'Locality point forecast'), onTap: () => select(item))).toList())))),
         )),
+        if (loadingLocations) const LinearProgressIndicator(),
+        if (stateNotice != null) Text(stateNotice!),
+        if (!loadingLocations && selectedLocation == null && place.text.trim().length >= 2 && locations(place.value).isEmpty)
+          const Text('No local matches. Try Find more Malaysian locations.'),
+        TextButton(onPressed: loadingLocations ? null : findMore, child: const Text('Find more Malaysian locations')),
         const SizedBox(height: 12),
         FilledButton(onPressed: busy ? null : search, child: Text(busy ? 'Loading forecast...' : 'Show weather')),
-        if (error != null) AppErrorState(message: error!, onRetry: search),
+        if (error != null) AppErrorState(message: error!, onRetry: retryAction ?? search),
         if (current.isNotEmpty) InkCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(locationName(selectedLocation!)),
           Text(conditions(current['weather_code']), style: Theme.of(context).textTheme.titleLarge),
@@ -165,9 +218,9 @@ class _WeatherScreenState extends State<WeatherScreen> {
         if (hasTrip && !days.any((day) => inTrip(day.toString()))) const Text('A forecast is not available for your trip dates yet. Check again closer to departure.'),
         for (var i = 0; i < days.length; i++) Padding(padding: const EdgeInsets.only(top: 10),
           child: InkCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${days[i]} — ${conditions(dailyValue(daily, 'weather_code', i))}'),
-            if (dailyValue(daily, 'temperature_2m_min', i) != null) Text('Low: ${dailyValue(daily, 'temperature_2m_min', i)} °C'),
-            if (dailyValue(daily, 'temperature_2m_max', i) != null) Text('High: ${dailyValue(daily, 'temperature_2m_max', i)} °C'),
+            Text('${days[i]} â€” ${conditions(dailyValue(daily, 'weather_code', i))}'),
+            if (dailyValue(daily, 'temperature_2m_min', i) != null) Text('Low: ${dailyValue(daily, 'temperature_2m_min', i)} Â°C'),
+            if (dailyValue(daily, 'temperature_2m_max', i) != null) Text('High: ${dailyValue(daily, 'temperature_2m_max', i)} Â°C'),
             if (dailyValue(daily, 'precipitation_probability_max', i) != null) Text('Rain probability: ${dailyValue(daily, 'precipitation_probability_max', i)}%'),
             if (hasTrip && inTrip(days[i].toString()) && dailyValue(daily, 'weather_code', i) is num &&
                 dailyValue(daily, 'precipitation_probability_max', i) is num && dailyValue(daily, 'temperature_2m_max', i) is num)

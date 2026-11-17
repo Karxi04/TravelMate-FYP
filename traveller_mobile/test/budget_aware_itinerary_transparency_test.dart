@@ -169,7 +169,30 @@ Future<void> _scrollTarget(WidgetTester tester, Finder target) async {
   await tester.pump();
 }
 
+Future<void> _reviewNote(WidgetTester tester, String text) async {
+  final tile = find.text('Visit information').first;
+  await tester.ensureVisible(tile);
+  await tester.tap(tile);
+  await tester.pumpAndSettle();
+  expect(find.text(text), findsOneWidget);
+  expect(find.text('RM 0'), findsNothing);
+}
+
 void main() {
+  testWidgets('Batch F verified unit price retains its pricing basis', (tester) async {
+    final trip = _buildTrip(activities:[{
+      'activityId':'verified-unit', 'activityName':'Verified Museum', 'dayNo':1,
+      'timeSlot':'09:00','estimatedCost':40,'effectiveCost':40,'unitPrice':20,
+      'pricingUnit':'per_person','costProvenance':'verified_ticket',
+      'selectionPriceStatus':'verified','pricingEvidence':{'applicability':'applicable'},
+    }]);
+    await _pumpTrip(tester,trip);
+    await _scrollTarget(tester,find.text('Verified Museum'));
+    expect(find.text('RM 20 / person'),findsOneWidget);
+    expect(find.text('RM 40 / person'),findsNothing);
+    expect(trip['activities'][0]['estimatedCost'],40);
+  });
+
   group('Batch F3-P2V-U: Verified-Free Admission Contract Hardening', () {
     testWidgets(
         '1. Missing verified Boolean and missing verification date -> NOT free',
@@ -184,7 +207,8 @@ void main() {
       await _pumpTrip(tester, trip);
       await _scrollTarget(tester, find.text('Missing Boolean and Date'));
       expect(find.text('Free admission'), findsNothing);
-      expect(find.text('Admission unverified'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+      await _reviewNote(tester, 'Check ticket prices before visiting.');
     });
 
     testWidgets(
@@ -215,7 +239,8 @@ void main() {
       await _pumpTrip(tester, trip);
       await _scrollTarget(tester, find.text('Explicitly False Verified'));
       expect(find.text('Free admission'), findsNothing);
-      expect(find.text('Admission unverified'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+      await _reviewNote(tester, 'Check ticket prices before visiting.');
     });
 
     testWidgets(
@@ -232,7 +257,8 @@ void main() {
       await _pumpTrip(tester, trip);
       await _scrollTarget(tester, find.text('Missing Required Provenance'));
       expect(find.text('Free admission'), findsNothing);
-      expect(find.text('Admission unverified'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+      await _reviewNote(tester, 'Check ticket prices before visiting.');
     });
 
     testWidgets('5. Source URL missing -> NOT free', (tester) async {
@@ -246,7 +272,8 @@ void main() {
       await _pumpTrip(tester, trip);
       await _scrollTarget(tester, find.text('Missing Source URL'));
       expect(find.text('Free admission'), findsNothing);
-      expect(find.text('Admission unverified'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+      await _reviewNote(tester, 'Check ticket prices before visiting.');
     });
 
     testWidgets('6. Verification date missing -> NOT free', (tester) async {
@@ -260,7 +287,8 @@ void main() {
       await _pumpTrip(tester, trip);
       await _scrollTarget(tester, find.text('Missing Date Field'));
       expect(find.text('Free admission'), findsNothing);
-      expect(find.text('Admission unverified'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+      await _reviewNote(tester, 'Check ticket prices before visiting.');
     });
 
     testWidgets('7. Invalid or blank verification date -> NOT free',
@@ -275,7 +303,8 @@ void main() {
       await _pumpTrip(tester, trip);
       await _scrollTarget(tester, find.text('Invalid Date Stamp'));
       expect(find.text('Free admission'), findsNothing);
-      expect(find.text('Admission unverified'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+      await _reviewNote(tester, 'Check ticket prices before visiting.');
     });
 
     testWidgets('8. Non-empty pricingIssues -> NOT free', (tester) async {
@@ -289,7 +318,8 @@ void main() {
       await _pumpTrip(tester, trip);
       await _scrollTarget(tester, find.text('Conflicting Tram Issues'));
       expect(find.text('Free admission'), findsNothing);
-      expect(find.text('Admission unverified'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+      await _reviewNote(tester, 'Check ticket prices before visiting.');
     });
 
     testWidgets('9. Conditional admission -> NOT free', (tester) async {
@@ -305,7 +335,8 @@ void main() {
       await _pumpTrip(tester, trip);
       await _scrollTarget(tester, find.text('Penang Hill Funicular'));
       expect(find.text('Free admission'), findsNothing);
-      expect(find.text('Tariff conditional'), findsOneWidget);
+      expect(find.text('Tariff conditional'), findsNothing);
+      await _reviewNote(tester, 'Ticket prices vary by option.');
     });
 
     testWidgets('10. Unresolved admission -> NOT free', (tester) async {
@@ -319,7 +350,8 @@ void main() {
       await _pumpTrip(tester, trip);
       await _scrollTarget(tester, find.text('Unresolved Price Activity'));
       expect(find.text('Free admission'), findsNothing);
-      expect(find.text('Admission unverified'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+      await _reviewNote(tester, 'Check ticket prices before visiting.');
     });
 
     testWidgets(
@@ -337,7 +369,8 @@ void main() {
       await _pumpTrip(tester, trip);
       await _scrollTarget(tester, find.text('Legacy Town Stroll'));
       expect(find.text('Free admission'), findsNothing);
-      expect(find.text('Admission unverified'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+      await _reviewNote(tester, 'Check ticket prices before visiting.');
     });
 
     testWidgets(
@@ -800,8 +833,9 @@ void main() {
       await _scrollTarget(tester, find.text('Mysterious Night Market'));
 
       expect(find.text('Free admission'), findsNothing);
-      expect(find.text('Admission unverified'), findsOneWidget);
-      expect(find.text('Price TBC'), findsOneWidget);
+      expect(find.text('Admission unverified'), findsNothing);
+      await _reviewNote(tester, 'Check ticket prices before visiting.');
+      expect(find.text('Price TBC'), findsNothing);
     });
 
     testWidgets(
@@ -848,7 +882,8 @@ void main() {
       );
 
       await _scrollTarget(tester, find.textContaining('Pinang Peranakan Mansion'));
-      expect(find.text('Tariff conditional'), findsOneWidget);
+      expect(find.text('Tariff conditional'), findsNothing);
+      await _reviewNote(tester, 'Ticket prices vary by option.');
       expect(tester.takeException(), isNull);
     });
 

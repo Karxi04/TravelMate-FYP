@@ -336,9 +336,11 @@ def _place_image_snapshot(item):
 
 
 def _activity_from_destination(item, index):
+    from services.itinerary_identity import IDENTITY_FIELDS
     item = dict(item or {})
     gps = item.get('gps_coordinates') or item.get('gpsCoordinates') or {}
     return {
+        **{key: item[key] for key in IDENTITY_FIELDS if key in item},
         'activityId': f'A{index + 1}',
         'activityName': item.get('title') or item.get('name') or f'Activity {index + 1}',
         'destinationId': item.get('destinationId') or item.get('place_id') or item.get('data_id') or item.get('id') or f'destination_{index + 1}',
@@ -414,7 +416,9 @@ def _generate_itinerary_data(current, payload, snapshot=None):
     apply_selection = False
     selection_skip_reason = 'existing_activities_preserved'
     if not working.get('activities'):
+        from services.itinerary_identity import consolidate_generated_candidates
         candidates, generation_source = _destination_candidates(working, snapshot)
+        candidates = consolidate_generated_candidates(candidates)
         if not candidates:
             if snapshot:
                 raise RuntimeError('Linked recommendation snapshot has no destination-relevant results')
