@@ -8,6 +8,8 @@ class RequestTimeouts {
   static const longProviderRead = Duration(seconds: 70);
   static const providerMutation = Duration(seconds: 90);
   static const personalisedGeneration = Duration(seconds: 65);
+  // Up to three sequential 40s Maps searches, plus bounded read/ranking/write headroom.
+  static const recommendationGeneration = Duration(seconds: 150);
 
   static Duration forGet(String path) {
     if (path.startsWith('/api/fr9/orders/') && path.endsWith('/reconcile')) {
@@ -22,6 +24,7 @@ class RequestTimeouts {
   }
 
   static Duration forPost(String path) {
+    if (path == '/api/fr4/recommendations/generate') return recommendationGeneration;
     if (path.endsWith('/lower-cost-alternatives')) return providerMutation;
     if (path == '/api/fr7/flights/returns') return longProviderRead;
     if (path == '/api/fr5/personalised-trips/generate') {
