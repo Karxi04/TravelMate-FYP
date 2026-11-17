@@ -44,6 +44,7 @@ API_LIMITS = {
     "fr03_destinations.ratings_reviews": "provider_search",
     "fr03_destinations.nearby_places": "provider_search",
     "fr04_recommendations.generate": "recommendation",
+    "fr04_recommendations.location_lookup": "provider_search",
     "fr06_weather.location_search": "provider_search",
     "fr06_weather.weather": "provider_search",
     "fr07_flights.search_flights": "provider_search",

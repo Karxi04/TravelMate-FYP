@@ -22,12 +22,22 @@ List<Map<String, dynamic>> matchingMalaysianLocations(
     return 4;
   }
 
-  final result = catalogue.where((row) => rank(row) < 4).toList();
+  final result = <MapEntry<int, Map<String, dynamic>>>[];
+  for (final row in catalogue) {
+    if (row['country'] != null && row['country'] != 'Malaysia') continue;
+    final score = rank(row);
+    if (score < 4) result.add(MapEntry(score, row));
+  }
   result.sort((a, b) {
-    final comparison = rank(a).compareTo(rank(b));
+    final comparison = a.key.compareTo(b.key);
+    final population = ((b.value['population'] as num?) ?? 0)
+        .compareTo((a.value['population'] as num?) ?? 0);
     return comparison != 0
         ? comparison
-        : '${a['canonicalName']}'.compareTo('${b['canonicalName']}');
+        : population != 0
+            ? population
+            : '${a.value['canonicalName']}'
+                .compareTo('${b.value['canonicalName']}');
   });
-  return result.take(30).toList();
+  return result.take(30).map((entry) => entry.value).toList();
 }

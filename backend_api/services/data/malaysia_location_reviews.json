@@ -1,0 +1,13 @@
+{
+  "1735168": {
+    "expectedName": "Ampang",
+    "expectedAdmin1": "14",
+    "state": "Selangor",
+    "aliases": ["Ampang", "Ampang Jaya"],
+    "sources": [
+      "https://www.mpaj.gov.my/en/contact-us",
+      "https://jkt.kpkt.gov.my/wp-content/d/sites/default/files/2021-12/Direktori_Portal_PBT_Mengikut_Negeri_Mei2021.pdf"
+    ],
+    "reason": "GeoNames lists Kuala Lumpur admin1, but the unchanged GeoNames point is within the pinned DOSM Selangor polygon. Official MPAJ and KPKT sources identify Ampang Jaya's Selangor jurisdiction. Do not propagate the conflicting Ampang Hilir alias or guess a district."
+  }
+}

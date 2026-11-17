@@ -9,6 +9,8 @@ from services.malaysian_locality import (
     normalize_destination_scope,
     normalize_candidate_geography,
 )
+from services import malaysia_locations as location_catalogue
+from services.malaysian_locality import location_scope, resolve_destination_scope
 from services.local_catalog import DESTINATIONS
 from services.activity_pricing import pricing_snapshot
 
@@ -72,6 +74,10 @@ def extract_activity_position(text, allow_short=False):
 
 def _ordered_malaysian_mentions(text):
     """Return canonical Malaysian places in the order the traveller wrote them."""
+    if 'geonames ' in text:
+        selected = resolve_destination_scope(text)
+        if selected.get('resolved'):
+            return [{'area': selected['canonicalName'], 'state': selected['state']}]
     mentions = []
     locality_states = set()
     for area, (state, aliases) in LOCALITIES.items():
@@ -83,6 +89,44 @@ def _ordered_malaysian_mentions(text):
         if positions:
             mentions.append((min(positions), area, state))
             locality_states.add(state)
+    words = text.split()
+    state_names = {alias for aliases in STATE_ALIASES.values() for alias in aliases} | {'malaysia'}
+    curated_spans = [match.span() for aliases in [*STATE_ALIASES.values(), *(data[1] for data in LOCALITIES.values())]
+                     for alias in aliases for match in re.finditer(rf'\b{re.escape(alias)}\b', text)]
+    for start, end, row in location_catalogue.mentions(text):
+        phrase = ' '.join(words[start:end])
+        position = len(' '.join(words[:start])) + (1 if start else 0)
+        if any(begin <= position and position + len(phrase) <= finish for begin, finish in curated_spans):
+            continue
+        if phrase in state_names:
+            continue
+        if phrase in FOREIGN_DESTINATIONS and not any(re.search(rf'\b{re.escape(alias)}\b', text)
+                for alias in state_names):
+            continue
+        before = words[start - 1] if start else ''
+        after = words[end] if end < len(words) else ''
+        if not ((start == 0 and end == len(words))
+                or before in {'in', 'at', 'to', 'from', 'near', 'around', 'visit', 'visiting', 'explore'}
+                or after in {'trip', 'itinerary', 'holiday', 'vacation'}):
+            continue
+        scope = resolve_destination_scope(phrase)
+        if not scope.get('resolved') or not scope.get('city'):
+            continue
+        parent = next((area for _, area, region in mentions if region == scope['state']
+                       and re.search(rf'\bin\s+{re.escape(area.lower())}\b', text)
+                       and (normalize_destination_scope(area).get('district') == row.get('district')
+                            or area == row.get('district'))), None)
+        if parent and parent != scope['city'] and not re.search(r'\bfrom\b.*\bto\b', text):
+            continue
+        mentions.append((position, scope['city'], scope['state']))
+        locality_states.add(scope['state'])
+    if not mentions:
+        phrase = re.search(r'\b(?:in|around|near|at|to)\s+([a-z ]+)$', text)
+        candidate = location_catalogue.confident_spelling(phrase[1]) if phrase else None
+        if candidate:
+            scope = location_scope(candidate)
+            mentions.append((phrase.start(1), scope['city'], scope['state']))
+            locality_states.add(scope['state'])
     for state, aliases in STATE_ALIASES.items():
         if state in locality_states:
             continue
@@ -164,6 +208,10 @@ def extract_geographic_entities(text):
                 break
 
     ordered_mentions = _ordered_malaysian_mentions(text_to_scan)
+    if not from_to and 'geonames ' in text_to_scan:
+        selected = resolve_destination_scope(re.split(r'\b(?:in|at|near|around|to)\s+', text_to_scan)[-1].strip())
+        if selected.get('resolved'):
+            ordered_mentions = [{'area': selected['canonicalName'], 'state': selected['state']}]
     all_malaysian = [item['area'] for item in ordered_mentions]
 
     is_multi = len(all_malaysian) > 1 and not is_dest_change
