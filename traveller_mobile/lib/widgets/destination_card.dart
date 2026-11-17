@@ -96,6 +96,8 @@ class DestinationCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: AppSpacing.xs),
+          if (destination['nearbyDistanceKm'] is num)
+            Text('Nearby · ${destination['city'] ?? 'Locality not supplied'} · ${(destination['nearbyDistanceKm'] as num).toStringAsFixed(1)} km straight-line'),
           _metadata(context),
           if (!condensed && _reason.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xs),

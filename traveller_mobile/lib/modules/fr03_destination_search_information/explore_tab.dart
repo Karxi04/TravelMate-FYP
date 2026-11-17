@@ -51,7 +51,13 @@ class _ExploreTabState extends State<ExploreTab> {
   int? nextOffset;
   String? _resultCriteria;
   String? _pendingCriteria;
-  String get _criteria => '${query.text.trim()}|${location.text.trim()}|$sort';
+  String geographicMode = 'strict';
+  String? searchMessage;
+  String? searchStatus;
+  String queryInterpretation = 'keyword';
+  Map<String, dynamic> searchScope = {};
+  bool nearbyAvailable = false;
+  String get _criteria => '${query.text.trim()}|${location.text.trim()}|$sort|$geographicMode';
 
   final suggestions = const [
     'Malaysia attractions',
@@ -124,6 +130,7 @@ class _ExploreTabState extends State<ExploreTab> {
     final params = <String, String>{
       'q': text,
       'location': requestedLocation,
+      if (geographicMode == 'nearby') 'geographicMode': 'nearby',
       if (loadMore) 'offset': '$nextOffset',
     };
     if (sort != 'relevance') params['sort'] = sort;
@@ -145,11 +152,17 @@ class _ExploreTabState extends State<ExploreTab> {
         locationUsed =
             (data['locationUsed'] ?? requestedLocation).toString().trim();
         resultSource = (data['source'] ?? '').toString();
+        searchMessage = data['searchMessage']?.toString();
+        searchStatus = data['searchStatus']?.toString();
+        searchScope = Map<String, dynamic>.from(data['canonicalDestinationScope'] as Map? ?? {});
+        nearbyAvailable = data['nearbyAvailable'] == true;
+        queryInterpretation = data['queryInterpretation']?.toString() ?? 'keyword';
       });
     } catch (error) {
       if (!mounted || version != searchVersion || requestedCriteria != _criteria) return;
       setState(() {
-        searchError = userFacingApiError(error);
+        searchError = error is ApiException && error.code == 'destination_provider_unavailable'
+            ? error.message : userFacingApiError(error);
       });
     } finally {
       if (mounted && version == searchVersion) setState(() => loading = false);
@@ -160,6 +173,7 @@ class _ExploreTabState extends State<ExploreTab> {
     if (!hasSearched && queryError == null) return;
     searchVersion++;
     setState(() {
+      geographicMode = 'strict'; nearbyAvailable = false; searchMessage = null;
       loading = false;
       hasSearched = false;
       results = [];
@@ -305,6 +319,23 @@ class _ExploreTabState extends State<ExploreTab> {
         ],
       );
 
+  Future<void> _changeGeographicMode() async {
+    if (loading || searchScope['canonicalName'] == null) return;
+    setState(() {
+      location.text = searchScope['canonicalName'] as String;
+      if (queryInterpretation == 'locality') query.text = 'tourist attractions';
+      geographicMode = geographicMode == 'nearby' ? 'strict' : 'nearby';
+    });
+    await search();
+  }
+
+  Widget _nearbyAction() => nearbyAvailable ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    const SizedBox(height: AppSpacing.sm),
+    Text(geographicMode == 'nearby' ? 'Within 10 km of $locationUsed. Straight-line distance, not travel time.' : 'Nearby places require a separate search.'),
+    TextButton(onPressed: loading ? null : _changeGeographicMode,
+      child: Text(geographicMode == 'nearby' ? 'Search exact locality' : 'Explore nearby places (10 km)')),
+  ]) : const SizedBox.shrink();
+
   Widget _resultState() {
     if (loading && results.isEmpty) {
       return const InkCard(
@@ -345,16 +376,18 @@ class _ExploreTabState extends State<ExploreTab> {
       );
     }
     if (results.isEmpty) {
-      return TravelEmptyState(
+      return Column(children: [TravelEmptyState(
         icon: Icons.search_off_rounded,
-        title: 'No places found',
-        message: 'Try a broader search term or another area.',
-      );
+        title: searchStatus == 'no_exact_locality_matches' ? 'No verified matches in this locality' : 'No places found',
+        message: searchMessage ?? 'Try a broader search term or another area.',
+      ), _nearbyAction()]);
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (queryInterpretation == 'locality') Text('Attraction search for $locationUsed'),
+        _nearbyAction(),
         if (loading) ...[
           const LinearProgressIndicator(),
           const SizedBox(height: AppSpacing.sm),

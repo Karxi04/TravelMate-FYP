@@ -23,6 +23,8 @@ def latest_snapshot(read, hydrate, uid, scope=None):
         stored = header.get('canonicalDestinationScope')
         return stored.get('scopeKey') if isinstance(stored, dict) else normalize_destination_scope(header.get('requestedDestination') or header.get('destinationArea'))['scopeKey']
     eligible = [h for h in headers if isinstance(h, dict) and h.get('travellerId') == uid
+                and (scope is not None or not isinstance(h.get('canonicalDestinationScope'), dict)
+                     or h['canonicalDestinationScope'].get('geographicMode') != 'nearby')
                 and (not scope or key(h) == scope['scopeKey'])]
     seen = set()
     for header in sorted(eligible, key=lambda h: (timestamp(h.get('generatedAt')), str(h.get('id') or '')), reverse=True):

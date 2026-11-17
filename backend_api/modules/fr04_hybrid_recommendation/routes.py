@@ -33,6 +33,7 @@ from services.malaysian_locality import (
     filter_candidates,
     normalize_destination_scope,
     validate_candidate,
+    discovery_scope,
 )
 from sequence_contract.firebase_firestore import (
     loadRecommendationSnapshot, retrieveRecord, storeRecord, transactPreferenceLearning,
@@ -286,9 +287,19 @@ def _page(record, options):
     search_status = 'matches' if qualified else 'no_relevant_matches' if all_items else 'no_candidates'
     stored_scope = record.get('canonicalDestinationScope')
     area = (stored_scope.get('canonicalName') if isinstance(stored_scope, dict) else None) or record.get('requestedDestination') or 'this destination'
-    search_message = (None if qualified else f'No places with supported matches for your preferences in {area}.' if all_items
+    diagnostics = dict(record.get('discoveryDiagnostics') or {})
+    if not all_items and diagnostics.get('rawProviderCount') and not diagnostics.get('geographicallyValidCount'):
+        search_status = 'no_exact_locality_matches'
+    nearby = isinstance(stored_scope, dict) and stored_scope.get('geographicMode') == 'nearby'
+    search_message = (None if qualified else f'Attractions were found, but none match your interests or selected threshold for {area}.' if all_items
+                      else f'No verified nearby attractions within 10 km straight-line distance of {area}.' if nearby
+                      else f'No attractions could be verified within the exact locality {area}. You can explicitly explore nearby places.' if search_status == 'no_exact_locality_matches'
                       else f'No verified destination candidates are available for {area}.')
+    diagnostics.update(preferenceMatchCount=len(qualified), displayedCount=len(qualified[offset:end]))
     return {**view, 'searchStatus': search_status, 'searchMessage': search_message,
+        'nearbyAvailable': bool(isinstance(stored_scope, dict) and stored_scope.get('city')
+                                and stored_scope.get('coordinateStatus') == 'verified_locality'),
+        'discoveryDiagnostics': diagnostics,
         'recommendationResults': qualified[offset:end], 'pagination': {
         'minimumMatchScore': minimum, 'scoreBasis':basis, 'offset': offset, 'limit': limit,
         'discoveryMode': discovery or None, 'thresholdApplied': not bool(discovery),
@@ -324,6 +335,7 @@ def generate():
     destination_area = str(payload.get('destinationArea') or payload.get('location') or 'Malaysia').strip()
     try:
         destination_scope = resolve_selected_scope(destination_area, payload.get('destinationScopeKey'), payload.get('destinationLocationId'))
+        destination_scope = discovery_scope(destination_scope, payload.get('geographicMode'))
     except ValueError:
         return jsonify(ok=False, error='Choose a supported Malaysian destination area.'), 400
     except Exception:
@@ -458,6 +470,8 @@ def generate():
         ranked_candidates,
         destination_scope,
     )
+    if destination_scope.get('geographicMode') == 'nearby':
+        final_candidates.sort(key=lambda row: (-float(row.get('score') or 0), row['nearbyDistanceKm']))
     if rejected_final:
         logger.warning(
             'Final geographic guard rejected %s recommendation candidate(s) for %s',
@@ -496,7 +510,7 @@ def generate():
         'providerRequestsUsed': pool['providerRequestsUsed'],
         'previousGenerationId': previous_id or None,
         'discoveryDiagnostics': {'providerRequests': pool['providerRequests'], 'providerErrors': pool['providerErrors'],
-                                 'candidateCount': len(ranked), 'retainedDisplayedCount': len(retained)},
+                                 **pool['diagnostics'], 'candidateCount': len(ranked), 'retainedDisplayedCount': len(retained)},
         'engine': {
             'discoveryVersion': DISCOVERY_MODE,
             'scoringVersion':'recovery_v3',
@@ -552,6 +566,18 @@ def get_recommendations():
             return jsonify({'ok': False, 'error': 'Recommendation snapshot not found'}), 404
     scope = resolve_destination_scope(destination_area) if destination_area else None
     stored = record.get('canonicalDestinationScope') if record else None
+    mode = request.args.get('geographicMode')
+    if mode not in (None, '', 'strict', 'nearby'):
+        return jsonify(ok=False, error='Choose strict or nearby discovery.'), 400
+    if isinstance(stored, dict) and mode is not None and (mode or 'strict') != stored.get('geographicMode', 'strict'):
+        return jsonify(ok=False, error='Recommendation snapshot not found for this discovery mode.'), 404
+    if mode is None and isinstance(stored, dict):
+        mode = stored.get('geographicMode')
+    if scope and scope.get('resolved'):
+        try:
+            scope = discovery_scope(scope, mode)
+        except ValueError:
+            return jsonify(ok=False, error='Choose a verified locality and strict or nearby discovery.'), 400
     if scope and not scope.get('resolved') and isinstance(stored, dict) and stored.get('country') == 'Malaysia':
         if str(stored.get('canonicalName') or '').strip().casefold() == destination_area.casefold():
             scope = stored  # Owned, previously verified immutable scope; no geocoder call on a saved-result read.

@@ -50,6 +50,8 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   String? locationNotice;
   List<Map<String, dynamic>> lookupMatches = [];
   Map<String, dynamic> generatedScope = {};
+  String geographicMode = 'strict';
+  bool nearbyAvailable = false;
   List<Map<String, dynamic>> locations = [];
   Map<String, dynamic>? selectedLocation;
   String? searchMessage;
@@ -106,8 +108,11 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
           pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
           discoveryNotice = data['snapshot']?['cacheFallbackNotice']?.toString();
           searchMessage = data['snapshot']?['searchMessage']?.toString();
+          nearbyAvailable = data['snapshot']?['nearbyAvailable'] == true;
           generatedScope = Map<String, dynamic>.from(data['snapshot']?['canonicalDestinationScope'] as Map? ?? {});
-          if (generatedScope['locationId'] != null) selectedLocation = generatedScope;
+          geographicMode = generatedScope['geographicMode'] == 'nearby' ? 'nearby' : 'strict';
+          if (generatedScope['locationId'] != null) selectedLocation = {...generatedScope,
+            if (geographicMode == 'nearby') 'scopeKey': generatedScope['originScopeKey']};
           generatedDestination = (data['snapshot']?['requestedDestination'] ?? widget.initialDestination).toString();
           destination.text = generatedDestination;
           recommendationGenerationId = (data['recommendationGenerationId'] ??
@@ -177,6 +182,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     try {
       final data = await api.post('/api/fr4/recommendations/generate', {
         'destinationArea': requestedArea,
+        if (geographicMode == 'nearby') 'geographicMode': 'nearby',
         if (selectedLocation?['canonicalName'] == requestedArea) 'destinationScopeKey': selectedLocation!['scopeKey'],
         if (selectedLocation?['canonicalName'] == requestedArea && selectedLocation?['locationId'] != null)
           'destinationLocationId': selectedLocation!['locationId'],
@@ -193,6 +199,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         items = expand ? appendRecommendationResults(items, received) : received;
         discoveryNotice = data['discoveryMessage']?.toString();
         searchMessage = data['snapshot']?['searchMessage']?.toString();
+        nearbyAvailable = data['snapshot']?['nearbyAvailable'] == true;
         generatedScope = Map<String, dynamic>.from(data['snapshot']?['canonicalDestinationScope'] as Map? ?? {});
         source = (data['source'] ?? '').toString();
         pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
@@ -215,6 +222,8 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       lookupMatches = []; locationLookupBusy = false; locationNotice = null;
       if (selectedLocation?['canonicalName'] != value.trim()) selectedLocation = null;
       if (value.trim() != generatedDestination) {
+        geographicMode = 'strict';
+        nearbyAvailable = false;
         ++requestVersion;
         items = []; pagination = {}; recommendationGenerationId = ''; generatedScope = {};
         busy = generationInFlight; loadingMore = false; discoveryNotice = null; searchMessage = null;
@@ -228,6 +237,16 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     destination.text = row['canonicalName'] as String;
     changeDestination(destination.text);
     setState(() => ++destinationSelection);
+  }
+
+  Future<void> changeGeographicMode(String mode) async {
+    if (busy || loadingMore || generationInFlight || !nearbyAvailable) return;
+    setState(() {
+      geographicMode = mode;
+      items = []; pagination = {}; recommendationGenerationId = '';
+      generatedScope = {}; generatedDestination = ''; searchMessage = null;
+    });
+    await generate();
   }
 
   Future<void> findLocation() async {
@@ -602,6 +621,14 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
                   ),
                 );
               }),
+            if (nearbyAvailable) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(geographicMode == 'nearby'
+                ? 'Nearby places within 10 km of ${generatedScope['canonicalName']}. Distances are straight-line, not travel times.'
+                : 'Exact locality matches. Nearby places require a separate search.'),
+              TextButton(onPressed: busy ? null : () => changeGeographicMode(geographicMode == 'nearby' ? 'strict' : 'nearby'),
+                child: Text(geographicMode == 'nearby' ? 'Search exact locality' : 'Explore nearby places (10 km)')),
+            ],
             if (pagination['hasMore'] == true)
               PrimaryButton(label:'Load more matching places', loading:loadingMore, onPressed:() => loadPage()),
             if (discoveryNotice != null)

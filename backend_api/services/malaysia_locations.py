@@ -100,10 +100,15 @@ def label(row):
     name = row['name'] + (' District' if row['kind'] == 'district' else '')
     duplicates = [r for r in indexes()[0].get(text(row['name']), [])
                   if r['state'] == row['state'] and r['kind'] == row['kind'] and text(r['name']) == text(row['name'])]
-    if len([r for r in duplicates if r.get('district') == row.get('district')]) > 1:
-        name += f" [GeoNames {row['id']}]"
     district = f", {row['district']}" if len(duplicates) > 1 and row.get('district') else ''
     return f"{name}{district}, {row['state']}, Malaysia"
+
+
+def unambiguous_labels(rows):
+    counts = defaultdict(int)
+    for row in rows:
+        counts[text(row['canonicalName'])] += 1
+    return [row for row in rows if counts[text(row['canonicalName'])] == 1]
 
 
 def search(query, *, limit=30, fuzzy=True):

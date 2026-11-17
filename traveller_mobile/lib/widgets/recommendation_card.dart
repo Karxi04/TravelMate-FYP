@@ -229,6 +229,8 @@ class RecommendationCard extends StatelessWidget {
                       tone: AppStatusTone.neutral,
                     ),
                   ],
+                  if (recommendation['nearbyDistanceKm'] is num)
+                    Text('Nearby · ${recommendation['city'] ?? 'Locality not supplied'} · ${(recommendation['nearbyDistanceKm'] as num).toStringAsFixed(1)} km straight-line'),
                   if (_location.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.xxs),
                     Row(

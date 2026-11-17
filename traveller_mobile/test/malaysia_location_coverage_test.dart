@@ -19,9 +19,6 @@ Map<String, dynamic> dto(Map row) {
           r['kind'] == row['kind'])
       .toList();
   var name = '${row['name']}${row['kind'] == 'district' ? ' District' : ''}';
-  if (duplicates.where((r) => r['district'] == row['district']).length > 1) {
-    name += ' [GeoNames ${row['id']}]';
-  }
   final district = duplicates.length > 1 && row['district'] != null
       ? ', ${row['district']}'
       : '';
@@ -39,7 +36,7 @@ Map<String, dynamic> dto(Map row) {
   };
 }
 
-final instant = <Map<String, dynamic>>[
+final rawInstant = <Map<String, dynamic>>[
   for (final state in (source['counts']['byState'] as Map).keys)
     {
       'country': 'Malaysia',
@@ -52,6 +49,13 @@ final instant = <Map<String, dynamic>>[
   for (final row in source['places'] as List)
     if (row['fast'] == true && row['name'] != row['state']) dto(row as Map),
 ];
+final instant = rawInstant
+    .where((row) =>
+        rawInstant
+            .where((other) => other['canonicalName'] == row['canonicalName'])
+            .length ==
+        1)
+    .toList();
 final kulim = dto(
     (source['places'] as List).firstWhere((r) => r['id'] == '1734393') as Map);
 
