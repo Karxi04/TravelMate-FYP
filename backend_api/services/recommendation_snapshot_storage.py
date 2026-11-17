@@ -19,8 +19,11 @@ def latest_snapshot(read, hydrate, uid, scope=None):
         # Legacy snapshots predate the indexed scope field. This fallback is bounded and newest-first.
         headers += read('recommendation_snapshots', filters=[('travellerId', '==', uid)],
                         orderBy=[('generatedAt', 'DESCENDING')], limit=150) or []
+    def key(header):
+        stored = header.get('canonicalDestinationScope')
+        return stored.get('scopeKey') if isinstance(stored, dict) else normalize_destination_scope(header.get('requestedDestination') or header.get('destinationArea'))['scopeKey']
     eligible = [h for h in headers if isinstance(h, dict) and h.get('travellerId') == uid
-                and (not scope or normalize_destination_scope(h.get('requestedDestination') or h.get('destinationArea'))['scopeKey'] == scope['scopeKey'])]
+                and (not scope or key(h) == scope['scopeKey'])]
     seen = set()
     for header in sorted(eligible, key=lambda h: (timestamp(h.get('generatedAt')), str(h.get('id') or '')), reverse=True):
         if header.get('id') in seen:

@@ -385,7 +385,8 @@ def test_missing_credentials_use_local_recommendations_or_controlled_unavailable
     assert all(validate_candidate(row, normalize_destination_scope("Penang"))[0] for row in snapshot["recommendationResults"])
     original = deepcopy(journey.collections["recommendation_snapshots"])
     monkeypatch.setenv("FALLBACK_MODE", "false")
-    assert client.post("/api/fr4/recommendations/generate", headers=AUTH, json={"destinationArea": "Penang"}).status_code == 502
+    unavailable = client.post("/api/fr4/recommendations/generate", headers=AUTH, json={"destinationArea": "Penang"})
+    assert unavailable.status_code == 503 and unavailable.json['code'] == 'discovery_unavailable'
     assert client.post("/api/fr11/chat", headers=AUTH, json={"message": "Tell me about Melaka"}).status_code == 502
     assert client.post("/api/fr8/hotels/search", headers=AUTH, json={
         "destination": "Penang", "checkin": "2026-11-01", "checkout": "2026-11-03",

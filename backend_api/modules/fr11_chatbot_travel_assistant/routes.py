@@ -1,4 +1,6 @@
 from flask import Blueprint, request, jsonify, g, current_app
+from time import monotonic
+from uuid import uuid4
 from auth_utils import auth_required
 from utils import utc_now_iso
 from services.gemini_service import generateChatbotResponse, generateFollowUpResponse, interpretChatbotIntent
@@ -36,6 +38,7 @@ from .nlp_extractor import (
     filter_constraint_candidates,
 )
 from .guided_planning import guided_requirements
+from . import chat_delivery
 from .contextual_intent import resolve_turn, prompt_context, remember_results, decorate_reply, place_cards
 from .history_conversation import is_history_request, history_turn
 from services.itinerary_history import HistoryConflict, restore_patch
@@ -55,6 +58,23 @@ from services.serpapi_service import retrieveDestinationResults
 from datetime import date, timedelta
 
 bp = Blueprint('fr11_chatbot', __name__, url_prefix='/api/fr11')
+
+
+@bp.before_request
+def time_chat_request():
+    if request.endpoint == 'fr11_chatbot.chat':
+        g.chat_http_started = monotonic()
+        g.chat_http_id = uuid4().hex[:16]
+        current_app.logger.info('chat_http_started request=%s at=%s', g.chat_http_id, utc_now_iso())
+
+
+@bp.after_request
+def finish_chat_request(response):
+    if getattr(g, 'chat_http_started', None) is not None:
+        response.headers['X-Request-ID'] = g.chat_http_id
+        current_app.logger.info('chat_http_finished request=%s status=%s elapsed_ms=%s',
+            g.chat_http_id, response.status_code, round((monotonic() - g.chat_http_started) * 1000))
+    return response
 
 
 @bp.errorhandler(HistoryConflict)
@@ -769,6 +789,33 @@ def _adjust_trip(message, state):
 @auth_required(['traveller'])
 def chat():
     payload = request.get_json(silent=True) or {}
+    return chat_delivery.run(payload, g.uid, _chat_turn, retrieveRecord, claimRecord, updateRecord)
+
+
+@bp.get('/chat-requests/<identity>')
+@auth_required(['traveller'])
+def chat_request_status(identity):
+    if not chat_delivery.valid_identity(identity):
+        return jsonify(ok=False, error='Invalid chat request identifier.'), 400
+    return jsonify(ok=True, **chat_delivery.status(retrieveRecord, g.uid, identity))
+
+
+def _save_chat_message(item, session):
+    identity = getattr(g, 'chat_client_request_id', None)
+    if identity:
+        item['clientRequestId'] = identity
+        key = chat_delivery.request_key(g.uid, identity)
+        return storeRecord('chat_messages', {**item, 'sessionId': session['id']}, key)
+    return storeRecord('chat_messages', {**item, 'sessionId': session['id']})
+
+
+def _update_chat_session(session, updates, expected, *, guard_legacy=False):
+    if getattr(g, 'chat_client_request_id', None) or guard_legacy:
+        return updateRecord('chat_sessions', session['id'], updates, expected=expected)
+    return updateRecord('chat_sessions', session['id'], updates)
+
+
+def _chat_turn(payload):
     if not isinstance(payload,dict):
         return jsonify({'ok':False,'error':'Chat data must be an object.'}),400
     message = str(payload.get('message', '')).strip()
@@ -785,6 +832,8 @@ def chat():
         if payload.get('sessionId') and not session:
             return jsonify({'ok':False,'error':'Chat session not found.'}),404
         session = session or _new_session(_session_title(message))
+        if getattr(g, 'chat_request_key', None) and not payload.get('sessionId'):
+            updateRecord('chat_requests', g.chat_request_key, {'sessionId': session['id']})
     except Exception:
         return jsonify({'ok':False,'error':'Your conversation could not be loaded. Please retry.'}),503
     messages = [dict(x) for x in session.get('messages', []) if isinstance(x, dict)]
@@ -836,11 +885,11 @@ def chat():
         item = {'message':user_message,'createdAt':utc_now_iso(),'travellerId':g.uid,'source':'travelmate-assistant' if adjustment is not None or discovery else 'travelmate-data',**commerce}
         decorate_reply(item, planning_state)
         try:
-            record=storeRecord('chat_messages',{**item,'sessionId':session['id']})
+            record=_save_chat_message(item, session)
             item['id']=record['id']
             remember_results(planning_state, item)
             messages.append(item)
-            session=updateRecord('chat_sessions',session['id'],{'messages':messages,'planningState':planning_state,'updatedAt':utc_now_iso()},expected=expected_session)
+            session=_update_chat_session(session, {'messages':messages,'planningState':planning_state,'updatedAt':utc_now_iso()}, expected_session, guard_legacy=True)
         except Exception:
             return jsonify({'ok':False,'error':'The conversation could not be saved. Reopen the chat and retry.'}),409
         return jsonify({'ok':True,'reply':item['reply'],'source':item['source'],'item':item,'session':session})
@@ -1003,7 +1052,7 @@ def chat():
             'source': 'travelmate-assistant',
             'createdAt': utc_now_iso(),
         }
-        record = storeRecord('chat_messages', {**item, 'sessionId': session['id']})
+        record = _save_chat_message(item, session)
         item['id'] = record['id']
         messages.append(item)
         updates = {
@@ -1011,7 +1060,7 @@ def chat():
             'planningState': planning_state,
             'updatedAt': utc_now_iso(),
         }
-        session = updateRecord('chat_sessions', session['id'], updates)
+        session = _update_chat_session(session, updates, expected_session)
         return jsonify({'ok': True, 'reply': foreign_reply, 'source': 'travelmate-assistant', 'messageId': record['id'], 'item': item, 'session': session})
 
     # Check requirement completeness for planning requests
@@ -1041,7 +1090,7 @@ def chat():
             item['suggestedReplies'] = req_check['suggestedReplies']
         if previews:
             item['placeSuggestions'] = previews
-        record = storeRecord('chat_messages', {**item, 'sessionId': session['id']})
+        record = _save_chat_message(item, session)
         item['id'] = record['id']
         messages.append(item)
         updates = {
@@ -1049,7 +1098,7 @@ def chat():
             'planningState': planning_state,
             'updatedAt': utc_now_iso(),
         }
-        session = updateRecord('chat_sessions', session['id'], updates)
+        session = _update_chat_session(session, updates, expected_session)
         return jsonify({'ok': True, 'reply': clarification_reply, 'source': 'travelmate-assistant', 'messageId': record['id'], 'item': item, 'session': session})
 
     road_trip_unsupported = (
@@ -1216,7 +1265,7 @@ def chat():
         item['placeSuggestions'] = suggestions
 
     decorate_reply(item, planning_state)
-    record = storeRecord('chat_messages', {**item, 'sessionId': session['id']})
+    record = _save_chat_message(item, session)
     item['id'] = record['id']
     remember_results(planning_state, item)
     messages.append(item)
@@ -1227,7 +1276,7 @@ def chat():
     }
     if session.get('title') in {None, '', 'New travel chat'}:
         updates['title'] = _session_title(message)
-    session = updateRecord('chat_sessions', session['id'], updates)
+    session = _update_chat_session(session, updates, expected_session)
     return jsonify({'ok': True, 'reply': reply, 'source': source, 'messageId': record['id'], 'item': item, 'session': session})
 
 
