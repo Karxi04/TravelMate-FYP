@@ -40,6 +40,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   Map<String, dynamic> pagination = {};
   int requestVersion = 0;
   String generatedDestination = '';
+  String? discoveryNotice;
   bool loadingMore = false;
 
   @override
@@ -81,6 +82,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
           items = data['recommendations'] as List? ?? [];
           source = (data['source'] ?? '').toString();
           pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
+          discoveryNotice = data['snapshot']?['cacheFallbackNotice']?.toString();
           generatedDestination = (data['snapshot']?['requestedDestination'] ?? widget.initialDestination).toString();
           destination.text = generatedDestination;
           recommendationGenerationId = (data['recommendationGenerationId'] ??
@@ -133,6 +135,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   }
 
   Future<void> generate({bool reuseCandidates = false, bool expand = false}) async {
+    if (busy || loadingMore) return;
     final version = ++requestVersion;
     final requestedArea = destination.text.trim();
     if (requestedArea.isEmpty) {
@@ -152,11 +155,14 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         if ((reuseCandidates || expand) && generatedDestination == requestedArea && recommendationGenerationId.isNotEmpty)
           'previousGenerationId': recommendationGenerationId,
         if (expand) 'expandCandidates': true,
+        if (expand) 'displayedDestinationIds': items.whereType<Map>().map((row) => _destinationId(Map<String, dynamic>.from(row))).toList(),
       });
       if (!mounted || version != requestVersion || data is! Map) return;
       validateDiscoveryResponse(data);
       setState(() {
-        items = data['recommendations'] as List? ?? [];
+        final received = data['recommendations'] as List? ?? [];
+        items = expand ? appendRecommendationResults(items, received) : received;
+        discoveryNotice = data['discoveryMessage']?.toString();
         source = (data['source'] ?? '').toString();
         pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
         generatedDestination = requestedArea;
@@ -182,7 +188,11 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         'offset': reset ? '0' : '${pagination['nextOffset'] ?? 0}',
       });
       if (!mounted || version != requestVersion) return;
-      if (data['stale'] == true) { await generate(reuseCandidates:true); return; }
+      if (data['stale'] == true) {
+        setState(() => loadingMore = false);
+        await generate(reuseCandidates:true);
+        return;
+      }
       validateDiscoveryResponse(data);
       setState(() {
         final received = data['recommendations'] as List? ?? [];
@@ -489,7 +499,9 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
               }),
             if (pagination['hasMore'] == true)
               PrimaryButton(label:'Load more matching places', loading:loadingMore, onPressed:() => loadPage()),
-            if (pagination['hasMore'] != true && pagination['providerHasMore'] == true)
+            if (discoveryNotice != null)
+              Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(discoveryNotice!)),
+            if (pagination['hasMore'] != true && items.isNotEmpty)
               PrimaryButton(label:'Discover more places', loading:busy, onPressed:() => generate(expand:true)),
           ],
         ),

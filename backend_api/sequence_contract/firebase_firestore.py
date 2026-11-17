@@ -47,7 +47,7 @@ def _revoke_public_projection(collection_name, document_id):
     revoke_projection(collection_name, document_id)
 
 
-def retrieveRecord(collectionName, documentId=None, filters=None, limit=None):
+def retrieveRecord(collectionName, documentId=None, filters=None, limit=None, orderBy=None):
     """Exact sequence-diagram name for Firestore retrieval."""
     collection = get_db().collection(collectionName)
     if documentId:
@@ -59,6 +59,10 @@ def retrieveRecord(collectionName, documentId=None, filters=None, limit=None):
     query = collection
     for field, operator, value in (filters or []):
         query = query.where(field, operator, value)
+    for field, direction in (orderBy or []):
+        if direction not in ('ASCENDING', 'DESCENDING'):
+            raise ValueError('Invalid record ordering')
+        query = query.order_by(field, direction=direction)
     if limit:
         query = query.limit(limit)
     return [doc_to_dict(doc) for doc in query.stream()]

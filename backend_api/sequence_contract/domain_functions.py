@@ -16,6 +16,7 @@ from services.recommendation_taxonomy import (
     normalize_personality,
     normalize_phrase,
     normalize_purpose,
+    experience_types,
 )
 from services.preference_learning import LEARNED_INTEREST_STRENGTH
 from services.activity_pricing import activity_pricing, traveller_count
@@ -511,27 +512,22 @@ def rankRecommendations(items):
 def deduplicateRecommendations(items):
     """Keep the best-scoring representation of each destination identity."""
     ranked = rankRecommendations(items)
-    seen_ids = set()
-    seen_names = set()
+    from services.destination_candidates import same_place
     output = []
     for item in ranked:
-        destination_id = normalize_phrase(_destination_id(item))
-        name = normalize_phrase(item.get('title') or item.get('name'))
-        if (destination_id and destination_id in seen_ids) or (name and name in seen_names):
+        if any(same_place(item, old) for old in output):
             continue
-        if destination_id:
-            seen_ids.add(destination_id)
-        if name:
-            seen_names.add(name)
         output.append(item)
     return output
 
 
 def diversifyRecommendations(items, preferenceProfile=None, limit=12):
     """Greedy lightweight reranking that keeps strong preferences dominant."""
-    remaining = [dict(item) for item in (items or [])]
+    remaining = sorted([dict(item) for item in (items or [])],
+                       key=lambda item: (-_score_number(item.get('score')), _destination_id(item)))
     selected = []
     category_counts = {}
+    experience_counts, geography_counts = {}, {}
     preferred = preference_concepts((preferenceProfile or {}).get('interests', []))
     while remaining and len(selected) < max(0, int(limit or 0)):
         best_index = 0
@@ -546,6 +542,12 @@ def diversifyRecommendations(items, preferenceProfile=None, limit=12):
             repeated = category_counts.get(category, 0)
             penalty_rate = 2.0 if category in preferred else 7.0
             penalty = min(4.0, repeated * penalty_rate)
+            experiences = experience_types(item)
+            geography = item.get('normalizedGeography') or {}
+            area = (geography.get('state'), geography.get('city')) if geography.get('state') else None
+            experience_penalty = min(3.0, min((experience_counts.get(kind, 0) for kind in experiences), default=0) * 1.25)
+            geographic_penalty = min(2.0, geography_counts.get(area, 0) * .5) if area else 0
+            penalty = min(7.0, penalty + experience_penalty + geographic_penalty)
             adjusted = _score_number(item.get('score')) - penalty
             if adjusted > best_adjusted:
                 best_index = index
@@ -555,10 +557,18 @@ def diversifyRecommendations(items, preferenceProfile=None, limit=12):
         chosen = remaining.pop(best_index)
         chosen['diversityCategory'] = best_category
         chosen['diversityAdjustedScore'] = round(best_adjusted, 2)
+        chosen['diversityPenalty'] = round(best_penalty, 2)
+        chosen['experienceTypes'] = experience_types(chosen)
         if best_penalty:
-            chosen['diversityReason'] = 'Light category repetition penalty applied'
+            chosen['diversityReason'] = 'Bounded category, experience and geographic repetition penalty; hybrid score unchanged'
         selected.append(chosen)
         category_counts[best_category] = category_counts.get(best_category, 0) + 1
+        for kind in experience_types(chosen):
+            experience_counts[kind] = experience_counts.get(kind, 0) + 1
+        geo = chosen.get('normalizedGeography') or {}
+        if geo.get('state'):
+            area = (geo['state'], geo.get('city'))
+            geography_counts[area] = geography_counts.get(area, 0) + 1
     return [{**item, 'rankNo': index + 1} for index, item in enumerate(selected)]
 
 

@@ -57,7 +57,7 @@ def test_weather_error_does_not_disclose_provider_diagnostic(client, mock_travel
 
 def test_more_destinations_have_canonical_ids_and_real_page(client, mock_traveller_auth):
     rows = [{'place_id': str(i), 'title': f'Penang Visitor Place {i}', 'address': 'George Town, Penang, Malaysia', 'type': 'Museum'} for i in range(35)]
-    with patch('modules.fr03_destination_search_information.routes.retrieveDestinationResults', return_value={'local_results': rows, 'serpapi_pagination': {'next': 'opaque-provider-next'}}) as provider, patch('modules.fr03_destination_search_information.routes.retrieveRecord', return_value=[]), patch('modules.fr03_destination_search_information.routes.storeRecord'):
+    with patch('modules.fr03_destination_search_information.routes.retrieveDestinationResults', return_value={'local_results': rows, 'serpapi_pagination': {'next': 'https://serpapi.com/search.json?start=40'}}) as provider, patch('modules.fr03_destination_search_information.routes.retrieveRecord', return_value=[]), patch('modules.fr03_destination_search_information.routes.storeRecord'):
         response = client.get('/api/fr3/destinations/search?q=museum&location=Penang&offset=20', headers=AUTH)
     assert response.status_code == 200
     assert provider.call_args.kwargs == {'start': 20}

@@ -369,7 +369,9 @@ def test_route_improvement_executes_through_registered_http_generation(client,mo
     from test_fr05_budget_aware_integration import fixture,_personalised_payload,HEADERS
     data=_route_trip()
     for item,offset,close in zip(data['activities'],[0,.001,.1,.101],[20,18,19,21]):
-        item['gps_coordinates']['latitude']=5.416+offset
+        # Keep the same north/south test distances on Penang mainland land polygons.
+        item['gps_coordinates']['latitude']=5.30+offset
+        item['gps_coordinates']['longitude']=100.4667
         item['openingHours']=f'09:00-{close}:00'
         item.update(address='George Town, Penang, Malaysia',destinationId='synthetic-'+item['activityId'])
     monkeypatch.setenv('TRAVELMATE_BUDGET_AWARE_SELECTION_ENABLED',str(selection_enabled).lower())

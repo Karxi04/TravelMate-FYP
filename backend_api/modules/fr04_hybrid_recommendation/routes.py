@@ -13,12 +13,13 @@ from werkzeug.exceptions import HTTPException
 from auth_utils import auth_required
 from utils import utc_now_iso
 from services.serpapi_service import retrieveDestinationResults
+from services.destination_candidates import provider_page, cached_candidates, discovery_pool, merge_candidates, normalise, facts_signature
 from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
 from services.review_service import published_review
 from services.recommendation_taxonomy import candidate_concepts
 from services.recommendation_discovery import DISCOVERY_MODE, discovery_annotations, discovery_queries, enrich_discovery_candidate, is_planning_candidate
-from services.recommendation_snapshot_storage import validation_reason
+from services.recommendation_snapshot_storage import validation_reason, latest_snapshot
 from services.preference_learning import (
     apply_explicit_feedback,
     canonical_concepts,
@@ -218,38 +219,7 @@ def reset_preference_feedback():
 
 
 def _provider_destinations(query, location, start=0):
-    scope = location if isinstance(location, dict) else normalize_destination_scope(location)
-    result = retrieveDestinationResults(
-        query,
-        scope.get('canonicalName') or str(location or ''),
-        {
-            'latitude': scope.get('latitude'),
-            'longitude': scope.get('longitude'),
-        },
-        **({'start': start} if start else {}),
-    )
-    items = list(result.get('local_results', []) or [])
-    normalized = []
-    for raw in items:
-        item = dict(raw or {})
-        did = str(
-            item.get('destinationId')
-            or item.get('place_id')
-            or item.get('data_id')
-            or item.get('data_cid')
-            or item.get('id')
-            or item.get('title')
-            or ''
-        ).strip()
-        if not did:
-            continue
-        item['destinationId'] = did
-        if 'rating' in item:
-            item['ratingSource'] = 'provider'
-        item['category'] = item.get('category') or item.get('type') or ''
-        item['description'] = item.get('description') or item.get('type') or item.get('address') or ''
-        normalized.append(item)
-    return normalized
+    return provider_page(retrieveDestinationResults, query, location, start)
 
 
 def _snapshot_item(item, source):
@@ -365,78 +335,53 @@ def generate():
         previous_key = _requested_area(previous.get('requestedDestination') or previous.get('destinationArea'))
     if previous_id and (not previous or previous.get('travellerId') != g.uid or previous_key != destination_scope['scopeKey']):
         return jsonify(ok=False, error='Recommendation snapshot not found for this destination.'), 404
-    try:
-        provider_offset = int((previous or {}).get('providerNextOffset') or 0)
-        if not 0 <= provider_offset <= 60 or provider_offset % 20:provider_offset = 0
-    except (TypeError,ValueError,OverflowError):provider_offset = 0
     expand = payload.get('expandCandidates') is True
-    if previous:
-        candidates = _filter_for_destination(previous.get('recommendationResults') or [], destination_scope)
-        source = previous.get('source', 'cache')
-    provider_has_more = bool((previous or {}).get('providerHasMore'))
-
-    cached = retrieveRecord(
-        'destination_cache',
-        filters=[] if destination_scope['scopeKey'] == 'my' else [('canonicalDestinationScope', '==', destination_scope['scopeKey'])],
-        limit=150,
-    )
-    if not cached and destination_scope.get('state'):
-        cached = retrieveRecord('destination_cache', filters=[('normalizedGeography.state','==',destination_scope['state'])], limit=150)
-    if len(cached or []) < 150 and destination_scope['scopeKey'] != 'my':
-        # Older seed/cache records predate scope fields; geography still gates every row.
-        cached = list(cached or []) + list(retrieveRecord('destination_cache',limit=150) or [])
-    if cached:
-        # Latest grounded metadata wins for the same identity; prior-only candidates survive.
-        refreshed = {_destination_id(item):item for item in _filter_for_destination(cached, destination_scope)}
-        candidates = [{**item, **refreshed.get(_destination_id(item), {})} for item in candidates]
-        candidates += list(refreshed.values())
-
-    if search_query != 'tourist attractions' or payload.get('discoveryMode') != DISCOVERY_MODE:
-        provider_queries = [search_query]
-    elif previous and isinstance(previous.get('providerQueries'),list) and previous.get('providerQueries') and all(isinstance(query,str) and query for query in previous['providerQueries'][:2]) and previous.get('preferenceFingerprint') == _profile_fingerprint(pref) and previous.get('preferenceProfileVersion') == _preference_version(pref,learned_profile):
-        provider_queries = previous['providerQueries'][:2]
-    else:
-        provider_queries = discovery_queries(effective_pref,candidates)
-    if previous and previous.get('providerQueries') != provider_queries:
-        provider_offset = 0
-        provider_has_more = bool(os.getenv('SERPAPI_KEY','').strip())
-
-    # Prefer live destination information when SerpApi is configured.
-    if os.getenv('SERPAPI_KEY', '').strip() and (not previous or (expand and provider_has_more and provider_offset < 60)):
+    displayed = payload.get('displayedDestinationIds', [])
+    previous_ids = {_destination_id(r) for r in (previous or {}).get('recommendationResults', [])}
+    if (not isinstance(displayed, list) or len(displayed) > 150 or
+            any(not isinstance(v, str) or v not in previous_ids for v in displayed)):
+        return jsonify(ok=False, error='Displayed destinations must belong to the previous generation.'), 400
+    cache = cached_candidates(retrieveRecord, destination_scope)
+    candidates = merge_candidates(normalise((previous or {}).get('recommendationResults', []), destination_scope, source='snapshot'), cache)
+    cursors = (previous or {}).get('providerCursors') or {}
+    stored_queries = (previous or {}).get('providerQueries') or []
+    previous_queries = [q for q in stored_queries if isinstance(q, str) and len(q) <= 200][:3] if isinstance(stored_queries, list) else []
+    if not isinstance(cursors, dict):
+        cursors = {}
+    if previous and not cursors:
+        # Legacy snapshots share one offset; never infer further pages from candidate count.
+        offset = previous.get('providerNextOffset')
+        cursors = {q: offset if previous.get('providerHasMore') and type(offset) is int and offset in (20, 40) else None for q in previous_queries}
+    used = (previous or {}).get('providerRequestsUsed')
+    if type(used) is not int or not 0 <= used <= 6:
+        offset = (previous or {}).get('providerNextOffset')
+        offset = offset if type(offset) is int and offset in (0, 20, 40, 60) else 0
+        used = min(6, len(previous_queries) * max(1, offset // 20))
+    planned = ([search_query] if search_query != 'tourist attractions' or payload.get('discoveryMode') != DISCOVERY_MODE
+               else discovery_queries(effective_pref, candidates))
+    pending = [q for q in previous_queries if cursors.get(q) is not None]
+    provider_queries = list(dict.fromkeys([*pending, *planned]))[:3]
+    pool = discovery_pool(retrieveRecord, _provider_destinations, destination_scope, effective_pref,
+        previous=(previous or {}).get('recommendationResults', []), cached=cache,
+        queries=provider_queries, cursors=cursors, used=used,
+        allow_provider=bool(os.getenv('SERPAPI_KEY', '').strip()) and (not previous or expand))
+    candidates = pool['items']
+    source = pool['source'] if pool['providerRequests'] else (previous or {}).get('source', 'cache')
+    provider_has_more = pool['providerHasMore']
+    next_offsets = [v for v in pool['cursors'].values() if type(v) is int]
+    provider_offset = min(next_offsets) if next_offsets else 60
+    if pool['providerErrors']:
+        logger.warning('recommendation_provider_unavailable request_id=%s types=%s',
+                       _correlation_id(), ','.join(pool['providerFailureTypes']))
+    for item in pool['providerItems']:
+        did = _destination_id(item)
         try:
-            batches = [_provider_destinations(query,destination_scope,provider_offset) for query in provider_queries]
-            discovered = [item for batch in batches for item in batch]
-            candidates += _filter_for_destination(
-                discovered,
-                destination_scope,
-            )
-            source = 'live_provider'
-            provider_offset += 20
-            provider_has_more = any(len(batch) >= 20 for batch in batches) and provider_offset < 60
-            for item in _filter_for_destination(discovered, destination_scope)[:40]:
-                did = str(item.get('destinationId') or '')
-                if did:
-                    try:
-                        storeRecord('destination_cache', {
-                            **item,
-                            'requestedDestination': destination_area,
-                            'canonicalDestinationScope': destination_scope['scopeKey'],
-                            'canonicalDestinationName': destination_scope['canonicalName'],
-                            'recommendationSource': 'live_provider',
-                            'cachedAt': utc_now_iso(),
-                        }, did, merge=True)
-                    except InvalidArgument as error:
-                        # The candidate remains in the ranked snapshot even if
-                        # Firestore rejects its optional discovery cache entry.
-                        logger.warning('recommendation_cache_invalid request_id=%s reason=%s',
-                                       _correlation_id(), validation_reason(error))
-        except Exception as error:
-            logger.warning('recommendation_provider_unavailable request_id=%s type=%s',
-                           _correlation_id(),type(error).__name__)
-            # Keep an existing snapshot useful when a later provider page fails.
-            if expand:
-                return jsonify(ok=False, error='Additional destinations could not be loaded. Your current results are preserved.'), 502
-
+            storeRecord('destination_cache', {**item, 'requestedDestination': destination_area,
+                'canonicalDestinationScope': destination_scope['scopeKey'],
+                'canonicalDestinationName': destination_scope['canonicalName'],
+                'recommendationSource': 'live_provider', 'cachedAt': utc_now_iso()}, did, merge=True)
+        except InvalidArgument as error:
+            logger.warning('recommendation_cache_invalid request_id=%s reason=%s', _correlation_id(), validation_reason(error))
 
     if not candidates and _fallback_mode():
         fallback_candidates = [{**x,'ratingSource':'unverified_local_catalog'} for x in DESTINATIONS]
@@ -452,6 +397,13 @@ def generate():
 
     if not candidates:
         return jsonify({'ok': False, 'error': 'No recommendation candidates are available. Configure SerpApi or enable FALLBACK_MODE.'}), 502
+
+    if expand and previous and not pool['providerRequests'] and facts_signature(candidates) == facts_signature(previous['recommendationResults']):
+        page = _page(previous, {**payload, 'offset': len(displayed)})
+        return jsonify(ok=True, recommendationGenerationId=previous_id, snapshot=page,
+                       recommendations=page['recommendationResults'], pagination=page['pagination'],
+                       source=previous.get('source'), expanded=False,
+                       discoveryMessage='No additional matching places found in the available candidates.')
 
     local_ids = {_destination_id(item) for item in DESTINATIONS}
     candidates = [{**item,'ratingSource':'unverified_local_catalog'} if
@@ -483,6 +435,9 @@ def generate():
         effective_pref,
         limit=150,
     )
+    ranked_ids = {_destination_id(row) for row in ranked_candidates}
+    ranked_candidates += [row for row in unique_candidates if _destination_id(row) in displayed
+                          and _destination_id(row) not in ranked_ids]
     final_candidates, rejected_final = filter_candidates(
         ranked_candidates,
         destination_scope,
@@ -494,8 +449,14 @@ def generate():
             destination_scope['scopeKey'],
         )
     ranked = [{**_snapshot_item(item, source),**discovery_annotations(item,effective_pref)}
-              for item in final_candidates[:150]]
+              for item in final_candidates]
 
+    # Continue after the already displayed eligible prefix, retaining its visible order.
+    by_id = {_destination_id(row): row for row in ranked}
+    retained = [by_id[key] for key in dict.fromkeys(displayed) if key in by_id] if expand else []
+    retained_ids = {_destination_id(row) for row in retained}
+    ranked = (retained + [row for row in ranked if _destination_id(row) not in retained_ids])[:150]
+    ranked = [{**row, 'candidatePoolRankNo': row.get('rankNo'), 'rankNo': i + 1} for i, row in enumerate(ranked)]
     generation_id = uuid4().hex
     record = {
         'recommendationGenerationId': generation_id,
@@ -509,10 +470,17 @@ def generate():
             pref, learned_profile),
         'preferenceFingerprint': _profile_fingerprint(pref),
         'source': source,
+        'cacheFallbackNotice': ('Using saved destination metadata; some cache dates are stale or unavailable. Check venue details before travelling.'
+            if source != 'live_provider' and any(row.get('cacheFreshness') in {'stale', 'unknown'} for row in ranked) else None),
         'scoreBasis':payload.get('scoreBasis') or 'hybrid_v1',
         'providerHasMore': provider_has_more,
         'providerNextOffset': provider_offset,
-        'providerQueries': provider_queries,
+        'providerQueries': list(pool['cursors']) or provider_queries,
+        'providerCursors': pool['cursors'],
+        'providerRequestsUsed': pool['providerRequestsUsed'],
+        'previousGenerationId': previous_id or None,
+        'discoveryDiagnostics': {'providerRequests': pool['providerRequests'], 'providerErrors': pool['providerErrors'],
+                                 'candidateCount': len(ranked), 'retainedDisplayedCount': len(retained)},
         'engine': {
             'discoveryVersion': DISCOVERY_MODE,
             'scoringVersion':'recovery_v3',
@@ -535,7 +503,11 @@ def generate():
                        getattr(error, 'snapshot_bytes', 'unavailable'))
         raise
 
-    response_record = _page(record, payload)
+    page_options = dict(payload)
+    if retained:
+        retained_page = _page({**record, 'recommendationResults': retained}, payload)
+        page_options['offset'] = retained_page['pagination']['qualifiedCount']
+    response_record = _page(record, page_options)
     return jsonify({
         'ok': True,
         'recommendationGenerationId': generation_id,
@@ -544,6 +516,11 @@ def generate():
         'source': source,
         'engine': record['engine'],
         'pagination': response_record['pagination'],
+        'discoveryMessage': ('Provider search is temporarily unavailable; available saved candidates are preserved.'
+                             if pool['providerErrors'] == pool['providerRequests'] and pool['providerRequests'] else
+                             f"Found {len(response_record['recommendationResults'])} additional matching places."
+                             if response_record['recommendationResults'] else
+                             'No additional matching places found in the available candidates.') if expand or pool['providerErrors'] else record.get('cacheFallbackNotice'),
     })
 
 
@@ -557,19 +534,8 @@ def get_recommendations():
         if not record or record.get('travellerId') != g.uid:
             return jsonify({'ok': False, 'error': 'Recommendation snapshot not found'}), 404
     else:
-        snapshots = retrieveRecord(
-            'recommendation_snapshots',
-            filters=[('travellerId', '==', g.uid)],
-            limit=50,
-        ) or []
-        if destination_area:
-            requested = _requested_area(destination_area)
-            snapshots = [
-                item for item in snapshots
-                if _requested_area(item.get('requestedDestination') or item.get('destinationArea')) == requested
-            ]
-        snapshots.sort(key=lambda item: str(item.get('generatedAt') or ''), reverse=True)
-        record = loadRecommendationSnapshot(snapshots[0]) if snapshots else {}
+        record = latest_snapshot(retrieveRecord, loadRecommendationSnapshot, g.uid,
+                                 normalize_destination_scope(destination_area) if destination_area else None)
     preference = retrieveRecord('travel_preferences', g.uid)
     learned = retrieveRecord('learned_preference_profiles', g.uid)
     stale = bool(record and isinstance(preference, dict) and isinstance(preference.get('interests'), list)

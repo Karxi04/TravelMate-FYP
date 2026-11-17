@@ -1,6 +1,10 @@
 import logging
 import re
 import unicodedata
+import json
+import math
+from pathlib import Path
+from services.malaysia_boundary import coordinate_state
 
 
 logger = logging.getLogger(__name__)
@@ -73,6 +77,12 @@ LOCALITIES = {
     'Kangar': ('Perlis', {'kangar'}),
     'Putrajaya': ('Putrajaya', {'putrajaya'}),
     'Labuan': ('Labuan', {'labuan'}),
+    'Semporna': ('Sabah', {'semporna'}),
+    'Sibu': ('Sarawak', {'sibu'}),
+    'Kuala Selangor': ('Selangor', {'kuala selangor'}),
+    'Kuala Kangsar': ('Perak', {'kuala kangsar'}),
+    'Muar': ('Johor', {'muar'}),
+    'Sungai Petani': ('Kedah', {'sungai petani'}),
 }
 
 
@@ -95,20 +105,7 @@ STATE_CENTERS = {
     'Labuan': (5.2831, 115.2308),
 }
 
-
-# Bounding boxes are deliberately conservative. Penang uses separate island and
-# mainland boxes so the state scope includes Seberang Perai without becoming a
-# broad northern-Malaysia rectangle.
-STATE_BOUNDARIES = [
-    ('Kuala Lumpur', [(2.95, 3.27, 101.55, 101.80)]),
-    ('Putrajaya', [(2.88, 3.00, 101.64, 101.76)]),
-    ('Penang', [(5.12, 5.59, 100.15, 100.35), (5.10, 5.57, 100.35, 100.57)]),
-    ('Selangor', [(2.95, 3.25, 101.40, 101.66)]),
-    ('Perak', [(4.40, 4.75, 100.90, 101.30)]),
-    ('Johor', [(1.30, 1.70, 103.50, 104.05)]),
-    ('Kedah', [(5.95, 6.25, 100.20, 100.50)]),
-    ('Labuan', [(5.20, 5.45, 115.15, 115.35)]),
-]
+LOCALITY_CENTRES = json.loads((Path(__file__).parent / 'data/malaysia_locality_centres.json').read_text(encoding='utf-8'))['localities']
 
 
 FOREIGN_DESTINATIONS = {
@@ -185,7 +182,10 @@ def _coordinates(item):
     latitude = gps.get('latitude', gps.get('lat', item.get('latitude', item.get('lat'))))
     longitude = gps.get('longitude', gps.get('lng', gps.get('lon', item.get('longitude', item.get('lng')))))
     try:
-        return float(latitude), float(longitude)
+        lat, lon = float(latitude), float(longitude)
+        if isinstance(latitude, bool) or isinstance(longitude, bool) or not math.isfinite(lat) or not math.isfinite(lon) or abs(lat) > 90 or abs(lon) > 180:
+            return None, None
+        return lat, lon
     except (TypeError, ValueError):
         return None, None
 
@@ -193,11 +193,7 @@ def _coordinates(item):
 def _state_from_coordinates(latitude, longitude):
     if latitude is None or longitude is None:
         return None
-    for state, boxes in STATE_BOUNDARIES:
-        for south, north, west, east in boxes:
-            if south <= latitude <= north and west <= longitude <= east:
-                return state
-    return None
+    return coordinate_state(latitude, longitude)
 
 
 def normalize_destination_scope(value):
@@ -218,7 +214,9 @@ def normalize_destination_scope(value):
     else:
         canonical_name = raw
         scope_key = ''
-    center = STATE_CENTERS.get(state)
+    locality = LOCALITY_CENTRES.get(city)
+    compatible = bool(locality and coordinate_state(locality['latitude'], locality['longitude']) == state)
+    center = (locality['latitude'], locality['longitude']) if compatible else (None if city else STATE_CENTERS.get(state))
     return {
         'country': country,
         'state': state,
@@ -227,6 +225,8 @@ def normalize_destination_scope(value):
         'scopeKey': scope_key,
         'latitude': center[0] if center else None,
         'longitude': center[1] if center else None,
+        'coordinateSource': locality['sourceUrl'] if compatible else ('legacy_state_centre' if center else None),
+        'coordinateStatus': 'verified_locality' if compatible else ('unavailable_or_boundary_conflict' if city else 'state_hint'),
         'resolved': bool(scope_key),
     }
 
@@ -257,7 +257,10 @@ def normalize_candidate_geography(item):
     address_state = _state_from_text(address)
 
     textual_state = explicit_state or city_state or address_state
-    conflict = bool(coordinate_state and textual_state and coordinate_state != textual_state)
+    outside = latitude is not None and longitude is not None and coordinate_state is None
+    country = str(item.get('country') or item.get('countryCode') or '').strip().lower()
+    foreign_country = bool(country and country not in {'my', 'mys', 'malaysia'})
+    conflict = bool((coordinate_state and textual_state and coordinate_state != textual_state) or outside or foreign_country)
     if conflict:
         logger.warning(
             'Candidate geographic conflict: id=%s coordinate_state=%s text_state=%s',
@@ -298,6 +301,8 @@ def validate_candidate(item, requested_scope):
 
     if not scope.get('resolved'):
         reason = 'unresolved_requested_destination'
+    elif geography.get('conflict'):
+        reason = 'conflicting_candidate_geography'
     elif not geography.get('resolved'):
         reason = 'unresolved_candidate_geography'
     elif scope.get('state') and geography.get('state') != scope.get('state'):

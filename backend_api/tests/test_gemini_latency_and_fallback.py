@@ -434,7 +434,7 @@ def test_section_6_melaka_multi_turn_scenario(client, mock_traveller_auth):
         rec.update(d)
         return rec
 
-    def mock_retrieve(coll, doc_id=None, filters=None, limit=None):
+    def mock_retrieve(coll, doc_id=None, filters=None, limit=None, orderBy=None):
         col = mock_db.get(coll, {})
         if doc_id:
             return col.get(doc_id)

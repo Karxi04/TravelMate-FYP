@@ -14,7 +14,7 @@ def test_hosting_targets_rewrite_each_portal_to_its_own_cloud_run_service():
         "admin": ("travelmate-admin-ckx", "travelmate-admin"),
     }
     assert (root / "firebase" / "hosting" / "empty").is_dir()
-    assert config["firestore"] == {"rules": "firebase/firestore.rules"}
+    assert config["firestore"] == {"rules": "firebase/firestore.rules", "indexes": "firebase/firestore.indexes.json"}
 
     by_target = {entry["target"]: entry for entry in config["hosting"]}
     assert set(by_target) == set(expected)

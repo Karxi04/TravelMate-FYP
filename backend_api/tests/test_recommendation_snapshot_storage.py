@@ -121,7 +121,7 @@ def test_invalid_provider_cache_metadata_does_not_abort_expansion(
     new = {'destinationId': 'new', 'title': 'Heritage Hall', 'address': 'Penang',
            'providerMetadata': {'series': [[9, 20]]}}
     monkeypatch.setenv('SERPAPI_KEY', 'isolated-provider')
-    monkeypatch.setattr(routes, '_provider_destinations', lambda *args: [new])
+    monkeypatch.setattr(routes, '_provider_destinations', lambda *args: {'items': [new], 'hasMore': False, 'nextOffset': None})
     stored = routes.storeRecord
 
     def persist(collection, *args, **kwargs):

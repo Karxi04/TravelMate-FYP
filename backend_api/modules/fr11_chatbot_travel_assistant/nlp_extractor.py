@@ -58,7 +58,7 @@ def itinerary_view_request(text):
             r'\b(?:plan|trip|itinerary|schedule|draft|revision)\b', q):
         return False
     return bool((object_present and (inspect or planned_question)) or re.search(r'\bwhat have (?:i|we) planned\b', q)
-                or re.search(r'\bwhere (?:is|are) (?:my |the )?trips?\b', q))
+                or re.search(r'\bwhere (?:(?:is|are) )?(?:my |the )?trips?\b', q))
 
 
 def extract_activity_position(text, allow_short=False):

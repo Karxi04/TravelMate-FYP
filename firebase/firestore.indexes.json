@@ -1,0 +1,17 @@
+{
+  "indexes": [
+    {"collectionGroup": "destination_cache", "queryScope": "COLLECTION", "fields": [
+      {"fieldPath": "canonicalDestinationScope", "order": "ASCENDING"}, {"fieldPath": "cachedAt", "order": "DESCENDING"}
+    ]},
+    {"collectionGroup": "destination_cache", "queryScope": "COLLECTION", "fields": [
+      {"fieldPath": "normalizedGeography.state", "order": "ASCENDING"}, {"fieldPath": "cachedAt", "order": "DESCENDING"}
+    ]},
+    {"collectionGroup": "recommendation_snapshots", "queryScope": "COLLECTION", "fields": [
+      {"fieldPath": "travellerId", "order": "ASCENDING"}, {"fieldPath": "generatedAt", "order": "DESCENDING"}
+    ]},
+    {"collectionGroup": "recommendation_snapshots", "queryScope": "COLLECTION", "fields": [
+      {"fieldPath": "travellerId", "order": "ASCENDING"}, {"fieldPath": "canonicalDestinationScope.scopeKey", "order": "ASCENDING"}, {"fieldPath": "generatedAt", "order": "DESCENDING"}
+    ]}
+  ],
+  "fieldOverrides": []
+}

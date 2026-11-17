@@ -10,7 +10,7 @@ from services.malaysian_locality import normalize_candidate_geography
 from services.recommendation_taxonomy import candidate_concepts, concepts_for, display_concepts
 from .nlp_extractor import (clean_text, extract_itinerary_day, extract_activity_position,
                             extract_geographic_entities, extract_interests, itinerary_view_request,
-                            extract_budget, extract_travellers, conversational_question, classify_detailed_intent,
+                            extract_budget, extract_travellers, extract_duration, conversational_question, classify_detailed_intent,
                             find_matching_catalog_destinations, filter_constraint_candidates,
                             extract_excluded_interests, extract_excluded_activity_types, extract_indoor_preference)
 from .history_conversation import is_history_request
@@ -253,7 +253,8 @@ def place_cards(candidates, state, interests=None):
         if geo.get('conflict'):
             continue
         fields = ('destinationId', 'place_id', 'id', 'title', 'name', 'address', 'category', 'type',
-                  'description', 'recommendationReason', 'thumbnail', 'imageUrl', 'photoAttribution', 'imageSource', 'indoor',
+                  'description', 'recommendationReason', 'thumbnail', 'imageUrl', 'photoAttribution', 'imageSource',
+                  'imageStatus', 'photoAuthor', 'photoLicense', 'photoSourceUrl', 'imageVerifiedAt', 'indoor',
                   'recommendedDurationMinutes', 'familyFriendly', 'openingHours', 'currency', 'estimatedCost',
                   'openingHoursSourceUrl', 'openingHoursVerifiedAt', *PRICING_FIELDS)
         card = {k: row[k] for k in fields if k in row}
@@ -416,6 +417,15 @@ def resolve_turn(message, state, messages, *, interpret=None, lookup=None):
         state.setdefault('resultContext', {'messageId': message_id, 'kinds': [kind]})
     focus = _focused(state, messages, kind, rows)
     geo = extract_geographic_entities(message)
+    if itinerary_view_request(message) and state.get('activePlan') and not adjustment.get('tripId'):
+        if state.get('dateClarification'):
+            return {'response': {'reply': 'The draft dates need review before this itinerary can be shown or saved.'}}
+        saved_id = (state.get('savedPlans') or {}).get(state['activePlan'].get('draftId'))
+        if saved_id:
+            return {'response': {'reply': 'This plan is already saved. Open Trips to review its current details.', 'savedTripId': saved_id}}
+        return {'response': {'reply': 'Here is your unconfirmed itinerary. Nothing has been saved.', 'tripPlan': state['activePlan']}}
+    if re.fullmatch(r'what was my previous question', q) and messages:
+        return {'response': {'reply': 'Your previous question was: ' + redact(messages[-1].get('message'), 600)}}
     if geo.get('is_foreign') or geo.get('is_multi_destination') or itinerary_view_request(message):
         return None
     if is_history_request(message):
@@ -590,16 +600,20 @@ def resolve_turn(message, state, messages, *, interpret=None, lookup=None):
     if not rows and re.search(r'\b(?:ticket prices?|opening hours|admission prices?|expensive)\b', q):
         return {'response': {'reply': 'Which place do you mean? Choose a recorded place so I can check its available price or hours.'}}
     # Explicit commands, package budgets and useful short clarification answers stay deterministic.
+    date_words = r'\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b'
+    if (re.search(r'\d', message) and (re.search(date_words, q) or re.search(r'\d{1,4}[-/]\d{1,2}[-/]\d{1,4}', message))):
+        return None  # Existing date validation owns short ranges and invalid-date explanations.
     explicit = re.search(r'\b(?:adjust|change|replace|remove|add|keep|cancel|stop|undo|compare|plan)\b', q)
     known_intent = classify_detailed_intent(message) in {
         'FEATURE_EXPLANATION', 'BUDGET_ENQUIRY', 'DATE_ADJUSTMENT', 'DURATION_ADJUSTMENT', 'TRAVELLER_COUNT_ADJUSTMENT',
         'DESTINATION_RECOMMENDATION', 'DESTINATION_ENQUIRY', 'ACTIVITY_DISCOVERY', 'INDOOR_ALTERNATIVE',
         'ITINERARY_MODIFICATION', 'INTEREST_MODIFICATION', 'FLIGHT_ENQUIRY', 'HOTEL_ENQUIRY', 'CAR_RENTAL_ENQUIRY'}
-    supplied_detail = (extract_budget(message) is not None or extract_travellers(message)
+    supplied_detail = (extract_budget(message) is not None or extract_travellers(message) or extract_duration(message)
         or extract_itinerary_day(message) is not None or extract_interests(message)
         or extract_activity_position(message, allow_short=True) or extract_excluded_interests(message)
         or extract_excluded_activity_types(message) or extract_indoor_preference(message) is not None)
-    if explicit or known_intent or supplied_detail or re.search(r'\b(?:packages?|saved trips|booked|purchased)\b', q):
+    upgrade = re.search(r'\b(?:make|turn|convert) (?:this|it|these) into (?:a |an )?(?:complete |full |dated )?(?:trip|itinerary)\b', q)
+    if explicit or known_intent or supplied_detail or upgrade or geo.get('destination_area') or re.search(r'\b(?:packages?|saved trips|booked|purchased)\b', q):
         return None
     if interpret is None or len(q.split()) < 3 or re.fullmatch(r'(?:hi|hello|hey|hai|thanks|thank you)(?: lah| ah)?', q):
         return None

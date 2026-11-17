@@ -149,7 +149,7 @@ def test_metadata_survives_provider_snapshot_activity_schedule_and_budget():
     raw = candidate('local_botanical_gardens')
     with patch.object(recommendations, 'retrieveDestinationResults',
                       return_value={'local_results': [raw]}):
-        provider = recommendations._provider_destinations('parks', 'Penang')[0]
+        provider = recommendations._provider_destinations('parks', 'Penang')['items'][0]
     snapshot = recommendations._snapshot_item(provider, 'live_provider')
     original_snapshot = deepcopy(snapshot)
     activity = itineraries._activity_from_destination(snapshot, 0)

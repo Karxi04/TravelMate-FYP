@@ -541,8 +541,9 @@ def test_gemini_flask_route_preserves_context_and_session(client, journey, monke
     assert data["session"]["planningState"]["budgetLimit"] == 2000
     assert data["session"]["planningState"]["travellerCount"] == 3
     contents = sdk.return_value.models.generate_content.call_args.kwargs["contents"]
-    assert "Traveller preferences:" in contents
-    assert "Active trip planning state:" in contents
+    assert "Relevant conversation context (not reservation proof):" in contents
+    assert '"destinationArea": "Kota Kinabalu"' in contents and '"tripDays": 4' in contents
+    assert TRAVELLER not in contents
     assert "First Gemini reply" in contents
     assert "Traveller: Our budget is RM2000 for 3 people" in contents
     assert len(journey.retrieve("chat_messages")) == 2

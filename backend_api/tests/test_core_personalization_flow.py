@@ -141,7 +141,8 @@ def test_provider_expansion_is_explicit_bounded_and_previous_owner_scope_checked
     repo.store('travel_preferences',{'travellerId':UID,'interests':['Culture'],'preferenceProfileVersion':'v1'},UID)
     def provider(query,location,coords,**kwargs):
         offset=kwargs.get('start',0)
-        return {'local_results':[{'place_id':f'p{i}','title':f'Museum {i}','category':'Culture','address':'Penang, Malaysia'} for i in range(offset,offset+20)]}
+        return {'local_results':[{'place_id':f'p{i}','title':f'Museum {i}','category':'Culture','address':'Penang, Malaysia'} for i in range(offset,offset+20)],
+                'pagination': {'hasMore': offset < 40, 'nextOffset': offset+20 if offset < 40 else None}}
     with patch.dict('os.environ',{'SERPAPI_KEY':'synthetic-only'}),patch.object(routes,'retrieveRecord',side_effect=repo.read), \
          patch.object(routes,'storeRecord',side_effect=repo.store),patch.object(routes,'retrieveDestinationResults',side_effect=provider) as get:
         initial=client.post('/api/fr4/recommendations/generate',headers=AUTH,json={'destinationArea':'Penang','minimumMatchScore':70})
@@ -154,7 +155,9 @@ def test_provider_expansion_is_explicit_bounded_and_previous_owner_scope_checked
         assert expanded.status_code==200 and expanded.json['pagination']['candidateCount']==40
         assert get.call_args.kwargs['start']==20 and get.call_count==2
         with patch.object(routes,'retrieveDestinationResults',side_effect=RuntimeError('Unavailable')):
-            assert client.post('/api/fr4/recommendations/generate',headers=AUTH,json={'destinationArea':'Penang','previousGenerationId':gid,'expandCandidates':True}).status_code==502
+            fallback=client.post('/api/fr4/recommendations/generate',headers=AUTH,json={'destinationArea':'Penang','previousGenerationId':gid,'expandCandidates':True})
+            assert fallback.status_code==200 and fallback.json['source']=='cache'
+            assert 'unavailable' in fallback.json['discoveryMessage']
         assert client.post('/api/fr4/recommendations/generate',headers=AUTH,json={'destinationArea':'Kuala Lumpur','previousGenerationId':gid}).status_code==404
         repo.records[('recommendation_snapshots',gid)]['travellerId']='other'
         assert client.get('/api/fr4/recommendations?generationId='+gid,headers=AUTH).status_code==404

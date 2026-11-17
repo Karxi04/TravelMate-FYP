@@ -1,4 +1,6 @@
 import os
+from services.destination_candidates import normalise, same_place
+from services.serpapi_service import destination_pagination
 import math
 import re
 from flask import Blueprint, current_app, request, jsonify, g
@@ -259,38 +261,7 @@ def _canonical_place_name(item):
 
 
 def _same_place(left, right):
-    if not isinstance(left, dict) or not isinstance(right, dict):
-        return False
-    left_ids = _result_identity_values(left)
-    right_ids = _result_identity_values(right)
-    if left_ids and right_ids and left_ids.intersection(right_ids):
-        return True
-    left_name = _canonical_place_name(left)
-    right_name = _canonical_place_name(right)
-    if not left_name or left_name != right_name:
-        return False
-
-    left_coords = _coords(left)
-    right_coords = _coords(right)
-    if left_coords and right_coords:
-        distance = _distance_km(left_coords, right_coords)
-        return distance is not None and distance <= 0.5
-
-    left_geo = normalize_candidate_geography(left)
-    right_geo = normalize_candidate_geography(right)
-    if left_geo.get('state') and right_geo.get('state'):
-        if left_geo['state'] != right_geo['state']:
-            return False
-        if (left_geo.get('city') and right_geo.get('city') and
-                left_geo['city'] != right_geo['city']):
-            return False
-        return True
-
-    left_address = _search_text(left.get('address') or left.get('location'))
-    right_address = _search_text(right.get('address') or right.get('location'))
-    if left_address and right_address:
-        return left_address in right_address or right_address in left_address
-    return True
+    return same_place(left, right)
 
 
 def _enrich_search_result(item):
@@ -614,9 +585,10 @@ def search_destinations():
         else sorted(results, key=lambda item: _relevance_rank(item, q))
     )
 
-    has_more = (bool((data.get('serpapi_pagination') or {}).get('next')) or len(_provider_results(data)) >= 20) if source == 'serpapi' else len(results) > offset + 20
+    has_more = destination_pagination(data, offset)['hasMore'] if source == 'serpapi' else len(results) > offset + 20
     if source == 'local':
         results = results[offset:offset + 20]
+    results = normalise(results, requested_scope, source='live_provider' if source == 'serpapi' else 'local_catalog')
     for item in results:
         item.pop('_providerOrder', None)
         did = _destination_id(item)

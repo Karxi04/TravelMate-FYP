@@ -165,9 +165,11 @@ def respond(message, state, read, uid, *, tool=None):
         if reference:
             snapshot = own('recommendation_snapshots', context['generationId'])
         else:
-            headers = rows('recommendation_snapshots')
-            headers.sort(key=lambda r: str(r.get('generatedAt') or ''), reverse=True)
-            snapshot = own('recommendation_snapshots', headers[0]['id']) if headers else None
+            from services.recommendation_snapshot_storage import latest_snapshot
+            try:
+                snapshot = latest_snapshot(raw_read, lambda header: raw_read('recommendation_snapshots', header['id']), uid)
+            except Exception as error:
+                raise PersonalReadUnavailable() from error
         if not snapshot:
             return reply('No saved recommendations are available. Open Home → For You to deliberately generate recommendations; I have not generated a snapshot.')
         from modules.fr04_hybrid_recommendation.routes import _profile_fingerprint, _preference_version

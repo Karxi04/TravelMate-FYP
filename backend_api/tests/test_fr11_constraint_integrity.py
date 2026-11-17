@@ -156,7 +156,7 @@ def test_multiturn_route_preserves_constraints_and_returns_explicit_conflict(cli
         database.setdefault(collection, {})[record_id] = record
         return deepcopy(record)
 
-    def retrieve(collection, record_id=None, filters=None, limit=None):
+    def retrieve(collection, record_id=None, filters=None, limit=None, orderBy=None):
         if record_id is not None:
             value = database.get(collection, {}).get(record_id)
             return deepcopy(value) if value else None

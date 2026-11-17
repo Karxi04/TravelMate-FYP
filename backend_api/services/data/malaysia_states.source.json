@@ -1,0 +1,8 @@
+{
+  "source": "https://raw.githubusercontent.com/dosm-malaysia/data-open/b057365ccbf26cbe3db1c043668f6a0efe811cb2/datasets/geodata/administrative_1_state.geojson",
+  "commit": "b057365ccbf26cbe3db1c043668f6a0efe811cb2",
+  "sha256": "538f9301431c9f4a7c9262b419c9f6705fdfc57275aedf44c7bbbd7aff748587",
+  "bytes": 391521,
+  "features": 16,
+  "usage": "Unmodified DOSM geometry; search geography only, not legal boundary advice. Polygon envelopes are only an acceleration filter."
+}

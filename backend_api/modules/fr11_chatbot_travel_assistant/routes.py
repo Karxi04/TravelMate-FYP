@@ -44,6 +44,8 @@ from services.review_service import ReviewConflict
 from .package_assistant import respond as commerce_response, public_details
 from .personal_questions import respond as personal_response, PersonalReadUnavailable
 from .capabilities import normalize_message
+from services.destination_candidates import cached_candidates, discovery_pool, provider_page, merge_candidates, normalise
+from services.recommendation_discovery import discovery_queries
 import re
 import os
 import json
@@ -256,35 +258,15 @@ def _extract_place_suggestions(message, destination_area=None, prefer_indoor=Fal
 
 def _planning_catalog(area, state, interests=None, *, allow_provider=True):
     scope = normalize_destination_scope(area)
-    cached = retrieveRecord('destination_cache',
-                            filters=[('canonicalDestinationScope', '==', scope.get('scopeKey'))],
-                            limit=150) or []
-    catalog = DESTINATIONS
-    if cached:
-        from services.activity_pricing import PRICING_FIELDS
-        by_id = {str(row.get('destinationId') or row.get('place_id')):
-                 {**row, 'ratingSource': 'unverified_local_catalog'} for row in DESTINATIONS}
-        for candidate in cached:
-            key = str(candidate.get('destinationId') or candidate.get('place_id') or '')
-            if not key:
-                continue
-            base = by_id.get(key, {})
-            merged = {**base, **{k: v for k, v in candidate.items() if v not in (None, '', [], {})}}
-            if base.get('pricingUnit') or 'unitPrice' in base:
-                merged.update({key: base[key] for key in PRICING_FIELDS if key in base})
-            by_id[key] = merged
-        catalog = list(by_id.values())
-    matching = find_matching_catalog_destinations(area, state, catalog)
-    food_focus = concepts_for(interests or []) == {'food'}
-    needs_search = not matching or (food_focus and not any('food' in candidate_concepts(row) for row in matching))
-    if allow_provider and needs_search and os.getenv('SERPAPI_KEY', '').strip():
-        try:
-            query = 'local food and hawker centres' if food_focus else 'tourist attractions'
-            result = retrieveDestinationResults(f'{query} in {area}', area)
-            catalog = [*catalog, *(result.get('local_results') or [])]
-        except Exception:
-            pass
-    return catalog
+    profile = {'interests': interests or []}
+    cache = cached_candidates(retrieveRecord, scope)
+    base = merge_candidates(normalise(DESTINATIONS, scope, source='local_catalog'), cache)
+    queries = discovery_queries(profile, base, budget=1)
+    pool = discovery_pool(retrieveRecord,
+        lambda query, location, start: provider_page(retrieveDestinationResults, query, location, start),
+        scope, profile, local=DESTINATIONS, cached=cache, queries=queries,
+        allow_provider=allow_provider and bool(os.getenv('SERPAPI_KEY', '').strip()))
+    return pool['items']
 
 
 def _activity_preview(state):
@@ -343,12 +325,7 @@ def _destination_discovery(message, planning_state, interests=None):
     desired = concepts_for(interests)
     geo = extract_geographic_entities(message)
     scope = geo.get('destination_area') or 'Malaysia'
-    if scope == 'Malaysia':
-        candidates = [row for row in DESTINATIONS if normalize_candidate_geography(row).get('state')
-                      and not normalize_candidate_geography(row).get('conflict')]
-    else:
-        candidates = find_matching_catalog_destinations(scope, geo.get('destination_state'),
-                                                        _planning_catalog(scope, geo.get('destination_state'), interests))
+    candidates = _planning_catalog(scope, geo.get('destination_state'), interests)
     if not desired:
         return {'reply': 'What would you enjoy most: local food, heritage, nature, or a relaxed outing?',
                 'suggestedReplies': ['Recommend somewhere for local food', 'Recommend somewhere peaceful',
