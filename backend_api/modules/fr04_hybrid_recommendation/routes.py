@@ -29,6 +29,7 @@ from services.preference_learning import (
     reset_learning_profile,
 )
 from services.malaysian_locality import (
+    destination_locations, resolve_destination_scope,
     filter_candidates,
     normalize_destination_scope,
     validate_candidate,
@@ -282,7 +283,13 @@ def _page(record, options):
         except (ValueError,TypeError,OverflowError):
             continue
     end = offset + limit
-    return {**view, 'recommendationResults': qualified[offset:end], 'pagination': {
+    search_status = 'matches' if qualified else 'no_relevant_matches' if all_items else 'no_candidates'
+    stored_scope = record.get('canonicalDestinationScope')
+    area = (stored_scope.get('canonicalName') if isinstance(stored_scope, dict) else None) or record.get('requestedDestination') or 'this destination'
+    search_message = (None if qualified else f'No places with supported matches for your preferences in {area}.' if all_items
+                      else f'No verified destination candidates are available for {area}.')
+    return {**view, 'searchStatus': search_status, 'searchMessage': search_message,
+        'recommendationResults': qualified[offset:end], 'pagination': {
         'minimumMatchScore': minimum, 'scoreBasis':basis, 'offset': offset, 'limit': limit,
         'discoveryMode': discovery or None, 'thresholdApplied': not bool(discovery),
         'candidateCount': len(all_items), 'qualifiedCount': len(qualified),
@@ -315,7 +322,10 @@ def generate():
     if _page({}, payload) is None:
         return jsonify(ok=False, error='Invalid recommendation threshold or page.'), 400
     destination_area = str(payload.get('destinationArea') or payload.get('location') or 'Malaysia').strip()
-    destination_scope = normalize_destination_scope(destination_area)
+    try:
+        destination_scope = resolve_destination_scope(destination_area, payload.get('destinationScopeKey'))
+    except ValueError:
+        return jsonify(ok=False, error='Choose a supported Malaysian destination area.'), 400
     if not destination_scope.get('resolved'):
         return jsonify({
             'ok': False,
@@ -395,8 +405,12 @@ def generate():
         candidates = _filter_for_destination(fallback_candidates, destination_scope)
         source = 'fallback'
 
-    if not candidates:
-        return jsonify({'ok': False, 'error': 'No recommendation candidates are available. Configure SerpApi or enable FALLBACK_MODE.'}), 502
+    if not candidates and pool['providerErrors']:
+        return jsonify(ok=False, code='destination_provider_unavailable',
+                       error='Destination search is temporarily unavailable and no verified saved places are available for this area.'), 502
+    if not candidates and not os.getenv('SERPAPI_KEY', '').strip() and not _fallback_mode():
+        return jsonify(ok=False, code='discovery_unavailable',
+                       error='Destination search is not configured and no verified saved places are available for this area.'), 503
 
     if expand and previous and not pool['providerRequests'] and facts_signature(candidates) == facts_signature(previous['recommendationResults']):
         page = _page(previous, {**payload, 'offset': len(displayed)})
@@ -529,13 +543,20 @@ def generate():
 def get_recommendations():
     generation_id = str(request.args.get('generationId') or '').strip()
     destination_area = str(request.args.get('destinationArea') or '').strip()
+    scope = resolve_destination_scope(destination_area) if destination_area else None
+    if scope and not scope.get('resolved'):
+        return jsonify(ok=False, error='Choose a supported Malaysian destination area.'), 400
     if generation_id:
         record = retrieveRecord('recommendation_snapshots', generation_id) or {}
         if not record or record.get('travellerId') != g.uid:
             return jsonify({'ok': False, 'error': 'Recommendation snapshot not found'}), 404
+        actual = record.get('canonicalDestinationScope')
+        actual = actual if isinstance(actual, dict) else resolve_destination_scope(record.get('requestedDestination'))
+        if scope and scope['scopeKey'] != actual.get('scopeKey'):
+            return jsonify(ok=False, error='Recommendation snapshot not found for this destination.'), 404
     else:
         record = latest_snapshot(retrieveRecord, loadRecommendationSnapshot, g.uid,
-                                 normalize_destination_scope(destination_area) if destination_area else None)
+                                 scope)
     preference = retrieveRecord('travel_preferences', g.uid)
     learned = retrieveRecord('learned_preference_profiles', g.uid)
     stale = bool(record and isinstance(preference, dict) and isinstance(preference.get('interests'), list)
@@ -562,6 +583,13 @@ def get_recommendations():
         'pagination': response_record['pagination'],
         'stale': stale,
     })
+
+
+@bp.get('/locations')
+@auth_required(['traveller'])
+def supported_locations():
+    fields = ('country', 'state', 'city', 'kind', 'canonicalName', 'scopeKey', 'aliases')
+    return jsonify(ok=True, locations=[{key: row.get(key) for key in fields} for row in destination_locations()])
 
 
 @bp.get('/settings')

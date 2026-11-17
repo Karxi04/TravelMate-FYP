@@ -30,6 +30,24 @@ class _DelayedBackend {
 }
 
 void main() {
+  testWidgets('a recorded 90-second chat returns once within its own deadline',
+      (tester) async {
+    final harness = _DelayedBackend(const Duration(seconds: 90));
+    http.Response? response;
+    Object? failure;
+    unawaited(harness.backend
+        .request('POST', '/api/fr11/chat',
+            timeout: RequestTimeouts.forPost('/api/fr11/chat'),
+            headers: () async => {'Authorization': 'Bearer synthetic-fixture'})
+        .then<void>((value) => response = value,
+            onError: (Object error) => failure = error));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 90));
+    expect(failure, isNull);
+    expect(response?.statusCode, 200);
+    expect(harness.posts, 1);
+  });
+
   testWidgets('the observed 42-second generation returns without replay',
       (tester) async {
     final harness = _DelayedBackend(const Duration(seconds: 42));

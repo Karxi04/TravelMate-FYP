@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import '../../services/transaction_request.dart';
 import 'database_chat_cards.dart';
 import 'personal_assistant_actions.dart';
 import '../../widgets/local_place_rating.dart';
@@ -52,6 +53,9 @@ class _ChatTabState extends State<ChatTab> {
   String? screenError;
   String? sendError;
   String? failedMessage;
+  String? pendingRequestId;
+  bool deliveryUnknown = false;
+  int conversationVersion = 0;
   Map<String, dynamic> planningState = {};
   final Map<String, String> savedPlans = {};
   final Set<String> openingPackageIds = {};
@@ -187,6 +191,7 @@ class _ChatTabState extends State<ChatTab> {
 
   Future<void> newChat() async {
     if (busy) return;
+    ++conversationVersion;
     setState(() => busy = true);
     try {
       final data =
@@ -200,6 +205,8 @@ class _ChatTabState extends State<ChatTab> {
         savedPlans.clear();
         sendError = null;
         failedMessage = null;
+        pendingRequestId = null;
+        deliveryUnknown = false;
       });
       await loadSessions(openNewest: false);
       scaffoldKey.currentState?.closeDrawer();
@@ -212,6 +219,7 @@ class _ChatTabState extends State<ChatTab> {
 
   Future<void> openSession(String id) async {
     if (busy) return;
+    ++conversationVersion;
     setState(() => busy = true);
     try {
       final data = await api.get('/api/fr11/sessions/$id');
@@ -224,6 +232,8 @@ class _ChatTabState extends State<ChatTab> {
         acceptPlanningState(session);
         sendError = null;
         failedMessage = null;
+        pendingRequestId = null;
+        deliveryUnknown = false;
       });
       _showLatest();
     } catch (e) {
@@ -278,7 +288,9 @@ class _ChatTabState extends State<ChatTab> {
 
   Future<void> send([String? quickText]) async {
     final text = (quickText ?? message.text).trim();
-    if (text.isEmpty || busy) return;
+    if (text.isEmpty || busy || deliveryUnknown) return;
+    final version = ++conversationVersion;
+    pendingRequestId = newTransactionAttemptId('chat');
 
     message.clear();
     followReply = true;
@@ -292,11 +304,13 @@ class _ChatTabState extends State<ChatTab> {
     try {
       final data = await api.post('/api/fr11/chat', {
         'message': text,
+        'clientRequestId': pendingRequestId,
         'guidedPlanning': true,
         if (activeSessionId != null) 'sessionId': activeSessionId,
         if (planningState['commerceRevision'] != null)
           'commerceRevision': planningState['commerceRevision'],
       });
+      if (!mounted || version != conversationVersion) return;
       final session = data['session'];
       if (session is Map && mounted) {
         final s = Map<String, dynamic>.from(session);
@@ -315,7 +329,17 @@ class _ChatTabState extends State<ChatTab> {
           sessions = [summary, ...sessions.where((row) => row is Map && row['id'].toString() != activeSessionId)];
         });
       }
+      failedMessage = null;
+      pendingRequestId = null;
+      deliveryUnknown = false;
     } catch (error) {
+      if (!mounted || version != conversationVersion) return;
+      if (isBackendConnectionFailure(error) ||
+          (error is ApiException && (error.statusCode >= 500 ||
+              (error.statusCode == 409 && error.code != 'stale_chat_context')))) {
+        await reconcileDelivery(version);
+        return;
+      }
       if (error is ApiException &&
           error.statusCode == 409 &&
           activeSessionId != null) {
@@ -330,7 +354,7 @@ class _ChatTabState extends State<ChatTab> {
           }
         } catch (_) {/* Keep the retry message if refreshing also fails. */}
       }
-      if (mounted) {
+      if (mounted && version == conversationVersion) {
         setState(() {
           sendError = switch (error) {
             ApiException(statusCode: 409) =>
@@ -342,7 +366,7 @@ class _ChatTabState extends State<ChatTab> {
         });
       }
     } finally {
-      if (mounted) {
+      if (mounted && version == conversationVersion) {
         setState(() {
           busy = false;
           pendingMessage = null;
@@ -352,8 +376,54 @@ class _ChatTabState extends State<ChatTab> {
     }
   }
 
+  Future<void> reconcileDelivery(int version) async {
+    final identity = pendingRequestId;
+    if (identity == null) return;
+    try {
+      final data = await api.get('/api/fr11/chat-requests/$identity');
+      if (!mounted || version != conversationVersion) return;
+      final session = data['session'];
+      setState(() {
+        if (session is Map) {
+          activeSessionId = session['id'].toString();
+          messages = session['messages'] as List? ?? [];
+          acceptPlanningState(Map<String, dynamic>.from(session));
+        }
+        if (data['status'] == 'completed' && session is Map) {
+          deliveryUnknown = false; sendError = null; failedMessage = null; pendingRequestId = null;
+          final summary = Map<String, dynamic>.from(session)..remove('messages');
+          sessions = [summary, ...sessions.where((row) => row is Map && row['id'].toString() != activeSessionId)];
+        } else if (data['status'] == 'rejected') {
+          deliveryUnknown = false; pendingRequestId = null;
+          sendError = 'The message was not accepted. Review the conversation before trying again.';
+        } else {
+          deliveryUnknown = true;
+          sendError = 'Delivery is not confirmed yet. Check the conversation before sending again.';
+        }
+      });
+    } catch (_) {
+      if (mounted && version == conversationVersion) setState(() {
+        deliveryUnknown = true;
+        sendError = 'Delivery is not confirmed yet. Check the conversation when the connection returns.';
+      });
+    }
+  }
+
+  Future<void> checkDelivery() async {
+    if (busy || pendingRequestId == null) return;
+    final version = conversationVersion;
+    setState(() => busy = true);
+    try { await reconcileDelivery(version); }
+    finally {
+      if (mounted && version == conversationVersion) {
+        setState(() => busy = false);
+        _showLatest();
+      }
+    }
+  }
+
   Future<void> savePlan(Map<String, dynamic> plan) async {
-    if (plan['viewOnly'] == true || busy ||
+    if (plan['viewOnly'] == true || busy || deliveryUnknown ||
         stalePlan(plan) ||
         savedPlans.containsKey(planKey(plan)) ||
         plan['coverageStatus'] == 'partial' ||
@@ -592,11 +662,11 @@ class _ChatTabState extends State<ChatTab> {
           : sendError != null
               ? AppErrorState(
                   key: const ValueKey('assistant-send-error'),
-                  title: 'Message not sent',
+                  title: deliveryUnknown ? 'Delivery unconfirmed' : 'Message not sent',
                   message: sendError!,
-                  retryLabel: 'Retry message',
+                  retryLabel: deliveryUnknown ? 'Check conversation' : 'Retry message',
                   onRetry:
-                      failedMessage == null ? null : () => send(failedMessage),
+                      deliveryUnknown ? checkDelivery : failedMessage == null ? null : () => send(failedMessage),
                 )
               : const SizedBox.shrink(),
     );
@@ -1300,7 +1370,7 @@ class _ChatTabState extends State<ChatTab> {
             SizedBox(
               width: double.infinity,
               child: TextButton.icon(
-                onPressed: busy ? null : () => send('Regenerate itinerary'),
+                onPressed: busy || deliveryUnknown ? null : () => send('Regenerate itinerary'),
                 icon: const Icon(Icons.refresh),
                 label: const Text('Regenerate'),
               ),
@@ -1408,7 +1478,7 @@ class _ChatTabState extends State<ChatTab> {
                     children: suggestions
                         .map((item) => ActionChip(
                             label: Text(item),
-                            onPressed: busy ? null : () => send(item)))
+                            onPressed: busy || deliveryUnknown ? null : () => send(item)))
                         .toList(),
                   ),
                   const SizedBox(height: 16),
@@ -1427,7 +1497,7 @@ class _ChatTabState extends State<ChatTab> {
                     subtitle: 'Heritage sites, local street food & temples',
                     tag: 'Itinerary',
                     onTap:
-                        busy ? null : () => send('Plan a 3-day cultural trip'),
+                        busy || deliveryUnknown ? null : () => send('Plan a 3-day cultural trip'),
                   ),
                   _buildCuratedPromptCard(
                     icon: Icons.account_balance_wallet_outlined,
@@ -1435,7 +1505,7 @@ class _ChatTabState extends State<ChatTab> {
                     subtitle: 'Smart budget breakdown for your trip',
                     tag: 'Budget',
                     onTap:
-                        busy ? null : () => send('Vacation on RM1,500 budget'),
+                        busy || deliveryUnknown ? null : () => send('Vacation on RM1,500 budget'),
                   ),
                   _buildCuratedPromptCard(
                     icon: Icons.umbrella_outlined,
@@ -1451,7 +1521,7 @@ class _ChatTabState extends State<ChatTab> {
                     title: 'Adjust my itinerary',
                     subtitle: 'Pace changes, rest days & relaxed flow',
                     tag: 'Planning',
-                    onTap: busy ? null : () => send('Adjust my itinerary'),
+                    onTap: busy || deliveryUnknown ? null : () => send('Adjust my itinerary'),
                   ),
                   const SizedBox(height: 14),
                   const Text(
@@ -1657,7 +1727,7 @@ class _ChatTabState extends State<ChatTab> {
                                       for (final text in replies)
                                         ActionChip(
                                           label: Text(text),
-                                          onPressed: busy ? null : () => send(text),
+                                          onPressed: busy || deliveryUnknown ? null : () => send(text),
                                         ),
                                     ],
                                   ),
@@ -1723,6 +1793,7 @@ class _ChatTabState extends State<ChatTab> {
                   Expanded(
                     child: TextField(
                       controller: message,
+                      enabled: !deliveryUnknown,
                       minLines: 1,
                       maxLines: 5,
                       onSubmitted: (_) => send(),
@@ -1738,7 +1809,7 @@ class _ChatTabState extends State<ChatTab> {
                       child: FilledButton(
                           style:
                               FilledButton.styleFrom(padding: EdgeInsets.zero),
-                          onPressed: busy ? null : () => send(),
+                          onPressed: busy || deliveryUnknown ? null : () => send(),
                           child: const Icon(
                             Icons.arrow_upward_rounded,
                             semanticLabel: 'Send message',

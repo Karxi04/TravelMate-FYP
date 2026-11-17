@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
 import '../../core/utils/recommendation_page.dart';
+import '../../core/utils/malaysian_locations.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/recommendation_card.dart';
@@ -42,6 +43,11 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   String generatedDestination = '';
   String? discoveryNotice;
   bool loadingMore = false;
+  bool generationInFlight = false;
+  FocusNode? autocompleteFocus;
+  List<Map<String, dynamic>> locations = [];
+  Map<String, dynamic>? selectedLocation;
+  String? searchMessage;
 
   @override
   void initState() {
@@ -49,6 +55,12 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     api = widget.api ?? ApiService();
     destination = TextEditingController(text: widget.initialDestination);
     Future.microtask(loadExisting);
+    Future.microtask(() async {
+      try {
+        final data = await api.get('/api/fr4/locations');
+        if (mounted) setState(() => locations = (data['locations'] as List? ?? []).whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList());
+      } catch (_) { /* The existing supported free-text search remains available offline. */ }
+    });
   }
 
   @override
@@ -57,8 +69,9 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     super.dispose();
   }
 
-  String _errorText(Object error) =>
-      userFacingApiError(error);
+  String _errorText(Object error) => error is ApiException &&
+      {'destination_provider_unavailable', 'discovery_unavailable'}.contains(error.code)
+      ? error.message : userFacingApiError(error);
 
   Future<void> loadExisting() async {
     final version = ++requestVersion;
@@ -83,6 +96,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
           source = (data['source'] ?? '').toString();
           pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
           discoveryNotice = data['snapshot']?['cacheFallbackNotice']?.toString();
+          searchMessage = data['snapshot']?['searchMessage']?.toString();
           generatedDestination = (data['snapshot']?['requestedDestination'] ?? widget.initialDestination).toString();
           destination.text = generatedDestination;
           recommendationGenerationId = (data['recommendationGenerationId'] ??
@@ -135,7 +149,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   }
 
   Future<void> generate({bool reuseCandidates = false, bool expand = false}) async {
-    if (busy || loadingMore) return;
+    if (busy || loadingMore || generationInFlight) return;
     final version = ++requestVersion;
     final requestedArea = destination.text.trim();
     if (requestedArea.isEmpty) {
@@ -144,6 +158,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     }
 
     setState(() {
+      generationInFlight = true;
       busy = true;
       loadingMore = false;
       errorMessage = null;
@@ -151,6 +166,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     try {
       final data = await api.post('/api/fr4/recommendations/generate', {
         'destinationArea': requestedArea,
+        if (selectedLocation?['canonicalName'] == requestedArea) 'destinationScopeKey': selectedLocation!['scopeKey'],
         'discoveryMode':recommendationDiscoveryMode,
         if ((reuseCandidates || expand) && generatedDestination == requestedArea && recommendationGenerationId.isNotEmpty)
           'previousGenerationId': recommendationGenerationId,
@@ -163,6 +179,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         final received = data['recommendations'] as List? ?? [];
         items = expand ? appendRecommendationResults(items, received) : received;
         discoveryNotice = data['discoveryMessage']?.toString();
+        searchMessage = data['snapshot']?['searchMessage']?.toString();
         source = (data['source'] ?? '').toString();
         pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
         generatedDestination = requestedArea;
@@ -174,7 +191,18 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     } catch (error) {
       if (mounted && version == requestVersion) setState(() => errorMessage = _errorText(error));
     } finally {
-      if (mounted && version == requestVersion) setState(() => busy = false);
+      if (mounted) setState(() { generationInFlight = false; busy = false; });
+    }
+  }
+
+  void changeDestination(String value) {
+    if (value.trim() != generatedDestination) {
+      ++requestVersion;
+      setState(() {
+        items = []; pagination = {}; recommendationGenerationId = '';
+        busy = generationInFlight; loadingMore = false; discoveryNotice = null; searchMessage = null;
+        if (selectedLocation?['canonicalName'] != value.trim()) selectedLocation = null;
+      });
     }
   }
 
@@ -410,20 +438,35 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
               _profileSummary(),
             ],
             const SizedBox(height: AppSpacing.md),
-            AppTextField(
-              controller: destination,
-              label: 'Destination area',
-              hint: 'e.g. Penang, Malaysia',
-              prefixIcon: Icons.location_on_outlined,
-              onChanged: (value) {
-                if (value.trim() != generatedDestination) {
-                  ++requestVersion;
-                  setState(() { items=[]; pagination={}; recommendationGenerationId=''; busy=false; loadingMore=false; });
-                }
+            LayoutBuilder(key: const ValueKey('recommendation-location-field'), builder: (context, constraints) => RawAutocomplete<Map<String, dynamic>>(
+              key: ValueKey('destination-$generatedDestination'),
+              initialValue: TextEditingValue(text: destination.text),
+              displayStringForOption: (row) => row['canonicalName'] as String,
+              optionsBuilder: (value) => matchingMalaysianLocations(locations, value.text),
+              onSelected: (row) {
+                selectedLocation = row;
+                destination.text = row['canonicalName'] as String;
+                changeDestination(row['canonicalName'] as String);
+                autocompleteFocus?.unfocus();
               },
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) => busy ? null : generate(),
-            ),
+              fieldViewBuilder: (_, controller, focus, submit) {
+                autocompleteFocus = focus;
+                return TextField(
+                controller: controller, focusNode: focus,
+                decoration: const InputDecoration(labelText: 'Destination area', hintText: 'e.g. Penang, Malaysia', prefixIcon: Icon(Icons.location_on_outlined)),
+                onChanged: (value) { destination.text = value; changeDestination(value); }, textInputAction: TextInputAction.search,
+                onSubmitted: (_) { focus.unfocus(); if (!busy) generate(); },
+              ); },
+              optionsViewBuilder: (_, choose, options) => Align(alignment: Alignment.topLeft,
+                child: Material(elevation: 4, borderRadius: AppRadii.control,
+                  child: SizedBox(width: constraints.maxWidth, height: 220,
+                    child: ListView(padding: EdgeInsets.zero, children: options.map((row) => ListTile(
+                      title: Text(row['canonicalName'] as String),
+                      subtitle: Text(row['kind'] == 'state' ? 'State / federal territory' : row['state']?.toString() ?? 'Country'),
+                      onTap: () => choose(row),
+                    )).toList())),
+                )),
+            )),
             const SizedBox(height: AppSpacing.sm),
             TertiaryButton(label:'Change preferences', onPressed: () async {
               await Navigator.push(context, MaterialPageRoute(builder: (_) => PreferencesScreen(api:widget.api)));
@@ -465,7 +508,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
               TravelEmptyState(
                 icon: Icons.auto_awesome_outlined,
                 title: 'No relevant suggestions available yet',
-                message: 'The current places do not have supported matches to your interests in $generatedDestination. Discover more places or update your preferences.',
+                message: searchMessage ?? 'The current places do not have supported matches to your interests in $generatedDestination. Discover more places or update your preferences.',
                 actionLabel: 'Discover suggestions',
                 onAction: generate,
               )

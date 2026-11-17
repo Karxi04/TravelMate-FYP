@@ -10,6 +10,8 @@ class RequestTimeouts {
   static const personalisedGeneration = Duration(seconds: 65);
   // Up to three sequential 40s Maps searches, plus bounded read/ranking/write headroom.
   static const recommendationGeneration = Duration(seconds: 150);
+  // Observed discovery chat turns took 80–90s, followed by a successful saved reply.
+  static const chatGeneration = Duration(seconds: 120);
 
   static Duration forGet(String path) {
     if (path.startsWith('/api/fr9/orders/') && path.endsWith('/reconcile')) {
@@ -24,6 +26,7 @@ class RequestTimeouts {
   }
 
   static Duration forPost(String path) {
+    if (path == '/api/fr11/chat') return chatGeneration;
     if (path == '/api/fr4/recommendations/generate') return recommendationGeneration;
     if (path.endsWith('/lower-cost-alternatives')) return providerMutation;
     if (path == '/api/fr7/flights/returns') return longProviderRead;

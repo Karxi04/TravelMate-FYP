@@ -316,7 +316,9 @@ void main() {
     api.suggestedReplies = null;
     await tap(tester, find.widgetWithText(ActionChip, 'Half day'));
     expect(api.posts.last['path'], '/api/fr11/chat');
-    expect(api.posts.last['body'], {
+    final body = Map<String, dynamic>.from(api.posts.last['body'] as Map);
+    expect(body.remove('clientRequestId'), matches(RegExp(r'^chat_[a-f0-9]{36}$')));
+    expect(body, {
       'message': 'Half day', 'guidedPlanning': true, 'sessionId': 'sent-session'
     });
     expect(find.widgetWithText(ActionChip, 'Not sure'), findsNothing);

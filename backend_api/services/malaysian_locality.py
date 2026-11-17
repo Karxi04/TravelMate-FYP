@@ -167,6 +167,12 @@ def _state_from_text(value):
 
 def _locality_from_text(value):
     text = _text(value)
+    # A qualified area label starts with its locality; a street containing a city word does not.
+    if ',' in str(value):
+        first = _text(str(value).split(',')[0])
+        exact = next((name for name, (_, aliases) in LOCALITIES.items() if first in aliases), None)
+        if exact:
+            return exact
     match = _last_alias_match(
         text,
         ((name, aliases) for name, (_, aliases) in LOCALITIES.items()),
@@ -229,6 +235,41 @@ def normalize_destination_scope(value):
         'coordinateStatus': 'verified_locality' if compatible else ('unavailable_or_boundary_conflict' if city else 'state_hint'),
         'resolved': bool(scope_key),
     }
+
+
+def destination_locations():
+    """Supported areas only; no attraction names, provider calls or guessed city centres."""
+    rows = [dict(normalize_destination_scope('Malaysia'), kind='country', aliases=['malaysia', 'my'])]
+    for state, aliases in STATE_ALIASES.items():
+        lat, lon = STATE_CENTERS[state]
+        rows.append({'country': 'Malaysia', 'state': state, 'city': None, 'kind': 'state',
+                     'canonicalName': f'{state}, Malaysia', 'scopeKey': f"my:{_text(state).replace(' ', '_')}",
+                     'latitude': lat, 'longitude': lon, 'coordinateSource': 'legacy_state_centre',
+                     'coordinateStatus': 'state_hint', 'resolved': True,
+                     'aliases': sorted(aliases | (LOCALITIES[state][1] if state in LOCALITIES else set()))})
+    for city, (state, aliases) in LOCALITIES.items():
+        if city == state:
+            continue
+        rows.append(dict(normalize_destination_scope(city),
+                         kind='locality', aliases=sorted(aliases)))
+    return rows
+
+
+def resolve_destination_scope(value, scope_key=None):
+    rows = destination_locations()
+    if scope_key is not None:
+        match = next((row for row in rows if row['scopeKey'] == scope_key), None)
+        if not match or _text(value) != _text(match['canonicalName']):
+            raise ValueError('Choose a supported destination area')
+        return {key: val for key, val in match.items() if key not in ('kind', 'aliases')}
+    # Fully qualified state labels are unambiguous; short legacy city aliases stay supported.
+    match = next((row for row in rows if _text(value) == _text(row['canonicalName'])), None)
+    known = {_text(label) for row in rows for alias in row['aliases'] for label in
+             (alias, f'{alias}, Malaysia', f"{alias}, {row['state'] or ''}", f"{alias}, {row['state'] or ''}, Malaysia")}
+    if not match and _text(value) not in known:
+        return {**normalize_destination_scope(''), 'canonicalName': str(value or '').strip()}
+    return ({key: val for key, val in match.items() if key not in ('kind', 'aliases')}
+            if match else normalize_destination_scope(value))
 
 
 def normalize_candidate_geography(item):
