@@ -1,3 +1,4 @@
+import 'malaysian_locality.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'malaysian_locations.dart';
@@ -133,6 +134,7 @@ class MalaysiaWeather {
         'admin1': state,
         'country': 'Malaysia',
         'label': '$state, Malaysia',
+        'aliases': MalaysianLocality.aliasesForState(state.toString()),
         'requiresCity': true,
         'pointDescription':
             'Choose a city or locality; weather varies across the state.'

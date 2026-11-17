@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:travelmate_traveller/services/standalone_api_service.dart';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
@@ -56,25 +60,22 @@ const kk = {
 class WeatherApi extends ApiService {
   final calls = <String>[];
   final queries = <Map<String, String>>[];
+  WeatherApi({this.catalogue = const [alma, sabah, kk]});
+  final List<Map<String, dynamic>> catalogue;
+  Map<String, dynamic> forecastData = {
+    'current': {'temperature_2m': 30}
+  };
   Completer<dynamic>? forecast;
   Completer<dynamic>? more;
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
     calls.add(path);
     queries.add({...?query});
-    if (path == '/api/fr6/locations')
-      return {
-        'results': [alma, sabah, kk]
-      };
+    if (path == '/api/fr6/locations') return {'results': catalogue};
     if (path == '/api/fr6/locations/search')
       return more?.future ?? {'results': []};
     if (path == '/api/fr6/weather')
-      return forecast?.future ??
-          {
-            'weather': {
-              'current': {'temperature_2m': 30}
-            }
-          };
+      return forecast?.future ?? {'weather': forecastData};
     throw StateError('Unexpected request');
   }
 }
@@ -86,14 +87,29 @@ Future<void> open(WidgetTester tester, WeatherApi api) async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  test('independent applicable ticket products retain distinct costs at one venue', () {
-    Map<String,dynamic> ticket(String product,int cost) => place('Venue','same',{
-      'unitPrice':cost,'estimatedCost':cost,'costProvenance':'verified_ticket',
-      'pricingUnit':'per_person','priceSourceUrl':'https://example.test/tickets',
-      'priceVerifiedAt':'2026-11-17','pricingEvidence':{'applicability':'applicable','ticketProductId':product}});
-    final a = ticket('entry',10), b = {...ticket('independent',20),'independentSubAttraction':true};
-    expect(consolidateGeneratedCandidates([a,b]).length,2);
-    expect(consolidateGeneratedCandidates([a,Map<String,dynamic>.from(a)]).length,1);
+  test(
+      'independent applicable ticket products retain distinct costs at one venue',
+      () {
+    Map<String, dynamic> ticket(String product, int cost) =>
+        place('Venue', 'same', {
+          'unitPrice': cost,
+          'estimatedCost': cost,
+          'costProvenance': 'verified_ticket',
+          'pricingUnit': 'per_person',
+          'priceSourceUrl': 'https://example.test/tickets',
+          'priceVerifiedAt': '2026-11-17',
+          'pricingEvidence': {
+            'applicability': 'applicable',
+            'ticketProductId': product
+          }
+        });
+    final a = ticket('entry', 10),
+        b = {...ticket('independent', 20), 'independentSubAttraction': true};
+    expect(consolidateGeneratedCandidates([a, b]).length, 2);
+    expect(
+        consolidateGeneratedCandidates([a, Map<String, dynamic>.from(a)])
+            .length,
+        1);
   });
   test(
       'standalone uses the exact shared source assets and rejects foreign coordinates',
@@ -228,17 +244,238 @@ void main() {
     await tester.pumpAndSettle();
     expect(
         find.textContaining('weather varies across the state'), findsOneWidget);
-    await tester.tap(find.text('Show weather'));
-    await tester.pumpAndSettle();
+    expect(find.text('Choose a locality in Sabah'), findsOneWidget);
     expect(api.calls.where((p) => p.endsWith('/weather')), isEmpty);
-    await tester.enterText(find.byType(TextField), 'Kota Kinabalu');
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Kota Kinabalu, Sabah, Malaysia'));
+    await tester.tap(find.text('Kota Kinabalu, Sabah, Malaysia').hitTestable());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Show weather'));
     await tester.pumpAndSettle();
     expect(api.queries.last['locationId'], kk['id']);
   });
+  testWidgets('forecast uses the correct date dash and Celsius symbols',
+      (tester) async {
+    final api = WeatherApi()
+      ..forecastData = {
+        'timezone_abbreviation': '+08',
+        'current': {
+          'time': '2026-11-17T15:15',
+          'wind_speed_10m': 9,
+          'precipitation': 2
+        },
+        'current_units': {'wind_speed_10m': 'km/h', 'precipitation': 'mm'},
+        'daily': {
+          'time': ['2026-11-17'],
+          'weather_code': [61],
+          'temperature_2m_min': [24.3],
+          'temperature_2m_max': [30.7],
+          'precipitation_probability_max': [85],
+        },
+      };
+    await open(tester, api);
+    expect(find.text('Choose a Malaysian city or locality.'), findsOneWidget);
+    expect(find.textContaining('Open-Meteo'), findsNothing);
+    await tester.enterText(find.byType(TextField), 'Alma');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Alma, Penang, Malaysia'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show weather'));
+    await tester.pumpAndSettle();
+    expect(find.text('2026-11-17 \u2014 Rain or showers'), findsOneWidget);
+    expect(find.text('Low: 24.3 \u00b0C'), findsOneWidget);
+    expect(find.text('High: 30.7 \u00b0C'), findsOneWidget);
+    expect(find.text('Rain probability: 85%'), findsOneWidget);
+    expect(find.text('Wind: 9 km/h'), findsOneWidget);
+    expect(find.text('Precipitation: 2 mm'), findsOneWidget);
+    expect(find.text('Updated: 2026-11-17T15:15 +08'), findsOneWidget);
+  });
+
+  for (final region in [
+    'Johor',
+    'Kedah',
+    'Kelantan',
+    'Melaka',
+    'Negeri Sembilan',
+    'Pahang',
+    'Penang',
+    'Perak',
+    'Perlis',
+    'Sabah',
+    'Sarawak',
+    'Selangor',
+    'Terengganu',
+    'Kuala Lumpur',
+    'Putrajaya',
+    'Labuan',
+  ]) {
+    testWidgets('exact $region leads to a verified locality choice',
+        (tester) async {
+      final geography = await tester.runAsync(MalaysiaWeather.load);
+      final actual = geography!.catalogue;
+      final points = actual.where((row) => row['admin1'] == region).toList();
+      final api = WeatherApi(catalogue: [
+        ...points,
+        {
+          'name': region,
+          'label': 'Unrelated match',
+          'admin1': 'Other',
+          'country': 'Malaysia',
+          'population': 99999999
+        },
+        {
+          'name': region,
+          'label': 'Foreign match',
+          'admin1': region,
+          'country': 'Other'
+        },
+      ]);
+      await open(tester, api);
+      await tester.enterText(
+          find.byType(TextField), region == 'Penang' ? 'Pulau Pinang' : region);
+      await tester.pumpAndSettle();
+      expect(find.text('Unrelated match'), findsNothing);
+      expect(find.text('Foreign match'), findsNothing);
+      final stateOption = find.text('$region, Malaysia');
+      expect(stateOption, findsOneWidget);
+      await tester.tap(stateOption);
+      await tester.pumpAndSettle();
+      expect(find.text('Choose a locality in $region'), findsOneWidget);
+      expect(api.calls, ['/api/fr6/locations']);
+      final list = find.byType(ListView).last;
+      final choice =
+          find.descendant(of: list, matching: find.byType(ListTile)).first;
+      final label = (tester.widget<ListTile>(choice).title as Text).data;
+      final point = points.firstWhere(
+          (row) => row['label'] == label && row['requiresCity'] != true);
+      await tester.tap(choice);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Show weather'));
+      await tester.pumpAndSettle();
+      expect(api.queries.last['locationId'], point['id']);
+      expect(api.queries.last['locationName'], label);
+      expect(find.text('Something went wrong'), findsNothing);
+    });
+  }
+
+  test(
+      'F02 merges separated hill pins and aliases while retaining a separate viewpoint',
+      () {
+    final rows = [
+      place('Penang Hill', 'summit'),
+      place('Bukit Bendera', 'alias', {
+        'gps_coordinates': {'latitude': 5.40846, 'longitude': 100.27733}
+      }),
+      place('Penang Hill Lower Station', 'station', {
+        'gps_coordinates': {'latitude': 5.40846, 'longitude': 100.27733}
+      }),
+      place('Penang Hill Viewing Area', 'viewpoint',
+          {'independentSubAttraction': true}),
+      place('Bukit Bendera', 'repeat', {'intentionalRepeat': true}),
+    ];
+    final result = consolidateGeneratedCandidates(rows);
+    expect(result.map((row) => row['destinationId']),
+        ['summit', 'viewpoint', 'repeat']);
+    expect(result.first['supportingAccess'].single['destinationId'], 'station');
+  });
+
+  test(
+      'F09 through F11 select richer coherent prose and recognise sparse categories',
+      () {
+    final summary = destinationSummary({
+      'description': 'Scenic attraction.',
+      'editorial_summary': {
+        'overview': 'A hill resort above George Town.',
+        'details':
+            'Its forest trails connect parts of the hill. The funicular links the stations. The upper station has a viewing deck.'
+      },
+    });
+    expect(summary['text'],
+        'A hill resort above George Town. Its forest trails connect parts of the hill. The funicular links the stations.');
+    expect(summary['additionalText'], 'The upper station has a viewing deck.');
+    expect(
+        destinationSummary(
+            {'title': 'Town Lookout', 'type': 'Scenic spot'})['text'],
+        'Town Lookout is listed as a scenic spot.');
+    expect(
+        destinationSummary({
+          'metadataConflict': true,
+          'description': 'Conflicting description.'
+        })['text'],
+        contains('unavailable'));
+  });
+
+  test(
+      'standalone personalised generation saves only one Hill visit and its unit cost',
+      () async {
+    final rows = [
+      place('Penang Hill', 'summit', {
+        'estimatedCost': 12,
+        'unitPrice': 12,
+        'pricingUnit': 'per_person',
+        'costProvenance': 'catalog_estimate'
+      }),
+      place('Bukit Bendera', 'base-pin', {
+        'estimatedCost': 12,
+        'gps_coordinates': {'latitude': 5.40846, 'longitude': 100.27733}
+      }),
+      place('Penang Hill Lower Station', 'station'),
+      place('Penang Hill Viewing Area', 'viewpoint',
+          {'independentSubAttraction': true}),
+    ];
+    final snapshot = {
+      'travellerId': 'f1',
+      'recommendationGenerationId': 'rec-hill',
+      'requestedDestination': 'Penang',
+      'recommendationResults': rows
+    };
+    final encoded = jsonEncode([snapshot]);
+    final memory = {'travelmate_f1_recommendation_snapshots': encoded};
+    final service =
+        StandaloneApiService(uidOverride: 'f1', memoryStore: memory);
+    final response = await http.runWithClient(
+        () => service.post('/api/fr5/personalised-trips/generate', {
+              'title': 'Penang visit',
+              'destinationArea': 'Penang',
+              'startDate': '2027-01-10',
+              'endDate': '2027-01-12',
+              'travellerCount': 2,
+              'budgetLimit': 1000,
+              'recommendationGenerationId': 'rec-hill',
+              'generationRequestId': 'f1-standalone-generation',
+            }),
+        () => MockClient((_) async => http.Response('{}', 503)));
+    expect(response['ok'], isTrue, reason: response.toString());
+    final saved = (await service.get(
+        '/api/fr5/itineraries/' + response['tripId'].toString()))['itinerary'];
+    final activities = (saved['activities'] as List).cast<Map>();
+    expect(activities.map((row) => row['destinationId']).toSet(),
+        {'summit', 'viewpoint'});
+    final hill =
+        activities.firstWhere((row) => row['destinationId'] == 'summit');
+    expect(hill['supportingAccess'].single['destinationId'], 'station');
+    expect(hill['unitPrice'], 12);
+    expect(hill['pricingUnit'], 'per_person');
+    expect(memory['travelmate_f1_recommendation_snapshots'], encoded);
+  });
+
+  testWidgets(
+      'empty forecast remains an unavailable state for the selected point',
+      (tester) async {
+    final api = WeatherApi()..forecastData = {};
+    await open(tester, api);
+    await tester.enterText(find.byType(TextField), 'Alma');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Alma, Penang, Malaysia'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show weather'));
+    await tester.pumpAndSettle();
+    expect(
+        find.text(
+            'No weather observations or forecast are available for this location.'),
+        findsOneWidget);
+    expect(find.textContaining('Temperature:'), findsNothing);
+    expect(api.queries.last['locationId'], alma['id']);
+  });
+
   testWidgets('old forecast cannot replace a newly edited location',
       (tester) async {
     final api = WeatherApi()..forecast = Completer<dynamic>();

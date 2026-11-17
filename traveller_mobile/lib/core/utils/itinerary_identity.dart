@@ -30,6 +30,35 @@ Object? _ticket(Map row) {
       : null;
 }
 
+const _hillNames = {
+  'penang hill',
+  'bukit bendera',
+  'penang hill bukit bendera',
+  'bukit bendera penang hill'
+};
+const _stationNames = {
+  'penang hill lower station',
+  'penang hill railway lower station',
+  'penang hill funicular lower station',
+  'stesen bawah bukit bendera'
+};
+
+// The documented Lower Station and summit pins can refer to one main visit.
+bool _hillArea(Map<String, dynamic> row) {
+  final geo = _geo(row);
+  final lat = geo['latitude'], lon = geo['longitude'];
+  return geo['state'] == 'Penang' &&
+      geo['conflict'] != true &&
+      (lat is num && lon is num
+          ? lat >= 5.40 && lat <= 5.44 && lon >= 100.25 && lon <= 100.285
+          : geo['city'] == 'Air Itam');
+}
+
+bool _hillMain(Map<String, dynamic> row) =>
+    !['access', 'entrance', 'boarding_station'].contains(row['locationRole']) &&
+    _hillNames.contains(_name(row)) &&
+    _hillArea(row);
+
 bool _same(Map<String, dynamic> a, Map<String, dynamic> b) {
   if ((a['independentSubAttraction'] == true ||
           b['independentSubAttraction'] == true) &&
@@ -49,6 +78,10 @@ bool _same(Map<String, dynamic> a, Map<String, dynamic> b) {
         'viewing area',
         'station'
       }.contains(_name(a))) return false;
+  if (_hillNames.contains(_name(a)) &&
+      _hillNames.contains(_name(b)) &&
+      _hillMain(a) &&
+      _hillMain(b)) return true;
   if (_name(a).isEmpty || _name(a) != _name(b)) return false;
   final ga = _geo(a), gb = _geo(b);
   if (ga['conflict'] == true ||
@@ -83,11 +116,7 @@ bool _access(Map<String, dynamic> a, Map<String, dynamic> main) {
         main['locationRole'] == 'main') return true;
   }
   // PHC's direction page establishes the lower station as access, not a second main visit.
-  return ['penang hill lower station', 'penang hill railway lower station']
-          .contains(_name(a)) &&
-      ['penang hill', 'bukit bendera'].contains(_name(main)) &&
-      [a, main].every(
-          (r) => _geo(r)['state'] == 'Penang' && _geo(r)['conflict'] != true);
+  return _stationNames.contains(_name(a)) && _hillMain(main) && _hillArea(a);
 }
 
 /// Only call for newly selected automatic candidates, never when reopening/recalculating a trip.

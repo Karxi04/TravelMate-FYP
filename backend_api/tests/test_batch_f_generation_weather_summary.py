@@ -103,7 +103,8 @@ def test_rich_short_conflicting_and_untrusted_summaries():
            'category': 'shopping mall', 'reviews': [{'text': 'Invented endorsement.'}]}
     summary = place_summary(raw)
     assert summary['text'].count('.') == 3
-    long_facts = ['A ' + ('recorded detail ' * 19).strip() + end for end in ('.', '!', '?')]
+    long_facts = [subject + ' ' + ('recorded detail ' * 19).strip() + '.'
+                  for subject in ('Forest', 'Museum', 'Garden')]
     assert place_summary({'description': ' '.join(long_facts)})['text'] == ' '.join(long_facts)
     assert summary['additionalText'] == 'A fourth recorded detail.'
     assert 'shopping' not in summary['text'] and 'endorsement' not in str(summary)
@@ -174,7 +175,9 @@ def test_bootstrap_is_local_and_provider_search_is_explicit(client, mock_travell
 
 def test_fr11_new_plan_uses_same_identity_policy():
     from modules.fr11_chatbot_travel_assistant.nlp_extractor import build_structured_trip_plan
-    rows = [place('Penang Hill Lower Station', 'station'), place(), place(identity='copy'),
+    base_pin = {'latitude': 5.40846, 'longitude': 100.27733}
+    rows = [place('Penang Hill Lower Station', 'station', gps_coordinates=base_pin), place(),
+            place('Bukit Bendera', 'copy', gps_coordinates=base_pin),
             place('The Habitat', 'habitat', independentSubAttraction=True, category='Nature', type='Nature', address='Air Itam, Penang, Malaysia')]
     plan, status = build_structured_trip_plan('Penang', 'Penang', days=1, catalog=rows)
     assert status == 'ready'
@@ -257,3 +260,54 @@ def test_distinct_names_do_not_repeat_expensive_geographic_resolution():
         output = consolidate_generated_candidates(rows)
     assert len(output) == 150
     assert geography.call_count == 0
+
+def test_f09_provider_details_preserve_useful_prose_and_expansion():
+    from modules.fr03_destination_search_information.routes import _merge_destination
+
+    provider = {'editorial_summary': {'overview': 'A hill resort above George Town.',
+                'details': 'Its forest trails connect parts of the hill. The funicular links the stations. '
+                           'The upper station has a viewing deck. The hill is also known as Bukit Bendera.'},
+                'snippet': 'Scenic attraction.',
+                'description': 'Scenic attraction.'}
+    summary = place_summary(_merge_destination({'destinationId': 'example'}, provider))
+    assert summary['text'] == 'A hill resort above George Town. Its forest trails connect parts of the hill. The funicular links the stations.'
+    assert summary['additionalText'] == 'The upper station has a viewing deck. The hill is also known as Bukit Bendera.'
+    assert summary['sourceFields'] == ['editorial_summary']
+
+    provider = {'description': {'overview': 'A railway museum.', 'details': 'Its galleries display engines.'}}
+    assert 'Its galleries display engines.' in place_summary(_merge_destination({}, provider))['text']
+    assert 'unavailable' in place_summary({**provider, 'metadataConflict': True})['text']
+    assert place_summary({'title': 'Town Lookout', 'type': 'Scenic spot'})['text'] == (
+        'Town Lookout is listed as a scenic spot.')
+
+
+def test_f02_hill_family_leaves_different_places_and_intentional_revisits():
+    pins = {'latitude': 5.40846, 'longitude': 100.27733}
+    rows = [place(), place('Bukit Bendera', 'copy', gps_coordinates=pins),
+            place('Bukit Bendera', 'repeat', gps_coordinates=pins, intentionalRepeat=True),
+            place('Penang Hill Viewing Area', 'view', independentSubAttraction=True),
+            place('Penang Hill', 'incompatible', gps_coordinates={'latitude': 5.34, 'longitude': 100.3})]
+    assert [row['destinationId'] for row in consolidate_generated_candidates(rows)] == [
+        'hill', 'repeat', 'view', 'incompatible']
+
+def test_f10_documented_place_extensions_supply_only_selected_reported_features():
+    from modules.fr03_destination_search_information.routes import _merge_destination
+    source = {'description': {'snippet': 'A heritage museum.', 'source': 'Reference'},
+              'extensions': [{'accessibility': ['Wheelchair-accessible entrance']},
+                             {'highlights': ['Guided exhibits']},
+                             {'crowd': ['Popular with groups']}, {'payments': ['Credit cards']}]}
+    destination = _merge_destination({}, source)
+    assert place_summary(destination)['text'] == 'A heritage museum.'
+    assert destination['highlightsSource'] == 'provider_about'
+    assert destination['highlights'] == ['Wheelchair-accessible entrance', 'Guided exhibits']
+    assert destination['description'] == 'A heritage museum.'
+    assert destination['descriptionDetails']['source'] == 'Reference'
+
+
+def test_f11_actual_sparse_local_catalogue_keeps_recorded_information():
+    from services.local_catalog import DESTINATIONS
+    hill = next(row for row in DESTINATIONS if row['destinationId'] == 'local_penang_hill')
+    summary = place_summary(hill)
+    assert 'Hilltop views, forest walks' in summary['text']
+    assert summary['additionalText'] == ''
+    assert summary['sourceFields'] == ['description']

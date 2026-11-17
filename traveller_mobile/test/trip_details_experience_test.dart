@@ -342,6 +342,27 @@ Future<void> _scrollTripToTop(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('F02 describes Lower Station as access to the scheduled Hill visit',
+      (tester) async {
+    final api = _TripApi();
+    final hill = (api.trip['activities'] as List)[1] as Map;
+    hill['supportingAccess'] = [
+      {'destinationId': 'station', 'title': 'Penang Hill Lower Station',
+        'note': 'Access point; confirm transport, journey time and any separate ticket cost before visiting.'},
+    ];
+    final viewpoint = _activity(id: 'view', name: 'Penang Hill Viewing Area',
+      day: 1, start: '16:00', end: '16:30', category: 'Scenic attraction', cost: 10);
+    (api.trip['activities'] as List).add(viewpoint);
+    api._syncDays();
+    await _pumpTrip(tester, api);
+    await _show(tester, find.text('Penang Hill'));
+    expect(find.text('Penang Hill'), findsOneWidget);
+    expect(find.text('Penang Hill Lower Station'), findsNothing);
+    expect(find.textContaining('Penang Hill Lower Station: Access point'), findsOneWidget);
+    await _show(tester, find.text('Penang Hill Viewing Area'));
+    expect(find.text('Penang Hill Viewing Area'), findsOneWidget);
+  });
+
   testWidgets('loads the exact trip and presents a traveller-friendly header',
       (tester) async {
     final api = _TripApi();

@@ -27,6 +27,28 @@ def _ticket(row):
     return None
 
 
+# PHC documents Bukit Bendera as Penang Hill and the Lower Station as its
+# transport terminus. Pins for the main visit can refer to either end.
+# https://www.penanghill.gov.my/index.php/en/direction
+# https://www.penanghill.gov.my/index.php/ms/soalan-lazim
+_HILL_NAMES = {'penang hill', 'bukit bendera', 'penang hill bukit bendera', 'bukit bendera penang hill'}
+_STATION_NAMES = {'penang hill lower station', 'penang hill railway lower station',
+                  'penang hill funicular lower station', 'stesen bawah bukit bendera'}
+
+
+def _hill_area(row):
+    geo = normalize_candidate_geography(row)
+    lat, lon = geo.get('latitude'), geo.get('longitude')
+    return (geo.get('state') == 'Penang' and not geo.get('conflict')
+            and (5.40 <= lat <= 5.44 and 100.25 <= lon <= 100.285
+                 if lat is not None and lon is not None else geo.get('city') == 'Air Itam'))
+
+
+def _hill_main(row):
+    return (row.get('locationRole') not in {'access', 'entrance', 'boarding_station'}
+            and _name(row) in _HILL_NAMES and _hill_area(row))
+
+
 def _same(a, b):
     # Explicit independent experiences can have separate applicable tickets at one venue.
     if ((a.get('independentSubAttraction') is True or b.get('independentSubAttraction') is True)
@@ -39,6 +61,8 @@ def _same(a, b):
         return False
     if _name(a) in {'park', 'temple', 'museum', 'mosque', 'beach', 'viewpoint', 'viewing area', 'station'}:
         return False
+    if _name(a) in _HILL_NAMES and _name(b) in _HILL_NAMES and _hill_main(a) and _hill_main(b):
+        return True
     if not same_place({**a, 'title': _name(a)}, {**b, 'title': _name(b)}):
         return False
     ga, gb = normalize_candidate_geography(a), normalize_candidate_geography(b)
@@ -71,10 +95,7 @@ def _access_for(access, main):
     # PHC identifies the Lower Station as the funicular terminus at the foot of the hill:
     # https://www.penanghill.gov.my/index.php/en/direction (checked 2026-11-17).
     # No timetable, fare, journey time or ticket entitlement is inferred from this relation.
-    return (_name(access) in {'penang hill lower station', 'penang hill railway lower station'}
-            and _name(main) in {'penang hill', 'bukit bendera'}
-            and all(normalize_candidate_geography(row).get('state') == 'Penang'
-                    and not normalize_candidate_geography(row).get('conflict') for row in (access, main)))
+    return _name(access) in _STATION_NAMES and _hill_main(main) and _hill_area(access)
 
 
 def consolidate_generated_candidates(candidates):
