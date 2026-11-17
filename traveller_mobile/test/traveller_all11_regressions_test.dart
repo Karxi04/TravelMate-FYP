@@ -42,6 +42,19 @@ class AllApi extends ApiService {
     return {'session': {'id': 's', 'messages': []}};
   }
 }
+class _SparseDetailsApi extends AllApi {
+  @override
+  Future<dynamic> get(String path, [Map<String, String>? query]) {
+    if (path == '/api/fr3/destinations/one') {
+      gets.add(path);
+      return Future.value({'destination': {
+        'destinationId': 'one', 'title': 'Town Lookout', 'type': 'Scenic spot',
+      }});
+    }
+    return super.get(path, query);
+  }
+}
+
 Future<void> frame(WidgetTester tester, Widget child, {double width = 430, double scale = 1}) async {
   tester.view.physicalSize = Size(width, 950); tester.view.devicePixelRatio = 1;
   tester.platformDispatcher.textScaleFactorTestValue = scale;
@@ -58,6 +71,8 @@ void main() {
     expect(find.text('Another documented public detail.'),findsNothing);
     await tester.tap(find.text('Read more')); await tester.pumpAndSettle();
     expect(find.text('Another documented public detail.'),findsOneWidget);
+    await tester.tap(find.text('Read more')); await tester.pumpAndSettle();
+    expect(find.text('Another documented public detail.'),findsNothing);
     expect(api.gets.where((p) => p == '/api/fr3/destinations/one').length,1);
   });
 
@@ -114,9 +129,21 @@ void main() {
     expect(state.results.length, 3); expect(state.results.map((e) => e['destinationId']).toSet().length, 3);
     expect(api.queries.any((q) => q['offset'] == '20'), isTrue);
   });
+  testWidgets('F11 sparse destination stays honest without an empty expansion', (tester) async {
+    final api = _SparseDetailsApi();
+    await frame(tester, DestinationDetailsScreen(api: api,
+      initialDestination: const {'destinationId': 'one', 'title': 'Town Lookout'}));
+    await tester.scrollUntilVisible(find.text('Town Lookout is listed as a scenic spot.'),
+      200, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Read more'), findsNothing);
+    expect(api.gets.where((path) => path == '/api/fr3/destinations/one').length, 1);
+  });
   testWidgets('About displays real description and returned highlights', (tester) async {
     await frame(tester, DestinationDetailsScreen(api: AllApi(), initialDestination: const {'destinationId': 'one', 'title': 'Temple one'}));
     await tester.scrollUntilVisible(find.text('A genuine provider description.'), 250, scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(find.text('Read more'));
+    await tester.tap(find.text('Read more'));
+    await tester.pumpAndSettle();
     expect(find.textContaining('Wheelchair access'), findsOneWidget);
   });
   testWidgets('a property image is not presented as a room image', (tester) async {

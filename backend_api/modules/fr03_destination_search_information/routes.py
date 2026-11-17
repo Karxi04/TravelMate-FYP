@@ -439,6 +439,10 @@ def _merge_destination(cached, provider):
         description = description.get('overview') or description.get('snippet')
     if not description:
         description = provider.get('snippet')
+    if isinstance(provider.get('description'), dict):
+        merged['descriptionDetails'] = provider['description']
+    elif provider.get('description'):
+        merged.pop('descriptionDetails', None)
     if isinstance(description, str) and description.strip():
         merged['description'] = description.strip()
     highlights = []
@@ -449,6 +453,16 @@ def _merge_destination(cached, provider):
                 highlights.extend(str(key) for key, value in attributes.items() if value is True)
             elif isinstance(attributes, list):
                 highlights.extend(value for value in attributes if isinstance(value, str))
+    extensions = provider.get('extensions')
+    if isinstance(extensions, list):
+        for section in extensions:
+            if not isinstance(section, dict):
+                continue
+            for key in ('highlights', 'accessibility', 'amenities'):
+                values = section.get(key)
+                if isinstance(values, list):
+                    highlights.extend(value.strip() for value in values
+                                      if isinstance(value, str) and 0 < len(value.strip()) <= 100)
     merged['highlights'] = list(dict.fromkeys(highlights))[:12] or cached.get('highlights', [])
     if highlights:
         merged['highlightsSource'] = 'provider_about'

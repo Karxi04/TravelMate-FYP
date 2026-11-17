@@ -515,3 +515,48 @@ def test_manual_trip_still_works_without_recommendation_generation_id(
     assert response.get_json()['id'] == 'manual_trip_1'
     assert captured['status'] == 'draft'
     assert 'recommendationGenerationId' not in captured
+
+def test_f02_generate_persists_one_hill_visit_and_keeps_independent_viewpoint(client, mock_traveller_auth):
+    from copy import deepcopy
+    from modules.fr05_smart_itinerary_budget_planner import routes
+
+    def point(identity, title, lat, lon, **extra):
+        return {'destinationId': identity, 'place_id': identity, 'title': title,
+                'address': 'Air Itam, Penang, Malaysia', 'estimatedCost': 12,
+                'recommendedDurationMinutes': 45,
+                'gps_coordinates': {'latitude': lat, 'longitude': lon}, **extra}
+
+    snapshot = _personalised_snapshot()
+    snapshot['recommendationResults'] = [
+        point('hill-summit', 'Penang Hill', 5.4244, 100.2684),
+        point('hill-provider', 'Penang Hill', 5.40846, 100.27733),
+        point('hill-malay', 'Bukit Bendera', 5.40846, 100.27733),
+        point('station', 'Penang Hill Lower Station', 5.40846, 100.27733),
+        point('viewpoint', 'Penang Hill Viewing Area', 5.4244, 100.2684,
+              independentSubAttraction=True),
+    ]
+    original = deepcopy(snapshot)
+    records, retrieve, store, update = _memory_storage(snapshot)
+    records['itineraries']['old'] = {'id': 'old', 'activities': deepcopy(snapshot['recommendationResults'])}
+    saved_old = deepcopy(records['itineraries']['old'])
+    with (patch.object(routes, 'retrieveRecord', side_effect=retrieve),
+          patch.object(routes, 'storeRecord', side_effect=store),
+          patch.object(routes, 'updateRecord', side_effect=update),
+          patch.object(routes, '_forecast_for', return_value=({}, {}))):
+        response = client.post('/api/fr5/personalised-trips/generate',
+            headers={'Authorization': 'Bearer valid_test_token'}, json=_personalised_payload())
+
+    assert response.status_code == 200, response.get_json()
+    trip = records['itineraries'][response.get_json()['tripId']]
+    assert trip['status'] == 'planned'
+    assert {row['destinationId'] for row in trip['activities']} == {'hill-summit', 'viewpoint'}
+    hill = next(row for row in trip['activities'] if row['destinationId'] == 'hill-summit')
+    assert [p['destinationId'] for p in hill['supportingAccess']] == ['station']
+    assert {p['destinationId'] for p in hill['identityConsolidation']} == {'hill-provider', 'hill-malay'}
+    scheduled = [row for day in trip['dailySchedule'] for row in day['activities']]
+    assert len(scheduled) == 2
+    assert len({row['activityId'] for row in scheduled}) == 2
+    assert all(row['scheduledStartTime'] and row['scheduledEndTime'] for row in scheduled)
+    assert trip['budgetEstimate']['activities'] == 24
+    assert records['itineraries']['old'] == saved_old
+    assert snapshot == original

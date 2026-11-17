@@ -18,6 +18,9 @@ class MalaysianLocality {
     'Labuan': ['labuan', 'wilayah persekutuan labuan'],
   };
 
+  static List<String> aliasesForState(String state) =>
+      List.unmodifiable(_stateAliases[state] ?? const []);
+
   static const Map<String, Map<String, Object>> _localities = {
     'George Town': {
       'state': 'Penang',

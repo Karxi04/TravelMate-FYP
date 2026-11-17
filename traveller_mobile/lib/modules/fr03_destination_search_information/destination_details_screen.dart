@@ -127,6 +127,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         final hours = OpeningHoursUtils.parse(fetched);
         detail = {
           ...detail,
+          'placeSummary': null,
           ...fetched,
           if (hours.hasWeeklySchedule) 'weeklyHours': Map.fromEntries(
             hours.weeklyHours.where((entry) => entry.value != 'Not available')),
@@ -866,6 +867,15 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     }
 
     final summary = destinationSummary(detail);
+    final overview = summary['text'].toString();
+    final additional = (summary['additionalText'] ?? '').toString().trim();
+    final recordedFeatures = detail['metadataConflict'] != true &&
+            (detail['highlightsSource'] == 'provider_about' || detail['highlightsVerified'] == true)
+        ? (detail['highlights'] as List? ?? []).whereType<String>().map((v) => v.trim())
+            .where((v) => v.isNotEmpty && !('$overview $additional').toLowerCase().contains(v.toLowerCase()))
+            .toSet().take(6).toList()
+        : const <String>[];
+
     final reasons = _personalReasons();
 
     return TravelMatePageScaffold(
@@ -949,13 +959,17 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             const AppSectionHeader(title: 'About this place'),
             const SizedBox(height: AppSpacing.sm),
             InkCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(summary['text'].toString()),
-              if ((summary['additionalText'] ?? '').toString().isNotEmpty) ExpansionTile(
-                tilePadding: EdgeInsets.zero, title: const Text('Read more'),
-                children: [Text(summary['additionalText'].toString())]),
-              if (detail['highlightsSource'] == 'provider_about' || detail['highlightsVerified'] == true)
-                for (final highlight in (detail['highlights'] as List? ?? []).whereType<String>().take(6))
-                  Text(highlight),
+              Text(overview),
+              if (additional.isNotEmpty || recordedFeatures.isNotEmpty) ExpansionTile(
+                key: ValueKey('destination-overview-$destinationId'),
+                tilePadding: EdgeInsets.zero,
+                expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                title: const Text('Read more'),
+                children: [
+                  if (additional.isNotEmpty) Text(additional),
+                  if (recordedFeatures.isNotEmpty)
+                    Text('Reported features: ' + recordedFeatures.join(', ') + '.'),
+                ]),
               if (category.isNotEmpty) Text('Category: $category'),
               if (address.isNotEmpty) Text('Location: $address'),
             ])),

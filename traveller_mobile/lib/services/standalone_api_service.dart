@@ -3774,6 +3774,12 @@ class StandaloneApiService {
                 'activityName': item['title'] ?? item['name'],
                 'destinationId': item['destinationId'] ?? item['place_id'] ?? item['data_id'] ?? item['id'],
                 'address': item['address'] ?? '',
+                for (final key in [
+                  'pricingUnit', 'unitPrice', 'costCategory', 'costProvenance',
+                  'priceSourceUrl', 'priceVerifiedAt', 'pricingEvidence', 'currency',
+                  'overlapsAllowance', 'intentionalRepeat', 'independentSubAttraction',
+                ])
+                  if (item[key] != null) key: item[key],
                 'estimatedCost': item['estimatedCost'] ?? 0,
                 'gps_coordinates':
                     item['gps_coordinates'] ?? item['gpsCoordinates'] ?? {},
