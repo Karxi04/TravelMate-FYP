@@ -29,7 +29,7 @@ from services.preference_learning import (
     reset_learning_profile,
 )
 from services.malaysian_locality import (
-    destination_locations, resolve_destination_scope,
+    destination_locations, resolve_destination_scope, resolve_selected_scope, search_destination_locations,
     filter_candidates,
     normalize_destination_scope,
     validate_candidate,
@@ -323,9 +323,11 @@ def generate():
         return jsonify(ok=False, error='Invalid recommendation threshold or page.'), 400
     destination_area = str(payload.get('destinationArea') or payload.get('location') or 'Malaysia').strip()
     try:
-        destination_scope = resolve_destination_scope(destination_area, payload.get('destinationScopeKey'))
+        destination_scope = resolve_selected_scope(destination_area, payload.get('destinationScopeKey'), payload.get('destinationLocationId'))
     except ValueError:
         return jsonify(ok=False, error='Choose a supported Malaysian destination area.'), 400
+    except Exception:
+        return jsonify(ok=False, code='location_lookup_unavailable', error='The selected Malaysian location could not be verified. Please try its location lookup again.'), 502
     if not destination_scope.get('resolved'):
         return jsonify({
             'ok': False,
@@ -543,13 +545,19 @@ def generate():
 def get_recommendations():
     generation_id = str(request.args.get('generationId') or '').strip()
     destination_area = str(request.args.get('destinationArea') or '').strip()
-    scope = resolve_destination_scope(destination_area) if destination_area else None
-    if scope and not scope.get('resolved'):
-        return jsonify(ok=False, error='Choose a supported Malaysian destination area.'), 400
+    record = None
     if generation_id:
         record = retrieveRecord('recommendation_snapshots', generation_id) or {}
         if not record or record.get('travellerId') != g.uid:
             return jsonify({'ok': False, 'error': 'Recommendation snapshot not found'}), 404
+    scope = resolve_destination_scope(destination_area) if destination_area else None
+    stored = record.get('canonicalDestinationScope') if record else None
+    if scope and not scope.get('resolved') and isinstance(stored, dict) and stored.get('country') == 'Malaysia':
+        if str(stored.get('canonicalName') or '').strip().casefold() == destination_area.casefold():
+            scope = stored  # Owned, previously verified immutable scope; no geocoder call on a saved-result read.
+    if scope and not scope.get('resolved'):
+        return jsonify(ok=False, error='Choose a supported Malaysian destination area.'), 400
+    if generation_id:
         actual = record.get('canonicalDestinationScope')
         actual = actual if isinstance(actual, dict) else resolve_destination_scope(record.get('requestedDestination'))
         if scope and scope['scopeKey'] != actual.get('scopeKey'):
@@ -588,8 +596,23 @@ def get_recommendations():
 @bp.get('/locations')
 @auth_required(['traveller'])
 def supported_locations():
-    fields = ('country', 'state', 'city', 'kind', 'canonicalName', 'scopeKey', 'aliases')
+    fields = ('country', 'state', 'city', 'kind', 'canonicalName', 'scopeKey', 'aliases', 'locationId', 'district', 'population', 'dataSource', 'dataLicense')
     return jsonify(ok=True, locations=[{key: row.get(key) for key in fields} for row in destination_locations()])
+
+
+@bp.get('/locations/search')
+@auth_required(['traveller'])
+def location_lookup():
+    query = str(request.args.get('q') or '').strip()
+    if not 2 <= len(query) <= 100:
+        return jsonify(ok=False, error='Enter 2 to 100 characters for a Malaysian location.'), 400
+    try:
+        rows = search_destination_locations(query, remote=request.args.get('remote') == 'true')
+        return jsonify(ok=True, locations=rows,
+                       message=None if rows else 'No verified Malaysian location was found. Try its state or another established name.')
+    except Exception:
+        return jsonify(ok=False, code='location_lookup_unavailable',
+                       error='Additional Malaysian location lookup is unavailable. Existing suggestions remain available.'), 502
 
 
 @bp.get('/settings')

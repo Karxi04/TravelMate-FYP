@@ -314,14 +314,19 @@ def _browse_places(message, state, messages, rows, focus, lookup, geo):
     rejected = bool(re.search(r'\b(?:don t want|dont want|not these)\b.*\b(?:these|places|results)\b', q))
     similar = 'similar' in q
     search = state.get('placeSearch') or {}
+    viewing = bool(search and re.search(r'\b(?:view|browse|see|look at)\b.*\b(?:places?|attractions?|options|results)\b', q))
+    area_reply = bool(search and geo.get('destination_area') and len(q.split()) <= 8
+                      and not re.search(r'\b(?:plan|itinerary|trip|budget|dates?|days?|travellers?)\b', q)
+                      and not (state.get('planningGoal') == 'itinerary' and state.get('guidedActive')))
     # Pronouns/questions about a selected result are not new result-page requests.
     page_request = (place_word and more and not re.search(r'\b(?:nearby|cheaper)\b', q)) or rejected or (
         bool(rows) and re.fullmatch(r'(?:got |any |show |give me )?(?:more|another one|anything else)(?: lah| ah)?', q))
     interests = extract_interests(message)
     explicit = (place_word or (focus and not (state.get('adjustment') or {}).get('tripId'))) and (
         geo.get('destination_area') or interests) and bool(re.search(r'\b(?:show|suggest|recommend|give|find|want|prefer)\b', q))
-    if not (page_request or explicit):
+    if not (page_request or explicit or viewing or area_reply):
         return None
+    interests = interests or search.get('interests') or state.get('interests') or []
     area = geo.get('destination_area') or search.get('area') or state.get('destinationArea')
     region = geo.get('destination_state') or search.get('state')
     if not area and rows:
@@ -329,14 +334,19 @@ def _browse_places(message, state, messages, rows, focus, lookup, geo):
         regions.discard(None)
         area = next(iter(regions)) if len(regions) == 1 else None
     if not area:
-        return {'reply': 'Which Malaysian destination should I use for the other places?'}
+        state['placeSearch'] = {'interests': interests, 'awaitingDestination': True}
+        return {'reply': 'Which Malaysian destination would you like to browse? Tell me its town and state.'}
     interests = interests or (display_concepts(candidate_concepts(focus)) if similar and focus else
                               search.get('interests') or state.get('interests') or [])
     state['placeSearch'] = {'area': area, 'state': region, 'interests': interests}
+    if state.get('planningGoal') != 'itinerary':
+        state.pop('guidedQuestion', None)
+        state['guidedActive'] = False
     if rejected:
         entries = [{'kind': 'place', 'id': result_id(r, 'place')} for r in rows]
         state['rejectedResults'] = [*(state.get('rejectedResults') or []), *entries][-50:]
-    candidates = lookup({'city': area, 'state': region}) if lookup else rows
+    candidates = lookup({'city': area, 'state': region, 'interests': interests,
+                         'discover': not viewing}) if lookup else rows
     cards = place_cards(find_matching_catalog_destinations(area, region, candidates), state, interests)
     desired = concepts_for(interests)
     if desired:

@@ -32,6 +32,7 @@ from services.fyp_reviews import dataset_for, dataset_reviews, private_dataset
 from services.review_destination import review_destination_id, review_destination_ids
 from services.malaysian_locality import (
     normalize_destination_scope,
+    resolve_area_query,
     normalize_candidate_geography,
     filter_candidates,
     FOREIGN_DESTINATIONS,
@@ -119,7 +120,10 @@ def _search_scope(location):
         provider_location = requested.get('canonicalName') or 'Penang, Malaysia'
         return requested, requested, provider_location
 
-    requested = normalize_destination_scope(raw_location)
+    try:
+        requested = resolve_area_query(raw_location, remote=True)
+    except Exception:
+        requested = resolve_area_query(raw_location)
     if not requested.get('resolved') or requested.get('country') != 'Malaysia':
         return requested, None, None
 

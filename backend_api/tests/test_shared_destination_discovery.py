@@ -114,9 +114,13 @@ def test_every_state_or_federal_territory_has_geographical_validation(state):
     assert ok and row['normalizedGeography']['state'] == state
 
 
-def test_unknown_city_centre_is_not_its_state_capital_and_foreign_coords_are_rejected():
+def test_newly_sourced_city_centre_is_not_its_state_capital_and_foreign_coords_are_rejected():
+    from services.malaysia_locations import by_id
     scope = normalize_destination_scope('Kundasang')
-    assert scope['resolved'] and scope['latitude'] is None and scope['longitude'] is None
+    sourced = by_id('1736633')
+    assert scope['resolved'] and scope['coordinateStatus'] == 'verified_locality'
+    assert (scope['latitude'], scope['longitude']) == (sourced['latitude'], sourced['longitude'])
+    assert (scope['latitude'], scope['longitude']) != STATE_CENTERS['Sabah']
     ok, _ = validate_candidate({'state': 'Penang', 'gps_coordinates': {'latitude': 1.3, 'longitude': 103.85}}, 'Penang')
     assert not ok
     assert not validate_candidate({'gps_coordinates': {'latitude': 13.75, 'longitude': 100.5}}, 'Malaysia')[0]

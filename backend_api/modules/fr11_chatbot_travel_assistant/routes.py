@@ -10,7 +10,7 @@ from sequence_contract.domain_functions import createItinerary, calculateBudget,
 from services.activity_pricing import pricing_snapshot, refresh_activity_costs
 from services.local_catalog import DESTINATIONS
 from services.preference_learning import effective_preference_profile
-from services.malaysian_locality import normalize_candidate_geography, normalize_destination_scope
+from services.malaysian_locality import normalize_candidate_geography, normalize_destination_scope, resolve_area_query
 from services.recommendation_taxonomy import candidate_concepts, concepts_for, display_concepts
 from services.review_service import published_review
 from .nlp_extractor import (
@@ -845,14 +845,41 @@ def _chat_turn(payload):
     if payload.get('commerceRevision') is not None and payload['commerceRevision'] != planning_state.get('commerceRevision',0):
         return jsonify({'ok':False,'error':'This conversation changed. Reopen the chat before sending the next message.','code':'stale_chat_context'}),409
     try:
+        location_reply = None
+        personal = personal_response(message, planning_state, retrieveRecord, g.uid)
+        browsing = personal is None and re.search(r'\b(?:places?|attractions?|visit|sightseeing)\b', message, re.I) and not re.search(
+            r'\b(?:plan|create|generate|build)\b.*\b(?:trip|itinerary)\b', message, re.I)
+        area_text = re.search(r'\b(?:in|around|near)\s+(.+?)(?:\s+please)?[.!?]*$', message, re.I) if browsing else None
+        answering_area = bool((planning_state.get('placeSearch') or {}).get('awaitingDestination')
+                              and len(message) <= 160 and not re.search(r'\b(?:cancel|stop|skip|budget|days?|plan|itinerary|why|how|what)\b', message, re.I))
+        answering_area = answering_area and not re.match(r'^(?:i|we|show|suggest|recommend|view|browse|help|can|please|where)\b', message, re.I)
+        if personal is None and (area_text or answering_area):
+            raw_area = (area_text[1] if area_text else message).strip().rstrip('.!?')
+            raw_area = re.split(r'\b(?:for|with|under|without|but|that|which|on)\b', raw_area, maxsplit=1, flags=re.I)[0].strip()
+            geo = extract_geographic_entities(raw_area)
+            if not geo.get('is_foreign') and not geo.get('is_multi_destination'):
+                try:
+                    area_scope = resolve_area_query(raw_area, remote=True)
+                except Exception:
+                    area_scope = {'resolved': False}
+                if area_scope.get('resolved'):
+                    message = ((message[:area_text.start(1)] if area_text else 'Show places in ')
+                               + area_scope['canonicalName']
+                               + message[(area_text.start(1) if area_text else 0) + len(raw_area):])
+                else:
+                    interests = extract_interests(message) or (planning_state.get('placeSearch') or {}).get('interests') or []
+                    planning_state['placeSearch'] = {'interests': interests, 'awaitingDestination': True}
+                    choices = area_scope.get('clarificationChoices') or []
+                    location_reply = {'reply': 'Which Malaysian town and state do you mean? I could not verify a single location from that name.',
+                                      'suggestedReplies': [row['canonicalName'] for row in choices[:4]]}
         def nearby_catalog(focus):
             area = focus.get('city') or planning_state.get('destinationArea') or focus.get('state')
             if not area:
                 return []
             return find_matching_catalog_destinations(area, focus.get('state'),
-                _planning_catalog(area, focus.get('state'), allow_provider=False))
-        personal = personal_response(message, planning_state, retrieveRecord, g.uid)
-        routing = ({'response': personal} if personal is not None else
+                _planning_catalog(area, focus.get('state'), focus.get('interests'),
+                                  allow_provider=focus.get('discover') is True))
+        routing = ({'response': location_reply} if location_reply is not None else {'response': personal} if personal is not None else
                    resolve_turn(message, planning_state, messages, interpret=interpretChatbotIntent, lookup=nearby_catalog))
         if routing and routing.get('personalTool'):
             routing = {'response': personal_response(message, planning_state, retrieveRecord, g.uid,
