@@ -479,37 +479,43 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   List<String> _activityNotes(Map<String, dynamic> activity) {
     final notes = <String>[];
     final weather = (activity['weatherNote'] ?? '').toString();
-    if (weather.isNotEmpty &&
-        weather != 'No major weather rearrangement required.')
-      notes.add(weather);
+    if (weather.isNotEmpty && weather != 'No major weather rearrangement required.') notes.add(weather);
     for (final note in (activity['scheduleNotes'] as List? ?? [])) {
-      var text = note.toString();
-      if (text.contains('Fits one reported opening period; current hours and special-date closures are not verified.')) {
-        text = 'Hours unverified on special dates. Fits one reported opening period.';
+      var text = note.toString().trim();
+      if (text.startsWith('Provisional visit time: opening hours are unknown')) {
+        text = 'Check opening hours before visiting.';
+      } else if (text.startsWith('Fits one reported opening period; current hours and special-date closures')) {
+        text = 'Check opening hours and special-date closures before visiting.';
       }
-      if (text.trim().isNotEmpty && !notes.contains(text)) notes.add(text);
+      if (text.isNotEmpty && !notes.contains(text)) notes.add(text);
     }
-    if (_isProvisional(activity) &&
-        !notes.any((n) =>
-            n.toLowerCase().contains('opening hours') ||
-            n.toLowerCase().contains('unverified') ||
-            n.toLowerCase().contains('provisional'))) {
-      notes.add(
-          'Operating hours for the planned date are not confirmed. Confirm with the venue before visiting.');
+    if (_isProvisional(activity) && !notes.any((n) => n.toLowerCase().contains('opening hours'))) {
+      notes.add('Check opening hours before visiting.');
     }
-    if (_isPriceConditional(activity) &&
-        !notes.any((n) => n.toLowerCase().contains('tariff'))) {
-      notes.add(
-          'Admission tariff varies by visitor category or transport option. Verify before visiting.');
-    } else if (_isPriceUnverified(activity) &&
-        !notes.any((n) =>
-            n.toLowerCase().contains('admission') ||
-            n.toLowerCase().contains('ticket') ||
-            n.toLowerCase().contains('price'))) {
-      notes.add(
-          'Admission price is unverified. Check ticket prices before your visit.');
+    if (_isPriceConditional(activity)) {
+      notes.add('Ticket prices vary by option.');
+    } else if (_isPriceUnverified(activity)) {
+      notes.add('Check ticket prices before visiting.');
     }
-    return notes.take(2).toList();
+    for (final access in (activity['supportingAccess'] as List? ?? []).whereType<Map>()) {
+      notes.add('${access['title'] ?? 'Access point'}: ${access['note'] ?? 'Confirm access and any separate transport cost before visiting.'}');
+    }
+    return notes.toSet().toList();
+  }
+
+  bool _essentialNote(String note) {
+    // Only recognised routine guidance is collapsed; unfamiliar warnings stay visible.
+    const routine = {
+      'Check opening hours before visiting.',
+      'Check opening hours and special-date closures before visiting.',
+      'Check ticket prices before visiting.',
+      'Ticket prices vary by option.',
+      'Grouped with a nearby attraction to reduce estimated travel time.',
+    };
+    return !routine.contains(note) &&
+        !note.startsWith('Scheduled before the reported period closes at ') &&
+        !note.startsWith('Scheduled before closing at ') &&
+        !RegExp(r'^Recommended stop for Day [0-9]+$').hasMatch(note);
   }
 
   String _lifecycleLabel(dynamic raw) {
@@ -1836,8 +1842,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             ? distance.toInt().toString()
             : distance.toStringAsFixed(1);
     final text = [
-      confirmed ? '$minutes min' : '~$minutes min estimated',
-      if (distance != null && distance > 0) '$distanceText km',
+      activity['travelTimeSource'] == 'unverified_access_buffer'
+        ? 'Transfer needs confirmation · $minutes min planning buffer'
+        : confirmed ? '$minutes min' : '~$minutes min estimated',
+      if (distance != null && !confirmed && distance < .05) 'Same vicinity; route not verified'
+      else if (distance != null && distance > 0) '$distanceText km',
     ].join(' · ');
     return Semantics(
       label: 'Travel to next activity, $text',
@@ -1848,11 +1857,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           const Icon(Icons.south_rounded,
               size: AppSizes.iconSmall, color: AppColors.textSecondary),
           const SizedBox(width: AppSpacing.xs),
-          Text(text,
+          Flexible(child: Text(text,
               style: Theme.of(context)
                   .textTheme
                   .bodySmall
-                  ?.copyWith(color: AppColors.textSecondary)),
+                  ?.copyWith(color: AppColors.textSecondary))),
         ]),
       ),
     );
@@ -1861,20 +1870,16 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   Widget _activityCard(Map<String, dynamic> activity) {
     final category =
         (activity['category'] ?? activity['type'] ?? '').toString().trim();
-    final cost = double.tryParse('${activity['estimatedCost'] ?? 0}') ?? 0;
+    final unit = activity['pricingUnit'];
+    final amount = {'per_person', 'per_group'}.contains(unit)
+        ? activity['unitPrice'] ?? activity['estimatedCost'] : activity['estimatedCost'];
+    final cost = double.tryParse('${amount ?? 0}') ?? 0;
     final notes = _activityNotes(activity);
     final isProvisional = _isProvisional(activity);
     final isFree = _isVerifiedFree(activity);
     final isConditional = _isPriceConditional(activity);
     final isPriceUnverified = _isPriceUnverified(activity);
     final isVerifiedPaid = _isPriceVerified(activity) && !isFree;
-
-    final showLeftNote = isProvisional || isPriceUnverified;
-    final leftNoteText = (isProvisional && isPriceUnverified)
-        ? 'Hours & price\nunverified'
-        : isProvisional
-            ? 'Hours\nunverified'
-            : 'Price\nunverified';
 
     final semanticsHours = isProvisional ? ', Hours unverified' : '';
     final semanticsPricing = isFree
@@ -1906,18 +1911,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                       .titleSmall
                       ?.copyWith(color: AppColors.primaryStrong),
                 ),
-                if (showLeftNote) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    leftNoteText,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: AppColors.textSecondary,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w600,
-                          height: 1.15,
-                        ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -1945,28 +1938,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                         runSpacing: AppSpacing.xxs,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          if (isProvisional)
-                            const StatusChip(
-                              text: 'Hours unverified',
-                              tone: AppStatusTone.neutral,
-                            ),
                           if (isFree)
                             const StatusChip(
                               text: 'Free admission',
                               tone: AppStatusTone.success,
                               icon: Icons.check_circle_outline_rounded,
-                            ),
-                          if (isConditional)
-                            const StatusChip(
-                              text: 'Tariff conditional',
-                              tone: AppStatusTone.neutral,
-                              icon: Icons.info_outline_rounded,
-                            ),
-                          if (isPriceUnverified)
-                            const StatusChip(
-                              text: 'Admission unverified',
-                              tone: AppStatusTone.neutral,
-                              icon: Icons.help_outline_rounded,
                             ),
                           if (category.isNotEmpty)
                             Text(category,
@@ -1975,33 +1951,29 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                             Text(_durationText(activity),
                                 style: Theme.of(context).textTheme.bodySmall),
                           if (isConditional && cost > 0)
-                            Text('~RM ${_money(cost)} tariff',
+                            Text('~RM ${_money(cost)} · varies',
                                 style: Theme.of(context).textTheme.bodySmall)
                           else if (isPriceUnverified && cost > 0)
                             Text('~RM ${_money(cost)} estimate',
                                 style: Theme.of(context).textTheme.bodySmall)
-                          else if (isPriceUnverified && cost <= 0)
-                            Text('Price TBC',
-                                style: Theme.of(context).textTheme.bodySmall)
                           else if (isVerifiedPaid && cost > 0)
-                            Text('RM ${_money(cost)} verified',
+                            Text('RM ${_money(cost)}${activity['pricingUnit'] == 'per_person' ? ' / person' : activity['pricingUnit'] == 'per_group' ? ' / group' : ''}',
                                 style: Theme.of(context).textTheme.bodySmall)
                           else if (!isFree && cost > 0)
                             Text('RM ${_money(cost)} estimated',
                                 style: Theme.of(context).textTheme.bodySmall),
                         ]),
-                    if (notes.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        notes.first,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: AppColors.textSecondary),
-                      ),
-                    ],
+                    for (final note in notes.where(_essentialNote)) Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xs),
+                      child: Text(note, style: Theme.of(context).textTheme.bodySmall)),
+                    if (notes.isNotEmpty) ExpansionTile(
+                      key: ValueKey('visit-information-${activity['activityId']}'),
+                      tilePadding: EdgeInsets.zero, childrenPadding: EdgeInsets.zero,
+                      title: const Text('Visit information'),
+                      children: [for (final note in notes.where((n) => !_essentialNote(n))) Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                        child: Align(alignment: Alignment.centerLeft,
+                          child: Text(note, style: Theme.of(context).textTheme.bodySmall)))]),
                   ]),
             ),
           ),
@@ -2128,7 +2100,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                             (activity['activityName'] ?? 'Activity').toString(),
                             style: Theme.of(context).textTheme.titleMedium),
                         Text(
-                          '${activity['scheduledStartTime'] ?? activity['timeSlot'] ?? 'Time TBC'} · ${_durationText(activity)}${_isProvisional(activity) ? ' · Hours unverified' : ''}',
+                          '${activity['scheduledStartTime'] ?? activity['timeSlot'] ?? 'Time TBC'} · ${_durationText(activity)}',
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall

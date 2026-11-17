@@ -12,6 +12,7 @@ import 'package:travelmate_traveller/modules/fr08_hotel_booking/room_offer_photo
 import 'package:travelmate_traveller/modules/fr11_chatbot_travel_assistant/chat_tab.dart';
 
 class AllApi extends ApiService {
+  String description = 'A genuine provider description.';
   final posts = <String>[];
   final bodies = <Map<String, dynamic>>[];
   final gets = <String>[];
@@ -24,13 +25,13 @@ class AllApi extends ApiService {
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
     gets.add(path); queries.add({...?query});
     if (path == '/api/fr3/favourites' || path == '/api/fr11/sessions') return {'items': []};
-    if (path == '/api/fr6/locations/search') return {'results': [{'name': 'George Town', 'admin1': 'Penang', 'country': 'Malaysia', 'latitude': 5.4, 'longitude': 100.2}]};
+    if (path == '/api/fr6/locations' || path == '/api/fr6/locations/search') return {'results': [{'name': 'George Town', 'admin1': 'Penang', 'country': 'Malaysia', 'latitude': 5.4, 'longitude': 100.2}]};
     if (path == '/api/fr6/weather') return delayedWeather?.future ?? Future.value({'weather': forecast});
     if (path == '/api/fr3/destinations/search') return {'results': [
       {'destinationId': 'one', 'title': 'Temple one'},
       {'destinationId': query?['offset'] == '20' ? 'three' : 'two', 'title': query?['offset'] == '20' ? 'Temple three' : 'Temple two'}],
       if (query?['offset'] == null) 'nextOffset': 20};
-    if (path == '/api/fr3/destinations/one') return {'destination': {'destinationId': 'one', 'title': 'Temple one', 'description': 'A genuine provider description.', 'category': 'Temple', 'highlights': ['Wheelchair access']}, 'source': 'serpapi'};
+    if (path == '/api/fr3/destinations/one') return {'destination': {'destinationId': 'one', 'title': 'Temple one', 'description': description, 'category': 'Temple', 'highlightsSource': 'provider_about', 'highlights': ['Wheelchair access']}, 'source': 'serpapi'};
     return {'items': [], 'result': {}};
   }
   @override
@@ -49,6 +50,17 @@ Future<void> frame(WidgetTester tester, Widget child, {double width = 430, doubl
 }
 
 void main() {
+  testWidgets('Batch F concise About expands only additional source text without refetching', (tester) async {
+    final api = AllApi()..description = 'A heritage museum. It has recorded galleries. Visitors can see its exhibits. Another documented public detail.';
+    await frame(tester,DestinationDetailsScreen(api:api,initialDestination:const {'destinationId':'one','title':'Temple one'}));
+    await tester.scrollUntilVisible(find.text('Read more'),200,scrollable:find.byType(Scrollable).first);
+    expect(find.text('About this place'),findsOneWidget);
+    expect(find.text('Another documented public detail.'),findsNothing);
+    await tester.tap(find.text('Read more')); await tester.pumpAndSettle();
+    expect(find.text('Another documented public detail.'),findsOneWidget);
+    expect(api.gets.where((p) => p == '/api/fr3/destinations/one').length,1);
+  });
+
   for (final width in [320.0, 360.0, 430.0]) {
     testWidgets('hotel dates and guest controls fit $width at larger text', (tester) async {
       await frame(tester, HotelScreen(api: AllApi()), width: width, scale: 1.2);
@@ -75,7 +87,7 @@ void main() {
   testWidgets('weather requires a selected location then displays actual optional fields', (tester) async {
     final api = AllApi(); await frame(tester, WeatherScreen(api: api));
     final dynamic state = tester.state(find.byType(WeatherScreen)); await state.search(); await tester.pumpAndSettle();
-    expect(api.gets, isEmpty);
+    expect(api.gets, ['/api/fr6/locations']);
     await tester.enterText(find.byType(TextField), 'George'); await tester.pump(const Duration(milliseconds: 350)); await tester.pumpAndSettle();
     await tester.tap(find.text('George Town, Penang, Malaysia')); await tester.pumpAndSettle();
     await tester.tap(find.text('Show weather')); await tester.pumpAndSettle();

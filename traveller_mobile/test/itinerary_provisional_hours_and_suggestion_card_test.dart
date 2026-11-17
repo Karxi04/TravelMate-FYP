@@ -183,6 +183,17 @@ Future<void> _scrollToPlanning(WidgetTester tester, Finder target) async {
 }
 
 void main() {
+  testWidgets('Batch F unfamiliar access restrictions remain visible without expanding', (tester) async {
+    final trip = _makeTrip(scheduled:[{
+      'activityId':'restricted','activityName':'Limited Access Park','dayNo':1,
+      'timeSlot':'09:00','openingHoursStatus':'open',
+      'scheduleNotes':['Access restricted during the selected dates.'],
+    }]);
+    await _pumpTripDetails(tester,trip);
+    await _show(tester,find.text('Limited Access Park'));
+    expect(find.text('Access restricted during the selected dates.'),findsOneWidget);
+  });
+
   group('Batch 21E-F1C: Provisional Itinerary Hours Presentation', () {
     testWidgets('1. Provisional activity displays Hours unverified and explanatory note',
         (tester) async {
@@ -212,12 +223,15 @@ void main() {
       await _pumpTripDetails(tester, trip);
       await _show(tester, find.text('Wonderfood Museum'));
 
-      expect(find.text('Hours unverified'), findsAtLeastNWidgets(1));
+      expect(find.text('Hours unverified'), findsNothing);
+      await tester.tap(find.text('Visit information').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Check opening hours before visiting.'), findsOneWidget);
       expect(find.text('15:30'), findsOneWidget);
       expect(find.text('Wonderfood Museum'), findsOneWidget);
 
       expect(
-        find.textContaining('Confirm with the venue before visiting'),
+        find.text('Check opening hours before visiting.'),
         findsOneWidget,
       );
     });
@@ -253,8 +267,10 @@ void main() {
       expect(find.text('Georgetown World Heritage Site'), findsOneWidget);
       expect(find.text('09:00'), findsOneWidget);
       expect(find.text('Hours unverified'), findsNothing);
+      await tester.tap(find.text('Visit information').first);
+      await tester.pumpAndSettle();
       expect(
-        find.textContaining('Fits one reported opening period'),
+        find.text('Check opening hours and special-date closures before visiting.'),
         findsOneWidget,
       );
     });

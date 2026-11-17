@@ -128,6 +128,10 @@ double? _distance(Map<String, dynamic> first, Map<String, dynamic> second) {
       source: 'provider'
     );
   }
+  if ((item['supportingAccess'] as List? ?? []).isNotEmpty ||
+      (previous['supportingAccess'] as List? ?? []).isNotEmpty) {
+    return (minutes: 25, distance: null, source: 'unverified_access_buffer');
+  }
   final distance = _distance(previous, item);
   if (distance == null) return (minutes: 25, distance: null, source: 'estimated_default');
   return (
@@ -254,6 +258,8 @@ Map<String, dynamic> planConstraintAwareItinerary(
                   : 'Rain is forecast; keep an indoor alternative available.')
               : '',
           'scheduleNotes': [
+            if (travel.source == 'unverified_access_buffer')
+              'Access transfer requires confirmation; 25 minutes is a planning buffer, not a verified journey time or walking route.',
             if (previous != null && travel.source == 'estimated_haversine')
               'Grouped with a nearby attraction to reduce estimated travel time.',
             if (opening.end != null && opening.end! <= 1080)

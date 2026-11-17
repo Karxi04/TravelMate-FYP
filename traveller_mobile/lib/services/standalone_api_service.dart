@@ -1,3 +1,5 @@
+import '../core/utils/malaysia_weather.dart';
+import '../core/utils/itinerary_identity.dart';
 import 'dart:convert';
 import 'dart:math';
 
@@ -232,8 +234,11 @@ class StandaloneApiService {
       }
       return {'ok': true, 'budget': _calculateBudget(trip ?? {})};
     }
+    if (path == '/api/fr6/locations') {
+      return {'ok': true, 'results': (await MalaysiaWeather.load()).catalogue};
+    }
     if (path == '/api/fr6/locations/search') {
-      return _searchLocation(query?['q'] ?? 'George Town');
+      return _searchLocation(query?['q'] ?? '', remote: query?['remote'] == 'true');
     }
     if (path == '/api/fr6/weather') {
       return _weather(query ?? const {});
@@ -3759,13 +3764,15 @@ class StandaloneApiService {
         throw Exception(
             'No destination candidates are available for this trip.');
       }
-      activities = recs
+      activities = consolidateGeneratedCandidates(recs)
           .take(20)
           .map((item) => {
                 'activityId':
                     '${id}_a${DateTime.now().microsecondsSinceEpoch}_${item['destinationId']}',
+                if (item['supportingAccess'] != null) 'supportingAccess': item['supportingAccess'],
+                if (item['identityConsolidation'] != null) 'identityConsolidation': item['identityConsolidation'],
                 'activityName': item['title'] ?? item['name'],
-                'destinationId': item['destinationId'] ?? item['place_id'],
+                'destinationId': item['destinationId'] ?? item['place_id'] ?? item['data_id'] ?? item['id'],
                 'address': item['address'] ?? '',
                 'estimatedCost': item['estimatedCost'] ?? 0,
                 'gps_coordinates':
@@ -4184,44 +4191,50 @@ class StandaloneApiService {
   // Weather (real public Open-Meteo calls where internet is available)
   // ------------------------------------------------------------------
 
-  Future<dynamic> _searchLocation(String place) async {
-    try {
-      final uri = Uri.https('geocoding-api.open-meteo.com', '/v1/search', {
-        'name': place,
-        'count': '5',
-        'language': 'en',
-        'format': 'json',
-      });
-      final response = await http.get(uri).timeout(const Duration(seconds: 15));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {'ok': true, 'results': data['results'] ?? []};
+  final Map<String, Map<String, dynamic>> _weatherRemotePoints = {};
+  Future<dynamic> _searchLocation(String place, {bool remote = false}) async {
+    final geography = await MalaysiaWeather.load();
+    final local = geography.search(place);
+    if (local.isNotEmpty || !remote || place.trim().length < 3) return {'ok': true, 'results': local};
+    final uri = Uri.https('geocoding-api.open-meteo.com', '/v1/search', {
+      'name': place, 'count': '10', 'language': 'en', 'format': 'json', 'countryCode': 'MY'});
+    final response = await http.get(uri).timeout(const Duration(seconds: 8));
+    if (response.statusCode != 200) throw Exception('Malaysian location search is unavailable.');
+    final data = jsonDecode(response.body) as Map;
+    final found = <Map<String, dynamic>>[];
+    for (final row in (data['results'] as List? ?? []).whereType<Map>()) {
+      if (row['country_code'] != 'MY' || !['PPL','PPLA','PPLA2','PPLA3','PPLA4','PPLC','PPLX','ADM2'].contains(row['feature_code'])) continue;
+      final state = MalaysiaWeather.stateName('${row['admin1']}');
+      final point = geography.point({...row, 'state': state, 'aliases': [], 'kind':'locality'});
+      if (point != null) {
+        found.add(point); _weatherRemotePoints[point['id']] = point;
+        if (_weatherRemotePoints.length > 100) _weatherRemotePoints.remove(_weatherRemotePoints.keys.first);
       }
-    } catch (_) {}
-
-    final lower = place.toLowerCase();
-    final point = lower.contains('kuala')
-        ? {'name': 'Kuala Lumpur', 'latitude': 3.1390, 'longitude': 101.6869}
-        : lower.contains('langkawi')
-            ? {'name': 'Langkawi', 'latitude': 6.3500, 'longitude': 99.8000}
-            : {
-                'name': 'George Town',
-                'latitude': 5.4141,
-                'longitude': 100.3288
-              };
-    return {
-      'ok': true,
-      'results': [point]
-    };
+    }
+    return {'ok': true, 'results': found};
   }
 
   Future<dynamic> _weather(Map<String, String> query) async {
-    final lat = query['latitude'] ?? '5.4141';
-    final lon = query['longitude'] ?? '100.3288';
+    final lat = double.tryParse(query['latitude'] ?? '');
+    final lon = double.tryParse(query['longitude'] ?? '');
+    final geography = await MalaysiaWeather.load();
+    if (lat == null || lon == null || geography.coordinateState(lat, lon) == null) {
+      throw Exception('Choose a verified Malaysian weather location.');
+    }
+    final identity = query['locationId'];
+    if (identity != null) {
+      final matches = geography.all.where((p) => p['id'] == identity);
+      final point = matches.isNotEmpty ? matches.first : _weatherRemotePoints[identity];
+      if (point == null || ((point['latitude'] as num)-lat).abs() > .00001 ||
+          ((point['longitude'] as num)-lon).abs() > .00001 ||
+          query['locationName'] != null && query['locationName'] != point['label']) {
+        throw Exception('Choose the matching verified Malaysian weather location.');
+      }
+    }
     try {
       final uri = Uri.https('api.open-meteo.com', '/v1/forecast', {
-        'latitude': lat,
-        'longitude': lon,
+        'latitude': '$lat',
+        'longitude': '$lon',
         'current':
             'temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code',
         'daily':
@@ -4239,26 +4252,7 @@ class StandaloneApiService {
       }
     } catch (_) {}
 
-    final now = DateTime.now();
-    final dates = List.generate(7, (i) => _date(now.add(Duration(days: i))));
-    return {
-      'ok': true,
-      'source': 'local',
-      'weather': {
-        'current': {
-          'temperature_2m': 30,
-          'relative_humidity_2m': 72,
-          'wind_speed_10m': 8,
-          'weather_code': 2,
-        },
-        'daily': {
-          'time': dates,
-          'temperature_2m_max': [31, 31, 30, 30, 31, 32, 31],
-          'temperature_2m_min': [25, 25, 24, 25, 25, 25, 24],
-          'precipitation_probability_max': [35, 45, 65, 55, 40, 30, 50],
-        },
-      },
-    };
+    throw Exception('Weather provider is unavailable. Please try again.');
   }
 
   // ------------------------------------------------------------------
