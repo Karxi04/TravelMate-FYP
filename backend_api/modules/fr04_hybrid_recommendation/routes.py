@@ -18,6 +18,7 @@ from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
 from services.review_service import published_review
 from services.recommendation_taxonomy import candidate_concepts, preference_concepts, display_concepts
+from services.recommendation_taxonomy import planning_preferences
 from services.recommendation_discovery import (
     DISCOVERY_MODE, discovery_annotations, discovery_queries, enrich_discovery_candidate,
     is_administrative_facility, is_planning_candidate,
@@ -513,6 +514,7 @@ def generate():
         'preferenceProfileVersion': _preference_version(
             pref, learned_profile),
         'preferenceFingerprint': _profile_fingerprint(pref),
+        'planningPreferences': planning_preferences(effective_pref),
         'source': source,
         'cacheFallbackNotice': ('Using saved destination metadata; some cache dates are stale or unavailable. Check venue details before travelling.'
             if source != 'live_provider' and any(row.get('cacheFreshness') in {'stale', 'unknown'} for row in ranked) else None),

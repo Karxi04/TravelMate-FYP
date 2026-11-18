@@ -214,6 +214,9 @@ def test_activity_only_budget_preview_and_confirmed_apply(client, mock_traveller
         **command, 'confirmed': False}).status_code == 409
     state['f2'] = {**state['f2'], 'itineraryRevision': 2}
     assert client.get(PATH + '/budget-replan', headers=AUTH).json['stateVersion'] != trip_options['stateVersion']
+    stale = client.post(PATH + '/budget-replan/preview', headers=AUTH,
+                        json={**payload, 'stateVersion': trip_options['stateVersion']})
+    assert stale.status_code == 409 and stale.json['code'] == 'STALE_BUDGET_PLAN'
     assert client.post(PATH + '/budget-replan/apply', headers=AUTH, json=command).status_code == 409
     updater.assert_not_called()
     preview = client.post(PATH + '/budget-replan/preview', headers=AUTH, json=payload)

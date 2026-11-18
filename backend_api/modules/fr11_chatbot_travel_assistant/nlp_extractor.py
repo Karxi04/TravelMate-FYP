@@ -869,13 +869,14 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
         days = max(1, min(14, int(days or 3)))
     time_slots = ['Morning (09:00 - 12:00)', 'Afternoon (13:30 - 16:30)', 'Evening (18:00 - 20:30)']
     activities = []
-    activity_count = days * (2 if normalize_pace(profile.get('travelPace')) == 'relaxed' else len(time_slots))
+    activity_count = days * {'relaxed': 2, 'moderate': 3, 'active': 5}.get(
+        normalize_pace(profile.get('travelPace')), 3)
     scheduled = matching[:activity_count]
     for idx, d in enumerate(scheduled):
         # Spread a limited verified catalogue across all days without repeating places.
         day_no = min(days, idx * days // len(scheduled) + 1)
         day_slot = sum(a['dayNo'] == day_no for a in activities)
-        slot = time_slots[day_slot]
+        slot = time_slots[min(day_slot, len(time_slots) - 1)]
         activities.append({
                 **{key: d[key] for key in IDENTITY_FIELDS if key in d},
                 'activityId': f'A{len(activities) + 1}',
@@ -916,8 +917,11 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
     else:
         e_date = end_date
 
+    from services.recommendation_taxonomy import planning_preferences
     plan = {
         'attractionIdentityPolicy': POLICY,
+        'sleepingType': profile.get('sleepingType'),
+        'planningPreferences': planning_preferences(profile),
         'title': f"{days}-Day {destination_area} Itinerary Plan",
         'destinationArea': destination_area,
         'destinationState': destination_state or '',

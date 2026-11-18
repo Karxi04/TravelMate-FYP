@@ -479,6 +479,32 @@ void main() {
     expect(find.textContaining('available time, travel'), findsNothing);
   });
 
+  testWidgets('flight actions have separated rows and usable targets on a narrow trip page',
+      (tester) async {
+    final api = _TripApi();
+    api.trip['selectedFlight'] = {
+      'airline': 'Fixture Airlines', 'flightNumber': 'TM12', 'price': 282,
+    };
+    api.trip['flightCost'] = 282;
+    await tester.binding.setSurfaceSize(const Size(320, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpTrip(tester, api);
+    final adjust = find.byKey(const ValueKey('adjust-flight-itinerary-btn'));
+    final replace = find.byKey(const ValueKey('replace-flight-btn'));
+    final remove = find.byKey(const ValueKey('remove-flight-btn'));
+    await _show(tester, adjust);
+    final rects = [adjust, replace, remove].map(tester.getRect).toList();
+    expect(rects.every((rect) => rect.height >= 48), isTrue);
+    expect(rects.first.top, lessThan(rects.last.top));
+    for (var i = 1; i < rects.length; i++) {
+      final before = rects[i - 1];
+      final after = rects[i];
+      expect(after.top > before.top ? after.top - before.bottom : after.left - before.right,
+          greaterThanOrEqualTo(8));
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Trip Details exposes alternatives directly for an under-budget saved trip', (tester) async {
     final api = _TripApi();
     await _pumpTrip(tester, api);

@@ -64,6 +64,10 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   }
   String get title => DestinationUtils.resolveName(detail);
   String get reviewDestinationId {
+    final canonical = detail['reviewDestinationId'];
+    if (canonical is String && canonical.isNotEmpty) {
+      return ReviewContract.destinationId(canonical);
+    }
     final openedId = DestinationUtils.resolveId(widget.initialDestination);
     return ReviewContract.destinationId(openedId.isEmpty ? destinationId : openedId);
   }
@@ -77,6 +81,8 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         'cached',
         'fallback',
         'local',
+        'local_catalog',
+        'fyp_private',
         'demo',
       }.contains(source.toLowerCase());
 
@@ -141,7 +147,9 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     }
 
     try {
-      final reviewId = Uri.encodeComponent(reviewDestinationId);
+      final openedId = DestinationUtils.resolveId(widget.initialDestination);
+      final reviewId = Uri.encodeComponent(detail['reviewDestinationId'] != null && openedId.isNotEmpty
+          ? openedId : reviewDestinationId);
       final path = '/api/fr3/destinations/$reviewId/ratings-reviews';
       final data = await api.get(path, {'view': 'unified'});
       if (!current()) return;

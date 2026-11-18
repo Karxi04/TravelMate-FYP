@@ -274,3 +274,23 @@ def normalize_personality(value):
         if canonical in phrase:
             return canonical
     return ''
+
+
+PLANNING_PREFERENCE_FIELDS = ('travelPersonality', 'sleepingType', 'travelType',
+                              'interests', 'budgetRange', 'travelPace', 'travelPurpose')
+
+
+def planning_preferences(profile):
+    return {field: profile[field] for field in PLANNING_PREFERENCE_FIELDS
+            if profile.get(field)}
+
+
+def travel_style_suitability(style, item):
+    style = normalize_phrase(style)
+    count = item.get('reviews')
+    # Review counts indicate relative visibility, not venue quality or crowd levels.
+    if style == 'mixed' or item.get('ratingSource') != 'provider' or type(count) not in (int, float) or not 1 <= count <= 100000000:
+        return .60, False
+    if style == 'popular landmarks':
+        return (.90 if count >= 1000 else .45 if count <= 100 else .60), True
+    return (.90 if count <= 100 else .45 if count >= 1000 else .60), True

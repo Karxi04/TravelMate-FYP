@@ -542,11 +542,12 @@ class SourceFallbackBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final normalized = source.trim().toLowerCase();
-    final isLive = normalized == 'live' || normalized == 'provider';
-    final isCache = normalized == 'cache' || normalized == 'cached';
-    final label = isLive
-        ? 'Live source'
-        : (isCache ? 'Cached source' : 'Fallback source');
+    final isLive = const {'live', 'provider', 'serpapi', 'live_provider'}.contains(normalized);
+    final isCache = const {'cache', 'cached', 'fallback', 'local', 'local_catalog'}.contains(normalized);
+    final label = isLive ? 'Live provider information'
+        : const {'demo', 'fyp_private'}.contains(normalized) ? 'Demonstration information'
+        : const {'cache', 'cached'}.contains(normalized) ? 'Saved provider information'
+        : 'Saved destination information';
     final tone = isLive
         ? AppStatusTone.success
         : (isCache ? AppStatusTone.info : AppStatusTone.warning);

@@ -221,7 +221,21 @@ Map<String, dynamic> planConstraintAwareItinerary(
   final days = _days(trip);
   final startDate = DateTime.tryParse('${trip['startDate'] ?? ''}') ?? DateTime.now();
   final pace = _pace(trip);
-  final window = itineraryPaceWindows[pace]!;
+  final window = [...itineraryPaceWindows[pace]!];
+  final rhythm = (trip['sleepingType'] ?? '').toString().toLowerCase();
+  if (rhythm == 'early riser') {
+    window[0] = max(450, window[0] - 60);
+    window[1] -= 60;
+  } else if (rhythm == 'night owl') {
+    window[0] = max(window[0], 660);
+  } else if (rhythm == 'comfort-focused') {
+    window[0] = max(window[0], 600);
+  }
+  final rest = rhythm == 'night owl' ? [840, 900] : [750, rhythm == 'comfort-focused' ? 840 : 810];
+  final profiled = (trip['planningPreferences'] as Map?)?.isNotEmpty == true;
+  final rank = {for (var i = 0; i < remaining.length; i++) remaining[i]['activityId']: i};
+  final maxVisits = profiled && !respectDayAssignments
+      ? const {'relaxed': 2, 'moderate': 3, 'active': 5}[pace] : null;
   final weather = _weatherByDate(forecast);
   final scheduled = <Map<String, dynamic>>[];
   final daily = <Map<String, dynamic>>[];
@@ -238,7 +252,7 @@ Map<String, dynamic> planConstraintAwareItinerary(
     var current = window[0];
     Map<String, dynamic>? previous;
     final dayItems = <Map<String, dynamic>>[];
-    while (remaining.isNotEmpty) {
+    while (remaining.isNotEmpty && (maxVisits == null || dayItems.length < maxVisits)) {
       final eligible = remaining
           .where((item) => (!respectDayAssignments && !pinned.contains(item['activityId'])) ||
               _number(item['dayNo'], dayNo.toDouble()).round() == dayNo)
@@ -252,6 +266,7 @@ Map<String, dynamic> planConstraintAwareItinerary(
           final closeA = _opening(a['openingHours']).end ?? 1440;
           final closeB = _opening(b['openingHours']).end ?? 1440;
           if (closeA != closeB) return closeA.compareTo(closeB);
+          if (profiled) return rank[a['activityId']]!.compareTo(rank[b['activityId']]!);
           return (_distance(previous ?? a, a) ?? 99999).compareTo(_distance(previous ?? b, b) ?? 99999);
         });
       }
@@ -267,7 +282,7 @@ Map<String, dynamic> planConstraintAwareItinerary(
         final duration = _duration(item);
         final travel = _travel(previous, item);
         var itemStart = max(current + travel.minutes, opening.start ?? 0);
-        if (itemStart < 810 && itemStart + duration.minutes > 750) itemStart = 810;
+        if (itemStart < rest[1] && itemStart + duration.minutes > rest[0]) itemStart = rest[1];
         final itemEnd = itemStart + duration.minutes;
         if (itemEnd > window[1] || (opening.end != null && itemEnd > opening.end!)) continue;
         chosen = {
@@ -325,9 +340,9 @@ Map<String, dynamic> planConstraintAwareItinerary(
               {
                 'type': 'meal_rest',
                 'label': 'Lunch and rest',
-                'startTime': '12:30',
-                'endTime': '13:30',
-                'durationMinutes': 60,
+                'startTime': _time(rest[0]),
+                'endTime': _time(rest[1]),
+                'durationMinutes': rest[1] - rest[0],
                 'estimated': true,
               }
             ],

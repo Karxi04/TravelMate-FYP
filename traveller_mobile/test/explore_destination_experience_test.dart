@@ -298,7 +298,7 @@ void main() {
     expect(api.searchCalls, 1);
     expect(find.text('Kek Lok Si Temple'), findsWidgets);
     expect(find.text('Culture'), findsWidgets);
-    expect(find.text('Fallback source'), findsWidgets);
+    expect(find.text('Saved destination information'), findsOneWidget);
     expect(find.textContaining('% match'), findsNothing);
     expect(find.text('contentScore'), findsNothing);
     expect(find.text('provider stack trace'), findsNothing);
@@ -381,8 +381,8 @@ void main() {
 
     expect(find.text('Kek Lok Si Temple'), findsWidgets);
     expect(find.text('Air Itam, Penang'), findsWidgets);
-    await _show(tester, find.text('Cached source'));
-    expect(find.text('Cached source'), findsOneWidget);
+    await _show(tester, find.text('Saved provider information'));
+    expect(find.text('Saved provider information'), findsOneWidget);
     expect(find.text('Why this fits you'), findsOneWidget);
     expect(find.text('Matches your Culture and Heritage interests'),
         findsOneWidget);

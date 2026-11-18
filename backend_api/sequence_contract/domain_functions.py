@@ -123,6 +123,7 @@ def applyContentBasedFiltering(recommendationInput):
     interest_concepts = preference_concepts(raw_interests)
     excluded_concepts = concepts_for(pref.get('excludedInterests', []))
     travel_type_concepts = concepts_for(pref.get('travelType'))
+    from services.recommendation_taxonomy import travel_style_suitability
     requested_budget = normalize_budget(pref.get('budgetRange'))
     requested_pace = normalize_pace(pref.get('travelPace'))
     requested_purpose = normalize_purpose(pref.get('travelPurpose'))
@@ -165,8 +166,12 @@ def applyContentBasedFiltering(recommendationInput):
             -LEARNED_INTEREST_STRENGTH,
             min(1.0, base_interest_score + learned_adjustment),
         )
-        type_score = _concept_compatibility(
-            travel_type_concepts, destination_concepts, neutral=0.60)
+        style = str(pref.get('travelType') or '').lower()
+        if style in {'popular landmarks', 'lesser-known places', 'mixed'}:
+            type_score, style_applied = travel_style_suitability(style, item)
+        else:
+            type_score = _concept_compatibility(travel_type_concepts, destination_concepts, neutral=0.60)
+            style_applied = bool(travel_type_concepts and destination_concepts)
         pace_score, pace_applied = _pace_suitability(requested_pace, item)
         budget_score, budget_applied = _budget_suitability(requested_budget, item)
         purpose_score, purpose_applied = _purpose_suitability(requested_purpose, item)
@@ -203,7 +208,7 @@ def applyContentBasedFiltering(recommendationInput):
             },
             'travelType': {
                 'score': round(type_score * 100.0, 2),
-                'applied': bool(travel_type_concepts and destination_concepts),
+                'applied': style_applied,
                 'matched': display_concepts(
                     travel_type_concepts.intersection(destination_concepts)),
             },
@@ -217,7 +222,7 @@ def applyContentBasedFiltering(recommendationInput):
 
         weights = {'interests':0.55,'travelType':0.15,'pace':0.10,'budget':0.10,'travelPurpose':0.06,'travelPersonality':0.04}
         known_weight = sum(weights[key] for key,signal in content_signals.items() if signal['applied'])
-        requested = [bool(interest_concepts),bool(travel_type_concepts),bool(requested_pace),bool(requested_budget),bool(requested_purpose),bool(requested_personality)]
+        requested = [bool(interest_concepts),bool(travel_type_concepts or style in {'popular landmarks', 'lesser-known places'}),bool(requested_pace),bool(requested_budget),bool(requested_purpose),bool(requested_personality)]
         requested_weight = sum(weight for weight,applied in zip(weights.values(),requested) if applied)
         suitability = (sum(weights[key]*signal['score'] for key,signal in content_signals.items() if signal['applied']) / known_weight) if known_weight else None
         if raw_interests and (not interest_concepts or not destination_concepts):
@@ -1493,7 +1498,7 @@ def _indoor(activity):
     return bool(activity.get('indoor')) or any(x in label for x in ('indoor', 'museum', 'mall', 'gallery', 'food', 'restaurant'))
 
 
-def _candidate_order(remaining, previous, weather, preserve_order, day_date=None):
+def _candidate_order(remaining, previous, weather, preserve_order, day_date=None, prefer_rank=False):
     if preserve_order:
         return list(remaining)
     def key(item):
@@ -1501,11 +1506,15 @@ def _candidate_order(remaining, previous, weather, preserve_order, day_date=None
         close_time = opening['window'][1] if opening.get('window') else 24 * 60
         rain_rank = 0 if weather.get('heavyRainLikely') and _indoor(item) else 1
         distance = _distance_km(previous, item) if previous else None
+        if prefer_rank:
+            # The incoming recommendation order is the tie-break for destinations
+            # with the same closing time. Feasibility checks still run for each visit.
+            return (rain_rank, close_time)
         return (rain_rank, close_time, distance if distance is not None else 99999)
     return sorted(remaining, key=key)
 
 
-def _schedule_candidate(activity, previous, current_minutes, day_date, window_end):
+def _schedule_candidate(activity, previous, current_minutes, day_date, window_end, rest=(750, 810)):
     duration, duration_source = _activity_duration(activity)
     travel_minutes, distance, travel_source = _travel_leg(previous, activity)
     opening = _activity_opening(activity, day_date)
@@ -1517,8 +1526,8 @@ def _schedule_candidate(activity, previous, current_minutes, day_date, window_en
     for period_start, period_end in periods:
         start = max(arrival, period_start)
         # Lunch/rest shifting must still fit wholly inside one open period.
-        if start < 13 * 60 + 30 and start + duration > 12 * 60 + 30:
-            start = 13 * 60 + 30
+        if start < rest[1] and start + duration > rest[0]:
+            start = rest[1]
         end = start + duration
         if end <= min(period_end, window_end):
             selected_period = (period_start, period_end)
@@ -1570,6 +1579,16 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
     start_date = _trip_start_date(itinerary)
     pace = _pace_key(itinerary)
     window_start, window_end = PACE_WINDOWS[pace]
+    rhythm = _text(itinerary.get('sleepingType')).lower()
+    if rhythm == 'early riser':
+        window_start, window_end = max(7 * 60 + 30, window_start - 60), window_end - 60
+    elif rhythm == 'night owl':
+        window_start = max(window_start, 11 * 60)
+    elif rhythm == 'comfort-focused':
+        window_start = max(window_start, 10 * 60)
+    rest = (840, 900) if rhythm == 'night owl' else (750, 840 if rhythm == 'comfort-focused' else 810)
+    profiled = bool(itinerary.get('planningPreferences'))
+    max_visits = {'relaxed': 2, 'moderate': 3, 'active': 5}[pace] if profiled and not respect_day_assignments else None
     weather_by_date = _forecast_by_date(forecast_data or {})
     remaining = activities
     scheduled = []
@@ -1588,7 +1607,7 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         current = window_start
         previous = None
         day_items = []
-        while remaining:
+        while remaining and (max_visits is None or len(day_items) < max_visits):
             eligible = [x for x in remaining
                         if (not respect_day_assignments and x.get('activityId') not in pinned)
                         or int(_float(x.get('dayNo'), day_no)) == day_no]
@@ -1596,13 +1615,13 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
                 break
             chosen = None
             reason_by_id = {}
-            for candidate in _candidate_order(eligible, previous, weather, preserve_order, day_date):
+            for candidate in _candidate_order(eligible, previous, weather, preserve_order, day_date, profiled):
                 # Retain a same-day pair only if the existing saved schedule already contains it.
                 if any(same_attraction(candidate, visit) and
                        (saved_days.get(candidate.get('activityId')) != day_no or
                         saved_days.get(visit.get('activityId')) != day_no) for visit in day_items):
                     continue
-                planned, reason = _schedule_candidate(candidate, previous, current, day_date, window_end)
+                planned, reason = _schedule_candidate(candidate, previous, current, day_date, window_end, rest)
                 if planned:
                     chosen = planned
                     break
@@ -1649,8 +1668,8 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         if day_items:
             meal_blocks.append({
                 'type': 'meal_rest', 'label': 'Lunch and rest',
-                'startTime': '12:30', 'endTime': '13:30',
-                'durationMinutes': 60, 'estimated': True,
+                'startTime': _format_time(rest[0]), 'endTime': _format_time(rest[1]),
+                'durationMinutes': rest[1] - rest[0], 'estimated': True,
             })
         daily.append({
             'dayNo': day_no,

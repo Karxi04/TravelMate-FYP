@@ -920,20 +920,23 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                   fontStyle: FontStyle.italic),
             ),
             const SizedBox(height: 8),
-            Wrap(spacing: 8, children: [
+            Wrap(spacing: 12, runSpacing: 12, children: [
               OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
                 key: const ValueKey('adjust-flight-itinerary-btn'),
                 onPressed: busy ? null : _previewFlightAdjustment,
                 icon: const Icon(Icons.auto_fix_high_rounded),
                 label: const Text('Adjust itinerary'),
               ),
               OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
                 key: const ValueKey('replace-flight-btn'),
                 onPressed: busy ? null : () => _replaceFlight(t),
                 icon: const Icon(Icons.swap_horiz_rounded),
                 label: const Text('Replace Flight'),
               ),
               OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
                 key: const ValueKey('remove-flight-btn'),
                 onPressed: busy ? null : _removeFlight,
                 icon: const Icon(Icons.remove_circle_outline_rounded),
@@ -981,15 +984,21 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
             if ((t['hotelBookingId'] ?? '').toString().isNotEmpty)
-              Text('Hotel record ID: ${t['hotelBookingId']}',
-                  style: const TextStyle(
-                      fontSize: 12, color: InkWashColors.mutedInk)),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('Hotel record details'),
+                children: [
+                  Align(alignment: Alignment.centerLeft,
+                    child: SelectableText('Hotel record ID: ${t['hotelBookingId']}')),
+                ],
+              ),
             const SizedBox(height: 10),
-            Wrap(spacing: 8, children: [
+            Wrap(spacing: 12, runSpacing: 12, children: [
               if (accepted is Map && accepted['checkoutEligible'] == true &&
                   accepted['id'] is String && payment?['status'] != 'paid' &&
                   expires != null && expires.isAfter(DateTime.now()))
                 OutlinedButton(
+                  style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
                   onPressed: () async {
                     final supported = (await loadHostedCheckoutCapabilities(api)).contains('hotel');
                     if (!mounted) return;
@@ -1013,17 +1022,20 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                   child: const Text('Continue to Payment'),
                 ),
               OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: () => Navigator.push(context, MaterialPageRoute(
                     builder: (_) => HotelDetailsScreen(hotel: hotel))),
                 icon: const Icon(Icons.info_outline_rounded),
                 label: const Text('View hotel details'),
               ),
               OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: busy ? null : () => _replaceHotel(t),
                 icon: const Icon(Icons.swap_horiz_rounded),
                 label: const Text('Replace'),
               ),
               TextButton.icon(
+                style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: busy ? null : _removeHotel,
                 icon: const Icon(Icons.link_off_rounded),
                 label: const Text('Remove from trip'),

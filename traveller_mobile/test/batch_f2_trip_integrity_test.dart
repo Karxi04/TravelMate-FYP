@@ -71,6 +71,32 @@ _LocalApi _api() {
 const path = '/api/fr5/itineraries/f2';
 
 void main() {
+  test('standalone scheduling respects sleep, pace and verified closed hours', () {
+    Map<String, dynamic> plan(String sleepingType, String pace) =>
+        planConstraintAwareItinerary({
+          'startDate': '2027-01-10',
+          'endDate': '2027-01-10',
+          'sleepingType': sleepingType,
+          'travelPace': pace,
+          'planningPreferences': {'travelPace': pace},
+          'activities': [
+            for (var i = 0; i < 6; i++)
+              {..._visit('A$i', 'venue-$i', 'Venue $i', 1),
+                'openingHours': i == 5 ? 'Closed' : '08:00-20:00'},
+          ],
+        });
+    final early = plan('Early riser', 'Packed');
+    final late = plan('Night owl', 'Packed');
+    final comfortable = plan('Comfort-focused', 'Moderate');
+    final easy = plan('Flexible', 'Relaxed');
+    expect(early['activities'][0]['scheduledStartTime'], '08:00');
+    expect(late['activities'][0]['scheduledStartTime'], '11:00');
+    expect(easy['activities'].length, 2);
+    expect(late['activities'].length, greaterThan(2));
+    expect(comfortable['dailySchedule'][0]['planningBlocks'][0]['durationMinutes'], 90);
+    expect(early['activities'].any((row) => row['activityId'] == 'A5'), isFalse);
+  });
+
   test('standalone tourism recommendations exclude service buildings before ranking', () async {
     const fixtures = [
       {'destinationId': 'service-office', 'title': 'Pejabat Imigresen', 'type': 'Government office',

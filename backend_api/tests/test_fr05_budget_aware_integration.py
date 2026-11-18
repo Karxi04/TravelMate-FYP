@@ -50,6 +50,8 @@ def fixture(items=None, *, new_trip=False, snapshot_problem=None, **changes):
             return deepcopy(current) if created else None
         if collection == 'recommendation_snapshots':
             return deepcopy(snapshot)
+        if collection == 'travel_preferences' and document_id == 'test_traveller_uid':
+            return None
         raise AssertionError('Unexpected read outside isolated generation fixtures')
 
     def persist(collection, document_id, values):

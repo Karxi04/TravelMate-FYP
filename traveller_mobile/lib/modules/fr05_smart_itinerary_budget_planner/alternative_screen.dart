@@ -165,9 +165,9 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     final tripId = widget.tripId;
     if (options == null || tripId == null || busy || applying) return;
     final updated = await Navigator.push<Map<String, dynamic>>(context, MaterialPageRoute(
-      builder: (context) => BudgetReplanScreen(api: api, tripId: tripId, options: options)));
+      builder: (context) => BudgetReplanScreen(api: api, tripId: tripId, options: options, stateVersion: stateVersion)));
     if (!mounted || widget.tripId != tripId || updated == null) return;
-    widget.onApplied?.call(updated);
+    if (updated['id'] == tripId) widget.onApplied?.call(updated);
     await load();
   }
 

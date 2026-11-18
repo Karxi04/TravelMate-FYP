@@ -1,5 +1,5 @@
 import os
-from services.destination_candidates import normalise, same_place, discovery_diagnostics
+from services.destination_candidates import cached_candidates, normalise, same_place, discovery_diagnostics
 from services.recommendation_discovery import is_planning_candidate
 from services.serpapi_service import destination_pagination
 import math
@@ -286,6 +286,7 @@ def _same_place(left, right):
 def _enrich_search_result(item):
     """Fill missing trusted geography without replacing provider fields."""
     enriched = dict(item or {})
+    enriched.pop('reviewDestinationId', None)
     for local in DESTINATIONS:
         if _same_place(enriched, local):
             for field in ('address', 'gps_coordinates', 'city', 'state'):
@@ -302,6 +303,9 @@ def _enrich_search_result(item):
         enriched['city'] = title_scope['city']
     if not enriched.get('resultKind'):
         enriched['resultKind'] = _result_kind(enriched)
+    canonical_review = _review_identity(enriched)
+    if canonical_review:
+        enriched['reviewDestinationId'] = canonical_review
     return enriched
 
 
@@ -310,10 +314,51 @@ def _deduplicate_results(items):
     for item in items or []:
         if not isinstance(item, dict):
             continue
-        if any(_same_place(item, existing) for existing in output):
+        if any(_same_place(item, existing) or
+               (item.get('reviewDestinationId') and (
+                    item['reviewDestinationId'] == existing.get('reviewDestinationId')
+                    or item['reviewDestinationId'] == _destination_id(existing)))
+               or (existing.get('reviewDestinationId') and existing['reviewDestinationId'] == _destination_id(item))
+               for existing in output):
             continue
         output.append(item)
     return output
+
+
+_CATALOG_ALIASES = {
+    'local_klcc': ('klcc', 'petronas twin towers', 'menara berkembar petronas', 'petronas skybridge', 'sky bridge'),
+    'local_penang_hill': ('bukit bendera',),
+    'local_langkawi_skycab': ('langkawi sky bridge', 'langkawi skycab', 'langkawi cable car', 'sky bridge'),
+    'local_legoland_malaysia': ('legoland', 'legoland malaysia'),
+}
+
+
+def _place_names(item):
+    return [_search_text(value) for value in (
+        item.get('title') or item.get('name'),
+        *_CATALOG_ALIASES.get(_destination_id(item), ()),
+    ) if value]
+
+
+def _named_match(item, query):
+    tokens = set(query.split()) - _SEARCH_NOISE
+    return bool(tokens) and any(tokens <= set(name.split()) for name in _place_names(item))
+
+
+def _review_identity(item):
+    # The main resort is distinct from its hotel, water park and aquarium.
+    title = _search_text(item.get('title') or item.get('name'))
+    if title not in {'legoland malaysia resort', 'legoland malaysia'}:
+        return None
+    geo = normalize_candidate_geography(item)
+    if geo.get('conflict') or geo.get('state') != 'Johor':
+        return None
+    coords = _coords(item)
+    distance = _distance_km(coords, (1.427361, 103.62987))
+    kind = _search_text(item.get('type') or item.get('category'))
+    if distance is not None and distance <= .8 and any(word in kind for word in ('theme park', 'amusement park', 'tourist attraction')):
+        return 'local_legoland_malaysia'
+    return None
 
 
 def _relevance_rank(item, query):
@@ -322,14 +367,13 @@ def _relevance_rank(item, query):
     category = _search_text(item.get('type') or item.get('category'))
     address = _search_text(item.get('address') or item.get('location'))
     query_tokens = set(query_text.split()) - _SEARCH_NOISE
-    title_tokens = set(title.split())
-    if title == query_text:
+    if title == query_text or query_text in _place_names(item):
         tier = 0
     elif title.startswith(query_text):
         tier = 1
     elif query_text and query_text in title:
         tier = 2
-    elif query_tokens and query_tokens.issubset(title_tokens):
+    elif query_tokens and _named_match(item, query_text):
         tier = 3
     elif query_tokens and query_tokens.issubset(set(
             f'{title} {category} {address}'.split())):
@@ -533,7 +577,11 @@ def search_destinations():
     requested_scope, target_scope, provider_location = _search_scope(location)
     interpretation = 'keyword'
     query_area = normalize_destination_scope(q)
-    if location.lower() == 'malaysia' and query_area.get('resolved') and query_area.get('city'):
+    name_query = _search_text(q)
+    catalogue_named = [item for item in DESTINATIONS if _named_match(item, name_query)]
+    if (location.lower() == 'malaysia'
+            and not any(name_query in _place_names(item) for item in catalogue_named)
+            and query_area.get('resolved') and query_area.get('city')):
         requested_scope, target_scope, provider_location = _search_scope(q)
         interpretation = 'locality'
     try:
@@ -574,6 +622,26 @@ def search_destinations():
                             'source': 'fyp_private', 'nextOffset': None,
                             'locationUsed': requested_scope.get('canonicalName') or provider_location})
 
+    # A validated named-place match stays discoverable even without a provider page.
+    named = []
+    named_query = _search_text(q)
+    general_query = named_query in {
+        'attraction', 'tourist attraction', 'places to visit', 'things to do',
+        'museum', 'museums', 'temple', 'temples', 'park', 'parks', 'garden', 'beach',
+        'food', 'restaurant', 'cafe', 'shopping', 'nature', 'culture',
+    }
+    nationwide_lookup = (requested_scope.get('scopeKey') == 'my'
+                         and interpretation == 'keyword' and not offset and not general_query
+                         and _provider_query(q) != 'tourist attractions')
+    if nationwide_lookup:
+        named = catalogue_named
+        named, _ = filter_candidates(named, requested_scope)
+        named = _filter_by_category(named, filterOption)
+        if len(named) == 1 and named_query in _place_names(named[0]):
+            return jsonify(ok=True, source='local_catalog', nextOffset=None,
+                           results=normalise(named, requested_scope, source='local_catalog'),
+                           locationUsed=requested_scope.get('canonicalName') or provider_location)
+
     interpreted_query = 'tourist attractions' if interpretation == 'locality' else _provider_query(q)
     if requested_scope.get('geographicMode') == 'nearby':
         interpreted_query = f'{interpreted_query} near {provider_location}'
@@ -586,7 +654,13 @@ def search_destinations():
         args = (interpreted_query, provider_location, coordinates)
         data = retrieveDestinationResults(*args, start=offset) if offset else retrieveDestinationResults(*args)
     except Exception:
-        if not _fallback_mode():
+        if nationwide_lookup and not named and len(named_query) >= 3:
+            try:
+                named = [row for row in cached_candidates(retrieveRecord, requested_scope, limit=40)
+                         if _named_match(row, named_query)]
+            except Exception:
+                named = []
+        if not named and not _fallback_mode():
             return jsonify({
                 'ok': False,
                 'error': 'Place search is temporarily unavailable. Please try again.',
@@ -596,14 +670,14 @@ def search_destinations():
         normalized_query = _search_text(q)
         query_words = set(normalized_query.split())
         matched = []
-        for x in _all_destinations():
+        for x in (_all_destinations() if _fallback_mode() else []):
             text = _search_text(' '.join(str(x.get(k, '')) for k in ['title', 'name', 'type', 'category', 'description', 'location', 'address', 'city', 'state']))
             if normalized_query in text or (query_words and query_words.issubset(set(text.split()))):
                 matched.append(dict(x))
             elif query_words and any(word in text for word in query_words if len(word) > 3):
                 matched.append(dict(x))
-        results = matched
-        source = 'local'
+        results = named + matched
+        source = 'cache' if any(row.get('candidateSource') == 'cache' for row in named) else 'local'
 
         if not results:
             return jsonify({
@@ -623,6 +697,16 @@ def search_destinations():
         source = 'serpapi'
 
     raw_provider_count = len(results) if source == 'serpapi' else 0
+    if source == 'serpapi' and nationwide_lookup:
+        if not named and len(named_query) >= 3 and not any(_named_match(row, named_query) for row in results):
+            try:
+                named = [row for row in cached_candidates(retrieveRecord, requested_scope, limit=40)
+                         if _named_match(row, named_query)]
+            except Exception:
+                named = []
+        named = [{**row, 'source': row.get('candidateSource') or 'local_catalog'} for row in named]
+        results = [*results, *named]
+
     # Always merge matching admin-managed destinations from Firestore
     try:
         admin_items = retrieveRecord('admin_destinations') or []
@@ -653,13 +737,18 @@ def search_destinations():
     has_more = destination_pagination(data, offset)['hasMore'] if source == 'serpapi' else len(results) > offset + 20
     if source == 'local':
         results = results[offset:offset + 20]
-    results = normalise(results, requested_scope, source='live_provider' if source == 'serpapi' else 'local_catalog')
+    results = [row for item in results for row in normalise(
+        [item], requested_scope, source=(
+            'cache' if item.get('candidateSource') == 'cache' else
+            'local_catalog' if item.get('source') == 'local_catalog' or source == 'local' else
+            'live_provider' if source == 'serpapi' else 'cache'))]
     for item in results:
         item.pop('_providerOrder', None)
         did = _destination_id(item)
         if did and not item.get('destinationId'):
             item['destinationId'] = did
-        _cache(item)
+        if item.get('candidateSource') != 'cache':
+            _cache(item)
 
     diagnostics.update(keywordMatchCount=len(results), displayedCount=len(results))
     if provider_unavailable and not results:
@@ -708,6 +797,9 @@ def destination_details(place_id):
         if not isinstance(provider, dict):
             provider = {}
         result = _merge_destination(cached, provider)
+        canonical_review = _review_identity(result)
+        if canonical_review:
+            result['reviewDestinationId'] = canonical_review
         _cache(result)
         return jsonify(
             {
@@ -751,10 +843,10 @@ def _private_destination(place):
             'place_id': place['destinationId']}
 
 
-def retrieveRatingsAndReviews(place_id):
+def retrieveRatingsAndReviews(place_id, *, alternate=None):
     """Retrieve TravelMate Traveller reviews from the shared Firestore database."""
     records = [
-        item for identity in review_destination_ids(place_id)
+        item for identity in dict.fromkeys((*review_destination_ids(place_id), *([alternate] if alternate else [])))
         for item in retrieveRecord('feedback', filters=[('destinationId', '==', identity)]) or []
     ]
     return _ratings_and_reviews(records)
@@ -794,18 +886,23 @@ def ratings_reviews(place_id):
     view = request.args.get('view')
     local_demo = current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS')
     canonical = review_destination_id(place_id)
+    if view in {'unified', 'samples'} and canonical == place_id and not canonical.startswith('local_'):
+        cached = _cached_destination(place_id)
+        canonical = (_review_identity(cached) if cached else None) or canonical
     regional = _local_demo_request() and canonical in regional_demo_destinations()
     if regional:
         if view == 'samples':
             samples = _ratings_and_reviews(regional_demo_reviews(canonical), sample=True)
             return jsonify(ok=True, source='fyp_private', sampleReviewsAvailable=True,
                            result={**samples, 'fypPreview': True})
-        result = retrieveRatingsAndReviews(canonical)
+        result = retrieveRatingsAndReviews(canonical, alternate=place_id) if canonical != place_id else retrieveRatingsAndReviews(canonical)
         if view == 'unified':
             _merge_sample_reviews(result, regional_demo_reviews(canonical))
         return jsonify(ok=True, source='travelmate_database', result=result, sampleReviewsAvailable=True)
     if view == 'unified':
-        result = retrieveRatingsAndReviews(canonical)
+        result = (retrieveRatingsAndReviews(canonical, alternate=place_id)
+                  if canonical == 'local_legoland_malaysia' and canonical != place_id
+                  else retrieveRatingsAndReviews(canonical))
         if local_demo:
             try:
                 demo = _private_review_dataset(discovery=True)

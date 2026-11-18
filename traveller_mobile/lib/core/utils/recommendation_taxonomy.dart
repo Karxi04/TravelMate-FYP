@@ -612,8 +612,21 @@ class RecommendationScoring {
     final interestScore = (baseInterestScore + learnedAdjustment)
         .clamp(-PreferenceLearning.learnedInterestStrength, 1)
         .toDouble();
-    final typeScore =
-        _conceptCompatibility(typeConcepts, destinationConcepts, neutral: .60);
+    final style = RecommendationTaxonomy.normalizePhrase(preferences['travelType']);
+    final modernStyle = style == 'popular landmarks' || style == 'lesser known places';
+    final count = item['reviews'];
+    final hasVisibility = item['ratingSource'] == 'provider' &&
+        count is num && count.isFinite && count >= 1 && count <= 100000000;
+    var typeScore = _conceptCompatibility(typeConcepts, destinationConcepts, neutral: .60);
+    var styleApplied = typeConcepts.isNotEmpty && destinationConcepts.isNotEmpty;
+    if (modernStyle || style == 'mixed') {
+      styleApplied = modernStyle && hasVisibility;
+      typeScore = .60;
+      if (styleApplied) {
+        if (count >= 1000) typeScore = style == 'popular landmarks' ? .90 : .45;
+        if (count <= 100) typeScore = style == 'popular landmarks' ? .45 : .90;
+      }
+    }
     final requestedPace =
         RecommendationTaxonomy.normalizePace(preferences['travelPace']);
     final requestedBudget =
@@ -664,7 +677,7 @@ class RecommendationScoring {
       },
       'travelType': {
         'score': _round2(typeScore * 100),
-        'applied': typeConcepts.isNotEmpty && destinationConcepts.isNotEmpty,
+        'applied': styleApplied,
         'matched': RecommendationTaxonomy.displayConcepts(
             typeConcepts.intersection(destinationConcepts)),
       },
@@ -676,7 +689,7 @@ class RecommendationScoring {
           _signal(personality.score, personality.applied, requestedPersonality),
     };
     const weights = {'interests':.55,'travelType':.15,'pace':.10,'budget':.10,'travelPurpose':.06,'travelPersonality':.04};
-    final requested = [interestConcepts.isNotEmpty,typeConcepts.isNotEmpty,requestedPace.isNotEmpty,requestedBudget.isNotEmpty,requestedPurpose.isNotEmpty,requestedPersonality.isNotEmpty];
+    final requested = [interestConcepts.isNotEmpty,typeConcepts.isNotEmpty || modernStyle,requestedPace.isNotEmpty,requestedBudget.isNotEmpty,requestedPurpose.isNotEmpty,requestedPersonality.isNotEmpty];
     var knownWeight = 0.0; var requestedWeight = 0.0; var knownScore = 0.0; var wi = 0;
     for (final entry in weights.entries) {
       if (requested[wi++]) requestedWeight += entry.value;

@@ -36,9 +36,10 @@ void main() {
       ),
     );
 
-    expect(find.text('Live source'), findsOneWidget);
-    expect(find.text('Cached source'), findsOneWidget);
-    expect(find.text('Fallback source'), findsOneWidget);
+    expect(find.text('Live provider information'), findsOneWidget);
+    expect(find.text('Saved provider information'), findsOneWidget);
+    expect(find.text('Saved destination information'), findsOneWidget);
+    expect(find.text('Fallback source'), findsNothing);
   });
 
   testWidgets('primary loading action cannot submit twice', (tester) async {
