@@ -1,5 +1,10 @@
 import io
 from datetime import datetime, timezone
+from collections import Counter
+from xml.sax.saxutils import escape
+
+from reportlab.graphics.charts.piecharts import Pie
+from reportlab.graphics.shapes import Drawing, Rect, Circle
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -10,7 +15,8 @@ from reportlab.platypus import (
     Table,
     TableStyle,
     KeepTogether,
-    HRFlowable
+    HRFlowable,
+    PageBreak,
 )
 from reportlab.pdfgen import canvas
 
@@ -165,6 +171,7 @@ def _get_styles():
             textColor=colors.HexColor("#0F172A")
         ),
     }
+    styles["SectionTitle"].keepWithNext = True
     return styles
 
 
@@ -191,6 +198,7 @@ def _build_kpi_card(value_text, label_text, styles, bg_color="#F8FAFC", border_c
 
 def _style_table(data, col_widths=None, colWidths=None, header_bg="#1E293B"):
     widths = col_widths or colWidths
+    widths = [width * 511 / sum(widths) for width in widths] if widths else None
     t = Table(data, colWidths=widths, repeatRows=1)
     style_cmds = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(header_bg)),
@@ -208,6 +216,207 @@ def _style_table(data, col_widths=None, colWidths=None, header_bg="#1E293B"):
         
     t.setStyle(TableStyle(style_cmds))
     return t
+
+
+_INK = colors.HexColor("#143F3B")
+_ACCENT = colors.HexColor("#25857A")
+_CHART_COLORS = [_ACCENT, colors.HexColor("#A88345"), colors.HexColor("#5E7C9B"),
+                 colors.HexColor("#B66A5A"), colors.HexColor("#778579")]
+
+
+def _generated_at(data):
+    raw = data.get('generatedAt')
+    try:
+        value = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
+        if value.tzinfo is None:
+            raise ValueError()
+        return value.astimezone(timezone.utc).strftime("%d %B %Y, %H:%M:%S UTC")
+    except (ValueError, TypeError):
+        return datetime.now(timezone.utc).strftime("%d %B %Y, %H:%M:%S UTC")
+
+
+def _period(data):
+    criteria = data.get('criteria') or {}
+    if criteria.get('startDate') or criteria.get('endDate'):
+        return f"{criteria.get('startDate') or 'All prior dates'} to {criteria.get('endDate') or 'Latest available date'}"
+    return "All available dates in the loaded report"
+
+
+def _cover(title, entity, data, generated_at, styles, classification):
+    cover_title = ParagraphStyle('CoverTitle', parent=styles['BrandHeader'],
+                                 fontSize=30, leading=37, textColor=_INK)
+    brand = Table([[Paragraph('<font color="#FFFFFF" size="18"><b>TravelMate</b></font>',
+                              styles['BrandHeader'])]], colWidths=[511])
+    brand.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), _INK),
+        ('LEFTPADDING', (0, 0), (-1, -1), 22),
+        ('TOPPADDING', (0, 0), (-1, -1), 20),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 20),
+    ]))
+    metadata = [[Paragraph(escape(label), styles['MetaLabel']),
+                 Paragraph(escape(str(value)), styles['MetaValue'])]
+                for label, value in [
+                    ('Prepared for', entity), ('Generated', generated_at),
+                    ('Reporting period', _period(data)), ('Classification', classification)]]
+    table = Table(metadata, colWidths=[116, 395])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F2F5F1')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 14),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 14),
+        ('TOPPADDING', (0, 0), (-1, -1), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+    ]))
+    return [
+        brand, Spacer(1, 60),
+        Paragraph('OPERATIONS &amp; PERFORMANCE', styles['Tag']),
+        Spacer(1, 12), Paragraph(escape(title), cover_title), Spacer(1, 30),
+        HRFlowable(width='100%', thickness=2, color=_ACCENT),
+        Spacer(1, 30), table, Spacer(1, 28),
+        Paragraph('Prepared from the existing TravelMate report scope. '
+                  'Source limits and selected filters apply throughout this document.',
+                  styles['SectionDesc']),
+        Paragraph('Recorded test-mode payments are simulated amounts. They do not establish '
+                  'real financial income or a confirmed supplier reservation.',
+                  styles['SectionDesc']),
+        PageBreak(),
+        Paragraph('Executive summary', styles['SectionTitle']), Spacer(1, 12),
+    ]
+
+
+def _financial_summary(summary, styles, operator=False):
+    metrics = [
+        ('Recorded paid MYR total - all recorded modes', summary.get('totalPaidRevenue', 0)),
+        ('Included recorded test-mode paid MYR', summary.get('testPaidTotal', 0)),
+    ]
+    rows = [[Paragraph('Payment measure', styles['TableHeader']),
+             Paragraph('Count / amount', styles['TableHeader'])]]
+    for label, value in metrics:
+        rows.append([Paragraph(label, styles['TableCell']),
+                     Paragraph(escape(f"MYR {value:,.2f}"), styles['TableCellBold'])])
+    count_fields = ([('bookingRecords', 'Booking records'), ('paidBookings', 'Paid booking records'),
+                     ('testModeOrders', 'Recorded test-mode orders')] if operator else
+                    [('total', 'Payment records'), ('paid', 'Paid payment records'),
+                     ('testMode', 'Recorded test-mode payment records')])
+    for key, label in count_fields:
+        rows.append([Paragraph(label, styles['TableCell']),
+                     Paragraph(escape(str(summary.get(key, 0))), styles['TableCellBold'])])
+    notes = ('The test-mode portion is included in the recorded paid total; do not add the two. '
+             'Recorded paid totals do not establish live settlement or real financial income. '
+             'Hotel and package supplier confirmations are separate from payment.')
+    if operator:
+        notes += ' Portfolio value is the listed package catalogue value, separate from booking payments.'
+    return [
+        Spacer(1, 12), Paragraph('Payment context', styles['SectionTitle']),
+        _style_table(rows, colWidths=[365, 146], header_bg='#143F3B'),
+        Spacer(1, 6), Paragraph(notes, styles['SectionDesc']),
+        Paragraph(f"Paid records without a usable amount: {summary.get('unpricedPaidOrders', 0)}.",
+                  styles['SectionDesc']),
+    ]
+
+
+def _distribution(summary, fields, total):
+    rows = [(label, summary.get(key, 0)) for key, label in fields]
+    other = summary.get(total, 0) - sum(count for _, count in rows)
+    if other > 0:
+        rows.append(('Other / unclassified', other))
+    return rows
+
+
+def _report_charts(data, operator=False):
+    summary = data.get('summary') or {}
+    package_fields = [('approved', 'Approved'), ('pending', 'Pending review'),
+                      ('rejected', 'Rejected'), ('draft', 'Draft')]
+    if operator:
+        summary = summary or data
+        packages = _distribution(summary, [
+            ('approvedPackages', 'Approved'), ('pendingPackages', 'Pending review'),
+            ('rejectedPackages', 'Rejected'), ('draftPackages', 'Draft')], 'totalPackages')
+        bookings = Counter(str(row.get('packageTitle') or 'Unspecified package')
+                           for row in data.get('bookings') or [])
+        fulfillment = _distribution(summary, [
+            ('fulfilledBookings', 'Fulfilled / trip ready'),
+            ('pendingFulfillmentBookings', 'Pending arrangements')], 'bookingRecords')
+        return [
+            ('Package status distribution', packages, 'donut',
+             'Package approval categories from the loaded report summary.'),
+            ('Bookings by package', sorted(bookings.items(), key=lambda row: (-row[1], row[0])), 'bar',
+             'Counts of loaded booking records grouped by the purchased package title. Includes unpaid records.'),
+            ('Fulfilment and arrangements', fulfillment, 'bar',
+             'Recorded booking fulfilment categories. Trip readiness does not establish a supplier reservation.'),
+        ]
+    return [
+        ('User role distribution', _distribution(summary.get('users') or {}, [
+            ('travellers', 'Travellers'), ('operators', 'Tourism operators'),
+            ('administrators', 'Administrators')], 'total'), 'donut',
+         'Account roles in the filtered report scope.'),
+        ('Package moderation', _distribution(summary.get('packages') or {}, package_fields, 'total'), 'bar',
+         'Approval categories in the loaded package summary.'),
+        ('Campaign status', [(label, (summary.get('campaigns') or {}).get(key, 0))
+                             for key, label in [('approved', 'Approved'), ('pending', 'Pending review'),
+                                                ('rejected', 'Rejected'), ('active', 'Active')]], 'bar',
+         'Active campaigns are a subset of approved campaigns. These categories overlap.'),
+        ('Feedback moderation', [(label, (summary.get('feedback') or {}).get(key, 0))
+                                 for key, label in [('visible', 'Visible'), ('pending', 'Pending review'),
+                                                    ('removed', 'Removed')]], 'bar',
+         'Existing visibility and moderation counts. Categories may overlap; they are not a percentage distribution.'),
+    ]
+
+
+def _chart_content(rows, kind, styles):
+    if not rows or not any(value for _, value in rows):
+        return Paragraph('No category counts available in this report scope.', styles['SectionDesc'])
+    if kind == 'donut':
+        drawing = Drawing(180, 176)
+        pie = Pie()
+        pie.x, pie.y, pie.width, pie.height = 12, 8, 156, 156
+        positive = [(label, value) for label, value in rows if value > 0]
+        pie.data = [value for _, value in positive]
+        pie.labels = []
+        for index, _ in enumerate(positive):
+            pie.slices[index].fillColor = _CHART_COLORS[index % len(_CHART_COLORS)]
+            pie.slices[index].strokeColor = colors.white
+        drawing.add(pie)
+        drawing.add(Circle(90, 86, 43, fillColor=colors.white, strokeColor=colors.white))
+        legend = []
+        for label, value in rows:
+            index = next((i for i, (key, _) in enumerate(positive) if key == label), None)
+            marker = Drawing(12, 12)
+            marker.add(Rect(0, 1, 9, 9, fillColor=_CHART_COLORS[index % len(_CHART_COLORS)]
+                            if index is not None else colors.HexColor('#D6DFDA'), strokeColor=None))
+            legend.append([marker, Paragraph(escape(label), styles['TableCell']),
+                           Paragraph(str(value), styles['TableCellBold'])])
+        table = Table([[drawing, Table(legend, colWidths=[18, 235, 50])]],
+                      colWidths=[192, 319])
+        table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                                   ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                                   ('RIGHTPADDING', (0, 0), (-1, -1), 0)]))
+        return table
+    maximum = max(value for _, value in rows)
+    table_rows = []
+    for label, value in rows:
+        bar = Drawing(232, 14)
+        bar.add(Rect(0, 2, 232, 10, fillColor=colors.HexColor('#E7EDE8'), strokeColor=None))
+        if value:
+            bar.add(Rect(0, 2, 232 * value / maximum, 10, fillColor=_ACCENT, strokeColor=None))
+        table_rows.append([Paragraph(escape(str(label)), styles['TableCell']), bar,
+                           Paragraph(str(value), styles['TableCellBold'])])
+    table = Table(table_rows, colWidths=[215, 246, 50])
+    table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                               ('TOPPADDING', (0, 0), (-1, -1), 6),
+                               ('BOTTOMPADDING', (0, 0), (-1, -1), 6)]))
+    return table
+
+
+def _visual_analytics(data, styles, operator=False):
+    story = [PageBreak(), Paragraph('Visual analytics', styles['SectionTitle']), Spacer(1, 14)]
+    for title, rows, kind, description in _report_charts(data, operator):
+        # The table can paginate for many package names; never lock a whole chart to one page.
+        story.extend([Paragraph(title, styles['SectionTitle']),
+                      Paragraph(description, styles['SectionDesc']), Spacer(1, 6),
+                      _chart_content(rows, kind, styles), Spacer(1, 22)])
+    story.extend([PageBreak(), Paragraph('Detailed report', styles['SectionTitle']), Spacer(1, 12)])
+    return story
 
 
 # ======================================================
@@ -239,14 +448,18 @@ def export_operator_report(data, target, operator_profile=None):
 
     packages = data.get("packages", []) if isinstance(data, dict) else []
     campaigns = data.get("campaigns", []) if isinstance(data, dict) else []
-    operator_profile = {key: escape(str(value)) for key, value in (operator_profile or {}).items() if value is not None}
+    raw_profile = operator_profile or {}
+    operator_profile = {key: escape(str(value)) for key, value in raw_profile.items() if value is not None}
 
     company_name = operator_profile.get("companyName") or operator_profile.get("businessName") or "Tourism Operator"
     rep_name = operator_profile.get("name") or operator_profile.get("fullName") or "Operator Representative"
     reg_no = operator_profile.get("registrationNo") or "-"
     contact = operator_profile.get("businessContact") or operator_profile.get("phoneNo") or "-"
     email = operator_profile.get("email") or operator_profile.get("businessEmail") or "-"
-    gen_date = datetime.now().strftime("%d %B %Y, %H:%M:%S UTC")
+    gen_date = _generated_at(data)
+    story.extend(_cover("Tourism Operator Business Performance Report",
+                        raw_profile.get("companyName") or raw_profile.get("businessName") or "Tourism Operator",
+                        data, gen_date, styles, "Confidential - Operator business report"))
 
     # 1. Header Banner & Branding
     header_data = [
@@ -256,7 +469,7 @@ def export_operator_report(data, target, operator_profile=None):
         ],
         [
             Paragraph("Business Analytics & Performance Report", styles["BrandHeader"]),
-            Paragraph("<b>Status:</b> Active Account", styles["TableCellBold"])
+            Paragraph("<b>Scope:</b> Operator report", styles["TableCellBold"])
         ],
         [
             Paragraph("Comprehensive overview of tourism packages, promotional campaigns, and business activity.", styles["BrandSubheader"]),
@@ -321,10 +534,10 @@ def export_operator_report(data, target, operator_profile=None):
 
     card1 = _build_kpi_card(total_packages, "Total Packages", styles, "#F8FAFC", "#CBD5E1")
     card2 = _build_kpi_card(approved_packages, "Approved Packages", styles, "#F0FDF4", "#BBF7D0", "#166534")
-    card3 = _build_kpi_card(total_campaigns, "Active Campaigns", styles, "#EFF6FF", "#BFDBFE", "#1E40AF")
+    card3 = _build_kpi_card(total_campaigns, "Total Campaigns", styles, "#EFF6FF", "#BFDBFE", "#1E40AF")
     card4 = _build_kpi_card(f"RM {total_value:,.2f}", "Total Portfolio Value", styles, "#F0FDFA", "#99F6E4", "#0F766E")
 
-    cards_table = Table([[card1, card2, card3, card4]], colWidths=[127, 127, 127, 142])
+    cards_table = Table([[card1, card2, card3, card4]], colWidths=[127.75] * 4)
     cards_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -335,6 +548,9 @@ def export_operator_report(data, target, operator_profile=None):
     ]))
     story.append(cards_table)
     story.append(Spacer(1, 16))
+
+    story.extend(_financial_summary(summary, styles, operator=True))
+    story.extend(_visual_analytics(data, styles, operator=True))
 
     # 4. Section 1: Tourism Package Portfolio
     story.append(Paragraph("1. Tourism Packages Portfolio", styles["SectionTitle"]))
@@ -486,7 +702,9 @@ def export_system_report_pdf(data, target, admin_profile=None):
 
     admin_name = escape(str(admin_profile.get("name") or "TravelMate Administrator"))
     admin_email = escape(str(admin_profile.get("email") or "-"))
-    gen_date = datetime.now(timezone.utc).strftime("%d %B %Y, %H:%M:%S UTC")
+    gen_date = _generated_at(data)
+    story.extend(_cover("Administrator System Activity Report", "TravelMate Central Administration",
+                        data, gen_date, styles, "Confidential - Internal system activity"))
 
     # 1. Header Banner & Branding
     header_data = [
@@ -564,7 +782,7 @@ def export_system_report_pdf(data, target, admin_profile=None):
     card3 = _build_kpi_card(c_total, "Promotions", styles, "#EFF6FF", "#BFDBFE", "#1E40AF")
     card4 = _build_kpi_card(f_total, "Traveller Feedback", styles, "#FEFCE8", "#FEF08A", "#854D0E")
 
-    cards_table = Table([[card1, card2, card3, card4]], colWidths=[127, 127, 127, 142])
+    cards_table = Table([[card1, card2, card3, card4]], colWidths=[127.75] * 4)
     cards_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -575,6 +793,9 @@ def export_system_report_pdf(data, target, admin_profile=None):
     ]))
     story.append(cards_table)
     story.append(Spacer(1, 16))
+
+    story.extend(_financial_summary(summary.get("payments") or {}, styles))
+    story.extend(_visual_analytics(data, styles))
 
     # 4. Section 1: User Accounts Distribution
     u_data = summary.get("users", {})
@@ -623,9 +844,9 @@ def export_system_report_pdf(data, target, admin_profile=None):
         [Paragraph("Visible Feedback", styles["TableCellBold"]), Paragraph(str(f_data.get("visible", 0)), styles["TableCellBold"]), Paragraph("Published traveller reviews", styles["TableCellBold"])],
         [Paragraph("Feedback Pending Moderation", styles["TableCellBold"]), Paragraph(str(f_data.get("pending", 0)), styles["TableCellBold"]), Paragraph("Queued for review", styles["TableCellMuted"])],
         [Paragraph("Removed Feedback", styles["TableCellBold"]), Paragraph(str(f_data.get("removed", 0)), styles["TableCellBold"]), Paragraph("Flagged & hidden from travellers", styles["TableCellMuted"])],
-        [Paragraph("Hotel Bookings", styles["TableCellBold"]), Paragraph(str(counts.get("hotel_bookings", 0)), styles["TableCellBold"]), Paragraph("Recorded reservations", styles["TableCellMuted"])],
+        [Paragraph("Hotel Bookings", styles["TableCellBold"]), Paragraph(str(counts.get("hotel_bookings", 0)), styles["TableCellBold"]), Paragraph("Recorded hotel bookings; supplier status is separate", styles["TableCellMuted"])],
         [Paragraph("Payment Records", styles["TableCellBold"]), Paragraph(str(counts.get("payment_records", 0)), styles["TableCellBold"]), Paragraph("Platform payment/order records", styles["TableCellMuted"])],
     ]
     story.append(_style_table(extra_rows, colWidths=[180, 140, 203], header_bg="#334155"))
 
-    doc.build(story, canvasmaker=NumberedCanvas)
+    doc.build(story, canvasmaker=NumberedCanvas)
