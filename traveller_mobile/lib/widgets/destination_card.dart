@@ -15,6 +15,7 @@ class DestinationCard extends StatelessWidget {
   final bool saveEnabled;
   final String source;
   final bool compact;
+  final bool showSource;
 
   const DestinationCard({
     super.key,
@@ -26,6 +27,7 @@ class DestinationCard extends StatelessWidget {
     this.saveEnabled = true,
     this.source = '',
     this.compact = false,
+    this.showSource = true,
   });
 
   String get _id => DestinationUtils.resolveId(destination);
@@ -48,6 +50,8 @@ class DestinationCard extends StatelessWidget {
         'cached',
         'fallback',
         'local',
+        'local_catalog',
+        'fyp_private',
         'demo',
       }.contains(_resolvedSource);
 
@@ -111,7 +115,7 @@ class DestinationCard extends StatelessWidget {
                   ?.copyWith(color: AppColors.textSecondary),
             ),
           ],
-          if (_showSource) ...[
+          if (showSource && _showSource) ...[
             const SizedBox(height: AppSpacing.xs),
             SourceFallbackBadge(source: _resolvedSource),
           ],

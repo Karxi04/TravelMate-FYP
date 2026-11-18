@@ -198,7 +198,7 @@ void main() {
     expect(find.textContaining('% match'), findsNothing);
     expect(find.text('Matches your Culture interests'), findsOneWidget);
     expect(find.text('Fits your relaxed travel pace'), findsOneWidget);
-    expect(find.text('Fallback source'), findsOneWidget);
+    expect(find.text('Saved destination information'), findsOneWidget);
     expect(find.text('contentScore'), findsNothing);
     expect(find.text('collaborativeScore'), findsNothing);
     expect(find.text('popularityScore'), findsNothing);

@@ -34,9 +34,25 @@ def _removable(trip):
     return [row for row in activities if row.get('activityId') and row.get('optional') is not False]
 
 
+def _selection_replan(trip, budget):
+    options = {}
+    for kind in ('flight', 'hotel'):
+        selected = trip.get('selectedFlight' if kind == 'flight' else 'selectedHotel')
+        if not isinstance(selected, dict) or not selected:
+            continue
+        references = (f'{kind}BookingId', f'{kind}PaymentId', f'{kind}OrderId')
+        detachable = (selected.get('planningOnly') is True and not protected_activity(selected)
+                      and not any(trip.get(key) for key in references)
+                      and not any(trip.get(key) for key in (
+                          'paymentId', 'paymentRecordId', 'checkoutOrderId', 'paidTotal', 'purchasedPackages')))
+        options[kind] = {'amount': budget[kind], 'canDetach': detachable}
+    return options
+
+
 def budget_replan_options(trip, budget):
     removable = _removable(trip)
     return {
+        'travelSelections': _selection_replan(trip, budget),
         'allowances': {field: budget[category] for field, category in _ALLOWANCES.items()},
         'visitRemovalLimited': bool(trip.get('activities')) and not removable,
         'optionalVisits': [
@@ -48,10 +64,28 @@ def budget_replan_options(trip, budget):
 
 
 def preview_budget_replan(trip, changes):
-    if not isinstance(changes, dict) or not changes or set(changes) - {*_ALLOWANCES, 'removeActivityIds'}:
+    if not isinstance(changes, dict) or not changes or set(changes) - {
+            *_ALLOWANCES, 'removeActivityIds', 'detachFlight', 'detachHotel'}:
         raise ValueError('Choose allowance changes or optional visits to remove.')
     before = calculateBudget(trip)
     patch = {}
+    selections = _selection_replan(trip, before)
+    detached = []
+    for kind, field in (('flight', 'detachFlight'), ('hotel', 'detachHotel')):
+        if field not in changes:
+            continue
+        if changes[field] is not True or not selections.get(kind, {}).get('canDetach'):
+            raise ValueError('Only an unpaid planning selection without a linked booking can be removed here.')
+        if kind == 'flight':
+            from services.flight_itinerary_adjustment import flight_selection_change_patch
+            patch.update(selectedFlight=None, flightCost=0, flightCurrency=None,
+                         flightPriceBasis=None, flightSelectionStatus='removed', travelMode='undecided',
+                         flightSelectionRemovedAt=utc_now_iso(), **flight_selection_change_patch(trip, None))
+        else:
+            patch.update(selectedHotel=None, hotelCost=0, hotelCurrency=None,
+                         accommodationChoice='undecided', hotelSelectionStatus='removed',
+                         hotelSelectionRemovedAt=utc_now_iso())
+        detached.append(kind)
     for field, category in _ALLOWANCES.items():
         if field not in changes:
             continue
@@ -88,4 +122,5 @@ def preview_budget_replan(trip, changes):
         'retainedEstimate': round(budget['total'] - budget['food'] - budget['transport'], 2),
         'dailySchedule': updated.get('dailySchedule') or [],
         'removedActivityIds': sorted(set(ids)),
+        'detachedSelections': detached,
     }

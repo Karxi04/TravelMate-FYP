@@ -3071,6 +3071,12 @@ class StandaloneApiService {
     return {'ok': true, 'favourite': record};
   }
 
+  Map<String, dynamic> _planningPreferences(Map profile) => {
+    for (final key in ['travelPersonality', 'sleepingType', 'travelType',
+      'interests', 'budgetRange', 'travelPace', 'travelPurpose'])
+      if (profile[key] != null) key: profile[key],
+  };
+
   Future<dynamic> _generateRecommendations(Map<String, dynamic> payload) async {
     final uid=_uid;
     final preferences = await _readMap('preferences') ?? {};
@@ -3154,6 +3160,7 @@ class StandaloneApiService {
         learnedProfile,
       ),
       'generatedAt': generatedAt,
+      'planningPreferences': _planningPreferences(effectivePreferences),
       'source': recommendationSource,
       'scoreBasis':payload['scoreBasis'] ?? 'hybrid_v1',
       'engine': _engineInfo,
@@ -3406,8 +3413,9 @@ class StandaloneApiService {
           'travellerId': _uid,
           'activities': <Map<String, dynamic>>[],
         };
+    final Map<String, dynamic> snapshot;
     try {
-      await _snapshotForTrip(candidate, payload);
+      snapshot = await _snapshotForTrip(candidate, payload);
     } catch (error) {
       return {
         'ok': false,
@@ -3442,12 +3450,19 @@ class StandaloneApiService {
 
     if (existing == null) {
       final now = _now();
+      final profile = snapshot['planningPreferences'] as Map? ??
+          _planningPreferences(await _readMap('preferences') ?? {});
       await _replaceTrip({
         ...payload,
         'id': id,
         'travellerId': _uid,
         'activities': <Map<String, dynamic>>[],
         'planningFlow': 'personalised',
+        if (profile.isNotEmpty) ...{
+          'planningPreferences': profile,
+          'travelPace': payload['travelPace'] ?? profile['travelPace'],
+          'sleepingType': profile['sleepingType'],
+        },
         'generationRequestId': requestId,
         'status': 'generating',
         'generationAttempts': 0,
@@ -4245,11 +4260,27 @@ class StandaloneApiService {
     };
   }
 
+  Map<String, dynamic> _planningSelections(Map<String, dynamic> trip, Map<String, dynamic> budget) {
+    final result = <String, dynamic>{};
+    for (final (kind, key) in [('flight', 'selectedFlight'), ('hotel', 'selectedHotel')]) {
+      final selected = trip[key];
+      if (selected is! Map || selected.isEmpty) continue;
+      final protected = ['${kind}BookingId', '${kind}PaymentId', '${kind}OrderId',
+        'paidTotal', 'paymentId', 'paymentRecordId', 'checkoutOrderId'].any((key) =>
+          trip[key] != null && trip[key] != '' && trip[key] != 0) ||
+          (trip['purchasedPackages'] as List? ?? []).isNotEmpty;
+      result[kind] = {'amount': budget[kind],
+        'canDetach': selected['planningOnly'] == true && !_protectedVisit(selected) && !protected};
+    }
+    return result;
+  }
+
   Map<String, dynamic> _budgetReplanState(Map<String, dynamic> trip) {
     final budget = _calculateBudget(trip);
     final visits = _removableVisits(trip);
     return {'budget': budget, 'stateVersion': _tripActionToken(trip),
       'budgetReplanOptions': !_canReplan(trip) ? null : {
+        'travelSelections': _planningSelections(trip, budget),
         'allowances': {'foodCost': budget['food'], 'transportCost': budget['transport']},
         'visitRemovalLimited': (trip['activities'] as List? ?? []).isNotEmpty && visits.isEmpty,
         'optionalVisits': [for (final row in visits)
@@ -4268,14 +4299,40 @@ class StandaloneApiService {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
     if (!_canReplan(trip)) throw Exception('This itinerary cannot be replanned.');
+    final currentVersion = _tripActionToken(trip);
+    if (payload['stateVersion'] != null && payload['stateVersion'] != currentVersion) {
+      throw ApiException('This trip changed. Reopen budget options to review the current costs.',
+          409, {'code': 'STALE_BUDGET_PLAN'});
+    }
     final changes = payload['changes'];
     if (changes is! Map || changes.isEmpty ||
-        changes.keys.any((key) => !['foodCost','transportCost','removeActivityIds'].contains(key))) {
+        changes.keys.any((key) => !['foodCost','transportCost','removeActivityIds','detachFlight','detachHotel'].contains(key))) {
       throw Exception('Choose allowance changes or optional visits to remove.');
     }
     final before = _calculateBudget(trip);
     var planned = {...trip};
     var edited = false;
+    final detached = <String>[];
+    final selections = _planningSelections(trip, before);
+    for (final (kind, field) in [('flight', 'detachFlight'), ('hotel', 'detachHotel')]) {
+      if (!changes.containsKey(field)) continue;
+      if (changes[field] != true || selections[kind]?['canDetach'] != true) {
+        throw ApiException('Only an unpaid planning selection without a linked booking can be removed here.', 409, {});
+      }
+      if (kind == 'flight') {
+        planned.addAll({'selectedFlight': null, 'flightCost': 0, 'flightCurrency': null,
+          'flightPriceBasis': null, 'flightSelectionStatus': 'removed', 'travelMode': 'undecided',
+          'flightSelectionRemovedAt': _now(), 'revision': _num(trip['revision']).toInt() + 1,
+          if (trip['flightAdjustmentPreviewId'] != null) 'flightAdjustmentStatus': 'review_required',
+          if (trip['flightAdjustmentPreviewId'] != null) 'flightAdjustmentReviewReason': 'flight_removed'});
+      } else {
+        planned.addAll({'selectedHotel': null, 'hotelCost': 0, 'hotelCurrency': null,
+          'hotelSelectionStatus': 'removed', 'accommodationChoice': 'undecided',
+          'hotelSelectionRemovedAt': _now()});
+      }
+      detached.add(kind);
+      edited = true;
+    }
     for (final field in {'foodCost':'food','transportCost':'transport'}.entries) {
       if (!changes.containsKey(field.key)) continue;
       final amount = changes[field.key];
@@ -4312,7 +4369,8 @@ class StandaloneApiService {
       return {'ok': true, 'before': before, 'budget': budget, 'previewToken': token,
         'estimatedReduction': _money(_num(before['total']) - _num(budget['total'])),
         'retainedEstimate': _money(_num(budget['total']) - _num(budget['food']) - _num(budget['transport'])),
-        'dailySchedule': planned['dailySchedule'] ?? [], 'removedActivityIds': ids.toList()};
+        'dailySchedule': planned['dailySchedule'] ?? [], 'removedActivityIds': ids.toList(),
+        'detachedSelections': detached};
     }
     if (payload['confirmed'] != true || payload['previewToken'] != token ||
         _uid != owner || _tripActionToken(await _tripById(id) ?? {}) != _tripActionToken(trip)) {
@@ -6166,8 +6224,8 @@ class StandaloneApiService {
       ..clear()
       ..addAll(consolidateGeneratedCandidates(ranked, automatic: true));
     if (candidates.length < days) return null;
-    final relaxed = RecommendationTaxonomy.normalizePace(state['pace'] ?? prefs['travelPace']) == 'relaxed';
-    final requiredCount = min(days * (relaxed ? 2 : 3), candidates.length);
+    final pace = RecommendationTaxonomy.normalizePace(state['pace'] ?? prefs['travelPace']);
+    final requiredCount = min(days * (const {'relaxed': 2, 'active': 5}[pace] ?? 3), candidates.length);
     final selected = <Map<String, dynamic>>[];
     final categoryCounts = <String, int>{};
     for (final item in candidates) {
@@ -6202,7 +6260,7 @@ class StandaloneApiService {
         'destinationId': d['destinationId'],
         'address': d['address'] ?? '',
         'dayNo': dayNo,
-        'timeSlot': slots[daySlot],
+        'timeSlot': slots[min(daySlot, slots.length - 1)],
         'estimatedCost': d['estimatedCost'] ?? 0,
         for (final key in ['pricingUnit','unitPrice','costCategory','costProvenance','priceSourceUrl','priceVerifiedAt','pricingEvidence','currency']) if(d[key]!=null) key:d[key],
         'category': d['category'] ?? d['type'] ?? '',
@@ -6236,6 +6294,8 @@ class StandaloneApiService {
       'activities': activities,
       'requestedInterests': targetInterests.map(_titleCase).toList(),
       'pace': state['pace'] ?? prefs['travelPace'] ?? 'Moderate',
+      'sleepingType': prefs['sleepingType'],
+      'planningPreferences': _planningPreferences(prefs),
       'travelPersonality': prefs['travelPersonality'] ?? '',
       'companions': state['companions'] ?? 'Traveller',
       'status': 'generated',

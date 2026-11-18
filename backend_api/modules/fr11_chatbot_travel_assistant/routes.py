@@ -449,7 +449,8 @@ def _day_activities(draft, trip_id, day, operation, position, interests):
             start_date=target_date, end_date=target_date, interests=interests,
             excluded_interests=draft.get('excludedInterests'), excluded_activity_types=draft.get('excludedActivityTypes'),
             prefer_indoor=draft.get('preferIndoor', False), catalog=catalog,
-            preference_profile={key: draft[key] for key in ('travelPace', 'travelPersonality') if key in draft})
+            preference_profile={**(draft.get('planningPreferences') or {}),
+                                **{key: draft[key] for key in ('travelPace', 'travelPersonality', 'sleepingType') if draft.get(key)}})
         if status != 'ready' or not planned.get('activities'):
             return None, f'I could not verify an unused activity for Day {day} that fits. Your saved trip is unchanged; try another theme.'
         count = 1 if operation in {'add', 'replace'} else max(1, min(len(selected), 3))
@@ -739,7 +740,8 @@ def _adjust_trip(message, state):
             start_date=draft['startDate'], end_date=draft['endDate'],
             interests=draft.get('interests'), excluded_interests=draft.get('excludedInterests'),
             excluded_activity_types=draft.get('excludedActivityTypes'), prefer_indoor=draft.get('preferIndoor', False),
-            preference_profile={key: draft[key] for key in ('travelPace', 'travelPersonality') if key in draft},
+            preference_profile={**(draft.get('planningPreferences') or {}),
+                                **{key: draft[key] for key in ('travelPace', 'travelPersonality', 'sleepingType') if draft.get(key)}},
             catalog=_planning_catalog(draft['destinationArea'], draft.get('destinationState'), draft.get('interests')))
         if status != 'ready' or planned.get('coverageStatus') != 'complete':
             return {'reply': 'I could not verify enough activities for those changes. Your saved trip is unchanged.'}
@@ -1443,7 +1445,8 @@ def save_plan():
            if any(act.get('pricingUnit') for act in clean_activities) else {}),
         'budgetLimit': limit,
         **{field: plan[field] for field in (
-            'originLocation', 'travelMode', 'accommodationChoice', 'carRentalChoice'
+            'originLocation', 'travelMode', 'accommodationChoice', 'carRentalChoice',
+            *(('travelPace', 'sleepingType', 'planningPreferences') if save_session else ())
         ) if field in plan},
         'activities': clean_activities,
         'transportCost': float(plan.get('transportCost') or 0.0),

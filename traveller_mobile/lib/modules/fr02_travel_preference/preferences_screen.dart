@@ -75,15 +75,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     'Comfort-focused',
     'Flexible',
   ];
-  final travelTypes = const [
-    'Adventure',
-    'Culture',
-    'Food',
-    'Nature',
-    'Leisure',
-    'Shopping',
-    'Mixed',
-  ];
+  final travelTypes = const ['Popular landmarks', 'Lesser-known places', 'Mixed'];
   final budgets = const ['Budget', 'Moderate', 'Premium'];
   final paces = const ['Relaxed', 'Moderate', 'Packed'];
   final purposes = const [
@@ -142,7 +134,8 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         );
         sleepingType =
             normalise(p['sleepingType'], sleepingTypes, sleepingType);
-        travelType = normalise(p['travelType'], travelTypes, travelType);
+        final savedStyle = (p['travelType'] ?? '').toString().trim();
+        travelType = savedStyle.isEmpty ? travelType : normalise(savedStyle, travelTypes, savedStyle);
         budget = normalise(p['budgetRange'], budgets, budget);
         pace = normalise(p['travelPace'], paces, pace);
         purpose = normalise(p['travelPurpose'], purposes, purpose);
@@ -430,14 +423,16 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
                     children: [
                       pageHeader('3 OF 6', 'What travel style do you prefer?',
-                          'TravelMate uses this with your interests to shape suggestions for you.'),
+                          'Choose how you explore. Review counts help distinguish well-known stops from less widely reviewed places when that information is available.'),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: travelTypes
-                            .map((item) => ChoiceChip(
+                        children: [
+                          if (!travelTypes.contains(travelType)) travelType,
+                          ...travelTypes,
+                        ].map((item) => ChoiceChip(
                                   selected: travelType == item,
-                                  label: Text(item),
+                                  label: Text(travelTypes.contains(item) ? item : 'Previous choice: $item'),
                                   onSelected: (_) =>
                                       setState(() => travelType = item),
                                 ))
@@ -449,7 +444,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
                     children: [
                       pageHeader('4 OF 6', 'What are you interested in?',
-                          'Choose all that apply so your suggestions reflect what you enjoy.'),
+                          'Choose what you want to see or do, such as heritage, food or nature.'),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -473,7 +468,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
                     children: [
                       pageHeader('5 OF 6', 'Choose your budget and travel pace',
-                          'These settings shape suggested places and how full each day feels.'),
+                          'Budget preference guides suggestions. The total MYR limit you enter for a trip controls affordability. Pace controls how full each day feels.'),
                       const Text('Budget preference',
                           style: TextStyle(fontWeight: FontWeight.w900)),
                       const SizedBox(height: 8),

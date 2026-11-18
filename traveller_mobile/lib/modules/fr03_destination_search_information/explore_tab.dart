@@ -90,6 +90,8 @@ class _ExploreTabState extends State<ExploreTab> {
         'cached',
         'fallback',
         'local',
+        'local_catalog',
+        'fyp_private',
         'demo',
       }.contains(resultSource.toLowerCase());
 
@@ -418,7 +420,7 @@ class _ExploreTabState extends State<ExploreTab> {
               ),
             ),
             if (_showSourceDisclosure)
-              SourceFallbackBadge(source: resultSource),
+              Flexible(child: SourceFallbackBadge(source: resultSource)),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -435,6 +437,7 @@ class _ExploreTabState extends State<ExploreTab> {
             child: DestinationCard(
               destination: item,
               source: resultSource,
+              showSource: !_showSourceDisclosure,
               onView: () => _viewResult(item),
               saved: favourites.contains(DestinationUtils.resolveId(item)),
               saveEnabled: favourites.loaded && favourites.error == null &&

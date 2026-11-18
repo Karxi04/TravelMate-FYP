@@ -414,6 +414,11 @@ def _generate_itinerary_data(current, payload, snapshot=None):
 
     generation_source = snapshot.get('source', 'recommendation_snapshot') if snapshot else 'existing-activities'
     working = {**current}
+    profile = current.get('planningPreferences') or (snapshot or {}).get('planningPreferences') or {}
+    if profile:
+        working.update(planningPreferences=profile,
+                       travelPace=current.get('travelPace') or profile.get('travelPace'),
+                       sleepingType=current.get('sleepingType') or profile.get('sleepingType'))
     selection_enabled = _budget_selection_enabled()
     apply_selection = False
     selection_skip_reason = 'existing_activities_preserved'
@@ -1475,12 +1480,16 @@ def budget_replan(iid):
     if not isinstance(payload, dict):
         return jsonify(ok=False, error='Choose valid budget changes.'), 400
     changes = payload.get('changes')
+    state = _alternative_state(current)
+    if payload.get('stateVersion') not in (None, state):
+        return jsonify(ok=False, code='STALE_BUDGET_PLAN',
+                       error='This trip changed. Reopen budget options to review the current costs.'), 409
     try:
         patch, preview = preview_budget_replan(current, changes)
     except ValueError as error:
         return jsonify(ok=False, error=str(error)), 409
     token = _alternative_state({'action': 'budget-replan', 'owner': g.uid, 'trip': iid,
-                                'state': _alternative_state(current), 'changes': changes})
+                                'state': state, 'changes': changes})
     if request.path.endswith('/preview'):
         return jsonify(ok=True, **preview, previewToken=token)
     if payload.get('confirmed') is not True or payload.get('previewToken') != token:
@@ -1660,8 +1669,12 @@ def generate_personalised_trip_route():
         current = _transition_to_generating(iid, existing)
     else:
         now = utc_now_iso()
+        from services.recommendation_taxonomy import planning_preferences
+        profile = snapshot.get('planningPreferences') or planning_preferences(
+            retrieveRecord('travel_preferences', g.uid) or {})
         initial = createItinerary({
             **payload,
+            **({'planningPreferences': profile} if profile else {}),
             'activities': [],
             'status': 'generating',
             'planningFlow': 'personalised',

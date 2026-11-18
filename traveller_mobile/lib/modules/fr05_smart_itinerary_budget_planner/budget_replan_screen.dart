@@ -7,12 +7,14 @@ class BudgetReplanScreen extends StatefulWidget {
   final ApiService api;
   final String tripId;
   final Map<String, dynamic> options;
+  final String? stateVersion;
 
   const BudgetReplanScreen({
     super.key,
     required this.api,
     required this.tripId,
     required this.options,
+    this.stateVersion,
   });
 
   @override
@@ -23,6 +25,7 @@ class _BudgetReplanScreenState extends State<BudgetReplanScreen> {
   final food = TextEditingController();
   final transport = TextEditingController();
   final removed = <String>{};
+  final detach = <String>{};
   bool busy = false;
 
   @override
@@ -50,16 +53,27 @@ class _BudgetReplanScreenState extends State<BudgetReplanScreen> {
       changes[entry.key] = value;
     }
     if (removed.isNotEmpty) changes['removeActivityIds'] = removed.toList();
+    for (final field in detach) {
+      changes[field] = true;
+    }
+    if (changes.isEmpty) {
+      showError(context, 'Enter a revised allowance or select a planning change to preview.');
+      return;
+    }
     final path = '/api/fr5/itineraries/${widget.tripId}/budget-replan';
     setState(() => busy = true);
     try {
-      final data = await widget.api.post('$path/preview', {'changes': changes});
+      final data = await widget.api.post('$path/preview', {
+        'changes': changes,
+        if (widget.stateVersion != null) 'stateVersion': widget.stateVersion,
+      });
       if (!mounted) return;
       final budget = data['budget'] as Map;
       final before = data['before'] as Map;
       final schedule = (data['dailySchedule'] as List? ?? []).whereType<Map>();
       final pending = (budget['pendingExpenseCategories'] as List? ?? []);
       final reduction = data['estimatedReduction'] as num;
+      final detached = (data['detachedSelections'] as List? ?? []);
       final approved = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -72,6 +86,8 @@ class _BudgetReplanScreenState extends State<BudgetReplanScreen> {
             Text(reduction < 0
                 ? 'Estimated increase: RM ${_money(-reduction)}'
                 : 'Estimated planning reduction: RM ${_money(reduction)}'),
+            if (detached.isNotEmpty)
+              Text('Remove unpaid planning selections: ${detached.join(', ')}. Review replacement travel costs before relying on this estimate.'),
             Text('Food allowance: RM ${_money(budget['food'])}'),
             Text(
                 'Local transport allowance: RM ${_money(budget['transport'])}'),
@@ -115,6 +131,7 @@ class _BudgetReplanScreenState extends State<BudgetReplanScreen> {
       final saved = await widget.api.post('$path/apply', {
         'changes': changes,
         'confirmed': true,
+        if (widget.stateVersion != null) 'stateVersion': widget.stateVersion,
         'previewToken': data['previewToken'],
       });
       if (!mounted) return;
@@ -124,7 +141,13 @@ class _BudgetReplanScreenState extends State<BudgetReplanScreen> {
       }
       Navigator.pop(context, Map<String, dynamic>.from(trip));
     } catch (error) {
-      if (mounted) showError(context, error);
+      if (!mounted) return;
+      if (error is ApiException && error.code == 'STALE_BUDGET_PLAN') {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+        Navigator.pop(context, <String, dynamic>{});
+      } else {
+        showError(context, error);
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -133,6 +156,7 @@ class _BudgetReplanScreenState extends State<BudgetReplanScreen> {
   @override
   Widget build(BuildContext context) {
     final allowances = widget.options['allowances'] as Map? ?? {};
+    final selections = widget.options['travelSelections'] as Map? ?? {};
     final visits =
         (widget.options['optionalVisits'] as List? ?? []).whereType<Map>();
     return Scaffold(
@@ -157,6 +181,24 @@ class _BudgetReplanScreenState extends State<BudgetReplanScreen> {
               ),
             ),
           ),
+        for (final (kind, field) in [('flight', 'detachFlight'), ('hotel', 'detachHotel')])
+          if (selections[kind] is Map)
+            if (selections[kind]['canDetach'] == true)
+              CheckboxListTile(
+                value: detach.contains(field),
+                title: Text('Remove unpaid $kind estimate'),
+                subtitle: Text('RM ${_money(selections[kind]['amount'])} · Review alternative travel costs separately'),
+                onChanged: busy ? null : (checked) => setState(() {
+                  if (checked == true) {
+                    detach.add(field);
+                  } else {
+                    detach.remove(field);
+                  }
+                }),
+              )
+            else
+              ListTile(title: Text('Retain $kind cost'),
+                subtitle: const Text('This selection has a record or cannot be confirmed as planning-only.')),
         if (widget.options['visitRemovalLimited'] == true)
           const Padding(
               padding: EdgeInsets.only(top: 12),
