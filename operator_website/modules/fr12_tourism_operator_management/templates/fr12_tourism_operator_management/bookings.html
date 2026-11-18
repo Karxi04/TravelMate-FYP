@@ -47,19 +47,20 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   margin-top: 8px;
+  width: 100%;
 }
 
 .bookings-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  min-width: 980px;
+  table-layout: fixed;
   font-size: 13px;
 }
 
 .bookings-table th {
   background: #F8FAFC;
-  padding: 14px 16px;
+  padding: 12px 10px;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -72,7 +73,8 @@
 
 .bookings-table th.col-actions {
   text-align: right;
-  width: 90px;
+  width: 8%;
+  padding-right: 14px;
 }
 
 .sort-group {
@@ -112,11 +114,17 @@
 }
 
 .bookings-table td {
-  padding: 16px 16px;
+  padding: 12px 10px;
   border-bottom: 1px solid var(--border-subtle);
   vertical-align: top;
   color: var(--ink);
   font-size: 13px;
+}
+
+.bookings-table td.col-actions {
+  text-align: right;
+  vertical-align: middle;
+  padding-right: 14px;
 }
 
 .bookings-table tr:last-child td {
@@ -130,25 +138,31 @@
 /* Booking Reference Cell */
 .booking-ref-wrap {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 5px;
+  max-width: 100%;
 }
 
 .booking-ref-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 11.5px;
+  line-height: 1.35;
   color: var(--ink);
   letter-spacing: -0.01em;
-  white-space: nowrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  display: inline-block;
+  max-width: 115px;
 }
 
 .btn-copy-ref {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 1px solid var(--border);
   background: var(--canvas);
@@ -157,6 +171,7 @@
   cursor: pointer;
   transition: all 0.15s ease;
   flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .btn-copy-ref:hover {
@@ -169,38 +184,38 @@
   font-size: 11px;
   color: var(--ink-muted);
   margin-top: 4px;
-  white-space: nowrap;
+  line-height: 1.25;
 }
 
 /* Package Cell */
 .pkg-cell-title {
   font-weight: 700;
-  font-size: 13.5px;
-  line-height: 1.4;
+  font-size: 13px;
+  line-height: 1.35;
   color: var(--ink);
-  max-width: 280px;
   word-break: normal;
   overflow-wrap: break-word;
 }
 
 .pkg-cell-id {
   display: block;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--ink-muted);
-  margin-top: 4px;
+  margin-top: 3px;
   font-family: ui-monospace, monospace;
+  word-break: break-all;
 }
 
 /* Trip Details Cell */
 .departure-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
+  gap: 4px;
+  padding: 2.5px 7px;
   background: var(--canvas);
   border: 1px solid var(--border);
   border-radius: var(--radius-xs);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--ink-secondary);
   white-space: nowrap;
@@ -208,52 +223,54 @@
 
 .pax-count {
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--ink);
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .pax-breakdown {
   font-size: 11px;
   color: var(--ink-muted);
   margin-top: 2px;
-  white-space: nowrap;
+  line-height: 1.25;
 }
 
 /* Payment Cell */
 .payment-amount {
   font-weight: 800;
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--ink);
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .payment-badge-wrap {
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 /* Fulfilment Progress Cell */
 .fulfilment-stack {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-width: 220px;
-  max-width: 280px;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .fulfilment-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
 .fulfilment-row-label {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--ink-muted);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
@@ -262,8 +279,10 @@
   white-space: nowrap !important;
   word-break: normal !important;
   overflow-wrap: normal !important;
-  font-size: 11px !important;
-  padding: 3px 9px !important;
+  font-size: 10.5px !important;
+  padding: 2.5px 8px !important;
+  display: inline-block;
+  line-height: 1.25;
 }
 
 .badge-legacy {
@@ -486,6 +505,14 @@
 {% else %}
 <section class="table-wrap">
   <table class="bookings-table">
+    <colgroup>
+      <col style="width: 16%;">
+      <col style="width: 22%;">
+      <col style="width: 16%;">
+      <col style="width: 14%;">
+      <col style="width: 24%;">
+      <col style="width: 8%;">
+    </colgroup>
     <thead>
       <tr>
         <th scope="col" aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort_column in ['reference', 'created'] else 'none' }}">
@@ -664,8 +691,8 @@
         </td>
 
         <!-- 6. Action Column -->
-        <td style="text-align: right; vertical-align: middle;">
-          <a class="btn outline btn-sm" href="{{ url_for('operator_fr12.booking_detail', order_reference=item.orderReference) }}">
+        <td class="col-actions">
+          <a class="btn outline btn-sm" href="{{ url_for('operator_fr12.booking_detail', order_reference=item.orderReference) }}" style="padding: 4px 10px; font-size: 11.5px; white-space: nowrap;">
             <span>Details</span>
           </a>
         </td>
