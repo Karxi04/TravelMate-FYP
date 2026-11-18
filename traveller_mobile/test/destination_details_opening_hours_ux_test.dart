@@ -102,11 +102,11 @@ void main() {
       return {'destination': place, 'items': []};
     });
     await _pumpDestination(tester, initial: place, api: api);
-    await _scrollIntoView(tester, find.text('Local Reviews'));
-    expect(find.text('3.0 · 3 reviews'), findsOneWidget);
+    await _scrollIntoView(tester, find.text('Reviews'));
+    expect(find.text('3.0 · 3 reviews'), findsNothing);
     expect(find.textContaining('FYP ·'), findsNothing);
-    expect(find.text('Demonstration reviews'), findsOneWidget);
-    expect(find.text('Sample review'), findsNWidgets(3));
+    expect(find.text('Includes fictional demo reviews.'), findsOneWidget);
+    expect(find.text('Sample review'), findsNothing);
     for (final stars in [1, 3, 5]) {
       expect(find.text('Reviewer $stars'), findsOneWidget);
       expect(find.text('Comment for $stars stars.'), findsOneWidget);
@@ -116,10 +116,20 @@ void main() {
     count = 12;
     await tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh();
     await tester.pumpAndSettle();
-    await _scrollIntoView(tester, find.text('Local Reviews'));
-    expect(find.text('4.5 · 12 reviews'), findsOneWidget);
+    await _scrollIntoView(tester, find.text('Reviews'));
+    expect(find.text('4.5 · 12 reviews'), findsNothing);
     expect(find.text('3.0 · 3 reviews'), findsNothing);
     expect(find.text('Reviewer 5'), findsOneWidget);
+  });
+
+  testWidgets('documented Maps price level does not imply a MYR amount or admission',
+      (tester) async {
+    const place = {'destinationId': 'mock-dining', 'title': 'Fixture cafe', 'price': r'$$'};
+    final api = _MockDetailsApi((path) => {'destination': place, 'source': 'serpapi', 'items': []});
+    await _pumpDestination(tester, initial: place, api: api);
+    await _scrollIntoView(tester, find.text('Moderate (Google Maps)'));
+    expect(find.text('Price level'), findsOneWidget);
+    expect(find.textContaining('MYR'), findsNothing);
   });
 
   group('Batch 21E-D1: Destination Details Opening Hours & Fallback UX', () {

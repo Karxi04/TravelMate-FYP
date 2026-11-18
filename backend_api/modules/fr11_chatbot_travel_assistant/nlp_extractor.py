@@ -12,6 +12,7 @@ from services.malaysian_locality import (
 from services import malaysia_locations as location_catalogue
 from services.malaysian_locality import location_scope, resolve_destination_scope
 from services.local_catalog import DESTINATIONS
+from services.recommendation_discovery import is_planning_candidate
 from services.activity_pricing import pricing_snapshot
 
 NUMBER_WORDS = {
@@ -578,7 +579,7 @@ def filter_constraint_candidates(candidates, excluded_interests=None,
                                  excluded_activity_types=None, prefer_indoor=False):
     return [
         item for item in candidates
-        if activity_satisfies_constraints(
+        if is_planning_candidate(item) and activity_satisfies_constraints(
             item,
             excluded_interests=excluded_interests,
             excluded_activity_types=excluded_activity_types,
@@ -787,7 +788,8 @@ def check_requirement_completeness(message, planning_state=None):
 
 def find_matching_catalog_destinations(destination_area, destination_state=None, catalog=None):
     """Find authentic destinations in the catalog matching the requested locality/state."""
-    items = catalog if catalog is not None else DESTINATIONS
+    items = [row for row in (catalog if catalog is not None else DESTINATIONS)
+             if is_planning_candidate(row)]
     area_low = clean_text(destination_area)
     state_low = clean_text(destination_state or '')
 

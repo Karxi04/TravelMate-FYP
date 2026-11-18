@@ -760,8 +760,12 @@ def add_activity_route(iid):
         return jsonify(ok=True, itinerary=current, activities=current.get('activities', []),
                        budget=current.get('budgetEstimate'), alreadyAdded=True)
 
-    existing = next((row for row in [*current.get('activities', []),
-                   *(current.get('unscheduledSuggestions') or [])] if same_attraction(row, activity)), None)
+    matching = [row for row in [*current.get('activities', []),
+                *(current.get('unscheduledSuggestions') or [])] if same_attraction(row, activity)]
+    same_day = next((row for row in matching if str(row.get('dayNo')) == str(day)), None)
+    if same_day:
+        return _same_day_visit(same_day, day)
+    existing = next(iter(matching), None)
     confirmation = payload.get('revisitConfirmation')
     if existing:
         # Bind the confirmation to this owner, trip revision, action, exact payload and request ID.
@@ -840,6 +844,14 @@ def remove_activity_route(iid, activity_id):
     return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
 
 
+def _same_day_visit(visit, day):
+    name = visit.get('activityName') or 'This place'
+    return jsonify(ok=False, code='duplicate_attraction_day',
+                   error=f'{name} is already included on Day {day}. '
+                         'You cannot add the same place twice on the same day. '
+                         'Choose another day if you want to visit again.'), 409
+
+
 @bp.put('/itineraries/<iid>/activities/<activity_id>')
 @auth_required(['traveller'])
 def update_activity_route(iid, activity_id):
@@ -861,6 +873,20 @@ def update_activity_route(iid, activity_id):
     if original and any(same_attraction({**original, **changes}, row) and not same_attraction(original, row)
                         for row in rows if row is not original):
         return jsonify(ok=False, error='Use Add Places to confirm a repeat visit.'), 409
+    if original and 'dayNo' in changes:
+        try:
+            day = int(str(changes['dayNo']))
+            if not 1 <= day <= _trip_days(current):
+                raise ValueError()
+        except ValueError:
+            return jsonify(ok=False, error='Choose a valid trip day.'), 400
+        changes['dayNo'] = day
+        if str(original.get('dayNo')) != str(day):
+            duplicate = next((row for row in rows if row is not original
+                              and str(row.get('dayNo')) == str(day)
+                              and same_attraction(original, row)), None)
+            if duplicate:
+                return _same_day_visit(duplicate, day)
     updated = updateActivity(current, activity_id, changes)
     recalculated = recalculateItinerary(
         {**current, **updated},
@@ -1400,6 +1426,7 @@ def lower_cost_alternatives(iid):
         alternative['stateVersion'] = _alternative_state(current)
     return jsonify({
         'ok': True, 'budget': budget, 'alternatives': alternatives,
+        'stateVersion': _alternative_state(current),
         'activityAlternativeStatus': 'available' if activity_items else 'priced_replacement_unavailable',
         'activityAdvice': None if activity_items else activity_advice,
         'flightAdvice': (
@@ -1422,6 +1449,17 @@ def lower_cost_alternatives(iid):
 def _can_replan(trip):
     return (not _is_package_trip(trip)
             and str(trip.get('status') or '').lower() not in {'completed', 'cancelled', 'generating'})
+
+
+@bp.get('/itineraries/<iid>/budget-replan')
+@auth_required(['traveller'])
+def budget_replan_state(iid):
+    current = _own(iid)
+    if not current:
+        return jsonify(ok=False, error='Itinerary not found'), 404
+    budget = calculateBudget(current)
+    return jsonify(ok=True, budget=budget, stateVersion=_alternative_state(current),
+                   budgetReplanOptions=budget_replan_options(current, budget) if _can_replan(current) else None)
 
 
 @bp.post('/itineraries/<iid>/budget-replan/preview')

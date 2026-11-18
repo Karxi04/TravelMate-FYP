@@ -1,9 +1,10 @@
 """Private Penang demonstration reviews, selected by the authenticated UID."""
 import os
 from collections import Counter
+from functools import lru_cache
 
 from firebase_service import get_db
-from services.review_service import ReviewConflict, review_revision, stage_review_decision
+from services.review_service import ReviewConflict, review_id, review_revision, screen_submission, stage_review_decision
 
 
 PROJECT = 'travelmate2-30a8a'
@@ -111,3 +112,52 @@ def moderate_review(ref, expected, updates):
         return {**updated, 'id': expected['id']}
 
     return commit(get_db().transaction())
+
+
+
+# Regional local-demo fixtures. They never enter feedback, recommendation inputs or
+# public projections. The existing separately moderated Penang dataset stays in Firestore.
+_REGIONAL_REVIEWS = {
+    'local_klcc': (
+        ('Aina R.', 5, 'Took my time looking at the skyline. Beautiful views in every direction; I kept going back for one more photo.'),
+        ('Dylan P.', 3, 'Beautiful city views, but the short visit was disappointing. I would give myself longer next time.'),
+        ('Nora L.', 2, 'A disappointing visit. The crowds were frustrating and made it difficult to see much. I left earlier than planned.'),
+    ),
+    'local_legoland_malaysia': (
+        ('Kai M.', 5, 'We had a wonderful family day. My nephew wanted to stop and look closely at every little model.'),
+        ('Mira S.', 4, 'We had a lovely afternoon in Miniland. The kids enjoyed spotting familiar buildings together.'),
+        ('Hafiz T.', 2, 'I found the day tiring and the waiting frustrating. We went home before we had seen everything we wanted.'),
+    ),
+    'local_tunku_abdul_rahman': (
+        ('Sara D.', 5, 'A beautiful break from the city. I mostly stayed by the water and loved that we could take the afternoon slowly.'),
+        ('Jin A.', 3, 'The island scenery was lovely, but the beach felt crowded. I was ready to head back by mid-afternoon.'),
+        ('Iman K.', 2, 'The afternoon felt too rushed. I was disappointed by how little time we spent on the island itself.'),
+    ),
+    'local_langkawi_skycab': (
+        ('Devi M.', 5, 'Beautiful views over the hills and sea. I put my camera away for a while just to take it in.'),
+        ('Ray H.', 4, 'I was nervous about the height, but the ride was enjoyable. The views were worth slowing down for.'),
+        ('Nabil C.', 3, 'Beautiful scenery when it cleared, but the poor visibility was disappointing for much of the ride.'),
+    ),
+}
+
+
+@lru_cache(maxsize=1)
+def regional_demo_destinations():
+    from services.local_catalog import DESTINATIONS
+    return {row['destinationId']: row for row in DESTINATIONS
+            if row['destinationId'] in _REGIONAL_REVIEWS}
+
+
+@lru_cache(maxsize=len(_REGIONAL_REVIEWS))
+def regional_demo_reviews(identity):
+    rows = []
+    for index, (author, rating, comment) in enumerate(_REGIONAL_REVIEWS.get(identity, ()), 1):
+        uid = f'fyp-regional-v1-{index}'
+        rows.append({
+            'id': review_id(uid, identity), 'travellerId': uid,
+            'travellerName': author, 'destinationId': identity,
+            'rating': rating, 'comment': comment, 'synthetic': True,
+            'dataset': 'fyp-regional-v1', 'submittedAt': f'2026-11-{10 + index}T10:00:00+08:00',
+            **screen_submission(comment, rating),
+        })
+    return rows

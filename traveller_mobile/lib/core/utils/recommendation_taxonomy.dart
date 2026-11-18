@@ -4,6 +4,38 @@ import 'preference_learning.dart';
 
 /// Small, explainable taxonomy shared by standalone recommendation scoring.
 /// It intentionally mirrors the Flask engine rather than using an opaque model.
+final _adminFacility = RegExp(
+  r'\b(?:local government office|government (?:office|department|administration|service cent(?:re|er))|'
+  r'municipal (?:office|administration)|public administration|immigration (?:office|department)|'
+  r'passport office|urban transformation cent(?:re|er)|police station|police department|'
+  r'courthouse|court house|court of (?:appeal|justice)|district office|'
+  r'balai polis|ibu pejabat polis|pejabat imigresen|jabatan imigresen|pejabat daerah|mahkamah)\b',
+);
+final _visitorFacility = RegExp(
+  r'\b(?:museum|muzium|galler(?:y|i)|historic(?:al)? (?:site|landmark|building)|heritage (?:site|museum)|'
+  r'national park|botanic(?:al)? garden|observation deck|cultural cent(?:re|er)|public garden|taman negara)\b',
+);
+
+bool isTourismPlanningCandidate(Map item) {
+  final feature = '${item['feature'] ?? ''}';
+  if (feature.startsWith('PPL') || feature.startsWith('ADM') ||
+      (item['locationId'] != null &&
+          const {'locality', 'state', 'district', 'country', 'subdistrict', 'region'}.contains(item['kind']))) {
+    return false;
+  }
+  final types = item['types'];
+  final categories = [item['type'], item['category'], if (types is List) ...types else types]
+      .map(RecommendationTaxonomy.normalizePhrase);
+  final title = RecommendationTaxonomy.normalizePhrase(item['title'] ?? item['name'] ?? item['activityName']);
+  final primary = RecommendationTaxonomy.normalizePhrase(item['type'] ?? item['category']);
+  final administrative = categories.any((value) =>
+          _adminFacility.hasMatch(value) || value == 'court' || value == 'government service') ||
+      (item['class'] == 'office' && primary == 'government');
+  if (!administrative && !_adminFacility.hasMatch(title)) return true;
+  return _visitorFacility.hasMatch(primary) && !_adminFacility.hasMatch(primary) &&
+      (!administrative || _visitorFacility.hasMatch(title));
+}
+
 class RecommendationTaxonomy {
   static const Map<String, Set<String>> conceptTerms = {
     'food': {

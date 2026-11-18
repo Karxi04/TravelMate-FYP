@@ -175,6 +175,7 @@ class StandaloneApiService {
         final safeResults = (snapshot['recommendationResults'] as List? ??
                 const [])
             .whereType<Map>()
+            .where(isTourismPlanningCandidate)
             .map((item) => MalaysianLocality.validateCandidate(
                 Map<String, dynamic>.from(item), scope))
             .where((item) => item['geographicEligibility']?['eligible'] == true)
@@ -223,6 +224,11 @@ class StandaloneApiService {
         throw Exception('Itinerary not found.');
       }
       return {'ok': true, 'itinerary': trip};
+    }
+    if (path.startsWith('/api/fr5/itineraries/') && path.endsWith('/budget-replan')) {
+      final trip = await _tripById(path.split('/')[4]);
+      if (trip == null) throw ApiException('Itinerary not found.', 404, {});
+      return {'ok': true, ..._budgetReplanState(trip)};
     }
     if (path.startsWith('/api/fr5/itineraries/') && path.endsWith('/budget')) {
       final id = path.split('/')[4];
@@ -3105,6 +3111,7 @@ class StandaloneApiService {
       ...savedSearch.map((item) => item['source']=='openstreetmap' ? item : {...item,'ratingSource':'unverified_local_catalog'})];
     final recommendationSource = savedSearch.any((item) => item['source']=='openstreetmap') ? 'cache' : 'fallback';
     for (final raw in pool) {
+      if (!isTourismPlanningCandidate(raw)) continue;
       final candidate = MalaysianLocality.validateCandidate(
           Map<String,dynamic>.from(raw), destinationScope);
       if (candidate['geographicEligibility']?['eligible'] != true) continue;
@@ -3641,7 +3648,10 @@ class StandaloneApiService {
     }
     final candidates = [...activities, ...(trip['unscheduledSuggestions'] as List? ?? [])
       .whereType<Map>().map(Map<String, dynamic>.from)];
-    final existing = candidates.where((row) => sameAttraction(row, activity)).firstOrNull;
+    final matches = candidates.where((row) => sameAttraction(row, activity));
+    final sameDay = matches.where((row) => '${row['dayNo']}' == '$day').firstOrNull;
+    if (sameDay != null) throw _sameDayVisit(sameDay, day);
+    final existing = matches.firstOrNull;
     final confirmation = payload['revisitConfirmation'];
     if (existing != null) {
       final token = _tripActionToken(['add-revisit', _uid, id, trip, requestHash, requestId]);
@@ -3727,6 +3737,13 @@ class StandaloneApiService {
     };
   }
 
+  ApiException _sameDayVisit(Map visit, Object? day) => ApiException(
+        '${visit['activityName'] ?? 'This place'} is already included on Day $day. '
+        'You cannot add the same place twice on the same day. '
+        'Choose another day if you want to visit again.',
+        409, {'code': 'duplicate_attraction_day'},
+      );
+
   Future<dynamic> _updateActivity(
       String id, String activityId, Map<String, dynamic> payload) async {
     final trip = await _tripById(id);
@@ -3750,6 +3767,23 @@ class StandaloneApiService {
     final updated = {...original, ...payload};
     if (activities.any((row) => !identical(row, original) && sameAttraction(updated, row) && !sameAttraction(original, row))) {
       throw Exception('Use Add Places to confirm a repeat visit.');
+    }
+    if (payload.containsKey('dayNo')) {
+      final day = int.tryParse('${payload['dayNo']}');
+      if (day == null || day < 1 || day > _tripDays(trip)) {
+        throw ApiException('Choose a valid trip day.', 400, {});
+      }
+      updated['dayNo'] = day;
+      if ('$day' != '${original['dayNo']}') {
+        final candidates = [
+          ...activities,
+          ...(trip['unscheduledSuggestions'] as List? ?? []).whereType<Map>().map(Map<String, dynamic>.from),
+        ];
+        final duplicate = candidates.where((row) =>
+            !identical(row, original) && '${row['dayNo']}' == '$day' &&
+            sameAttraction(original, row)).firstOrNull;
+        if (duplicate != null) throw _sameDayVisit(duplicate, day);
+      }
     }
     activities[index] = updated;
     trip['activities'] = activities;
@@ -3849,7 +3883,7 @@ class StandaloneApiService {
       }
     }
     if (activities.isEmpty) {
-      final recs = recommendationSnapshot != null
+      final scoped = recommendationSnapshot != null
           ? (recommendationSnapshot['recommendationResults'] as List? ?? [])
               .whereType<Map>()
               .map((item) => Map<String, dynamic>.from(item))
@@ -3861,6 +3895,7 @@ class StandaloneApiService {
               .where((item) => _matchesRequestedArea(
                   item, (trip['destinationArea'] ?? '').toString()))
               .toList();
+      final recs = scoped.where(isTourismPlanningCandidate).toList();
       if (recs.isEmpty && recommendationSnapshot != null) {
         throw Exception(
             'Linked recommendation snapshot has no destination-relevant results.');
@@ -4204,14 +4239,20 @@ class StandaloneApiService {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
     if (_isPackageTrip(trip)) throw Exception('Purchased package trips cannot be modified or recalculated.');
-    final budget = _calculateBudget(trip);
-    return {'ok': true, 'budget': budget, 'alternatives': [],
+    return {'ok': true, ..._budgetReplanState(trip), 'alternatives': [],
       'activityAdvice': 'Comparable verified replacements require a backend connection.',
       'activityAlternativeStatus': 'priced_replacement_unavailable',
-      if (_canReplan(trip)) 'budgetReplanOptions': {
+    };
+  }
+
+  Map<String, dynamic> _budgetReplanState(Map<String, dynamic> trip) {
+    final budget = _calculateBudget(trip);
+    final visits = _removableVisits(trip);
+    return {'budget': budget, 'stateVersion': _tripActionToken(trip),
+      'budgetReplanOptions': !_canReplan(trip) ? null : {
         'allowances': {'foodCost': budget['food'], 'transportCost': budget['transport']},
-        'visitRemovalLimited': (trip['activities'] as List? ?? []).isNotEmpty && _removableVisits(trip).isEmpty,
-        'optionalVisits': [for (final row in _removableVisits(trip))
+        'visitRemovalLimited': (trip['activities'] as List? ?? []).isNotEmpty && visits.isEmpty,
+        'optionalVisits': [for (final row in visits)
           {'activityId': row['activityId'], 'name': row['activityName'], 'dayNo': row['dayNo'],
             'priceKnown': row['pricingUnit'] != null && row['costProvenance'] != null}],
       },
@@ -6102,6 +6143,7 @@ class StandaloneApiService {
     final scope = MalaysianLocality.normalizeScope(destination);
     final identities = <String>{};
     final candidates = [..._destinations.map((item) => {...item,'ratingSource':'unverified_local_catalog'}), ...cachedPlaces]
+        .where(isTourismPlanningCandidate)
         .where((d) => (MalaysianLocality.validateCandidate(d,scope)['geographicEligibility'] as Map)['eligible'] == true)
         .where((d) => identities.add('${d['destinationId'] ?? d['place_id'] ?? d['title']}'))
         .where((item) {

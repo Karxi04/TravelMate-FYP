@@ -12,7 +12,12 @@ class _FakeAlternativeApi extends ApiService {
   List<String> postCalls = [];
   List<Map<String, dynamic>?> postBodies = [];
 
-  _FakeAlternativeApi({this.onPost});
+  _FakeAlternativeApi({this.onPost, this.onGet});
+  final Future<dynamic> Function(String path)? onGet;
+
+  @override
+  Future<dynamic> get(String path, [Map<String, String>? query]) async =>
+      onGet == null ? {} : await onGet!(path);
 
   @override
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
@@ -89,6 +94,62 @@ void main() {
     expect(updated?['activities'], ['gardens']);
     expect(find.text('Estimated total RM 820 / budget RM 800'), findsOneWidget);
     expect(find.text('Apply'), findsNothing);
+  });
+
+  testWidgets('planning options outlast failed price searches, navigation and recreation',
+      (tester) async {
+    var revision = 'r1';
+    var priceCalls = 0;
+    var failPrices = true;
+    final reads = <String>[];
+    final api = _FakeAlternativeApi(
+      onGet: (path) async {
+        reads.add(path);
+        return {
+          'ok': true, 'stateVersion': revision,
+          'budget': {'total': path.contains('/b/') ? 400 : 285, 'limit': 200},
+          'budgetReplanOptions': {
+            'allowances': {'foodCost': 100, 'transportCost': 70},
+            'optionalVisits': [],
+          },
+        };
+      },
+      onPost: (path, [body]) async {
+        priceCalls++;
+        if (failPrices) throw ApiException('Quote lookup failed.', 503, {});
+        return {'ok': true, 'alternatives': []};
+      },
+    );
+    Widget page(String trip) => _buildApp(AlternativeScreen(
+        budget: testBudgetModel, userBudget: 200, tripId: trip, api: api));
+
+    await tester.pumpWidget(page('a'));
+    await tester.pumpAndSettle();
+    expect(find.text('Review budget options'), findsOneWidget);
+    expect(find.text('Could not verify replacement prices'), findsOneWidget);
+
+    failPrices = false;
+    revision = 'r2';
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+    expect(find.text('Review budget options'), findsOneWidget);
+    expect(find.textContaining('Earlier options may no longer apply'), findsOneWidget);
+    expect(find.textContaining('No comparable replacement prices'), findsOneWidget);
+
+    await tester.pumpWidget(page('b'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Estimated total RM 400'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(page('a'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Estimated total RM 285'), findsOneWidget);
+    expect(find.text('Review budget options'), findsOneWidget);
+    expect(reads, [
+      '/api/fr5/itineraries/a/budget-replan', '/api/fr5/itineraries/a/budget-replan',
+      '/api/fr5/itineraries/b/budget-replan', '/api/fr5/itineraries/a/budget-replan',
+    ]);
+    expect(priceCalls, 4);
   });
 
   group('Batch 21E-F2A-U: Budget Alternatives & Activity Advice Presentation', () {

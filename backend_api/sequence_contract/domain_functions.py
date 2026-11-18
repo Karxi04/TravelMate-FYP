@@ -1552,11 +1552,16 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         candidate.pop('unscheduledReason', None)
         if not any(str(x.get('activityId')) == str(candidate.get('activityId')) for x in activities):
             activities.append(candidate)
-    from services.itinerary_identity import POLICY, consolidate_generated_candidates, validate_generated_partition
+    from services.itinerary_identity import POLICY, consolidate_generated_candidates, same_attraction, validate_generated_partition
     trip_wide = itinerary.get('attractionIdentityPolicy') == POLICY
     if trip_wide:
         activities = consolidate_generated_candidates(activities)
     all_candidates = list(activities)
+    saved_days = {row['activityId']: day.get('dayNo') for day in itinerary.get('dailySchedule') or []
+                  for row in day.get('activities') or [] if row.get('activityId')}
+    repeats = [row for row in activities if row.get('intentionalRepeat') is True]
+    pinned = {row.get('activityId') for row in activities if row.get('dayNo') and
+              any(same_attraction(row, repeat) for repeat in repeats)}
     for activity in activities:
         if activity.get('pricingUnit'):
             activity['effectiveCost'] = activity_pricing(
@@ -1584,12 +1589,19 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         previous = None
         day_items = []
         while remaining:
-            eligible = [x for x in remaining if not respect_day_assignments or int(_float(x.get('dayNo'), day_no)) == day_no]
+            eligible = [x for x in remaining
+                        if (not respect_day_assignments and x.get('activityId') not in pinned)
+                        or int(_float(x.get('dayNo'), day_no)) == day_no]
             if not eligible:
                 break
             chosen = None
             reason_by_id = {}
             for candidate in _candidate_order(eligible, previous, weather, preserve_order, day_date):
+                # Retain a same-day pair only if the existing saved schedule already contains it.
+                if any(same_attraction(candidate, visit) and
+                       (saved_days.get(candidate.get('activityId')) != day_no or
+                        saved_days.get(visit.get('activityId')) != day_no) for visit in day_items):
+                    continue
                 planned, reason = _schedule_candidate(candidate, previous, current, day_date, window_end)
                 if planned:
                     chosen = planned

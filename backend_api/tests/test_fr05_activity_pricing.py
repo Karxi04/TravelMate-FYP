@@ -81,10 +81,10 @@ def test_unit_and_reliability_are_separate():
 
 
 def test_mixed_daily_budget_recalculation_and_count_change():
-    items = [activity('per_person', 10), activity('per_group', 15, activityId='a2'),
-             activity('already_aggregated', 8, activityId='a3'),
+    items = [activity('per_person', 10), activity('per_group', 15, activityId='a2', destinationId='fixture-2'),
+             activity('already_aggregated', 8, activityId='a3', destinationId='fixture-3'),
              {'activityId': 'a4', 'estimatedCost': 7, 'recommendedDurationMinutes': 60},
-             activity('per_group', 0, activityId='a5', costProvenance='verified_ticket',
+             activity('per_group', 0, activityId='a5', destinationId='fixture-5', costProvenance='verified_ticket',
                       priceSourceUrl='https://example.invalid/fixture', priceVerifiedAt='2026-10-25')]
     data = trip(items)
     before = deepcopy(data)
@@ -158,7 +158,8 @@ def test_legacy_snapshot_and_catalog_remain_unchanged():
     assert calculateBudget(data)['activities'] == 25
     assert calculateBudget(data)['completenessStatus'] == 'incomplete'
     assert data == original
-    assert len(DESTINATIONS) == 35
+    assert len(DESTINATIONS) == 36
+    assert any(item['destinationId'] == 'local_legoland_malaysia' for item in DESTINATIONS)
     assert all(not item.get('pricingUnit') for item in DESTINATIONS)
     assert DESTINATIONS == catalog_before
 

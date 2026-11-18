@@ -438,6 +438,12 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     final admission = _text(detail['admission']);
     final bestTime = _text(detail['bestTime']);
     final price = _text(detail['price']);
+    final priceLevel = source == 'serpapi' ? const {
+      r'$': 'Budget',
+      r'$$': 'Moderate',
+      r'$$$': 'Premium',
+      r'$$$$': 'Premium',
+    }[price] : null;
     final phone = _text(detail['phone']);
     final links = detail['links'];
     final website = _text(
@@ -659,7 +665,8 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
                 'Best time to visit',
                 bestTime,
               ),
-              _informationRow(Icons.payments_outlined, 'Price level', price),
+              if (priceLevel != null)
+                _informationRow(Icons.payments_outlined, 'Price level', '$priceLevel (Google Maps)'),
               _informationRow(Icons.phone_outlined, 'Contact', phone),
               _informationRow(Icons.language_outlined, 'Website', website),
             ],
@@ -679,7 +686,6 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     final date = calendarDate == null
         ? rawDate
         : MaterialLocalizations.of(context).formatShortDate(calendarDate);
-    final sample = review['source'] == 'sample' || reviewInfo?['fypPreview'] == true;
     final reviewRating = num.tryParse('${review['rating'] ?? ''}');
     return InkCard(
       child: Column(
@@ -697,7 +703,6 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(author, style: Theme.of(context).textTheme.titleSmall),
-                    if (sample) const Text('Sample review'),
                     if (date.isNotEmpty)
                       Text(
                         date,
@@ -732,27 +737,19 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   Widget _reviewsSection() {
     final reviews = _reviews();
     final visible = showAllReviews ? reviews : reviews.take(3).toList();
-    final sampleSummary = reviewInfo?['sampleSummary'];
     final legacySample = reviewInfo?['fypPreview'] == true;
+    final includesDemo = legacySample || reviews.any((review) => review['source'] == 'sample');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const AppSectionHeader(title: 'Local Reviews'),
-        if (reviewInfo?['rating'] != null && !legacySample) ...[
-          const Text('Community reviews'),
+        const AppSectionHeader(title: 'Reviews'),
+        if (reviewInfo?['rating'] != null && !legacySample)
           LocalReviewRatingBadge(summary: reviewInfo!),
-        ] else if (!reviewsFailed)
-          const Text('No community reviews yet.'),
-        if (sampleSummary is Map && sampleSummary['rating'] != null) ...[
-          const SizedBox(height: AppSpacing.xs),
-          const Text('Demonstration reviews'),
-          LocalReviewRatingBadge(summary: Map<String, dynamic>.from(sampleSummary)),
-        ] else if (legacySample) ...[
-          const Text('Demonstration reviews'),
-          LocalReviewRatingBadge(summary: reviewInfo!),
-        ],
+        if (includesDemo)
+          Text('Includes fictional demo reviews.',
+              style: Theme.of(context).textTheme.bodySmall),
         if (reviewInfo?['samplesUnavailable'] == true)
-          const Text('Sample reviews could not be loaded. Refresh to try again.'),
+          const Text('Demo reviews could not be loaded. Refresh to try again.'),
         const SizedBox(height: AppSpacing.sm),
         if (reviewsFailed)
           AppErrorState(

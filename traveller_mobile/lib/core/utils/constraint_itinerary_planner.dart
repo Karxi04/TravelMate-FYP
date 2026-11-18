@@ -203,6 +203,17 @@ Map<String, dynamic> planConstraintAwareItinerary(
   final tripWide = trip['attractionIdentityPolicy'] == attractionIdentityPolicy;
   if (tripWide) remaining = consolidateGeneratedCandidates(remaining);
   final inputIds = remaining.map((row) => row['activityId']).toSet();
+  final savedDays = {
+    for (final day in (source['dailySchedule'] as List? ?? []).whereType<Map>())
+      for (final row in (day['activities'] as List? ?? []).whereType<Map>())
+        if (row['activityId'] != null) row['activityId']: day['dayNo'],
+  };
+  final repeats = remaining.where((row) => row['intentionalRepeat'] == true).toList();
+  final pinned = {
+    for (final row in remaining)
+      if (row['dayNo'] != null && repeats.any((repeat) => sameAttraction(row, repeat)))
+        row['activityId'],
+  };
   if (tripWide && inputIds.length != remaining.length) {
     throw StateError('Generated schedule contains duplicate activity identifiers.');
   }
@@ -229,7 +240,8 @@ Map<String, dynamic> planConstraintAwareItinerary(
     final dayItems = <Map<String, dynamic>>[];
     while (remaining.isNotEmpty) {
       final eligible = remaining
-          .where((item) => !respectDayAssignments || _number(item['dayNo'], dayNo.toDouble()).round() == dayNo)
+          .where((item) => (!respectDayAssignments && !pinned.contains(item['activityId'])) ||
+              _number(item['dayNo'], dayNo.toDouble()).round() == dayNo)
           .toList();
       if (eligible.isEmpty) break;
       if (!preserveOrder) {
@@ -246,6 +258,10 @@ Map<String, dynamic> planConstraintAwareItinerary(
       Map<String, dynamic>? chosen;
       var chosenEnd = 0;
       for (final item in eligible) {
+        if (dayItems.any((visit) => sameAttraction(item, visit) &&
+            (savedDays[item['activityId']] != dayNo || savedDays[visit['activityId']] != dayNo))) {
+          continue;
+        }
         final opening = _opening(item['openingHours']);
         if (opening.status == 'closed') continue;
         final duration = _duration(item);

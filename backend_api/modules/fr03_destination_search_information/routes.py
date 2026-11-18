@@ -29,7 +29,9 @@ from sequence_contract.firebase_firestore import (
 )
 from services.public_content_projection import public_review
 from services.review_service import approved_reviews
-from services.fyp_reviews import dataset_for, dataset_reviews, private_dataset
+from services.fyp_reviews import (
+    dataset_for, dataset_reviews, private_dataset, regional_demo_destinations, regional_demo_reviews,
+)
 from services.review_destination import review_destination_id, review_destination_ids
 from services.malaysian_locality import (
     normalize_destination_scope,
@@ -42,6 +44,11 @@ from services.malaysian_locality import (
 
 bp = Blueprint('fr03_destinations', __name__, url_prefix='/api/fr3')
 REVIEW_CONTEXT_HEADER = 'X-TravelMate-Review-Context'
+
+
+def _local_demo_request():
+    return (current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS')
+            and request.headers.get(REVIEW_CONTEXT_HEADER) == 'fyp-v1')
 
 
 def _private_review_dataset(*, discovery=False):
@@ -480,6 +487,8 @@ def local_ratings():
     # One read pass for a page of cards; retain the existing approval/dedup policy.
     grouped = {}
     for item in retrieveRecord('feedback'):
+        if item.get('synthetic') is True:
+            continue
         identity = item.get('destinationId')
         if isinstance(identity, str) and identity:
             canonical = review_destination_id(identity)
@@ -546,6 +555,14 @@ def search_destinations():
                 'error': f"Requested destination '{location}' could not be resolved as a Malaysian destination.",
             }), 400
 
+    if offset == 0 and _local_demo_request():
+        matches, _ = filter_candidates(
+            [place for place in regional_demo_destinations().values()
+             if _search_text(q) == _search_text(place['title'])], requested_scope)
+        if matches:
+            return jsonify(ok=True, results=_filter_by_category(matches, filterOption),
+                           source='fyp_private', nextOffset=None,
+                           locationUsed=requested_scope.get('canonicalName') or provider_location)
     demo = _private_review_dataset(discovery=True) if offset == 0 else None
     if demo:
         matches = [place for place in demo[1].values()
@@ -674,6 +691,9 @@ def search_destinations():
 @bp.get('/destinations/<path:place_id>')
 @auth_required(['traveller'])
 def destination_details(place_id):
+    regional = regional_demo_destinations().get(review_destination_id(place_id)) if _local_demo_request() else None
+    if regional:
+        return jsonify(ok=True, destination=regional, source='fyp_private', detailsAvailable=True)
     demo = _private_review_dataset(discovery=True)
     place = demo[1].get(review_destination_id(place_id)) if demo else None
     if place:
@@ -740,8 +760,8 @@ def retrieveRatingsAndReviews(place_id):
     return _ratings_and_reviews(records)
 
 
-def _ratings_and_reviews(records):
-    visible = approved_reviews(records)
+def _ratings_and_reviews(records, *, sample=False):
+    visible = approved_reviews(row for row in records if sample or row.get('synthetic') is not True)
     visible.sort(key=lambda x: str(x.get('updatedAt') or x.get('submittedAt') or ''), reverse=True)
     ratings = []
     for item in visible:
@@ -759,12 +779,31 @@ def _ratings_and_reviews(records):
     }
 
 
+def _merge_sample_reviews(result, records):
+    samples = _ratings_and_reviews(records, sample=True)
+    result['sampleSummary'] = {key: samples[key] for key in ('rating', 'reviews')}
+    result['user_reviews'].extend(
+        {**{key: value for key, value in item.items() if key != 'reviewKey'}, 'source': 'sample'}
+        for item in samples['user_reviews']
+    )
+
+
 @bp.get('/destinations/<path:place_id>/ratings-reviews')
 @auth_required(['traveller'])
 def ratings_reviews(place_id):
     view = request.args.get('view')
     local_demo = current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS')
     canonical = review_destination_id(place_id)
+    regional = _local_demo_request() and canonical in regional_demo_destinations()
+    if regional:
+        if view == 'samples':
+            samples = _ratings_and_reviews(regional_demo_reviews(canonical), sample=True)
+            return jsonify(ok=True, source='fyp_private', sampleReviewsAvailable=True,
+                           result={**samples, 'fypPreview': True})
+        result = retrieveRatingsAndReviews(canonical)
+        if view == 'unified':
+            _merge_sample_reviews(result, regional_demo_reviews(canonical))
+        return jsonify(ok=True, source='travelmate_database', result=result, sampleReviewsAvailable=True)
     if view == 'unified':
         result = retrieveRatingsAndReviews(canonical)
         if local_demo:
@@ -772,12 +811,7 @@ def ratings_reviews(place_id):
                 demo = _private_review_dataset(discovery=True)
                 if demo and canonical in demo[1]:
                     records = [item for item in dataset_reviews(*demo) if item['destinationId'] == canonical]
-                    samples = _ratings_and_reviews(records)
-                    result['sampleSummary'] = {key: samples[key] for key in ('rating', 'reviews')}
-                    result['user_reviews'].extend(
-                        {**{key: value for key, value in item.items() if key != 'reviewKey'}, 'source': 'sample'}
-                        for item in samples['user_reviews']
-                    )
+                    _merge_sample_reviews(result, records)
             except Exception as error:
                 current_app.logger.warning('Sample review retrieval failed: %s', type(error).__name__)
                 result['samplesUnavailable'] = True
@@ -789,7 +823,7 @@ def ratings_reviews(place_id):
         return jsonify(ok=False, error='Sample reviews are unavailable for this destination.'), 404
     if has_samples and (view == 'samples' if local_demo else view != 'community'):
         records = [item for item in dataset_reviews(*demo) if item['destinationId'] == canonical]
-        result = {**_ratings_and_reviews(records), 'fypPreview': True,
+        result = {**_ratings_and_reviews(records, sample=True), 'fypPreview': True,
                   'review_summary': 'Private FYP reviews. Fictional fixtures.'}
         return jsonify({'ok': True, 'source': 'fyp_private', 'result': result,
                         **({'sampleReviewsAvailable': True} if local_demo else {})})

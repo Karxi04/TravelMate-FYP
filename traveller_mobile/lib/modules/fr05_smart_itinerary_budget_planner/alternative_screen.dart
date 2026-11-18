@@ -29,7 +29,12 @@ class AlternativeScreen extends StatefulWidget {
 }
 
 class _AlternativeScreenState extends State<AlternativeScreen> {
-  late final ApiService api;
+  late ApiService api;
+  int _loadVersion = 0;
+  bool checkingPrices = false;
+  bool applying = false;
+  bool optionsChanged = false;
+  String? stateVersion;
   List<Map<String, dynamic>> alternatives = [];
   Map<String, dynamic>? budget;
   Map<String, dynamic>? replanOptions;
@@ -47,8 +52,34 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     Future.microtask(load);
   }
 
+  @override
+  void didUpdateWidget(covariant AlternativeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tripId != widget.tripId || oldWidget.api != widget.api) {
+      api = widget.api ?? ApiService();
+      stateVersion = null;
+      budget = null;
+      replanOptions = null;
+      optionsChanged = false;
+      applying = false;
+      load();
+    }
+  }
+
+  void _setTripState(Map data) {
+    budget = data['budget'] is Map
+        ? Map<String, dynamic>.from(data['budget']) : null;
+    replanOptions = data['budgetReplanOptions'] is Map
+        ? Map<String, dynamic>.from(data['budgetReplanOptions']) : null;
+    stateVersion = data['stateVersion'] as String?;
+  }
+
   Future<void> load() async {
-    if ((widget.tripId ?? '').isEmpty) {
+    if (!mounted || applying) return;
+    final version = ++_loadVersion;
+    final tripId = widget.tripId;
+    bool current() => mounted && version == _loadVersion;
+    if ((tripId ?? '').isEmpty) {
       final local = BudgetService().generateAlternatives(widget.budget);
       setState(() {
         alternatives = local
@@ -66,24 +97,50 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       });
       return;
     }
+    final hadPrices = alternatives.isNotEmpty;
     setState(() {
       busy = true;
+      checkingPrices = true;
       loadError = null;
+      alternatives = [];
+      activityAdvice = null;
+      flightAdvice = null;
+      hotelAdvice = null;
     });
+    final before = stateVersion;
+    var loadedTrip = false;
+    try {
+      final data = await api.get('/api/fr5/itineraries/$tripId/budget-replan');
+      if (!current()) return;
+      if (data is Map && data['ok'] == true && data['stateVersion'] is String) {
+        loadedTrip = true;
+        setState(() {
+          _setTripState(data);
+          optionsChanged = before != null && before != stateVersion;
+          busy = false;
+        });
+      }
+    } catch (_) {
+      // An older Backend can still return the complete state from the POST.
+    }
+    if (!current()) return;
     try {
       final data = await api.post(
-          '/api/fr5/itineraries/${widget.tripId}/lower-cost-alternatives');
-      if (!mounted) return;
+          '/api/fr5/itineraries/$tripId/lower-cost-alternatives');
+      if (!current()) return;
+      if (data is! Map || data['ok'] == false) {
+        throw StateError('Alternatives could not be refreshed.');
+      }
       setState(() {
         alternatives = (data['alternatives'] as List? ?? [])
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
             .toList();
-        budget = data['budget'] is Map
-            ? Map<String, dynamic>.from(data['budget'] as Map)
-            : null;
-        replanOptions = data['budgetReplanOptions'] is Map
-            ? Map<String, dynamic>.from(data['budgetReplanOptions']) : null;
+        if (!loadedTrip || data['stateVersion'] is String) {
+          _setTripState(data);
+          optionsChanged = before != null && before != stateVersion;
+        }
+        optionsChanged = optionsChanged || (hadPrices && alternatives.isEmpty);
         activityAdvice = data['activityAdvice']?.toString();
         flightAdvice = data['flightAdvice']?.toString();
         hotelAdvice = data['hotelAdvice']?.toString();
@@ -91,19 +148,25 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
             data['activityAlternativeStatus']?.toString();
       });
     } catch (e) {
-      if (mounted) setState(() => loadError = userFacingApiError(e));
+      if (current()) setState(() {
+        loadError = userFacingApiError(e);
+        if (!loadedTrip) replanOptions = null;
+      });
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (current()) setState(() {
+        busy = false;
+        checkingPrices = false;
+      });
     }
   }
 
   Future<void> openReplan() async {
     final options = replanOptions;
     final tripId = widget.tripId;
-    if (options == null || tripId == null) return;
+    if (options == null || tripId == null || busy || applying) return;
     final updated = await Navigator.push<Map<String, dynamic>>(context, MaterialPageRoute(
       builder: (context) => BudgetReplanScreen(api: api, tripId: tripId, options: options)));
-    if (!mounted || updated == null) return;
+    if (!mounted || widget.tripId != tripId || updated == null) return;
     widget.onApplied?.call(updated);
     await load();
   }
@@ -136,7 +199,9 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   }
 
   Future<void> applyAlternative(Map<String, dynamic> item) async {
-    if (busy || !_canApplyItem(item)) return;
+    if (busy || applying || !_canApplyItem(item)) return;
+    final tripId = widget.tripId;
+    final version = _loadVersion;
     final savings = _extractSavings(item)!;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -152,14 +217,15 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
         ],
       ),
     );
-    if (!mounted || confirmed != true || busy) return;
-    setState(() => busy = true);
+    if (!mounted || confirmed != true || busy || version != _loadVersion) return;
+    setState(() => applying = true);
+    var refresh = false;
     try {
       final data = await api.post(
-        '/api/fr5/itineraries/${widget.tripId}/lower-cost-alternatives/apply',
+        '/api/fr5/itineraries/$tripId/lower-cost-alternatives/apply',
         {'alternative': item},
       );
-      if (!mounted) return;
+      if (!mounted || version != _loadVersion) return;
       final updated = data['itinerary'];
       if (updated is! Map || updated['id'] != widget.tripId) {
         throw StateError('The trip update could not be confirmed.');
@@ -173,13 +239,15 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Lower-cost alternative applied.')),
       );
-      await load();
+      refresh = true;
     } catch (e) {
-      if (mounted) showError(context, e);
-      if (e is ApiException && e.statusCode == 409 && mounted) await load();
+      if (!mounted || version != _loadVersion) return;
+      showError(context, e);
+      refresh = e is ApiException && e.statusCode == 409;
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted && version == _loadVersion) setState(() => applying = false);
     }
+    if (refresh && mounted && version == _loadVersion) await load();
   }
 
   Widget _buildAdviceCard() {
@@ -248,22 +316,28 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
               subtitle: 'Estimated total RM $currentTotal / budget RM $limit',
             ),
             const SizedBox(height: 12),
-            if (replanOptions != null && loadError == null)
-              FilledButton(onPressed: busy ? null : openReplan, child: const Text('Review budget options')),
+            if (replanOptions != null) ...[
+              const Text('Adjust planned food, local transport or eligible optional visits.'),
+              FilledButton(onPressed: busy || applying ? null : openReplan, child: const Text('Review budget options')),
+            ],
+            if (optionsChanged)
+              const Text('Options have been refreshed for this trip. Earlier options may no longer apply.'),
             if (loadError != null)
               AppErrorState(
-                title: 'Alternatives unavailable',
+                title: replanOptions == null ? 'Alternatives unavailable' : 'Could not verify replacement prices',
                 message: loadError!,
                 onRetry: load,
               )
-            else if (busy && alternatives.isEmpty)
+            else if (checkingPrices)
               const SizedBox(
                   height: 160,
                   child: Center(child: CircularProgressIndicator()))
             else if (alternatives.isEmpty)
               TravelEmptyState(
                 icon: Icons.savings_outlined,
-                title: 'No priced replacements are available for this itinerary yet.',
+                title: replanOptions == null
+                    ? 'No priced replacements are available for this itinerary yet.'
+                    : 'No comparable replacement prices for the current trip',
                 message: [if (hasAdvice) activityAdvice!, ...supplierAdvice].join('\n\n'),
               )
             else ...[
@@ -343,7 +417,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                             alignment: Alignment.centerRight,
                             child: FilledButton.tonalIcon(
                               onPressed:
-                                  busy ? null : () => applyAlternative(item),
+                                  busy || applying ? null : () => applyAlternative(item),
                               icon: const Icon(Icons.check_rounded),
                               label: const Text('Apply'),
                             ),

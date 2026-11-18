@@ -365,7 +365,9 @@ def test_failed_persistence_does_not_mark_draft_saved(client, mock_traveller_aut
     assert not [key for key in memory if key[0] == 'itineraries']
 
 
-def test_coverage_gap_never_announces_a_generated_draft(client, mock_traveller_auth, memory):
+def test_coverage_gap_never_announces_a_generated_draft(client, mock_traveller_auth, memory, monkeypatch):
+    # Pin the coverage gap rather than depending on a state missing from the catalogue.
+    monkeypatch.setattr('modules.fr11_chatbot_travel_assistant.routes._planning_catalog', lambda *args: [])
     result = send(client, 'Plan Johor 12 Dec until 16 Dec for 2 travellers, RM1000')
     assert 'tripPlan' not in result['item']
     assert 'not have enough verified' in result['reply']
