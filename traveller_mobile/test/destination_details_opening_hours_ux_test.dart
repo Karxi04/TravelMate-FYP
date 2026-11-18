@@ -435,7 +435,8 @@ void main() {
         findsNothing,
       );
       // Neutral fallback attribution badge is present
-      expect(find.text('Saved destination information'), findsOneWidget);
+      expect(find.text('Saved destination information'), findsNothing);
+      expect(find.text('Saved place details. Check current hours and admission before visiting.'), findsOneWidget);
     });
 
     // 12. Cached destination without provider data
@@ -457,7 +458,7 @@ void main() {
       await _pumpDestination(tester, initial: initial, api: api);
 
       expect(find.text('Merdeka Square'), findsOneWidget);
-      expect(find.text('Saved provider information'), findsOneWidget);
+      expect(find.text('Saved place details. Check current hours and admission before visiting.'), findsOneWidget);
       expect(
         find.text('Some live details are unavailable. TravelMate is showing the reliable information already available.'),
         findsNothing,

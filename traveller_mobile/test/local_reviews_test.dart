@@ -56,7 +56,48 @@ class _PreviewApi extends ApiService {
   }
 }
 
+class _AuthorizedReviewApi extends ApiService {
+  final views = <String>[];
+  @override
+  Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (!path.endsWith('/ratings-reviews')) return {'items': <dynamic>[]};
+    views.add(query?['view'] ?? '');
+    final testing = query?['view'] == 'test';
+    return {
+      'reviewTestModeAvailable': true,
+      'source': testing ? 'fyp_private' : 'travelmate_database',
+      'result': {
+        'rating': testing ? 2.0 : 5.0,
+        'reviews': 1,
+        if (testing) 'fypPreview': true,
+        'user_reviews': [
+          {'id': testing ? 'test-row' : 'real-row', 'rating': testing ? 2 : 5,
+           'description': testing ? 'Fictional test comment.' : 'Approved visitor comment.'},
+        ],
+      },
+    };
+  }
+}
+
 void main() {
+  testWidgets('authorized review mode uses one disclosure and keeps authentic totals separate', (tester) async {
+    final api = _AuthorizedReviewApi();
+    await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,
+      initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Review testing'), 200);
+    await tester.ensureVisible(find.byType(Switch));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Fictional test comment.'), 180);
+    expect(find.text('Fictional review test data. Ratings are separate from visitor reviews.'), findsOneWidget);
+    expect(find.text('2.0 · 1 review'), findsOneWidget);
+    expect(find.text('5.0 · 1 review'), findsNothing);
+    expect(find.text('Sample review'), findsNothing);
+    expect(api.views, ['unified', 'test']);
+  });
+
   testWidgets('older local Backend sample fallback is not requested', (tester) async {
     final api = _PreviewApi(oldServer: true);
     await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,

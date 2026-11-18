@@ -68,10 +68,16 @@ def _improve_once(base, selected, excluded, scores, forecast, limit):
     rejected = [entry['activity'] for entry in excluded if entry['reasonCode'] == 'known_budget_exceeded']
     best, best_plan, attempts = selected, None, 0
     best_score = round(sum(scores[item['activityId']] for item in selected), 2)
+    from services.recommendation_taxonomy import preference_concepts, primary_concepts
+    interests = preference_concepts((base.get('planningPreferences') or {}).get('interests'))
+    represented = set().union(*(primary_concepts(item) for item in selected)) & interests
     trials = ((removed, pair) for removed in selected for pair in combinations(rejected, 2))
     for removed, pair in islice(trials, LOCAL_REPAIR_TRIAL_LIMIT):
         attempts += 1
         proposed = [item for item in selected if item['activityId'] != removed['activityId']] + list(pair)
+        if (base.get('geographyPlanningPolicy') == 'local-days-v1' and len(interests) > 1
+                and not represented.issubset(set().union(*(primary_concepts(item) for item in proposed)))):
+            continue
         score = round(sum(scores[item['activityId']] for item in proposed), 2)
         if score <= best_score or calculateBudget({**base, 'activities': proposed})['totalEstimatedCost'] > limit:
             continue
@@ -130,6 +136,14 @@ def select_budget_aware_activities(candidates, itinerary, forecast=None):
         entries.append((item, score, cost, issues))
     entries.sort(key=lambda entry: (-entry[1], entry[2] if entry[2] is not None else float('inf'), entry[0]['activityId']))
 
+    from services.recommendation_taxonomy import preference_concepts
+    selected_interests = preference_concepts((base.get('planningPreferences') or {}).get('interests'))
+    if base.get('geographyPlanningPolicy') == 'local-days-v1' and len(selected_interests) > 1:
+        # Use a jointly feasible full-pool plan to preserve represented interests
+        # before greedy affordability checks. Scores and costs are untouched.
+        seed = _schedule(base, [entry[0] for entry in entries], forecast)
+        order = {row['activityId']: index for index, row in enumerate(seed['activities'])}
+        entries.sort(key=lambda entry: order.get(entry[0]['activityId'], len(order)))
     selected, excluded, rationale = [], [], []
     plan = _schedule(base, [], forecast)
     for item, score, cost, issues in entries:
@@ -157,7 +171,7 @@ def select_budget_aware_activities(candidates, itinerary, forecast=None):
                 selected.append(item)
                 plan = trial
                 rationale.append({'activityId': item['activityId'], 'score': score, 'groupCost': cost,
-                                  'explanation': 'Accepted in descending original-score order: known group cost fits and all selected visits fit the existing scheduler.'})
+                                  'explanation': 'Accepted using unchanged recommendation scores and feasible selection order: known group cost fits and all selected visits fit the scheduler.'})
         if reason:
             excluded.append({'activity': item, 'score': score, 'groupCost': cost,
                              'pricingIssues': issues, 'reasonCode': reason, 'explanation': explanation})

@@ -298,7 +298,9 @@ def normalize_destination_scope(value):
             return location_scope(record) if record else _legacy_destination_scope(value)
         rows = locations.exact(value, state=LOCALITIES[legacy][0])
         return location_scope(rows[0]) if len(rows) == 1 and rows[0]['kind'] == 'locality' else _legacy_destination_scope(value)
-    rows = locations.exact(value)
+    # Housing-prefix scope is the established locality, never a nature category.
+    lookup = re.sub(r'^taman\s+', '', str(value or '').strip(), flags=re.I)
+    rows = locations.exact(lookup)
     if len(rows) == 1:
         return location_scope(rows[0])
     if len(rows) > 1:
@@ -371,7 +373,7 @@ def resolve_destination_scope(value, scope_key=None):
         return normalize_destination_scope(value)
     if match and match.get('city'):
         return normalize_destination_scope(match['city'])
-    sourced = locations.exact(value)
+    sourced = locations.exact(re.sub(r'^taman\s+', '', str(value or '').strip(), flags=re.I))
     if not match and len(sourced) == 1:
         return location_scope(sourced[0])
     known = {_text(label) for row in rows for alias in row['aliases'] for label in
@@ -537,7 +539,7 @@ def _explicit_locality(item, scope, geography):
     for key in ('address', 'formatted_address', 'formattedAddress'):
         names.extend(str(item.get(key) or '').split(','))
     for name in names:
-        rows = locations.exact(re.sub(r'^\s*\d{5}\s+', '', str(name or '')).strip(), state=scope.get('state'))
+        rows = locations.exact(re.sub(r'^(?:taman\s+|\s*\d{5}\s+)', '', str(name or ''), flags=re.I).strip(), state=scope.get('state'))
         if len(rows) == 1 and location_scope(rows[0])['scopeKey'] == scope['scopeKey']:
             return True
     return False

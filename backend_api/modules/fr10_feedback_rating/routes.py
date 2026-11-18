@@ -21,11 +21,21 @@ def submit_feedback():
     payload = request.get_json(silent=True)
     if not valid_review(payload):
         return jsonify({'ok': False, 'error': 'Choose a place, rate it 1–5 and write 5–2000 characters.'}), 400
-    payload = {**payload, 'destinationId': review_destination_id(payload['destinationId']),
+    opened_id = payload['destinationId']
+    canonical = review_destination_id(opened_id)
+    if canonical == opened_id and not canonical.startswith('local_'):
+        from modules.fr03_destination_search_information.routes import _review_identity
+        try:
+            cached = retrieveRecord('destination_cache', opened_id.replace('/', '_'))
+        except Exception:
+            return jsonify(ok=False, error='Reviews are temporarily unavailable. Please try again.'), 503
+        if isinstance(cached, dict):
+            canonical = _review_identity(cached) or canonical
+    payload = {**payload, 'destinationId': canonical,
                'comment': payload['comment'].strip()}
     try:
         existing = [
-            item for identity in review_destination_ids(payload['destinationId'])
+            item for identity in dict.fromkeys((*review_destination_ids(payload['destinationId']), opened_id))
             for item in retrieveRecord('feedback', filters=[
                 ('travellerId', '==', g.uid), ('destinationId', '==', identity),
             ]) or []
@@ -47,7 +57,7 @@ def submit_feedback():
             created = False
         if not created:
             if (result.get('travellerId') != g.uid or
-                    review_destination_id(result.get('destinationId') or '') != payload['destinationId']):
+                    review_destination_id(result.get('destinationId') or '') not in {payload['destinationId'], opened_id}):
                 return jsonify({'ok': False, 'error': 'Review could not be submitted.'}), 409
             if result.get('feedbackStatus') == 'removed':
                 return jsonify({'ok': False, 'error': 'This review was removed. Contact support if you need help.'}), 409

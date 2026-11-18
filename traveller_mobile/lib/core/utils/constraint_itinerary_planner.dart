@@ -11,7 +11,7 @@ const _distantStop =
     'This stop is too far from the other stops or accommodation for this sightseeing day. Choose a nearer stop or plan an intercity transfer.';
 const localActivityFields = [
   'city', 'state', 'country', 'district', 'locality', 'normalizedGeography',
-  'geographyConflict', 'metadataConflict', 'type_id', 'type_ids', 'tags',
+  'geographyConflict', 'metadataConflict', 'type_id', 'type_ids', 'tags', 'interests', 'subtype', 'verifiedDestinationEvidence',
   'providerTravelFromDestinationId', 'providerTravelDurationMinutes',
   'providerTravelDistanceKm', 'providerTravelMode',
 ];
@@ -415,13 +415,26 @@ Map<String, dynamic> planConstraintAwareItinerary(
             int coverage(Map<String, dynamic> item) =>
                 concepts[item['activityId']]?.intersection(missing).isNotEmpty == true ? 0 : 1;
             final coverageOrder = coverage(a).compareTo(coverage(b));
-            if (coverageOrder != 0) return coverageOrder;
+            if (focus != null && coverageOrder != 0) return coverageOrder;
             if (focus == null) {
-              int neighbours(Map<String, dynamic> item) => min(4, eligible.where((other) =>
-                  (_localDistance(item, other) ?? double.infinity) <= limits.km).length);
-              final grouping = neighbours(b).compareTo(neighbours(a));
+              List<Map<String, dynamic>> cluster(Map<String, dynamic> item) => eligible.where((other) {
+                final leg = _localLeg(item, other, mode);
+                return leg != null && (leg.distance ?? double.infinity) <= limits.km && leg.minutes <= limits.leg;
+              }).toList();
+              final clusterA = cluster(a);
+              final clusterB = cluster(b);
+              Set<String> coverage(List<Map<String, dynamic>> rows) => {
+                for (final row in rows) ...?concepts[row['activityId']],
+              }.intersection(interests);
+              final categoryOrder = coverage(clusterB).length.compareTo(coverage(clusterA).length);
+              if (categoryOrder != 0) return categoryOrder;
+              final variety = clusterB.map((row) => experiences[row['activityId']]).whereType<String>().where((v) => v.isNotEmpty).toSet().length
+                  .compareTo(clusterA.map((row) => experiences[row['activityId']]).whereType<String>().where((v) => v.isNotEmpty).toSet().length);
+              if (variety != 0) return variety;
+              final grouping = min(4, clusterB.length).compareTo(min(4, clusterA.length));
               if (grouping != 0) return grouping;
             }
+            if (coverageOrder != 0) return coverageOrder;
             final expA = experiences[a['activityId']];
             final expB = experiences[b['activityId']];
             final dailyVariety = (experienceCounts[expA] ?? 0).compareTo(experienceCounts[expB] ?? 0);
@@ -463,6 +476,18 @@ Map<String, dynamic> planConstraintAwareItinerary(
             (anchorDistance ?? 0) > limits.km || dailyTravel + travel.minutes > dailyLimit)) {
           reasons[itemId] = _distantStop;
           continue;
+        }
+        final budgetLimit = _number(trip['budgetLimit']);
+        if (localDays && interests.length > 1 && budgetLimit > 0) {
+          final estimate = trip['budgetEstimate'] as Map? ?? const {};
+          final previousActivityCost = _number(estimate['activities']);
+          final fixedCost = max(0, _number(estimate['totalEstimatedCost']) - previousActivityCost);
+          final activityCost = [...scheduled, item].fold<double>(0, (sum, row) =>
+              sum + (plannedActivityAmount(row, travellers) ?? 0));
+          if (fixedCost + activityCost > budgetLimit) {
+            reasons[itemId] = 'This activity would exceed the total trip budget using the current estimates.';
+            continue;
+          }
         }
         final experience = experiences[itemId] ?? '';
         final repeatLimit = hikeFocused || experience == 'meal' ? 2 : 1;
@@ -533,10 +558,10 @@ Map<String, dynamic> planConstraintAwareItinerary(
       scheduled.add(chosen);
       previous = chosen;
       current = chosenEnd;
-      if (flexible && dayItems.length == 1) {
+      if (flexible) {
         final compatible = focus == null ? remaining.length : remaining.where((item) =>
             (_localDistance(focus!, item) ?? double.infinity) <= limits.km && canStartDay(item)).length;
-        visitLimit = min(visitLimit!, max(1, 1 + compatible - futureLocalDays));
+        visitLimit = min(visitLimit!, max(dayItems.length, ((dayItems.length + compatible) / (futureLocalDays + 1)).ceil()));
       }
     }
     if (localDays && dayItems.isNotEmpty && focus != null && !sightseeingAnchors.contains(focus)) {
@@ -593,6 +618,16 @@ Map<String, dynamic> planConstraintAwareItinerary(
     ...trip,
     'activities': scheduled,
     'unscheduledSuggestions': unscheduled,
+    if (localDays) 'interestCoverage': {
+      'requested': interests.toList()..sort(),
+      'candidates': {for (final interest in interests)
+        interest: concepts.values.where((value) => value.contains(interest)).length},
+      'scheduled': {for (final interest in interests)
+        interest: scheduled.where((row) => concepts[row['activityId']]?.contains(interest) == true).length},
+      'unrepresented': interests.difference(usedConcepts).toList()..sort(),
+      'limitation': interests.difference(usedConcepts).isEmpty ? null :
+          'Some interests could not be included within the selected area, dates, budget and travel constraints.',
+    },
     if (transfer != null) 'intercityTransferStatus': transferApplied ? 'planned' : 'needs_review',
     'scheduledActivityCount': scheduled.length,
     'unscheduledActivityCount': unscheduled.length,

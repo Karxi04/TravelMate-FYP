@@ -426,6 +426,9 @@ def _generate_itinerary_data(current, payload, snapshot=None):
     if not working.get('activities'):
         candidates, generation_source = _destination_candidates(working, snapshot)
         candidates = consolidate_generated_candidates(candidates, automatic=True)
+        from sequence_contract.domain_functions import diversifyRecommendations
+        if profile.get('interests'):
+            candidates = diversifyRecommendations(candidates, profile, limit=len(candidates), coverageAware=True)
         working['attractionIdentityPolicy'] = POLICY
         if not candidates:
             if snapshot:
