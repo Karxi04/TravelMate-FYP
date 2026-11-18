@@ -14,6 +14,12 @@ EXPANSION_COUNT = 68
 MANIFEST_PATH = 'manifests/v2'
 EXPANSION_COLLECTION = 'expanded_reviews'
 MODERATION_COLLECTION = 'moderation'
+# Existing manifest identities, including historical IDs that are not local-catalogue IDs.
+PENANG_DESTINATION_IDS = frozenset({
+    'demo_penang_street_art', 'entopia', 'local_batu_ferringhi', 'local_botanical_gardens',
+    'local_chew_jetty', 'local_kek_lok_si', 'local_penang_hill', 'local_peranakan_mansion',
+    'local_wonderfood', 'penang_armenian_street', 'penang_gurney_drive', 'tropical_spice_garden',
+})
 
 
 def dataset_for(uid):
@@ -118,6 +124,21 @@ def moderate_review(ref, expected, updates):
 # Regional local-demo fixtures. They never enter feedback, recommendation inputs or
 # public projections. The existing separately moderated Penang dataset stays in Firestore.
 _REGIONAL_REVIEWS = {
+    'local_batu_caves': (
+        ('Traveller A', 5, 'A beautiful limestone setting and a wonderful visit. I enjoyed looking at the temple architecture.'),
+        ('Traveller B', 3, 'The setting was beautiful, but the busy steps were disappointing. I needed several breaks.'),
+        ('Traveller C', 2, 'The crowds were frustrating and the climb felt tiring. I left disappointed.'),
+    ),
+    'local_a_famosa': (
+        ('Traveller A', 5, 'A wonderful heritage visit. I enjoyed taking time to look at the historic remains.'),
+        ('Traveller B', 3, 'The history was interesting, but the short visit felt disappointing. I wanted more context.'),
+        ('Traveller C', 2, 'I found the visit disappointing and the crowd frustrating. I did not stay long.'),
+    ),
+    'local_sarawak_cultural_village': (
+        ('Traveller A', 5, 'A wonderful cultural visit. I enjoyed looking at the traditional buildings and taking my time.'),
+        ('Traveller B', 3, 'The buildings were interesting, but the visit felt rushed and a little disappointing.'),
+        ('Traveller C', 2, 'I left disappointed. The busy visit felt tiring and I could not enjoy it at my own pace.'),
+    ),
     'local_klcc': (
         ('Aina R.', 5, 'Took my time looking at the skyline. Beautiful views in every direction; I kept going back for one more photo.'),
         ('Dylan P.', 3, 'Beautiful city views, but the short visit was disappointing. I would give myself longer next time.'),

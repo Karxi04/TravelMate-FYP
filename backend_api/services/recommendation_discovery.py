@@ -57,7 +57,8 @@ _VISITOR_FACILITY = re.compile(
 def is_administrative_facility(item):
     """Use venue function, not government ownership, to judge tourism eligibility."""
     types = item.get('types')
-    categories = [item.get('category'), item.get('type'),
+    categories = [item.get('category'), item.get('type'), item.get('type_id'),
+                  *(item.get('type_ids') if isinstance(item.get('type_ids'), list) else []),
                   *(types if isinstance(types, (list, tuple)) else [types])]
     title = normalize_phrase(item.get('title') or item.get('name') or item.get('activityName'))
     primary = normalize_phrase(item.get('type') or item.get('category'))
@@ -91,6 +92,7 @@ def is_planning_candidate(item):
         'gas station', 'petrol station', 'fuel station', 'housing development',
         'residential area', 'residential development', 'residential complex',
         'warehouse', 'utility facility', 'corporate office', 'industrial supplier', 'factory',
+        'bank', 'car repair', 'real estate agency',
     }
     if any(normalize_phrase(value).replace('_', ' ') in rejected for value in categories if value):
         return False

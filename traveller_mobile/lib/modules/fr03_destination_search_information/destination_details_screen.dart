@@ -45,8 +45,8 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   int _loadRevision = 0;
   bool detailsFailed = false;
   bool reviewsFailed = false;
-  bool reviewTestMode = false;
-  bool reviewTestModeAvailable = false;
+  bool privateReviewContext = false;
+  bool exampleReviewsUnavailable = false;
   bool nearbyFailed = false;
   String source = '';
   bool providerFallback = false;
@@ -120,6 +120,8 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       detailsFailed = false;
       reviewsFailed = false;
       reviewInfo = null;
+      privateReviewContext = false;
+      exampleReviewsUnavailable = false;
       nearbyFailed = false;
       providerFallback = false;
     });
@@ -148,22 +150,27 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
 
     try {
       final openedId = DestinationUtils.resolveId(widget.initialDestination);
-      final reviewId = Uri.encodeComponent(detail['reviewDestinationId'] != null && openedId.isNotEmpty
-          ? openedId : reviewDestinationId);
+      final reviewId = Uri.encodeComponent(
+          detail['reviewDestinationId'] != null && openedId.isNotEmpty
+              ? openedId
+              : reviewDestinationId);
       final path = '/api/fr3/destinations/$reviewId/ratings-reviews';
-      final data = await api.get(path, {'view': reviewTestMode ? 'test' : 'unified'});
+      final data = await api.get(path, {'view': 'unified'});
       if (!current()) return;
       reviewInfo = data['result'] is Map
           ? Map<String, dynamic>.from(data['result'] as Map)
           : null;
-      reviewTestModeAvailable = data['reviewTestModeAvailable'] == true;
-      if ((!reviewTestMode || !reviewTestModeAvailable) &&
-          (reviewInfo?['fypPreview'] == true || data['source'] == 'fyp_private')) {
+      privateReviewContext = data['reviewEnvironment'] == 'private_demo' &&
+          reviewInfo?['privateExamplesAllowed'] == true;
+      exampleReviewsUnavailable = data['exampleReviewStatus'] == 'unavailable';
+      if (!privateReviewContext &&
+          (reviewInfo?['fypPreview'] == true ||
+              data['source'] == 'fyp_private')) {
         reviewInfo = {'user_reviews': <dynamic>[]};
       }
       if (reviewInfo == null) {
         reviewsFailed = true;
-      } else if (!reviewTestMode) {
+      } else {
         LocalReviewRatings.remember(reviewDestinationId, reviewInfo!);
       }
     } catch (_) {
@@ -256,7 +263,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     if (raw is List) {
       return raw
           .whereType<Map>()
-          .where((row) => reviewTestMode && reviewTestModeAvailable || ReviewContract.isGenuine(row))
+          .where((row) => privateReviewContext || ReviewContract.isGenuine(row))
           .map((review) => Map<String, dynamic>.from(review))
           .toList();
     }
@@ -266,7 +273,8 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         if (value is List) {
           return value
               .whereType<Map>()
-              .where((row) => reviewTestMode && reviewTestModeAvailable || ReviewContract.isGenuine(row))
+              .where((row) =>
+                  privateReviewContext || ReviewContract.isGenuine(row))
               .map((review) => Map<String, dynamic>.from(review))
               .toList();
         }
@@ -737,18 +745,6 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const AppSectionHeader(title: 'Reviews'),
-        if (reviewTestModeAvailable)
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Review testing'),
-            value: reviewTestMode,
-            onChanged: (value) {
-              setState(() => reviewTestMode = value);
-              loadDetails();
-            },
-          ),
-        if (reviewTestMode && reviewTestModeAvailable)
-          const Text('Fictional review test data. Ratings are separate from visitor reviews.'),
         if (reviewInfo?['rating'] != null)
           LocalReviewRatingBadge(summary: reviewInfo!),
         const SizedBox(height: AppSpacing.sm),
@@ -946,6 +942,14 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
           children: [
             if (loading) ...[
               const LinearProgressIndicator(),
+              const SizedBox(height: AppSpacing.sm),
+            ],
+            if (privateReviewContext) ...[
+              InkCard(
+                  child: Text(
+                'Private demonstration environment. Example reviews appear alongside genuine submissions; rating totals count genuine reviews only.'
+                '${exampleReviewsUnavailable ? ' Some example content is temporarily unavailable.' : ''}',
+              )),
               const SizedBox(height: AppSpacing.sm),
             ],
             _hero(),

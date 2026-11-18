@@ -41,11 +41,16 @@ def experience_types(item):
     evidence = item.get('verifiedDestinationEvidence') or {}
     if evidence.get('suppliesCategory'):
         text += ' ' + normalize_phrase(evidence.get('category'))
+    if not types and all(normalize_phrase(item.get(key)) in {
+            'nature', 'culture', 'shopping', 'attraction', 'tourist attraction', ''}
+            for key in ('category', 'type', 'subtype')):
+        text += ' ' + normalize_phrase(item.get('title') or item.get('name') or item.get('activityName'))
     for phrase, kind in (('botanical', 'botanical_garden'), ('botanic', 'botanical_garden'),
                         ('national park', 'national_park'), ('hiking', 'hiking'), ('beach', 'beach'),
                         ('wildlife', 'wildlife'), ('viewpoint', 'viewpoint'), ('museum', 'museum'),
                         ('heritage', 'heritage'), ('temple', 'religious_site'), ('street art', 'street_art'),
-                        ('hawker', 'dining'), ('restaurant', 'dining'), ('night market', 'night_market')):
+                        ('hawker', 'dining'), ('restaurant', 'dining'), ('night market', 'night_market'),
+                        ('shopping mall', 'shopping'), ('art gallery', 'art_gallery')):
         if phrase in text:
             types.add(kind)
     return sorted(types)

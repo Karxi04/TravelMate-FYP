@@ -1,0 +1,677 @@
+{
+  "version": 1,
+  "frozenBeforeComparison": true,
+  "note": "Synthetic metadata judgements, independent of production taxonomy. Coordinates are fixture pins. Labels are not live metadata or visitor reviews.",
+  "trip": {
+    "destinationArea": "Johor Bahru, Johor",
+    "startDate": "2030-12-12",
+    "endDate": "2030-12-13",
+    "budgetLimit": 700,
+    "travellerCount": 2,
+    "travelMode": "own_vehicle",
+    "accommodationChoice": "return_home",
+    "carRentalChoice": "not_required"
+  },
+  "candidates": [
+    {
+      "destinationId": "h2-hike1",
+      "title": "Hiking Trail One",
+      "category": "Nature",
+      "type": "Nature",
+      "type_ids": [],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.49,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 0,
+      "unitPrice": 0,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-hike2",
+      "title": "Hiking Trail Two",
+      "category": "Nature",
+      "type": "Nature",
+      "type_ids": [],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4904,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 0,
+      "unitPrice": 0,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-hike3",
+      "title": "Hiking Trail Three",
+      "category": "Nature",
+      "type": "Nature",
+      "type_ids": [],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4908,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 0,
+      "unitPrice": 0,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-garden",
+      "title": "Botanic Garden",
+      "category": "Nature",
+      "type": "Nature",
+      "type_ids": [],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4912,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 10,
+      "unitPrice": 10,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-beach",
+      "title": "Beach",
+      "category": "Nature",
+      "type": "Nature",
+      "type_ids": [],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4916,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 0,
+      "unitPrice": 0,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-wildlife",
+      "title": "Wildlife Park",
+      "category": "Nature",
+      "type": "Nature",
+      "type_ids": [
+        "wildlife_park"
+      ],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.492,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 30,
+      "unitPrice": 30,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Moderate",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-mall",
+      "title": "Shopping Mall",
+      "category": "Shopping",
+      "type": "Shopping",
+      "type_ids": [
+        "shopping_mall"
+      ],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4924,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 0,
+      "unitPrice": 0,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-market",
+      "title": "Craft Market",
+      "category": "Shopping",
+      "type": "Shopping",
+      "type_ids": [
+        "market"
+      ],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4928,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 0,
+      "unitPrice": 0,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-museum",
+      "title": "History Museum",
+      "category": "Culture",
+      "type": "Culture",
+      "type_ids": [
+        "museum"
+      ],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4932,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 20,
+      "unitPrice": 20,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Moderate",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-temple",
+      "title": "Heritage Temple",
+      "category": "Culture",
+      "type": "Culture",
+      "type_ids": [
+        "hindu_temple"
+      ],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4936,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 0,
+      "unitPrice": 0,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-gallery",
+      "title": "Art Gallery",
+      "category": "Culture",
+      "type": "Culture",
+      "type_ids": [
+        "art_gallery"
+      ],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.494,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 60,
+      "unitPrice": 60,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Premium",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-food",
+      "title": "Local Restaurant",
+      "category": "Food",
+      "type": "Food",
+      "type_ids": [
+        "restaurant"
+      ],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4944,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 25,
+      "unitPrice": 25,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Moderate",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-closed",
+      "title": "Closed Museum",
+      "category": "Culture",
+      "type": "Culture",
+      "type_ids": [
+        "museum"
+      ],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4948,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "Closed",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 10,
+      "unitPrice": 10,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-office",
+      "title": "Nature Service Centre",
+      "category": "Tourist attraction",
+      "type": "Tourist attraction",
+      "type_ids": [
+        "local_government_office"
+      ],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4952,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 0,
+      "unitPrice": 0,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-fuel",
+      "title": "Nature Fuel Stop",
+      "category": "Gas station",
+      "type": "Gas station",
+      "type_ids": [
+        "gas_station"
+      ],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4956,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 0,
+      "unitPrice": 0,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-warehouse",
+      "title": "Shopping Warehouse",
+      "category": "Warehouse",
+      "type": "Warehouse",
+      "type_ids": [
+        "warehouse"
+      ],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.496,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 0,
+      "unitPrice": 0,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    },
+    {
+      "destinationId": "h2-area",
+      "title": "Taman Residential Area",
+      "category": "Neighbourhood",
+      "type": "Neighbourhood",
+      "type_ids": [
+        "neighborhood"
+      ],
+      "address": "Johor Bahru, Johor, Malaysia",
+      "state": "Johor",
+      "city": "Johor Bahru",
+      "gps_coordinates": {
+        "latitude": 1.4964,
+        "longitude": 103.75
+      },
+      "rating": 4.4,
+      "reviews": 1000,
+      "ratingSource": "provider",
+      "openingHours": "08:00-21:00",
+      "recommendedDurationMinutes": 75,
+      "estimatedCost": 0,
+      "unitPrice": 0,
+      "pricingUnit": "per_group",
+      "costProvenance": "catalog_estimate",
+      "budgetLevel": "Budget",
+      "personality": [
+        "Planner"
+      ],
+      "pace": [
+        "Moderate"
+      ],
+      "syntheticEvaluation": true
+    }
+  ],
+  "relevanceJudgements": {
+    "nature": [
+      "h2-hike1",
+      "h2-hike2",
+      "h2-hike3",
+      "h2-garden",
+      "h2-beach",
+      "h2-wildlife"
+    ],
+    "shopping": [
+      "h2-mall",
+      "h2-market"
+    ],
+    "culture": [
+      "h2-museum",
+      "h2-temple",
+      "h2-gallery"
+    ],
+    "food": [
+      "h2-food"
+    ]
+  },
+  "profiles": {
+    "Nature": {
+      "interests": [
+        "Nature"
+      ]
+    },
+    "Shopping": {
+      "interests": [
+        "Shopping"
+      ]
+    },
+    "Nature + Shopping": {
+      "interests": [
+        "Nature",
+        "Shopping"
+      ]
+    },
+    "Culture + Heritage": {
+      "interests": [
+        "Culture",
+        "Heritage"
+      ]
+    },
+    "Food + Nature": {
+      "interests": [
+        "Food",
+        "Nature"
+      ]
+    },
+    "Culture + Shopping": {
+      "interests": [
+        "Culture",
+        "Shopping"
+      ]
+    },
+    "Three interests": {
+      "interests": [
+        "Nature",
+        "Shopping",
+        "Food"
+      ]
+    },
+    "Relaxed": {
+      "interests": [
+        "Nature",
+        "Shopping"
+      ],
+      "travelPace": "Relaxed"
+    },
+    "Packed": {
+      "interests": [
+        "Nature",
+        "Shopping"
+      ],
+      "travelPace": "Packed"
+    },
+    "Early riser": {
+      "interests": [
+        "Nature",
+        "Shopping"
+      ],
+      "sleepingType": "Early riser"
+    },
+    "Night owl": {
+      "interests": [
+        "Nature",
+        "Shopping"
+      ],
+      "sleepingType": "Night owl"
+    },
+    "Budget": {
+      "interests": [
+        "Nature",
+        "Shopping"
+      ],
+      "budgetRange": "Budget"
+    },
+    "Premium": {
+      "interests": [
+        "Nature",
+        "Shopping"
+      ],
+      "budgetRange": "Premium"
+    }
+  },
+  "budgetBoundary": 180,
+  "evaluationSetupNote": "Before baseline comparison, numeric budget raised from180 to700 because existing two-traveller subsistence estimates alone exceed180. Boundary180 retained separately. Candidate pool and independent relevance judgements unchanged."
+}

@@ -235,8 +235,9 @@ def test_local_demo_scope_returns_genuine_reviews_for_all_travellers(client, app
         assert 'no-store' in unified.headers['Cache-Control']
         combined = unified.json['result']
         assert (combined['rating'], combined['reviews']) == (4, 1)
-        assert 'sampleSummary' not in combined
-        assert [row['source'] for row in combined['user_reviews']] == ['travelmate']
+        assert combined['sampleSummary']['reviews'] == 3
+        assert [row['source'] for row in combined['user_reviews']] == ['travelmate'] + ['fyp_private'] * 3
+        assert all(row['synthetic'] for row in combined['user_reviews'][1:])
         samples = client.get(path + '?view=samples', headers=auth)
         assert samples.status_code == 404 and 'result' not in samples.json
         community = client.get(path + '?view=community', headers=auth).json
@@ -253,23 +254,37 @@ def test_local_demo_scope_returns_genuine_reviews_for_all_travellers(client, app
     ).json['result']
 
 
-def test_unified_reviews_do_not_access_private_preview(client, app, memory, planned_dataset, monkeypatch):
+def test_unified_reviews_preserve_genuine_data_when_private_preview_times_out(client, app, memory, planned_dataset, monkeypatch):
     app.config['LOCAL_FYP_SAMPLE_REVIEWS'] = True
     memory['feedback', 'community'] = {
         'id': 'community', 'travellerId': 'author', 'destinationId': 'penang_hill',
         'rating': 4, 'moderationStatus': 'approved', 'feedbackStatus': 'visible',
     }
 
-    def unavailable(*args):
+    def unavailable(*args, **kwargs):
         raise TimeoutError('fixture details')
 
     monkeypatch.setattr('modules.fr03_destination_search_information.routes._private_review_dataset', unavailable)
     auth = {**headers('other'), 'X-TravelMate-Review-Context': 'fyp-v1'}
     result = client.get('/api/fr3/destinations/local_penang_hill/ratings-reviews?view=unified', headers=auth)
     assert result.status_code == 200
-    assert 'samplesUnavailable' not in result.json['result']
+    assert result.json['exampleReviewStatus'] == 'unavailable'
     assert result.json['result']['reviews'] == 1
-    assert 'sampleSummary' not in result.json['result']
+    assert result.json['result']['sampleSummary'] == {'rating': None, 'reviews': 0}
+    assert [row['id'] for row in result.json['result']['user_reviews']] == ['community']
+
+
+def test_all_existing_manifest_identities_remain_available_in_one_private_list(client, app, memory, planned_dataset):
+    from services.fyp_reviews import PENANG_DESTINATION_IDS
+    plan, _, _ = planned_dataset
+    assert PENANG_DESTINATION_IDS == set(plan['documents'][DATASET_PATH]['destinations'])
+    app.config['LOCAL_FYP_SAMPLE_REVIEWS'] = True
+    for identity in sorted(PENANG_DESTINATION_IDS):
+        body = client.get(f'/api/fr3/destinations/{identity}/ratings-reviews?view=unified',
+                          headers={**headers('new-traveller'), 'X-TravelMate-Review-Context': 'fyp-v1'}).json
+        assert body['result']['sampleSummary']['reviews'] == 3
+        assert all(row['destinationId'] == identity and row['synthetic'] for row in body['result']['user_reviews'])
+        assert body['result']['rating'] is None
 
 
 @pytest.mark.parametrize('identity,state,average', [
@@ -291,7 +306,7 @@ def test_regional_reviews_use_exact_catalog_identity_and_stay_private(
     rows = regional_demo_reviews(identity)
     assert len(rows) == 3 and all(row['synthetic'] and row['destinationId'] == identity for row in rows)
     assert len({row['id'] for key in regional_demo_destinations()
-                for row in regional_demo_reviews(key)}) == 12
+                for row in regional_demo_reviews(key)}) == 21
 
     memory['feedback', 'genuine'] = {'id': 'genuine', 'travellerId': 'owner', 'destinationId': identity,
         'rating': 4, 'comment': 'Genuine review.', 'moderationStatus': 'reviewed', 'feedbackStatus': 'visible'}
@@ -308,8 +323,8 @@ def test_regional_reviews_use_exact_catalog_identity_and_stay_private(
     assert 'no-store' in data.headers['Cache-Control']
     assert (result['rating'], result['reviews']) == (4, 1)
     assert round(sum(row['rating'] for row in rows) / len(rows), 1) == average
-    assert 'sampleSummary' not in result
-    assert [row['source'] for row in result['user_reviews']] == ['travelmate']
+    assert result['sampleSummary'] == {'rating': average, 'reviews': 3}
+    assert [row['source'] for row in result['user_reviews']] == ['travelmate'] + ['fyp_private'] * 3
     assert client.get(path + '?view=samples', headers=auth).status_code == 404
     assert client.get(path + '?view=unified', headers=headers('ordinary-traveller')).json['result']['reviews'] == 1
     assert 'sampleSummary' not in client.get(path + '?view=unified', headers=headers('ordinary-traveller')).json['result']
