@@ -361,9 +361,16 @@ def export_report():
     params = _report_params()
     export_format = request.args.get("format", "pdf")
     if export_format == "csv":
+        layout = request.args.get("layout", "readable")
+        if layout not in {"readable", "legacy"}:
+            return Response("Unsupported CSV layout", status=400)
+        params["layout"] = layout
         response = call_api("GET", "/api/fr13/reports/export.csv", params=params)
         mimetype = "text/csv"
-        filename = "TravelMate_System_Report.csv"
+        filename = (f"TravelMate_Admin_{params['reportType']}_Report.csv"
+                    if layout == "readable" and params["reportType"] in {
+                        "system_summary", "users", "packages", "campaigns", "feedback", "bookings", "payments"
+                    } else "TravelMate_System_Report.csv")
     else:
         response = call_api("GET", "/api/fr13/reports/export", params=params)
         mimetype = "application/pdf"
