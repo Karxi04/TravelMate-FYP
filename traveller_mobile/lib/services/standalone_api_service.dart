@@ -1,3 +1,4 @@
+import 'package:crypto/crypto.dart';
 import '../core/utils/malaysia_weather.dart';
 import '../core/utils/itinerary_identity.dart';
 import 'dart:convert';
@@ -333,7 +334,18 @@ class StandaloneApiService {
     if (path == '/api/fr5/personalised-trips/generate') {
       return _generatePersonalisedTrip(payload);
     }
-    if (path == '/api/fr5/itineraries') return _createTrip(payload);
+    if (path == '/api/fr5/itineraries') {
+      final activities = (payload['activities'] as List? ?? []).whereType<Map>().map((row) =>
+        Map<String, dynamic>.from(row)..removeWhere((key, _) =>
+          ['intentionalRepeat', 'identityConsolidation', 'canonicalAttractionId', 'supportingAccess'].contains(key))).toList();
+      for (var index = 0; index < activities.length; index++) {
+        if (activities.take(index).any((row) => sameAttraction(row, activities[index]))) {
+          throw Exception('Add repeat visits to the saved trip and confirm each revisit.');
+        }
+      }
+      final draft = {...payload, 'activities': activities}..remove('attractionIdentityPolicy');
+      return _createTrip(draft);
+    }
     if (path.startsWith('/api/fr5/itineraries/') &&
         path.endsWith('/activities/rearrange')) {
       final id = path.split('/')[4];
@@ -342,7 +354,7 @@ class StandaloneApiService {
     if (path.startsWith('/api/fr5/itineraries/') &&
         path.endsWith('/activities')) {
       final id = path.split('/')[4];
-      return _addActivity(id, payload);
+      return _serializeTripEdit(() => _addActivity(id, payload));
     }
     if (path.startsWith('/api/fr5/itineraries/') &&
         path.endsWith('/hotel-selection/remove')) {
@@ -360,6 +372,10 @@ class StandaloneApiService {
     if (path.startsWith('/api/fr5/itineraries/') &&
         path.endsWith('/flight-adjustment/apply')) {
       return _flightAdjustmentApply(path.split('/')[4], payload);
+    }
+    if (path.startsWith('/api/fr5/itineraries/') && path.contains('/budget-replan/')) {
+      return _serializeTripEdit(() => _budgetReplan(path.split('/')[4], payload,
+        apply: path.endsWith('/apply')));
     }
     if (path.startsWith('/api/fr5/itineraries/') &&
         path.endsWith('/lower-cost-alternatives')) {
@@ -3566,6 +3582,26 @@ class StandaloneApiService {
     return {'ok': true, 'itinerary': trip, 'budget': trip['budgetEstimate']};
   }
 
+  static final Map<String, Future<void>> _tripEdits = {};
+
+  Future<T> _serializeTripEdit<T>(Future<T> Function() edit) async {
+    final owner = _uid;
+    final pending = _tripEdits[owner] ?? Future<void>.value();
+    final result = pending.then((_) {
+      if (_uid != owner) throw StateError('Account changed. Reopen your trip.');
+      return edit();
+    });
+    final completed = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _tripEdits[owner] = completed;
+    try {
+      return await result;
+    } finally {
+      if (identical(_tripEdits[owner], completed)) _tripEdits.remove(owner);
+    }
+  }
+
+  String _tripActionToken(Object data) => sha256.convert(utf8.encode(jsonEncode(data))).toString();
+
   Future<dynamic> _addActivity(String id, Map<String, dynamic> payload) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
@@ -3576,17 +3612,76 @@ class StandaloneApiService {
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
+    final day = int.tryParse('${payload['dayNo'] ?? 1}');
+    final cost = double.tryParse('${payload['estimatedCost'] ?? 0}');
+    final requestId = payload['clientRequestId'];
+    if (requestId != null && (requestId is! String || !RegExp(r'^[A-Za-z0-9_-]{8,128}$').hasMatch(requestId))) {
+      throw Exception('Invalid activity request identifier.');
+    }
+    if (day == null || day < 1 || day > _tripDays(trip) || cost == null || !cost.isFinite || cost < 0) {
+      throw Exception('Choose a valid trip day and activity amount.');
+    }
+    if (['completed', 'cancelled'].contains(trip['status'])) throw Exception('This itinerary no longer accepts new visits.');
     final activity = <String, dynamic>{
-      ...payload,
-      'activityId': payload['activityId'] ??
-          '${id}_a${DateTime.now().microsecondsSinceEpoch}',
-      'sequenceNo': activities.length + 1,
-      'dayNo': payload['dayNo'] ?? 1,
+      for (final key in ['activityName','title','destinationId','address','gps_coordinates','type','category',
+        'description','openingHours','indoor','recommendedDurationMinutes','providerDurationMinutes',
+        'durationSource','timeSlot','pricingUnit','unitPrice','costCategory','costProvenance',
+        'pricingEvidence','priceSourceUrl','priceVerifiedAt','currency','overlapsAllowance','thumbnail','image',
+        'imageUrl','mainPhoto','photos','images','photoGallery'])
+        if (payload[key] != null) key: payload[key],
+      'estimatedCost': cost, 'dayNo': day,
     };
+    final receipts = Map<String, dynamic>.from(trip['activityAddReceipts'] as Map? ?? {});
+    final requestHash = _tripActionToken(activity);
+    if (requestId != null && receipts.containsKey(requestId)) {
+      if (receipts[requestId]['payloadHash'] != requestHash) {
+        throw Exception('This activity request was already used for a different visit.');
+      }
+      return {'ok': true, 'alreadyAdded': true, 'itinerary': trip};
+    }
+    final candidates = [...activities, ...(trip['unscheduledSuggestions'] as List? ?? [])
+      .whereType<Map>().map(Map<String, dynamic>.from)];
+    final existing = candidates.where((row) => sameAttraction(row, activity)).firstOrNull;
+    final confirmation = payload['revisitConfirmation'];
+    if (existing != null) {
+      final token = _tripActionToken(['add-revisit', _uid, id, trip, requestHash, requestId]);
+      if (requestId == null || confirmation != token) {
+        throw ApiException('This attraction is already included in your itinerary.', 409, {
+          'code': 'revisit_confirmation_required', 'confirmationToken': token,
+          'existingDay': existing['dayNo'], 'activityName': existing['activityName'],
+        });
+      }
+      activity['intentionalRepeat'] = true;
+      activity['canonicalAttractionId'] = existing['canonicalAttractionId'] ?? existing['destinationId'];
+    } else if (confirmation != null) {
+      throw Exception('This repeat-visit confirmation is out of date.');
+    }
+    if (activities.length >= 20) throw Exception('Itinerary destination limit reached.');
+    final ids = candidates.map((row) => row['activityId']).toSet();
+    var sequence = int.tryParse('${trip['nextActivitySeq']}') ?? 1;
+    while (ids.contains('A$sequence')) { sequence++; }
+    activity['activityId'] = 'A$sequence';
+    activity['sequenceNo'] = activities.length + 1;
+    trip['nextActivitySeq'] = sequence + 1;
     activities.add(activity);
     trip['activities'] = activities;
     final recalculated = planConstraintAwareItinerary(trip,
         preserveOrder: true, respectDayAssignments: true);
+    final scheduled = (recalculated['activities'] as List).whereType<Map>();
+    if (existing != null && !scheduled.any((row) => row['activityId'] == activity['activityId'] && row['dayNo'] == day)) {
+      throw Exception('Another visit cannot fit on the selected day.');
+    }
+    for (final old in activities.where(_protectedVisit)) {
+      final after = scheduled.where((row) => row['activityId'] == old['activityId']).firstOrNull;
+      if (after == null || ['dayNo','scheduledStartTime','scheduledEndTime'].any((key) => old[key] != after[key])) {
+        throw Exception('Adding this visit would change a protected stop.');
+      }
+    }
+    if (requestId is String) {
+      receipts[requestId] = {'payloadHash': requestHash, 'activityId': activity['activityId']};
+      if (receipts.length > 80) receipts.remove(receipts.keys.first);
+      recalculated['activityAddReceipts'] = receipts;
+    }
     trip
       ..clear()
       ..addAll(recalculated);
@@ -3646,7 +3741,17 @@ class StandaloneApiService {
     final index =
         activities.indexWhere((item) => '${item['activityId']}' == activityId);
     if (index < 0) throw Exception('Activity not found.');
-    activities[index] = {...activities[index], ...payload};
+    final original = activities[index];
+    if (_protectedVisit(original) || ['activityId','destinationId','canonicalAttractionId',
+      'place_id','data_id','data_cid','intentionalRepeat','identityConsolidation','supportingAccess',
+      'independentSubAttraction','ticketProductId'].any((key) => payload.containsKey(key) && payload[key] != original[key])) {
+      throw Exception('Use Add Places to change the attraction or confirm a repeat visit.');
+    }
+    final updated = {...original, ...payload};
+    if (activities.any((row) => !identical(row, original) && sameAttraction(updated, row) && !sameAttraction(original, row))) {
+      throw Exception('Use Add Places to confirm a repeat visit.');
+    }
+    activities[index] = updated;
     trip['activities'] = activities;
     final recalculated = planConstraintAwareItinerary(trip,
         preserveOrder: true, respectDayAssignments: true);
@@ -3677,7 +3782,7 @@ class StandaloneApiService {
         .toList();
     final ids = (payload['orderedActivityIds'] as List? ?? [])
         .map((e) => e.toString())
-        .toList();
+        .toSet();
     final ordered = <Map<String, dynamic>>[];
     for (final idValue in ids) {
       final found = current.where((e) => e['activityId'].toString() == idValue);
@@ -3764,7 +3869,8 @@ class StandaloneApiService {
         throw Exception(
             'No destination candidates are available for this trip.');
       }
-      activities = consolidateGeneratedCandidates(recs)
+      trip['attractionIdentityPolicy'] = attractionIdentityPolicy;
+      activities = consolidateGeneratedCandidates(recs, automatic: true)
           .take(20)
           .map((item) => {
                 'activityId':
@@ -3963,19 +4069,15 @@ class StandaloneApiService {
   Map<String, dynamic> _calculateBudget(Map<String, dynamic> trip) {
     final activities =
         (trip['activities'] as List? ?? []).whereType<Map>().toList();
-    final travellers = max(1, _num(trip['travellerCount']).round());
+    final travellers = max(1, _num(trip['travellerCount'] ?? trip['numberOfTravellers']).round());
     var activityCost = 0.0;
     var unknownActivityCount = 0;
     for (final activity in activities) {
-      final unit = '${activity['pricingUnit'] ?? ''}';
-      final amount = double.tryParse('${activity['unitPrice'] ?? activity['estimatedCost']}');
-      final currency = '${activity['currency'] ?? 'MYR'}'.toUpperCase();
-      final evidencedZero = amount == 0 && ['per_person','per_group','already_aggregated'].contains(unit) &&
-          ['verified_ticket','catalog_estimate','user_entered'].contains(activity['costProvenance']);
-      if (currency != 'MYR' || amount == null || !amount.isFinite || amount < 0 || (amount == 0 && !evidencedZero)) {
+      final amount = plannedActivityAmount(activity, travellers);
+      if (amount == null) {
         unknownActivityCount++;
       } else {
-        activityCost += amount * (unit == 'per_person' ? travellers : 1);
+        activityCost += amount;
       }
     }
     final selectedFlight = trip['selectedFlight'] is Map
@@ -4074,123 +4176,111 @@ class StandaloneApiService {
     };
   }
 
+  bool _protectedVisit(Map row) =>
+      ['completedAt','paidAt','paymentId','paymentRecordId','bookingId','bookingReference',
+       'hotelBookingId','supplierArrangementId','checkoutOrderId','paid','completed','locked',
+       'packageIncluded','required'].any((key) => row[key] != null && row[key] != '' && row[key] != false) ||
+      ['status','paymentStatus','bookingStatus'].any((key) =>
+        ['paid','succeeded','completed','booked','confirmed','settled','fulfilled']
+          .contains(row[key].toString().toLowerCase()));
+
+  bool _canReplan(Map<String, dynamic> trip) =>
+      !_isPackageTrip(trip) && !['completed','cancelled','generating'].contains(trip['status']);
+
+  List<Map> _removableVisits(Map<String, dynamic> trip) {
+    final rows = (trip['activities'] as List? ?? []).whereType<Map>().toList();
+    final activityExpenses = (trip['manualExpenses'] as List? ?? []).whereType<Map>()
+        .any((row) => row['type'] == 'actual' && row['category'] == 'Activities');
+    final linkedPackage = (trip['purchasedPackages'] as List? ?? []).isNotEmpty;
+    if (['paidTotal', 'paymentId', 'paymentRecordId', 'checkoutOrderId'].any(
+            (key) => trip[key] != null && trip[key] != '' && trip[key] != 0) ||
+        linkedPackage || activityExpenses || rows.any(_protectedVisit)) {
+      return [];
+    }
+    return rows.where((row) => row['activityId'] != null && row['optional'] != false).toList();
+  }
+
   Future<dynamic> _lowerCostAlternatives(String id) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
-    if (_isPackageTrip(trip)) {
-      throw Exception('Purchased package trips cannot be modified or recalculated.');
-    }
+    if (_isPackageTrip(trip)) throw Exception('Purchased package trips cannot be modified or recalculated.');
     final budget = _calculateBudget(trip);
-    final over = _num(budget['overBy']);
-    final items = <Map<String, dynamic>>[
-      {
-        'alternativeType': 'Accommodation',
-        'title': 'Choose a lower-cost room option',
-        'estimatedSavings':
-            max(40, min(180, _num(trip['hotelCost']) * .25)).round(),
-        'data':
-            'Compare lower-priced hotel offers or reduce the room category while keeping the same destination.',
+    return {'ok': true, 'budget': budget, 'alternatives': [],
+      'activityAdvice': 'Comparable verified replacements require a backend connection.',
+      'activityAlternativeStatus': 'priced_replacement_unavailable',
+      if (_canReplan(trip)) 'budgetReplanOptions': {
+        'allowances': {'foodCost': budget['food'], 'transportCost': budget['transport']},
+        'visitRemovalLimited': (trip['activities'] as List? ?? []).isNotEmpty && _removableVisits(trip).isEmpty,
+        'optionalVisits': [for (final row in _removableVisits(trip))
+          {'activityId': row['activityId'], 'name': row['activityName'], 'dayNo': row['dayNo'],
+            'priceKnown': row['pricingUnit'] != null && row['costProvenance'] != null}],
       },
-      {
-        'alternativeType': 'Transport',
-        'title': 'Group nearby activities',
-        'estimatedSavings': 35,
-        'data':
-            'Arrange nearby attractions on the same day and use public transport for short city journeys.',
-      },
-      {
-        'alternativeType': 'Activities',
-        'title': 'Replace one higher-cost activity',
-        'estimatedSavings': 45,
-        'data':
-            'Swap one paid attraction for a heritage walk, public beach, park or other lower-cost destination.',
-      },
-      {
-        'alternativeType': 'Food',
-        'title': 'Use a local-food daily budget',
-        'estimatedSavings': 30,
-        'data':
-            'Plan one or two hawker meals per day while keeping one higher-value dining experience.',
-      },
-    ];
-    return {'ok': true, 'overBy': over, 'alternatives': items};
+    };
   }
 
-  Future<dynamic> _applyLowerCostAlternative(
-      String id, Map<String, dynamic> payload) async {
+  Future<dynamic> _applyLowerCostAlternative(String id, Map<String, dynamic> payload) async {
+    throw Exception('Comparable verified replacements require a backend connection. Use a budget preview for planning changes.');
+  }
+
+  Future<dynamic> _budgetReplan(String id, Map<String, dynamic> payload, {required bool apply}) async {
+    final owner = _uid;
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
-    if (_isPackageTrip(trip)) {
-      throw Exception('Purchased package trips cannot be modified or recalculated.');
+    if (!_canReplan(trip)) throw Exception('This itinerary cannot be replanned.');
+    final changes = payload['changes'];
+    if (changes is! Map || changes.isEmpty ||
+        changes.keys.any((key) => !['foodCost','transportCost','removeActivityIds'].contains(key))) {
+      throw Exception('Choose allowance changes or optional visits to remove.');
     }
-    final alternative = Map<String, dynamic>.from(payload['alternative'] is Map
-        ? payload['alternative'] as Map
-        : payload);
-    final kind = (alternative['alternativeType'] ?? alternative['type'] ?? '')
-        .toString()
-        .toLowerCase();
-    final rawData = alternative['data'];
-    final data = rawData is Map
-        ? Map<String, dynamic>.from(rawData)
-        : <String, dynamic>{};
-    final savings =
-        _num(alternative['estimatedSavings'] ?? alternative['saving']);
-
-    if (kind == 'flight' && data.isNotEmpty) {
-      trip['selectedFlight'] = data;
-      trip['flightCost'] = _num(data['price']);
-    } else if (kind == 'hotel' || kind == 'accommodation') {
-      if (data.isNotEmpty) {
-        if (data['amountSource'] != 'validated_offer' ||
-            (data['hotelCurrency'] ?? data['currency'] ?? '')
-                    .toString()
-                    .toUpperCase() !=
-                'MYR' ||
-            (data['hotelBookingId'] ?? '').toString().isEmpty ||
-            (data['hotelBookingId'] ?? '').toString() !=
-                (trip['hotelBookingId'] ?? '').toString()) {
-          throw Exception('Choose a validated MYR hotel booking instead.');
-        }
-        trip['selectedHotel'] = data;
-        trip['hotelCost'] = _num(data['price']);
-      } else {
-        trip['hotelCost'] = max(0, _num(trip['hotelCost']) - savings);
+    final before = _calculateBudget(trip);
+    var planned = {...trip};
+    var edited = false;
+    for (final field in {'foodCost':'food','transportCost':'transport'}.entries) {
+      if (!changes.containsKey(field.key)) continue;
+      final amount = changes[field.key];
+      if (amount is! num || !amount.isFinite || amount < 0 || amount > 1000000 || _money(amount) != amount) {
+        throw Exception('Enter a non-negative MYR allowance with at most two decimal places.');
       }
-    } else if (kind.contains('car') && data.isNotEmpty) {
-      trip['selectedCarRental'] = data;
-      trip['carRentalCost'] = _num(data['totalPrice'] ?? data['price']);
-    } else if (kind == 'transport' || kind == 'schedule') {
-      trip['transportCost'] =
-          max(0, _num(_calculateBudget(trip)['transport']) - savings);
-    } else if (kind == 'food') {
-      trip['foodCost'] = max(0, _num(_calculateBudget(trip)['food']) - savings);
-    } else if (kind == 'activity' || kind == 'activities') {
-      final activities = (trip['activities'] as List? ?? [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
-      if (activities.isNotEmpty) {
-        activities.sort((a, b) =>
-            _num(b['estimatedCost']).compareTo(_num(a['estimatedCost'])));
-        activities.first['estimatedCost'] =
-            max(0, _num(activities.first['estimatedCost']) - savings);
-        activities.first['budgetNote'] = 'Lower-cost alternative applied';
-        trip['activities'] = activities;
-      }
-    } else {
-      throw Exception('Unsupported lower-cost alternative.');
+      if (amount != before[field.value]) { planned[field.key] = amount; edited = true; }
     }
-
-    trip['lastAppliedLowerCostAlternative'] = alternative;
-    trip['budgetEstimate'] = _calculateBudget(trip);
-    trip['updatedAt'] = _now();
-    await _replaceTrip(trip);
-    return {
-      'ok': true,
-      'itinerary': trip,
-      'budget': trip['budgetEstimate'],
-      'applied': alternative,
-    };
+    final rawIds = changes['removeActivityIds'] ?? [];
+    if (rawIds is! List || rawIds.length > 20 || rawIds.any((value) => value is! String)) {
+      throw Exception('Choose optional visits from this trip.');
+    }
+    final ids = rawIds.toSet();
+    if (ids.isNotEmpty) {
+      final allowed = _removableVisits(trip).map((row) => row['activityId']).toSet();
+      if (!allowed.containsAll(ids)) throw Exception('Only optional unpaid and incomplete visits can be removed.');
+      final kept = (trip['activities'] as List).whereType<Map>().where((row) => !ids.contains(row['activityId'])).toList();
+      planned = planConstraintAwareItinerary({...planned, 'activities': kept, 'unscheduledSuggestions': []},
+        preserveOrder: true, respectDayAssignments: true);
+      final scheduled = (planned['activities'] as List).whereType<Map>().map((row) => row['activityId']).toSet();
+      if (scheduled.length != kept.length || !scheduled.containsAll(kept.map((row) => row['activityId']))) {
+        throw Exception('The remaining visits cannot fit safely on their assigned days.');
+      }
+      final suggestions = (trip['unscheduledSuggestions'] as List? ?? []).whereType<Map>()
+          .where((row) => !ids.contains(row['activityId'])).toList();
+      planned['unscheduledSuggestions'] = suggestions;
+      planned['unscheduledActivityCount'] = suggestions.length;
+      edited = true;
+    }
+    if (!edited) throw Exception('Choose a change before previewing the budget.');
+    final budget = _calculateBudget(planned);
+    final token = _tripActionToken(['budget-replan', owner, id, trip, changes]);
+    if (!apply) {
+      return {'ok': true, 'before': before, 'budget': budget, 'previewToken': token,
+        'estimatedReduction': _money(_num(before['total']) - _num(budget['total'])),
+        'retainedEstimate': _money(_num(budget['total']) - _num(budget['food']) - _num(budget['transport'])),
+        'dailySchedule': planned['dailySchedule'] ?? [], 'removedActivityIds': ids.toList()};
+    }
+    if (payload['confirmed'] != true || payload['previewToken'] != token ||
+        _uid != owner || _tripActionToken(await _tripById(id) ?? {}) != _tripActionToken(trip)) {
+      throw Exception('Review and confirm a current budget preview.');
+    }
+    planned['budgetEstimate'] = budget;
+    planned['updatedAt'] = _now();
+    await _replaceTrip(planned);
+    return {'ok': true, 'budget': budget, 'itinerary': planned};
   }
 
   // ------------------------------------------------------------------
@@ -6032,7 +6122,7 @@ class StandaloneApiService {
       }, currentUserId:_uid, limit:150);
     candidates
       ..clear()
-      ..addAll(ranked);
+      ..addAll(consolidateGeneratedCandidates(ranked, automatic: true));
     if (candidates.length < days) return null;
     final relaxed = RecommendationTaxonomy.normalizePace(state['pace'] ?? prefs['travelPace']) == 'relaxed';
     final requiredCount = min(days * (relaxed ? 2 : 3), candidates.length);
@@ -6061,6 +6151,9 @@ class StandaloneApiService {
       final daySlot = activities.where((a)=>a['dayNo']==dayNo).length;
       activities.add({
         'activityId':'chat_activity_$i',
+        for (final key in ['canonicalAttractionId', 'identityConsolidation', 'supportingAccess',
+          'independentSubAttraction', 'ticketProductId', 'place_id', 'data_id', 'data_cid'])
+          if (d[key] != null) key: d[key],
         'activityName': d['title'],
         if (d['gps_coordinates'] != null) 'gps_coordinates':d['gps_coordinates'],
         for (final key in ['score','contentScore','collaborativeScore','popularityScore','matchedInterests','recommendationReason']) if(d[key]!=null) key:d[key],
@@ -6089,6 +6182,7 @@ class StandaloneApiService {
     final start = DateTime.parse(state['startDate']);
     final end = DateTime.parse(state['endDate']);
     final plan = <String,dynamic>{
+      'attractionIdentityPolicy': attractionIdentityPolicy,
       'title': '$days-Day $destination Trip',
       'destinationArea': destination,
       'startDate': _date(start),
@@ -6150,13 +6244,42 @@ class StandaloneApiService {
       if(index<0) throw Exception('Chat session not found.');
       final state=Map<String,dynamic>.from(sessions[index]['planningState'] as Map? ?? {});
       if(payload['confirmed']!=true || state['dateClarification']!=null || state['activePlan'] is! Map || jsonEncode(state['activePlan'])!=jsonEncode(plan)) throw Exception('Confirm the current draft before saving. This draft may be out of date.');
-      final result=await _createTrip(plan,requestedId:'chat_${sessions[index]['id']}_${plan['draftId']}');
+      final result=await _createTrip(_deduplicateChatPlan(plan, trustedDraft: true),requestedId:'chat_${sessions[index]['id']}_${plan['draftId']}');
       state['savedPlans']={...(state['savedPlans'] as Map? ?? {}),plan['draftId']:result['id']};
       sessions[index]['planningState']=state;
       await _writeList('chat_sessions',sessions);
       return result;
     }
-    return _createTrip(plan);
+    return _createTrip(_deduplicateChatPlan(plan));
+  }
+
+  Map<String, dynamic> _deduplicateChatPlan(Map<String, dynamic> plan, {bool trustedDraft = false}) {
+    const resolvedFields = {
+      'canonicalAttractionId', 'attractionFamilyId', 'parentDestinationId',
+      'locationRole', 'independentSubAttraction', 'supportingAccess',
+      'identityConsolidation', 'ticketProductId', 'ticketProduct',
+    };
+    final candidates = [
+      ...(plan['activities'] as List? ?? []),
+      if (trustedDraft) ...(plan['unscheduledSuggestions'] as List? ?? []),
+    ].whereType<Map>().map((row) {
+      final copy = Map<String, dynamic>.from(row);
+      if (!trustedDraft) copy.removeWhere((key, _) => resolvedFields.contains(key));
+      return copy;
+    }).toList();
+    final activities = consolidateGeneratedCandidates(candidates, automatic: true);
+    final used = <String>{};
+    for (var index = 0; index < activities.length; index++) {
+      final row = activities[index];
+      var id = (row['activityId'] ?? 'A'+(index+1).toString()).toString();
+      while (!used.add(id)) { id += '_visit'; }
+      row['activityId'] = id;
+    }
+    final planned = planConstraintAwareItinerary({
+      ...plan, 'attractionIdentityPolicy': attractionIdentityPolicy,
+      'activities': activities, 'unscheduledSuggestions': [],
+    }, preserveOrder: true, respectDayAssignments: true);
+    return {...planned, 'budgetEstimate': _calculateBudget(planned)};
   }
 
   String _assistantReply(

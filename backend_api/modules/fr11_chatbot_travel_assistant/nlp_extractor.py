@@ -841,8 +841,8 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
     if not matching:
         return None, 'constraint_conflict'
 
-    from services.itinerary_identity import consolidate_generated_candidates, IDENTITY_FIELDS
-    matching = consolidate_generated_candidates(matching)
+    from services.itinerary_identity import consolidate_generated_candidates, IDENTITY_FIELDS, POLICY
+    matching = consolidate_generated_candidates(matching, automatic=True)
     from sequence_contract.domain_functions import (applyContentBasedFiltering, applyCollaborativeFiltering,
         calculateRecommendationScore, rankRecommendations, recalculateItinerary, calculateBudget)
     from services.recommendation_taxonomy import normalize_pace
@@ -915,6 +915,7 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
         e_date = end_date
 
     plan = {
+        'attractionIdentityPolicy': POLICY,
         'title': f"{days}-Day {destination_area} Itinerary Plan",
         'destinationArea': destination_area,
         'destinationState': destination_state or '',

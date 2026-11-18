@@ -16,12 +16,14 @@ from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
 from services.budget_aware_generation import generate_with_budget_selection, qualify_selection_budget
 from services.itinerary_write_contract import validate_trip_write
+from services.itinerary_identity import POLICY, same_attraction, consolidate_generated_candidates
+from services.trip_budget_replan import budget_replan_options, preview_budget_replan, protected_activity
 from services.itinerary_history import history_patch, history_metadata, HistoryConflict
 from sequence_contract.validators import validateItineraryInput, validateItineraryForSaving, validateSelectedDestination
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord, deleteRecord
 from sequence_contract.domain_functions import (
     createItinerary, addActivity, removeActivity, rearrangeActivity, updateActivity,
-    checkDestinationExists, checkDestinationLimit, calculateBudget, compareBudget,
+    checkDestinationLimit, calculateBudget, compareBudget,
     generateItinerary, groupNearbyActivities,
     checkOpeningHoursAndTravelTime, adjustWeatherSensitiveActivities, recalculateItinerary,
     _alternative_savings, _activity_duration, _activity_opening, _distance_km,
@@ -416,9 +418,9 @@ def _generate_itinerary_data(current, payload, snapshot=None):
     apply_selection = False
     selection_skip_reason = 'existing_activities_preserved'
     if not working.get('activities'):
-        from services.itinerary_identity import consolidate_generated_candidates
         candidates, generation_source = _destination_candidates(working, snapshot)
-        candidates = consolidate_generated_candidates(candidates)
+        candidates = consolidate_generated_candidates(candidates, automatic=True)
+        working['attractionIdentityPolicy'] = POLICY
         if not candidates:
             if snapshot:
                 raise RuntimeError('Linked recommendation snapshot has no destination-relevant results')
@@ -582,6 +584,10 @@ def create_itinerary_route():
         return jsonify({'ok': False, 'error': str(error)}), 400
     if not validateItineraryInput(payload) or not str(payload.get('destinationArea') or '').strip():
         return jsonify({'ok': False, 'error': 'Use a title, valid date range, positive traveller count and non-negative budget'}), 400
+    activities = payload.get('activities', [])
+    if any(same_attraction(row, earlier) for index, row in enumerate(activities)
+           for earlier in activities[:index]):
+        return jsonify(ok=False, error='Add repeat visits to the saved trip and confirm each revisit.'), 409
     itinerary = createItinerary(payload, g.uid)
     budget = calculateBudget(itinerary)
     itinerary['budgetEstimate'] = budget
@@ -706,19 +712,32 @@ def add_activity_route(iid):
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     if _is_package_trip(current):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
+    if str(current.get('status') or '').lower() in {'completed', 'cancelled'}:
+        return jsonify(ok=False, error='This itinerary no longer accepts new visits.'), 409
+    if not isinstance(payload, dict):
+        return jsonify(ok=False, error='Choose a valid activity.'), 400
     if payload.get('destinationId') and not validateSelectedDestination(payload.get('destinationId')):
         return jsonify({'ok': False, 'error': 'Invalid destination'}), 400
-    if payload.get('destinationId') and checkDestinationExists(current, payload.get('destinationId')):
-        return jsonify({'ok': False, 'error': 'Destination already exists in itinerary'}), 409
-    if not checkDestinationLimit(current):
-        return jsonify({'ok': False, 'error': 'Itinerary destination limit reached'}), 409
+    request_id = payload.get('clientRequestId')
+    if request_id is not None and (not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{8,128}', request_id)):
+        return jsonify(ok=False, error='Invalid activity request identifier.'), 400
+    try:
+        day = int(payload.get('dayNo', 1) or 1)
+        cost = float(payload.get('estimatedCost', 0) or 0)
+        duration = int(payload.get('recommendedDurationMinutes') or 0)
+        if (not 1 <= day <= _trip_days(current) or not 0 <= cost < float('inf')
+                or duration < 0):
+            raise ValueError()
+    except (TypeError, ValueError, OverflowError):
+        return jsonify(ok=False, error='Choose a valid trip day and activity amount.'), 400
+
     activity = {
         'activityName': payload.get('activityName') or payload.get('title') or 'New activity',
         'destinationId': payload.get('destinationId', ''),
         'address': payload.get('address', ''),
-        'dayNo': int(payload.get('dayNo', 1) or 1),
+        'dayNo': day,
         'timeSlot': payload.get('timeSlot', ''),
-        'estimatedCost': float(payload.get('estimatedCost', 0) or 0),
+        'estimatedCost': cost,
         **pricing_snapshot(payload),
         'gps_coordinates': payload.get('gps_coordinates') or payload.get('gpsCoordinates') or {},
         'type': payload.get('type') or payload.get('category') or '',
@@ -732,6 +751,36 @@ def add_activity_route(iid):
         'durationSource': payload.get('durationSource') or '',
         **_place_image_snapshot(payload),
     }
+    payload_hash = _alternative_state(activity)
+    receipts = current.get('activityAddReceipts') or {}
+    if request_id and request_id in receipts:
+        receipt = receipts[request_id]
+        if receipt['payloadHash'] != payload_hash:
+            return jsonify(ok=False, error='This activity request was already used for a different visit.'), 409
+        return jsonify(ok=True, itinerary=current, activities=current.get('activities', []),
+                       budget=current.get('budgetEstimate'), alreadyAdded=True)
+
+    existing = next((row for row in [*current.get('activities', []),
+                   *(current.get('unscheduledSuggestions') or [])] if same_attraction(row, activity)), None)
+    confirmation = payload.get('revisitConfirmation')
+    if existing:
+        # Bind the confirmation to this owner, trip revision, action, exact payload and request ID.
+        token = _alternative_state({'action': 'add-revisit', 'owner': g.uid, 'trip': iid,
+            'state': _alternative_state(current), 'payload': payload_hash, 'request': request_id})
+        if not request_id or confirmation != token:
+            return jsonify(ok=False, code='revisit_confirmation_required',
+                           error='This attraction is already included in your itinerary.',
+                           confirmationToken=token, existingDay=existing.get('dayNo'),
+                           activityName=existing.get('activityName') or activity['activityName']), 409
+        activity['intentionalRepeat'] = True
+        identity = existing.get('canonicalAttractionId') or existing.get('destinationId')
+        if identity:
+            activity['canonicalAttractionId'] = identity
+    elif confirmation is not None:
+        return jsonify(ok=False, error='This repeat-visit confirmation is out of date.'), 409
+    if not checkDestinationLimit(current):
+        return jsonify(ok=False, error='Itinerary destination limit reached'), 409
+
     updated = addActivity(current, activity)
     recalculated = recalculateItinerary(
         {**current, **updated},
@@ -746,9 +795,25 @@ def add_activity_route(iid):
                     'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq')
         if key in recalculated
     }
+    scheduled = {row.get('activityId'): row for row in patch['activities']}
+    for old in current.get('activities') or []:
+        if protected_activity(old):
+            after = scheduled.get(old.get('activityId'))
+            if not after or any(after.get(key) != old.get(key)
+                                for key in ('dayNo', 'scheduledStartTime', 'scheduledEndTime')):
+                return jsonify(ok=False, error='Adding this visit would change a protected stop.'), 409
+    new_id = updated['activities'][-1]['activityId']
+    if existing and (new_id not in scheduled or scheduled[new_id].get('dayNo') != day):
+        return jsonify(ok=False, error='Another visit cannot fit on the selected day.'), 409
+    if request_id:
+        patch['activityAddReceipts'] = dict(list({**receipts, request_id: {
+            'payloadHash': payload_hash, 'activityId': new_id}}.items())[-80:])
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
-    updateRecord('itineraries', iid, patch)
-    return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
+    saved = updateRecord('itineraries', iid, patch, expected=current)
+    if saved is None:
+        return jsonify(ok=False, error='Itinerary not found'), 404
+    return jsonify(ok=True, itinerary=saved, activities=saved['activities'], budget=saved['budgetEstimate'])
+
 
 
 @bp.delete('/itineraries/<iid>/activities/<activity_id>')
@@ -783,7 +848,20 @@ def update_activity_route(iid, activity_id):
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     if _is_package_trip(current):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
-    updated = updateActivity(current, activity_id, request.get_json(silent=True) or {})
+    changes = request.get_json(silent=True) or {}
+    from services.itinerary_identity import IDENTITY_FIELDS
+    rows = [*current.get('activities', []), *(current.get('unscheduledSuggestions') or [])]
+    original = next((row for row in rows if str(row.get('activityId')) == activity_id), None)
+    if not isinstance(changes, dict):
+        return jsonify(ok=False, error='Invalid activity changes.'), 400
+    if original and (protected_activity(original) or any(
+            key in changes and changes[key] != original.get(key)
+            for key in (*IDENTITY_FIELDS, 'activityId', 'destinationId'))):
+        return jsonify(ok=False, error='Use Add Places to change the attraction or confirm a repeat visit.'), 409
+    if original and any(same_attraction({**original, **changes}, row) and not same_attraction(original, row)
+                        for row in rows if row is not original):
+        return jsonify(ok=False, error='Use Add Places to confirm a repeat visit.'), 409
+    updated = updateActivity(current, activity_id, changes)
     recalculated = recalculateItinerary(
         {**current, **updated},
         preserveOrder=True,
@@ -905,15 +983,14 @@ def _resolve_activity_alternative(current, data, candidates):
     original = next((row for row in activities if row.get('activityId') == requested), None)
     candidate = candidates.get(str(data.get('destinationId') or ''))
     if not original or not candidate or any(
-            _activity_identity(row) == _activity_identity(candidate) for row in activities):
+            same_attraction(row, candidate)
+            for row in [*activities, *(current.get('unscheduledSuggestions') or [])]):
         raise _AlternativeConflict('Choose an unused replacement for an existing activity.')
     scope = normalize_destination_scope(current.get('destinationArea'))
     if not scope['state'] or not filter_candidates([candidate], scope)[0]:
         raise _AlternativeConflict('The replacement location is not verified for this trip.')
     before = activity_pricing(original, current.get('travellerCount'))
-    if (original.get('costCategory') not in (None, '', 'admission')
-            or original.get('paymentStatus') in {'paid', 'succeeded'}
-            or original.get('status') == 'completed' or original.get('completedAt')):
+    if original.get('costCategory') not in (None, '', 'admission') or protected_activity(original):
         raise _AlternativeConflict('Only unpaid, incomplete planned admissions can be replaced.')
     replacement = _activity_from_destination(candidate, 0)
     after = activity_pricing(replacement, current.get('travellerCount'))
@@ -941,8 +1018,7 @@ def _resolve_activity_alternative(current, data, candidates):
     slot = day_rows[index]
     if _activity_identity(slot) != _activity_identity(original):
         raise _AlternativeConflict('The saved itinerary and daily schedule do not match.')
-    if (slot.get('paymentStatus') in {'paid', 'succeeded'}
-            or slot.get('status') == 'completed' or slot.get('completedAt')):
+    if protected_activity(slot):
         raise _AlternativeConflict('An already paid or completed visit cannot be replaced.')
     start, old_end = (_parse_time_minutes(slot.get(key)) for key in ('scheduledStartTime', 'scheduledEndTime'))
     try:
@@ -1279,7 +1355,7 @@ def lower_cost_alternatives(iid):
     activities = current.get('activities') or []
     candidates = _activity_options(current) if activities else {}
     if not current.get('dailySchedule'):
-        activity_advice = 'A saved day and visit time are needed before a replacement can be checked; savings cannot be calculated.'
+        activity_advice = 'A saved visit time and comparable pricing unit are needed; savings cannot be calculated.'
     elif not candidates:
         activity_advice = 'There are no activities with verified replacement admission prices in this destination.'
     else:
@@ -1316,9 +1392,9 @@ def lower_cost_alternatives(iid):
     if not activity_items:
         reasons = ' '.join(sorted(rejection_reasons, key=rejection_reasons.get, reverse=True)[:2])
         activity_advice += (' ' + reasons) if reasons else ''
-        activity_advice += ' Check the admission price, pricing unit and suitability before changing a visit.'
-        if budget.get('expenseBreakdown', {}).get('hotel', {}).get('state') in {'undecided', 'not_selected'}:
-            activity_advice += ' Choose accommodation before comparing hotel costs.'
+        if 'pricing unit' not in activity_advice:
+            activity_advice += ' A comparable pricing unit is required.'
+
     alternatives = sorted(activity_items + alternatives, key=lambda item: -item['estimatedSavings'])
     for alternative in alternatives:
         alternative['stateVersion'] = _alternative_state(current)
@@ -1336,10 +1412,45 @@ def lower_cost_alternatives(iid):
             if current.get('hotelBookingId') and not any(item['alternativeType'] == 'hotel' for item in alternatives)
             else None
         ),
+        'budgetReplanOptions': budget_replan_options(current, budget) if _can_replan(current) else None,
         'activityCandidateCount': len(candidates),
         'duplicateAlternativeCount': duplicate_count,
         'activityRejectionCounts': rejection_reasons,
     })
+
+
+def _can_replan(trip):
+    return (not _is_package_trip(trip)
+            and str(trip.get('status') or '').lower() not in {'completed', 'cancelled', 'generating'})
+
+
+@bp.post('/itineraries/<iid>/budget-replan/preview')
+@bp.post('/itineraries/<iid>/budget-replan/apply')
+@auth_required(['traveller'])
+def budget_replan(iid):
+    current = _own(iid)
+    if not current:
+        return jsonify(ok=False, error='Itinerary not found'), 404
+    if not _can_replan(current):
+        return jsonify(ok=False, error='This itinerary cannot be replanned.'), 409
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(ok=False, error='Choose valid budget changes.'), 400
+    changes = payload.get('changes')
+    try:
+        patch, preview = preview_budget_replan(current, changes)
+    except ValueError as error:
+        return jsonify(ok=False, error=str(error)), 409
+    token = _alternative_state({'action': 'budget-replan', 'owner': g.uid, 'trip': iid,
+                                'state': _alternative_state(current), 'changes': changes})
+    if request.path.endswith('/preview'):
+        return jsonify(ok=True, **preview, previewToken=token)
+    if payload.get('confirmed') is not True or payload.get('previewToken') != token:
+        return jsonify(ok=False, error='Review and confirm a current budget preview.'), 409
+    saved = updateRecord('itineraries', iid, patch, expected=current)
+    if saved is None:
+        return jsonify(ok=False, error='Itinerary not found'), 404
+    return jsonify(ok=True, itinerary=saved, budget=saved['budgetEstimate'])
 
 
 @bp.post('/itineraries/<iid>/lower-cost-alternatives/apply')

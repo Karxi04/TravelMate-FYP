@@ -158,8 +158,8 @@ void main() {
         findsOneWidget);
     expect(find.textContaining('Estimated balance'), findsNothing);
     await tester.scrollUntilVisible(
-        find.text('View Lower-Cost Alternatives'), 250);
-    expect(find.text('View Lower-Cost Alternatives'), findsOneWidget);
+        find.text('Review budget options'), 250);
+    expect(find.text('Review budget options'), findsOneWidget);
   });
 
   testWidgets('complete estimate and genuinely not-required category',

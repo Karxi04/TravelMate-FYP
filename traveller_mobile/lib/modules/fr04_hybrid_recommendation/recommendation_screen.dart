@@ -1,3 +1,4 @@
+import '../fr05_smart_itinerary_budget_planner/activity_payload_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -395,7 +396,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         ),
       );
       if (selected == null) return;
-      await api.post('/api/fr5/itineraries/${selected['id']}/activities', {
+      if (!mounted || !await addTripVisit(context, api, selected['id'].toString(), {
         'activityName':
             (item['title'] ?? item['name'] ?? 'Destination').toString(),
         'destinationId':
@@ -424,7 +425,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
           'galleryImages',
         ])
           if (item[key] != null) key: item[key],
-      });
+      })) return;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Added to ${selected['title'] ?? 'trip'}')),

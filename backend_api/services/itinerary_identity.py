@@ -1,5 +1,6 @@
 """Consolidate automatic candidates, never saved activities or recalculation inputs."""
 from copy import deepcopy
+from services.review_destination import review_destination_id
 from services.destination_candidates import same_place
 from services.malaysian_locality import normalize_candidate_geography
 from services.recommendation_taxonomy import normalize_phrase
@@ -49,13 +50,31 @@ def _hill_main(row):
             and _name(row) in _HILL_NAMES and _hill_area(row))
 
 
-def _same(a, b):
-    # Explicit independent experiences can have separate applicable tickets at one venue.
-    if ((a.get('independentSubAttraction') is True or b.get('independentSubAttraction') is True)
-            and _ticket(a) and _ticket(b) and _ticket(a) != _ticket(b)):
+_ID_FIELDS = ('destinationId', 'place_id', 'data_id', 'data_cid', 'canonicalAttractionId', 'id')
+POLICY = 'trip-wide-v1'
+
+
+def _identities(row):
+    ids = {review_destination_id(str(row[key])) for key in _ID_FIELDS if row.get(key)}
+    for duplicate in row.get('identityConsolidation') or []:
+        if not isinstance(duplicate, dict):
+            continue
+        if duplicate.get('destinationId'):
+            ids.add(review_destination_id(str(duplicate['destinationId'])))
+        ids.update(review_destination_id(str(value))
+                   for value in (duplicate.get('sourceIds') or {}).values() if value)
+    return ids
+
+
+def _separate_tickets(a, b):
+    return bool((a.get('independentSubAttraction') is True or b.get('independentSubAttraction') is True)
+                and _ticket(a) and _ticket(b) and _ticket(a) != _ticket(b))
+
+
+def same_attraction(a, b):
+    if _separate_tickets(a, b):
         return False
-    fields = ('destinationId', 'place_id', 'data_id', 'data_cid', 'canonicalAttractionId')
-    if {str(a[k]) for k in fields if a.get(k)} & {str(b[k]) for k in fields if b.get(k)}:
+    if _identities(a) & _identities(b):
         return True
     if a.get('independentSubAttraction') is True or b.get('independentSubAttraction') is True:
         return False
@@ -98,18 +117,31 @@ def _access_for(access, main):
     return _name(access) in _STATION_NAMES and _hill_main(main) and _hill_area(access)
 
 
-def consolidate_generated_candidates(candidates):
+def consolidate_generated_candidates(candidates, *, automatic=False):
     kept = []
     for source in candidates:
         row = deepcopy(source)
-        existing = next((old for old in kept if not _repeat(row) and not _repeat(old) and _same(old, row)), None)
-        if existing is None:
+        if automatic:
+            # A source candidate cannot grant itself a confirmed repeat.
+            row.pop('intentionalRepeat', None)
+        matches = [old for old in kept if not _repeat(row) and not _repeat(old)
+                   and same_attraction(old, row)]
+        if not matches:
             kept.append(row)
-        else:
-            existing.setdefault('identityConsolidation', []).append({
-                'destinationId': row.get('destinationId') or row.get('place_id') or row.get('data_id') or row.get('id'),
-                'sourceIds': {key: row[key] for key in ('place_id', 'data_id', 'data_cid') if row.get(key)},
-                'title': row.get('title') or row.get('activityName'), 'reason': 'same_attraction'})
+            continue
+        existing = matches[0]
+        for duplicate in [row, *matches[1:]]:
+            if _separate_tickets(existing, duplicate):
+                continue
+            aliases = existing.setdefault('identityConsolidation', [])
+            aliases.append({
+                'destinationId': duplicate.get('destinationId') or duplicate.get('place_id') or duplicate.get('data_id') or duplicate.get('id'),
+                'sourceIds': {key: duplicate[key] for key in _ID_FIELDS if duplicate.get(key)},
+                'reason': 'same_attraction',
+            })
+            aliases.extend(duplicate.get('identityConsolidation') or [])
+            if duplicate is not row:
+                kept.remove(duplicate)
     output = []
     for row in kept:
         main = next((other for other in kept if other is not row and not _repeat(other) and _access_for(row, other)), None)
@@ -123,3 +155,12 @@ def consolidate_generated_candidates(candidates):
                 'role': 'access', 'transportDetailsVerified': False,
                 'note': 'Access point; confirm transport, journey time and any separate ticket cost before visiting.'})
     return output
+
+
+
+def validate_generated_partition(candidates, scheduled, unscheduled):
+    """The scheduler must account for each unique input exactly once across all days."""
+    ids = [str(row.get('activityId')) for row in candidates]
+    output = [str(row.get('activityId')) for row in [*scheduled, *unscheduled]]
+    if len(ids) != len(set(ids)) or sorted(ids) != sorted(output):
+        raise ValueError('Generated schedule contains inconsistent activity identifiers.')

@@ -96,6 +96,8 @@ def test_disabled_flag_has_exact_legacy_generation_parity(monkeypatch, value):
         expected = generateItinerary(locations, {}, working)
         expected['generationContext'].update({'destinationSource': 'offline_fixture',
             'destinationCoordinates': None, 'recommendationGenerationId': 'rec-integration'})
+        # Trip-wide identity is enforced independently of the budget selector flag.
+        expected['attractionIdentityPolicy'] = 'trip-wide-v1'
         assert generated == expected
         selector.assert_not_called()
 

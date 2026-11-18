@@ -490,6 +490,21 @@ void main() {
     expect(find.text('No comparable admission prices.'), findsOneWidget);
   });
 
+  testWidgets('over-budget saved trip opens budget options from Trip Details',
+      (tester) async {
+    final api = _TripApi();
+    api.trip['budgetLimit'] = 200;
+    (api.trip['budgetEstimate'] as Map)['limit'] = 200;
+    await _pumpTrip(tester, api);
+
+    final action = find.text('Review budget options');
+    await _show(tester, action);
+    await tester.tap(action.hitTestable());
+    await tester.pumpAndSettle();
+
+    expect(api.alternativeReads, 1);
+  });
+
   testWidgets('budget navigation retains authoritative flight and rental totals', (tester) async {
     final api = _TripApi();
     final budget = Map<String, dynamic>.from(api.trip['budgetEstimate'] as Map);

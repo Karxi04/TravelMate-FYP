@@ -1,4 +1,7 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
+import '../../services/api_service.dart';
 
 /// Supported image keys for activity and destination payloads.
 const List<String> kPlaceImageFields = [
@@ -297,4 +300,49 @@ Future<int?> promptTripDaySelection({
       ),
     ),
   );
+}
+
+/// An add is one action. Keep its request ID unchanged when a revisit is confirmed.
+Future<bool> addTripVisit(BuildContext context, ApiService api, String tripId,
+    Map<String, dynamic> activity) async {
+  final random = Random.secure();
+  final requestId = List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+  final payload = {...activity, 'clientRequestId': requestId};
+  final path = '/api/fr5/itineraries/$tripId/activities';
+
+  Future<void> submit(Map<String, dynamic> body) async {
+    final result = await api.post(path, body);
+    if (result is Map && result['ok'] == false) {
+      throw ApiException((result['error'] ?? 'The visit was not added.').toString(),
+          409, Map<String, dynamic>.from(result));
+    }
+  }
+
+  try {
+    await submit(payload);
+    return true;
+  } on ApiException catch (error) {
+    final token = error.data['confirmationToken'];
+    if (error.code != 'revisit_confirmation_required' || token is! String) rethrow;
+    if (!context.mounted) return false;
+    final name = error.data['activityName'] ?? activity['activityName'] ?? 'This place';
+    final existing = error.data['existingDay'];
+    final day = activity['dayNo'] ?? 1;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Visit this place again?'),
+        content: Text('$name is already included in your itinerary'
+            '${existing == null ? '' : ' on Day $existing'}.\n\n'
+            'Would you like to add another visit on Day $day?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Add another visit')),
+        ],
+      ),
+    );
+    if (accepted != true || !context.mounted) return false;
+    await submit({...payload, 'revisitConfirmation': token});
+    return true;
+  }
 }

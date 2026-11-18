@@ -1,3 +1,4 @@
+import '../../services/review_contract.dart';
 import 'dart:math';
 import 'malaysian_locality.dart';
 
@@ -7,13 +8,29 @@ String _name(Map row) =>
         .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
         .trim();
 
-Set<String> _ids(Map row) => [
-      'destinationId',
-      'place_id',
-      'data_id',
-      'data_cid',
-      'canonicalAttractionId'
-    ].map((k) => '${row[k] ?? ''}').where((v) => v.isNotEmpty).toSet();
+const attractionIdentityPolicy = 'trip-wide-v1';
+const _idFields = [
+  'destinationId',
+  'place_id',
+  'data_id',
+  'data_cid',
+  'canonicalAttractionId',
+  'id'
+];
+
+Set<String> _ids(Map row) {
+  final ids = [for (final key in _idFields) row[key]];
+  for (final alias
+      in (row['identityConsolidation'] as List? ?? []).whereType<Map>()) {
+    ids.add(alias['destinationId']);
+    if (alias['sourceIds'] is Map)
+      ids.addAll((alias['sourceIds'] as Map).values);
+  }
+  return ids
+      .where((value) => value != null && '$value'.trim().isNotEmpty)
+      .map((value) => ReviewContract.destinationId('$value'.trim()))
+      .toSet();
+}
 
 Map<String, dynamic> _geo(Map<String, dynamic> row) =>
     Map<String, dynamic>.from(MalaysianLocality.validateCandidate(
@@ -59,12 +76,15 @@ bool _hillMain(Map<String, dynamic> row) =>
     _hillNames.contains(_name(row)) &&
     _hillArea(row);
 
-bool _same(Map<String, dynamic> a, Map<String, dynamic> b) {
-  if ((a['independentSubAttraction'] == true ||
-          b['independentSubAttraction'] == true) &&
-      _ticket(a) != null &&
-      _ticket(b) != null &&
-      _ticket(a) != _ticket(b)) return false;
+bool _separateTickets(Map a, Map b) =>
+    (a['independentSubAttraction'] == true ||
+        b['independentSubAttraction'] == true) &&
+    _ticket(a) != null &&
+    _ticket(b) != null &&
+    _ticket(a) != _ticket(b);
+
+bool sameAttraction(Map<String, dynamic> a, Map<String, dynamic> b) {
+  if (_separateTickets(a, b)) return false;
   if (_ids(a).intersection(_ids(b)).isNotEmpty) return true;
   if (a['independentSubAttraction'] == true ||
       b['independentSubAttraction'] == true ||
@@ -121,32 +141,39 @@ bool _access(Map<String, dynamic> a, Map<String, dynamic> main) {
 
 /// Only call for newly selected automatic candidates, never when reopening/recalculating a trip.
 List<Map<String, dynamic>> consolidateGeneratedCandidates(
-    List<Map<String, dynamic>> rows) {
+    List<Map<String, dynamic>> rows,
+    {bool automatic = false}) {
   final kept = <Map<String, dynamic>>[];
   for (final source in rows) {
     final row = Map<String, dynamic>.from(source);
-    if (row['supportingAccess'] is List)
-      row['supportingAccess'] = List.of(row['supportingAccess']);
-    final duplicates = kept.where((r) =>
-        row['intentionalRepeat'] != true &&
-        r['intentionalRepeat'] != true &&
-        _same(r, row));
-    if (duplicates.isNotEmpty) {
-      final existing = duplicates.first;
-      existing['identityConsolidation'] = [
-        ...?existing['identityConsolidation'] as List?,
-        {
-          'destinationId': row['destinationId'] ??
-              row['place_id'] ??
-              row['data_id'] ??
-              row['id'],
-          'title': row['title'] ?? row['activityName'],
-          'reason': 'same_attraction'
-        }
-      ];
+    if (automatic) row.remove('intentionalRepeat');
+    final matches = kept
+        .where((other) =>
+            row['intentionalRepeat'] != true &&
+            other['intentionalRepeat'] != true &&
+            sameAttraction(other, row))
+        .toList();
+    if (matches.isEmpty) {
+      kept.add(row);
       continue;
     }
-    kept.add(row);
+    final retained = matches.first;
+    for (final duplicate in [row, ...matches.skip(1)]) {
+      if (_separateTickets(retained, duplicate)) continue;
+      retained['identityConsolidation'] = [
+        ...?retained['identityConsolidation'] as List?,
+        {
+          'destinationId': duplicate['destinationId'],
+          'sourceIds': {
+            for (final key in _idFields)
+              if (duplicate[key] != null) key: duplicate[key]
+          },
+          'reason': 'same_attraction'
+        },
+        ...?duplicate['identityConsolidation'] as List?,
+      ];
+      if (!identical(duplicate, row)) kept.remove(duplicate);
+    }
   }
   final output = <Map<String, dynamic>>[];
   for (final row in kept) {

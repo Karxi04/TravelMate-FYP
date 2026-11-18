@@ -1390,13 +1390,23 @@ def save_plan():
         return jsonify({'ok': False, 'error': err_msg}), 400
 
     dest = str(plan.get('destinationArea') or plan.get('destination') or '').strip()
-    raw_activities = plan.get('activities') or []
+    from services.itinerary_identity import POLICY, IDENTITY_FIELDS, consolidate_generated_candidates
+    trusted_identity = set(IDENTITY_FIELDS) - {'place_id', 'data_id', 'data_cid'}
+    activities = [row for row in plan.get('activities') or [] if isinstance(row, dict)]
+    if not save_session:
+        activities = [{key: value for key, value in row.items() if key not in trusted_identity}
+                      for row in activities]
+    raw_activities = consolidate_generated_candidates(activities, automatic=True)
+    used_ids = set()
     clean_activities = []
     for idx, act in enumerate(raw_activities):
-        if not isinstance(act, dict):
-            continue
+        activity_id = str(act.get('activityId') or f'A{idx + 1}')
+        while activity_id in used_ids:
+            activity_id = f'{activity_id}_visit'
+        used_ids.add(activity_id)
         clean_activities.append({
-            'activityId': act.get('activityId') or f'A{idx + 1}',
+            **{key: act[key] for key in IDENTITY_FIELDS if key in act},
+            'activityId': activity_id,
             'activityName': act.get('activityName') or act.get('name') or act.get('title') or f'Activity {idx + 1}',
             'destinationId': act.get('destinationId') or act.get('place_id') or f'dest_{idx + 1}',
             'address': act.get('address') or '',
@@ -1442,7 +1452,15 @@ def save_plan():
         'status': plan.get('status', 'draft'),
     }
 
-    itinerary = createItinerary(itinerary_data, g.uid)
+    itinerary = createItinerary({**itinerary_data, 'attractionIdentityPolicy': POLICY}, g.uid)
+    if save_session and plan.get('attractionIdentityPolicy') == POLICY:
+        from sequence_contract.domain_functions import recalculateItinerary
+        suggestions = []
+        for row in plan.get('unscheduledSuggestions') or []:
+            if isinstance(row, dict) and row.get('activityId') and row['activityId'] not in used_ids:
+                used_ids.add(row['activityId'])
+                suggestions.append({key: value for key, value in row.items() if key != 'intentionalRepeat'})
+        itinerary = recalculateItinerary({**itinerary, 'unscheduledSuggestions': suggestions})
     budget = calculateBudget(itinerary)
     itinerary['budgetEstimate'] = budget
     if save_session:
