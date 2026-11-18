@@ -298,7 +298,7 @@ void main() {
     expect(api.searchCalls, 1);
     expect(find.text('Kek Lok Si Temple'), findsWidgets);
     expect(find.text('Culture'), findsWidgets);
-    expect(find.text('Saved destination information'), findsOneWidget);
+    expect(find.text('Saved destination information'), findsNothing);
     expect(find.textContaining('% match'), findsNothing);
     expect(find.text('contentScore'), findsNothing);
     expect(find.text('provider stack trace'), findsNothing);

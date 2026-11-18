@@ -3,7 +3,7 @@ import os
 import re
 from time import perf_counter
 from datetime import datetime, date
-from math import radians, sin, cos, sqrt, atan2, isfinite
+from math import atan2, ceil, cos, isfinite, radians, sin, sqrt
 from utils import utc_now_iso
 from services.recommendation_taxonomy import (
     preference_concepts,
@@ -1471,6 +1471,121 @@ def _travel_leg(previous, activity):
     return minutes, round(distance, 2), 'estimated_haversine'
 
 
+# Sightseeing limits are planning budgets, not guaranteed travel times.
+# (radius/leg km, minutes per leg, minutes per sightseeing day, estimated speed)
+_LOCAL_TRAVEL = {'walk': (3, 45, 75, 4.5), 'drive': (35, 75, 135, 32),
+                 'public': (25, 65, 110, 23)}
+LOCAL_DAYS_POLICY = 'local-days-v1'
+_UNKNOWN_JOURNEY = 'Could not establish a reliable journey to this stop. Confirm its location or plan a separate day.'
+_DISTANT_STOP = 'This stop is too far from the other stops or accommodation for this sightseeing day. Choose a nearer stop or plan an intercity transfer.'
+LOCAL_ACTIVITY_FIELDS = (
+    'city', 'state', 'country', 'locality', 'district', 'geographyConflict',
+    'metadataConflict', 'normalizedGeography', 'type_id', 'type_ids', 'tags',
+    'verifiedDestinationEvidence',
+    'providerTravelFromDestinationId', 'providerTravelDurationMinutes',
+    'providerTravelDistanceKm', 'providerTravelMode',
+)
+
+
+def _sightseeing_mode(itinerary):
+    mode = _text(itinerary.get('transportMode') or itinerary.get('preferredTransport') or itinerary.get('travelMode')).lower()
+    if mode in {'walk', 'walking', 'on foot'}:
+        return 'walk'
+    if mode in {'car', 'drive', 'driving', 'private car', 'taxi', 'own_vehicle'}:
+        return 'drive'
+    return 'public'
+
+
+def _conflicting_location(activity):
+    normalized = activity.get('normalizedGeography') or {}
+    if activity.get('geographyConflict') or activity.get('metadataConflict') or (isinstance(normalized, dict) and normalized.get('conflict')):
+        return True
+    if any(activity.get(key) for key in ('state', 'city', 'locality', 'country')):
+        from services.malaysian_locality import normalize_candidate_geography
+        return normalize_candidate_geography(activity)['conflict']
+    return False
+
+
+def _local_coords(activity):
+    if _conflicting_location(activity):
+        return None
+    coord = _coord(activity)
+    if not coord or not all(isfinite(x) for x in coord) or abs(coord[0]) > 90 or abs(coord[1]) > 180:
+        return None
+    return coord
+
+
+def _local_leg(previous, activity, mode):
+    if previous is None:
+        if _conflicting_location(activity):
+            return None
+        return 0, 0.0, 'not_applicable'
+    if not _local_coords(previous) or not _local_coords(activity):
+        return None
+    distance = _distance_km(previous, activity)
+    if distance is None:
+        return None
+    origin = previous.get('destinationId')
+    minutes = _float(activity.get('providerTravelDurationMinutes'))
+    if (origin and origin == activity.get('providerTravelFromDestinationId')
+            and activity.get('providerTravelMode') == mode and minutes > 0 and isfinite(minutes)):
+        road = _float(activity.get('providerTravelDistanceKm'), distance)
+        return int(ceil(minutes)), max(distance, road if isfinite(road) else distance), 'provider'
+    speed = _LOCAL_TRAVEL[mode][3]
+    minutes = max(5, ceil(distance * 1.25 / speed * 60 + (0 if mode == 'walk' else 8)))
+    if activity.get('supportingAccess') or previous.get('supportingAccess'):
+        # Keep the verified distance bound; the facility access portion is provisional.
+        return max(25, minutes), distance, 'unverified_access_buffer'
+    return minutes, distance, 'estimated_haversine'
+
+
+def plan_intercity_transfer(itinerary, request):
+    """Plan one explicitly accepted relocation using existing trip candidates."""
+    if not isinstance(request, dict) or request.get('confirmed') is not True:
+        raise ValueError('Confirm the intercity travel day before updating the itinerary.')
+    day_no = request.get('dayNo')
+    target = request.get('toDestinationId')
+    mode = request.get('mode')
+    if (type(day_no) is not int or not 2 <= day_no < _trip_days(itinerary)
+            or mode not in ('drive', 'public') or not isinstance(target, str) or not target
+            or not any(row.get('destinationId') == target for row in itinerary.get('unscheduledSuggestions') or [])):
+        raise ValueError('Choose an optional stop and a transfer day between two sightseeing days.')
+    approved = {'dayNo': day_no, 'toDestinationId': target, 'mode': mode}
+    updated = recalculateItinerary({**itinerary, 'geographyPlanningPolicy': LOCAL_DAYS_POLICY,
+                                    'confirmedIntercityTransfer': approved},
+                                   preserveOrder=False, respectDayAssignments=False)
+    if updated.get('intercityTransferStatus') != 'planned' or not any(
+            row.get('dayNo', 0) > day_no and row.get('destinationId') == target for row in updated['activities']):
+        raise ValueError('This transfer and visit could not fit. Check the route, trip dates and venue hours.')
+    return updated
+
+
+def _visit_experience(activity):
+    from services.recommendation_taxonomy import experience_types
+    kinds = experience_types(activity)
+    if 'hiking' in kinds:
+        return 'hike'
+    if set(kinds) & {'dining', 'cafe'}:
+        return 'meal'
+    label = ' '.join(_text(activity.get(key)).lower() for key in ('activityName', 'category', 'type'))
+    for group, pattern in (
+        ('hike', r'\b(?:hik(?:e|ing)|trek(?:king)?)\b'),
+        ('beach', r'\b(?:beach|pantai)\b'),
+        ('garden', r'\b(?:garden|botanic|taman)'),
+        ('viewpoint', r'\b(?:viewpoint|lookout|viewing deck)\b'),
+        ('wildlife', r'\b(?:wildlife|zoo|bird park|sanctuary)\b'),
+        ('museum', r'\b(?:museum|gallery)\b'),
+        ('religious', r'\b(?:temple|mosque|church|shrine)\b'),
+        ('heritage', r'\b(?:heritage|historical|historic|fort)\b'),
+        ('market', r'\b(?:market|bazaar|pasar)\b'),
+        ('mall', r'\b(?:mall|shopping cent(?:re|er))\b'),
+        ('meal', r'\b(?:cafe|restaurant|food court|hawker cent(?:re|er))\b'),
+    ):
+        if re.search(pattern, label):
+            return group
+    return next(iter(sorted(kinds)), '')
+
+
 def _forecast_by_date(forecast_data):
     daily = (forecast_data or {}).get('daily', {}) if isinstance(forecast_data, dict) else {}
     dates = daily.get('time') or []
@@ -1514,13 +1629,15 @@ def _candidate_order(remaining, previous, weather, preserve_order, day_date=None
     return sorted(remaining, key=key)
 
 
-def _schedule_candidate(activity, previous, current_minutes, day_date, window_end, rest=(750, 810)):
+def _schedule_candidate(activity, previous, current_minutes, day_date, window_end, rest=(750, 810), leg=None):
     duration, duration_source = _activity_duration(activity)
-    travel_minutes, distance, travel_source = _travel_leg(previous, activity)
+    travel_minutes, distance, travel_source = leg if leg is not None else _travel_leg(previous, activity)
     opening = _activity_opening(activity, day_date)
     if opening['status'] == 'closed':
         return None, 'Attraction is closed on this trip day.'
     arrival = current_minutes + travel_minutes
+    if leg and current_minutes < rest[1] and arrival > rest[0]:
+        arrival = rest[1] + travel_minutes
     periods = opening.get('periods') or [(0, 1440)]
     selected_period = None
     for period_start, period_end in periods:
@@ -1588,7 +1705,42 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         window_start = max(window_start, 10 * 60)
     rest = (840, 900) if rhythm == 'night owl' else (750, 840 if rhythm == 'comfort-focused' else 810)
     profiled = bool(itinerary.get('planningPreferences'))
-    max_visits = {'relaxed': 2, 'moderate': 3, 'active': 5}[pace] if profiled and not respect_day_assignments else None
+    local_days = itinerary.get('geographyPlanningPolicy') == LOCAL_DAYS_POLICY
+    mode = _sightseeing_mode(itinerary)
+    max_km, max_leg, daily_limit, _ = _LOCAL_TRAVEL[mode]
+    daily_limit = int(daily_limit * {'relaxed': 0.75, 'moderate': 1, 'active': 1}[pace])
+    base = itinerary.get('accommodationBase') or itinerary.get('selectedHotel')
+    base = base if isinstance(base, dict) and _local_coords(base) else None
+    # A city-level location is not a verified overnight base.
+    focus = base or itinerary.get('_dayTrialFocus')
+    transfer = itinerary.get('confirmedIntercityTransfer') if local_days else None
+    transfer = transfer if isinstance(transfer, dict) else {}
+    transfer_applied = False
+    deferred_reasons = {}
+    sightseeing_anchors = []
+    from services.recommendation_taxonomy import preference_concepts, primary_concepts
+    preferences = itinerary.get('planningPreferences') or {}
+    interests = preference_concepts(itinerary.get('interests') or preferences.get('interests'))
+    hiking_interests = itinerary.get('interests') or preferences.get('interests') or []
+    hike_focused = itinerary.get('hikingFocused') is True or any(
+        _text(value).lower() in {'hiking', 'hike', 'trekking'} for value in hiking_interests)
+    experiences = {id(item): _visit_experience(item) for item in activities} if local_days else {}
+    concepts = {id(item): primary_concepts({**item, 'title': item.get('activityName')})
+                for item in activities} if local_days and interests else {}
+    used_concepts = set()
+    trip_experiences = {}
+    coordinates = {id(item): _local_coords(item) for item in activities} if local_days else {}
+    # A candidate that never fits on its own cannot fill one of the reserved days.
+    first_visit_by_day = {}
+    if local_days and not respect_day_assignments and not preserve_order:
+        for item in activities:
+            first_visit_by_day[id(item)] = [
+                day for day in range(days)
+                if _schedule_candidate(item, None, window_start,
+                    start_date.fromordinal(start_date.toordinal() + day), window_end, rest)[0]
+            ]
+    max_visits = ({'relaxed': 2, 'moderate': 3, 'active': 5}[pace]
+                  if (profiled or local_days and pace == 'relaxed') and not respect_day_assignments else None)
     weather_by_date = _forecast_by_date(forecast_data or {})
     remaining = activities
     scheduled = []
@@ -1605,27 +1757,95 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
             'heavyRainLikely': False,
         })
         current = window_start
-        previous = None
+        previous = base if local_days else None
         day_items = []
-        while remaining and (max_visits is None or len(day_items) < max_visits):
+        travel_minutes = 0
+        experience_counts = {}
+        transfer_block = None
+        if transfer.get('dayNo') == day_no and focus:
+            target = next((item for item in remaining if item.get('destinationId') == transfer.get('toDestinationId')), None)
+            leg = _local_leg(focus, target, transfer.get('mode', mode)) if target and transfer.get('mode', mode) in _LOCAL_TRAVEL else None
+            # Reserve a dedicated transfer day. Its allowance includes breaks
+            # and is never treated as a local sightseeing leg.
+            if (leg and leg[2] != 'unverified_access_buffer' and (leg[0] > max_leg or leg[1] > max_km)
+                    and leg[0] + 60 <= min(600, 1260 - current)
+                    and transfer.get('mode', mode) != 'walk'):
+                transfer_applied = True
+                duration = leg[0] + 60
+                transfer_block = {'type': 'intercity_transfer', 'label': 'Intercity transfer and breaks',
+                                  'startTime': _format_time(current),
+                                  'endTime': _format_time(current + duration),
+                                  'durationMinutes': duration, 'estimated': True,
+                                  'destinationId': target.get('destinationId')}
+                base = None
+                focus = target
+        visit_limit = max_visits
+        flexible = local_days and not respect_day_assignments and not preserve_order
+        transfer_day = transfer.get('dayNo')
+        last_local_day = transfer_day - 1 if type(transfer_day) is int and day_no < transfer_day <= days else days
+        future_local_days = last_local_day - day_no
+        if flexible:
+            visit_limit = min(max_visits or 5, max(1, len(remaining) - future_local_days))
+        while not transfer_block and remaining and (visit_limit is None or len(day_items) < visit_limit):
             eligible = [x for x in remaining
                         if (not respect_day_assignments and x.get('activityId') not in pinned)
                         or int(_float(x.get('dayNo'), day_no)) == day_no]
             if not eligible:
                 break
             chosen = None
-            reason_by_id = {}
-            for candidate in _candidate_order(eligible, previous, weather, preserve_order, day_date, profiled):
+            order = _candidate_order(eligible, previous, weather, preserve_order, day_date, profiled)
+            if local_days and not preserve_order:
+                def local_priority(item):
+                    experience = experiences[id(item)]
+                    uncovered = concepts.get(id(item), set()) & (interests - used_concepts)
+                    distance = _distance_km(previous, item) if previous and _coord(previous) and coordinates[id(item)] else None
+                    nearby = 0
+                    if focus is None and coordinates[id(item)]:
+                        nearby = sum(coordinates[id(other)] is not None and
+                                     _distance_km(item, other) <= max_km for other in eligible)
+                    return (0 if not weather.get('heavyRainLikely') or _indoor(item) else 1,
+                            not bool(uncovered), -min(nearby, 4), experience_counts.get(experience, 0),
+                            trip_experiences.get(experience, 0),
+                            int(distance // 4) if distance is not None else 0)
+                order.sort(key=local_priority)
+            for candidate in order:
                 # Retain a same-day pair only if the existing saved schedule already contains it.
                 if any(same_attraction(candidate, visit) and
                        (saved_days.get(candidate.get('activityId')) != day_no or
                         saved_days.get(visit.get('activityId')) != day_no) for visit in day_items):
                     continue
-                planned, reason = _schedule_candidate(candidate, previous, current, day_date, window_end, rest)
+                leg = None
+                if local_days:
+                    key = str(candidate.get('activityId'))
+                    # A bounded cluster prevents chaining short legs into a distant area.
+                    anchor = focus or (day_items[0] if day_items else None)
+                    anchor_distance = (_distance_km(anchor, candidate)
+                                       if anchor and _coord(anchor) and coordinates[id(candidate)] else None)
+                    leg = _local_leg(previous, candidate, mode)
+                    if leg is None or (anchor and anchor_distance is None):
+                        deferred_reasons[key] = _UNKNOWN_JOURNEY
+                        continue
+                    if (leg[0] > max_leg or leg[1] > max_km or (anchor_distance is not None and anchor_distance > max_km)
+                            or travel_minutes + leg[0] > daily_limit):
+                        deferred_reasons[key] = _DISTANT_STOP
+                        continue
+                    experience = experiences[id(candidate)]
+                    if experience in {'hike', 'meal'} and experience_counts.get(experience, 0) >= (2 if hike_focused or experience == 'meal' else 1):
+                        deferred_reasons[key] = 'This day already includes similar activities. Try another day to allow time for rest and variety.'
+                        continue
+                planned, reason = _schedule_candidate(candidate, previous, current, day_date, window_end, rest, leg)
+                if planned and local_days:
+                    if experience:
+                        experience_counts[experience] = experience_counts.get(experience, 0) + 1
+                        trip_experiences[experience] = trip_experiences.get(experience, 0) + 1
+                    used_concepts.update(concepts.get(id(candidate), ()))
+                    travel_minutes += leg[0]
+                    if focus is None and coordinates[id(candidate)]:
+                        focus = candidate
                 if planned:
                     chosen = planned
                     break
-                reason_by_id[str(candidate.get('activityId'))] = reason
+                deferred_reasons.setdefault(str(candidate.get('activityId')), reason)
             if chosen is None:
                 break
             remaining.remove(next(x for x in remaining if str(x.get('activityId')) == str(chosen.get('activityId'))))
@@ -1641,7 +1861,8 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
             notes = []
             if chosen.get('travelTimeSource') == 'unverified_access_buffer':
                 chosen['scheduleFeasibility'] = 'provisional'
-                notes.append('Access transfer requires confirmation; 25 minutes is a planning buffer, not a verified journey time or walking route.')
+                notes.append('Access transfer requires confirmation; the planning buffer is not a verified journey time or walking route.'
+                             if local_days else 'Access transfer requires confirmation; 25 minutes is a planning buffer, not a verified journey time or walking route.')
             if previous and chosen.get('travelTimeSource') == 'estimated_haversine':
                 notes.append('Grouped with a nearby attraction to reduce estimated travel time.')
             period_end = chosen.pop('_openingPeriodEnd')
@@ -1656,6 +1877,8 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
                     notes.append('Indoor activity prioritised because heavy rain is forecast for this date.')
                 else:
                     notes.append('Rain is forecast; keep an indoor alternative available.')
+            if local_days:
+                chosen['travelDistanceKm'] = round(chosen['travelDistanceKm'], 2)
             chosen['weather'] = weather
             chosen['weatherNote'] = notes[-1] if notes and 'rain' in notes[-1].lower() else ''
             chosen['scheduleNotes'] = notes[:3]
@@ -1663,9 +1886,19 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
             scheduled.append(chosen)
             current = end_minutes
             previous = chosen
+            if flexible and len(day_items) == 1:
+                compatible = sum(
+                    bool(_coord(focus) and coordinates[id(item)]
+                         and _distance_km(focus, item) <= max_km
+                         and any(day_index <= index < last_local_day for index in first_visit_by_day.get(id(item), ())))
+                    for item in remaining
+                ) if focus else len(remaining)
+                visit_limit = min(visit_limit, max(1, 1 + compatible - future_local_days))
 
-        meal_blocks = []
+        meal_blocks = [transfer_block] if transfer_block else []
         if day_items:
+            if local_days and focus and _coord(focus) and not any(anchor is focus for anchor in sightseeing_anchors):
+                sightseeing_anchors.append(focus)
             meal_blocks.append({
                 'type': 'meal_rest', 'label': 'Lunch and rest',
                 'startTime': _format_time(rest[0]), 'endTime': _format_time(rest[1]),
@@ -1679,7 +1912,8 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
             'activities': day_items,
             'planningBlocks': meal_blocks,
             'weather': weather,
-            'estimatedMinutes': sum(int(_float(x.get('recommendedDurationMinutes'))) + int(_float(x.get('travelDurationMinutes'))) for x in day_items),
+            'estimatedMinutes': ((transfer_block or {}).get('durationMinutes', 0)
+                                 + sum(int(_float(x.get('recommendedDurationMinutes'))) + int(_float(x.get('travelDurationMinutes'))) for x in day_items)),
             'estimatedCost': round(sum(activity_pricing(
                 x, itinerary.get('travellerCount', 1))['effectiveCost'] for x in day_items), 2),
         })
@@ -1690,6 +1924,12 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         all_closed = all(opening['status'] == 'closed' for opening in evidence)
         uncertain = any(opening['provisional'] for opening in evidence)
         reason = 'Attraction is closed on all trip days.' if all_closed else 'Could not fit within available time, travel, and opening-hour constraints.'
+        if local_days and not all_closed:
+            reason = deferred_reasons.get(str(item.get('activityId')), reason)
+            if sightseeing_anchors and not coordinates[id(item)]:
+                reason = _UNKNOWN_JOURNEY
+            elif sightseeing_anchors and all(_distance_km(anchor, item) > max_km for anchor in sightseeing_anchors):
+                reason = _DISTANT_STOP
         if uncertain and not all_closed:
             reason += ' Opening hours are unverified; confirm with the venue before arranging a visit.'
         unscheduled.append({
@@ -1698,6 +1938,8 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
             'scheduleFeasibility': 'unscheduled',
             'openingHoursEvidence': evidence[0]['evidence'],
         })
+    if local_days and transfer:
+        itinerary['intercityTransferStatus'] = 'planned' if transfer_applied else 'needs_review'
     if trip_wide:
         validate_generated_partition(all_candidates, scheduled, unscheduled)
 
@@ -1738,7 +1980,7 @@ def _improve_route(itinerary, forecast):
         best = day
         items = day['activities']
         ids = [item.get('activityId') for item in items]
-        if len(items) < 3:
+        if len(items) < 3 or itinerary.get('confirmedIntercityTransfer'):
             daily.append(best)
             continue
         distance = _route_distance(items)
@@ -1782,6 +2024,8 @@ def _improve_route(itinerary, forecast):
             trial = _constraint_plan({
                 **itinerary, 'startDate': day['dayDate'], 'endDate': day['dayDate'], 'tripDays': 1,
                 'activities': order, 'unscheduledSuggestions': [],
+                '_dayTrialFocus': next((item for item in itinerary['activities'] if _local_coords(item)), None)
+                                  if itinerary.get('geographyPlanningPolicy') == LOCAL_DAYS_POLICY else None,
             }, forecast, preserve_order=True, respect_day_assignments=False)
             candidate = trial['dailySchedule'][0]
             visits = candidate['activities']

@@ -28,9 +28,9 @@ from sequence_contract.firebase_firestore import (
     deleteRecord,
 )
 from services.public_content_projection import public_review
-from services.review_service import approved_reviews
+from services.review_service import approved_reviews, genuine_review
 from services.fyp_reviews import (
-    dataset_for, dataset_reviews, private_dataset, regional_demo_destinations, regional_demo_reviews,
+    dataset_for, private_dataset, regional_demo_destinations,
 )
 from services.review_destination import review_destination_id, review_destination_ids
 from services.malaysian_locality import (
@@ -526,29 +526,18 @@ def _merge_destination(cached, provider):
 @bp.get('/local-ratings')
 @auth_required(['traveller'])
 def local_ratings():
-    demo = None if current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS') else _private_review_dataset()
-    private_ids = set(demo[1]) if demo else set()
     # One read pass for a page of cards; retain the existing approval/dedup policy.
     grouped = {}
     for item in retrieveRecord('feedback'):
-        if item.get('synthetic') is True:
-            continue
         identity = item.get('destinationId')
-        if isinstance(identity, str) and identity:
-            canonical = review_destination_id(identity)
-            if canonical not in private_ids:
-                grouped.setdefault(canonical, []).append(item)
-    if demo:
-        for item in dataset_reviews(*demo):
-            grouped.setdefault(item['destinationId'], []).append(item)
+        if genuine_review(item) and isinstance(identity, str) and identity:
+            grouped.setdefault(review_destination_id(identity), []).append(item)
     result = {}
     for identity, records in grouped.items():
         approved = approved_reviews(records)
         if approved:
             summary = {'rating': round(sum(float(x['rating']) for x in approved) / len(approved), 1),
                        'reviews': len(approved)}
-            if identity in private_ids:
-                summary['fypPreview'] = True
             for alias in review_destination_ids(identity):
                 result[alias] = summary
     return jsonify({'ok': True, 'items': result})
@@ -852,8 +841,8 @@ def retrieveRatingsAndReviews(place_id, *, alternate=None):
     return _ratings_and_reviews(records)
 
 
-def _ratings_and_reviews(records, *, sample=False):
-    visible = approved_reviews(row for row in records if sample or row.get('synthetic') is not True)
+def _ratings_and_reviews(records):
+    visible = approved_reviews(row for row in records if genuine_review(row))
     visible.sort(key=lambda x: str(x.get('updatedAt') or x.get('submittedAt') or ''), reverse=True)
     ratings = []
     for item in visible:
@@ -871,62 +860,18 @@ def _ratings_and_reviews(records, *, sample=False):
     }
 
 
-def _merge_sample_reviews(result, records):
-    samples = _ratings_and_reviews(records, sample=True)
-    result['sampleSummary'] = {key: samples[key] for key in ('rating', 'reviews')}
-    result['user_reviews'].extend(
-        {**{key: value for key, value in item.items() if key != 'reviewKey'}, 'source': 'sample'}
-        for item in samples['user_reviews']
-    )
-
-
 @bp.get('/destinations/<path:place_id>/ratings-reviews')
 @auth_required(['traveller'])
 def ratings_reviews(place_id):
-    view = request.args.get('view')
-    local_demo = current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS')
+    if request.args.get('view') == 'samples':
+        return jsonify(ok=False, error='Sample reviews are unavailable.'), 404
     canonical = review_destination_id(place_id)
-    if view in {'unified', 'samples'} and canonical == place_id and not canonical.startswith('local_'):
+    if canonical == place_id and not canonical.startswith('local_'):
         cached = _cached_destination(place_id)
         canonical = (_review_identity(cached) if cached else None) or canonical
-    regional = _local_demo_request() and canonical in regional_demo_destinations()
-    if regional:
-        if view == 'samples':
-            samples = _ratings_and_reviews(regional_demo_reviews(canonical), sample=True)
-            return jsonify(ok=True, source='fyp_private', sampleReviewsAvailable=True,
-                           result={**samples, 'fypPreview': True})
-        result = retrieveRatingsAndReviews(canonical, alternate=place_id) if canonical != place_id else retrieveRatingsAndReviews(canonical)
-        if view == 'unified':
-            _merge_sample_reviews(result, regional_demo_reviews(canonical))
-        return jsonify(ok=True, source='travelmate_database', result=result, sampleReviewsAvailable=True)
-    if view == 'unified':
-        result = (retrieveRatingsAndReviews(canonical, alternate=place_id)
-                  if canonical == 'local_legoland_malaysia' and canonical != place_id
-                  else retrieveRatingsAndReviews(canonical))
-        if local_demo:
-            try:
-                demo = _private_review_dataset(discovery=True)
-                if demo and canonical in demo[1]:
-                    records = [item for item in dataset_reviews(*demo) if item['destinationId'] == canonical]
-                    _merge_sample_reviews(result, records)
-            except Exception as error:
-                current_app.logger.warning('Sample review retrieval failed: %s', type(error).__name__)
-                result['samplesUnavailable'] = True
-        return jsonify(ok=True, source='travelmate_database', result=result)
-    demo = (_private_review_dataset(discovery=bool(local_demo))
-            if local_demo or view != 'community' else None)
-    has_samples = bool(demo and canonical in demo[1])
-    if view == 'samples' and not has_samples:
-        return jsonify(ok=False, error='Sample reviews are unavailable for this destination.'), 404
-    if has_samples and (view == 'samples' if local_demo else view != 'community'):
-        records = [item for item in dataset_reviews(*demo) if item['destinationId'] == canonical]
-        result = {**_ratings_and_reviews(records, sample=True), 'fypPreview': True,
-                  'review_summary': 'Private FYP reviews. Fictional fixtures.'}
-        return jsonify({'ok': True, 'source': 'fyp_private', 'result': result,
-                        **({'sampleReviewsAvailable': True} if local_demo else {})})
-    result = retrieveRatingsAndReviews(place_id)
-    return jsonify({'ok': True, 'source': 'travelmate_database', 'result': result,
-                    **({'sampleReviewsAvailable': has_samples} if local_demo else {})})
+    alternate = place_id if canonical != place_id else None
+    result = retrieveRatingsAndReviews(canonical, alternate=alternate)
+    return jsonify(ok=True, source='travelmate_database', result=result)
 
 
 @bp.get('/destinations/<path:place_id>/nearby')

@@ -71,55 +71,34 @@ Future<void> _scrollIntoView(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
-  testWidgets('private FYP response uses the usual review cards and one section label',
+  testWidgets('legacy private FYP response uses a genuine-review empty state',
       (tester) async {
     const place = {
       'destinationId': 'local_penang_hill',
       'title': 'Penang Hill',
       'address': 'Air Itam, Penang',
     };
-    var rating = 3.0;
-    var count = 3;
     final api = _MockDetailsApi((path) {
       if (path.endsWith('/ratings-reviews')) {
         return {
+          'source': 'fyp_private',
           'result': {
-            'rating': rating,
-            'reviews': count,
-            'fypPreview': true,
+            'rating': 3.0, 'reviews': 3, 'fypPreview': true,
             'user_reviews': [
-              for (final stars in [1, 3, 5])
-                {
-                  'username': 'Reviewer $stars',
-                  'rating': stars,
-                  'description': 'Comment for $stars stars.',
-                  'date': '2026-11-11',
-                }
+              {'username': 'Fictional Reviewer', 'rating': 3, 'description': 'Fictional comment.'},
             ],
           },
         };
       }
-      return {'destination': place, 'items': []};
+      return {'destination': place, 'items': [], 'source': 'fyp_private'};
     });
     await _pumpDestination(tester, initial: place, api: api);
-    await _scrollIntoView(tester, find.text('Reviews'));
+    expect(find.text('Demonstration information'), findsNothing);
+    await _scrollIntoView(tester, find.text('No TravelMate reviews yet.'));
     expect(find.text('3.0 · 3 reviews'), findsNothing);
-    expect(find.textContaining('FYP ·'), findsNothing);
-    expect(find.text('Includes fictional demo reviews.'), findsOneWidget);
-    expect(find.text('Sample review'), findsNothing);
-    for (final stars in [1, 3, 5]) {
-      expect(find.text('Reviewer $stars'), findsOneWidget);
-      expect(find.text('Comment for $stars stars.'), findsOneWidget);
-    }
-    expect(find.text('Write a review'), findsNothing);
-    rating = 4.5;
-    count = 12;
-    await tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh();
-    await tester.pumpAndSettle();
-    await _scrollIntoView(tester, find.text('Reviews'));
-    expect(find.text('4.5 · 12 reviews'), findsNothing);
-    expect(find.text('3.0 · 3 reviews'), findsNothing);
-    expect(find.text('Reviewer 5'), findsOneWidget);
+    expect(find.text('Fictional Reviewer'), findsNothing);
+    expect(find.text('Fictional comment.'), findsNothing);
+    await _scrollIntoView(tester, find.text('Write a review'));
   });
 
   testWidgets('documented Maps price level does not imply a MYR amount or admission',

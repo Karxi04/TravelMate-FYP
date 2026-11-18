@@ -748,7 +748,8 @@ def _adjust_trip(message, state):
         change['activities'] = planned['activities']
         draft = {**trip, **patch, **change}
     if {'startDate', 'destinationArea', 'activities', 'travelPace'} & change.keys():
-        revised = recalculateItinerary(draft)
+        from sequence_contract.domain_functions import LOCAL_DAYS_POLICY
+        revised = recalculateItinerary({**draft, 'geographyPlanningPolicy': LOCAL_DAYS_POLICY})
         if day and 'destinationArea' not in change:
             other_days = [row for row in (draft.get('dailySchedule') or []) if str(row.get('dayNo')) != str(day)]
             if other_days:
@@ -1393,6 +1394,7 @@ def save_plan():
 
     dest = str(plan.get('destinationArea') or plan.get('destination') or '').strip()
     from services.itinerary_identity import POLICY, IDENTITY_FIELDS, consolidate_generated_candidates
+    from sequence_contract.domain_functions import LOCAL_ACTIVITY_FIELDS
     trusted_identity = set(IDENTITY_FIELDS) - {'place_id', 'data_id', 'data_cid'}
     activities = [row for row in plan.get('activities') or [] if isinstance(row, dict)]
     if not save_session:
@@ -1407,7 +1409,7 @@ def save_plan():
             activity_id = f'{activity_id}_visit'
         used_ids.add(activity_id)
         clean_activities.append({
-            **{key: act[key] for key in IDENTITY_FIELDS if key in act},
+            **{key: act[key] for key in (*IDENTITY_FIELDS, *(LOCAL_ACTIVITY_FIELDS if save_session else ())) if key in act},
             'activityId': activity_id,
             'activityName': act.get('activityName') or act.get('name') or act.get('title') or f'Activity {idx + 1}',
             'destinationId': act.get('destinationId') or act.get('place_id') or f'dest_{idx + 1}',
@@ -1446,7 +1448,8 @@ def save_plan():
         'budgetLimit': limit,
         **{field: plan[field] for field in (
             'originLocation', 'travelMode', 'accommodationChoice', 'carRentalChoice',
-            *(('travelPace', 'sleepingType', 'planningPreferences') if save_session else ())
+            *(('travelPace', 'sleepingType', 'planningPreferences', 'geographyPlanningPolicy',
+               'hikingFocused', 'interests') if save_session else ())
         ) if field in plan},
         'activities': clean_activities,
         'transportCost': float(plan.get('transportCost') or 0.0),
@@ -1463,7 +1466,9 @@ def save_plan():
             if isinstance(row, dict) and row.get('activityId') and row['activityId'] not in used_ids:
                 used_ids.add(row['activityId'])
                 suggestions.append({key: value for key, value in row.items() if key != 'intentionalRepeat'})
-        itinerary = recalculateItinerary({**itinerary, 'unscheduledSuggestions': suggestions})
+        itinerary = recalculateItinerary(itinerary)
+        itinerary['unscheduledSuggestions'].extend(suggestions)
+        itinerary['unscheduledActivityCount'] = len(itinerary['unscheduledSuggestions'])
     budget = calculateBudget(itinerary)
     itinerary['budgetEstimate'] = budget
     if save_session:

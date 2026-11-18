@@ -58,6 +58,7 @@ Map<String, dynamic> get _snapshotResponse => {
 class _FakeApiService extends ApiService {
   final Completer<dynamic>? generationGate;
   final bool noSavedSnapshot;
+  final bool staleSnapshot;
   final bool failGenerationOnce;
   final bool snapshotMismatch;
   int recommendationCalls = 0;
@@ -74,6 +75,7 @@ class _FakeApiService extends ApiService {
   _FakeApiService({
     this.generationGate,
     this.noSavedSnapshot = false,
+    this.staleSnapshot = false,
     this.failGenerationOnce = false,
     this.snapshotMismatch = false,
   });
@@ -149,6 +151,9 @@ class _FakeApiService extends ApiService {
     if (path == '/api/fr4/recommendations') {
       recommendationReads += 1;
       expect(query?['destinationArea'], 'Penang, Malaysia');
+      if (staleSnapshot) {
+        return {..._snapshotResponse, 'stale': true, 'recommendations': <dynamic>[]};
+      }
       if (noSavedSnapshot) {
         return {
           'ok': true,
@@ -562,6 +567,19 @@ void main() {
       find.byType(TripDetailsScreen),
     );
     expect(details.tripId, 'trip_exact_123');
+  });
+
+  testWidgets('changed preferences prompt an explicit refresh of the saved snapshot',
+      (tester) async {
+    final api = _FakeApiService(staleSnapshot: true);
+    await _pumpPlanning(tester, api);
+    await _scrollTo(tester, find.text('Your preferences changed. Refresh recommendations to use them for this trip.'));
+    expect(api.recommendationCalls, 0);
+    await _scrollTo(tester, find.text('Find suggestions'));
+    await tester.tap(find.text('Find suggestions'));
+    await tester.pumpAndSettle();
+    expect(api.recommendationCalls, 1);
+    expect(find.byKey(const ValueKey('planning-snapshot-rec_widget_1')), findsOneWidget);
   });
 
   testWidgets('find suggestions creates a snapshot when none is saved',

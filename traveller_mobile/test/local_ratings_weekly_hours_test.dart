@@ -134,7 +134,7 @@ void main() {
     expect(find.textContaining('4.9'), findsNothing);
     expect(find.byIcon(Icons.star_rounded), findsNothing);
   });
-  testWidgets('private card badge refreshes approved totals without a prefix',
+  testWidgets('cards suppress legacy sample totals and refresh genuine totals',
       (tester) async {
     final api = RatingsApi()
       ..cardSummary = {'rating': 3, 'reviews': 3, 'fypPreview': true};
@@ -142,11 +142,11 @@ void main() {
       home: Scaffold(body: LocalPlaceRating(place: place, api: api)),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('3.0 · 3 reviews'), findsOneWidget);
-    expect(find.byIcon(Icons.star_rounded), findsOneWidget);
+    expect(find.text('3.0 · 3 reviews'), findsNothing);
+    expect(find.byIcon(Icons.star_rounded), findsNothing);
     expect(find.textContaining('FYP'), findsNothing);
 
-    api.cardSummary = {'rating': 4.2, 'reviews': 8, 'fypPreview': true};
+    api.cardSummary = {'rating': 4.2, 'reviews': 8};
     LocalReviewRatings.invalidate();
     await tester.pumpAndSettle();
     expect(find.text('4.2 · 8 reviews'), findsOneWidget);

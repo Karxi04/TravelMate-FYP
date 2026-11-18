@@ -398,6 +398,9 @@ class StandaloneApiService {
       final id = path.split('/')[4];
       return _generateAndPlanTrip(id, payload);
     }
+    if (path.startsWith('/api/fr5/itineraries/') && path.endsWith('/intercity-transfer')) {
+      return _confirmIntercityTransfer(path.split('/')[4], payload);
+    }
     if (path.startsWith('/api/fr5/itineraries/') && path.endsWith('/save')) {
       final id = path.split('/')[4];
       return _saveTrip(id);
@@ -3645,7 +3648,7 @@ class StandaloneApiService {
     }
     if (['completed', 'cancelled'].contains(trip['status'])) throw Exception('This itinerary no longer accepts new visits.');
     final activity = <String, dynamic>{
-      for (final key in ['activityName','title','destinationId','address','gps_coordinates','type','category',
+      for (final key in ['activityName','title','destinationId','address','city','state','gps_coordinates','type','category',
         'description','openingHours','indoor','recommendedDurationMinutes','providerDurationMinutes',
         'durationSource','timeSlot','pricingUnit','unitPrice','costCategory','costProvenance',
         'pricingEvidence','priceSourceUrl','priceVerifiedAt','currency','overlapsAllowance','thumbnail','image',
@@ -3690,8 +3693,12 @@ class StandaloneApiService {
     trip['nextActivitySeq'] = sequence + 1;
     activities.add(activity);
     trip['activities'] = activities;
+    if (activities.where((row) => (row['gps_coordinates'] as Map?)?.isNotEmpty == true).length >= 2) {
+      trip['geographyPlanningPolicy'] = localDaysPolicy;
+    }
     final recalculated = planConstraintAwareItinerary(trip,
         preserveOrder: true, respectDayAssignments: true);
+    _checkTravelEdit(recalculated, activities);
     final scheduled = (recalculated['activities'] as List).whereType<Map>();
     if (existing != null && !scheduled.any((row) => row['activityId'] == activity['activityId'] && row['dayNo'] == day)) {
       throw Exception('Another visit cannot fit on the selected day.');
@@ -3802,8 +3809,12 @@ class StandaloneApiService {
     }
     activities[index] = updated;
     trip['activities'] = activities;
+    if (activities.where((row) => (row['gps_coordinates'] as Map?)?.isNotEmpty == true).length >= 2) {
+      trip['geographyPlanningPolicy'] = localDaysPolicy;
+    }
     final recalculated = planConstraintAwareItinerary(trip,
         preserveOrder: true, respectDayAssignments: true);
+    _checkTravelEdit(recalculated, activities);
     trip
       ..clear()
       ..addAll(recalculated);
@@ -3871,11 +3882,53 @@ class StandaloneApiService {
     }
   }
 
+  Future<dynamic> _confirmIntercityTransfer(String id, Map<String, dynamic> payload) async {
+    final trip = await _tripById(id);
+    if (trip == null) throw ApiException('Itinerary not found.', 404, {});
+    if (_isPackageTrip(trip) || trip['confirmedIntercityTransfer'] != null ||
+        (trip['activities'] as List? ?? []).whereType<Map>().any(_protectedVisit)) {
+      throw ApiException('This itinerary cannot be replanned for another transfer.', 409, {});
+    }
+    final day = payload['dayNo'];
+    final mode = payload['mode'];
+    final target = payload['toDestinationId'];
+    if (payload['confirmed'] != true || day is! int || day < 2 || day >= _tripDays(trip) ||
+        !const {'drive', 'public'}.contains(mode) || target is! String || target.isEmpty ||
+        !(trip['unscheduledSuggestions'] as List? ?? []).whereType<Map>().any((row) => row['destinationId'] == target)) {
+      throw ApiException('Choose an optional stop and a transfer day between two sightseeing days.', 409, {});
+    }
+    final revised = planConstraintAwareItinerary({
+      ...trip, 'geographyPlanningPolicy': localDaysPolicy,
+      'confirmedIntercityTransfer': {'dayNo': day, 'toDestinationId': target, 'mode': mode},
+    }, forecast: Map<String, dynamic>.from(trip['generationContext']?['forecastData'] as Map? ?? {}));
+    if (revised['intercityTransferStatus'] != 'planned' ||
+        !(revised['activities'] as List).whereType<Map>().any((row) =>
+          _num(row['dayNo']) > day && row['destinationId'] == target)) {
+      throw ApiException('This transfer and visit could not fit. Check the route, trip dates and venue hours.', 409, {});
+    }
+    revised['budgetEstimate'] = _calculateBudget(revised);
+    await _replaceTrip(revised);
+    return {'ok': true, 'itinerary': revised};
+  }
+
+  void _checkTravelEdit(Map<String, dynamic> revised, Iterable<Map> visits) {
+    final ids = visits.map((visit) => visit['activityId']).toSet();
+    for (final row in (revised['unscheduledSuggestions'] as List? ?? []).whereType<Map>()) {
+      final reason = (row['unscheduledReason'] ?? '').toString();
+      if (ids.contains(row['activityId']) && const [
+        'This stop is too far', 'Could not establish a reliable journey', 'This day already includes similar'
+      ].any(reason.startsWith)) {
+        throw ApiException(reason, 409, {'code': 'itinerary_travel_conflict'});
+      }
+    }
+  }
+
   Future<dynamic> _generateItinerary(
       String id, Map<String, dynamic> payload) async {
     final trip = await _tripById(id);
     if (trip == null) throw Exception('Itinerary not found.');
 
+    trip['geographyPlanningPolicy'] = localDaysPolicy;
     final snapshot = await _snapshotForTrip(trip, payload);
     final recommendationSnapshot = snapshot.isEmpty ? null : snapshot;
     final generationId = (trip['recommendationGenerationId'] ??
@@ -3934,6 +3987,7 @@ class StandaloneApiService {
                   'pricingUnit', 'unitPrice', 'costCategory', 'costProvenance',
                   'priceSourceUrl', 'priceVerifiedAt', 'pricingEvidence', 'currency',
                   'overlapsAllowance', 'intentionalRepeat', 'independentSubAttraction',
+                  ...localActivityFields,
                 ])
                   if (item[key] != null) key: item[key],
                 'estimatedCost': item['estimatedCost'] ?? 0,
@@ -6252,7 +6306,7 @@ class StandaloneApiService {
       activities.add({
         'activityId':'chat_activity_$i',
         for (final key in ['canonicalAttractionId', 'identityConsolidation', 'supportingAccess',
-          'independentSubAttraction', 'ticketProductId', 'place_id', 'data_id', 'data_cid'])
+          'independentSubAttraction', 'ticketProductId', 'place_id', 'data_id', 'data_cid', ...localActivityFields])
           if (d[key] != null) key: d[key],
         'activityName': d['title'],
         if (d['gps_coordinates'] != null) 'gps_coordinates':d['gps_coordinates'],
@@ -6283,6 +6337,7 @@ class StandaloneApiService {
     final end = DateTime.parse(state['endDate']);
     final plan = <String,dynamic>{
       'attractionIdentityPolicy': attractionIdentityPolicy,
+      'geographyPlanningPolicy': localDaysPolicy,
       'title': '$days-Day $destination Trip',
       'destinationArea': destination,
       'startDate': _date(start),
@@ -6301,7 +6356,7 @@ class StandaloneApiService {
       'status': 'generated',
       if(state['avoidCrowds']==true) 'planningLimitations':['Verified crowd-level data is unavailable; quieter conditions cannot be guaranteed.'],
     };
-    final scheduled = planConstraintAwareItinerary(plan, preserveOrder:true, respectDayAssignments:true);
+    final scheduled = planConstraintAwareItinerary(plan);
     return {...scheduled,'budgetEstimate':_calculateBudget(scheduled)};
   }
 
@@ -6363,7 +6418,7 @@ class StandaloneApiService {
     };
     final candidates = [
       ...(plan['activities'] as List? ?? []),
-      if (trustedDraft) ...(plan['unscheduledSuggestions'] as List? ?? []),
+
     ].whereType<Map>().map((row) {
       final copy = Map<String, dynamic>.from(row);
       if (!trustedDraft) copy.removeWhere((key, _) => resolvedFields.contains(key));
@@ -6381,6 +6436,16 @@ class StandaloneApiService {
       ...plan, 'attractionIdentityPolicy': attractionIdentityPolicy,
       'activities': activities, 'unscheduledSuggestions': [],
     }, preserveOrder: true, respectDayAssignments: true);
+    if (trustedDraft) {
+      final usedIds = {...used};
+      final pending = [
+        ...(planned['unscheduledSuggestions'] as List? ?? []),
+        for (final item in (plan['unscheduledSuggestions'] as List? ?? []).whereType<Map>())
+          if (item['activityId'] is String && usedIds.add(item['activityId'] as String)) item,
+      ];
+      planned['unscheduledSuggestions'] = pending;
+      planned['unscheduledActivityCount'] = pending.length;
+    }
     return {...planned, 'budgetEstimate': _calculateBudget(planned)};
   }
 

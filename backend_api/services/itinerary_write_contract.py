@@ -9,7 +9,7 @@ from sequence_contract.validators import (
 EDITABLE_FIELDS = {
     'title', 'destinationArea', 'destinationName', 'destinationCountry',
     'startDate', 'endDate', 'travellerCount', 'budgetLimit', 'originLocation',
-    'travelMode', 'accommodationChoice', 'carRentalChoice', 'travelPace',
+    'travelMode', 'transportMode', 'accommodationChoice', 'carRentalChoice', 'travelPace',
 }
 GENERATION_FIELDS = {'generationRequestId', 'recommendationGenerationId'}
 ERROR = 'Invalid or non-editable trip fields. Use the supported trip editing or selection actions.'
@@ -111,7 +111,8 @@ def validate_trip_write(payload, *, update=False, generation=False):
             raise ValueError(ERROR)
         elif key in {'title', 'destinationArea', 'startDate', 'endDate', 'hotelBookingId'} and not value.strip():
             raise ValueError(ERROR)
-    choices = {'travelMode': TRAVEL_MODES, 'accommodationChoice': ACCOMMODATION_CHOICES,
+    choices = {'travelMode': TRAVEL_MODES, 'transportMode': {'walk', 'drive', 'public'},
+               'accommodationChoice': ACCOMMODATION_CHOICES,
                'carRentalChoice': CAR_RENTAL_CHOICES}
     if any(key in payload and payload[key] not in options for key, options in choices.items()):
         raise ValueError(ERROR)

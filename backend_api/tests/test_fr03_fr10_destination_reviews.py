@@ -111,7 +111,7 @@ def test_submit_and_retrieve_ratings_reviews(client, mock_traveller_auth):
         assert data['result']['user_reviews'][0]['description'] == 'Magnificent temple and panoramic view.'
 
 
-def test_genuine_review_cross_account_and_separate_private_preview(client, memory, monkeypatch):
+def test_genuine_review_cross_account_and_synthetic_records_excluded(client, memory):
     identity = 'local_penang_hill'
     api = '/api/fr3/destinations/penang_hill/ratings-reviews'
     owner = headers('author')
@@ -119,17 +119,16 @@ def test_genuine_review_cross_account_and_separate_private_preview(client, memor
     preview = {**owner, 'X-TravelMate-Review-Context': 'fyp-v1'}
     sample = {'id': 'fixture', 'destinationId': identity, 'travellerId': 'fixture-author',
               'comment': 'Fictional preview fixture only.', 'rating': 1,
-              'feedbackStatus': 'visible', 'moderationStatus': 'reviewed'}
-    prefix = 'modules.fr03_destination_search_information.routes.'
-    monkeypatch.setattr(prefix + 'dataset_for', lambda uid: ('demo', {identity: {}}) if uid == 'author' else None)
-    monkeypatch.setattr(prefix + 'dataset_reviews', lambda *args: [sample])
+              'feedbackStatus': 'visible', 'moderationStatus': 'reviewed', 'synthetic': True}
+    memory['feedback', 'fixture'] = sample
+    memory['feedback', 'legacy'] = {**sample, 'id': 'legacy', 'synthetic': False, 'source': 'sample'}
     assert client.get(api, headers=second).json['result']['reviews'] == 0
     submitted = client.post('/api/fr10/feedback', headers=owner, json={
         'destinationId': identity, 'rating': 5, 'comment': 'Beautiful views and a wonderful visit.',
     })
     assert submitted.status_code == 201
     rid = submitted.json['id']
-    assert client.get(api, headers=preview).json['source'] == 'fyp_private'
+    assert client.get(api, headers=preview).json['source'] == 'travelmate_database'
     for auth, path in [(second, api), (preview, api + '?view=community')]:
         response = client.get(path, headers=auth)
         assert response.headers['Cache-Control'] == 'private, no-store'
@@ -138,7 +137,8 @@ def test_genuine_review_cross_account_and_separate_private_preview(client, memor
         assert result['user_reviews'][0]['id'] == rid
         assert 'fypPreview' not in result
     assert client.get('/api/fr3/local-ratings', headers=second).json['items'][identity]['rating'] == 5
-    assert client.get('/api/fr3/local-ratings', headers=preview).json['items'][identity]['rating'] == 1
+    assert client.get('/api/fr3/local-ratings', headers=preview).json['items'][identity] == {'rating': 5, 'reviews': 1}
+    assert memory['feedback', 'fixture'] == sample
     assert client.delete('/api/fr10/feedback/' + rid, headers=second).status_code == 404
     pending = client.post('/api/fr10/feedback', headers=second, json={
         'destinationId': 'penang_hill', 'rating': 3, 'comment': 'Click here https://example.invalid',

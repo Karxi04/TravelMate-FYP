@@ -82,8 +82,6 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         'fallback',
         'local',
         'local_catalog',
-        'fyp_private',
-        'demo',
       }.contains(source.toLowerCase());
 
   bool get _hasEssentialDetails =>
@@ -156,32 +154,12 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       reviewInfo = data['result'] is Map
           ? Map<String, dynamic>.from(data['result'] as Map)
           : null;
-      if (reviewInfo != null &&
-          reviewInfo!['sampleSummary'] == null &&
-          data['sampleReviewsAvailable'] == true) {
-        try {
-          final legacy = await api.get(path, {'view': 'samples'});
-          if (!current()) return;
-          final sample = legacy['result'];
-          if (sample is Map && sample['fypPreview'] == true) {
-            reviewInfo = {
-              ...reviewInfo!,
-              'sampleSummary': {'rating': sample['rating'], 'reviews': sample['reviews']},
-              'user_reviews': [
-                ..._reviews(),
-                for (final row in (sample['user_reviews'] as List? ?? const []).whereType<Map>())
-                  {...row, 'source': 'sample'},
-              ],
-            };
-          }
-        } catch (_) {
-          if (!current()) return;
-          reviewInfo!['samplesUnavailable'] = true;
-        }
+      if (reviewInfo?['fypPreview'] == true || data['source'] == 'fyp_private') {
+        reviewInfo = {'user_reviews': <dynamic>[]};
       }
       if (reviewInfo == null) {
         reviewsFailed = true;
-      } else if (reviewInfo!['fypPreview'] != true) {
+      } else {
         LocalReviewRatings.remember(reviewDestinationId, reviewInfo!);
       }
     } catch (_) {
@@ -274,6 +252,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     if (raw is List) {
       return raw
           .whereType<Map>()
+          .where(ReviewContract.isGenuine)
           .map((review) => Map<String, dynamic>.from(review))
           .toList();
     }
@@ -283,6 +262,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         if (value is List) {
           return value
               .whereType<Map>()
+              .where(ReviewContract.isGenuine)
               .map((review) => Map<String, dynamic>.from(review))
               .toList();
         }
@@ -745,19 +725,12 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   Widget _reviewsSection() {
     final reviews = _reviews();
     final visible = showAllReviews ? reviews : reviews.take(3).toList();
-    final legacySample = reviewInfo?['fypPreview'] == true;
-    final includesDemo = legacySample || reviews.any((review) => review['source'] == 'sample');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const AppSectionHeader(title: 'Reviews'),
-        if (reviewInfo?['rating'] != null && !legacySample)
+        if (reviewInfo?['rating'] != null)
           LocalReviewRatingBadge(summary: reviewInfo!),
-        if (includesDemo)
-          Text('Includes fictional demo reviews.',
-              style: Theme.of(context).textTheme.bodySmall),
-        if (reviewInfo?['samplesUnavailable'] == true)
-          const Text('Demo reviews could not be loaded. Refresh to try again.'),
         const SizedBox(height: AppSpacing.sm),
         if (reviewsFailed)
           AppErrorState(
@@ -791,7 +764,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             ),
         ],
         const SizedBox(height: AppSpacing.xs),
-        if (!legacySample) SecondaryButton(
+        SecondaryButton(
           label: 'Write a review',
           icon: Icons.rate_review_outlined,
           onPressed: () async { await Navigator.push(

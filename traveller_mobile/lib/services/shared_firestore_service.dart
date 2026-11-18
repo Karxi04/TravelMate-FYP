@@ -79,7 +79,8 @@ class SharedFirestoreService {
     QueryDocumentSnapshot<Map<String, dynamic>>? cursor;
     while (true) {
       final page = await (cursor == null ? query.limit(10) : query.startAfterDocument(cursor).limit(10)).get();
-      all.addAll(page.docs.map((d) => PublicContentContract.review(_doc(d))));
+      all.addAll(page.docs.map(_doc).where(ReviewContract.isGenuine)
+          .map(PublicContentContract.review));
       if (page.docs.length < 10) break;
       cursor = page.docs.last;
     }

@@ -175,7 +175,11 @@ def test_complete_traveller_journey_and_explicit_learning_refresh(client, journe
     edited = client.post(f"/api/fr5/itineraries/{trip_id}/activities/rearrange", headers=AUTH, json={"orderedActivityIds": order})
     assert edited.status_code == 200
     edited_trip = edited.get_json()["itinerary"]
-    assert [row["activityId"] for row in edited_trip["activities"]] == order
+    # Reordering operates within a day; advancing to a different day requires a move.
+    original_days = {row['activityId']: row['dayNo'] for row in trip['activities']}
+    assert {row['activityId']: row['dayNo'] for row in edited_trip['activities']} == original_days
+    assert [row['activityId'] for row in edited_trip['activities']] == sorted(
+        order, key=original_days.get)
     assert edited_trip["dailySchedule"] and edited_trip["totalScheduledMinutes"] > 0
     assert journey.retrieve("itineraries", trip_id)["activities"] == edited_trip["activities"]
     assert journey.retrieve("recommendation_snapshots", generation_id) == original_snapshot
