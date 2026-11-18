@@ -131,8 +131,13 @@ def test_legoland_provider_identity_preserves_genuine_ratings_in_all_modes(clien
         combined = client.get(path, headers=auth).json['result']
         app.config['LOCAL_FYP_SAMPLE_REVIEWS'] = False
         public = client.get(path, headers=auth).json['result']
-    assert combined == public
-    assert [row['id'] for row in combined['user_reviews']] == ['genuine']
+    assert (combined['rating'], combined['reviews']) == (public['rating'], public['reviews'])
+    assert combined['user_reviews'][:1] == public['user_reviews']
+    assert combined['sampleSummary'] == {'rating': 3.7, 'reviews': 3}
+    assert all(row['synthetic'] and row['source'] == 'fyp_private' for row in combined['user_reviews'][1:])
+    assert 'sampleSummary' not in public
+    assert [row['id'] for row in public['user_reviews']] == ['genuine']
+    assert [row['id'] for row in combined['user_reviews'] if not row.get('synthetic')] == ['genuine']
     assert combined['reviews'] == public['reviews'] == 1
     assert combined['rating'] == public['rating'] == 4
     assert 'sampleSummary' not in public

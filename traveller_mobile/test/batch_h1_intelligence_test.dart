@@ -10,7 +10,7 @@ Map<String, dynamic> place(String id, String title, String category, double lat,
 
 void main() {
   test('tourism eligibility uses provider function and keeps legitimate visitor venues', () {
-    for(final type in ['gas_station','residential area','Housing development','government office']) {
+    for(final type in ['gas_station','residential area','Housing development','government office', 'bank', 'car_repair', 'real_estate_agency']) {
       expect(isTourismPlanningCandidate({'title':'Local venue','type':type}), isFalse);
     }
     for(final type in ['Restaurant','Botanical garden','Museum']) {

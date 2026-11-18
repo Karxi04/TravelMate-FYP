@@ -19,6 +19,7 @@ from services.recommendation_taxonomy import (
     experience_types,
 )
 from services.preference_learning import LEARNED_INTEREST_STRENGTH
+from services.review_service import genuine_review
 from services.activity_pricing import activity_pricing, traveller_count
 from sequence_contract.validators import (
     ACCOMMODATION_CHOICES,
@@ -338,6 +339,8 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
     ratings = {}
     seen_ratings = set()
     for row in sorted(collaborativeData or [],key=lambda row:(str(row.get('updatedAt') or row.get('createdAt') or ''),str(row.get('id') or '')),reverse=True):
+        if not genuine_review(row):
+            continue
         did = str(row.get('destinationId') or '')
         if not did:
             continue

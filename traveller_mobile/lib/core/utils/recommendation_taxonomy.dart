@@ -33,6 +33,7 @@ bool isTourismPlanningCandidate(Map item) {
     'gas station', 'petrol station', 'fuel station', 'housing development',
     'residential area', 'residential development', 'residential complex',
     'warehouse', 'utility facility', 'corporate office', 'industrial supplier', 'factory',
+    'bank', 'car repair', 'real estate agency',
   };
   if (categories.any((value) => rejected.contains(value.replaceAll('_', ' ')))) return false;
   if (categories.any((value) => const {'locality', 'neighborhood', 'neighbourhood', 'sublocality', 'political'}.contains(value)) &&

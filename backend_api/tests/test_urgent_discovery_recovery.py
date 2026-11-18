@@ -117,7 +117,8 @@ def test_missing_interest_retrieval_is_bounded_and_never_writes_query_tags(clien
     assert result.status_code==200,result.json
     assert [call.args[0] for call in provider.call_args_list]==['hawker centres','street art']
     assert {row['destinationId'] for row in result.json['recommendations']}=={'street art','hawker centres'}
-    assert discovery_queries({'interests':['Photography','Food']},[{'title':'Street art'}])==['hawker centres', 'street art']
+    # Existing street-art experience now advances the bounded query plan to variety.
+    assert discovery_queries({'interests':['Photography','Food']},[{'title':'Street art'}])==['hawker centres', 'scenic viewpoints']
     assert 'tourist attractions' not in discovery_queries({'interests':['Photography','Food']},[{'title':'Street art hawker food'}])
     assert discovery_queries({'interests':['Photography','Food'],'excludedInterests':['Food']},[])==['street art']
     assert discovery_queries({'interests':['Photography','Food'],'destinationFeedback':{'no':'not_for_me'}},

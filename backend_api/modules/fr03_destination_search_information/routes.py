@@ -31,6 +31,7 @@ from services.public_content_projection import public_review
 from services.review_service import approved_reviews, genuine_review
 from services.fyp_reviews import (
     dataset_for, dataset_reviews, private_dataset, regional_demo_destinations, regional_demo_reviews,
+    PENANG_DESTINATION_IDS,
 )
 from services.review_destination import review_destination_id, review_destination_ids
 from services.malaysian_locality import (
@@ -908,6 +909,30 @@ def ratings_reviews(place_id):
     if request.args.get('view') == 'samples':
         return jsonify(ok=False, error='Use the authorized review testing view.'), 404
     result = retrieveRatingsAndReviews(canonical, alternate=alternate)
+    if _local_demo_request():
+        # One authorized list; genuine aggregates and private provenance stay independent.
+        records = regional_demo_reviews(canonical)
+        example_status = 'available'
+        if not records and canonical in PENANG_DESTINATION_IDS:
+            from google.api_core.exceptions import GoogleAPICallError
+            try:
+                demo = _private_review_dataset(discovery=True)
+                if demo and canonical in demo[1]:
+                    records = [row for row in dataset_reviews(*demo) if row['destinationId'] == canonical]
+            except (ValueError, GoogleAPICallError, TimeoutError) as exc:
+                current_app.logger.warning('Private review examples unavailable (%s)', type(exc).__name__)
+                example_status = 'unavailable'
+        visible = approved_reviews(records)
+        examples = [{**public_review(row), 'synthetic': True, 'source': 'fyp_private',
+                     'dataset': row.get('dataset') or 'penang_private'} for row in visible]
+        result.update(
+            user_reviews=result['user_reviews'] + examples,
+            privateExamplesAllowed=True,
+            sampleSummary={'reviews': len(examples),
+                           'rating': round(sum(float(row['rating']) for row in visible)/len(visible), 1) if visible else None},
+        )
+        return jsonify(ok=True, source='travelmate_database', result=result,
+                       reviewEnvironment='private_demo', exampleReviewStatus=example_status)
     return jsonify(ok=True, source='travelmate_database', result=result,
                    **({'reviewTestModeAvailable': True} if demo_available else {}))
 

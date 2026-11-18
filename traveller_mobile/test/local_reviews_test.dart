@@ -62,17 +62,28 @@ class _AuthorizedReviewApi extends ApiService {
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
     if (!path.endsWith('/ratings-reviews')) return {'items': <dynamic>[]};
     views.add(query?['view'] ?? '');
-    final testing = query?['view'] == 'test';
     return {
-      'reviewTestModeAvailable': true,
-      'source': testing ? 'fyp_private' : 'travelmate_database',
+      'reviewEnvironment': 'private_demo',
+      'source': 'travelmate_database',
       'result': {
-        'rating': testing ? 2.0 : 5.0,
+        'privateExamplesAllowed': true,
+        'rating': 5.0,
         'reviews': 1,
-        if (testing) 'fypPreview': true,
+        'sampleSummary': {'rating': 2.0, 'reviews': 3},
         'user_reviews': [
-          {'id': testing ? 'test-row' : 'real-row', 'rating': testing ? 2 : 5,
-           'description': testing ? 'Fictional test comment.' : 'Approved visitor comment.'},
+          {
+            'id': 'real',
+            'rating': 5,
+            'description': 'Approved visitor comment.'
+          },
+          for (var i = 1; i <= 3; i++)
+            {
+              'id': 'example-$i',
+              'synthetic': true,
+              'source': 'fyp_private',
+              'rating': 2,
+              'description': 'Fictional comment $i.'
+            },
         ],
       },
     };
@@ -80,25 +91,46 @@ class _AuthorizedReviewApi extends ApiService {
 }
 
 void main() {
-  testWidgets('authorized review mode uses one disclosure and keeps authentic totals separate', (tester) async {
+  testWidgets(
+      'authorized demo has one list, no toggle, and genuine totals after reopening',
+      (tester) async {
     final api = _AuthorizedReviewApi();
-    await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,
-      initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
+    Future<void> open() async {
+      await tester.pumpWidget(MaterialApp(
+          home: DestinationDetailsScreen(
+              key: UniqueKey(),
+              api: api,
+              initialDestination: const {
+            'destinationId': 'local_penang_hill',
+            'title': 'Penang Hill'
+          })));
+      await tester.pumpAndSettle();
+    }
+
+    await open();
+    expect(find.textContaining('Private demonstration environment.'),
+        findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Reviews'), 200);
+    expect(find.byType(Switch), findsNothing);
+    expect(find.text('Review testing'), findsNothing);
+    expect(find.text('5.0 · 1 review'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('View all 4 reviews'), 180);
+    await tester.ensureVisible(find.text('View all 4 reviews'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Review testing'), 200);
-    await tester.ensureVisible(find.byType(Switch));
+    await tester.tap(find.text('View all 4 reviews'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(Switch));
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Fictional test comment.'), 180);
-    expect(find.text('Fictional review test data. Ratings are separate from visitor reviews.'), findsOneWidget);
-    expect(find.text('2.0 · 1 review'), findsOneWidget);
-    expect(find.text('5.0 · 1 review'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Fictional comment 3.'), 180);
+    expect(find.text('Fictional comment 3.'), findsOneWidget);
     expect(find.text('Sample review'), findsNothing);
-    expect(api.views, ['unified', 'test']);
+    expect(find.text('Demonstration reviews'), findsNothing);
+    await open();
+    await tester.scrollUntilVisible(find.text('Reviews'), 200);
+    expect(find.text('5.0 · 1 review'), findsOneWidget);
+    expect(api.views, ['unified', 'unified']);
   });
 
-  testWidgets('older local Backend sample fallback is not requested', (tester) async {
+  testWidgets('older local Backend sample fallback is not requested',
+      (tester) async {
     final api = _PreviewApi(oldServer: true);
     await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,
         initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
