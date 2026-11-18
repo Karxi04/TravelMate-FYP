@@ -413,20 +413,23 @@ def test_reports_page_criteria_form_and_export_links(admin_client):
         assert "System Activity Report" in html
         assert "Export CSV" in html
         assert "layout=readable" in html
+        assert "layout=compact" in html
+        assert "Export Excel (.xlsx)" in html
+        assert "Advanced CSV (all fields)" in html
         assert "Export PDF" in html
         assert "Configure Report Parameters" in html
         assert "User Accounts Breakdown" in html
         assert "Tourism Packages Breakdown" in html
 
 
-@pytest.mark.parametrize('layout', ['readable', 'legacy'])
+@pytest.mark.parametrize('layout', ['compact', 'readable', 'legacy'])
 def test_csv_download_layout_forwarding_preserves_filters(admin_client, layout):
     response = _mock_response({})
     response.content = b'csv-test-content'
     api = MagicMock(return_value=response)
     query = '/admin/reports/export?format=csv&reportType=payments&startDate=2026-11-01&endDate=2026-11-18&filter=Penang'
-    if layout == 'legacy':
-        query += '&layout=legacy'
+    if layout != 'compact':
+        query += '&layout=' + layout
     with _patch_view_api('admin_fr13.export_report', api):
         result = admin_client.get(query)
     assert result.status_code == 200 and result.data == response.content
@@ -434,7 +437,7 @@ def test_csv_download_layout_forwarding_preserves_filters(admin_client, layout):
     api.assert_called_once_with('GET', '/api/fr13/reports/export.csv', params={
         'reportType': 'payments', 'startDate': '2026-11-01', 'endDate': '2026-11-18',
         'filter': 'Penang', 'layout': layout})
-    filename = 'TravelMate_Admin_payments_Report.csv' if layout == 'readable' else 'TravelMate_System_Report.csv'
+    filename = 'TravelMate_Admin_payments_Report.csv' if layout in {'compact', 'readable'} else 'TravelMate_System_Report.csv'
     assert filename in result.headers['Content-Disposition']
 
 
@@ -446,3 +449,16 @@ def test_csv_download_invalid_layout_and_backend_error(admin_client):
         api.assert_not_called()
         failed = admin_client.get('/admin/reports/export?format=csv&reportType=payments')
     assert failed.status_code == 302 and '/reports' in failed.headers['Location']
+
+
+def test_xlsx_download_forwards_existing_report_criteria(admin_client):
+    response = _mock_response({})
+    response.content = b'xlsx-test-content'
+    api = MagicMock(return_value=response)
+    with _patch_view_api('admin_fr13.export_report', api):
+        result = admin_client.get('/admin/reports/export?format=xlsx&reportType=payments&filter=Penang')
+    assert result.status_code == 200 and result.data == response.content
+    assert result.mimetype == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    assert '.xlsx' in result.headers['Content-Disposition']
+    api.assert_called_once_with('GET', '/api/fr13/reports/export.xlsx', params={
+        'reportType': 'payments', 'startDate': '', 'endDate': '', 'filter': 'Penang'})
