@@ -1,5 +1,5 @@
 {% extends 'portal_base.html' %}
-{% block title %}System Reports | TravelMate{% endblock %}
+{% block title %}System Reports | TravelMate Central Administration{% endblock %}
 
 {% block content %}
 {% include '_admin_data_state.html' %}
@@ -10,13 +10,139 @@
     </p>
   {% endif %}
 
-  <div class="page-title">
+  <style>
+  /* ==========================================================================
+     TravelMate Central Administration — Executive System Reports Presentation
+     ========================================================================== */
+  .report-header-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .report-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .report-filter-card {
+    margin-bottom: 24px;
+    padding: 20px 24px;
+  }
+
+  .report-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+
+  .filter-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .report-records-section {
+    margin-top: 28px;
+    margin-bottom: 28px;
+  }
+
+  .records-table-wrap {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-top: 12px;
+  }
+
+  .records-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+    min-width: 760px;
+  }
+
+  .records-table th {
+    background: #F8FAFC;
+    padding: 12px 16px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-secondary);
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .records-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    vertical-align: middle;
+    color: var(--ink);
+  }
+
+  .records-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .records-table tr:hover td {
+    background: #FAFCFF;
+  }
+
+  .code-cell {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  @media print {
+    .sidebar, .topbar, .report-actions, .report-filter-card, .mobile-menu-btn, .notice-banner-limited {
+      display: none !important;
+    }
+    .layout {
+      display: block !important;
+    }
+    .content {
+      padding: 0 !important;
+      margin: 0 !important;
+      width: 100% !important;
+    }
+    body {
+      background: #FFFFFF !important;
+      color: #000000 !important;
+      font-size: 12pt !important;
+    }
+    .card, .records-table-wrap {
+      box-shadow: none !important;
+      border: 1px solid #CBD5E1 !important;
+      page-break-inside: avoid;
+    }
+  }
+  </style>
+
+  <div class="report-header-banner">
     <div>
       <span class="eyebrow">AUDIT &amp; ANALYTICS</span>
-      <h1>System Activity Report</h1>
-      <p>Review comprehensive TravelMate system metrics, audit operational counts, and export administrative activity reports.</p>
+      <h1 style="margin: 4px 0 2px;">System Activity Report</h1>
+      <p style="margin: 0; color: var(--ink-secondary); font-size: 13.5px;">Review comprehensive TravelMate system metrics, audit operational counts, and export administrative activity reports.</p>
     </div>
-    <div class="actions">
+    <div class="report-actions">
+      <button type="button" class="btn outline" onclick="window.print()" aria-label="Print Report">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        <span>Print Report</span>
+      </button>
       <a class="btn outline" href="{{ url_for('admin_fr13.export_report', reportType=criteria.get('reportType', 'system_summary'), startDate=criteria.get('startDate', ''), endDate=criteria.get('endDate', ''), filter=criteria.get('filter', ''), format='csv') }}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         <span>Export CSV</span>
@@ -29,10 +155,10 @@
   </div>
 
   <!-- Report Filter Toolbar -->
-  <form class="card" method="get" action="{{ url_for('admin_fr13.reports') }}" style="margin-bottom: 24px; padding: 18px 20px;">
+  <form class="card report-filter-card" method="get" action="{{ url_for('admin_fr13.reports') }}">
     <span class="eyebrow">FILTER CRITERIA</span>
     <h3 style="margin: 2px 0 14px; font-size: 16px;">Configure Report Parameters</h3>
-    <div class="grid g4" style="margin-bottom: 14px;">
+    <div class="report-filter-grid">
       <div class="field">
         <label for="reportTypeSelect">Report type</label>
         <select id="reportTypeSelect" class="input" name="reportType">
@@ -54,7 +180,12 @@
         <input id="reportKeyword" class="input" name="filter" value="{{ criteria.get('filter', '') }}" placeholder="status, name, reference">
       </div>
     </div>
-    <button class="btn secondary" type="submit">Generate Report</button>
+    <div class="filter-actions-row">
+      <button class="btn secondary" type="submit">Generate Report</button>
+      {% if criteria.get('reportType') and criteria.get('reportType') != 'system_summary' or criteria.get('startDate') or criteria.get('endDate') or criteria.get('filter') %}
+        <a class="btn outline" href="{{ url_for('admin_fr13.reports') }}" style="color: var(--ink-muted);">Reset Parameters</a>
+      {% endif %}
+    </div>
   </form>
 
   {% set summary = report.get('summary', {}) %}
@@ -62,10 +193,11 @@
   {% set packages = summary.get('packages', {}) %}
   {% set campaigns = summary.get('campaigns', {}) %}
   {% set feedback = summary.get('feedback', {}) %}
+  {% set payments = summary.get('payments', {}) %}
   {% set counts = report.get('counts', {}) %}
 
   <!-- Top Metrics Overview -->
-  <div class="grid g4" style="margin-bottom: 20px;">
+  <div class="grid g4" style="margin-bottom: 24px;">
     <div class="card metric-card">
       <div>
         <span class="badge neutral">Users</span>
@@ -104,7 +236,7 @@
   </div>
 
   <!-- Detailed Category Breakdowns -->
-  <div class="grid g2" style="margin-bottom: 20px;">
+  <div class="grid g2" style="margin-bottom: 24px;">
     <!-- User Breakdown -->
     <div class="card">
       <span class="eyebrow">ACCOUNTS</span>
@@ -199,6 +331,109 @@
       </div>
     </div>
   </div>
+
+  <!-- Commerce & Operational Monitoring Card -->
+  <div class="card cream" style="margin-bottom: 24px;">
+    <span class="eyebrow">COMMERCE &amp; AUDIT MONITORING</span>
+    <h3 style="margin: 4px 0 14px;">Platform Bookings &amp; Payment Transactions</h3>
+    <div class="grid g4">
+      <div>
+        <small class="muted" style="text-transform: uppercase; font-size: 10.5px; font-weight: 700;">Package Bookings</small>
+        <div style="font-size: 22px; font-weight: 800; color: var(--ink); margin-top: 2px;">{{ counts.get('package_bookings', 0) }}</div>
+        <small class="muted">Platform packages</small>
+      </div>
+      <div>
+        <small class="muted" style="text-transform: uppercase; font-size: 10.5px; font-weight: 700;">Hotel Bookings</small>
+        <div style="font-size: 22px; font-weight: 800; color: var(--ink); margin-top: 2px;">{{ counts.get('hotel_bookings', 0) }}</div>
+        <small class="muted">Partner hotel rooms</small>
+      </div>
+      <div>
+        <small class="muted" style="text-transform: uppercase; font-size: 10.5px; font-weight: 700;">Paid Orders</small>
+        <div style="font-size: 22px; font-weight: 800; color: var(--success); margin-top: 2px;">{{ payments.get('paid', 0) }}</div>
+        <small class="muted">MYR {{ '%.2f'|format(payments.get('totalPaidRevenue', 0.0)) }} settled</small>
+      </div>
+      <div>
+        <small class="muted" style="text-transform: uppercase; font-size: 10.5px; font-weight: 700;">Stripe Test Orders</small>
+        <div style="font-size: 22px; font-weight: 800; color: var(--bluegrey); margin-top: 2px;">{{ payments.get('testMode', 0) }}</div>
+        <small class="muted">MYR {{ '%.2f'|format(payments.get('testPaidTotal', 0.0)) }} sandbox</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filtered Records Table Section -->
+  {% set records = report.get('records', []) %}
+  {% if criteria.get('reportType') and criteria.get('reportType') != 'system_summary' %}
+  <section class="report-records-section">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+      <div>
+        <span class="eyebrow">AUDIT DATASET</span>
+        <h3 style="margin: 2px 0 0;">Filtered Records: {{ criteria.get('reportType')|replace('_', ' ')|title }}</h3>
+      </div>
+      <span class="muted" style="font-size: 12px; font-weight: 600;">
+        Showing {{ records|length }} record{% if records|length != 1 %}s{% endif %}{% if report.get('recordsLimited') %} (capped at 200){% endif %}
+      </span>
+    </div>
+
+    {% if records %}
+    <div class="records-table-wrap">
+      <table class="records-table">
+        <thead>
+          <tr>
+            <th>Identifier / Ref</th>
+            <th>Primary Name / Title</th>
+            <th>Status / State</th>
+            <th>Date / Timestamp</th>
+            <th>Additional Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rec in records %}
+          <tr>
+            <td class="code-cell">
+              {{ rec.id or rec.uid or rec.orderReference or rec.transactionReference or '—' }}
+            </td>
+            <td>
+              <strong style="color: var(--ink);">
+                {{ rec.name or rec.fullName or rec.title or rec.packageTitle or rec.campaignTitle or rec.destinationName or rec.hotelName or rec.productTitle or '—' }}
+              </strong>
+              {% if rec.email %}
+                <small class="muted" style="display: block;">{{ rec.email }}</small>
+              {% endif %}
+            </td>
+            <td>
+              {% set s_val = rec.status or rec.approvalStatus or rec.reviewStatus or rec.paymentStatus or rec.verificationStatus or 'recorded' %}
+              <span class="status {{ 'approved' if s_val in ['approved', 'active', 'paid', 'visible', 'verified'] else 'pending' if s_val in ['pending', 'submitted', 'under_review'] else 'rejected' if s_val in ['rejected', 'deactivated', 'failed', 'removed'] else 'draft' }}">
+                {{ s_val|replace('_', ' ')|title }}
+              </span>
+            </td>
+            <td style="font-size: 12px; color: var(--ink-muted);">
+              {{ (rec.createdAt or rec.updatedAt or rec.startDate or rec.departureDate or '—')[:19]|replace('T', ' ') }}
+            </td>
+            <td style="font-size: 12px;">
+              {% if rec.amount is not none or rec.groupTotal is not none %}
+                <strong>{{ rec.currency or 'MYR' }} {{ '%.2f'|format((rec.amount if rec.amount is not none else rec.groupTotal)|float) }}</strong>
+              {% elif rec.role %}
+                <span>Role: <strong>{{ rec.role|title }}</strong></span>
+              {% elif rec.discountValue %}
+                <span>Discount: <strong>{{ rec.discountValue }}{% if rec.discountType == 'percentage' %}%{% else %} MYR{% endif %}</strong></span>
+              {% elif rec.rating %}
+                <span>Rating: <strong>{{ rec.rating }}/5</strong></span>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card empty-state" style="margin-top: 12px; padding: 32px 16px;">
+      <p class="muted" style="margin: 0;">No matching records found for the selected criteria and date range.</p>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
 
   <!-- Generation Timestamp -->
   <div class="card cream" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">

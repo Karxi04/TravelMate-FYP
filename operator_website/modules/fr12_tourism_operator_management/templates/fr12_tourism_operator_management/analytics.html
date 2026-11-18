@@ -1,17 +1,203 @@
 {% extends 'portal_base.html' %}
-{% block title %}Business Analytics | TravelMate{% endblock %}
+{% block title %}Business Analytics &amp; Performance Report | TravelMate Operator{% endblock %}
 
 {% block content %}
 {% set summary = analytics.get('summary', {}) %}
-<div class="page-title">
+{% set packages = analytics.get('packages', []) %}
+{% set campaigns = analytics.get('campaigns', []) %}
+{% set bookings = analytics.get('bookings', []) %}
+
+<style>
+/* ==========================================================================
+   TravelMate Penang Tourism Platform — Executive Business Report Presentation
+   ========================================================================== */
+
+.report-header-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.report-meta-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.report-meta-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: var(--canvas);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.report-section {
+  margin-top: 28px;
+}
+
+.report-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.report-section-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-section-desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+/* Data Tables */
+.report-table-wrap {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  min-width: 720px;
+}
+
+.report-table th {
+  background: #F8FAFC;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-secondary);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.report-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+  color: var(--ink);
+}
+
+.report-table tr:last-child td {
+  border-bottom: none;
+}
+
+.report-table tr:hover td {
+  background: #FAFCFF;
+}
+
+.status-cell {
+  white-space: nowrap;
+}
+
+.code-badge {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-weight: 700;
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  background: #F1F5F9;
+  border: 1px solid var(--grey);
+  color: var(--ink);
+}
+
+/* Print Styles */
+@media print {
+  .sidebar, .topbar, .report-actions, .mobile-menu-btn, .notice-banner-limited {
+    display: none !important;
+  }
+  .layout {
+    display: block !important;
+  }
+  .content {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+  }
+  body {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+    font-size: 12pt !important;
+  }
+  .card, .report-table-wrap {
+    box-shadow: none !important;
+    border: 1px solid #CBD5E1 !important;
+    page-break-inside: avoid;
+  }
+  .report-table th {
+    background: #F1F5F9 !important;
+    color: #000000 !important;
+  }
+  a {
+    text-decoration: none !important;
+    color: #000000 !important;
+  }
+}
+</style>
+
+<div class="report-header-banner">
   <div>
-    <span class="eyebrow">Executive Intelligence</span>
-    <h1>Business Analytics</h1>
-    <p>Operational performance, catalog moderation metrics, and platform records.</p>
+    <span class="eyebrow">Executive Intelligence • TravelMate Penang</span>
+    <h1 style="margin: 4px 0 2px;">Business Analytics</h1>
+    <p style="margin: 0; color: var(--ink-secondary); font-size: 13.5px;">Operational performance, catalog moderation metrics, and platform records.</p>
+    <div class="report-meta-strip">
+      <span class="report-meta-tag">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>Generated: {{ (analytics.get('generatedAt') or '')[:19]|replace('T', ' ') if analytics.get('generatedAt') else 'Live Platform Session' }}</span>
+      </span>
+      <span class="report-meta-tag">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span>Scope: Authorized Operator Catalog</span>
+      </span>
+    </div>
   </div>
-  <div class="actions">
+  <div class="report-actions">
+    <button type="button" class="btn outline" onclick="window.print()" aria-label="Print or Save Report as PDF">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      <span>Print Report</span>
+    </button>
     <a class="btn primary" href="{{ url_for('operator_fr12.export_report') }}">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       <span>Export Business Report PDF</span>
     </a>
   </div>
@@ -29,19 +215,23 @@
   </div>
 </div>
 {% else %}
+
 {% if analytics.get('dataLimited') %}
 <div class="notice-banner-limited" role="region" aria-label="Data Scope Notice">
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <p class="muted">Totals cover up to {{ analytics.get('recordLimit') }} loaded records per category, not the complete business history.</p>
+  <p class="muted">Totals cover up to {{ analytics.get('recordLimit', 500) }} loaded records per category, not the complete business history.</p>
 </div>
 {% endif %}
+
 {% if summary.get('unpricedPaidOrders', 0) %}
 <div class="notice-banner-limited" style="border-left-color: var(--warning);" role="region" aria-label="Pricing Notice">
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
   <p class="muted">Some paid-order amounts are unavailable and excluded from monetary totals.</p>
 </div>
 {% endif %}
-<div class="grid g4">
+
+<!-- Executive Overview Metric Cards -->
+<div class="grid g4" style="margin-bottom: 24px;">
   <div class="metric-card accent-blue">
     <div class="metric-card-top">
       <span class="metric-label">Total Packages</span>
@@ -55,7 +245,7 @@
 
   <div class="metric-card accent-green">
     <div class="metric-card-top">
-      <span class="metric-label">Approved & Published</span>
+      <span class="metric-label">Approved &amp; Published</span>
       <div class="metric-card-icon" aria-hidden="true">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
       </div>
@@ -72,7 +262,7 @@
       </div>
     </div>
     <div class="metric">{{ summary.get('totalCampaigns', 0) }}</div>
-    <div class="metric-help">Promotions & seasonal offers</div>
+    <div class="metric-help">Promotions &amp; seasonal offers</div>
   </div>
 
   <div class="metric-card">
@@ -88,7 +278,7 @@
 </div>
 
 <!-- Detailed Performance Breakdown -->
-<div class="grid g2" style="margin-top: 24px;">
+<div class="grid g2" style="margin-bottom: 24px;">
   <!-- Package Pipeline Details -->
   <section class="card">
     <div class="card-heading">
@@ -98,7 +288,7 @@
       </div>
     </div>
 
-    <div style="display: grid; gap: 14px; margin-top: 14px;">
+    <div style="display: grid; gap: 12px; margin-top: 14px;">
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
         <div style="display: flex; align-items: center; gap: 10px;">
           <span class="status approved">Approved</span>
@@ -142,7 +332,7 @@
       </div>
     </div>
 
-    <div style="display: grid; gap: 14px; margin-top: 14px;">
+    <div style="display: grid; gap: 12px; margin-top: 14px;">
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--canvas); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
         <div style="display: flex; align-items: center; gap: 10px;">
           <span class="status active">Active</span>
@@ -179,7 +369,7 @@
 </div>
 
 <!-- Combined Approved Catalog Portfolio Value -->
-<div class="card cream" style="margin-top: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
+<div class="card cream" style="margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
   <div>
     <span class="eyebrow">Financial Valuation</span>
     <h3 style="margin: 4px 0 2px;">Combined Approved Catalog Portfolio Value</h3>
@@ -193,5 +383,167 @@
     <span class="muted" style="font-size: 11px;">Calculated from approved catalog rates</span>
   </div>
 </div>
+
+<!-- Section 1: Package Portfolio Presentation -->
+<section class="report-section">
+  <div class="report-section-header">
+    <div>
+      <h3 class="report-section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+        <span>1. Tourism Package Portfolio</span>
+      </h3>
+      <p class="report-section-desc">Active, pending, and draft packages registered under this operator account.</p>
+    </div>
+    <span class="muted" style="font-size: 12px; font-weight: 600;">{{ packages|length }} Package{% if packages|length != 1 %}s{% endif %}</span>
+  </div>
+
+  {% if packages %}
+  <div class="report-table-wrap">
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th>Package Title</th>
+          <th>Destination</th>
+          <th>Price Rate</th>
+          <th>Duration</th>
+          <th>Capacity</th>
+          <th>Moderation Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pkg in packages %}
+        <tr>
+          <td>
+            <strong style="color: var(--ink); font-size: 13.5px; display: block;">{{ pkg.packageTitle or pkg.title or 'Untitled Package' }}</strong>
+            <span style="font-size: 11px; color: var(--ink-muted); font-family: ui-monospace, monospace;">ID: {{ pkg.id }}</span>
+          </td>
+          <td>{{ pkg.destinationName or pkg.destination or 'Penang' }}</td>
+          <td>
+            <strong style="color: var(--ink);">
+              {{ pkg.currency or 'MYR' }} {{ '%.2f'|format(pkg.adultPrice|float if pkg.adultPrice is not none else (pkg.price|float if pkg.price is not none else 0.0)) }}
+            </strong>
+          </td>
+          <td>{{ pkg.durationDays or 1 }} Day{% if pkg.durationDays != 1 %}s{% endif %}</td>
+          <td>{{ pkg.maxTravellers or 1 }} pax</td>
+          <td class="status-cell">
+            {% set status_val = (pkg.approvalStatus or 'draft')|lower %}
+            <span class="status {{ 'approved' if status_val == 'approved' else 'pending' if status_val in ['pending', 'submitted', 'under_review'] else 'rejected' if status_val == 'rejected' else 'draft' }}">
+              {{ status_val|replace('_', ' ')|title }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card empty-state" style="padding: 28px 16px;">
+    <p class="muted" style="margin: 0;">No packages currently recorded in this operator's portfolio.</p>
+  </div>
+  {% endif %}
+</section>
+
+<!-- Section 2: Promotional Campaigns -->
+<section class="report-section">
+  <div class="report-section-header">
+    <div>
+      <h3 class="report-section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span>2. Promotional Campaigns &amp; Seasonal Offers</span>
+      </h3>
+      <p class="report-section-desc">Scheduled marketing discounts, coupon codes, and administrative review states.</p>
+    </div>
+    <span class="muted" style="font-size: 12px; font-weight: 600;">{{ campaigns|length }} Campaign{% if campaigns|length != 1 %}s{% endif %}</span>
+  </div>
+
+  {% if campaigns %}
+  <div class="report-table-wrap">
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th>Campaign Title</th>
+          <th>Promo Code</th>
+          <th>Discount</th>
+          <th>Validity Period</th>
+          <th>Review Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for camp in campaigns %}
+        <tr>
+          <td>
+            <strong style="color: var(--ink); font-size: 13.5px; display: block;">{{ camp.campaignTitle or camp.title or 'Seasonal Campaign' }}</strong>
+          </td>
+          <td>
+            <span class="code-badge">{{ camp.promoCode or '—' }}</span>
+          </td>
+          <td>
+            {% if camp.discountType == 'percentage' %}
+              <strong>{{ camp.discountValue }}% OFF</strong>
+            {% else %}
+              <strong>MYR {{ '%.2f'|format(camp.discountValue|float if camp.discountValue else 0) }} OFF</strong>
+            {% endif %}
+          </td>
+          <td style="font-size: 12.5px;">
+            {{ camp.startDate or '—' }} to {{ camp.endDate or '—' }}
+          </td>
+          <td class="status-cell">
+            {% set c_status = (camp.reviewStatus or 'draft')|lower %}
+            <span class="status {{ 'approved' if c_status == 'approved' else 'pending' if c_status in ['pending', 'under_review'] else 'rejected' if c_status == 'rejected' else 'draft' }}">
+              {{ c_status|replace('_', ' ')|title }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card empty-state" style="padding: 28px 16px;">
+    <p class="muted" style="margin: 0;">No promotional campaigns configured for this operator account.</p>
+  </div>
+  {% endif %}
+</section>
+
+<!-- Section 3: Booking & Operational Performance Summary -->
+<section class="report-section" style="margin-bottom: 32px;">
+  <div class="report-section-header">
+    <div>
+      <h3 class="report-section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/></svg>
+        <span>3. Booking &amp; Operational Fulfillment Summary</span>
+      </h3>
+      <p class="report-section-desc">Authoritative order records, payment settlement volume, and platform trip status.</p>
+    </div>
+    <span class="muted" style="font-size: 12px; font-weight: 600;">{{ summary.get('bookingRecords', 0) }} Orders</span>
+  </div>
+
+  <div class="grid g4" style="margin-bottom: 20px;">
+    <div class="card" style="padding: 16px;">
+      <small class="muted" style="text-transform: uppercase; font-size: 11px; font-weight: 700; letter-spacing: 0.05em;">Paid Orders</small>
+      <div style="font-size: 22px; font-weight: 800; color: var(--success); margin: 4px 0 2px;">{{ summary.get('paidBookings', 0) }}</div>
+      <div style="font-size: 12px; color: var(--ink-secondary);">MYR {{ '%.2f'|format(summary.get('totalPaidRevenue', 0.0)) }} settled</div>
+    </div>
+
+    <div class="card" style="padding: 16px;">
+      <small class="muted" style="text-transform: uppercase; font-size: 11px; font-weight: 700; letter-spacing: 0.05em;">In-App Trips Created</small>
+      <div style="font-size: 22px; font-weight: 800; color: var(--bluegrey); margin: 4px 0 2px;">{{ summary.get('fulfilledBookings', 0) }}</div>
+      <div style="font-size: 12px; color: var(--ink-secondary);">Platform itinerary synced</div>
+    </div>
+
+    <div class="card" style="padding: 16px;">
+      <small class="muted" style="text-transform: uppercase; font-size: 11px; font-weight: 700; letter-spacing: 0.05em;">Pending Fulfillment</small>
+      <div style="font-size: 22px; font-weight: 800; color: var(--warning); margin: 4px 0 2px;">{{ summary.get('pendingFulfillmentBookings', 0) }}</div>
+      <div style="font-size: 12px; color: var(--ink-secondary);">Supplier arrangements needed</div>
+    </div>
+
+    <div class="card" style="padding: 16px;">
+      <small class="muted" style="text-transform: uppercase; font-size: 11px; font-weight: 700; letter-spacing: 0.05em;">Stripe Test Orders</small>
+      <div style="font-size: 22px; font-weight: 800; color: var(--ink); margin: 4px 0 2px;">{{ summary.get('testModeOrders', 0) }}</div>
+      <div style="font-size: 12px; color: var(--ink-secondary);">MYR {{ '%.2f'|format(summary.get('testPaidTotal', 0.0)) }} test volume</div>
+    </div>
+  </div>
+</section>
+
 {% endif %}
 {% endblock %}
