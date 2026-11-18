@@ -111,7 +111,8 @@ def test_authorized_catalogue_access_does_not_override_genuine_ratings(client, m
     private = client.get(alias, headers=viewer)
     assert real.json['result']['rating'] == 4 and real.json['result']['reviews'] == 1
     assert client.get(alias, headers=headers('fyp-viewer')).json == real.json
-    assert private.json == real.json
+    assert private.json['result'] == real.json['result']
+    assert private.json['reviewTestModeAvailable'] is True
     result = private.json['result']
     assert (result['rating'], result['reviews']) == (4, 1)
     assert [row['id'] for row in result['user_reviews']] == ['real']

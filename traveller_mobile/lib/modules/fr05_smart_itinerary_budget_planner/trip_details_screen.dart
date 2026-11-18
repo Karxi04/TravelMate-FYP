@@ -2675,6 +2675,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               _dayNavigation(t),
               const SizedBox(height: AppSpacing.sm),
               _daySummary(t, day),
+              if (t['interestCoverage']?['limitation'] != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.sm),
+                  child: Text(t['interestCoverage']['limitation'].toString()),
+                ),
               if (t['intercityTransferStatus'] == 'needs_review')
                 const Padding(
                   padding: EdgeInsets.only(top: AppSpacing.sm),

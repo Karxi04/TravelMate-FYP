@@ -381,8 +381,8 @@ void main() {
 
     expect(find.text('Kek Lok Si Temple'), findsWidgets);
     expect(find.text('Air Itam, Penang'), findsWidgets);
-    await _show(tester, find.text('Saved provider information'));
-    expect(find.text('Saved provider information'), findsOneWidget);
+    await _show(tester, find.text('Saved place details. Check current hours and admission before visiting.'));
+    expect(find.text('Saved place details. Check current hours and admission before visiting.'), findsOneWidget);
     expect(find.text('Why this fits you'), findsOneWidget);
     expect(find.text('Matches your Culture and Heritage interests'),
         findsOneWidget);

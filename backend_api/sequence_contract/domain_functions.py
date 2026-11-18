@@ -1480,7 +1480,7 @@ _UNKNOWN_JOURNEY = 'Could not establish a reliable journey to this stop. Confirm
 _DISTANT_STOP = 'This stop is too far from the other stops or accommodation for this sightseeing day. Choose a nearer stop or plan an intercity transfer.'
 LOCAL_ACTIVITY_FIELDS = (
     'city', 'state', 'country', 'locality', 'district', 'geographyConflict',
-    'metadataConflict', 'normalizedGeography', 'type_id', 'type_ids', 'tags',
+    'metadataConflict', 'normalizedGeography', 'type_id', 'type_ids', 'tags', 'interests', 'subtype',
     'verifiedDestinationEvidence',
     'providerTravelFromDestinationId', 'providerTravelDurationMinutes',
     'providerTravelDistanceKm', 'providerTravelMode',
@@ -1728,6 +1728,7 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
     concepts = {id(item): primary_concepts({**item, 'title': item.get('activityName')})
                 for item in activities} if local_days and interests else {}
     used_concepts = set()
+    balance_budget = local_days and len(interests) > 1 and _float(itinerary.get('budgetLimit')) > 0
     trip_experiences = {}
     coordinates = {id(item): _local_coords(item) for item in activities} if local_days else {}
     # A candidate that never fits on its own cannot fill one of the reserved days.
@@ -1799,12 +1800,18 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
                     experience = experiences[id(item)]
                     uncovered = concepts.get(id(item), set()) & (interests - used_concepts)
                     distance = _distance_km(previous, item) if previous and _coord(previous) and coordinates[id(item)] else None
-                    nearby = 0
+                    nearby, cluster_coverage, cluster_variety = 0, set(), set()
                     if focus is None and coordinates[id(item)]:
-                        nearby = sum(coordinates[id(other)] is not None and
-                                     _distance_km(item, other) <= max_km for other in eligible)
+                        for other in eligible:
+                            if (coordinates[id(other)] is not None and
+                                    _distance_km(item, other) <= min(max_km, (max_leg - 8) * _LOCAL_TRAVEL[mode][3] / 75)):
+                                nearby += 1
+                                cluster_coverage.update(concepts.get(id(other), set()) & interests)
+                                if experiences[id(other)]:
+                                    cluster_variety.add(experiences[id(other)])
                     return (0 if not weather.get('heavyRainLikely') or _indoor(item) else 1,
-                            not bool(uncovered), -min(nearby, 4), experience_counts.get(experience, 0),
+                            -len(cluster_coverage), not bool(uncovered), -min(len(cluster_variety), 4) if interests else 0,
+                            -min(nearby, 4), experience_counts.get(experience, 0),
                             trip_experiences.get(experience, 0),
                             int(distance // 4) if distance is not None else 0)
                 order.sort(key=local_priority)
@@ -1828,6 +1835,9 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
                     if (leg[0] > max_leg or leg[1] > max_km or (anchor_distance is not None and anchor_distance > max_km)
                             or travel_minutes + leg[0] > daily_limit):
                         deferred_reasons[key] = _DISTANT_STOP
+                        continue
+                    if balance_budget and calculateBudget({**itinerary, 'activities': scheduled + [candidate]})['totalEstimatedCost'] > _float(itinerary['budgetLimit']):
+                        deferred_reasons[key] = 'This activity would exceed the total trip budget using the current estimates.'
                         continue
                     experience = experiences[id(candidate)]
                     if experience in {'hike', 'meal'} and experience_counts.get(experience, 0) >= (2 if hike_focused or experience == 'meal' else 1):
@@ -1886,14 +1896,15 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
             scheduled.append(chosen)
             current = end_minutes
             previous = chosen
-            if flexible and len(day_items) == 1:
+            if flexible:
                 compatible = sum(
                     bool(_coord(focus) and coordinates[id(item)]
                          and _distance_km(focus, item) <= max_km
-                         and any(day_index <= index < last_local_day for index in first_visit_by_day.get(id(item), ())))
+                         and any(day_index <= index < last_local_day for index in first_visit_by_day.get(id(item), ()))
+                         and (not balance_budget or calculateBudget({**itinerary, 'activities': scheduled + [item]})['totalEstimatedCost'] <= _float(itinerary['budgetLimit'])))
                     for item in remaining
                 ) if focus else len(remaining)
-                visit_limit = min(visit_limit, max(1, 1 + compatible - future_local_days))
+                visit_limit = min(visit_limit, max(len(day_items), ceil((len(day_items) + compatible) / (future_local_days + 1))))
 
         meal_blocks = [transfer_block] if transfer_block else []
         if day_items:
@@ -1926,6 +1937,8 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         reason = 'Attraction is closed on all trip days.' if all_closed else 'Could not fit within available time, travel, and opening-hour constraints.'
         if local_days and not all_closed:
             reason = deferred_reasons.get(str(item.get('activityId')), reason)
+            if balance_budget and calculateBudget({**itinerary, 'activities': scheduled + [item]})['totalEstimatedCost'] > _float(itinerary['budgetLimit']):
+                reason = 'This activity would exceed the total trip budget using the current estimates.'
             if sightseeing_anchors and not coordinates[id(item)]:
                 reason = _UNKNOWN_JOURNEY
             elif sightseeing_anchors and all(_distance_km(anchor, item) > max_km for anchor in sightseeing_anchors):
@@ -1938,6 +1951,17 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
             'scheduleFeasibility': 'unscheduled',
             'openingHoursEvidence': evidence[0]['evidence'],
         })
+    if local_days:
+        selected_ids = {row['activityId'] for row in scheduled}
+        itinerary['interestCoverage'] = {
+            'requested': sorted(interests),
+            'candidates': {concept: sum(concept in concepts.get(id(row), set()) for row in all_candidates) for concept in interests},
+            'scheduled': {concept: sum(concept in concepts.get(id(row), set()) for row in all_candidates
+                                      if row.get('activityId') in selected_ids) for concept in interests},
+            'unrepresented': sorted(interests - used_concepts),
+            'limitation': ('Some interests could not be included within the selected area, dates, budget and travel constraints.'
+                           if interests - used_concepts else None),
+        }
     if local_days and transfer:
         itinerary['intercityTransferStatus'] = 'planned' if transfer_applied else 'needs_review'
     if trip_wide:

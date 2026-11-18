@@ -30,7 +30,7 @@ from sequence_contract.firebase_firestore import (
 from services.public_content_projection import public_review
 from services.review_service import approved_reviews, genuine_review
 from services.fyp_reviews import (
-    dataset_for, private_dataset, regional_demo_destinations,
+    dataset_for, dataset_reviews, private_dataset, regional_demo_destinations, regional_demo_reviews,
 )
 from services.review_destination import review_destination_id, review_destination_ids
 from services.malaysian_locality import (
@@ -349,7 +349,22 @@ def _review_identity(item):
     # The main resort is distinct from its hotel, water park and aquarium.
     title = _search_text(item.get('title') or item.get('name'))
     if title not in {'legoland malaysia resort', 'legoland malaysia'}:
-        return None
+        from services.recommendation_taxonomy import primary_concepts
+        geo = normalize_candidate_geography(item)
+        if geo.get('conflict') or not is_planning_candidate(item):
+            return None
+        matches = []
+        for place in DESTINATIONS:
+            if title not in _place_names(place):
+                continue
+            known_geo = normalize_candidate_geography(place)
+            if (geo.get('state') != known_geo.get('state')
+                    or not primary_concepts(item).intersection(primary_concepts(place))):
+                continue
+            distance = _distance_km(_coords(item), _coords(place))
+            if distance is not None and distance <= .8:
+                matches.append(review_destination_id(place['destinationId']))
+        return matches[0] if len(set(matches)) == 1 else None
     geo = normalize_candidate_geography(item)
     if geo.get('conflict') or geo.get('state') != 'Johor':
         return None
@@ -715,6 +730,9 @@ def search_destinations():
     results = _deduplicate_results(results)
     results, _rejected = filter_candidates(results, requested_scope)
     results = [item for item in results if is_planning_candidate(item)]
+    if _search_text(q) in {'food', 'restaurant', 'restaurants', 'cafe', 'cafes', 'hawker centres'}:
+        from services.recommendation_taxonomy import primary_concepts
+        results = [item for item in results if 'food' in primary_concepts(item)]
     results = _filter_by_category(results, filterOption)
     results = (
         applyDestinationSorting(results, sortOption)
@@ -863,15 +881,35 @@ def _ratings_and_reviews(records):
 @bp.get('/destinations/<path:place_id>/ratings-reviews')
 @auth_required(['traveller'])
 def ratings_reviews(place_id):
-    if request.args.get('view') == 'samples':
-        return jsonify(ok=False, error='Sample reviews are unavailable.'), 404
     canonical = review_destination_id(place_id)
     if canonical == place_id and not canonical.startswith('local_'):
         cached = _cached_destination(place_id)
         canonical = (_review_identity(cached) if cached else None) or canonical
     alternate = place_id if canonical != place_id else None
+    demo_available = bool(_local_demo_request() or (
+        request.headers.get(REVIEW_CONTEXT_HEADER) == 'fyp-v1'
+        and os.getenv('FYP_REVIEW_VIEWER_UID', '').strip() == g.uid))
+    if request.args.get('view') == 'test':
+        if not demo_available:
+            return jsonify(ok=False, error='Review testing is unavailable.'), 403
+        records = regional_demo_reviews(canonical)
+        demo = _private_review_dataset(discovery=True) if _local_demo_request() else dataset_for(g.uid)
+        if demo and canonical in demo[1]:
+            records = [row for row in dataset_reviews(*demo) if row['destinationId'] == canonical]
+        visible = approved_reviews(records)
+        result = {
+            'rating': round(sum(float(row['rating']) for row in visible) / len(visible), 1) if visible else None,
+            'reviews': len(visible), 'user_reviews': [public_review(row) for row in visible],
+            'fypPreview': True,
+        }
+        return jsonify(ok=True, source='fyp_private', result=result,
+                       reviewTestModeAvailable=True,
+                       disclosure='Fictional review test data. Ratings are separate from visitor reviews.')
+    if request.args.get('view') == 'samples':
+        return jsonify(ok=False, error='Use the authorized review testing view.'), 404
     result = retrieveRatingsAndReviews(canonical, alternate=alternate)
-    return jsonify(ok=True, source='travelmate_database', result=result)
+    return jsonify(ok=True, source='travelmate_database', result=result,
+                   **({'reviewTestModeAvailable': True} if demo_available else {}))
 
 
 @bp.get('/destinations/<path:place_id>/nearby')

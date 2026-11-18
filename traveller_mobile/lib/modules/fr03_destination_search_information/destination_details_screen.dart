@@ -45,6 +45,8 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   int _loadRevision = 0;
   bool detailsFailed = false;
   bool reviewsFailed = false;
+  bool reviewTestMode = false;
+  bool reviewTestModeAvailable = false;
   bool nearbyFailed = false;
   String source = '';
   bool providerFallback = false;
@@ -149,17 +151,19 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       final reviewId = Uri.encodeComponent(detail['reviewDestinationId'] != null && openedId.isNotEmpty
           ? openedId : reviewDestinationId);
       final path = '/api/fr3/destinations/$reviewId/ratings-reviews';
-      final data = await api.get(path, {'view': 'unified'});
+      final data = await api.get(path, {'view': reviewTestMode ? 'test' : 'unified'});
       if (!current()) return;
       reviewInfo = data['result'] is Map
           ? Map<String, dynamic>.from(data['result'] as Map)
           : null;
-      if (reviewInfo?['fypPreview'] == true || data['source'] == 'fyp_private') {
+      reviewTestModeAvailable = data['reviewTestModeAvailable'] == true;
+      if ((!reviewTestMode || !reviewTestModeAvailable) &&
+          (reviewInfo?['fypPreview'] == true || data['source'] == 'fyp_private')) {
         reviewInfo = {'user_reviews': <dynamic>[]};
       }
       if (reviewInfo == null) {
         reviewsFailed = true;
-      } else {
+      } else if (!reviewTestMode) {
         LocalReviewRatings.remember(reviewDestinationId, reviewInfo!);
       }
     } catch (_) {
@@ -252,7 +256,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     if (raw is List) {
       return raw
           .whereType<Map>()
-          .where(ReviewContract.isGenuine)
+          .where((row) => reviewTestMode && reviewTestModeAvailable || ReviewContract.isGenuine(row))
           .map((review) => Map<String, dynamic>.from(review))
           .toList();
     }
@@ -262,7 +266,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         if (value is List) {
           return value
               .whereType<Map>()
-              .where(ReviewContract.isGenuine)
+              .where((row) => reviewTestMode && reviewTestModeAvailable || ReviewContract.isGenuine(row))
               .map((review) => Map<String, dynamic>.from(review))
               .toList();
         }
@@ -321,7 +325,11 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             children: [
               if (category.isNotEmpty)
                 StatusChip(text: category, tone: AppStatusTone.neutral),
-              if (_showSourceDisclosure) SourceFallbackBadge(source: source),
+              if (_showSourceDisclosure)
+                const Padding(
+                  padding: EdgeInsets.only(top: AppSpacing.xs),
+                  child: Text('Saved place details. Check current hours and admission before visiting.'),
+                ),
             ],
           ),
         ],
@@ -729,6 +737,18 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const AppSectionHeader(title: 'Reviews'),
+        if (reviewTestModeAvailable)
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Review testing'),
+            value: reviewTestMode,
+            onChanged: (value) {
+              setState(() => reviewTestMode = value);
+              loadDetails();
+            },
+          ),
+        if (reviewTestMode && reviewTestModeAvailable)
+          const Text('Fictional review test data. Ratings are separate from visitor reviews.'),
         if (reviewInfo?['rating'] != null)
           LocalReviewRatingBadge(summary: reviewInfo!),
         const SizedBox(height: AppSpacing.sm),

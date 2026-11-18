@@ -77,12 +77,29 @@ def is_administrative_facility(item):
 
 
 def is_planning_candidate(item):
+    if item.get('resultKind') == 'area':
+        return False
     if str(item.get('feature') or '').startswith(('PPL','ADM')) or (
             item.get('locationId') and item.get('kind') in {'locality','state','district','country','subdistrict','region'}):
         return False
     types = item.get('types')
-    categories = [item.get('category'), item.get('type'),
+    categories = [item.get('category'), item.get('type'), item.get('type_id'),
+                  *(item.get('type_ids') if isinstance(item.get('type_ids'), list) else []),
                   *(types if isinstance(types, (list, tuple)) else [types])]
+    title = normalize_phrase(item.get('title') or item.get('name') or item.get('activityName'))
+    rejected = {
+        'gas station', 'petrol station', 'fuel station', 'housing development',
+        'residential area', 'residential development', 'residential complex',
+        'warehouse', 'utility facility', 'corporate office', 'industrial supplier', 'factory',
+    }
+    if any(normalize_phrase(value).replace('_', ' ') in rejected for value in categories if value):
+        return False
+    if any(normalize_phrase(value).replace('_', ' ') in {'locality', 'neighborhood', 'neighbourhood', 'sublocality', 'political'}
+           for value in categories) and not any(
+               candidate_concepts({'type': value}) for value in categories if value):
+        return False
+    if re.search(r'\b(?:petrol station|gas station|stesen minyak)\b', title):
+        return False
     if any(_NON_VISITOR_CATEGORY.search(normalize_phrase(value)) for value in categories if value):
         return False
     if is_administrative_facility(item):

@@ -17,6 +17,7 @@ final _visitorFacility = RegExp(
 );
 
 bool isTourismPlanningCandidate(Map item) {
+  if (item['resultKind'] == 'area') return false;
   final feature = '${item['feature'] ?? ''}';
   if (feature.startsWith('PPL') || feature.startsWith('ADM') ||
       (item['locationId'] != null &&
@@ -24,9 +25,19 @@ bool isTourismPlanningCandidate(Map item) {
     return false;
   }
   final types = item['types'];
-  final categories = [item['type'], item['category'], if (types is List) ...types else types]
+  final categories = [item['type'], item['category'], item['type_id'],
+    ...(item['type_ids'] is List ? item['type_ids'] as List : const []), if (types is List) ...types else types]
       .map(RecommendationTaxonomy.normalizePhrase);
   final title = RecommendationTaxonomy.normalizePhrase(item['title'] ?? item['name'] ?? item['activityName']);
+  final rejected = {
+    'gas station', 'petrol station', 'fuel station', 'housing development',
+    'residential area', 'residential development', 'residential complex',
+    'warehouse', 'utility facility', 'corporate office', 'industrial supplier', 'factory',
+  };
+  if (categories.any((value) => rejected.contains(value.replaceAll('_', ' ')))) return false;
+  if (categories.any((value) => const {'locality', 'neighborhood', 'neighbourhood', 'sublocality', 'political'}.contains(value)) &&
+      !categories.any((value) => RecommendationTaxonomy.conceptsFor(value).isNotEmpty)) return false;
+  if (RegExp(r'\b(?:petrol station|gas station|stesen minyak)\b').hasMatch(title)) return false;
   final primary = RecommendationTaxonomy.normalizePhrase(item['type'] ?? item['category']);
   final administrative = categories.any((value) =>
           _adminFacility.hasMatch(value) || value == 'court' || value == 'government service') ||
