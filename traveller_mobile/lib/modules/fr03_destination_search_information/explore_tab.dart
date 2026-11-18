@@ -85,16 +85,6 @@ class _ExploreTabState extends State<ExploreTab> {
     super.dispose();
   }
 
-  bool get _showSourceDisclosure => const {
-        'cache',
-        'cached',
-        'fallback',
-        'local',
-        'local_catalog',
-        'fyp_private',
-        'demo',
-      }.contains(resultSource.toLowerCase());
-
   String get _locationTitle {
     final value = location.text.trim();
     if (value.isEmpty || value.toLowerCase() == 'malaysia') return 'Malaysia';
@@ -419,8 +409,6 @@ class _ExploreTabState extends State<ExploreTab> {
                     ?.copyWith(color: AppColors.textSecondary),
               ),
             ),
-            if (_showSourceDisclosure)
-              Flexible(child: SourceFallbackBadge(source: resultSource)),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -437,7 +425,7 @@ class _ExploreTabState extends State<ExploreTab> {
             child: DestinationCard(
               destination: item,
               source: resultSource,
-              showSource: !_showSourceDisclosure,
+              showSource: false,
               onView: () => _viewResult(item),
               saved: favourites.contains(DestinationUtils.resolveId(item)),
               saveEnabled: favourites.loaded && favourites.error == null &&

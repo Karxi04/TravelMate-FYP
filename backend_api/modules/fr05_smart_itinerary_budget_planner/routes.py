@@ -26,6 +26,7 @@ from sequence_contract.domain_functions import (
     checkDestinationLimit, calculateBudget, compareBudget,
     generateItinerary, groupNearbyActivities,
     checkOpeningHoursAndTravelTime, adjustWeatherSensitiveActivities, recalculateItinerary,
+    LOCAL_ACTIVITY_FIELDS, LOCAL_DAYS_POLICY, plan_intercity_transfer,
     _alternative_savings, _activity_duration, _activity_opening, _distance_km,
     _format_time, _parse_time_minutes, _travel_leg,
 )
@@ -342,7 +343,7 @@ def _activity_from_destination(item, index):
     item = dict(item or {})
     gps = item.get('gps_coordinates') or item.get('gpsCoordinates') or {}
     return {
-        **{key: item[key] for key in IDENTITY_FIELDS if key in item},
+        **{key: item[key] for key in (*IDENTITY_FIELDS, *LOCAL_ACTIVITY_FIELDS) if key in item},
         'activityId': f'A{index + 1}',
         'activityName': item.get('title') or item.get('name') or f'Activity {index + 1}',
         'destinationId': item.get('destinationId') or item.get('place_id') or item.get('data_id') or item.get('id') or f'destination_{index + 1}',
@@ -413,7 +414,7 @@ def _generate_itinerary_data(current, payload, snapshot=None):
                 raise ValueError('Itinerary contains recommendations from a different snapshot')
 
     generation_source = snapshot.get('source', 'recommendation_snapshot') if snapshot else 'existing-activities'
-    working = {**current}
+    working = {**current, 'geographyPlanningPolicy': LOCAL_DAYS_POLICY}
     profile = current.get('planningPreferences') or (snapshot or {}).get('planningPreferences') or {}
     if profile:
         working.update(planningPreferences=profile,
@@ -708,6 +709,50 @@ def remove_hotel_selection(iid):
     return jsonify({'ok': True, 'itinerary': updateRecord('itineraries', iid, patch)})
 
 
+@bp.post('/itineraries/<iid>/intercity-transfer')
+@auth_required(['traveller'])
+def confirm_intercity_transfer(iid):
+    current = _own(iid)
+    if not current:
+        return jsonify(ok=False, error='Itinerary not found'), 404
+    if _is_package_trip(current):
+        return jsonify(ok=False, error='Purchased package trips cannot be modified or recalculated.'), 409
+    if current.get('confirmedIntercityTransfer'):
+        return jsonify(ok=False, error='This itinerary already has a confirmed intercity transfer.'), 409
+    try:
+        revised = plan_intercity_transfer(current, request.get_json(silent=True))
+    except ValueError as error:
+        return jsonify(ok=False, error=str(error)), 409
+    for activity in current.get('activities') or []:
+        if protected_activity(activity):
+            return jsonify(ok=False, error='This change would replan protected visits.'), 409
+    revised['budgetEstimate'] = calculateBudget(revised)
+    revised['budgetEstimate']['comparison'] = compareBudget(revised['budgetEstimate'])
+    saved = updateRecord('itineraries', iid, revised, expected=current)
+    if saved is None:
+        return jsonify(ok=False, error='Itinerary not found'), 404
+    return jsonify(ok=True, itinerary=saved)
+
+
+def _travel_edit_conflict(original, planned, activity_id):
+    discarded = {row.get('activityId'): row.get('unscheduledReason', '')
+                 for row in planned.get('unscheduledSuggestions') or []}
+    affected = [activity_id, *(row.get('activityId') for row in original.get('activities', []))]
+    for identifier in affected:
+        reason = discarded.get(identifier, '')
+        if reason.startswith(('This stop is too far', 'Could not establish a reliable journey',
+                              'This day already includes similar')):
+            return jsonify(ok=False, error=reason, code='itinerary_travel_conflict'), 409
+    return None
+
+
+def _edit_planning_policy(current, activities):
+    # Legacy coordinate-free manual trips keep their existing edit behaviour.
+    # Establish the local policy when there is real distance evidence to check.
+    geocoded = sum(bool(row.get('gps_coordinates') or row.get('gpsCoordinates')) for row in activities)
+    return LOCAL_DAYS_POLICY if geocoded >= 2 else current.get('geographyPlanningPolicy')
+
+
 @bp.post('/itineraries/<iid>/activities')
 @auth_required(['traveller'])
 def add_activity_route(iid):
@@ -738,6 +783,7 @@ def add_activity_route(iid):
 
     activity = {
         'activityName': payload.get('activityName') or payload.get('title') or 'New activity',
+        **{key: payload[key] for key in ('city', 'state', 'country') if isinstance(payload.get(key), str)},
         'destinationId': payload.get('destinationId', ''),
         'address': payload.get('address', ''),
         'dayNo': day,
@@ -791,8 +837,9 @@ def add_activity_route(iid):
         return jsonify(ok=False, error='Itinerary destination limit reached'), 409
 
     updated = addActivity(current, activity)
+    policy = _edit_planning_policy(current, updated['activities'])
     recalculated = recalculateItinerary(
-        {**current, **updated},
+        {**current, **updated, 'geographyPlanningPolicy': policy},
         preserveOrder=True,
         respectDayAssignments=True,
     )
@@ -801,7 +848,7 @@ def add_activity_route(iid):
         for key in ('activities', 'unscheduledSuggestions', 'scheduledActivityCount',
                     'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
                     'paceApplied', 'dailyPlanningWindow', 'tripDays',
-                    'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq')
+                    'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq', 'intercityTransferStatus')
         if key in recalculated
     }
     scheduled = {row.get('activityId'): row for row in patch['activities']}
@@ -812,6 +859,11 @@ def add_activity_route(iid):
                                 for key in ('dayNo', 'scheduledStartTime', 'scheduledEndTime')):
                 return jsonify(ok=False, error='Adding this visit would change a protected stop.'), 409
     new_id = updated['activities'][-1]['activityId']
+    conflict = _travel_edit_conflict(current, recalculated, new_id)
+    if conflict:
+        return conflict
+    if policy:
+        patch['geographyPlanningPolicy'] = policy
     if existing and (new_id not in scheduled or scheduled[new_id].get('dayNo') != day):
         return jsonify(ok=False, error='Another visit cannot fit on the selected day.'), 409
     if request_id:
@@ -843,7 +895,7 @@ def remove_activity_route(iid, activity_id):
         'activities', 'unscheduledSuggestions', 'scheduledActivityCount',
         'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
         'paceApplied', 'dailyPlanningWindow', 'tripDays',
-        'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq') if key in recalculated}
+        'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq', 'intercityTransferStatus') if key in recalculated}
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
     updateRecord('itineraries', iid, patch)
     return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
@@ -893,8 +945,9 @@ def update_activity_route(iid, activity_id):
             if duplicate:
                 return _same_day_visit(duplicate, day)
     updated = updateActivity(current, activity_id, changes)
+    policy = _edit_planning_policy(current, updated['activities'])
     recalculated = recalculateItinerary(
-        {**current, **updated},
+        {**current, **updated, 'geographyPlanningPolicy': policy},
         preserveOrder=True,
         respectDayAssignments=True,
     )
@@ -902,10 +955,15 @@ def update_activity_route(iid, activity_id):
         'activities', 'unscheduledSuggestions', 'scheduledActivityCount',
         'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
         'paceApplied', 'dailyPlanningWindow', 'tripDays',
-        'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq') if key in recalculated}
+        'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq', 'intercityTransferStatus') if key in recalculated}
+    conflict = _travel_edit_conflict(current, recalculated, activity_id)
+    if conflict:
+        return conflict
+    if policy:
+        patch['geographyPlanningPolicy'] = policy
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
-    updateRecord('itineraries', iid, patch)
-    return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
+    saved = updateRecord('itineraries', iid, patch, expected=current)
+    return jsonify({'ok': True, 'itinerary': saved, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
 
 
 @bp.post('/itineraries/<iid>/activities/rearrange')
@@ -926,7 +984,7 @@ def rearrange_activity_route(iid):
         'activities', 'unscheduledSuggestions', 'scheduledActivityCount',
         'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
         'paceApplied', 'dailyPlanningWindow', 'tripDays',
-        'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq') if key in recalculated}
+        'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq', 'intercityTransferStatus') if key in recalculated}
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
     updateRecord('itineraries', iid, patch)
     return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})

@@ -2,6 +2,11 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 class ReviewContract {
+  static bool isGenuine(Map review) =>
+      review['synthetic'] != true &&
+      review['fypPreview'] != true &&
+      !const {'sample', 'synthetic', 'demo', 'fyp_private'}
+          .contains(review['source']?.toString().trim().toLowerCase());
   // Exact Penang IDs only. Keep in sync with backend review_destination.py.
   static const _aliases = <String, List<String>>{
     'local_penang_hill': ['penang_hill'],

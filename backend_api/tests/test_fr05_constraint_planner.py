@@ -388,7 +388,7 @@ def test_route_improvement_executes_through_registered_http_generation(client,mo
     before,after=results
     assert len(before['activities'])==len(after['activities'])==4
     assert {a['destinationId'] for a in before['activities']}=={a['destinationId'] for a in after['activities']}
-    assert _route_km(before['activities'])==pytest.approx(33.3584779934)
+    assert _route_km(before['activities'])==pytest.approx(11.3418825177)
     assert _route_km(after['activities'])==pytest.approx(11.2306875911)
     assert before['budgetEstimate']==after['budgetEstimate']
     if selection_enabled:

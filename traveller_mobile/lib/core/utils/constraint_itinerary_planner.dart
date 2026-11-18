@@ -1,5 +1,20 @@
-import 'itinerary_identity.dart';
 import 'dart:math';
+
+import 'itinerary_identity.dart';
+import 'malaysian_locality.dart';
+import 'recommendation_taxonomy.dart';
+
+const localDaysPolicy = 'local-days-v1';
+const _unknownJourney =
+    'Could not establish a reliable journey to this stop. Confirm its location or plan a separate day.';
+const _distantStop =
+    'This stop is too far from the other stops or accommodation for this sightseeing day. Choose a nearer stop or plan an intercity transfer.';
+const localActivityFields = [
+  'city', 'state', 'country', 'district', 'locality', 'normalizedGeography',
+  'geographyConflict', 'metadataConflict', 'type_id', 'type_ids', 'tags',
+  'providerTravelFromDestinationId', 'providerTravelDurationMinutes',
+  'providerTravelDistanceKm', 'providerTravelMode',
+];
 
 const Map<String, List<int>> itineraryPaceWindows = {
   'relaxed': [600, 1200],
@@ -102,7 +117,11 @@ List<double>? _coordinates(Map<String, dynamic> item) {
   if (gps is! Map) return null;
   final latitude = double.tryParse('${gps['latitude'] ?? ''}');
   final longitude = double.tryParse('${gps['longitude'] ?? ''}');
-  return latitude == null || longitude == null ? null : [latitude, longitude];
+  if (latitude == null || longitude == null || !latitude.isFinite ||
+      !longitude.isFinite || latitude.abs() > 90 || longitude.abs() > 180) {
+    return null;
+  }
+  return [latitude, longitude];
 }
 
 double? _distance(Map<String, dynamic> first, Map<String, dynamic> second) {
@@ -115,7 +134,7 @@ double? _distance(Map<String, dynamic> first, Map<String, dynamic> second) {
   final dLat = lat2 - lat1;
   final dLon = (b[1] - a[1]) * pi / 180;
   final h = pow(sin(dLat / 2), 2) + cos(lat1) * cos(lat2) * pow(sin(dLon / 2), 2);
-  return radius * 2 * atan2(sqrt(h), sqrt(1 - h));
+  return radius * 2 * atan2(sqrt(h), sqrt(max(0, 1 - h)));
 }
 
 ({int minutes, double? distance, String source}) _travel(
@@ -140,6 +159,72 @@ double? _distance(Map<String, dynamic> first, Map<String, dynamic> second) {
     distance: double.parse(distance.toStringAsFixed(2)),
     source: 'estimated_haversine'
   );
+}
+
+const _localLimits = {
+  'walk': (km: 3, leg: 45, day: 75, speed: 4.5),
+  'drive': (km: 35, leg: 75, day: 135, speed: 32.0),
+  'public': (km: 25, leg: 65, day: 110, speed: 23.0),
+};
+
+String _sightseeingMode(Map<String, dynamic> trip) {
+  final mode = (trip['transportMode'] ?? trip['preferredTransport'] ?? trip['travelMode']).toString().toLowerCase();
+  if (const {'walk', 'walking', 'on foot'}.contains(mode)) return 'walk';
+  if (const {'car', 'drive', 'driving', 'private car', 'taxi', 'own_vehicle'}.contains(mode)) return 'drive';
+  return 'public';
+}
+
+bool _conflictingLocation(Map<String, dynamic> item) =>
+    item['metadataConflict'] == true || item['geographyConflict'] == true ||
+    (item['normalizedGeography'] as Map?)?['conflict'] == true ||
+    (MalaysianLocality.validateCandidate(item, const {})['normalizedGeography'] as Map)['conflict'] == true;
+
+double? _localDistance(Map<String, dynamic> origin, Map<String, dynamic> target) =>
+    _conflictingLocation(origin) || _conflictingLocation(target) ? null : _distance(origin, target);
+
+({int minutes, double? distance, String source})? _localLeg(
+    Map<String, dynamic>? previous, Map<String, dynamic> item, String mode) {
+  if (_conflictingLocation(item)) return null;
+  if (previous == null) return (minutes: 0, distance: 0, source: 'not_applicable');
+  final distance = _localDistance(previous, item);
+  if (distance == null) return null;
+  final minutes = _number(item['providerTravelDurationMinutes']);
+  if (previous['destinationId'] != null &&
+      previous['destinationId'] == item['providerTravelFromDestinationId'] &&
+      item['providerTravelMode'] == mode && minutes.isFinite && minutes > 0) {
+    final roadDistance = _number(item['providerTravelDistanceKm'], distance);
+    return (minutes: minutes.ceil(), distance: roadDistance.isFinite ? max(distance, roadDistance) : distance, source: 'provider');
+  }
+  final estimated = (distance * 1.25 / _localLimits[mode]!.speed * 60).ceil();
+  final total = max(5, estimated + (mode == 'walk' ? 0 : 8));
+  if ((item['supportingAccess'] as List? ?? []).isNotEmpty ||
+      (previous['supportingAccess'] as List? ?? []).isNotEmpty) {
+    return (minutes: max(25, total), distance: distance, source: 'unverified_access_buffer');
+  }
+  return (minutes: total, distance: distance, source: 'estimated_haversine');
+}
+
+String _experience(Map<String, dynamic> item) {
+  final label = [for (final key in ['activityName', 'category', 'type', 'type_id']) item[key],
+    ...(item['type_ids'] as List? ?? const [])]
+      .whereType<String>().join(' ').toLowerCase().replaceAll('_', ' ');
+  const groups = {
+    'hike': r'\b(?:hik(?:e|ing)|trek(?:king)?)(?:\b|_)',
+    'beach': r'\b(?:beach|pantai)\b',
+    'garden': r'\b(?:garden|botanic|taman)',
+    'viewpoint': r'\b(?:viewpoint|lookout|viewing deck)\b',
+    'wildlife': r'\b(?:wildlife|zoo|bird park|sanctuary)\b',
+    'museum': r'\b(?:museum|gallery)\b',
+    'religious': r'\b(?:temple|mosque|church|shrine)\b',
+    'heritage': r'\b(?:heritage|historical|historic|fort)\b',
+    'market': r'\b(?:market|bazaar|pasar)\b',
+    'mall': r'\b(?:mall|shopping cent(?:re|er))\b',
+    'meal': r'\b(?:cafe|restaurant|food court|hawker cent(?:re|er))\b',
+  };
+  for (final entry in groups.entries) {
+    if (RegExp(entry.value).hasMatch(label)) return entry.key;
+  }
+  return '';
 }
 
 Map<String, Map<String, dynamic>> _weatherByDate(Map<String, dynamic> forecast) {
@@ -232,9 +317,33 @@ Map<String, dynamic> planConstraintAwareItinerary(
     window[0] = max(window[0], 600);
   }
   final rest = rhythm == 'night owl' ? [840, 900] : [750, rhythm == 'comfort-focused' ? 840 : 810];
-  final profiled = (trip['planningPreferences'] as Map?)?.isNotEmpty == true;
+  final preferences = (trip['planningPreferences'] as Map?) ?? const {};
+  final profiled = preferences.isNotEmpty;
+  final localDays = trip['geographyPlanningPolicy'] == localDaysPolicy;
+  final mode = _sightseeingMode(trip);
+  final limits = _localLimits[mode]!;
+  final dailyLimit = (limits.day * (pace == 'relaxed' ? .75 : 1)).floor();
+  final requested = trip['interests'] ?? trip['requestedInterests'] ?? preferences['interests'];
+  final interests = RecommendationTaxonomy.conceptsFor(requested);
+  final hikeFocused = trip['hikingFocused'] == true ||
+      (requested is List && requested.any((value) =>
+          const {'hiking', 'hike', 'trekking'}.contains(value.toString().trim().toLowerCase())));
+  final usedConcepts = <String>{};
+  final reasons = <dynamic, String>{};
+  final sightseeingAnchors = <Map<String, dynamic>>[];
+  final experiences = {if (localDays) for (final item in remaining) item['activityId']: _experience(item)};
+  final concepts = {if (localDays && interests.isNotEmpty) for (final item in remaining)
+    item['activityId']: RecommendationTaxonomy.primaryConcepts({...item, 'title': item['activityName']})};
+  final tripExperiences = <String, int>{};
+  final baseInfo = trip['accommodationBase'] ?? trip['selectedHotel'];
+  final baseCandidate = baseInfo is Map ? Map<String, dynamic>.from(baseInfo) : null;
+  var base = baseCandidate != null && _coordinates(baseCandidate) != null &&
+      !_conflictingLocation(baseCandidate) ? baseCandidate : null;
+  Map<String, dynamic>? focus = base;
+  final transfer = localDays ? trip['confirmedIntercityTransfer'] as Map? : null;
+  var transferApplied = false;
   final rank = {for (var i = 0; i < remaining.length; i++) remaining[i]['activityId']: i};
-  final maxVisits = profiled && !respectDayAssignments
+  final maxVisits = (profiled || localDays && pace == 'relaxed') && !respectDayAssignments
       ? const {'relaxed': 2, 'moderate': 3, 'active': 5}[pace] : null;
   final weather = _weatherByDate(forecast);
   final scheduled = <Map<String, dynamic>>[];
@@ -250,9 +359,47 @@ Map<String, dynamic> planConstraintAwareItinerary(
       'heavyRainLikely': false,
     };
     var current = window[0];
-    Map<String, dynamic>? previous;
+    Map<String, dynamic>? previous = localDays ? base : null;
     final dayItems = <Map<String, dynamic>>[];
-    while (remaining.isNotEmpty && (maxVisits == null || dayItems.length < maxVisits)) {
+    final experienceCounts = <String, int>{};
+    var dailyTravel = 0;
+    Map<String, dynamic>? transferBlock;
+    if (transfer?['dayNo'] == dayNo && focus != null) {
+      final target = remaining.where((item) => item['destinationId'] == transfer?['toDestinationId']).firstOrNull;
+      final transferMode = transfer?['mode'] ?? mode;
+      final leg = target != null && _localLimits.containsKey(transferMode)
+          ? _localLeg(focus, target, transferMode.toString()) : null;
+      if (leg != null && leg.source != 'unverified_access_buffer' && (leg.minutes > limits.leg || (leg.distance ?? 0) > limits.km) &&
+          leg.minutes + 60 <= min(600, 1260 - current) && transferMode != 'walk') {
+        transferApplied = true;
+        final duration = leg.minutes + 60;
+        transferBlock = {
+          'type': 'intercity_transfer', 'label': 'Intercity transfer and breaks',
+          'startTime': _time(current), 'endTime': _time(current + duration),
+          'durationMinutes': duration, 'estimated': true, 'destinationId': target!['destinationId'],
+        };
+        base = null;
+        focus = target;
+      }
+    }
+    var visitLimit = maxVisits;
+    bool canStartDay(Map<String, dynamic> item) {
+      final opening = _opening(item['openingHours']);
+      var start = max(window[0], opening.start ?? 0);
+      final duration = _duration(item).minutes;
+      if (start < rest[1] && start + duration > rest[0]) start = rest[1];
+      return opening.status != 'closed' && start + duration <= min(window[1], opening.end ?? 1440);
+    }
+    final flexible = localDays && !respectDayAssignments && !preserveOrder;
+    final transferDay = transfer?['dayNo'];
+    final lastLocalDay = transferDay is int && transferDay > dayNo && transferDay <= days
+        ? transferDay - 1 : days;
+    final futureLocalDays = lastLocalDay - dayNo;
+    if (flexible) {
+      visitLimit = min(maxVisits ?? 5, max(1, remaining.length - futureLocalDays));
+    }
+    while (transferBlock == null && remaining.isNotEmpty &&
+        (visitLimit == null || dayItems.length < visitLimit)) {
       final eligible = remaining
           .where((item) => (!respectDayAssignments && !pinned.contains(item['activityId'])) ||
               _number(item['dayNo'], dayNo.toDouble()).round() == dayNo)
@@ -263,6 +410,30 @@ Map<String, dynamic> planConstraintAwareItinerary(
           final rainA = dayWeather['heavyRainLikely'] == true && _indoor(a) ? 0 : 1;
           final rainB = dayWeather['heavyRainLikely'] == true && _indoor(b) ? 0 : 1;
           if (rainA != rainB) return rainA.compareTo(rainB);
+          if (localDays) {
+            final missing = interests.difference(usedConcepts);
+            int coverage(Map<String, dynamic> item) =>
+                concepts[item['activityId']]?.intersection(missing).isNotEmpty == true ? 0 : 1;
+            final coverageOrder = coverage(a).compareTo(coverage(b));
+            if (coverageOrder != 0) return coverageOrder;
+            if (focus == null) {
+              int neighbours(Map<String, dynamic> item) => min(4, eligible.where((other) =>
+                  (_localDistance(item, other) ?? double.infinity) <= limits.km).length);
+              final grouping = neighbours(b).compareTo(neighbours(a));
+              if (grouping != 0) return grouping;
+            }
+            final expA = experiences[a['activityId']];
+            final expB = experiences[b['activityId']];
+            final dailyVariety = (experienceCounts[expA] ?? 0).compareTo(experienceCounts[expB] ?? 0);
+            if (dailyVariety != 0) return dailyVariety;
+            final tripVariety = (tripExperiences[expA] ?? 0).compareTo(tripExperiences[expB] ?? 0);
+            if (tripVariety != 0) return tripVariety;
+            if (previous != null) {
+              final proximity = ((_localDistance(previous, a) ?? 0) ~/ 4)
+                  .compareTo((_localDistance(previous, b) ?? 0) ~/ 4);
+              if (proximity != 0) return proximity;
+            }
+          }
           final closeA = _opening(a['openingHours']).end ?? 1440;
           final closeB = _opening(b['openingHours']).end ?? 1440;
           if (closeA != closeB) return closeA.compareTo(closeB);
@@ -280,8 +451,31 @@ Map<String, dynamic> planConstraintAwareItinerary(
         final opening = _opening(item['openingHours']);
         if (opening.status == 'closed') continue;
         final duration = _duration(item);
-        final travel = _travel(previous, item);
-        var itemStart = max(current + travel.minutes, opening.start ?? 0);
+        final travel = localDays ? _localLeg(previous, item, mode) : _travel(previous, item);
+        final anchor = focus ?? dayItems.firstOrNull;
+        final anchorDistance = localDays && anchor != null ? _localDistance(anchor, item) : null;
+        final itemId = item['activityId'];
+        if (travel == null || (localDays && anchor != null && anchorDistance == null)) {
+          reasons[itemId] = _unknownJourney;
+          continue;
+        }
+        if (localDays && (travel.minutes > limits.leg || (travel.distance ?? 0) > limits.km ||
+            (anchorDistance ?? 0) > limits.km || dailyTravel + travel.minutes > dailyLimit)) {
+          reasons[itemId] = _distantStop;
+          continue;
+        }
+        final experience = experiences[itemId] ?? '';
+        final repeatLimit = hikeFocused || experience == 'meal' ? 2 : 1;
+        if (localDays && const {'hike', 'meal'}.contains(experience) &&
+            (experienceCounts[experience] ?? 0) >= repeatLimit) {
+          reasons[itemId] = 'This day already includes similar activities. Try another day to allow time for rest and variety.';
+          continue;
+        }
+        var arrival = current + travel.minutes;
+        if (localDays && current < rest[1] && arrival > rest[0]) {
+          arrival = rest[1] + travel.minutes;
+        }
+        var itemStart = max(arrival, opening.start ?? 0);
         if (itemStart < rest[1] && itemStart + duration.minutes > rest[0]) itemStart = rest[1];
         final itemEnd = itemStart + duration.minutes;
         if (itemEnd > window[1] || (opening.end != null && itemEnd > opening.end!)) continue;
@@ -292,7 +486,8 @@ Map<String, dynamic> planConstraintAwareItinerary(
           'durationEstimated': duration.source != 'provider',
           'travelBufferMinutes': travel.minutes,
           'travelDurationMinutes': travel.minutes,
-          'travelDistanceKm': travel.distance,
+          'travelDistanceKm': localDays && travel.distance != null
+              ? double.parse(travel.distance!.toStringAsFixed(2)) : travel.distance,
           'travelTimeSource': travel.source,
           'openingHoursStatus': opening.status,
           'dayNo': dayNo,
@@ -311,13 +506,24 @@ Map<String, dynamic> planConstraintAwareItinerary(
               : '',
           'scheduleNotes': [
             if (travel.source == 'unverified_access_buffer')
-              'Access transfer requires confirmation; 25 minutes is a planning buffer, not a verified journey time or walking route.',
+              localDays
+                  ? 'Access transfer requires confirmation; the planning buffer is not a verified journey time or walking route.'
+                  : 'Access transfer requires confirmation; 25 minutes is a planning buffer, not a verified journey time or walking route.',
             if (previous != null && travel.source == 'estimated_haversine')
               'Grouped with a nearby attraction to reduce estimated travel time.',
             if (opening.end != null && opening.end! <= 1080)
               'Scheduled before closing at ${_time(opening.end!)}.',
           ],
         };
+        if (localDays) {
+          if (experience.isNotEmpty) {
+            experienceCounts.update(experience, (count) => count + 1, ifAbsent: () => 1);
+            tripExperiences.update(experience, (count) => count + 1, ifAbsent: () => 1);
+          }
+          usedConcepts.addAll(concepts[itemId] ?? const {});
+          dailyTravel += travel.minutes;
+          if (_coordinates(item) != null) focus ??= item;
+        }
         chosenEnd = itemEnd;
         break;
       }
@@ -327,6 +533,14 @@ Map<String, dynamic> planConstraintAwareItinerary(
       scheduled.add(chosen);
       previous = chosen;
       current = chosenEnd;
+      if (flexible && dayItems.length == 1) {
+        final compatible = focus == null ? remaining.length : remaining.where((item) =>
+            (_localDistance(focus!, item) ?? double.infinity) <= limits.km && canStartDay(item)).length;
+        visitLimit = min(visitLimit!, max(1, 1 + compatible - futureLocalDays));
+      }
+    }
+    if (localDays && dayItems.isNotEmpty && focus != null && !sightseeingAnchors.contains(focus)) {
+      sightseeingAnchors.add(focus);
     }
     daily.add({
       'dayNo': dayNo,
@@ -334,7 +548,7 @@ Map<String, dynamic> planConstraintAwareItinerary(
       'dayLabel': 'Day $dayNo · $dateKey',
       'planningWindow': {'startTime': _time(window[0]), 'endTime': _time(window[1]), 'pace': pace},
       'activities': dayItems,
-      'planningBlocks': dayItems.isEmpty
+      'planningBlocks': transferBlock != null ? [transferBlock] : dayItems.isEmpty
           ? []
           : [
               {
@@ -348,18 +562,27 @@ Map<String, dynamic> planConstraintAwareItinerary(
             ],
       'weather': dayWeather,
       'estimatedMinutes': dayItems.fold<int>(
-          0,
+          (transferBlock?['durationMinutes'] as int?) ?? 0,
           (sum, item) =>
               sum + _number(item['recommendedDurationMinutes']).round() + _number(item['travelDurationMinutes']).round()),
       'estimatedCost': dayItems.fold<double>(0, (sum, item) => sum + (plannedActivityAmount(item, travellers) ?? 0)),
     });
   }
+  String unscheduledReason(Map<String, dynamic> item) {
+    if (_opening(item['openingHours']).status == 'closed') {
+      return 'Attraction is closed on all trip days.';
+    }
+    if (sightseeingAnchors.isNotEmpty) {
+      if (_conflictingLocation(item) || _coordinates(item) == null) return _unknownJourney;
+      if (sightseeingAnchors.every((anchor) =>
+          (_localDistance(anchor, item) ?? 0) > limits.km)) return _distantStop;
+    }
+    return reasons[item['activityId']] ?? 'Could not fit within available time, travel, and opening-hour constraints.';
+  }
   final unscheduled = remaining
       .map((item) => {
             ...item,
-            'unscheduledReason': _opening(item['openingHours']).status == 'closed'
-                ? 'Attraction is closed on all trip days.'
-                : 'Could not fit within available time, travel, and opening-hour constraints.',
+            'unscheduledReason': unscheduledReason(item),
           })
       .toList();
   if (tripWide && (scheduled.length + unscheduled.length != inputIds.length ||
@@ -370,6 +593,7 @@ Map<String, dynamic> planConstraintAwareItinerary(
     ...trip,
     'activities': scheduled,
     'unscheduledSuggestions': unscheduled,
+    if (transfer != null) 'intercityTransferStatus': transferApplied ? 'planned' : 'needs_review',
     'scheduledActivityCount': scheduled.length,
     'unscheduledActivityCount': unscheduled.length,
     'tripDays': days,

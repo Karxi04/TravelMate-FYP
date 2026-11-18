@@ -58,6 +58,9 @@ Map<String, dynamic> buildActivityPayload(
     'activityName': name.isEmpty ? 'Place' : name,
     'destinationId': destId,
     'address': addr,
+    for (final key in ['city', 'state'])
+      if (place[key] is String && (place[key] as String).trim().isNotEmpty)
+        key: (place[key] as String).trim(),
     'dayNo': effectiveDay,
     'type': typ,
     'category': cat,

@@ -754,6 +754,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         reason.contains('is closed during')) {
       return 'This place is closed during your trip dates.';
     }
+    if (reason.startsWith('this stop is too far') || reason.startsWith('could not establish') ||
+        reason.startsWith('this day already includes')) return rawReason;
     if (reason.contains('unverified')) {
       return 'Couldn’t fit in schedule. Opening hours are unverified; check with venue.';
     }
@@ -1486,6 +1488,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
       );
       selectedDay = targetDay;
       await load();
+    } on ApiException catch (error) {
+      if (mounted) showError(context, error.message);
     } catch (_) {
       if (mounted) showError(context, 'We could not move this activity.');
     } finally {
@@ -2009,7 +2013,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                 style: Theme.of(context).textTheme.titleSmall),
           ),
           const SizedBox(width: AppSpacing.xs),
-          const Icon(Icons.restaurant_outlined, color: AppColors.textSecondary),
+          Icon(block['type'] == 'intercity_transfer' ? Icons.route_outlined : Icons.restaurant_outlined,
+              color: AppColors.textSecondary),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child:
@@ -2385,8 +2390,69 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     );
   }
 
-  Widget _unscheduledSection(List<Map<String, dynamic>> unscheduled) {
+  Future<void> _confirmIntercity(Map<String, dynamic> item, int days) async {
+    var day = 2;
+    var mode = 'drive';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(builder: (context, setDialogState) {
+        return AlertDialog(
+          title: const Text('Plan an intercity travel day'),
+          content: SingleChildScrollView(child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Recalculate your itinerary to reserve a travel day before visiting ${item['activityName']}. Verify your route, transport and overnight stay before travelling.'),
+              const SizedBox(height: AppSpacing.sm),
+              DropdownButtonFormField<int>(
+                initialValue: day,
+                decoration: const InputDecoration(labelText: 'Travel day'),
+                items: [for (var value = 2; value < days; value++)
+                  DropdownMenuItem(value: value, child: Text('Day $value'))],
+                onChanged: (value) => setDialogState(() => day = value ?? day),
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: mode,
+                decoration: const InputDecoration(labelText: 'Transport'),
+                items: const [
+                  DropdownMenuItem(value: 'drive', child: Text('Car')),
+                  DropdownMenuItem(value: 'public', child: Text('Public transport')),
+                ],
+                onChanged: (value) => setDialogState(() => mode = value ?? mode),
+              ),
+            ],
+          )),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirm travel day')),
+          ],
+        );
+      }),
+    );
+    if (!mounted || confirmed != true || busy) return;
+    setState(() => busy = true);
+    try {
+      await api.post('/api/fr5/itineraries/${widget.tripId}/intercity-transfer', {
+        'dayNo': day,
+        'mode': mode,
+        'toDestinationId': item['destinationId'],
+        'confirmed': true,
+      });
+      selectedDay = day;
+      await load();
+    } on ApiException catch (error) {
+      if (mounted) showError(context, error.message);
+    } catch (_) {
+      if (mounted) showError(context, 'We could not update the travel day.');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Widget _unscheduledSection(Map<String, dynamic> trip, List<Map<String, dynamic>> unscheduled) {
     if (unscheduled.isEmpty) return const SizedBox.shrink();
+    final days = (trip['dailySchedule'] as List? ?? const []).length;
+    final canPlanTransfer = days >= 3 && trip['confirmedIntercityTransfer'] == null;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       AppSectionHeader(
         title: 'Couldn’t fit into your schedule',
@@ -2416,6 +2482,12 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                             .bodySmall
                             ?.copyWith(color: AppColors.textSecondary),
                       ),
+                      if (canPlanTransfer && item['destinationId'] != null &&
+                          (item['unscheduledReason'] ?? '').toString().startsWith('This stop is too far'))
+                        TextButton(
+                          onPressed: busy ? null : () => _confirmIntercity(item, days),
+                          child: const Text('Plan a travel day'),
+                        ),
                     ]),
               ),
               TextButton(
@@ -2603,6 +2675,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               _dayNavigation(t),
               const SizedBox(height: AppSpacing.sm),
               _daySummary(t, day),
+              if (t['intercityTransferStatus'] == 'needs_review')
+                const Padding(
+                  padding: EdgeInsets.only(top: AppSpacing.sm),
+                  child: Text('Review your intercity travel day before travelling. The transfer could not be planned from the current trip information.'),
+                ),
               const SizedBox(height: AppSpacing.md),
               AppSectionHeader(
                 title: 'Day $selectedDay itinerary',
@@ -2620,7 +2697,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                         setState(() => editingItinerary = !editingItinerary),
               ),
               const SizedBox(height: AppSpacing.sm),
-              if (dayItems.isEmpty)
+              if (dayItems.isEmpty && _planningBlocks(day).isEmpty)
                 TravelEmptyState(
                   icon: Icons.route_outlined,
                   title: 'No activities for this day',
@@ -2648,7 +2725,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               _budgetSection(t),
               if (unscheduled.isNotEmpty) ...[
                 const SizedBox(height: AppSpacing.lg),
-                _unscheduledSection(unscheduled),
+                _unscheduledSection(t, unscheduled),
               ],
             ],
             const SizedBox(height: AppSpacing.lg),

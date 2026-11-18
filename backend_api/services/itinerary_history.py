@@ -11,7 +11,8 @@ from utils import utc_now_iso
 RETENTION = 5
 MAX_SNAPSHOT_BYTES = 48 * 1024
 FIELDS = EDITABLE_FIELDS | {'destinationState', 'numberOfTravellers', 'interests', 'excludedInterests',
-    'excludedActivityTypes', 'preferIndoor', 'daySpecificPreferences', 'activities', 'foodCost', 'transportCost'}
+    'excludedActivityTypes', 'preferIndoor', 'daySpecificPreferences', 'activities', 'foodCost', 'transportCost',
+    'confirmedIntercityTransfer'}
 ACTIVITY_FIELDS = ACTIVITY_TEXT | ACTIVITY_NUMBERS | {'activityId', 'dayNo', 'sequenceNo', 'indoor',
     'gps_coordinates', 'gpsCoordinates', 'pricingEvidence', 'overlapsAllowance', 'currency',
     'imageUrl', 'thumbnail', 'openingHoursSourceUrl', 'openingHoursVerifiedAt',
@@ -116,7 +117,8 @@ def restore_patch(trip, version, *, scope='trip', day=None):
     if all(current.get(k) == v for k, v in patch.items()):
         raise HistoryConflict('Those supported fields already match this version. Nothing needs restoring.')
     merged = {**trip, **patch}
-    if {'activities', 'startDate', 'endDate', 'destinationArea', 'travelPace'} & patch.keys():
+    if {'activities', 'startDate', 'endDate', 'destinationArea', 'travelPace',
+        'transportMode', 'confirmedIntercityTransfer'} & patch.keys():
         ids = [a.get('activityId') for a in merged['activities']]
         if any(not key for key in ids) or len(ids) != len(set(ids)):
             raise HistoryConflict('Historical activity identifiers are incomplete or duplicated; safe restoration is unavailable.')
@@ -141,6 +143,8 @@ def restore_patch(trip, version, *, scope='trip', day=None):
         else:
             patch.update({key: planned[key] for key in ('activities', 'dailySchedule', 'tripDays', 'coverageStatus',
                 'unscheduledSuggestions', 'routeWarnings') if key in planned})
+            if 'confirmedIntercityTransfer' in patch:
+                patch['intercityTransferStatus'] = planned.get('intercityTransferStatus') if patch['confirmedIntercityTransfer'] else None
         merged = {**trip, **patch}
     if 'travellerCount' in patch:
         from services.activity_pricing import refresh_activity_costs

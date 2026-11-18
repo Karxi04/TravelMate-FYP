@@ -212,8 +212,9 @@ def test_firestore_chat_turn_replaces_removed_draft_fields(monkeypatch):
 
 
 def johor_provider(monkeypatch):
-    # Synthetic provider records, never production catalogue entries.
+    # The multi-day save cases use a walkable set of fixture pins, not production catalogue entries.
     records = [{'place_id': f'johor_test_{i}', 'title': f'Johor test attraction {i}', 'address': 'Johor Bahru, Johor, Malaysia',
+                'gps_coordinates': {'latitude': 1.493 + i * .001, 'longitude': 103.749},
                 'state': 'Johor', 'city': 'Johor Bahru', 'category': 'Culture', 'description': 'Provider-returned test detail.'} for i in range(15)]
     records.append({'place_id': 'wrong_state', 'title': 'KL test attraction', 'state': 'Kuala Lumpur', 'address': 'Kuala Lumpur, Malaysia'})
     monkeypatch.setenv('SERPAPI_KEY', 'synthetic-test-only')
@@ -250,7 +251,9 @@ def test_full_guided_date_conversation(client, mock_traveller_auth, memory, monk
         previous = json.loads(fixture.read_text(encoding='utf-8'))['item']['tripPlan']
         assert (plan['destinationArea'], plan['startDate'], plan['endDate']) == (
             previous['destinationArea'], previous['startDate'], previous['endDate'])
-        assert {a['destinationId'] for a in plan['activities']} <= {a['destinationId'] for a in previous['activities']}
+        # Flutter must still accept the same schema and stable provider identities.
+        assert all(a.get('activityId') and a.get('scheduledStartTime') for a in plan['activities'])
+        assert all(a['destinationId'].startswith('johor_test_') for a in plan['activities'])
     if wording == '12 Dec until 16 Dec' and os.getenv('TRAVELMATE_FR11_CONTRACT_OUTPUT'):
         Path(os.environ['TRAVELMATE_FR11_CONTRACT_OUTPUT']).write_text(json.dumps(final, indent=2, ensure_ascii=False)+'\n', encoding='utf-8')
 

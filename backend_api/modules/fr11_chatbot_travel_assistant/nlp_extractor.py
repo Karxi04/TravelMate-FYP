@@ -867,18 +867,13 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
             return None, 'invalid_dates'
     else:
         days = max(1, min(14, int(days or 3)))
-    time_slots = ['Morning (09:00 - 12:00)', 'Afternoon (13:30 - 16:30)', 'Evening (18:00 - 20:30)']
+    from sequence_contract.domain_functions import LOCAL_ACTIVITY_FIELDS, LOCAL_DAYS_POLICY
     activities = []
     activity_count = days * {'relaxed': 2, 'moderate': 3, 'active': 5}.get(
         normalize_pace(profile.get('travelPace')), 3)
-    scheduled = matching[:activity_count]
-    for idx, d in enumerate(scheduled):
-        # Spread a limited verified catalogue across all days without repeating places.
-        day_no = min(days, idx * days // len(scheduled) + 1)
-        day_slot = sum(a['dayNo'] == day_no for a in activities)
-        slot = time_slots[min(day_slot, len(time_slots) - 1)]
+    for d in matching[:max(20, activity_count)]:
         activities.append({
-                **{key: d[key] for key in IDENTITY_FIELDS if key in d},
+                **{key: d[key] for key in (*IDENTITY_FIELDS, *LOCAL_ACTIVITY_FIELDS) if key in d},
                 'activityId': f'A{len(activities) + 1}',
                 'activityName': d.get('title') or d.get('name') or f'Stop {len(activities) + 1}',
                 'destinationId': d.get('destinationId') or d.get('place_id') or f'dest_{len(activities) + 1}',
@@ -889,9 +884,6 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
                 'address': d.get('address', ''),
                 'state': d.get('state') or destination_state or '',
                 'city': d.get('city') or destination_area or '',
-                'dayNo': day_no,
-                'timeSlot': slot,
-                'timeRangeLabel': slot,
                 'estimatedCost': float(d.get('estimatedCost', 0) or 0),
                 **pricing_snapshot(d),
                 'gps_coordinates': d.get('gps_coordinates') or d.get('gpsCoordinates') or {},
@@ -904,7 +896,6 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
                 **{key:d[key] for key in ('score','finalScore','contentScore','collaborativeScore','popularityScore','matchedInterests','recommendationReason') if key in d},
                 'recommendedDurationMinutes': int(d.get('recommendedDurationMinutes', 0) or 0),
                 'travelBufferMinutes': int(d.get('travelBufferMinutes', 0) or 0),
-                'scheduleNotes': [f"Recommended stop for Day {day_no}"],
         })
 
     s_date = start_date or date.today().isoformat()
@@ -919,6 +910,7 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
 
     from services.recommendation_taxonomy import planning_preferences
     plan = {
+        'geographyPlanningPolicy': LOCAL_DAYS_POLICY,
         'attractionIdentityPolicy': POLICY,
         'sleepingType': profile.get('sleepingType'),
         'planningPreferences': planning_preferences(profile),
@@ -933,7 +925,8 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
         'tripDays': days,
         'nights': days - 1,
         'datesSource': 'user' if start_date and end_date else 'suggested',
-        'coverageStatus': 'complete' if len(scheduled) >= days else 'partial',
+        'coverageStatus': 'partial',
+        'hikingFocused': any(str(item).lower() == 'hiking' for item in (interests or [])),
         'interests': list(interests or []),
         'excludedInterests': list(excluded_interests or []),
         'excludedActivityTypes': list(excluded_activity_types or []),
@@ -941,7 +934,8 @@ def build_structured_trip_plan(destination_area, destination_state=None, days=3,
         'travelPace': profile.get('travelPace', ''),
         'activities': activities,
     }
-    generated = recalculateItinerary({**plan, 'status':'generated'})
+    generated = recalculateItinerary({**plan, 'status': 'generated'},
+                                     preserveOrder=False, respectDayAssignments=False)
     generated['budgetEstimate'] = calculateBudget(generated)
     generated['coverageStatus'] = 'complete' if len({a.get('dayNo') for a in generated['activities']}) >= days else 'partial'
     return generated, 'ready'

@@ -108,6 +108,12 @@ def current_screen(item):
     return screen_submission(comment, rating)['screening']
 
 
+def genuine_review(item):
+    return item.get('synthetic') is not True and str(item.get('source') or '').strip().lower() not in {
+        'sample', 'synthetic', 'demo', 'fyp_private',
+    }
+
+
 def published_review(item):
     try:
         rating = float(item.get('rating'))
@@ -133,7 +139,7 @@ class ReviewConflict(ValueError):
 
 def stage_public_review(write, projection, document_id, record):
     from services.public_content_projection import public_review
-    if published_review(record):
+    if genuine_review(record) and published_review(record):
         write.set(projection, public_review({**record, 'id': document_id}))
     else:
         write.delete(projection)

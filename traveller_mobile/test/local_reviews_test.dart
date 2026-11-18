@@ -57,7 +57,7 @@ class _PreviewApi extends ApiService {
 }
 
 void main() {
-  testWidgets('older local Backend samples still appear in one Reviews section', (tester) async {
+  testWidgets('older local Backend sample fallback is not requested', (tester) async {
     final api = _PreviewApi(oldServer: true);
     await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,
         initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
@@ -66,12 +66,13 @@ void main() {
     expect(find.text('3.0 · 1 review'), findsNothing);
     expect(find.text('5.0 · 1 review'), findsOneWidget);
     expect(find.text('View community reviews'), findsNothing);
-    await tester.scrollUntilVisible(find.text('Previously available sample.'), 140);
+    await tester.scrollUntilVisible(find.text('Write a review'), 140);
+    expect(find.text('Previously available sample.'), findsNothing);
     expect(find.text('Sample review'), findsNothing);
-    expect(find.text('Includes fictional demo reviews.'), findsOneWidget);
-    expect(api.reads, 2);
+    expect(find.text('Includes fictional demo reviews.'), findsNothing);
+    expect(api.reads, 1);
   });
-  testWidgets('unified reviews disclose sample source and expand without another request', (tester) async {
+  testWidgets('unified reviews exclude sample rows and retain genuine presentation', (tester) async {
     final api = _PreviewApi();
     await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,
         initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
@@ -81,29 +82,15 @@ void main() {
     expect(find.text('3.0 · 3 reviews'), findsNothing);
     expect(find.text('Community reviews'), findsNothing);
     expect(find.text('Demonstration reviews'), findsNothing);
-    expect(find.text('Includes fictional demo reviews.'), findsOneWidget);
+    expect(find.text('Includes fictional demo reviews.'), findsNothing);
     expect(find.textContaining('FYP'), findsNothing);
     expect(find.text('View community reviews'), findsNothing);
     await tester.scrollUntilVisible(find.text('Nov 11, 2026'), 150);
     expect(find.text('2026-11-11T09:00:00+08:00'), findsNothing);
     expect(find.text('Sample comment 3.'), findsNothing);
-    final all = find.text('View all 4 reviews');
-    await tester.scrollUntilVisible(all, 180);
-    await tester.ensureVisible(all);
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -120));
-    await tester.pumpAndSettle();
-    await tester.tap(all.hitTestable());
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Sample comment 3.'), 150);
-    expect(find.text('Sample comment 3.'), findsOneWidget);
-    final fewer = find.text('Show fewer reviews');
-    await tester.scrollUntilVisible(fewer, 150);
-    await tester.ensureVisible(fewer);
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -120));
-    await tester.pumpAndSettle();
-    await tester.tap(fewer.hitTestable());
-    await tester.pumpAndSettle();
-    expect(find.text('Sample comment 3.'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Write a review'), 150);
+    expect(find.textContaining('Sample comment'), findsNothing);
+    expect(find.text('View all 4 reviews'), findsNothing);
     expect(api.reads, 1);
   });
 

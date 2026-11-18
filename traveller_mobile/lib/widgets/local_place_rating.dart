@@ -40,13 +40,12 @@ class LocalReviewRatings {
 
   static void remember(String id, Map<String, dynamic> summary) {
     final owner = accountUid;
-    if (owner.isEmpty && summary['fypPreview'] == true) return;
+    if (!ReviewContract.isGenuine(summary)) return;
     _scopeRecent(owner);
     final canonical = ReviewContract.destinationId(id);
     _recent[canonical] = {
       'rating': summary['rating'],
       'reviews': summary['reviews'],
-      if (summary['fypPreview'] == true) 'fypPreview': true,
     };
     _recentUntil[canonical] = DateTime.now().add(const Duration(seconds: 30));
     revision.value++;
@@ -74,7 +73,8 @@ class LocalReviewRatings {
     final summaries = await _pending!;
     if (accountUid != uid) return {};
     final summary = summaries[canonical] ?? summaries[id];
-    return summary is Map ? Map<String, dynamic>.from(summary) : {};
+    return summary is Map && ReviewContract.isGenuine(summary)
+        ? Map<String, dynamic>.from(summary) : {};
   }
 }
 

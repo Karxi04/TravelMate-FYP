@@ -85,7 +85,7 @@ def fixture(items=None, *, new_trip=False, snapshot_problem=None, **changes):
 
 
 @pytest.mark.parametrize('value', [None, 'false', '0', 'invalid'])
-def test_disabled_flag_has_exact_legacy_generation_parity(monkeypatch, value):
+def test_disabled_flag_matches_default_geographic_planner_exactly(monkeypatch, value):
     if value is None:
         monkeypatch.delenv(FLAG, raising=False)
     else:
@@ -93,13 +93,13 @@ def test_disabled_flag_has_exact_legacy_generation_parity(monkeypatch, value):
     with fixture() as (current, snapshot, _, _), patch.object(routes, 'generate_with_budget_selection') as selector:
         generated = routes._generate_itinerary_data(current, {}, snapshot)
         mapped = [{**item, 'recommendationGenerationId': 'rec-integration'} for item in snapshot['recommendationResults']]
-        working = {**current, 'activities': [routes._activity_from_destination(item, index) for index, item in enumerate(mapped)]}
+        working = {**current, 'geographyPlanningPolicy': routes.LOCAL_DAYS_POLICY,
+                   'attractionIdentityPolicy': 'trip-wide-v1',
+                   'activities': [routes._activity_from_destination(item, index) for index, item in enumerate(mapped)]}
         locations = routes.retrieveLocationAndTravelTime(working['activities'])
         expected = generateItinerary(locations, {}, working)
         expected['generationContext'].update({'destinationSource': 'offline_fixture',
             'destinationCoordinates': None, 'recommendationGenerationId': 'rec-integration'})
-        # Trip-wide identity is enforced independently of the budget selector flag.
-        expected['attractionIdentityPolicy'] = 'trip-wide-v1'
         assert generated == expected
         selector.assert_not_called()
 
@@ -561,11 +561,13 @@ def test_personalised_real_endpoint_performance(client, mock_traveller_auth, mon
                 samples.append((perf_counter() - start) * 1000)
                 assert response.status_code == 200, response.json
                 saved = response.json['itinerary']
-                assert saved['scheduledActivityCount'] == 20
+                # Packed pace allows up to five visits per day, even with a larger pool.
+                assert saved['scheduledActivityCount'] == 15
+                assert max(len(day['activities']) for day in saved['dailySchedule']) == 5
                 _assert_schedule_fits(saved)
         assert selector.call_count == (7 if enabled else 0)
     record_property('endpoint_performance', json.dumps({
         'enabled': enabled, 'candidates': 20, 'days': 3, 'samplesMs': samples,
         'medianMs': median(samples), 'p95Ms': max(samples),
-        'selectorCalls': selector.call_count, 'scheduled': 20, 'excluded': 0,
+        'selectorCalls': selector.call_count, 'scheduled': 15, 'excluded': 5,
         'method': 'Flask test_client, mocked authentication/persistence/forecast, nearest-rank P95 of seven calls'}))

@@ -27,6 +27,7 @@ class _PersonalizedPlanningScreenState
   final budget = TextEditingController(text: '1200');
   final origin = TextEditingController();
   String travelMode = 'undecided';
+  String sightseeingMode = 'auto';
   String accommodationChoice = 'undecided';
   String carRentalChoice = 'not_required';
   late final TextEditingController startDate;
@@ -268,9 +269,11 @@ class _PersonalizedPlanningScreenState
         recommendationSource =
             (data['source'] ?? snapshot['source'] ?? '').toString().trim();
         snapshotConflict = false;
-        suggestionsError = items.isEmpty
-            ? 'No saved suggestions are available for this destination yet.'
-            : null;
+        suggestionsError = data['stale'] == true
+            ? 'Your preferences changed. Refresh recommendations to use them for this trip.'
+            : items.isEmpty
+                ? 'No saved suggestions are available for this destination yet.'
+                : null;
       });
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -305,6 +308,7 @@ class _PersonalizedPlanningScreenState
         budget.text.trim(),
         origin.text.trim(),
         travelMode,
+        sightseeingMode,
         accommodationChoice,
         carRentalChoice,
         recommendationGenerationId ?? '',
@@ -320,6 +324,7 @@ class _PersonalizedPlanningScreenState
         'budgetLimit': double.parse(budget.text.trim()),
         if (origin.text.trim().isNotEmpty) 'originLocation': origin.text.trim(),
         'travelMode': travelMode,
+        if (sightseeingMode != 'auto') 'transportMode': sightseeingMode,
         'accommodationChoice': accommodationChoice,
         'carRentalChoice': carRentalChoice,
         'recommendationGenerationId': recommendationGenerationId,
@@ -669,6 +674,19 @@ class _PersonalizedPlanningScreenState
         if (travelMode == 'flight')
           const Text(
               'Flight intent only. A flight price is still needed; no ticket is booked.'),
+        const SizedBox(height: AppSpacing.sm),
+        _arrangementChoices(
+          'sightseeing-mode',
+          'Getting between attractions',
+          sightseeingMode,
+          const {
+            'auto': 'Use trip settings',
+            'walk': 'Walking',
+            'drive': 'Car',
+            'public': 'Public transport',
+          },
+          (value) => sightseeingMode = value,
+        ),
         const SizedBox(height: AppSpacing.sm),
         _arrangementChoices(
             'accommodation',
