@@ -40,8 +40,43 @@ _NON_VISITOR_CATEGORY = re.compile(
 _GLAZING_TRADE_NAME = re.compile(r'\bglass (?:and )?(?:aluminium|aluminum)\b')
 
 
+_ADMIN_FACILITY = re.compile(
+    r'\b(?:local government office|government (?:office|department|administration|service cent(?:re|er))|'
+    r'municipal (?:office|administration)|public administration|immigration (?:office|department)|'
+    r'passport office|urban transformation cent(?:re|er)|police station|police department|'
+    r'courthouse|court house|court of (?:appeal|justice)|district office|'
+    r'balai polis|ibu pejabat polis|pejabat imigresen|jabatan imigresen|pejabat daerah|mahkamah)\b'
+)
+_VISITOR_FACILITY = re.compile(
+    r'\b(?:museum|muzium|galler(?:y|i)|historic(?:al)? (?:site|landmark|building)|heritage (?:site|museum)|'
+    r'national park|botanic(?:al)? garden|observation deck|'
+    r'cultural cent(?:re|er)|public garden|taman negara)\b'
+)
+
+
+def is_administrative_facility(item):
+    """Use venue function, not government ownership, to judge tourism eligibility."""
+    types = item.get('types')
+    categories = [item.get('category'), item.get('type'),
+                  *(types if isinstance(types, (list, tuple)) else [types])]
+    title = normalize_phrase(item.get('title') or item.get('name') or item.get('activityName'))
+    primary = normalize_phrase(item.get('type') or item.get('category'))
+    administrative = (any(_ADMIN_FACILITY.search(normalize_phrase(value))
+                          or normalize_phrase(value) in {'court', 'government service'}
+                          for value in categories if value)
+                      or (normalize_phrase(item.get('class')) == 'office' and primary == 'government'))
+    verified = _EVIDENCE_BY_ALIAS.get(title)
+    if verified and _VISITOR_FACILITY.search(normalize_phrase(verified[0])):
+        geography = item.get('normalizedGeography') or {}
+        if geography.get('state') == 'Penang' and not geography.get('conflict'):
+            return False
+    return bool((administrative or _ADMIN_FACILITY.search(title)) and not (
+        _VISITOR_FACILITY.search(primary) and not _ADMIN_FACILITY.search(primary)
+        and (not administrative or _VISITOR_FACILITY.search(title))
+    ))
+
+
 def is_planning_candidate(item):
-    """Reject specific trade evidence without excluding visitor-facing shops or food."""
     if str(item.get('feature') or '').startswith(('PPL','ADM')) or (
             item.get('locationId') and item.get('kind') in {'locality','state','district','country','subdistrict','region'}):
         return False
@@ -50,11 +85,12 @@ def is_planning_candidate(item):
                   *(types if isinstance(types, (list, tuple)) else [types])]
     if any(_NON_VISITOR_CATEGORY.search(normalize_phrase(value)) for value in categories if value):
         return False
+    if is_administrative_facility(item):
+        return False
     title = normalize_phrase(item.get('title') or item.get('name'))
     return not _GLAZING_TRADE_NAME.search(title) or any(
         term in title.split() for term in ('museum', 'gallery', 'workshop')
     )
-
 
 def enrich_discovery_candidate(item):
     """Keep provider fields intact and attach separately sourced scoring evidence."""

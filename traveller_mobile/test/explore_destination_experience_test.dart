@@ -411,7 +411,7 @@ void main() {
     expect(find.text('About 120 minutes'), findsOneWidget);
     expect(find.text('About RM 20'), findsOneWidget);
 
-    await _show(tester, find.text('Local Reviews'));
+    await _show(tester, find.text('Reviews'));
     expect(find.text('4.8 · 1 review'), findsOneWidget);
     expect(find.text('Alya'), findsOneWidget);
     expect(find.text('Beautiful views and a peaceful visit.'), findsOneWidget);

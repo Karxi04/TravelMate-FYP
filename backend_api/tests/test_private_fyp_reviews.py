@@ -272,3 +272,50 @@ def test_unified_reviews_keep_community_visible_when_sample_read_fails(client, a
     assert result.json['result']['samplesUnavailable'] is True
     assert result.json['result']['reviews'] == 1
     assert 'sampleSummary' not in result.json['result']
+
+
+@pytest.mark.parametrize('identity,state,average', [
+    ('local_klcc', 'Kuala Lumpur', 3.3),
+    ('local_legoland_malaysia', 'Johor', 3.7),
+    ('local_tunku_abdul_rahman', 'Sabah', 3.3),
+    ('local_langkawi_skycab', 'Kedah', 4.0),
+])
+def test_regional_reviews_use_exact_catalog_identity_and_stay_private(
+        client, app, memory, identity, state, average):
+    from services.fyp_reviews import regional_demo_destinations, regional_demo_reviews
+    from services.malaysian_locality import normalize_candidate_geography
+    from services.recommendation_discovery import is_planning_candidate
+
+    place = regional_demo_destinations()[identity]
+    assert place['place_id'] == place['destinationId'] == identity
+    assert normalize_candidate_geography(place)['state'] == state
+    assert is_planning_candidate(place)
+    rows = regional_demo_reviews(identity)
+    assert len(rows) == 3 and all(row['synthetic'] and row['destinationId'] == identity for row in rows)
+    assert len({row['id'] for key in regional_demo_destinations()
+                for row in regional_demo_reviews(key)}) == 12
+
+    memory['feedback', 'genuine'] = {'id': 'genuine', 'travellerId': 'owner', 'destinationId': identity,
+        'rating': 4, 'comment': 'Genuine review.', 'moderationStatus': 'reviewed', 'feedbackStatus': 'visible'}
+    memory['feedback', 'foreign'] = {**memory['feedback', 'genuine'], 'id': 'foreign',
+        'destinationId': 'another-place', 'comment': 'Other attraction.'}
+    memory['feedback', 'pending'] = {**memory['feedback', 'genuine'], 'id': 'pending',
+        'travellerId': 'other', 'rating': 1, 'moderationStatus': 'pending_review'}
+    auth = {**headers('ordinary-traveller'), 'X-TravelMate-Review-Context': 'fyp-v1'}
+    path = f'/api/fr3/destinations/{identity}/ratings-reviews'
+    app.config['LOCAL_FYP_SAMPLE_REVIEWS'] = True
+    assert client.get(path + '?view=unified').status_code == 401
+    data = client.get(path + '?view=unified', headers=auth)
+    result = data.json['result']
+    assert 'no-store' in data.headers['Cache-Control']
+    assert (result['rating'], result['reviews']) == (4, 1)
+    assert result['sampleSummary'] == {'rating': average, 'reviews': 3}
+    assert [row['source'] for row in result['user_reviews']] == ['travelmate', 'sample', 'sample', 'sample']
+    assert all('reviewKey' not in row for row in result['user_reviews'][1:])
+    assert client.get(path + '?view=unified', headers=headers('ordinary-traveller')).json['result']['reviews'] == 1
+    assert 'sampleSummary' not in client.get(path + '?view=unified', headers=headers('ordinary-traveller')).json['result']
+    assert client.get('/api/fr3/local-ratings', headers=auth).json['items'][identity] == {'rating': 4, 'reviews': 1}
+    app.config['LOCAL_FYP_SAMPLE_REVIEWS'] = False
+    response = client.get(path + '?view=unified', headers=auth).json['result']
+    assert 'sampleSummary' not in response
+    assert [row['id'] for row in response['user_reviews']] == ['genuine']

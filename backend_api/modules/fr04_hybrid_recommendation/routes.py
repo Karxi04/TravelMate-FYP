@@ -18,7 +18,10 @@ from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
 from services.review_service import published_review
 from services.recommendation_taxonomy import candidate_concepts, preference_concepts, display_concepts
-from services.recommendation_discovery import DISCOVERY_MODE, discovery_annotations, discovery_queries, enrich_discovery_candidate, is_planning_candidate
+from services.recommendation_discovery import (
+    DISCOVERY_MODE, discovery_annotations, discovery_queries, enrich_discovery_candidate,
+    is_administrative_facility, is_planning_candidate,
+)
 from services.recommendation_snapshot_storage import validation_reason, latest_snapshot
 from services.preference_learning import (
     apply_explicit_feedback,
@@ -272,7 +275,8 @@ def _page(record, options):
     all_items = view['recommendationResults']
     qualified = []
     for item in all_items:
-        if options.get('purpose') == 'trip_planning' and not is_planning_candidate(item):
+        if (is_administrative_facility(item)
+                or options.get('purpose') == 'trip_planning' and not is_planning_candidate(item)):
             continue
         if discovery:
             if item.get('discoveryEligible') is True:qualified.append(item)
@@ -424,7 +428,8 @@ def generate():
                     fallback_candidates.append({**ad,'ratingSource':'unverified_local_catalog'})
         except Exception:
             pass
-        candidates = _filter_for_destination(fallback_candidates, destination_scope)
+        candidates = [item for item in _filter_for_destination(fallback_candidates, destination_scope)
+                      if is_planning_candidate(item)]
         source = 'fallback'
 
     if not candidates and pool['providerErrors']:

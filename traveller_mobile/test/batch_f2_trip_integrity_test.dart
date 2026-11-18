@@ -16,6 +16,10 @@ class _LocalApi extends ApiService {
   _LocalApi(this.service);
 
   @override
+  Future<dynamic> get(String path, [Map<String, String>? query]) =>
+      service.get(path, query);
+
+  @override
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) async {
     calls.add(path);
     requests.add({...?body});
@@ -67,6 +71,26 @@ _LocalApi _api() {
 const path = '/api/fr5/itineraries/f2';
 
 void main() {
+  test('standalone tourism recommendations exclude service buildings before ranking', () async {
+    const fixtures = [
+      {'destinationId': 'service-office', 'title': 'Pejabat Imigresen', 'type': 'Government office',
+       'address': 'George Town, Penang, Malaysia'},
+      {'destinationId': 'gallery', 'title': 'City heritage gallery', 'type': 'Gallery',
+       'types': ['Gallery', 'government office'], 'address': 'George Town, Penang, Malaysia'},
+    ];
+    final service = StandaloneApiService(uidOverride: 'fixture', memoryStore: {
+      'travelmate_fixture_preferences': jsonEncode({'interests': ['Culture']}),
+      'travelmate_fixture_last_search_results': jsonEncode(fixtures),
+    });
+    final generated = await service.post('/api/fr4/recommendations/generate',
+      {'destinationArea': 'Penang', 'limit': 50});
+    expect(generated['ok'], true);
+    final ids = (generated['recommendations'] as List).cast<Map>()
+        .map((row) => row['destinationId']);
+    expect(ids, contains('gallery'));
+    expect(ids, isNot(contains('service-office')));
+  });
+
   for (final day in [1, 2, 3, 5]) {
     test(
         'trip-wide planner validates Day $day and unscheduled occurrences together',
@@ -136,6 +160,29 @@ void main() {
     final retry = await api.service.post('$path/activities', savedRequest);
     expect(retry['alreadyAdded'], true);
     expect((await api.service.get(path))['itinerary']['activities'].length, 2);
+  });
+
+  testWidgets('same-day alias add is blocked without a revisit confirmation', (tester) async {
+    final api = _api();
+    final payload = _visit('not-trusted', 'other-pin', 'Bukit Bendera', 1);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: Builder(
+      builder: (context) => TextButton(
+        onPressed: () async {
+          try {
+            await addTripVisit(context, api, 'f2', payload);
+          } on ApiException catch (error) {
+            expect(error.code, 'duplicate_attraction_day');
+            expect(error.message, contains('already included on Day 1'));
+          }
+        },
+        child: const Text('Add place'),
+      ),
+    ))));
+    await tester.tap(find.text('Add place'));
+    await tester.pumpAndSettle();
+    expect(api.calls.length, 1);
+    expect(find.text('Visit this place again?'), findsNothing);
+    expect((await api.service.get(path))['itinerary']['activities'].length, 1);
   });
 
   testWidgets(

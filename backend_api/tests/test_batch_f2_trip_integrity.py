@@ -80,8 +80,8 @@ def owned():
         yield state, updater
 
 
-@pytest.mark.parametrize('day', [1, 3])
-def test_manual_repeat_requires_trip_day_and_action_bound_confirmation(client, mock_traveller_auth, owned, day):
+def test_manual_repeat_requires_trip_day_and_action_bound_confirmation(client, mock_traveller_auth, owned):
+    day = 3
     state, updater = owned
     state['f2'] = recalculateItinerary(trip(activities=[visit()], attractionIdentityPolicy=POLICY))
     state['other'] = {**deepcopy(state['f2']), 'id': 'other'}
@@ -108,11 +108,48 @@ def test_manual_repeat_requires_trip_day_and_action_bound_confirmation(client, m
     assert repeat['dayNo'] == day and repeat['canonicalAttractionId'] == 'summit'
     assert repeat['activityId'] != 'A1'
     assert calculateBudget(recalculateItinerary(reopened))['activities'] == 50
+    recalculated = recalculateItinerary(reopened, respectDayAssignments=False)
+    assert [row['dayNo'] for row in recalculated['activities']] == [1, 3]
+    assert client.put(PATH + f"/activities/{repeat['activityId']}", headers=AUTH,
+                      json={'dayNo': 1}).json['code'] == 'duplicate_attraction_day'
     assert len(reopened['itineraryHistory']) == 1
     retry = client.post(PATH + '/activities', headers=AUTH, json=approved)
     assert retry.json['alreadyAdded'] is True
     assert updater.call_count == 1
     assert len(rearrangeActivity(reopened, ['A1', 'A1'])['activities']) == 2
+
+
+@pytest.mark.parametrize('identity,name', [
+    ('summit', 'Penang Hill'),
+    ('alternate-id', 'Bukit Bendera'),
+    ('provider-2', 'Penang-Hill'),
+])
+def test_same_day_add_blocks_exact_id_alias_and_provider_variation(client, mock_traveller_auth, owned, identity, name):
+    state, updater = owned
+    state['f2'] = recalculateItinerary(trip(activities=[visit()], attractionIdentityPolicy=POLICY))
+    original = deepcopy(state['f2'])
+    payload = {**visit(identity, name), 'clientRequestId': 'f3-repeat-day1',
+               'intentionalRepeat': True, 'revisitConfirmation': 'forged-token'}
+    response = client.post(PATH + '/activities', headers=AUTH, json=payload)
+    assert response.status_code == 409
+    assert response.json['code'] == 'duplicate_attraction_day'
+    assert 'Penang Hill is already included on Day 1.' in response.json['error']
+    assert 'confirmationToken' not in response.json
+    assert state['f2'] == original
+    updater.assert_not_called()
+
+
+def test_recalculation_does_not_create_same_day_pair_or_drop_saved_historical_pair():
+    visits = [visit(), visit('other-id', 'Bukit Bendera', 'A2', 1, intentionalRepeat=True)]
+    with_repeat = trip(activities=visits, attractionIdentityPolicy=POLICY)
+    newly_calculated = recalculateItinerary(with_repeat)
+    assert [row['activityId'] for row in newly_calculated['activities']] == ['A1']
+    assert [row['activityId'] for row in newly_calculated['unscheduledSuggestions']] == ['A2']
+    historical = {**with_repeat, 'dailySchedule': [{'dayNo': 1, 'activities': visits}]}
+    original = deepcopy(historical)
+    recalculated = recalculateItinerary(historical)
+    assert historical == original
+    assert [row['activityId'] for row in recalculated['dailySchedule'][0]['activities']] == ['A1', 'A2']
 
 
 def test_verified_replacement_cannot_duplicate_a_deferred_attraction():
@@ -159,6 +196,10 @@ def test_activity_only_budget_preview_and_confirmed_apply(client, mock_traveller
         changes['removeActivityIds'] = ['A1']
     reduction = 85 if paid else 110
     payload = {'changes': changes}
+    trip_options = client.get(PATH + '/budget-replan', headers=AUTH).json
+    assert trip_options['budget'] == options['budget']
+    assert trip_options['budgetReplanOptions'] == options['budgetReplanOptions']
+    assert trip_options['stateVersion'] == options['stateVersion']
     preview = client.post(PATH + '/budget-replan/preview', headers=AUTH, json=payload)
     assert preview.status_code == 200, preview.json
     assert preview.json['estimatedReduction'] == reduction
@@ -171,6 +212,12 @@ def test_activity_only_budget_preview_and_confirmed_apply(client, mock_traveller
         **command, 'changes': {'foodCost': 10}}).status_code == 409
     assert client.post(PATH + '/budget-replan/apply', headers=AUTH, json={
         **command, 'confirmed': False}).status_code == 409
+    state['f2'] = {**state['f2'], 'itineraryRevision': 2}
+    assert client.get(PATH + '/budget-replan', headers=AUTH).json['stateVersion'] != trip_options['stateVersion']
+    assert client.post(PATH + '/budget-replan/apply', headers=AUTH, json=command).status_code == 409
+    updater.assert_not_called()
+    preview = client.post(PATH + '/budget-replan/preview', headers=AUTH, json=payload)
+    command['previewToken'] = preview.json['previewToken']
     saved = client.post(PATH + '/budget-replan/apply', headers=AUTH, json=command)
     assert saved.status_code == 200, saved.json
     revised = saved.json['itinerary']

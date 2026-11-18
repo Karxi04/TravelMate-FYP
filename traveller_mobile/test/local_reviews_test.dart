@@ -57,17 +57,18 @@ class _PreviewApi extends ApiService {
 }
 
 void main() {
-  testWidgets('older local Backend samples still appear in one Local Reviews section', (tester) async {
+  testWidgets('older local Backend samples still appear in one Reviews section', (tester) async {
     final api = _PreviewApi(oldServer: true);
     await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,
         initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Local Reviews'), 220);
-    expect(find.text('3.0 · 1 review'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Reviews'), 220);
+    expect(find.text('3.0 · 1 review'), findsNothing);
     expect(find.text('5.0 · 1 review'), findsOneWidget);
     expect(find.text('View community reviews'), findsNothing);
     await tester.scrollUntilVisible(find.text('Previously available sample.'), 140);
-    expect(find.text('Sample review'), findsOneWidget);
+    expect(find.text('Sample review'), findsNothing);
+    expect(find.text('Includes fictional demo reviews.'), findsOneWidget);
     expect(api.reads, 2);
   });
   testWidgets('unified reviews disclose sample source and expand without another request', (tester) async {
@@ -75,11 +76,12 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: DestinationDetailsScreen(api: api,
         initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Local Reviews'), 220);
+    await tester.scrollUntilVisible(find.text('Reviews'), 220);
     expect(find.text('5.0 · 1 review'), findsOneWidget);
-    expect(find.text('3.0 · 3 reviews'), findsOneWidget);
-    expect(find.text('Community reviews'), findsOneWidget);
-    expect(find.text('Demonstration reviews'), findsOneWidget);
+    expect(find.text('3.0 · 3 reviews'), findsNothing);
+    expect(find.text('Community reviews'), findsNothing);
+    expect(find.text('Demonstration reviews'), findsNothing);
+    expect(find.text('Includes fictional demo reviews.'), findsOneWidget);
     expect(find.textContaining('FYP'), findsNothing);
     expect(find.text('View community reviews'), findsNothing);
     await tester.scrollUntilVisible(find.text('Nov 11, 2026'), 150);
@@ -110,8 +112,9 @@ void main() {
         api: _PreviewApi(localDemo: false),
         initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Local Reviews'), 220);
+    await tester.scrollUntilVisible(find.text('Reviews'), 220);
     expect(find.text('5.0 · 1 review'), findsOneWidget);
+    expect(find.text('Includes fictional demo reviews.'), findsNothing);
     expect(find.text('Demonstration reviews'), findsNothing);
     expect(find.text('Sample review'), findsNothing);
   });

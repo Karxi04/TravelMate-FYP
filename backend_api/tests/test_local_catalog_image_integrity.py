@@ -20,10 +20,10 @@ PRIORITY_ATTRACTION_IDS = {
 
 
 def test_catalog_destinations_structure_and_count():
-    """Verify all 35 local destinations are preserved with canonical identifiers."""
-    assert len(DESTINATIONS) == 35, f"Expected 35 destinations, found {len(DESTINATIONS)}"
+    """Verify all 36 local destinations have canonical identifiers."""
+    assert len(DESTINATIONS) == 36, f"Expected 36 destinations, found {len(DESTINATIONS)}"
     ids = [d.get("place_id") for d in DESTINATIONS]
-    assert len(set(ids)) == 35, "All destination IDs must be unique"
+    assert len(set(ids)) == 36, "All destination IDs must be unique"
 
     required_keys = {
         "place_id",
@@ -84,10 +84,10 @@ def test_catalog_three_priority_attractions_verified():
         assert d["lastValidatedAt"] == "2026-10-24"
 
 
-def test_catalog_thirty_two_attractions_unverified_safe_null():
-    """Verify all other 32 attractions have neutralized image URLs and unverified status."""
+def test_catalog_other_attractions_unverified_safe_null():
+    """Verify other attractions have neutralized image URLs and unverified status."""
     unverified = [d for d in DESTINATIONS if d.get("imageStatus") == "unverified"]
-    assert len(unverified) == 32, f"Expected exactly 32 unverified destinations, found {len(unverified)}"
+    assert len(unverified) == 33, f"Expected exactly 33 unverified destinations, found {len(unverified)}"
 
     for d in unverified:
         assert d["place_id"] not in PRIORITY_ATTRACTION_IDS
