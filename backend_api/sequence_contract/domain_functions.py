@@ -697,7 +697,7 @@ def rearrangeActivity(itinerary, orderedActivityIds):
     itinerary = dict(itinerary or {})
     existing = list(itinerary.get('activities', []))
     by_id = {str(x.get('activityId')).strip(): x for x in existing if x.get('activityId') is not None}
-    ordered = [by_id[str(i).strip()] for i in orderedActivityIds if str(i).strip() in by_id]
+    ordered = [by_id[key] for key in dict.fromkeys(str(i).strip() for i in orderedActivityIds) if key in by_id]
     ordered_ids = {str(i).strip() for i in orderedActivityIds}
     remaining = [x for x in existing if str(x.get('activityId')).strip() not in ordered_ids]
     itinerary['activities'] = ordered + remaining
@@ -1552,6 +1552,11 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         candidate.pop('unscheduledReason', None)
         if not any(str(x.get('activityId')) == str(candidate.get('activityId')) for x in activities):
             activities.append(candidate)
+    from services.itinerary_identity import POLICY, consolidate_generated_candidates, validate_generated_partition
+    trip_wide = itinerary.get('attractionIdentityPolicy') == POLICY
+    if trip_wide:
+        activities = consolidate_generated_candidates(activities)
+    all_candidates = list(activities)
     for activity in activities:
         if activity.get('pricingUnit'):
             activity['effectiveCost'] = activity_pricing(
@@ -1662,6 +1667,9 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
             'scheduleFeasibility': 'unscheduled',
             'openingHoursEvidence': evidence[0]['evidence'],
         })
+    if trip_wide:
+        validate_generated_partition(all_candidates, scheduled, unscheduled)
+
     itinerary.update({
         'activities': scheduled,
         'unscheduledSuggestions': unscheduled,

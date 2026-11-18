@@ -53,7 +53,9 @@ class _BudgetComparisonScreenState extends State<BudgetComparisonScreen> {
           InkCard(child: BudgetBreakdown(budget: budget, limit: widget.userBudget)),
           if (canBrowse)
             ElevatedButton(
-              child: const Text("View Lower-Cost Alternatives"),
+              child: Text(budget.isOverBudget(widget.userBudget)
+                  ? 'Review budget options'
+                  : 'View Lower-Cost Alternatives'),
               onPressed: () {
                 Navigator.push(
                     context,

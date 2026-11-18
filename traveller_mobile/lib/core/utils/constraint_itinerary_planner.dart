@@ -1,3 +1,4 @@
+import 'itinerary_identity.dart';
 import 'dart:math';
 
 const Map<String, List<int>> itineraryPaceWindows = {
@@ -169,6 +170,19 @@ bool _indoor(Map<String, dynamic> item) {
       ['indoor', 'museum', 'mall', 'gallery', 'food', 'restaurant'].any(label.contains);
 }
 
+/// A missing amount stays unknown in the budget, and contributes no numeric estimate.
+double? plannedActivityAmount(Map activity, int travellers) {
+  final unit = activity['pricingUnit'];
+  final amount = double.tryParse((activity['unitPrice'] ?? activity['estimatedCost']).toString());
+  final currency = (activity['currency'] ?? 'MYR').toString().toUpperCase();
+  final recognisedUnit = ['per_person', 'per_group', 'already_aggregated'].contains(unit);
+  final evidencedZero = amount == 0 && recognisedUnit &&
+      ['verified_ticket', 'catalog_estimate', 'user_entered'].contains(activity['costProvenance']);
+  if (currency != 'MYR' || amount == null || !amount.isFinite || amount < 0 ||
+      (amount == 0 && !evidencedZero)) return null;
+  return amount * (unit == 'per_person' ? travellers : 1);
+}
+
 Map<String, dynamic> planConstraintAwareItinerary(
   Map<String, dynamic> source, {
   Map<String, dynamic> forecast = const {},
@@ -176,7 +190,7 @@ Map<String, dynamic> planConstraintAwareItinerary(
   bool respectDayAssignments = false,
 }) {
   final trip = Map<String, dynamic>.from(source);
-  final remaining = (trip['activities'] as List? ?? [])
+  var remaining = (trip['activities'] as List? ?? [])
       .whereType<Map>()
       .map((item) => Map<String, dynamic>.from(item))
       .toList();
@@ -186,6 +200,13 @@ Map<String, dynamic> planConstraintAwareItinerary(
       remaining.add(item);
     }
   }
+  final tripWide = trip['attractionIdentityPolicy'] == attractionIdentityPolicy;
+  if (tripWide) remaining = consolidateGeneratedCandidates(remaining);
+  final inputIds = remaining.map((row) => row['activityId']).toSet();
+  if (tripWide && inputIds.length != remaining.length) {
+    throw StateError('Generated schedule contains duplicate activity identifiers.');
+  }
+  final travellers = max(1, _number(trip['travellerCount'] ?? trip['numberOfTravellers'], 1).round());
   final days = _days(trip);
   final startDate = DateTime.tryParse('${trip['startDate'] ?? ''}') ?? DateTime.now();
   final pace = _pace(trip);
@@ -299,7 +320,7 @@ Map<String, dynamic> planConstraintAwareItinerary(
           0,
           (sum, item) =>
               sum + _number(item['recommendedDurationMinutes']).round() + _number(item['travelDurationMinutes']).round()),
-      'estimatedCost': dayItems.fold<double>(0, (sum, item) => sum + _number(item['estimatedCost'])),
+      'estimatedCost': dayItems.fold<double>(0, (sum, item) => sum + (plannedActivityAmount(item, travellers) ?? 0)),
     });
   }
   final unscheduled = remaining
@@ -310,6 +331,10 @@ Map<String, dynamic> planConstraintAwareItinerary(
                 : 'Could not fit within available time, travel, and opening-hour constraints.',
           })
       .toList();
+  if (tripWide && (scheduled.length + unscheduled.length != inputIds.length ||
+      ![...scheduled, ...unscheduled].map((row) => row['activityId']).toSet().containsAll(inputIds))) {
+    throw StateError('Generated schedule contains inconsistent activity identifiers.');
+  }
   return {
     ...trip,
     'activities': scheduled,

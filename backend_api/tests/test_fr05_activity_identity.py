@@ -379,8 +379,10 @@ def test_scenario_16_manual_trip_creation_compatibility(client, mock_traveller_a
             return deepcopy(mock_db.get(coll, {}).get(doc_id))
         return list(mock_db.get(coll, {}).values())
 
-    def mock_update(coll, doc_id, patch_data):
+    def mock_update(coll, doc_id, patch_data, expected=None):
         doc = mock_db[coll].setdefault(doc_id, {})
+        if expected is not None:
+            assert doc == expected
         doc.update(deepcopy(patch_data))
         return deepcopy(doc)
 

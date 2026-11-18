@@ -1367,18 +1367,18 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         : selectedDay;
     setState(() => busy = true);
     try {
+      var added = 0;
       for (final place in selected) {
+        if (!mounted) return;
         final day = place['dayNo'] is int ? place['dayNo'] as int : targetDay;
         final payload = buildActivityPayload(place, dayNo: day);
-        await api.post(
-            '/api/fr5/itineraries/${widget.tripId}/activities', payload);
+        if (await addTripVisit(context, api, widget.tripId, payload)) added++;
       }
+      if (added == 0 || !mounted) return;
       await load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  '${selected.length} place${selected.length == 1 ? '' : 's'} added to Day $targetDay.')),
+          SnackBar(content: Text('$added place${added == 1 ? '' : 's'} added.')),
         );
       }
     } catch (e) {
@@ -2297,6 +2297,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     final known = budget.knownSubtotal ?? budget.authoritativeTotal;
     final estimate = (expenses?['systemEstimateMinor'] as num?) ??
         (known == null ? null : known * 100);
+    final estimateOver = limit > 0 && estimate != null && estimate > limit;
     final over = limit > 0 && [estimate, planned, actual, verified, hotel]
         .whereType<num>().any((value) => value > limit);
     final within = budget.isComplete && !_expenseFailed &&
@@ -2345,11 +2346,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               )),
             ),
           ),
-        if (!api.isStandalone)
+        if (!api.isStandalone || estimateOver)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.sm),
             child: SecondaryButton(
-            label: 'Lower-Cost Alternatives',
+            label: estimateOver ? 'Review budget options' : 'Lower-Cost Alternatives',
             icon: Icons.savings_outlined,
             onPressed: () async {
               var applied = false;

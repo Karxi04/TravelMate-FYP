@@ -1,3 +1,4 @@
+import '../../modules/fr05_smart_itinerary_budget_planner/activity_payload_helper.dart';
 import '../utils/package_pricing.dart';
 import 'dart:math' as math;
 
@@ -484,7 +485,7 @@ class _HomeTabState extends State<HomeTab> {
         ),
       );
       if (selected == null) return;
-      await api.post('/api/fr5/itineraries/${selected['id']}/activities', {
+      if (!mounted || !await addTripVisit(context, api, selected['id'].toString(), {
         'activityName': (item['title'] ?? item['name'] ?? 'Place').toString(),
         'destinationId': destinationId(item),
         'address': item['address'] ?? '',
@@ -498,7 +499,7 @@ class _HomeTabState extends State<HomeTab> {
         'openingHours': item['openingHours'] ?? '',
         'recommendedDurationMinutes': item['recommendedDurationMinutes'] ?? 90,
         'dayNo': 1,
-      });
+      })) return;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Added to ${selected['title'] ?? 'trip'}')),

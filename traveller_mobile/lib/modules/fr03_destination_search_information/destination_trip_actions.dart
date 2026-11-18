@@ -136,14 +136,8 @@ Future<bool> addDestinationToTrip({
     payload['activityName'] = DestinationUtils.resolveName(destination);
     payload['destinationId'] = DestinationUtils.resolveId(destination);
 
-    final response = await api.post(
-        '/api/fr5/itineraries/${selected['id']}/activities', payload);
-    if (response is Map && response['ok'] == false) {
-      throw ApiException(
-          (response['error'] ?? 'The place was not added. Please retry.')
-              .toString(),
-          400,
-          Map<String, dynamic>.from(response));
+    if (!context.mounted || !await addTripVisit(context, api, selected['id'].toString(), payload)) {
+      return false;
     }
 
     if (context.mounted) {

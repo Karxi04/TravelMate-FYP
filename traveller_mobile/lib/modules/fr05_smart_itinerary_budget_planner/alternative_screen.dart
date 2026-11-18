@@ -5,6 +5,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 import 'budget_service.dart';
+import 'budget_replan_screen.dart';
 import 'models/budget_model.dart';
 
 class AlternativeScreen extends StatefulWidget {
@@ -31,6 +32,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   late final ApiService api;
   List<Map<String, dynamic>> alternatives = [];
   Map<String, dynamic>? budget;
+  Map<String, dynamic>? replanOptions;
   String? activityAdvice;
   String? flightAdvice;
   String? hotelAdvice;
@@ -80,6 +82,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
         budget = data['budget'] is Map
             ? Map<String, dynamic>.from(data['budget'] as Map)
             : null;
+        replanOptions = data['budgetReplanOptions'] is Map
+            ? Map<String, dynamic>.from(data['budgetReplanOptions']) : null;
         activityAdvice = data['activityAdvice']?.toString();
         flightAdvice = data['flightAdvice']?.toString();
         hotelAdvice = data['hotelAdvice']?.toString();
@@ -91,6 +95,17 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  Future<void> openReplan() async {
+    final options = replanOptions;
+    final tripId = widget.tripId;
+    if (options == null || tripId == null) return;
+    final updated = await Navigator.push<Map<String, dynamic>>(context, MaterialPageRoute(
+      builder: (context) => BudgetReplanScreen(api: api, tripId: tripId, options: options)));
+    if (!mounted || updated == null) return;
+    widget.onApplied?.call(updated);
+    await load();
   }
 
   double? _extractSavings(Map<String, dynamic> item) {
@@ -233,6 +248,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
               subtitle: 'Estimated total RM $currentTotal / budget RM $limit',
             ),
             const SizedBox(height: 12),
+            if (replanOptions != null && loadError == null)
+              FilledButton(onPressed: busy ? null : openReplan, child: const Text('Review budget options')),
             if (loadError != null)
               AppErrorState(
                 title: 'Alternatives unavailable',

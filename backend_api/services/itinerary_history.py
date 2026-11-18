@@ -11,10 +11,12 @@ from utils import utc_now_iso
 RETENTION = 5
 MAX_SNAPSHOT_BYTES = 48 * 1024
 FIELDS = EDITABLE_FIELDS | {'destinationState', 'numberOfTravellers', 'interests', 'excludedInterests',
-    'excludedActivityTypes', 'preferIndoor', 'daySpecificPreferences', 'activities'}
+    'excludedActivityTypes', 'preferIndoor', 'daySpecificPreferences', 'activities', 'foodCost', 'transportCost'}
 ACTIVITY_FIELDS = ACTIVITY_TEXT | ACTIVITY_NUMBERS | {'activityId', 'dayNo', 'sequenceNo', 'indoor',
     'gps_coordinates', 'gpsCoordinates', 'pricingEvidence', 'overlapsAllowance', 'currency',
-    'imageUrl', 'thumbnail', 'openingHoursSourceUrl', 'openingHoursVerifiedAt'}
+    'imageUrl', 'thumbnail', 'openingHoursSourceUrl', 'openingHoursVerifiedAt',
+    'intentionalRepeat', 'canonicalAttractionId', 'identityConsolidation', 'supportingAccess',
+    'independentSubAttraction', 'ticketProductId', 'place_id', 'data_id', 'data_cid'}
 
 
 class HistoryConflict(ReviewConflict):
