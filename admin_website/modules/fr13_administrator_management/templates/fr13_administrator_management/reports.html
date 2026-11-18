@@ -1,5 +1,5 @@
 {% extends 'portal_base.html' %}
-{% block title %}System Reports | TravelMate{% endblock %}
+{% block title %}System Reports | TravelMate Central Administration{% endblock %}
 
 {% block content %}
 {% include '_admin_data_state.html' %}
@@ -10,13 +10,491 @@
     </p>
   {% endif %}
 
-  <div class="page-title">
+  <style>
+  /* ==========================================================================
+     TravelMate Central Administration — Executive System Reports Presentation
+     ========================================================================== */
+  
+  /* Executive Cover Page (Screen & Print) */
+  .admin-cover-page {
+    background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+    color: #FFFFFF;
+    border-radius: var(--radius-md);
+    padding: 32px 36px;
+    margin-bottom: 32px;
+    box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.25);
+    border: 1px solid #334155;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .admin-cover-page::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 240px;
+    height: 240px;
+    background: radial-gradient(circle, rgba(79, 70, 229, 0.2) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cover-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    padding-bottom: 18px;
+    margin-bottom: 24px;
+  }
+
+  .cover-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .cover-logo-icon {
+    width: 36px;
+    height: 36px;
+    background: #4F46E5;
+    border-radius: var(--radius-sm);
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    font-size: 15px;
+    color: #FFFFFF;
+    letter-spacing: -0.02em;
+  }
+
+  .cover-brand-title {
+    display: block;
+    font-size: 15px;
+    font-weight: 700;
+    color: #FFFFFF;
+    letter-spacing: -0.01em;
+  }
+
+  .cover-brand-sub {
+    display: block;
+    font-size: 11px;
+    color: #94A3B8;
+    font-weight: 500;
+  }
+
+  .cover-badge-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #E2E8F0;
+  }
+
+  .cover-kicker {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #A5B4FC;
+    margin-bottom: 6px;
+  }
+
+  .cover-main-heading {
+    margin: 0 0 10px;
+    font-size: 26px;
+    font-weight: 800;
+    color: #FFFFFF;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+  }
+
+  .cover-lead-text {
+    margin: 0 0 24px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: #CBD5E1;
+    max-width: 680px;
+  }
+
+  .cover-details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .cover-detail-box {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+  }
+
+  .cover-detail-lbl {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94A3B8;
+    margin-bottom: 3px;
+  }
+
+  .cover-detail-val {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: #F8FAFC;
+  }
+
+  .cover-footer-note {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 14px;
+    font-size: 11px;
+    color: #94A3B8;
+    gap: 16px;
+  }
+
+  .cover-security-stamp strong {
+    display: block;
+    color: #E2E8F0;
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+  }
+
+  .cover-security-stamp p {
+    margin: 2px 0 0;
+    font-size: 10.5px;
+    color: #94A3B8;
+    line-height: 1.4;
+  }
+
+  .cover-folio {
+    font-family: ui-monospace, monospace;
+    font-size: 10.5px;
+    color: #94A3B8;
+    white-space: nowrap;
+  }
+
+  /* Charts Styling */
+  .chart-card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 20px 22px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .chart-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 10px;
+  }
+
+  .chart-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .chart-donut-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    gap: 20px;
+    flex-wrap: wrap;
+    padding: 6px 0;
+  }
+
+  .chart-svg-donut {
+    width: 130px;
+    height: 130px;
+    transform: rotate(-90deg);
+    flex-shrink: 0;
+  }
+
+  .donut-center-text {
+    transform: rotate(90deg);
+    transform-origin: 21px 21px;
+  }
+
+  .chart-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    min-width: 170px;
+  }
+
+  .chart-legend-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    gap: 8px;
+  }
+
+  .chart-legend-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ink-secondary);
+  }
+
+  .chart-color-bullet {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .chart-bars-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .chart-bar-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .chart-bar-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--ink);
+  }
+
+  .chart-bar-track {
+    width: 100%;
+    height: 9px;
+    background: var(--canvas);
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid var(--border-subtle);
+  }
+
+  .chart-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.3s ease;
+  }
+
+  .report-header-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .report-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .report-filter-card {
+    margin-bottom: 24px;
+    padding: 20px 24px;
+  }
+
+  .report-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+
+  .filter-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .report-records-section {
+    margin-top: 28px;
+    margin-bottom: 28px;
+  }
+
+  .records-table-wrap {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-top: 12px;
+  }
+
+  .records-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+    min-width: 760px;
+  }
+
+  .records-table th {
+    background: #F8FAFC;
+    padding: 12px 16px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-secondary);
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .records-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    vertical-align: middle;
+    color: var(--ink);
+  }
+
+  .records-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .records-table tr:hover td {
+    background: #FAFCFF;
+  }
+
+  .code-cell {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  @media print {
+    .sidebar, .topbar, .report-actions, .report-filter-card, .mobile-menu-btn, .notice-banner-limited {
+      display: none !important;
+    }
+    .layout {
+      display: block !important;
+    }
+    .content {
+      padding: 0 !important;
+      margin: 0 !important;
+      width: 100% !important;
+    }
+    body {
+      background: #FFFFFF !important;
+      color: #000000 !important;
+      font-size: 12pt !important;
+    }
+    .admin-cover-page {
+      min-height: 96vh !important;
+      page-break-after: always !important;
+      break-after: page !important;
+      border: 2px solid #0F172A !important;
+      box-shadow: none !important;
+      background: #0F172A !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: space-between !important;
+      padding: 40px !important;
+      margin: 0 0 20px 0 !important;
+    }
+    .card, .records-table-wrap, .chart-card {
+      box-shadow: none !important;
+      border: 1px solid #CBD5E1 !important;
+      page-break-inside: avoid;
+    }
+  }
+  </style>
+
+  <!-- Administrator Executive Cover Page (Screen & Print) -->
+  <section class="admin-cover-page" aria-label="Administrator Report Cover">
+    <div class="cover-header">
+      <div class="cover-brand">
+        <div class="cover-logo-icon">TM</div>
+        <div>
+          <span class="cover-brand-title">TravelMate</span>
+          <span class="cover-brand-sub">Central Administration</span>
+        </div>
+      </div>
+      <div class="cover-badge-pill">SYSTEM AUDIT DOSSIER</div>
+    </div>
+
+    <div class="cover-body">
+      <span class="cover-kicker">CENTRAL ADMINISTRATIVE GOVERNANCE</span>
+      <h1 class="cover-main-heading">Administrator System Activity Report</h1>
+      <p class="cover-lead-text">
+        Comprehensive system audit, user role composition, catalog moderation pipeline, and platform transaction monitoring for TravelMate Penang Tourism Platform.
+      </p>
+
+      <div class="cover-details-grid">
+        <div class="cover-detail-box">
+          <span class="cover-detail-lbl">System Authority</span>
+          <strong class="cover-detail-val">TravelMate Central Admin</strong>
+        </div>
+        <div class="cover-detail-box">
+          <span class="cover-detail-lbl">Audit Date</span>
+          <strong class="cover-detail-val">{{ (report.get('generatedAt') or '')[:10] if report.get('generatedAt') else 'Live Platform Session' }}</strong>
+        </div>
+        <div class="cover-detail-box">
+          <span class="cover-detail-lbl">Target Dataset</span>
+          <strong class="cover-detail-val">{{ criteria.get('reportType', 'system_summary')|replace('_', ' ')|title }}</strong>
+        </div>
+        <div class="cover-detail-box">
+          <span class="cover-detail-lbl">Classification</span>
+          <strong class="cover-detail-val">Confidential Audit Ledger</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="cover-footer-note">
+      <div class="cover-security-stamp">
+        <strong>OFFICIAL SYSTEM ACTIVITY AUDIT • FYP DEMONSTRATION ENVIRONMENT</strong>
+        <p>This report compiles authoritative administrative audit records across all user accounts, tourism packages, promotional campaigns, and Stripe test transactions.</p>
+      </div>
+      <span class="cover-folio">Document Ref: TM-ADM-{{ (report.get('generatedAt') or '20261118')[:10]|replace('-', '') }}</span>
+    </div>
+  </section>
+
+  <div class="report-header-banner">
     <div>
       <span class="eyebrow">AUDIT &amp; ANALYTICS</span>
-      <h1>System Activity Report</h1>
-      <p>Review comprehensive TravelMate system metrics, audit operational counts, and export administrative activity reports.</p>
+      <h1 style="margin: 4px 0 2px;">System Activity Report</h1>
+      <p style="margin: 0; color: var(--ink-secondary); font-size: 13.5px;">Review comprehensive TravelMate system metrics, audit operational counts, and export administrative activity reports.</p>
     </div>
-    <div class="actions">
+    <div class="report-actions">
+      <button type="button" class="btn outline" onclick="window.print()" aria-label="Print Report">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        <span>Print Report</span>
+      </button>
       <a class="btn outline" href="{{ url_for('admin_fr13.export_report', reportType=criteria.get('reportType', 'system_summary'), startDate=criteria.get('startDate', ''), endDate=criteria.get('endDate', ''), filter=criteria.get('filter', ''), format='csv') }}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         <span>Export CSV</span>
@@ -29,10 +507,10 @@
   </div>
 
   <!-- Report Filter Toolbar -->
-  <form class="card" method="get" action="{{ url_for('admin_fr13.reports') }}" style="margin-bottom: 24px; padding: 18px 20px;">
+  <form class="card report-filter-card" method="get" action="{{ url_for('admin_fr13.reports') }}">
     <span class="eyebrow">FILTER CRITERIA</span>
     <h3 style="margin: 2px 0 14px; font-size: 16px;">Configure Report Parameters</h3>
-    <div class="grid g4" style="margin-bottom: 14px;">
+    <div class="report-filter-grid">
       <div class="field">
         <label for="reportTypeSelect">Report type</label>
         <select id="reportTypeSelect" class="input" name="reportType">
@@ -54,7 +532,12 @@
         <input id="reportKeyword" class="input" name="filter" value="{{ criteria.get('filter', '') }}" placeholder="status, name, reference">
       </div>
     </div>
-    <button class="btn secondary" type="submit">Generate Report</button>
+    <div class="filter-actions-row">
+      <button class="btn secondary" type="submit">Generate Report</button>
+      {% if criteria.get('reportType') and criteria.get('reportType') != 'system_summary' or criteria.get('startDate') or criteria.get('endDate') or criteria.get('filter') %}
+        <a class="btn outline" href="{{ url_for('admin_fr13.reports') }}" style="color: var(--ink-muted);">Reset Parameters</a>
+      {% endif %}
+    </div>
   </form>
 
   {% set summary = report.get('summary', {}) %}
@@ -62,10 +545,11 @@
   {% set packages = summary.get('packages', {}) %}
   {% set campaigns = summary.get('campaigns', {}) %}
   {% set feedback = summary.get('feedback', {}) %}
+  {% set payments = summary.get('payments', {}) %}
   {% set counts = report.get('counts', {}) %}
 
   <!-- Top Metrics Overview -->
-  <div class="grid g4" style="margin-bottom: 20px;">
+  <div class="grid g4" style="margin-bottom: 24px;">
     <div class="card metric-card">
       <div>
         <span class="badge neutral">Users</span>
@@ -103,8 +587,336 @@
     </div>
   </div>
 
+  <!-- Visual System Analytics & Charts -->
+  <div style="margin-bottom: 28px;">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+      <div>
+        <span class="eyebrow">SYSTEM VISUAL METRICS</span>
+        <h3 style="margin: 2px 0 0; font-size: 16px; color: var(--ink);">System Intelligence &amp; Moderation Charts</h3>
+      </div>
+      <span class="muted" style="font-size: 12px; font-weight: 600;">Platform Aggregation Ledger</span>
+    </div>
+
+    <div class="grid g2" style="margin-bottom: 20px;">
+      <!-- Chart 1: User Accounts by Role Donut Chart -->
+      {% set u_tot = users.get('total', 0)|int %}
+      {% set u_trav = users.get('travellers', 0)|int %}
+      {% set u_ops = users.get('operators', 0)|int %}
+      {% set u_admin = users.get('administrators', 0)|int %}
+      {% if u_tot > 0 %}
+        {% set p_trav = ((u_trav / u_tot) * 100)|round(1) %}
+        {% set p_ops = ((u_ops / u_tot) * 100)|round(1) %}
+        {% set p_admin = (100 - p_trav - p_ops)|round(1) %}
+        {% if p_admin < 0 %}{% set p_admin = 0 %}{% endif %}
+      {% else %}
+        {% set p_trav = 0 %}{% set p_ops = 0 %}{% set p_admin = 0 %}
+      {% endif %}
+
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h4 class="chart-title">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10h-10z"/></svg>
+            <span>User Accounts by Role</span>
+          </h4>
+          <span class="muted" style="font-size: 11px; font-weight: 600;">{{ u_tot }} Users</span>
+        </div>
+
+        <div class="chart-donut-container">
+          <svg class="chart-svg-donut" viewBox="0 0 42 42" role="img" aria-label="Donut chart showing user account role distribution">
+            {% if u_tot > 0 %}
+              <circle cx="21" cy="21" r="15.9155" fill="transparent" stroke="#F1F5F9" stroke-width="5.5" />
+              
+              <!-- Slice 1: Travellers (Blue-grey) -->
+              {% if p_trav > 0 %}
+              <circle cx="21" cy="21" r="15.9155" fill="transparent" stroke="#2B6CB0" stroke-width="5.5"
+                      stroke-dasharray="{{ p_trav }} {{ 100 - p_trav }}" stroke-dashoffset="0" />
+              {% endif %}
+
+              <!-- Slice 2: Operators (Amber) -->
+              {% if p_ops > 0 %}
+              <circle cx="21" cy="21" r="15.9155" fill="transparent" stroke="#D97706" stroke-width="5.5"
+                      stroke-dasharray="{{ p_ops }} {{ 100 - p_ops }}" stroke-dashoffset="{{ -p_trav }}" />
+              {% endif %}
+
+              <!-- Slice 3: Administrators (Indigo) -->
+              {% if p_admin > 0 %}
+              <circle cx="21" cy="21" r="15.9155" fill="transparent" stroke="#4F46E5" stroke-width="5.5"
+                      stroke-dasharray="{{ p_admin }} {{ 100 - p_admin }}" stroke-dashoffset="{{ -(p_trav + p_ops) }}" />
+              {% endif %}
+            {% else %}
+              <circle cx="21" cy="21" r="15.9155" fill="transparent" stroke="#E2E8F0" stroke-width="5.5" />
+            {% endif %}
+
+            <g class="donut-center-text">
+              <text x="21" y="20" text-anchor="middle" font-size="7" font-weight="800" fill="#0F172A">{{ u_tot }}</text>
+              <text x="21" y="25" text-anchor="middle" font-size="3.2" font-weight="600" fill="#64748B" letter-spacing="0.05em">USERS</text>
+            </g>
+          </svg>
+
+          <div class="chart-legend">
+            <div class="chart-legend-row">
+              <span class="chart-legend-label">
+                <span class="chart-color-bullet" style="background: #2B6CB0;"></span>
+                <span>Travellers</span>
+              </span>
+              <strong>{{ u_trav }} <span class="muted" style="font-size: 10.5px; font-weight: normal;">({{ p_trav }}%)</span></strong>
+            </div>
+            <div class="chart-legend-row">
+              <span class="chart-legend-label">
+                <span class="chart-color-bullet" style="background: #D97706;"></span>
+                <span>Operators</span>
+              </span>
+              <strong>{{ u_ops }} <span class="muted" style="font-size: 10.5px; font-weight: normal;">({{ p_ops }}%)</span></strong>
+            </div>
+            <div class="chart-legend-row">
+              <span class="chart-legend-label">
+                <span class="chart-color-bullet" style="background: #4F46E5;"></span>
+                <span>Administrators</span>
+              </span>
+              <strong>{{ u_admin }} <span class="muted" style="font-size: 10.5px; font-weight: normal;">({{ p_admin }}%)</span></strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart 2: Package Moderation Horizontal Bar Chart -->
+      {% set pkg_tot = packages.get('total', 0)|int %}
+      {% set pkg_app = packages.get('approved', 0)|int %}
+      {% set pkg_pen = packages.get('pending', 0)|int %}
+      {% set pkg_rej = packages.get('rejected', 0)|int %}
+      {% set pkg_dra = packages.get('draft', 0)|int %}
+      {% set pkg_max = [pkg_tot, 1]|max %}
+      {% set w_pkg_app = ((pkg_app / pkg_max) * 100)|round(1) %}
+      {% set w_pkg_pen = ((pkg_pen / pkg_max) * 100)|round(1) %}
+      {% set w_pkg_rej = ((pkg_rej / pkg_max) * 100)|round(1) %}
+      {% set w_pkg_dra = ((pkg_dra / pkg_max) * 100)|round(1) %}
+
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h4 class="chart-title">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+            <span>Tourism Package Moderation Pipeline</span>
+          </h4>
+          <span class="muted" style="font-size: 11px; font-weight: 600;">{{ pkg_tot }} Total</span>
+        </div>
+
+        <div class="chart-bars-list">
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-weight: 600; font-size: 12px; color: var(--ink);">Approved &amp; Published</span>
+              <strong>{{ pkg_app }} <span class="muted" style="font-size: 11px; font-weight: normal;">({{ w_pkg_app }}%)</span></strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ w_pkg_app }}%; background: #16A34A;"></div>
+            </div>
+          </div>
+
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-weight: 600; font-size: 12px; color: var(--ink);">Pending Administrative Review</span>
+              <strong>{{ pkg_pen }} <span class="muted" style="font-size: 11px; font-weight: normal;">({{ w_pkg_pen }}%)</span></strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ w_pkg_pen }}%; background: #D97706;"></div>
+            </div>
+          </div>
+
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-weight: 600; font-size: 12px; color: var(--ink);">Rejected (Needs Changes)</span>
+              <strong>{{ pkg_rej }} <span class="muted" style="font-size: 11px; font-weight: normal;">({{ w_pkg_rej }}%)</span></strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ w_pkg_rej }}%; background: #DC2626;"></div>
+            </div>
+          </div>
+
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-weight: 600; font-size: 12px; color: var(--ink);">Draft Itineraries</span>
+              <strong>{{ pkg_dra }} <span class="muted" style="font-size: 11px; font-weight: normal;">({{ w_pkg_dra }}%)</span></strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ w_pkg_dra }}%; background: #64748B;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid g3" style="margin-bottom: 20px;">
+      <!-- Chart 3: Promotional Campaign Review -->
+      {% set c_tot = campaigns.get('total', 0)|int %}
+      {% set c_app = campaigns.get('approved', 0)|int %}
+      {% set c_pen = campaigns.get('pending', 0)|int %}
+      {% set c_act = campaigns.get('active', 0)|int %}
+      {% set c_rej = campaigns.get('rejected', 0)|int %}
+      {% set c_max = [c_tot, 1]|max %}
+
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h4 class="chart-title">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span>Campaign Moderation</span>
+          </h4>
+          <span class="muted" style="font-size: 11px; font-weight: 600;">{{ c_tot }} Total</span>
+        </div>
+
+        <div class="chart-bars-list">
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-size: 11.5px;">Active Campaigns</span>
+              <strong>{{ c_act }}</strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ ((c_act / c_max) * 100)|round(1) }}%; background: #16A34A;"></div>
+            </div>
+          </div>
+
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-size: 11.5px;">Approved Offers</span>
+              <strong>{{ c_app }}</strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ ((c_app / c_max) * 100)|round(1) }}%; background: #2B6CB0;"></div>
+            </div>
+          </div>
+
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-size: 11.5px;">Pending Approval</span>
+              <strong>{{ c_pen }}</strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ ((c_pen / c_max) * 100)|round(1) }}%; background: #D97706;"></div>
+            </div>
+          </div>
+
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-size: 11.5px;">Rejected</span>
+              <strong>{{ c_rej }}</strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ ((c_rej / c_max) * 100)|round(1) }}%; background: #DC2626;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart 4: Community Feedback Review -->
+      {% set fb_tot = feedback.get('total', 0)|int %}
+      {% set fb_vis = feedback.get('visible', 0)|int %}
+      {% set fb_pen = feedback.get('pending', 0)|int %}
+      {% set fb_rem = feedback.get('removed', 0)|int %}
+      {% set fb_max = [fb_tot, 1]|max %}
+
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h4 class="chart-title">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            <span>Feedback Moderation</span>
+          </h4>
+          <span class="muted" style="font-size: 11px; font-weight: 600;">{{ fb_tot }} Reviews</span>
+        </div>
+
+        <div class="chart-bars-list">
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-size: 11.5px;">Visible Reviews</span>
+              <strong>{{ fb_vis }}</strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ ((fb_vis / fb_max) * 100)|round(1) }}%; background: #16A34A;"></div>
+            </div>
+          </div>
+
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-size: 11.5px;">Pending Moderation</span>
+              <strong>{{ fb_pen }}</strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ ((fb_pen / fb_max) * 100)|round(1) }}%; background: #D97706;"></div>
+            </div>
+          </div>
+
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-size: 11.5px;">Removed / Hidden</span>
+              <strong>{{ fb_rem }}</strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ ((fb_rem / fb_max) * 100)|round(1) }}%; background: #DC2626;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart 5: Platform Commerce & Booking Activity -->
+      {% set comm_pkg = counts.get('package_bookings', 0)|int %}
+      {% set comm_htl = counts.get('hotel_bookings', 0)|int %}
+      {% set comm_paid = payments.get('paid', 0)|int %}
+      {% set comm_test = payments.get('testMode', 0)|int %}
+      {% set comm_max = [comm_pkg + comm_htl + comm_paid, 1]|max %}
+
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h4 class="chart-title">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            <span>Commerce Monitoring</span>
+          </h4>
+          <span class="muted" style="font-size: 11px; font-weight: 600;">MYR {{ '%.2f'|format(payments.get('totalPaidRevenue', 0.0)) }}</span>
+        </div>
+
+        <div class="chart-bars-list">
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-size: 11.5px;">Package Bookings</span>
+              <strong>{{ comm_pkg }}</strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ ((comm_pkg / comm_max) * 100)|round(1) }}%; background: #2B6CB0;"></div>
+            </div>
+          </div>
+
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-size: 11.5px;">Hotel Bookings</span>
+              <strong>{{ comm_htl }}</strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ ((comm_htl / comm_max) * 100)|round(1) }}%; background: #475569;"></div>
+            </div>
+          </div>
+
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-size: 11.5px;">Paid Orders</span>
+              <strong>{{ comm_paid }}</strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ ((comm_paid / comm_max) * 100)|round(1) }}%; background: #16A34A;"></div>
+            </div>
+          </div>
+
+          <div class="chart-bar-item">
+            <div class="chart-bar-meta">
+              <span style="font-size: 11.5px;">Stripe Sandbox</span>
+              <strong>{{ comm_test }}</strong>
+            </div>
+            <div class="chart-bar-track">
+              <div class="chart-bar-fill" style="width: {{ [((comm_test / comm_max) * 100)|round(1), 100]|min }}%; background: #D97706;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Detailed Category Breakdowns -->
-  <div class="grid g2" style="margin-bottom: 20px;">
+  <div class="grid g2" style="margin-bottom: 24px;">
     <!-- User Breakdown -->
     <div class="card">
       <span class="eyebrow">ACCOUNTS</span>
@@ -199,6 +1011,109 @@
       </div>
     </div>
   </div>
+
+  <!-- Commerce & Operational Monitoring Card -->
+  <div class="card cream" style="margin-bottom: 24px;">
+    <span class="eyebrow">COMMERCE &amp; AUDIT MONITORING</span>
+    <h3 style="margin: 4px 0 14px;">Platform Bookings &amp; Payment Transactions</h3>
+    <div class="grid g4">
+      <div>
+        <small class="muted" style="text-transform: uppercase; font-size: 10.5px; font-weight: 700;">Package Bookings</small>
+        <div style="font-size: 22px; font-weight: 800; color: var(--ink); margin-top: 2px;">{{ counts.get('package_bookings', 0) }}</div>
+        <small class="muted">Platform packages</small>
+      </div>
+      <div>
+        <small class="muted" style="text-transform: uppercase; font-size: 10.5px; font-weight: 700;">Hotel Bookings</small>
+        <div style="font-size: 22px; font-weight: 800; color: var(--ink); margin-top: 2px;">{{ counts.get('hotel_bookings', 0) }}</div>
+        <small class="muted">Partner hotel rooms</small>
+      </div>
+      <div>
+        <small class="muted" style="text-transform: uppercase; font-size: 10.5px; font-weight: 700;">Paid Orders</small>
+        <div style="font-size: 22px; font-weight: 800; color: var(--success); margin-top: 2px;">{{ payments.get('paid', 0) }}</div>
+        <small class="muted">MYR {{ '%.2f'|format(payments.get('totalPaidRevenue', 0.0)) }} settled</small>
+      </div>
+      <div>
+        <small class="muted" style="text-transform: uppercase; font-size: 10.5px; font-weight: 700;">Stripe Test Orders</small>
+        <div style="font-size: 22px; font-weight: 800; color: var(--bluegrey); margin-top: 2px;">{{ payments.get('testMode', 0) }}</div>
+        <small class="muted">MYR {{ '%.2f'|format(payments.get('testPaidTotal', 0.0)) }} sandbox</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filtered Records Table Section -->
+  {% set records = report.get('records', []) %}
+  {% if criteria.get('reportType') and criteria.get('reportType') != 'system_summary' %}
+  <section class="report-records-section">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+      <div>
+        <span class="eyebrow">AUDIT DATASET</span>
+        <h3 style="margin: 2px 0 0;">Filtered Records: {{ criteria.get('reportType')|replace('_', ' ')|title }}</h3>
+      </div>
+      <span class="muted" style="font-size: 12px; font-weight: 600;">
+        Showing {{ records|length }} record{% if records|length != 1 %}s{% endif %}{% if report.get('recordsLimited') %} (capped at 200){% endif %}
+      </span>
+    </div>
+
+    {% if records %}
+    <div class="records-table-wrap">
+      <table class="records-table">
+        <thead>
+          <tr>
+            <th>Identifier / Ref</th>
+            <th>Primary Name / Title</th>
+            <th>Status / State</th>
+            <th>Date / Timestamp</th>
+            <th>Additional Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rec in records %}
+          <tr>
+            <td class="code-cell">
+              {{ rec.id or rec.uid or rec.orderReference or rec.transactionReference or '—' }}
+            </td>
+            <td>
+              <strong style="color: var(--ink);">
+                {{ rec.name or rec.fullName or rec.title or rec.packageTitle or rec.campaignTitle or rec.destinationName or rec.hotelName or rec.productTitle or '—' }}
+              </strong>
+              {% if rec.email %}
+                <small class="muted" style="display: block;">{{ rec.email }}</small>
+              {% endif %}
+            </td>
+            <td>
+              {% set s_val = rec.status or rec.approvalStatus or rec.reviewStatus or rec.paymentStatus or rec.verificationStatus or 'recorded' %}
+              <span class="status {{ 'approved' if s_val in ['approved', 'active', 'paid', 'visible', 'verified'] else 'pending' if s_val in ['pending', 'submitted', 'under_review'] else 'rejected' if s_val in ['rejected', 'deactivated', 'failed', 'removed'] else 'draft' }}">
+                {{ s_val|replace('_', ' ')|title }}
+              </span>
+            </td>
+            <td style="font-size: 12px; color: var(--ink-muted);">
+              {{ (rec.createdAt or rec.updatedAt or rec.startDate or rec.departureDate or '—')[:19]|replace('T', ' ') }}
+            </td>
+            <td style="font-size: 12px;">
+              {% if rec.amount is not none or rec.groupTotal is not none %}
+                <strong>{{ rec.currency or 'MYR' }} {{ '%.2f'|format((rec.amount if rec.amount is not none else rec.groupTotal)|float) }}</strong>
+              {% elif rec.role %}
+                <span>Role: <strong>{{ rec.role|title }}</strong></span>
+              {% elif rec.discountValue %}
+                <span>Discount: <strong>{{ rec.discountValue }}{% if rec.discountType == 'percentage' %}%{% else %} MYR{% endif %}</strong></span>
+              {% elif rec.rating %}
+                <span>Rating: <strong>{{ rec.rating }}/5</strong></span>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card empty-state" style="margin-top: 12px; padding: 32px 16px;">
+      <p class="muted" style="margin: 0;">No matching records found for the selected criteria and date range.</p>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
 
   <!-- Generation Timestamp -->
   <div class="card cream" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">

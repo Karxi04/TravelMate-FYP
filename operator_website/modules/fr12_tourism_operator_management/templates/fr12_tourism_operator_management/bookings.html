@@ -2,15 +2,350 @@
 {% block title %}Package Bookings | TravelMate Operator{% endblock %}
 
 {% block content %}
-{% from 'fr12_tourism_operator_management/_sort_header.html' import sort_header with context %}
-<style>.table-wrap table{width:100%;table-layout:fixed}.table-wrap td,.detail-row strong,.eyebrow{overflow-wrap:anywhere;white-space:normal;min-width:0}.table-wrap th{min-width:0!important}.table-wrap code{white-space:normal;overflow-wrap:anywhere}.table-wrap{overflow-x:auto}@media(max-width:850px){.table-wrap table{min-width:850px}}</style>
 <style>
-.booking-filter-form{flex:1;min-width:0;align-items:flex-end}.booking-filter-form label{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 160px}.booking-filter-form .input{width:100%;max-width:100%;min-width:0;box-sizing:border-box}.booking-filter-form>div{flex:1 1 180px;min-width:0}.booking-filter-form>select{flex:1 1 160px;max-width:220px}
+/* ==========================================================================
+   TravelMate Penang Tourism Platform — Modern Operator Bookings View
+   ========================================================================== */
+
+.booking-filter-form {
+  flex: 1;
+  min-width: 0;
+  align-items: flex-end;
+}
+
+.booking-filter-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 150px;
+}
+
+.booking-filter-form .input {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.booking-filter-form > div {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.booking-filter-form > select {
+  flex: 1 1 160px;
+  max-width: 220px;
+}
+
+/* Modern Enterprise Bookings Table Layout */
+.table-wrap {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.bookings-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 13px;
+}
+
+.bookings-table th {
+  background: #F8FAFC;
+  padding: 12px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-secondary);
+  border-bottom: 2px solid var(--border);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.bookings-table th.col-actions {
+  text-align: right;
+  width: 8%;
+  padding-right: 14px;
+}
+
+.sort-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sort-link-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.sort-link-primary:hover {
+  color: var(--bluegrey);
+}
+
+.sort-link-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ink-muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.sort-link-secondary:hover {
+  color: var(--ink-secondary);
+}
+
+.bookings-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.bookings-table td.col-actions {
+  text-align: right;
+  vertical-align: middle;
+  padding-right: 14px;
+}
+
+.bookings-table tr:last-child td {
+  border-bottom: none;
+}
+
+.bookings-table tr:hover td {
+  background: #F8FAFC;
+}
+
+/* Booking Reference Cell */
+.booking-ref-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  max-width: 100%;
+}
+
+.booking-ref-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  display: inline-block;
+  max-width: 115px;
+}
+
+.btn-copy-ref {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--canvas);
+  border-radius: var(--radius-xs);
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.btn-copy-ref:hover {
+  background: var(--bluegrey-subtle);
+  color: var(--bluegrey);
+  border-color: var(--bluegrey-light);
+}
+
+.booking-date-sub {
+  font-size: 11px;
+  color: var(--ink-muted);
+  margin-top: 4px;
+  line-height: 1.25;
+}
+
+/* Package Cell */
+.pkg-cell-title {
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink);
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.pkg-cell-id {
+  display: block;
+  font-size: 10.5px;
+  color: var(--ink-muted);
+  margin-top: 3px;
+  font-family: ui-monospace, monospace;
+  word-break: break-all;
+}
+
+/* Trip Details Cell */
+.departure-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2.5px 7px;
+  background: var(--canvas);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+
+.pax-count {
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--ink);
+  margin-top: 4px;
+}
+
+.pax-breakdown {
+  font-size: 11px;
+  color: var(--ink-muted);
+  margin-top: 2px;
+  line-height: 1.25;
+}
+
+/* Payment Cell */
+.payment-amount {
+  font-weight: 800;
+  font-size: 13.5px;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.payment-badge-wrap {
+  margin-top: 4px;
+}
+
+/* Fulfilment Progress Cell */
+.fulfilment-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.fulfilment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.fulfilment-row-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* Status Badges - Always keep words together without ugly splits */
+.status {
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  font-size: 10.5px !important;
+  padding: 2.5px 8px !important;
+  display: inline-block;
+  line-height: 1.25;
+}
+
+.badge-legacy {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--radius-xs);
+  background: #F1F5F9;
+  border: 1px solid var(--grey);
+  color: var(--ink-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.muted-chip {
+  display: inline-block;
+  padding: 3px 8px;
+  background: var(--canvas);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-xs);
+  font-size: 11px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+/* Responsive Card View on Mobile */
+@media (max-width: 768px) {
+  .bookings-table, .bookings-table thead, .bookings-table tbody, .bookings-table th, .bookings-table td, .bookings-table tr {
+    display: block;
+  }
+  .bookings-table {
+    min-width: 100%;
+  }
+  .bookings-table thead {
+    display: none;
+  }
+  .bookings-table tr {
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--white);
+    box-shadow: var(--shadow-xs);
+    padding: 14px;
+  }
+  .bookings-table td {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .bookings-table td:last-child {
+    border-bottom: none;
+    text-align: left !important;
+    padding-top: 12px;
+  }
+  .fulfilment-stack {
+    max-width: 100%;
+  }
+}
 </style>
+
 <div class="page-title">
   <div>
     <span class="eyebrow">Tourism Operator Management</span>
-    <h1>Package Bookings & Orders</h1>
+    <h1>Package Bookings &amp; Orders</h1>
     <p>View and manage incoming traveller bookings, party compositions, Stripe test payments, and platform trip fulfillment.</p>
   </div>
   <div class="actions">
@@ -28,6 +363,7 @@
   <p class="muted">Showing up to 500 records. Sorting, filters and totals cover the loaded records only.</p>
 </div>
 {% endif %}
+
 <!-- Metrics Overview Ribbon -->
 {% if not backend_error %}
 <div class="grid g4 operator-stats" style="margin-bottom: 24px;">
@@ -75,9 +411,9 @@
     <div class="metric-help">Required, partial or unresolved arrangements</div>
   </div>
 </div>
+{% endif %}
 
 <!-- Toolbar: Search and Filter -->
-{% endif %}
 <div class="toolbar">
   <form class="actions booking-filter-form" method="get">
     <input type="hidden" name="sort" value="{{ sort_column }}"><input type="hidden" name="direction" value="{{ direction }}">
@@ -123,6 +459,7 @@
 </div>
 
 {% if filter_error %}<p role="alert" class="review-feedback">{{ filter_error }}</p>{% endif %}
+
 {% if not backend_error %}
 <section class="card" aria-label="Filtered departure summary" style="margin-bottom:20px">
   <h3>{{ dict(package_options).get(package_id, 'Package unavailable') if package_id else 'All Packages' }}{% if departure %} · {{ departure if departure != 'missing' else 'Missing departure date' }}{% endif %}</h3>
@@ -135,6 +472,7 @@
   {% if selection_summary.unknown_parties %}<small class="muted">{{ selection_summary.unknown_parties }} paid order(s) have incomplete party details; only recorded counts are included.</small>{% endif %}
 </section>
 {% endif %}
+
 {% if backend_error %}
 <div class="card" style="text-align: center; padding: 36px 20px; border-color: var(--danger-border); background: #FFF5F5;">
   <div style="font-weight: 700; color: var(--danger); font-size: 16px; margin-bottom: 8px;">Backend Service Unavailable</div>
@@ -166,107 +504,195 @@
 </div>
 {% else %}
 <section class="table-wrap">
-  <table>
+  <table class="bookings-table">
+    <colgroup>
+      <col style="width: 16%;">
+      <col style="width: 22%;">
+      <col style="width: 16%;">
+      <col style="width: 14%;">
+      <col style="width: 24%;">
+      <col style="width: 8%;">
+    </colgroup>
     <thead>
       <tr>
-        {{ sort_header('reference', 'Order Reference') }}
-        {{ sort_header('package', 'Package Excursion') }}
-        {{ sort_header('departure', 'Departure') }}
-        {{ sort_header('party', 'Party Breakdown') }}
-        {{ sort_header('amount', 'Amount') }}
-        {{ sort_header('payment', 'Payment Status') }}
-        {{ sort_header('trip', 'Traveller Trip') }}
-        {{ sort_header('readiness', 'Operator Readiness') }}
-        {{ sort_header('supplier', 'Supplier Arrangements') }}
-        {{ sort_header('created', 'Created') }}
-        <th style="text-align:right">Action</th>
+        <th scope="col" aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort_column in ['reference', 'created'] else 'none' }}">
+          <div class="sort-group">
+            <a href="{{ sort_links['reference'] }}" aria-label="Sort by Order Reference" class="sort-link-primary">
+              <span>Order Reference</span>
+              <span aria-hidden="true">{{ ('↑' if direction == 'asc' else '↓') if sort_column == 'reference' else '↕' }}</span>
+            </a>
+            <a href="{{ sort_links['created'] }}" aria-label="Sort by Created" class="sort-link-secondary">
+              <span>Created {{ ('↑' if direction == 'asc' else '↓') if sort_column == 'created' else '↕' }}</span>
+            </a>
+          </div>
+        </th>
+
+        <th scope="col" aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort_column == 'package' else 'none' }}">
+          <a href="{{ sort_links['package'] }}" aria-label="Sort by Package Excursion" class="sort-link-primary">
+            <span>Package Excursion</span>
+            <span aria-hidden="true">{{ ('↑' if direction == 'asc' else '↓') if sort_column == 'package' else '↕' }}</span>
+          </a>
+        </th>
+
+        <th scope="col" aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort_column in ['departure', 'party'] else 'none' }}">
+          <div class="sort-group">
+            <a href="{{ sort_links['departure'] }}" aria-label="Sort by Departure" class="sort-link-primary">
+              <span>Departure</span>
+              <span aria-hidden="true">{{ ('↑' if direction == 'asc' else '↓') if sort_column == 'departure' else '↕' }}</span>
+            </a>
+            <a href="{{ sort_links['party'] }}" aria-label="Sort by Party Breakdown" class="sort-link-secondary">
+              <span>Party Breakdown {{ ('↑' if direction == 'asc' else '↓') if sort_column == 'party' else '↕' }}</span>
+            </a>
+          </div>
+        </th>
+
+        <th scope="col" aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort_column in ['amount', 'payment'] else 'none' }}">
+          <div class="sort-group">
+            <a href="{{ sort_links['amount'] }}" aria-label="Sort by Amount" class="sort-link-primary">
+              <span>Amount</span>
+              <span aria-hidden="true">{{ ('↑' if direction == 'asc' else '↓') if sort_column == 'amount' else '↕' }}</span>
+            </a>
+            <a href="{{ sort_links['payment'] }}" aria-label="Sort by Payment Status" class="sort-link-secondary">
+              <span>Payment Status {{ ('↑' if direction == 'asc' else '↓') if sort_column == 'payment' else '↕' }}</span>
+            </a>
+          </div>
+        </th>
+
+        <th scope="col" aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort_column in ['trip', 'readiness', 'supplier'] else 'none' }}">
+          <div class="sort-group">
+            <span style="font-size:11px; font-weight:700; color:var(--ink);">Fulfilment Progress</span>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <a href="{{ sort_links['trip'] }}" aria-label="Sort by Traveller Trip" class="sort-link-secondary">
+                <span>Trip {{ ('↑' if direction == 'asc' else '↓') if sort_column == 'trip' else '↕' }}</span>
+              </a>
+              <span style="color:var(--border);">•</span>
+              <a href="{{ sort_links['readiness'] }}" aria-label="Sort by Operator Readiness" class="sort-link-secondary">
+                <span>Readiness {{ ('↑' if direction == 'asc' else '↓') if sort_column == 'readiness' else '↕' }}</span>
+              </a>
+              <span style="color:var(--border);">•</span>
+              <a href="{{ sort_links['supplier'] }}" aria-label="Sort by Supplier Arrangements" class="sort-link-secondary">
+                <span>Supplier {{ ('↑' if direction == 'asc' else '↓') if sort_column == 'supplier' else '↕' }}</span>
+              </a>
+            </div>
+          </div>
+        </th>
+
+        <th scope="col" class="col-actions">Action</th>
       </tr>
     </thead>
     <tbody>
       {% for item in items %}
       <tr data-order-reference="{{ item.orderReference or item.id }}">
+        <!-- 1. Booking Column -->
         <td>
-          <div style="font-weight: 700; color: var(--ink); font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px;">
-            {{ item.orderReference }}
+          <div class="booking-ref-wrap">
+            <span class="booking-ref-code" title="{{ item.orderReference }}">{{ item.orderReference }}</span>
+            <button type="button" class="btn-copy-ref" onclick="copyBookingRef(this, '{{ item.orderReference }}')" title="Copy Reference" aria-label="Copy booking reference">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
           </div>
-          <div style="font-size: 11px; color: var(--ink-muted); margin-top: 3px;">
+          <div class="booking-date-sub">
             {% if item.createdAt %}
-              {{ item.createdAt[:10] }}
+              Created {{ item.createdAt[:10] }}
             {% else %}
               Date unrecorded
             {% endif %}
           </div>
         </td>
 
+        <!-- 2. Package Column -->
         <td>
-          <strong style="color: var(--ink); font-size: 14px; display: block;">
+          <div class="pkg-cell-title">
             {{ item.packageTitle or 'Tourism Package' }}
-          </strong>
-          <span style="font-size: 11px; color: var(--ink-muted);">
+          </div>
+          <span class="pkg-cell-id">
             ID: {{ item.packageId or '—' }}
           </span>
         </td>
 
+        <!-- 3. Trip Details Column -->
         <td>
           {% if item.departureDate %}
-            <span class="departure-chip">
+            <span class="departure-pill">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
               <span>{{ item.departureDate }}</span>
             </span>
           {% else %}
             <span class="muted-chip">Flexible / On Demand</span>
           {% endif %}
-        </td>
 
-        <td>
           {% if item.groupSize %}
-            <div style="font-weight: 700; color: var(--ink);">
+            <div class="pax-count">
               {{ item.groupSize }} pax
             </div>
             {% if item.adults is not none or item.children is not none %}
-              <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 2px;">
+              <div class="pax-breakdown">
                 {{ item.adults or 0 }} Adult{% if item.adults != 1 %}s{% endif %}{% if item.children %}, {{ item.children }} Child{% if item.children != 1 %}ren{% endif %}{% endif %}
               </div>
             {% else %}
-              <div style="font-size: 11px; color: var(--ink-muted); margin-top: 2px;">
+              <div class="pax-breakdown">
                 Breakdown not specified
               </div>
             {% endif %}
           {% else %}
-            <span class="badge-legacy" title="Legacy order record without structured participants">
-              Legacy (Unspecified)
-            </span>
+            <div style="margin-top: 5px;">
+              <span class="badge-legacy" title="Legacy order record without structured participants">
+                Legacy (Unspecified)
+              </span>
+            </div>
           {% endif %}
         </td>
 
+        <!-- 4. Payment Column -->
         <td>
-          {% if item.get('groupTotal') is not none %}
-            <strong style="color: var(--ink); font-size: 14px;">
+          <div class="payment-amount">
+            {% if item.get('groupTotal') is not none %}
               {{ item.currency or 'UNKNOWN' }} {{ '%.2f'|format(item.groupTotal|float) }}
-            </strong>
-          {% else %}
-            <span class="muted">—</span>
-          {% endif %}
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </div>
+          <div class="payment-badge-wrap">
+            {% set pay_status = (item.paymentStatus or 'unknown')|lower %}
+            {% set ord_status = (item.orderStatus or '')|lower %}
+            {% set label = pay_status|payment_label(ord_status) %}
+            <span class="status {{ 'approved' if label == 'Paid' else 'pending' if label == 'Pending' else 'expired' if label == 'Expired' else 'rejected' }}">{{ label }}</span>
+          </div>
         </td>
 
+        <!-- 5. Fulfilment Progress Column -->
         <td>
-          {% set pay_status = (item.paymentStatus or 'unknown')|lower %}
-          {% set ord_status = (item.orderStatus or '')|lower %}
-          {% set label = pay_status|payment_label(ord_status) %}
-          <span class="status {{ 'approved' if label == 'Paid' else 'pending' if label == 'Pending' else 'expired' if label == 'Expired' else 'rejected' }}">{{ label }}</span>
+          {% set overview = item.get('statusOverview') or {} %}
+          <div class="fulfilment-stack">
+            <!-- Traveller Trip -->
+            {% set trip_state = overview.get('travellerTrip', {}) %}
+            <div class="fulfilment-row">
+              <span class="fulfilment-row-label">Traveller Trip</span>
+              <span class="status {{ 'approved' if trip_state.get('state') == 'created' else 'pending' }}">{{ trip_state.get('label', 'Unavailable') }}</span>
+            </div>
+
+            <!-- Operator Readiness -->
+            {% set ready_state = overview.get('operatorReadiness', {}) %}
+            <div class="fulfilment-row">
+              <span class="fulfilment-row-label">Operator Readiness</span>
+              <span class="status {{ 'approved' if ready_state.get('state') == 'ready' else 'pending' }}">{{ ready_state.get('label', 'Unavailable') }}</span>
+            </div>
+
+            <!-- Supplier Arrangements -->
+            {% set supp_state = overview.get('supplierArrangements', {}) %}
+            <div class="fulfilment-row">
+              <span class="fulfilment-row-label">Supplier Arrangements</span>
+              <span class="status {{ 'approved' if supp_state.get('state') in ['arrangements_recorded', 'not_required'] else 'pending' }}">{{ supp_state.get('label', 'Unavailable') }}</span>
+            </div>
+            {% if supp_state.get('state') in ['arrangements_recorded', 'partially_recorded'] %}
+              <small class="muted" style="display:block; text-align:right; font-size:10px;">Operator records · {{ supp_state.get('completedCount',0) }}/{{ supp_state.get('requiredCount',0) }}</small>
+            {% endif %}
+          </div>
         </td>
 
-        {% set overview = item.get('statusOverview') or {} %}
-        {% for key in ['travellerTrip','operatorReadiness','supplierArrangements'] %}
-        {% set state = overview.get(key, {}) %}
-        <td><span class="status {{ 'approved' if state.get('state') in ['created','ready','arrangements_recorded','not_required'] else 'pending' }}" style="white-space:normal;overflow-wrap:anywhere;max-width:100%">{{ state.get('label','Unavailable') }}</span>
-          {% if key == 'supplierArrangements' and state.get('state') in ['arrangements_recorded','partially_recorded'] %}<small class="muted" style="display:block">Operator records · {{ state.get('completedCount',0) }}/{{ state.get('requiredCount',0) }}</small>{% endif %}
-        </td>
-        {% endfor %}
-
-        <td>{{ (item.get('createdAt') or '—')[:19]|replace('T',' ') }}</td>
-        <td style="text-align: right;">
-          <a class="btn outline btn-sm" href="{{ url_for('operator_fr12.booking_detail', order_reference=item.orderReference) }}">
+        <!-- 6. Action Column -->
+        <td class="col-actions">
+          <a class="btn outline btn-sm" href="{{ url_for('operator_fr12.booking_detail', order_reference=item.orderReference) }}" style="padding: 4px 10px; font-size: 11.5px; white-space: nowrap;">
             <span>Details</span>
           </a>
         </td>
@@ -275,5 +701,45 @@
     </tbody>
   </table>
 </section>
+
+<script>
+function copyBookingRef(btn, text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      showCopiedFeedback(btn);
+    }).catch(function() {
+      fallbackCopy(btn, text);
+    });
+  } else {
+    fallbackCopy(btn, text);
+  }
+}
+
+function fallbackCopy(btn, text) {
+  var input = document.createElement('input');
+  input.value = text;
+  document.body.appendChild(input);
+  input.select();
+  try {
+    document.execCommand('copy');
+    showCopiedFeedback(btn);
+  } catch(e) {}
+  document.body.removeChild(input);
+}
+
+function showCopiedFeedback(btn) {
+  var origHtml = btn.innerHTML;
+  btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
+  btn.style.color = 'var(--success)';
+  btn.style.borderColor = 'var(--success-border)';
+  btn.setAttribute('title', 'Copied to clipboard!');
+  setTimeout(function() {
+    btn.innerHTML = origHtml;
+    btn.style.color = '';
+    btn.style.borderColor = '';
+    btn.setAttribute('title', 'Copy Reference');
+  }, 1800);
+}
+</script>
 {% endif %}
 {% endblock %}
