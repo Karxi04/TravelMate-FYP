@@ -21,6 +21,7 @@ from sequence_contract.domain_functions import (
 
 from services.commerce_money import record_money as _record_money, record_amount as _amount
 from services.admin_report_csv import readable_csv
+from services.admin_report_spreadsheet import compact_csv, export_xlsx
 from services.report_service import (
     export_system_report_pdf
 )
@@ -1032,6 +1033,8 @@ def export_report_pdf():
 def export_report():
     if str(request.args.get('format') or '').lower() == 'csv':
         return export_report_csv()
+    if str(request.args.get('format') or '').lower() == 'xlsx':
+        return export_report_xlsx()
     try:
         report = _summary(_criteria())
     except ValueError as exc:
@@ -1052,16 +1055,16 @@ def export_report():
 @auth_required(['admin'])
 def export_report_csv():
     layout = request.args.get('layout', 'legacy')
-    if layout not in {'legacy', 'readable'}:
-        return jsonify({'ok': False, 'error': 'Use legacy or readable CSV layout'}), 400
+    if layout not in {'legacy', 'readable', 'compact'}:
+        return jsonify({'ok': False, 'error': 'Use legacy, readable or compact CSV layout'}), 400
     try:
         report = _summary(_criteria())
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 400
-    if layout == 'readable':
+    if layout in {'readable', 'compact'}:
         report_type = report['criteria']['reportType']
         return Response(
-            readable_csv(_sanitize_commerce_record(report)),
+            (compact_csv if layout == 'compact' else readable_csv)(_sanitize_commerce_record(report)),
             mimetype='text/csv',
             headers={'Content-Disposition': f'attachment; filename=TravelMate_Admin_{report_type}_Report.csv'},
         )
@@ -1097,3 +1100,17 @@ def export_report_csv():
         mimetype='text/csv',
         headers={'Content-Disposition': 'attachment; filename=TravelMate_System_Report.csv'},
     )
+
+
+@bp.get('/reports/export.xlsx')
+@auth_required(['admin'])
+def export_report_xlsx():
+    try:
+        report = _sanitize_commerce_record(_summary(_criteria()))
+        buffer = io.BytesIO()
+        export_xlsx(report, buffer)
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    buffer.seek(0)
+    return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                     as_attachment=True, download_name=f"TravelMate_Admin_{report['criteria']['reportType']}_Report.xlsx")
