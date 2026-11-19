@@ -165,20 +165,67 @@ _REGIONAL_REVIEWS = {
 @lru_cache(maxsize=1)
 def regional_demo_destinations():
     from services.local_catalog import DESTINATIONS
-    return {row['destinationId']: row for row in DESTINATIONS
-            if row['destinationId'] in _REGIONAL_REVIEWS}
+    from services.destination_research import attraction_identities
+    places = {row['destinationId']: row for row in DESTINATIONS if row['destinationId'] in _REGIONAL_REVIEWS}
+    covered = {row['state'] for row in places.values()} | {'Penang'}
+    for row in attraction_identities():
+        if row['state'] not in covered:
+            places[row['destinationId']] = row
+            covered.add(row['state'])
+    return places
 
 
-@lru_cache(maxsize=len(_REGIONAL_REVIEWS))
-def regional_demo_reviews(identity):
+@lru_cache(maxsize=64)
+def _regional_sources(identity):
     rows = []
-    for index, (author, rating, comment) in enumerate(_REGIONAL_REVIEWS.get(identity, ()), 1):
+    place = regional_demo_destinations().get(identity)
+    examples = _REGIONAL_REVIEWS.get(identity, ())
+    if place and not examples:
+        examples = (
+            ('Traveller A', 5, 'A beautiful visit. I enjoyed taking time to explore and look around.'),
+            ('Traveller B', 3, 'The visit was interesting, but felt rushed and a little disappointing.'),
+            ('Traveller C', 2, 'A disappointing visit. The crowds felt frustrating and I left earlier than planned.'),
+        )
+    for index, (author, rating, comment) in enumerate(examples, 1):
         uid = f'fyp-regional-v1-{index}'
         rows.append({
             'id': review_id(uid, identity), 'travellerId': uid,
             'travellerName': author, 'destinationId': identity,
+            'destinationName': (place or {}).get('title', identity),
+            'destinationAddress': f"{(place or {}).get('city', '')}, {(place or {}).get('state', '')}, Malaysia",
             'rating': rating, 'comment': comment, 'synthetic': True,
             'dataset': 'fyp-regional-v1', 'submittedAt': f'2026-11-{10 + index}T10:00:00+08:00',
             **screen_submission(comment, rating),
         })
     return rows
+
+
+def regional_demo_reviews(identity):
+    from services.review_staging import overlay_rows
+    return overlay_rows(_regional_sources(identity))
+
+
+def all_regional_reviews():
+    return [row for identity in regional_demo_destinations() for row in regional_demo_reviews(identity)]
+
+
+def illustrative_reviews(genuine, examples):
+    """One eligible list and one illustrative summary, with genuine totals retained."""
+    from services.review_service import approved_reviews
+    from services.public_content_projection import public_review
+    rows = list(genuine.get('user_reviews') or [])
+    seen = {('genuine', row.get('id')) for row in rows if row.get('id')}
+    eligible_examples = approved_reviews(examples)
+    for row in eligible_examples:
+        key = ('synthetic', row['id'])
+        if key not in seen:
+            rows.append({**public_review(row), 'synthetic': True, 'source': 'fyp_private',
+                         'dataset': row.get('dataset') or 'penang_private'})
+            seen.add(key)
+    return {**genuine, 'genuineSummary': {'rating': genuine['rating'], 'reviews': genuine['reviews']},
+            'sampleSummary': {'reviews': len(eligible_examples),
+                              'rating': round(sum(float(row['rating']) for row in eligible_examples) / len(eligible_examples), 1) if eligible_examples else None},
+            'rating': round(sum(float(row['rating']) for row in rows) / len(rows), 1) if rows else None,
+            'reviews': len(rows), 'user_reviews': rows, 'ratingBasis': 'private_illustrative',
+            'privateExamplesAllowed': True, 'reviewEnvironment': 'private_demo',
+            'provenance': 'Private examples and genuine submissions; not a public visitor aggregate.'}

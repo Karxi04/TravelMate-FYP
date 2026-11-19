@@ -16,6 +16,10 @@ class ReviewContract {
       review['fypPreview'] != true &&
       !const {'sample', 'synthetic', 'demo', 'fyp_private'}
           .contains(review['source']?.toString().trim().toLowerCase());
+  static bool isDisplaySummary(Map summary) =>
+      summary['ratingBasis'] == 'private_illustrative' ? (
+          summary['reviewEnvironment'] == 'private_demo' &&
+          summary['privateExamplesAllowed'] == true) : isGenuine(summary);
   // Exact Penang IDs only. Keep in sync with backend review_destination.py.
   static const _aliases = <String, List<String>>{
     'local_penang_hill': ['penang_hill'],

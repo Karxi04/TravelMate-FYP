@@ -127,7 +127,9 @@ def test_missing_choices_preserve_legacy_numeric_totals_but_are_incomplete():
     assert budget['total'] == 1035
     assert budget['totalEstimatedCost'] == 1035
     assert budget['pendingExpenseCategories'] == [
-        'flight', 'hotel', 'carRental', 'activities']
+        'flight', 'hotel', 'activities']
+    assert budget['carRental'] == 50
+    assert budget['expenseBreakdown']['carRental']['state'] == 'unverified_estimate'
     assert budget['affordabilityStatus'] == 'incomplete'
 
 

@@ -1,3 +1,4 @@
+import 'package:travelmate_traveller/modules/fr07_flight_search/flight_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/trip_details_screen.dart';
@@ -342,6 +343,20 @@ Future<void> _scrollTripToTop(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('Flights from Trip essentials retains the exact Trip context', (tester) async {
+    final api = _TripApi();
+    await _pumpTrip(tester, api);
+    final button = find.text('Flights');
+    await _show(tester, button);
+    await tester.tap(button); await tester.pumpAndSettle();
+    final screen = tester.widget<FlightScreen>(find.byType(FlightScreen));
+    expect(screen.targetTripId, 'trip_target');
+    expect(screen.targetTrip?['travellerCount'], 2);
+    expect(screen.initialOutboundDate, api.trip['startDate']);
+    expect(screen.initialReturnDate, api.trip['endDate']);
+    expect(api.generationCalls, 0);
+  });
+
   testWidgets('F02 describes Lower Station as access to the scheduled Hill visit',
       (tester) async {
     final api = _TripApi();

@@ -887,9 +887,9 @@ def calculateBudget(itineraryOrSelections):
         else:
             rental_state = 'simulated_estimate'
             limitations.append('Car-rental pricing uses the simulated local catalogue and is not a live provider quote.')
-    elif rental_choice == 'undecided':
-        rental_state = 'undecided'
-        pending.append('carRental')
+    elif car_rental > 0:
+        rental_state = 'unverified_estimate'
+        limitations.append('Historical car-rental expenditure is retained; no new rental selection is offered.')
     else:
         car_rental = 0.0
         rental_state = 'not_required'

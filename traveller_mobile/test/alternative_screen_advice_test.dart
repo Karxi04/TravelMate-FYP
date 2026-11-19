@@ -1,3 +1,4 @@
+import 'package:travelmate_traveller/modules/fr07_flight_search/flight_screen.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,6 +46,68 @@ Widget _buildApp(Widget child, {Size size = const Size(390, 844), double textSca
 }
 
 void main() {
+  testWidgets('budget explanation links Search Flights to the exact current Trip without searching', (tester) async {
+    final api = _FakeAlternativeApi(onGet: (path) async {
+      if (path.endsWith('/budget-replan')) return {'ok': true, 'stateVersion': 'revision', 'budget': {'total': 728, 'limit': 700},
+        'budgetReplanOptions': {'allowances': {'foodCost': 360, 'transportCost': 105}},
+        'flightComparison': {'status': 'needs_review', 'reasons': ['Passenger count is missing.']}};
+      return {'ok': true, 'itinerary': {'id': 'owned', 'travellerCount': 2, 'startDate': '2028-12-12', 'endDate': '2028-12-14', 'destinationArea': 'Penang'}};
+    }, onPost: (path, [body]) async => {'ok': true, 'alternatives': [], 'flightAdvice': 'No comparable fare.'});
+    await tester.pumpWidget(_buildApp(AlternativeScreen(budget: BudgetModel(accommodation: 0, food: 360, transportation: 105, activities: 0, flight: 263),
+      userBudget: 700, tripId: 'owned', api: api)));
+    await tester.pumpAndSettle();
+    expect(find.text('Passenger count is missing.'), findsOneWidget);
+    final search = find.text('Search Flights'); await tester.ensureVisible(search);
+    await tester.tap(search); await tester.pumpAndSettle();
+    final target = tester.widget<FlightScreen>(find.byType(FlightScreen));
+    expect(target.targetTripId, 'owned');
+    expect(target.targetTrip?['travellerCount'], 2);
+    expect(target.initialOutboundDate, '2028-12-12');
+    expect(api.postCalls.where((path) => path.contains('/fr7/')), isEmpty);
+  });
+
+  testWidgets('allowance preview cancel confirm and reopen show known-subtotal reductions', (tester) async {
+    var food = 360;
+    var applies = 0;
+    final api = _FakeAlternativeApi(onGet: (path) async => {'ok': true, 'stateVersion': 'revision',
+      'budget': {'total': food + 368, 'limit': 700},
+      'budgetReplanOptions': {'allowances': {'foodCost': food, 'transportCost': 105}}},
+      onPost: (path, [body]) async {
+        if (path.endsWith('/preview')) return {'before': {'total': 728, 'food': 360, 'transport': 105},
+          'budget': {'total': 688, 'food': 320, 'transport': 105, 'pendingExpenseCategories': ['hotel', 'activities']},
+          'estimatedReduction': 40, 'previewToken': 'confirmed-preview', 'retainedEstimate': 263};
+        if (path.endsWith('/apply')) {
+          expect(body?['confirmed'], true); expect(body?['previewToken'], 'confirmed-preview');
+          applies++; food = 320;
+          return {'itinerary': {'id': 'owned'}};
+        }
+        return {'ok': true, 'alternatives': []};
+      });
+    await tester.pumpWidget(_buildApp(AlternativeScreen(budget: BudgetModel(accommodation: 0, food: 360, transportation: 105, activities: 0, flight: 263),
+      userBudget: 700, tripId: 'owned', api: api)));
+    await tester.pumpAndSettle();
+    Future<void> open() async {
+      final options = find.text('Review budget options'); await tester.ensureVisible(options);
+      await tester.tap(options); await tester.pumpAndSettle();
+    }
+    await open();
+    await tester.enterText(find.widgetWithText(TextField, 'Food allowance (MYR)'), '320');
+    final preview = find.text('Preview revised budget'); await tester.ensureVisible(preview);
+    await tester.tap(preview); await tester.pumpAndSettle();
+    expect(find.text('Previous known estimated subtotal: RM 728.00'), findsOneWidget);
+    expect(find.text('Proposed known estimated subtotal: RM 688.00'), findsOneWidget);
+    expect(find.text('Food allowance reduction: RM 40.00'), findsOneWidget);
+    expect(find.textContaining('does not establish full-trip affordability'), findsOneWidget);
+    await tester.tap(find.text('Cancel')); await tester.pumpAndSettle();
+    expect(applies, 0); expect(food, 360);
+    await tester.ensureVisible(preview); await tester.tap(preview); await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm budget changes')); await tester.pumpAndSettle();
+    expect(applies, 1); expect(food, 320);
+    await open();
+    expect(find.text('Current: RM 320.00'), findsOneWidget);
+    expect(applies, 1);
+  });
+
   testWidgets('safe budget adjustments remain actionable while provider lookup is delayed', (tester) async {
     final pending = Completer<dynamic>();
     final api = _FakeAlternativeApi(

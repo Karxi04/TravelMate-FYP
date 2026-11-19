@@ -40,7 +40,7 @@ class BudgetBreakdown extends StatelessWidget {
       else if (!over)
         Text('Estimated balance: ${money(limit - budget.totalCost)}'),
       const SizedBox(height: AppSpacing.md),
-      for (final entry in BudgetModel.categoryLabels.entries)
+      for (final entry in BudgetModel.categoryLabels.entries.where((entry) => entry.key != 'carRental' || budget.carRental > 0))
         Padding(
           key: ValueKey('budget-category-${entry.key}'),
           padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -66,9 +66,9 @@ class BudgetBreakdown extends StatelessWidget {
                     textAlign: TextAlign.right)),
           ]),
         ),
-      if (budget.pendingExpenseCategories.isNotEmpty)
+      if (budget.pendingExpenseCategories.where((key) => key != 'carRental').isNotEmpty)
         Text(
-            'Pending: ${budget.pendingExpenseCategories.map(BudgetModel.categoryLabel).join(', ')}.'),
+            'Pending: ${budget.pendingExpenseCategories.where((key) => key != 'carRental').map(BudgetModel.categoryLabel).join(', ')}.'),
       if (budget.excludedExpenseCategories.isNotEmpty)
         Text(
             'Outside this estimate: ${budget.excludedExpenseCategories.map(BudgetModel.categoryLabel).join(', ')}.'),

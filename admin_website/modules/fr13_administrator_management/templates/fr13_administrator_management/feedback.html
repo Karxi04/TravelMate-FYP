@@ -120,7 +120,8 @@
       {% elif decision or x.get('reviewedBy') or x.get('removedBy') %}
         <p><a href="{{ url_for('admin_fr13.feedback', history_source=review_source, q=query, status=status, history=x.id) }}">Decision history</a></p>
       {% endif %}
-      {% if category != 'hidden' %}
+      {% if x.get('moderationWritable') == false %}<p class="muted">Read-only fixture · local staging overlay is not configured.</p>{% endif %}
+      {% if category != 'hidden' and x.get('moderationWritable', true) %}
         <form method="post" action="{{ url_for('admin_fr13.review_feedback', feedback_id=x.id) }}" style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="expectedUpdatedAt" value="{{ x.get('updatedAt', '') }}">

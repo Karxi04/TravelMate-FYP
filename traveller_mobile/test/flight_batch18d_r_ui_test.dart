@@ -96,6 +96,12 @@ class _Mock18DRApi extends ApiService {
       };
     }
 
+    if (path.startsWith('/api/fr5/itineraries/')) {
+      final id = path.split('/').last;
+      final rows = tripsResponse?['items'] as List? ?? [];
+      return {'ok': true, 'itinerary': rows.whereType<Map>().firstWhere((row) => row['id'] == id, orElse: () => {'id': id})};
+    }
+
     if (path == '/api/fr9/payments') {
       return {'ok': true, 'items': []};
     }
@@ -244,6 +250,37 @@ Future<void> _pumpTripDetails(WidgetTester tester, Map<String, dynamic> trip, _M
 }
 
 void main() {
+  testWidgets('Trip search prefills saved route group and known cabin without API search', (tester) async {
+    _setViewport(tester);
+    final api = _Mock18DRApi();
+    await tester.pumpWidget(_wrap(FlightScreen(api: api, targetTripId: 'owned',
+      targetTrip: {'id': 'owned', 'travellerCount': 3.0, 'selectedFlight': {'outboundSegments': [
+        {'departureAirportCode': 'JHB', 'arrivalAirportCode': 'LGK', 'travelClass': 'Business'}]}})));
+    await tester.pumpAndSettle();
+    final values = tester.widgetList<TextField>(find.byType(TextField)).map((field) => field.controller?.text).toList();
+    expect(values, containsAll(['JHB', 'LGK', '3']));
+    expect(find.text('Business'), findsOneWidget);
+    expect(api.getPaths, isEmpty); expect(api.postPaths, isEmpty);
+  });
+
+  testWidgets('targeted flight attaches to fresh owned Trip without picker or creation', (tester) async {
+    _setViewport(tester);
+    final api = _Mock18DRApi();
+    api.tripsResponse = {'items': [{'id': 'trip_penang_nov', 'startDate': '2026-11-19', 'endDate': '2026-11-25', 'travellerCount': 2}]};
+    await tester.pumpWidget(_wrap(FlightScreen(api: api, targetTripId: 'trip_penang_nov')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Search flights'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Select'));
+    await tester.pumpAndSettle();
+    expect(find.text('Attach flight to itinerary'), findsNothing);
+    expect(find.text('Create Itinerary for Flight?'), findsNothing);
+    expect(api.getPaths, contains('/api/fr5/itineraries/trip_penang_nov'));
+    expect(api.getPaths, isNot(contains('/api/fr5/itineraries')));
+    expect(api.selectCallCount, 1);
+    expect(api.postBodies.last?['itineraryId'], 'trip_penang_nov');
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('Batch 18D-R-UI Regression Tests', () {

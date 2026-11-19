@@ -2543,6 +2543,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             MaterialPageRoute(
               builder: (_) => FlightScreen(
                 api: api,
+                targetTripId: widget.tripId,
+                targetTrip: t,
                 initialOutboundDate: (t['startDate'] ?? '').toString(),
                 initialReturnDate: (t['endDate'] ?? '').toString(),
               ),

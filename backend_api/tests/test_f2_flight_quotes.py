@@ -155,7 +155,7 @@ def test_provider_completed_round_trip_gets_server_completed_identifier(
         ).get_json()
     provider_option_id = searched['items'][0]['id']
     itinerary = {
-        'id': 'provider-complete-trip', 'travellerId': 'test_traveller_uid',
+        'id': 'provider-complete-trip', 'travellerId': 'test_traveller_uid', 'travellerCount': 1,
         'startDate': '2027-02-10', 'endDate': '2027-02-12', 'activities': [],
     }
     with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=itinerary), \
@@ -188,7 +188,7 @@ def test_round_trip_conflict_refers_to_the_actual_segment_date(client, mock_trav
 def test_round_trip_conflict_requires_one_explicit_acknowledgement(client, mock_traveller_auth):
     reset_flight_quotes()
     with patch('modules.fr07_flight_search.routes.retrieveFlightOptions', return_value={'items': [_outbound()]}):
-        searched = client.get('/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2027-02-10&return_date=2027-02-12', headers={'Authorization': 'Bearer valid_test_token'})
+        searched = client.get('/api/fr7/flights/search?departure_id=KUL&arrival_id=PEN&outbound_date=2027-02-10&return_date=2027-02-12&traveller_count=2', headers={'Authorization': 'Bearer valid_test_token'})
     outbound = searched.get_json()['items'][0]
     with patch('modules.fr07_flight_search.routes.retrieveFlightReturns', return_value={'items': [_return()]}):
         returns = client.post('/api/fr7/flights/returns', headers={'Authorization': 'Bearer valid_test_token'}, json={'searchId': searched.get_json()['searchId'], 'optionId': outbound['id']})
@@ -296,7 +296,7 @@ def test_one_way_flight_uses_the_same_inclusive_trip_date_rule(client, mock_trav
         ).get_json()
     option = searched['items'][0]
     valid_trip = {
-        'id': 'one-way-valid', 'travellerId': 'test_traveller_uid',
+        'id': 'one-way-valid', 'travellerId': 'test_traveller_uid', 'travellerCount': 1,
         'startDate': '2027-02-10', 'endDate': '2027-02-12', 'activities': [],
     }
     with patch('modules.fr07_flight_search.routes.retrieveRecord', return_value=valid_trip), \

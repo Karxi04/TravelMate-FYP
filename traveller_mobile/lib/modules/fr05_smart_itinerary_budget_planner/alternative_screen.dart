@@ -7,6 +7,7 @@ import '../../widgets/travel_widgets.dart';
 import 'budget_service.dart';
 import 'budget_replan_screen.dart';
 import 'models/budget_model.dart';
+import '../fr07_flight_search/flight_screen.dart';
 
 class AlternativeScreen extends StatefulWidget {
   final BudgetModel budget;
@@ -33,6 +34,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   int _loadVersion = 0;
   bool checkingPrices = false;
   bool applying = false;
+  bool openingFlights = false;
   bool optionsChanged = false;
   String? stateVersion;
   List<Map<String, dynamic>> alternatives = [];
@@ -43,6 +45,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   String? hotelAdvice;
   String? activityAlternativeStatus;
   String? loadError;
+  Map<String, dynamic>? flightComparison;
+  Map<String, dynamic> travelRejections = {};
   bool busy = false;
 
   @override
@@ -67,6 +71,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   }
 
   void _setTripState(Map data) {
+    if (data['flightComparison'] is Map) flightComparison = Map<String, dynamic>.from(data['flightComparison']);
     budget = data['budget'] is Map
         ? Map<String, dynamic>.from(data['budget']) : null;
     replanOptions = data['budgetReplanOptions'] is Map
@@ -102,6 +107,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       busy = true;
       checkingPrices = true;
       loadError = null;
+      flightComparison = null;
+      travelRejections = {};
       alternatives = [];
       activityAdvice = null;
       flightAdvice = null;
@@ -146,6 +153,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
         hotelAdvice = data['hotelAdvice']?.toString();
         activityAlternativeStatus =
             data['activityAlternativeStatus']?.toString();
+        travelRejections = Map<String, dynamic>.from(data['travelRejectionCounts'] as Map? ?? {});
       });
     } catch (e) {
       if (current()) setState(() {
@@ -171,6 +179,27 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     if (!mounted || widget.tripId != tripId || updated == null) return;
     if (updated['id'] == tripId) widget.onApplied?.call(updated);
     await load();
+  }
+
+  Future<void> searchFlights() async {
+    final tripId = widget.tripId;
+    if (tripId == null || applying || openingFlights) return;
+    setState(() => openingFlights = true);
+    try {
+      final response = await api.get('/api/fr5/itineraries/$tripId');
+      final trip = response['itinerary'];
+      if (!mounted) return;
+      if (trip is! Map || trip['id'] != tripId) throw StateError('The current Trip could not be loaded.');
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => FlightScreen(
+        api: api, targetTripId: tripId, targetTrip: Map<String, dynamic>.from(trip),
+        initialOutboundDate: trip['startDate']?.toString(), initialReturnDate: trip['endDate']?.toString(),
+      )));
+      if (mounted) await load();
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => openingFlights = false);
+    }
   }
 
   double? _extractSavings(Map<String, dynamic> item) {
@@ -321,6 +350,16 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
             if (replanOptions != null) ...[
               const Text('Adjust planned food, local transport or eligible optional visits.'),
               FilledButton(onPressed: applying ? null : openReplan, child: const Text('Review budget options')),
+            ],
+            if (flightComparison != null) ...[
+              Text(flightComparison!['status'] == 'eligible'
+                  ? 'Selected flight can be compared with complete matching fares.'
+                  : 'Flight comparison needs review'),
+              for (final reason in (flightComparison!['reasons'] as List? ?? [])) Text('$reason'),
+              Text('${flightComparison!['explanation'] ?? ''}'),
+              for (final reason in travelRejections.entries) Text('${reason.key} (${reason.value})'),
+              OutlinedButton.icon(onPressed: applying || openingFlights ? null : searchFlights,
+                  icon: const Icon(Icons.flight_takeoff), label: const Text('Search Flights')),
             ],
             if (optionsChanged)
               const Text('Options have been refreshed for this trip. Earlier options may no longer apply.'),

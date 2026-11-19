@@ -17,7 +17,7 @@ from services.flight_itinerary_adjustment import (
 def _flight(arrival_date='2026-11-01', arrival_time='15:00', departure_date='2026-11-03', departure_time='10:00'):
     return {
         'id': 'flight_pu3b', 'departureAirport': 'KUL', 'arrivalAirport': 'PEN',
-        'price': 180, 'currency': 'MYR', 'priceBasis': 'itinerary_total',
+        'price': 180, 'currency': 'MYR', 'priceBasis': 'itinerary_total', 'travellerCount': 1,
         'outboundSegments': [{'departureAirportCode': 'KUL', 'arrivalAirportCode': 'PEN', 'departureDate': arrival_date, 'arrivalDate': arrival_date, 'departureTime': '13:30', 'arrivalTime': arrival_time, 'durationMinutes': 90}],
         'returnSegments': [{'departureAirportCode': 'PEN', 'arrivalAirportCode': 'KUL', 'departureDate': departure_date, 'arrivalDate': departure_date, 'departureTime': departure_time, 'arrivalTime': '11:30', 'durationMinutes': 90}],
     }

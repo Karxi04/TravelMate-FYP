@@ -11,7 +11,7 @@ from services.recommendation_discovery import is_planning_candidate
 from services.recommendation_taxonomy import experience_types
 
 
-def test_local_demo_has_one_list_with_provenance_but_only_genuine_rating(client, memory):
+def test_local_demo_has_one_illustrative_list_and_separate_genuine_rating(client, memory):
     from modules.fr03_destination_search_information import routes
     client.application.config['LOCAL_FYP_SAMPLE_REVIEWS'] = True
     real = {'id': 'real', 'travellerId': 'owner', 'travellerName': 'Visitor',
@@ -28,7 +28,8 @@ def test_local_demo_has_one_list_with_provenance_but_only_genuine_rating(client,
             response = client.get(url, headers={**headers(account), **context})
             body = response.json
             assert body['reviewEnvironment'] == 'private_demo'
-            assert body['result']['rating'] == 4 and body['result']['reviews'] == 1
+            assert body['result']['rating'] == 3 and body['result']['reviews'] == 2
+            assert body['result']['genuineSummary'] == {'rating': 4, 'reviews': 1}
             assert [row['id'] for row in body['result']['user_reviews']] == ['real', 'example']
             assert body['result']['user_reviews'][1]['synthetic'] is True
             assert body['result']['user_reviews'][1]['source'] == 'fyp_private'
@@ -65,7 +66,9 @@ def test_regional_fixtures_are_screened_canonical_private_and_not_seeded(client,
         body = client.get(f'/api/fr3/destinations/{identity}/ratings-reviews?view=unified',
                           headers={**headers(), 'X-TravelMate-Review-Context': 'fyp-v1'}).json
     firestore.assert_not_called()
-    assert body['result']['rating'] is None and body['result']['reviews'] == 0
+    assert body['result']['reviews'] == 3
+    assert body['result']['rating'] == round(sum(row['rating'] for row in rows) / 3, 1)
+    assert body['result']['genuineSummary'] == {'rating': None, 'reviews': 0}
     assert len(body['result']['user_reviews']) == 3
     assert rows == before and not memory
 

@@ -172,7 +172,6 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         reviewsFailed = true;
       } else {
         LocalReviewRatings.remember(reviewDestinationId, reviewInfo!);
-        LocalReviewRatings.privateEnvironment.value = privateReviewContext;
       }
     } catch (_) {
       if (!current()) return;

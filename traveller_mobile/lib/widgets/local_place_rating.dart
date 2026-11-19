@@ -8,7 +8,6 @@ import 'travel_widgets.dart';
 /// Presentation only: never substitutes provider scores or changes ranking data.
 class LocalReviewRatings {
   static final revision = ValueNotifier<int>(0);
-  static final privateEnvironment = ValueNotifier<bool>(false);
   static Future<Map<String, dynamic>>? _pending;
   static DateTime? _expires;
   static final Map<String, Map<String, dynamic>> _recent = {};
@@ -41,12 +40,14 @@ class LocalReviewRatings {
 
   static void remember(String id, Map<String, dynamic> summary) {
     final owner = accountUid;
-    if (!ReviewContract.isGenuine(summary)) return;
+    if (!ReviewContract.isDisplaySummary(summary)) return;
     _scopeRecent(owner);
     final canonical = ReviewContract.destinationId(id);
     _recent[canonical] = {
       'rating': summary['rating'],
       'reviews': summary['reviews'],
+      for (final key in ['ratingBasis', 'reviewEnvironment', 'privateExamplesAllowed'])
+        if (summary.containsKey(key)) key: summary[key],
     };
     _recentUntil[canonical] = DateTime.now().add(const Duration(seconds: 30));
     revision.value++;
@@ -74,7 +75,7 @@ class LocalReviewRatings {
     final summaries = await _pending!;
     if (accountUid != uid) return {};
     final summary = summaries[canonical] ?? summaries[id];
-    return summary is Map && ReviewContract.isGenuine(summary)
+    return summary is Map && ReviewContract.isDisplaySummary(summary)
         ? Map<String, dynamic>.from(summary) : {};
   }
 }
@@ -106,7 +107,7 @@ class LocalReviewRatingBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final rating = num.tryParse('${summary['rating']}');
     final count = int.tryParse('${summary['reviews']}') ?? 0;
-    if (!ReviewContract.isGenuine(summary) || rating == null || !rating.isFinite || rating < 1 || rating > 5 || count < 1) {
+    if (!ReviewContract.isDisplaySummary(summary) || rating == null || !rating.isFinite || rating < 1 || rating > 5 || count < 1) {
       return const Text('Not rated yet');
     }
     final score = rating.toStringAsFixed(1);

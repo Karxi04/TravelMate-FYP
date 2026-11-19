@@ -659,6 +659,10 @@ def select_flight():
         return jsonify({'ok': False, 'error': 'Select a valid itinerary first'}), 404
     if current.get('tripType') == 'package' or current.get('packageTrip'):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
+    from services.trip_budget_replan import protected_activity
+    if protected_activity(current.get('selectedFlight') or {}) or any(current.get(key) for key in (
+            'flightBookingId', 'flightPaymentId', 'flightOrderId', 'paymentId', 'paymentRecordId', 'paidTotal')):
+        return jsonify(ok=False, error='A paid or booked flight cannot be replaced here. Open its original record.'), 409
     quote, trusted, quote_error = _quote_item(payload)
     client_match_target = trusted
     return_option = None
@@ -715,6 +719,12 @@ def select_flight():
         date_error = _flight_trip_date_error(current, trusted)
         if date_error:
             return jsonify({'ok': False, **date_error}), 409
+    if quote:
+        count = current.get('travellerCount')
+        if (type(count) not in (int, float) or not math.isfinite(count) or count < 1 or int(count) != count
+                or trusted.get('travellerCount') != int(count)):
+            return _flight_error('flight_trip_passenger_mismatch',
+                                 'The flight passenger count must match this Trip. Confirm the Trip group and search again.', 409)
     if completed_selection_created:
         try:
             _persist_quote(quote)

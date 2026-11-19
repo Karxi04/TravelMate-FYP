@@ -67,8 +67,11 @@ class _AuthorizedReviewApi extends ApiService {
       'source': 'travelmate_database',
       'result': {
         'privateExamplesAllowed': true,
-        'rating': 5.0,
-        'reviews': 1,
+        'rating': 2.8,
+        'reviews': 4,
+        'ratingBasis': 'private_illustrative',
+        'reviewEnvironment': 'private_demo',
+        'genuineSummary': {'rating': 5.0, 'reviews': 1},
         'sampleSummary': {'rating': 2.0, 'reviews': 3},
         'user_reviews': [
           {
@@ -92,7 +95,7 @@ class _AuthorizedReviewApi extends ApiService {
 
 void main() {
   testWidgets(
-      'authorized demo has one list, no toggle, and genuine totals after reopening',
+      'authorized demo summary counts the eligible unified list after reopening',
       (tester) async {
     final api = _AuthorizedReviewApi();
     Future<void> open() async {
@@ -113,7 +116,7 @@ void main() {
     await tester.scrollUntilVisible(find.text('Reviews'), 200);
     expect(find.byType(Switch), findsNothing);
     expect(find.text('Review testing'), findsNothing);
-    expect(find.descendant(of: find.byKey(const ValueKey('destination-review-rating')), matching: find.text('5.0 (1 review)')), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const ValueKey('destination-review-rating')), matching: find.text('2.8 (4 reviews)')), findsOneWidget);
     await tester.scrollUntilVisible(find.text('View all 4 reviews'), 180);
     await tester.ensureVisible(find.text('View all 4 reviews'));
     await tester.pumpAndSettle();
@@ -125,7 +128,7 @@ void main() {
     expect(find.text('Demonstration reviews'), findsNothing);
     await open();
     await tester.scrollUntilVisible(find.text('Reviews'), 200);
-    expect(find.descendant(of: find.byKey(const ValueKey('destination-review-rating')), matching: find.text('5.0 (1 review)')), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const ValueKey('destination-review-rating')), matching: find.text('2.8 (4 reviews)')), findsOneWidget);
     expect(api.views, ['unified', 'unified']);
   });
 

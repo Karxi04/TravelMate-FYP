@@ -1216,6 +1216,42 @@ def _flight_cabin(current):
     return next(iter(cabins)) if len(cabins) == 1 else None
 
 
+def _flight_comparison_diagnostics(current):
+    """Eligibility evidence only; no provider searches, writes or quote repricing."""
+    flight = current.get('selectedFlight') or {}
+    reasons = []
+    if not flight:
+        reasons.append('No selected flight is available to compare. Search Flights for this trip.')
+    else:
+        if protected_activity(flight) or any(current.get(key) for key in (
+                'flightBookingId', 'flightPaymentId', 'flightOrderId', 'paymentId', 'paymentRecordId', 'paidTotal')):
+            reasons.append('This flight has a paid or booking reference; manage the original arrangement.')
+        if current.get('travelMode') != 'flight':
+            reasons.append('The saved travel mode is not flight.')
+        legs = flight.get('outboundSegments') or []
+        if not legs:
+            reasons.append('The selected flight is missing its outbound route and dates.')
+        else:
+            from sequence_contract.validators import flightSearchValidationError
+            returns = flight.get('returnSegments') or []
+            route = {'departure_id': legs[0].get('departureAirportCode') or '',
+                     'arrival_id': legs[-1].get('arrivalAirportCode') or '',
+                     'outbound_date': legs[0].get('departureDate') or '',
+                     'return_date': returns[0].get('departureDate') if returns else None}
+            if flightSearchValidationError(route):
+                reasons.append('The selected route or travel dates are invalid or no longer searchable.')
+        if current.get('flightCurrency') != 'MYR' or not current.get('flightPriceBasis'):
+            reasons.append('The saved flight currency or total-fare price basis is missing.')
+        if not current.get('flightCost') or flight.get('price') != current.get('flightCost'):
+            reasons.append('The selected flight amount does not match the saved trip estimate.')
+        if flight.get('travellerCount') != traveller_count(current.get('travellerCount')):
+            reasons.append('The selected flight passenger count is missing or does not match this trip.')
+        if _flight_cabin(current) not in {1, 2, 3, 4}:
+            reasons.append('The selected cabin class cannot be established from its saved quote or segments.')
+    return {'status': 'eligible' if not reasons else 'needs_review', 'reasons': reasons,
+            'explanation': 'Comparable fares must retain the route, dates, cabin, passenger count and complete MYR price basis.'}
+
+
 def _flight_alternative_options(current):
     from modules.fr07_flight_search.routes import (
         _FLIGHT_QUOTES, _completed_option, _criteria, _persist_quote,
@@ -1224,6 +1260,8 @@ def _flight_alternative_options(current):
     from services.serpapi_service import retrieveFlightOptions, retrieveFlightReturns
     from sequence_contract.validators import flightSearchValidationError
 
+    if _flight_comparison_diagnostics(current)['status'] != 'eligible':
+        return []
     flight = current.get('selectedFlight') or {}
     legs = flight.get('outboundSegments') or []
     if (current.get('travelMode') != 'flight' or not legs
@@ -1282,6 +1320,9 @@ def _flight_alternative_options(current):
 def _resolve_cost_alternative(kind, data, current):
     """Resolve existing owned references; never accept client replacement prices."""
     if kind == 'flight':
+        if protected_activity(current.get('selectedFlight') or {}) or any(current.get(key) for key in (
+                'flightBookingId', 'flightPaymentId', 'flightOrderId', 'paymentId', 'paymentRecordId', 'paidTotal')):
+            raise _AlternativeConflict('A paid or booked flight cannot be replaced here. Manage the original arrangement.')
         if current.get('travelMode') != 'flight' or not (current.get('selectedFlight') or {}).get('outboundSegments'):
             raise _AlternativeConflict('This itinerary has no comparable selected flight.')
         from modules.fr07_flight_search.routes import (
@@ -1430,14 +1471,19 @@ def lower_cost_alternatives(iid):
     alternatives = []
     seen = set()
     duplicate_count = 0
+    travel_rejections = {}
     for kind, options in (('flight', flights), ('hotel', hotels)):
         for option in options:
             try:
                 trusted, _, reference, comparison = _resolve_cost_alternative(kind, option, current)
-            except (ValueError, KeyError, TypeError):
+            except (ValueError, KeyError, TypeError) as error:
+                reason = str(error) if isinstance(error, _AlternativeConflict) else 'Incomplete comparison metadata.'
+                travel_rejections[reason] = travel_rejections.get(reason, 0) + 1
                 continue
             savings = _alternative_savings(kind, trusted, comparison)
             if savings is None:
+                reason = 'No lower verified MYR total with the same passenger count and price basis.'
+                travel_rejections[reason] = travel_rejections.get(reason, 0) + 1
                 continue
             if kind == 'flight':
                 identity = tuple(
@@ -1523,8 +1569,11 @@ def lower_cost_alternatives(iid):
         'stateVersion': _alternative_state(current),
         'activityAlternativeStatus': 'available' if activity_items else 'priced_replacement_unavailable',
         'activityAdvice': None if activity_items else activity_advice,
+        'flightComparison': _flight_comparison_diagnostics(current),
+        'travelRejectionCounts': travel_rejections,
+        'flightCandidateCount': len(flights),
         'flightAdvice': (
-            flight_advice or 'No cheaper complete flight quote matched this trip. Search Flights for more options.'
+            flight_advice or ' '.join(_flight_comparison_diagnostics(current)['reasons']) or 'No cheaper complete flight quote matched this trip. Search Flights for more options.'
             if current.get('selectedFlight') and not any(item['alternativeType'] == 'flight' for item in alternatives)
             else None
         ),
@@ -1553,6 +1602,7 @@ def budget_replan_state(iid):
         return jsonify(ok=False, error='Itinerary not found'), 404
     budget = calculateBudget(current)
     return jsonify(ok=True, budget=budget, stateVersion=_alternative_state(current),
+                   flightComparison=_flight_comparison_diagnostics(current),
                    budgetReplanOptions=budget_replan_options(current, budget) if _can_replan(current) else None)
 
 
