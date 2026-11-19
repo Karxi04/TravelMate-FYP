@@ -109,11 +109,11 @@ void main() {
 
     await open();
     expect(find.textContaining('Private demonstration environment.'),
-        findsOneWidget);
+        findsNothing);
     await tester.scrollUntilVisible(find.text('Reviews'), 200);
     expect(find.byType(Switch), findsNothing);
     expect(find.text('Review testing'), findsNothing);
-    expect(find.text('5.0 · 1 review'), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const ValueKey('destination-review-rating')), matching: find.text('5.0 (1 review)')), findsOneWidget);
     await tester.scrollUntilVisible(find.text('View all 4 reviews'), 180);
     await tester.ensureVisible(find.text('View all 4 reviews'));
     await tester.pumpAndSettle();
@@ -125,7 +125,7 @@ void main() {
     expect(find.text('Demonstration reviews'), findsNothing);
     await open();
     await tester.scrollUntilVisible(find.text('Reviews'), 200);
-    expect(find.text('5.0 · 1 review'), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const ValueKey('destination-review-rating')), matching: find.text('5.0 (1 review)')), findsOneWidget);
     expect(api.views, ['unified', 'unified']);
   });
 
@@ -136,8 +136,8 @@ void main() {
         initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Reviews'), 220);
-    expect(find.text('3.0 · 1 review'), findsNothing);
-    expect(find.text('5.0 · 1 review'), findsOneWidget);
+    expect(find.text('3.0 (1 review)'), findsNothing);
+    expect(find.descendant(of: find.byKey(const ValueKey('destination-review-rating')), matching: find.text('5.0 (1 review)')), findsOneWidget);
     expect(find.text('View community reviews'), findsNothing);
     await tester.scrollUntilVisible(find.text('Write a review'), 140);
     expect(find.text('Previously available sample.'), findsNothing);
@@ -151,8 +151,8 @@ void main() {
         initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Reviews'), 220);
-    expect(find.text('5.0 · 1 review'), findsOneWidget);
-    expect(find.text('3.0 · 3 reviews'), findsNothing);
+    expect(find.descendant(of: find.byKey(const ValueKey('destination-review-rating')), matching: find.text('5.0 (1 review)')), findsOneWidget);
+    expect(find.text('3.0 (3 reviews)'), findsNothing);
     expect(find.text('Community reviews'), findsNothing);
     expect(find.text('Demonstration reviews'), findsNothing);
     expect(find.text('Includes fictional demo reviews.'), findsNothing);
@@ -173,7 +173,7 @@ void main() {
         initialDestination: const {'destinationId': 'local_penang_hill', 'title': 'Penang Hill'})));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Reviews'), 220);
-    expect(find.text('5.0 · 1 review'), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const ValueKey('destination-review-rating')), matching: find.text('5.0 (1 review)')), findsOneWidget);
     expect(find.text('Includes fictional demo reviews.'), findsNothing);
     expect(find.text('Demonstration reviews'), findsNothing);
     expect(find.text('Sample review'), findsNothing);

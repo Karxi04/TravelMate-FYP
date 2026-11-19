@@ -108,7 +108,7 @@ void main() {
                         compact: entry == 'Nearby')));
       })));
       await tester.pumpAndSettle();
-      expect(find.text('4.0 · 2 reviews'), findsOneWidget);
+      expect(find.text('4.0 (2 reviews)'), findsOneWidget);
       expect(find.textContaining('4.9'), findsNothing);
       await tester.ensureVisible(find.text('View'));
       await tester.tap(find.text('View'));
@@ -129,10 +129,11 @@ void main() {
     LocalReviewRatings.remember('same-place', {'rating': null, 'reviews': 0});
     await tester.pumpWidget(MaterialApp(
         home: Scaffold(
-            body: DestinationCard(destination: place, onView: () {}))));
+            body: SingleChildScrollView(child: DestinationCard(destination: place, onView: () {})))));
     await tester.pumpAndSettle();
     expect(find.textContaining('4.9'), findsNothing);
     expect(find.byIcon(Icons.star_rounded), findsNothing);
+    expect(find.text('Not rated yet'), findsOneWidget);
   });
   testWidgets('cards suppress legacy sample totals and refresh genuine totals',
       (tester) async {
@@ -142,15 +143,15 @@ void main() {
       home: Scaffold(body: LocalPlaceRating(place: place, api: api)),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('3.0 · 3 reviews'), findsNothing);
+    expect(find.text('3.0 (3 reviews)'), findsNothing);
     expect(find.byIcon(Icons.star_rounded), findsNothing);
     expect(find.textContaining('FYP'), findsNothing);
 
     api.cardSummary = {'rating': 4.2, 'reviews': 8};
     LocalReviewRatings.invalidate();
     await tester.pumpAndSettle();
-    expect(find.text('4.2 · 8 reviews'), findsOneWidget);
-    expect(find.text('3.0 · 3 reviews'), findsNothing);
+    expect(find.text('4.2 (8 reviews)'), findsOneWidget);
+    expect(find.text('3.0 (3 reviews)'), findsNothing);
   });
   testWidgets('local rating fits a narrow compact card with large text', (tester) async {
     LocalReviewRatings.remember('same-place', {'rating':4.0,'reviews':2});
@@ -159,7 +160,7 @@ void main() {
       child: Scaffold(body:Align(alignment:Alignment.topLeft,child:SizedBox(width:320,
         child:SingleChildScrollView(child:DestinationCard(destination:place,onView:(){},compact:true))))))));
     await tester.pumpAndSettle();
-    expect(find.text('4.0 · 2 reviews'),findsOneWidget);
+    expect(find.text('4.0 (2 reviews)'),findsOneWidget);
     expect(tester.takeException(),isNull);
   });
   test('partial weekly map retains split sessions, closed and unreported days',

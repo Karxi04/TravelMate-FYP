@@ -21,6 +21,7 @@ class FavouritesController extends ChangeNotifier {
 
   void _refresh() => unawaited(load());
   bool contains(String id) => items.any((e) => DestinationUtils.resolveId(e) == id);
+  bool containsPlace(Map<String, dynamic> place) => items.any((row) => DestinationUtils.samePlace(row, place));
 
   Future<void> load() async {
     final version = ++_version;
@@ -47,7 +48,7 @@ class FavouritesController extends ChangeNotifier {
     busyIds.add(id);
     notifyListeners();
     try {
-      final existing = items.where((e) => DestinationUtils.resolveId(e) == id).toList();
+      final existing = items.where((e) => DestinationUtils.samePlace(e, destination)).toList();
       if (existing.isEmpty) {
         await api.post('/api/fr3/favourites', {...destination, 'destinationId': id});
       } else {

@@ -61,6 +61,9 @@ class _FakeApiService extends ApiService {
   final bool staleSnapshot;
   final bool failGenerationOnce;
   final bool snapshotMismatch;
+  final bool timeoutAfterCommit;
+  final bool contentionAfterCommit;
+  int statusReads = 0;
   int recommendationCalls = 0;
   int recommendationReads = 0;
   int generationCalls = 0;
@@ -78,6 +81,8 @@ class _FakeApiService extends ApiService {
     this.staleSnapshot = false,
     this.failGenerationOnce = false,
     this.snapshotMismatch = false,
+    this.timeoutAfterCommit = false,
+    this.contentionAfterCommit = false,
   });
 
   @override
@@ -97,6 +102,8 @@ class _FakeApiService extends ApiService {
       generationBodies.add(Map<String, dynamic>.from(lastGenerationBody!));
       trip.addAll(lastGenerationBody!);
       if (generationGate != null) await generationGate!.future;
+      if (timeoutAfterCommit) throw TimeoutException('Synthetic response lost after commit');
+      if (contentionAfterCommit) throw const ApiException('This itinerary changed.', 409, {});
       if (snapshotMismatch) {
         throw const ApiException(
           'Recommendation snapshot destination does not match this trip.',
@@ -137,6 +144,11 @@ class _FakeApiService extends ApiService {
 
   @override
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
+    if (path == '/api/fr5/personalised-trips/status') {
+      statusReads++;
+      return {'ok': true, 'status': failGenerationOnce && generationCalls == 1 ? 'generation_failed' : 'planned',
+        'tripId': trip['id'], 'itinerary': trip, 'retryable': true, 'stage': 'budget_calculation'};
+    }
     if (path == '/api/fr2/preferences') {
       return {
         'ok': true,
@@ -236,6 +248,24 @@ Future<void> _submit(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('concurrent trip transition recovers the saved result without refreshing recommendations', (tester) async {
+    final api = _FakeApiService(contentionAfterCommit: true);
+    await _pumpPlanning(tester, api);
+    await _submit(tester);
+    expect(api.generationCalls, 1);
+    expect(api.statusReads, 1);
+    expect(api.recommendationCalls, 0);
+    expect(find.byType(TripDetailsScreen), findsOneWidget);
+  });
+  testWidgets('lost generation response recovers one saved trip without reposting', (tester) async {
+    final api = _FakeApiService(timeoutAfterCommit: true);
+    await _pumpPlanning(tester, api);
+    await _submit(tester);
+    expect(api.generationCalls, 1);
+    expect(api.statusReads, 1);
+    expect(find.byType(TripDetailsScreen), findsOneWidget);
+    expect(api.posts, ['/api/fr5/personalised-trips/generate']);
+  });
   testWidgets('optional origin and undecided defaults do not imply free travel',
       (tester) async {
     final api = _FakeApiService();

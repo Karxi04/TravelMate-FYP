@@ -236,7 +236,7 @@ def test_count_update_refreshes_daily_cost_without_reordering(client, mock_trave
     before = deepcopy(data)
     with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord', return_value=data), \
          patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord',
-               side_effect=lambda _c, _id, changes: {**data, **changes}):
+               side_effect=lambda _c, _id, changes, expected=None: {**data, **changes}):
         response = client.put('/api/fr5/itineraries/fixture', json={'travellerCount': 4},
                               headers={'Authorization': 'Bearer valid_test_token'})
     assert response.status_code == 200
@@ -257,7 +257,7 @@ def test_generation_persists_candidate_pricing_and_matching_daily_budget(client,
          patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveLocationAndTravelTime', return_value=[]), \
          patch('modules.fr05_smart_itinerary_budget_planner.routes._forecast_for', return_value=({}, None)), \
          patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord',
-               side_effect=lambda _c, _id, changes: {**data, **changes}):
+               side_effect=lambda _c, _id, changes, expected=None: {**data, **changes}):
         response = client.post('/api/fr5/itineraries/fixture/generate', json={},
                                headers={'Authorization': 'Bearer valid_test_token'})
     assert response.status_code == 200

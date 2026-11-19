@@ -2,7 +2,8 @@ from flask import Blueprint, request, jsonify, g
 from auth_utils import auth_required
 from utils import utc_now_iso
 from sequence_contract.firebase_firestore import retrieveRecord, claimRecord, updateRecord, deleteRecord
-from services.review_service import valid_review, review_id, screen_submission, ReviewConflict
+from services.review_service import (valid_review, review_id, screen_submission, ReviewConflict,
+                                     review_revision, edits_used, MAX_REVIEW_EDITS)
 from services.review_destination import review_destination_id, review_destination_ids
 from google.api_core.exceptions import Aborted, DeadlineExceeded
 
@@ -12,7 +13,9 @@ bp = Blueprint('fr10_feedback', __name__, url_prefix='/api/fr10')
 @bp.get('/feedback')
 @auth_required(['traveller'])
 def own_feedback():
-    return jsonify({'ok': True, 'items': retrieveRecord('feedback', filters=[('travellerId', '==', g.uid)])})
+    rows = retrieveRecord('feedback', filters=[('travellerId', '==', g.uid)])
+    return jsonify({'ok': True, 'items': [{**row, 'revision': review_revision(row),
+                    'editsRemaining': max(0, MAX_REVIEW_EDITS - edits_used(row))} for row in rows]})
 
 
 @bp.post('/feedback')
@@ -44,7 +47,8 @@ def submit_feedback():
         profile = retrieveRecord('users', g.uid) or {}
         now = utc_now_iso()
         data = {**payload, 'travellerId': g.uid, 'travellerName': profile.get('name') or 'Traveller',
-                'submittedAt': now, 'updatedAt': now, **screen_submission(payload['comment'], payload['rating'])}
+                'submittedAt': now, 'updatedAt': now, 'editCount': 0,
+                **screen_submission(payload['comment'], payload['rating'])}
         identity = review_id(g.uid, payload['destinationId'])
         try:
             result, created = (existing[0], False) if existing else claimRecord('feedback', identity, data)
@@ -79,15 +83,22 @@ def update_feedback(fid):
     payload = request.get_json(silent=True)
     if not valid_review(payload, partial=True):
         return jsonify({'ok': False, 'error': 'Invalid feedback update'}), 400
+    expected_revision = payload.pop('expectedRevision', None)
+    expected_updated = payload.pop('expectedUpdatedAt', None)
     if 'comment' in payload:
         payload['comment'] = payload['comment'].strip()
     if all(current.get(key) == value for key, value in payload.items()):
         return jsonify({'ok': True, 'feedback': current})
+    if ((expected_revision and expected_revision != review_revision(current))
+            or (expected_updated is not None and expected_updated != current.get('updatedAt'))):
+        return jsonify(ok=False, error='This review changed. Refresh before editing again.'), 409
+    if edits_used(current) >= MAX_REVIEW_EDITS:
+        return jsonify(ok=False, error='No edits remaining. Each review can be edited twice.'), 409
     screening = screen_submission(
         payload.get('comment', current.get('comment', '')),
         payload.get('rating', current.get('rating')),
     )
-    updates = {**payload, 'updatedAt': utc_now_iso(), **screening}
+    updates = {**payload, 'editCount': edits_used(current) + 1, 'updatedAt': utc_now_iso(), **screening}
     try:
         return jsonify({'ok': True, 'feedback': updateRecord('feedback', fid, updates, expected=current)})
     except ReviewConflict as error:

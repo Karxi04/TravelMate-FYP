@@ -28,10 +28,10 @@ def _removable(trip):
     if (any(trip.get(key) for key in ('paidTotal', 'paymentId', 'paymentRecordId',
                                       'checkoutOrderId', 'purchasedPackages'))
             or any(row.get('type') == 'actual' and row.get('category') == 'Activities'
-                   for row in trip.get('manualExpenses') or [] if isinstance(row, dict))
-            or any(protected_activity(row) for row in activities)):
+                   for row in trip.get('manualExpenses') or [] if isinstance(row, dict))):
         return []
-    return [row for row in activities if row.get('activityId') and row.get('optional') is not False]
+    return [row for row in activities if row.get('activityId') and row.get('optional') is not False
+            and not protected_activity(row)]
 
 
 def _selection_replan(trip, budget):
@@ -105,6 +105,15 @@ def preview_budget_replan(trip, changes):
         kept = [row for row in trip.get('activities', []) if row.get('activityId') not in removed]
         # Retain suggestions for later. They must not become new billable visits in this preview.
         planned = recalculateItinerary({**trip, 'activities': kept, 'unscheduledSuggestions': []})
+        for original in kept:
+            if not protected_activity(original):
+                continue
+            retained = next((row for row in planned['activities'] if row['activityId'] == original['activityId']), {})
+            protected_fields = ('dayNo', 'timeSlot', 'scheduledStartTime', 'scheduledEndTime',
+                                'estimatedCost', 'unitPrice', 'pricingUnit', 'currency',
+                                'bookingId', 'paymentId', 'bookingReference')
+            if any(retained.get(key) != original[key] for key in protected_fields if key in original):
+                raise ValueError('Removing this visit would change a protected arrangement. Adjust allowances instead.')
         if {row['activityId'] for row in planned['activities']} != {row['activityId'] for row in kept}:
             raise ValueError('The remaining visits cannot fit safely on their assigned days.')
         patch.update({key: planned[key] for key in _SCHEDULE if key in planned})

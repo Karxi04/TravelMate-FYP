@@ -259,11 +259,13 @@
 }
 
 .fulfilment-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, min(45%, 138px)) minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
 }
+
+.fulfilment-row > :last-child { justify-self: start; max-width: 100%; }
 
 .fulfilment-row-label {
   font-size: 10px;
@@ -271,7 +273,7 @@
   color: var(--ink-muted);
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 /* Status Badges - Always keep words together without ugly splits */

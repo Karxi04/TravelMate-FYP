@@ -39,7 +39,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   bool saving = false;
   bool adding = false;
   late final FavouritesController favourites;
-  bool get saved => favourites.contains(destinationId);
+  bool get saved => favourites.containsPlace({...detail, 'destinationId': destinationId});
   void _favouritesChanged() { if (mounted) setState(() {}); }
   bool showAllReviews = false;
   int _loadRevision = 0;
@@ -172,6 +172,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
         reviewsFailed = true;
       } else {
         LocalReviewRatings.remember(reviewDestinationId, reviewInfo!);
+        LocalReviewRatings.privateEnvironment.value = privateReviewContext;
       }
     } catch (_) {
       if (!current()) return;
@@ -333,6 +334,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             children: [
               if (category.isNotEmpty)
                 StatusChip(text: category, tone: AppStatusTone.neutral),
+              LocalReviewRatingBadge(summary: reviewInfo ?? const {}),
               if (_showSourceDisclosure)
                 const Padding(
                   padding: EdgeInsets.only(top: AppSpacing.xs),
@@ -745,8 +747,9 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const AppSectionHeader(title: 'Reviews'),
-        if (reviewInfo?['rating'] != null)
-          LocalReviewRatingBadge(summary: reviewInfo!),
+        if (exampleReviewsUnavailable)
+          const Text('Some reviews are temporarily unavailable. Pull down to retry.'),
+        if (reviewInfo != null) LocalReviewRatingBadge(key: const ValueKey('destination-review-rating'), summary: reviewInfo!),
         const SizedBox(height: AppSpacing.sm),
         if (reviewsFailed)
           AppErrorState(
@@ -942,14 +945,6 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
           children: [
             if (loading) ...[
               const LinearProgressIndicator(),
-              const SizedBox(height: AppSpacing.sm),
-            ],
-            if (privateReviewContext) ...[
-              InkCard(
-                  child: Text(
-                'Private demonstration environment. Example reviews appear alongside genuine submissions; rating totals count genuine reviews only.'
-                '${exampleReviewsUnavailable ? ' Some example content is temporarily unavailable.' : ''}',
-              )),
               const SizedBox(height: AppSpacing.sm),
             ],
             _hero(),

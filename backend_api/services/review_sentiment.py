@@ -43,6 +43,8 @@ def classify_review_sentiment(normalized, rating):
     normalized = re.sub(r"\b(\w+)n't\b", r'\1 not', normalized)
     normalized = re.sub(r'\bnot\s+(?:only|just)\b', '', normalized)
     normalized = re.sub(r'[^\S\n]+', ' ', normalized)
+    # Advice to avoid a condition is not a report that the visit was unpleasant.
+    normalized = re.sub(r'\b(?:avoid|avoiding|beat)\s+(?:the\s+)?(?:crowds?|heat|queues?)\b', '', normalized)
     positive, negative = {}, {}
     balanced = False
     for clause in _CLAUSE_BOUNDARIES.split(normalized):
@@ -69,7 +71,7 @@ def classify_review_sentiment(normalized, rating):
     elif positive or negative:
         label = 'positive' if positive else 'negative'
     else:
-        label = 'uncertain'
+        label = 'neutral' if re.search(r'\b(?:architecture|sightseeing|views?|visit|hours?|arrive|morning|temple|museum|garden|transport|entrance)\b', normalized) else 'uncertain'
 
     valid_rating = type(rating) is int and 1 <= rating <= 5
     disagreement = valid_rating and (

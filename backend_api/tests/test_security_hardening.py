@@ -135,6 +135,7 @@ def test_feedback_rules_allowlist_expected_fields_and_reject_unknown_fields():
         'moderationStatus',
         'submittedAt',
         'updatedAt',
+        'editCount',
     }
     valid_payload_fields = {
         'destinationId',

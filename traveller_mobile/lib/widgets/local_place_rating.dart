@@ -8,6 +8,7 @@ import 'travel_widgets.dart';
 /// Presentation only: never substitutes provider scores or changes ranking data.
 class LocalReviewRatings {
   static final revision = ValueNotifier<int>(0);
+  static final privateEnvironment = ValueNotifier<bool>(false);
   static Future<Map<String, dynamic>>? _pending;
   static DateTime? _expires;
   static final Map<String, Map<String, dynamic>> _recent = {};
@@ -86,7 +87,7 @@ class LocalPlaceRating extends StatelessWidget {
   Widget build(BuildContext context) => ValueListenableBuilder<int>(
         valueListenable: LocalReviewRatings.revision,
         builder: (_, revision, child) => FutureBuilder<Map<String, dynamic>>(
-          future: LocalReviewRatings.forPlace(DestinationUtils.resolveId(place),
+          future: LocalReviewRatings.forPlace((place['reviewDestinationId'] ?? DestinationUtils.resolveId(place)).toString(),
               api: api),
           builder: (_, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) return const SizedBox.shrink();
@@ -105,15 +106,15 @@ class LocalReviewRatingBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final rating = num.tryParse('${summary['rating']}');
     final count = int.tryParse('${summary['reviews']}') ?? 0;
-    if (rating == null || !rating.isFinite || rating < 1 || rating > 5 || count < 1) {
-      return const SizedBox.shrink();
+    if (!ReviewContract.isGenuine(summary) || rating == null || !rating.isFinite || rating < 1 || rating > 5 || count < 1) {
+      return const Text('Not rated yet');
     }
     final score = rating.toStringAsFixed(1);
     final reviews = '$count ${count == 1 ? 'review' : 'reviews'}';
     return Semantics(
       label: '$score out of 5, $reviews',
       excludeSemantics: true,
-      child: StatusChip(text: '$score · $reviews', icon: Icons.star_rounded),
+      child: StatusChip(text: '$score ($reviews)', icon: Icons.star_rounded),
     );
   }
 }

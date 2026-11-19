@@ -54,8 +54,9 @@ def fixture(items=None, *, new_trip=False, snapshot_problem=None, **changes):
             return None
         raise AssertionError('Unexpected read outside isolated generation fixtures')
 
-    def persist(collection, document_id, values):
+    def persist(collection, document_id, values, expected=None):
         assert collection == 'itineraries' and document_id == current['id']
+        assert expected is None or expected == current
         current.update(deepcopy(values))
         return deepcopy(current)
 
@@ -74,6 +75,7 @@ def fixture(items=None, *, new_trip=False, snapshot_problem=None, **changes):
     with patch.object(routes, 'retrieveRecord', side_effect=retrieve), \
          patch.object(routes, 'updateRecord', side_effect=persist) as writes, \
          patch.object(routes, 'storeRecord', side_effect=store if new_trip else forbidden), \
+         patch.object(routes, 'claimRecord', side_effect=lambda collection, identity, data: (store(collection, data, identity), True)), \
          patch.object(routes, 'retrieveDestinationResults', side_effect=forbidden), \
          patch.object(routes, 'geocode', side_effect=forbidden), \
          patch.object(routes, 'retrieveSevenDayForecast', side_effect=forbidden), \

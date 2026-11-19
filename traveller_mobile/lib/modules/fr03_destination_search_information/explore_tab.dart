@@ -135,9 +135,7 @@ class _ExploreTabState extends State<ExploreTab> {
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
             .toList();
-        final unique = <String, Map<String, dynamic>>{};
-        for (final item in [...previous, ...incoming]) { unique.putIfAbsent(DestinationUtils.resolveId(item), () => item); }
-        results = unique.values.toList();
+        results = DestinationUtils.uniquePlaces([...previous, ...incoming]);
         if (loadMore) visibleLimit += 20;
         nextOffset = data['nextOffset'] as int?;
         _resultCriteria = requestedCriteria;
@@ -427,7 +425,7 @@ class _ExploreTabState extends State<ExploreTab> {
               source: resultSource,
               showSource: false,
               onView: () => _viewResult(item),
-              saved: favourites.contains(DestinationUtils.resolveId(item)),
+              saved: favourites.containsPlace(item),
               saveEnabled: favourites.loaded && favourites.error == null &&
                   !favourites.busyIds.contains(DestinationUtils.resolveId(item)),
               onSave: _isArea(item) ? null : () => _saveDestination(item),

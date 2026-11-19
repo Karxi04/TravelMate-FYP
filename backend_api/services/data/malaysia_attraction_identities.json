@@ -1,0 +1,4469 @@
+{
+  "version": "malaysia-attraction-identities-20261119",
+  "verifiedAt": "2026-11-19",
+  "verificationScope": "Official guide names, state and visitor-attraction identity; locality follows guide grouping. Coordinates are included only from explicit source target pins with matching state, or an official destination coordinate. Operating status, prices and opening hours require further evidence.",
+  "usage": "Named-place discovery and review identity only. Do not append to a planning or recommendation pool without its existing metadata/geographic validation.",
+  "authenticReviewAvailability": "Not audited against production. No external review text, reviewer identity or rating is included.",
+  "records": [
+    {
+      "destinationId": "local_penang_hill",
+      "title": "Penang Hill",
+      "city": "Air Itam",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/",
+      "gps_coordinates": {
+        "latitude": 5.4084613,
+        "longitude": 100.2773317
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_penang_national_park",
+      "title": "Penang National Park",
+      "city": "Teluk Bahang",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/",
+      "gps_coordinates": {
+        "latitude": 5.4471423,
+        "longitude": 100.1939923
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_tropical_fruit_farm",
+      "title": "Tropical Fruit Farm",
+      "city": "Teluk Bahang",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_entopia",
+      "title": "Entopia",
+      "city": "Teluk Bahang",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_tropical_spice_garden",
+      "title": "Tropical Spice Garden",
+      "city": "Teluk Bahang",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/",
+      "gps_coordinates": {
+        "latitude": 5.4634881,
+        "longitude": 100.2293398
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_esc",
+      "title": "ESCAPE",
+      "city": "Teluk Bahang",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Adventure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/",
+      "gps_coordinates": {
+        "latitude": 5.4497405,
+        "longitude": 100.214038
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_the_top_komtar",
+      "title": "The TOP Komtar",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/",
+      "gps_coordinates": {
+        "latitude": 5.4145785,
+        "longitude": 100.3299332
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_chowrasta_bazaar",
+      "title": "Chowrasta Bazaar",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/",
+      "gps_coordinates": {
+        "latitude": 5.4181347,
+        "longitude": 100.3313948
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_penang_batik_factory",
+      "title": "Penang Batik Factory",
+      "city": "Teluk Bahang",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/",
+      "gps_coordinates": {
+        "latitude": 5.456677,
+        "longitude": 100.2154512
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_batu_ferringhi",
+      "title": "Batu Feringghi",
+      "city": "Batu Ferringhi",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/",
+      "gps_coordinates": {
+        "latitude": 5.47124,
+        "longitude": 100.246491
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_dhammikarama_burmese_temple",
+      "title": "Dhammikarama Burmese Temple",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_goddess_of_mercy_temple",
+      "title": "Goddess of Mercy Temple",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_kapitan_keling_mosque",
+      "title": "Kapitan Keling Mosque",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_sri_mariamman_temple",
+      "title": "Sri Mariamman Temple",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_st_george_s_church",
+      "title": "St. George's Church",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "demo_penang_street_art",
+      "title": "Penang Street Art",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_sun_yat_sen_museum",
+      "title": "Sun Yat Sen Museum",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_queen_victoria_clock_tower",
+      "title": "Queen Victoria Clock Tower",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_upside_down_museum",
+      "title": "Upside Down Museum",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_wonderfood",
+      "title": "Wonder Food Museum",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_penang_bird_park",
+      "title": "Penang Bird Park",
+      "city": "Butterworth",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_cherok_tokun_nature_park",
+      "title": "Cherok Tokun Nature Park",
+      "city": "Bukit Mertajam",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_titi_kerawang_waterfall",
+      "title": "Titi Kerawang Waterfall",
+      "city": "Balik Pulau",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_the_habitat",
+      "title": "The Habitat",
+      "city": "Air Itam",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_my_penang_cheah_kongsi",
+      "title": "Cheah Kongsi",
+      "city": "George Town",
+      "state": "Penang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/"
+    },
+    {
+      "destinationId": "local_langkawi_skycab",
+      "title": "Langkawi SkyCab",
+      "city": "Langkawi",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 6.3711831,
+        "longitude": 99.671458
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_kilim_geopark",
+      "title": "Kilim Geopark",
+      "city": "Langkawi",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 6.4050671,
+        "longitude": 99.858348
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_pulau_payar_marine_park",
+      "title": "Pulau Payar Marine Park",
+      "city": "Langkawi",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 6.3187496,
+        "longitude": 99.8513386
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_tasik_dayang_bunting",
+      "title": "Tasik Dayang Bunting",
+      "city": "Langkawi",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 6.2058055,
+        "longitude": 99.7852974
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_oriental_village",
+      "title": "Oriental Village",
+      "city": "Langkawi",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 6.3702185,
+        "longitude": 99.6713339
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_bujang_valley_archaeology_museum",
+      "title": "Bujang Valley Archaeology Museum",
+      "city": "Merbok",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 5.738079,
+        "longitude": 100.4144645
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_ulu_legong_hot_springs",
+      "title": "Ulu Legong Hot Springs",
+      "city": "Baling",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 5.8168513,
+        "longitude": 100.9357854
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_treetop_walk_and_sedim_river",
+      "title": "Treetop Walk and Sedim River",
+      "city": "Kulim",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Adventure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_paddy_museum",
+      "title": "Paddy Museum",
+      "city": "Alor Setar",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 6.1913989,
+        "longitude": 100.3261704
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_alor_setar_tower",
+      "title": "Alor Setar Tower",
+      "city": "Alor Setar",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 6.1243,
+        "longitude": 100.36735
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_sultan_abdul_halim_gallery",
+      "title": "Sultan Abdul Halim Gallery",
+      "city": "Alor Setar",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 6.121448,
+        "longitude": 100.3670713
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_masjid_zahir",
+      "title": "Masjid Zahir",
+      "city": "Alor Setar",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 6.1203428,
+        "longitude": 100.3651412
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_gunung_keriang_caves",
+      "title": "Gunung Keriang Caves",
+      "city": "Alor Setar",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 6.1875,
+        "longitude": 100.3316667
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_ulu_muda_eco_park",
+      "title": "Ulu Muda Eco Park",
+      "city": "Sik",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/",
+      "gps_coordinates": {
+        "latitude": 6.182652,
+        "longitude": 100.9469902
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_balai_besar",
+      "title": "Balai Besar",
+      "city": "Alor Setar",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_balai_nobat",
+      "title": "Balai Nobat",
+      "city": "Alor Setar",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_kedah_state_museum",
+      "title": "Kedah State Museum",
+      "city": "Alor Setar",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_kota_kuala_kedah",
+      "title": "Kota Kuala Kedah",
+      "city": "Alor Setar",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_pekan_rabu",
+      "title": "Pekan Rabu",
+      "city": "Alor Setar",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_rumah_merdeka",
+      "title": "Rumah Merdeka",
+      "city": "Alor Setar",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_gunung_jerai",
+      "title": "Gunung Jerai",
+      "city": "Yan",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_pantai_merdeka",
+      "title": "Pantai Merdeka",
+      "city": "Kuala Muda",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_eagle_square",
+      "title": "Eagle Square",
+      "city": "Langkawi",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_kedah_seven_wells_waterfall",
+      "title": "Seven Wells Waterfall",
+      "city": "Langkawi",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_underwater_langkawi",
+      "title": "Underwater World",
+      "city": "Langkawi",
+      "state": "Kedah",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kedah/"
+    },
+    {
+      "destinationId": "local_my_perlis_gua_kelam_recreational_park",
+      "title": "Gua Kelam Recreational Park",
+      "city": "Kaki Bukit",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/",
+      "gps_coordinates": {
+        "latitude": 6.6449412,
+        "longitude": 100.2030624
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_padang_besar",
+      "title": "Padang Besar",
+      "city": "Padang Besar",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/",
+      "gps_coordinates": {
+        "latitude": 6.6619008,
+        "longitude": 100.3239606
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_frim_canopy_walkway",
+      "title": "FRIM Canopy Walkway",
+      "city": "Sungai Batu Pahat",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/",
+      "gps_coordinates": {
+        "latitude": 6.6511329,
+        "longitude": 100.2418496
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_snake_and_reptile_farm",
+      "title": "Snake and Reptile Farm",
+      "city": "Sungai Batu Pahat",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/",
+      "gps_coordinates": {
+        "latitude": 6.5088729,
+        "longitude": 100.1739916
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_rimba_herba",
+      "title": "Rimba Herba",
+      "city": "Sungai Batu Pahat",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/",
+      "gps_coordinates": {
+        "latitude": 6.53414,
+        "longitude": 100.169068
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_al_hussain_mosque",
+      "title": "Al-Hussain Mosque",
+      "city": "Kuala Perlis",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_superfruits_valley",
+      "title": "Superfruits Valley",
+      "city": "Chuping",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/",
+      "gps_coordinates": {
+        "latitude": 6.560249,
+        "longitude": 100.3007498
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_kota_kayang_museum",
+      "title": "Kota Kayang Museum",
+      "city": "Kuala Perlis",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/",
+      "gps_coordinates": {
+        "latitude": 6.4156508,
+        "longitude": 100.1487503
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_taman_sakura_tebing_tinggi",
+      "title": "Taman Sakura Tebing Tinggi",
+      "city": "Bintong",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_bukit_ayer_recreational_park",
+      "title": "Bukit Ayer Recreational Park",
+      "city": "Sungai Batu Pahat",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_putra_golf_club",
+      "title": "Putra Golf Club",
+      "city": "Sungai Batu Pahat",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_harumanis_plantation",
+      "title": "Harumanis Plantation",
+      "city": "Sungai Batu Pahat",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_handicraft_complex",
+      "title": "Handicraft Complex",
+      "city": "Kuala Perlis",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_laman_brasmana",
+      "title": "Laman Brasmana",
+      "city": "Kuala Perlis",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Food",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_kompleks_makanan_laut",
+      "title": "Kompleks Makanan Laut",
+      "city": "Kuala Perlis",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Food",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_tasik_melati",
+      "title": "Tasik Melati",
+      "city": "Beseri",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_pusat_agro_pelancongan",
+      "title": "Pusat Agro Pelancongan",
+      "city": "Beseri",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_bukit_temiang",
+      "title": "Bukit Temiang",
+      "city": "Beseri",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_ladang_nipah_kipli",
+      "title": "Ladang Nipah Kipli",
+      "city": "Kuala Sanglang",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Food",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_galeri_diraja_arau",
+      "title": "Galeri DiRaja Arau",
+      "city": "Arau",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_homestay_kampung_paya_guring",
+      "title": "Homestay Kampung Paya Guring",
+      "city": "Arau",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_perlis_state_park",
+      "title": "Perlis State Park",
+      "city": "Wang Kelian",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_arked_niaga_padang_besar",
+      "title": "Arked Niaga Padang Besar",
+      "city": "Padang Besar",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_timah_tasoh_lake",
+      "title": "Timah Tasoh Lake",
+      "city": "Beseri",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perlis_bukit_keteri",
+      "title": "Bukit Keteri",
+      "city": "Beseri",
+      "state": "Perlis",
+      "country": "Malaysia",
+      "category": "Adventure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perlis/"
+    },
+    {
+      "destinationId": "local_my_perak_pulau_pangkor",
+      "title": "Pulau Pangkor",
+      "city": "Manjung",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/",
+      "gps_coordinates": {
+        "latitude": 4.21322,
+        "longitude": 100.5735949
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_royal_belum",
+      "title": "Royal Belum",
+      "city": "Gerik",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/",
+      "gps_coordinates": {
+        "latitude": 5.6754769,
+        "longitude": 101.3994312
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_gua_tempurung",
+      "title": "Gua Tempurung",
+      "city": "Gopeng",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/",
+      "gps_coordinates": {
+        "latitude": 4.4160094,
+        "longitude": 101.1876852
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_zoo_taiping",
+      "title": "Zoo Taiping",
+      "city": "Taiping",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/",
+      "gps_coordinates": {
+        "latitude": 4.854792,
+        "longitude": 100.7494656
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_kellie_s_castle",
+      "title": "Kellie's Castle",
+      "city": "Batu Gajah",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/",
+      "gps_coordinates": {
+        "latitude": 4.4751613,
+        "longitude": 101.0874278
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_lost_world_of_tambun",
+      "title": "Lost World of Tambun",
+      "city": "Ipoh",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/",
+      "gps_coordinates": {
+        "latitude": 4.625824,
+        "longitude": 101.15478
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_tanjung_tualang_tin_dredge_no_5",
+      "title": "Tanjung Tualang Tin Dredge No. 5",
+      "city": "Tanjung Tualang",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://www.tourismperakmalaysia.com/wp-content/uploads/2021/12/TPR-1909-0060_TinMiningStory_Booklet_010720.pdf",
+      "gps_coordinates": {
+        "latitude": 4.396642,
+        "longitude": 101.0531688
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_bukit_larut",
+      "title": "Bukit Larut",
+      "city": "Taiping",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/",
+      "gps_coordinates": {
+        "latitude": 4.8623,
+        "longitude": 100.793
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_teluk_intan_leaning_tower",
+      "title": "Teluk Intan Leaning Tower",
+      "city": "Teluk Intan",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/",
+      "gps_coordinates": {
+        "latitude": 4.0251397,
+        "longitude": 101.0192616
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_felda_residence_hot_springs",
+      "title": "Felda Residence Hot Springs",
+      "city": "Sungai Klah",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/",
+      "gps_coordinates": {
+        "latitude": 3.9981143,
+        "longitude": 101.3918883
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_birch_memorial_clock_tower",
+      "title": "Birch Memorial Clock Tower",
+      "city": "Ipoh",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_darul_ridzuan_museum",
+      "title": "Darul Ridzuan Museum",
+      "city": "Ipoh",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_geological_museum",
+      "title": "Geological Museum",
+      "city": "Ipoh",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_gunung_lang_recreational_park",
+      "title": "Gunung Lang Recreational Park",
+      "city": "Ipoh",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_ipoh_railway_station",
+      "title": "Ipoh Railway Station",
+      "city": "Ipoh",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_kek_look_tong_temple",
+      "title": "Kek Look Tong Temple",
+      "city": "Ipoh",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_kledang_saiong_forest_eco_park",
+      "title": "Kledang Saiong Forest Eco Park",
+      "city": "Ipoh",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_sam_poh_tong_temple",
+      "title": "Sam Poh Tong Temple",
+      "city": "Ipoh",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_kinta_riverwalk",
+      "title": "Kinta Riverwalk",
+      "city": "Ipoh",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_sultan_azlan_shah_gallery",
+      "title": "Sultan Azlan Shah Gallery",
+      "city": "Kuala Kangsar",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_ubudiah_mosque",
+      "title": "Ubudiah Mosque",
+      "city": "Kuala Kangsar",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_royal_museum_kuala_kangsar",
+      "title": "Royal Museum Kuala Kangsar",
+      "city": "Kuala Kangsar",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_victoria_bridge",
+      "title": "Victoria Bridge",
+      "city": "Kuala Kangsar",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_taiping_lake_gardens",
+      "title": "Taiping Lake Gardens",
+      "city": "Taiping",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_my_perak_perak_museum",
+      "title": "Perak Museum",
+      "city": "Taiping",
+      "state": "Perak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/perak/"
+    },
+    {
+      "destinationId": "local_batu_caves",
+      "title": "Batu Caves",
+      "city": "Batu Caves",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 3.236516,
+        "longitude": 101.6816512
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_sunway_lagoon",
+      "title": "Sunway Lagoon",
+      "city": "Bandar Sunway",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 3.0690075,
+        "longitude": 101.6067623
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_frim",
+      "title": "FRIM",
+      "city": "Kepong",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 3.2334997,
+        "longitude": 101.632654
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_sepang_international_circuit",
+      "title": "Sepang International Circuit",
+      "city": "Sepang",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 2.76101,
+        "longitude": 101.7369094
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_kampung_kuantan_firefly_parks",
+      "title": "Kampung Kuantan Firefly Parks",
+      "city": "Kuala Selangor",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 3.3606857,
+        "longitude": 101.3015477
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_masjid_sultan_salahuddin_abdul_aziz_shah",
+      "title": "Masjid Sultan Salahuddin Abdul Aziz Shah",
+      "city": "Shah Alam",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 3.0786225,
+        "longitude": 101.5207184
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_i_city",
+      "title": "i-City",
+      "city": "Shah Alam",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 3.0651229,
+        "longitude": 101.4832499
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_royal_klang_town_heritage_walk",
+      "title": "Royal Klang Town Heritage Walk",
+      "city": "Klang",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 3.044917,
+        "longitude": 101.4455621
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_bukit_malawati",
+      "title": "Bukit Malawati",
+      "city": "Kuala Selangor",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 3.341172,
+        "longitude": 101.2481651
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_sepang_goldcoast",
+      "title": "Sepang GoldCoast",
+      "city": "Sepang",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 2.6038875,
+        "longitude": 101.6881431
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_farm_in_the_city",
+      "title": "Farm in the City",
+      "city": "Seri Kembangan",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 2.9801264,
+        "longitude": 101.6616563
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_fo_guang_shan_dong_zen_temple",
+      "title": "Fo Guang Shan Dong Zen Temple",
+      "city": "Jenjarom",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 2.8678474,
+        "longitude": 101.4912707
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_sky_mirror",
+      "title": "Sky Mirror",
+      "city": "Kuala Selangor",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/",
+      "gps_coordinates": {
+        "latitude": 3.3424776,
+        "longitude": 101.250781
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_laman_seni_7",
+      "title": "Laman Seni 7",
+      "city": "Shah Alam",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_little_india_klang",
+      "title": "Little India Klang",
+      "city": "Klang",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_sungai_chiling",
+      "title": "Sungai Chiling",
+      "city": "Kuala Kubu Bharu",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_bukit_jugra",
+      "title": "Bukit Jugra",
+      "city": "Kuala Langat",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_kidzania_kuala_lumpur",
+      "title": "KidZania Kuala Lumpur",
+      "city": "Petaling Jaya",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_taman_botani_negara_shah_alam",
+      "title": "Taman Botani Negara Shah Alam",
+      "city": "Shah Alam",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_shah_alam_lake_gardens",
+      "title": "Shah Alam Lake Gardens",
+      "city": "Shah Alam",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_wet_world_shah_alam",
+      "title": "Wet World Shah Alam",
+      "city": "Shah Alam",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_chocolate_museum",
+      "title": "Chocolate Museum",
+      "city": "Petaling Jaya",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_sultan_alam_shah_museum",
+      "title": "Sultan Alam Shah Museum",
+      "city": "Shah Alam",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_kuala_selangor_nature_park",
+      "title": "Kuala Selangor Nature Park",
+      "city": "Kuala Selangor",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_my_selangor_bangi_wonderland",
+      "title": "Bangi Wonderland",
+      "city": "Bangi",
+      "state": "Selangor",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/selangor/"
+    },
+    {
+      "destinationId": "local_klcc",
+      "title": "Petronas Twin Towers",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1574693,
+        "longitude": 101.7115639
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_pasar_seni",
+      "title": "Pasar Seni",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1452635,
+        "longitude": 101.6954158
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_kl_tower",
+      "title": "KL Tower",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1528762,
+        "longitude": 101.7038516
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_petaling_street",
+      "title": "Petaling Street",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_aquaria_klcc",
+      "title": "Aquaria KLCC",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1535483,
+        "longitude": 101.713178
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_royal_selangor",
+      "title": "Royal Selangor",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1963425,
+        "longitude": 101.7245123
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_kl_bird_park",
+      "title": "KL Bird Park",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1431273,
+        "longitude": 101.6882629
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_national_museum",
+      "title": "National Museum",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.137711,
+        "longitude": 101.6874214
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_masjid_negara",
+      "title": "Masjid Negara",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1419783,
+        "longitude": 101.6917573
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_masjid_jamek_sultan_abdul_samad",
+      "title": "Masjid Jamek Sultan Abdul Samad",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1489312,
+        "longitude": 101.6957104
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_river_of_life",
+      "title": "River of Life",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1477,
+        "longitude": 101.69524
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_islamic_arts_museum",
+      "title": "Islamic Arts Museum",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1418458,
+        "longitude": 101.6899992
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_sultan_abdul_samad_building",
+      "title": "Sultan Abdul Samad Building",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1486226,
+        "longitude": 101.6944045
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_dataran_merdeka",
+      "title": "Dataran Merdeka",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1490605,
+        "longitude": 101.6936592
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_perdana_botanical_gardens",
+      "title": "Perdana Botanical Gardens",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.143678,
+        "longitude": 101.686073
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_st_mary_s_cathedral",
+      "title": "St. Mary's Cathedral",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.150382,
+        "longitude": 101.693409
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_tun_abdul_razak_heritage_park",
+      "title": "Tun Abdul Razak Heritage Park",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1417537,
+        "longitude": 101.6870311
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_petrosains",
+      "title": "Petrosains",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1578933,
+        "longitude": 101.711981
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_kl_forest_eco_park",
+      "title": "KL Forest Eco-Park",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1506078,
+        "longitude": 101.702256
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_berjaya_times_square_theme_park",
+      "title": "Berjaya Times Square Theme Park",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1421984,
+        "longitude": 101.7105512
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_kl_citywalk",
+      "title": "KL Citywalk",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1553477,
+        "longitude": 101.7090882
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_kuala_lumpur_craft_complex",
+      "title": "Kuala Lumpur Craft Complex",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1493854,
+        "longitude": 101.7189046
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_kl_old_railway_station",
+      "title": "KL Old Railway Station",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1400965,
+        "longitude": 101.692646
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_titiwangsa_lake_gardens",
+      "title": "Titiwangsa Lake Gardens",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_kuala_lumpur_kwai_chai_hong",
+      "title": "Kwai Chai Hong",
+      "city": "Kuala Lumpur",
+      "state": "Kuala Lumpur",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/",
+      "gps_coordinates": {
+        "latitude": 3.1414947,
+        "longitude": 101.6976067
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kuala-lumpur/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_putra_mosque",
+      "title": "Putra Mosque",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/",
+      "gps_coordinates": {
+        "latitude": 2.9360702,
+        "longitude": 101.689213
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_tuanku_mizan_zainal_abidin_mosque",
+      "title": "Tuanku Mizan Zainal Abidin Mosque",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/",
+      "gps_coordinates": {
+        "latitude": 2.9191718,
+        "longitude": 101.6811676
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_dataran_putra",
+      "title": "Dataran Putra",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/",
+      "gps_coordinates": {
+        "latitude": 2.934843,
+        "longitude": 101.6908245
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_dataran_wawasan",
+      "title": "Dataran Wawasan",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_dataran_putrajaya",
+      "title": "Dataran Putrajaya",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_dataran_rakyat",
+      "title": "Dataran Rakyat",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_dataran_gemilang",
+      "title": "Dataran Gemilang",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_persiaran_perdana",
+      "title": "Persiaran Perdana",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/",
+      "gps_coordinates": {
+        "latitude": 2.907688,
+        "longitude": 101.6814752
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_putra_bridge",
+      "title": "Putra Bridge",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_seri_perdana_bridge",
+      "title": "Seri Perdana Bridge",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_seri_gemilang_bridge",
+      "title": "Seri Gemilang Bridge",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_seri_bakti_bridge",
+      "title": "Seri Bakti Bridge",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_seri_setia_bridge",
+      "title": "Seri Setia Bridge",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_seri_saujana_bridge",
+      "title": "Seri Saujana Bridge",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_seri_bestari_bridge",
+      "title": "Seri Bestari Bridge",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_taman_botani",
+      "title": "Taman Botani",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/",
+      "gps_coordinates": {
+        "latitude": 2.9448069,
+        "longitude": 101.6955157
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_national_millennium_monument",
+      "title": "National Millennium Monument",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/",
+      "gps_coordinates": {
+        "latitude": 2.9235876,
+        "longitude": 101.6826889
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_putrajaya_wetland",
+      "title": "Putrajaya Wetland",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/",
+      "gps_coordinates": {
+        "latitude": 2.9616867,
+        "longitude": 101.6956668
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_taman_warisan_pertanian",
+      "title": "Taman Warisan Pertanian",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/",
+      "gps_coordinates": {
+        "latitude": 2.9279642,
+        "longitude": 101.7004002
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_lake_putrajaya",
+      "title": "Lake Putrajaya",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/",
+      "gps_coordinates": {
+        "latitude": 2.941942,
+        "longitude": 101.68911
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_cruise_tasik_putrajaya",
+      "title": "Cruise Tasik Putrajaya",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/putrajaya/"
+    },
+    {
+      "destinationId": "local_my_putrajaya_saujana_hijau_park",
+      "title": "Saujana Hijau Park",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://www.malaysia.travel/index.php/explore/saujana-hijau-park"
+    },
+    {
+      "destinationId": "local_my_putrajaya_taman_wawasan",
+      "title": "Taman Wawasan",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://www.malaysia.travel/index.php/explore/guide-to-the-must-visit-public-parks-in-putrajaya"
+    },
+    {
+      "destinationId": "local_my_putrajaya_china_malaysia_friendship_garden",
+      "title": "China-Malaysia Friendship Garden",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://www.malaysia.travel/explore/china-malaysia-friendship-garden"
+    },
+    {
+      "destinationId": "local_my_putrajaya_taman_seri_empangan",
+      "title": "Taman Seri Empangan",
+      "city": "Putrajaya",
+      "state": "Putrajaya",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://penggambaran.ppj.gov.my/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_army_museum",
+      "title": "Army Museum",
+      "city": "Port Dickson",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/",
+      "gps_coordinates": {
+        "latitude": 2.4963497,
+        "longitude": 101.8471234
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_sungai_menyala_eco_edu_tourism_centre",
+      "title": "Sungai Menyala Eco-Edu Tourism Centre",
+      "city": "Port Dickson",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/",
+      "gps_coordinates": {
+        "latitude": 2.4380926,
+        "longitude": 101.8734896
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_alive_3d_art_gallery",
+      "title": "Alive 3D Art Gallery",
+      "city": "Port Dickson",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/",
+      "gps_coordinates": {
+        "latitude": 2.5597677,
+        "longitude": 101.8174662
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_taman_negeri_kenaboi",
+      "title": "Taman Negeri Kenaboi",
+      "city": "Jelebu",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/",
+      "gps_coordinates": {
+        "latitude": 3.1749501,
+        "longitude": 101.9884044
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_ulu_bendul_recreational_forest",
+      "title": "Ulu Bendul Recreational Forest",
+      "city": "Kuala Pilah",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/",
+      "gps_coordinates": {
+        "latitude": 2.7302261,
+        "longitude": 102.0778494
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_the_royal_museum_of_seri_menanti",
+      "title": "The Royal Museum of Seri Menanti",
+      "city": "Kuala Pilah",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_gunung_angsi",
+      "title": "Gunung Angsi",
+      "city": "Kuala Pilah",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Adventure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/",
+      "gps_coordinates": {
+        "latitude": 2.6986111,
+        "longitude": 102.0480556
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_ladang_alam_warisan",
+      "title": "Ladang Alam Warisan",
+      "city": "Kuala Pilah",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_rembau_museum",
+      "title": "Rembau Museum",
+      "city": "Rembau",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_negeri_sembilan_state_museum_complex",
+      "title": "Negeri Sembilan State Museum Complex",
+      "city": "Seremban",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/",
+      "gps_coordinates": {
+        "latitude": 2.7179441,
+        "longitude": 101.9204852
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_fort_lukut_and_lukut_museum",
+      "title": "Fort Lukut and Lukut Museum",
+      "city": "Port Dickson",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_jelita_ostrich_farm",
+      "title": "Jelita Ostrich Farm",
+      "city": "Seremban",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_starfresh_agro_park",
+      "title": "Starfresh Agro Park",
+      "city": "Seremban",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_seremban_orchid_park",
+      "title": "Seremban Orchid Park",
+      "city": "Seremban",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_seremban_lake_garden",
+      "title": "Seremban Lake Garden",
+      "city": "Seremban",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_then_sze_temple",
+      "title": "Then Sze Temple",
+      "city": "Seremban",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_galeri_diraja_tuanku_ja_afar",
+      "title": "Galeri Diraja Tuanku Ja'afar",
+      "city": "Seremban",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_pd_ostrich_farm",
+      "title": "PD Ostrich Farm",
+      "city": "Port Dickson",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_pd_waterfront",
+      "title": "PD Waterfront",
+      "city": "Port Dickson",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_balai_cerap_baitul_hilal",
+      "title": "Balai Cerap Baitul Hilal",
+      "city": "Port Dickson",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_upside_down_house",
+      "title": "Upside Down House",
+      "city": "Port Dickson",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_muzium_adat",
+      "title": "Muzium Adat",
+      "city": "Jelebu",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_pengkalan_kempas_historical_complex",
+      "title": "Pengkalan Kempas Historical Complex",
+      "city": "Linggi",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_gunung_datuk_recreational_forest",
+      "title": "Gunung Datuk Recreational Forest",
+      "city": "Rembau",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Adventure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_negeri_sembilan_sungai_timun_wildlife_park",
+      "title": "Sungai Timun Wildlife Park",
+      "city": "Rembau",
+      "state": "Negeri Sembilan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/negeri-sembilan/"
+    },
+    {
+      "destinationId": "local_my_melaka_a_famosa_fort",
+      "title": "A'Famosa Fort",
+      "city": "Melaka City",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/",
+      "gps_coordinates": {
+        "latitude": 2.1917988,
+        "longitude": 102.2503678
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_jonker_street",
+      "title": "Jonker Street",
+      "city": "Melaka City",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_the_stadthuys",
+      "title": "The Stadthuys",
+      "city": "Melaka City",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/",
+      "gps_coordinates": {
+        "latitude": 2.1941655,
+        "longitude": 102.2495614
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_encore_melaka",
+      "title": "Encore Melaka",
+      "city": "Melaka City",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_taming_sari_tower",
+      "title": "Taming Sari Tower",
+      "city": "Melaka City",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/",
+      "gps_coordinates": {
+        "latitude": 2.19096,
+        "longitude": 102.2472866
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_melaka_cruise",
+      "title": "Melaka River Cruise",
+      "city": "Melaka City",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/",
+      "gps_coordinates": {
+        "latitude": 2.2073436,
+        "longitude": 102.2518114
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_freeport_a_famosa_outlet",
+      "title": "Freeport A' Famosa Outlet",
+      "city": "Alor Gajah",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/",
+      "gps_coordinates": {
+        "latitude": 2.4449511,
+        "longitude": 102.2066086
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_peranakan_melaka",
+      "title": "Baba & Nyonya Heritage Museum",
+      "city": "Melaka City",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/",
+      "gps_coordinates": {
+        "latitude": 2.1953382,
+        "longitude": 102.2467179
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_mini_malaysia_asean_cultural_park",
+      "title": "Mini Malaysia & ASEAN Cultural Park",
+      "city": "Ayer Keroh",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/",
+      "gps_coordinates": {
+        "latitude": 2.2823631,
+        "longitude": 102.3038163
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_melaka_tropical_fruit_farm",
+      "title": "Melaka Tropical Fruit Farm",
+      "city": "Alor Gajah",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/",
+      "gps_coordinates": {
+        "latitude": 2.290949,
+        "longitude": 102.1311117
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_a_famosa_resort",
+      "title": "A'Famosa Resort",
+      "city": "Alor Gajah",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/",
+      "gps_coordinates": {
+        "latitude": 2.446552,
+        "longitude": 102.2092136
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_submarine_museum",
+      "title": "Submarine Museum",
+      "city": "Klebang",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_melaka_sultanate_palace",
+      "title": "Melaka Sultanate Palace",
+      "city": "Melaka City",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/",
+      "gps_coordinates": {
+        "latitude": 2.1927719,
+        "longitude": 102.2505099
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_kampung_morten",
+      "title": "Kampung Morten",
+      "city": "Melaka City",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/",
+      "gps_coordinates": {
+        "latitude": 2.203778,
+        "longitude": 102.249734
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_the_shore_oceanarium",
+      "title": "The Shore Oceanarium",
+      "city": "Melaka City",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_pulau_besar",
+      "title": "Pulau Besar",
+      "city": "Jasin",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_asahan_waterfalls",
+      "title": "Asahan Waterfalls",
+      "city": "Jasin",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_agricultural_museum",
+      "title": "Agricultural Museum",
+      "city": "Jasin",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_bemban_hot_springs",
+      "title": "Bemban Hot Springs",
+      "city": "Jasin",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_bukit_batu_lebah_recreational_forest",
+      "title": "Bukit Batu Lebah Recreational Forest",
+      "city": "Jasin",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_melaka_zoo",
+      "title": "Melaka Zoo",
+      "city": "Ayer Keroh",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_taman_seribu_bunga",
+      "title": "Taman Seribu Bunga",
+      "city": "Ayer Keroh",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_gadek_hot_springs",
+      "title": "Gadek Hot Springs",
+      "city": "Alor Gajah",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_tanjung_bidara_beach",
+      "title": "Tanjung Bidara Beach",
+      "city": "Alor Gajah",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_my_melaka_pengkalan_balak_beach",
+      "title": "Pengkalan Balak Beach",
+      "city": "Alor Gajah",
+      "state": "Melaka",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/melaka/"
+    },
+    {
+      "destinationId": "local_legoland_malaysia",
+      "title": "LEGOLAND",
+      "city": "Iskandar Puteri",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_johor_premium_outlets",
+      "title": "Johor Premium Outlets",
+      "city": "Kulai",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/",
+      "gps_coordinates": {
+        "latitude": 1.6028601,
+        "longitude": 103.6215983
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_desaru_fruit_farm",
+      "title": "Desaru Fruit Farm",
+      "city": "Kota Tinggi",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/",
+      "gps_coordinates": {
+        "latitude": 1.5839028,
+        "longitude": 104.1935403
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_tanjung_piai_national_park",
+      "title": "Tanjung Piai National Park",
+      "city": "Pontian",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/",
+      "gps_coordinates": {
+        "latitude": 1.2681356,
+        "longitude": 103.5094726
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_endau_rompin_national_park",
+      "title": "Endau-Rompin National Park",
+      "city": "Mersing",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/",
+      "gps_coordinates": {
+        "latitude": 2.471916,
+        "longitude": 103.2663479
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_pulau_kukup_national_park",
+      "title": "Pulau Kukup National Park",
+      "city": "Pontian",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/",
+      "gps_coordinates": {
+        "latitude": 1.3271947,
+        "longitude": 103.4343101
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_sultan_iskandar_marine_park",
+      "title": "Sultan Iskandar Marine Park",
+      "city": "Mersing",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/",
+      "gps_coordinates": {
+        "latitude": 2.4340724,
+        "longitude": 103.8410602
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_gunung_ledang_national_park",
+      "title": "Gunung Ledang National Park",
+      "city": "Tangkak",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_adventure_waterpark_desaru_coast",
+      "title": "Adventure Waterpark Desaru Coast",
+      "city": "Kota Tinggi",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/",
+      "gps_coordinates": {
+        "latitude": 1.5380472,
+        "longitude": 104.2628632
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_nasuha_herbs_and_spices_paradise",
+      "title": "Nasuha Herbs and Spices Paradise",
+      "city": "Muar",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/",
+      "gps_coordinates": {
+        "latitude": 2.1286989,
+        "longitude": 102.7043346
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_uk_farm_agro_resort",
+      "title": "UK Farm Agro Resort",
+      "city": "Kluang",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/",
+      "gps_coordinates": {
+        "latitude": 2.0181272,
+        "longitude": 103.2187406
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_zenxin_organic_park",
+      "title": "Zenxin Organic Park",
+      "city": "Kluang",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/",
+      "gps_coordinates": {
+        "latitude": 1.9627318,
+        "longitude": 103.2126348
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_sultan_abu_bakar_mosque",
+      "title": "Sultan Abu Bakar Mosque",
+      "city": "Johor Bahru",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_johor_bahru_old_chinese_temple",
+      "title": "Johor Bahru Old Chinese Temple",
+      "city": "Johor Bahru",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_sri_raja_mariamman_temple",
+      "title": "Sri Raja Mariamman Temple",
+      "city": "Johor Bahru",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_tiong_hua_chinese_heritage_museum",
+      "title": "Tiong Hua Chinese Heritage Museum",
+      "city": "Johor Bahru",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_arulmigu_sri_rajakaliamman_glass_temple",
+      "title": "Arulmigu Sri Rajakaliamman Glass Temple",
+      "city": "Johor Bahru",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_kota_tinggi_waterfalls",
+      "title": "Kota Tinggi Waterfalls",
+      "city": "Kota Tinggi",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_johor_lama_museum",
+      "title": "Johor Lama Museum",
+      "city": "Kota Tinggi",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_kota_tinggi_museum",
+      "title": "Kota Tinggi Museum",
+      "city": "Kota Tinggi",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_teluk_sengat_crocodile_farm",
+      "title": "Teluk Sengat Crocodile Farm",
+      "city": "Kota Tinggi",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_gunung_belumut",
+      "title": "Gunung Belumut",
+      "city": "Kluang",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Adventure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_gunung_lambak",
+      "title": "Gunung Lambak",
+      "city": "Kluang",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_muar_river_cruise",
+      "title": "Muar River Cruise",
+      "city": "Muar",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_johor_air_papan_beach",
+      "title": "Air Papan Beach",
+      "city": "Mersing",
+      "state": "Johor",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/johor/"
+    },
+    {
+      "destinationId": "local_my_pahang_cameron_highlands",
+      "title": "Cameron Highlands",
+      "city": "Cameron Highlands",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/",
+      "gps_coordinates": {
+        "latitude": 4.4721201,
+        "longitude": 101.3801441
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_taman_negara",
+      "title": "Taman Negara",
+      "city": "Kuala Tahan",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_resorts_world_genting",
+      "title": "Resorts World Genting",
+      "city": "Genting Highlands",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Family",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/",
+      "gps_coordinates": {
+        "latitude": 3.424728,
+        "longitude": 101.7931168
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_fraser_s_hill",
+      "title": "Fraser's Hill",
+      "city": "Raub",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_national_elephant_conservation_centre",
+      "title": "National Elephant Conservation Centre",
+      "city": "Kuala Gandah",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/",
+      "gps_coordinates": {
+        "latitude": 3.5918216,
+        "longitude": 102.144045
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_pulau_tioman",
+      "title": "Pulau Tioman",
+      "city": "Rompin",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/",
+      "gps_coordinates": {
+        "latitude": 2.7902494,
+        "longitude": 104.1698463
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_teluk_chempedak",
+      "title": "Teluk Chempedak",
+      "city": "Kuantan",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/",
+      "gps_coordinates": {
+        "latitude": 3.812601,
+        "longitude": 103.3720031
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_cherating_beach",
+      "title": "Cherating Beach",
+      "city": "Kuantan",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/",
+      "gps_coordinates": {
+        "latitude": 4.129589,
+        "longitude": 103.3867379
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_sungai_lembing_museum",
+      "title": "Sungai Lembing Museum",
+      "city": "Sungai Lembing",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/",
+      "gps_coordinates": {
+        "latitude": 3.9138152,
+        "longitude": 103.0322441
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_taman_negara_sungai_relau",
+      "title": "Taman Negara Sungai Relau",
+      "city": "Merapoh",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/",
+      "gps_coordinates": {
+        "latitude": 4.6802412,
+        "longitude": 102.0571171
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_kenong_eco_rimba_park",
+      "title": "Kenong Eco Rimba Park",
+      "city": "Kuala Lipis",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/",
+      "gps_coordinates": {
+        "latitude": 4.1803559,
+        "longitude": 102.0531057
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_kota_gelanggi_caves",
+      "title": "Kota Gelanggi Caves",
+      "city": "Jerantut",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/",
+      "gps_coordinates": {
+        "latitude": 3.8886507,
+        "longitude": 102.4769232
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_kuantan_river_cruise",
+      "title": "Kuantan River Cruise",
+      "city": "Kuantan",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_art_museum",
+      "title": "Art Museum",
+      "city": "Kuantan",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_natural_batik_village",
+      "title": "Natural Batik Village",
+      "city": "Balok",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_batu_hitam_beach",
+      "title": "Batu Hitam Beach",
+      "city": "Kuantan",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_cherating_turtle_sanctuary",
+      "title": "Cherating Turtle Sanctuary",
+      "city": "Cherating",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_chendor_beach",
+      "title": "Chendor Beach",
+      "city": "Cherating",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_sungai_pandan_waterfalls",
+      "title": "Sungai Pandan Waterfalls",
+      "city": "Kuantan",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_the_great_mines_of_sungai_lembing",
+      "title": "The Great Mines of Sungai Lembing",
+      "city": "Sungai Lembing",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_panorama_hill",
+      "title": "Panorama Hill",
+      "city": "Sungai Lembing",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_pelangi_waterfall",
+      "title": "Pelangi Waterfall",
+      "city": "Sungai Lembing",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_lata_jarum_waterfall",
+      "title": "Lata Jarum Waterfall",
+      "city": "Raub",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_sultan_abu_bakar_museum",
+      "title": "Sultan Abu Bakar Museum",
+      "city": "Pekan",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_pahang_gunung_senyum_caves",
+      "title": "Gunung Senyum Caves",
+      "city": "Temerloh",
+      "state": "Pahang",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/pahang/"
+    },
+    {
+      "destinationId": "local_my_terengganu_pulau_redang",
+      "title": "Pulau Redang",
+      "city": "Kuala Nerus",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/",
+      "gps_coordinates": {
+        "latitude": 5.7844414,
+        "longitude": 103.0068926
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_pulau_perhentian",
+      "title": "Pulau Perhentian",
+      "city": "Besut",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/",
+      "gps_coordinates": {
+        "latitude": 5.909231,
+        "longitude": 102.7479949
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_tasik_kenyir",
+      "title": "Tasik Kenyir",
+      "city": "Hulu Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/",
+      "gps_coordinates": {
+        "latitude": 5.0039622,
+        "longitude": 102.6388451
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_pasar_payang_2",
+      "title": "Pasar Payang 2",
+      "city": "Kuala Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/",
+      "gps_coordinates": {
+        "latitude": 5.3374233,
+        "longitude": 103.1360063
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_kampung_cina",
+      "title": "Kampung Cina",
+      "city": "Kuala Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/",
+      "gps_coordinates": {
+        "latitude": 5.3341227,
+        "longitude": 103.1332208
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_taman_tamadun_islam",
+      "title": "Taman Tamadun Islam",
+      "city": "Kuala Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/",
+      "gps_coordinates": {
+        "latitude": 5.3219043,
+        "longitude": 103.1188116
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_terengganu_drawbridge",
+      "title": "Terengganu Drawbridge",
+      "city": "Kuala Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_pulau_kapas",
+      "title": "Pulau Kapas",
+      "city": "Marang",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/",
+      "gps_coordinates": {
+        "latitude": 5.2190041,
+        "longitude": 103.2649049
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_tengku_tengah_zaharah_mosque",
+      "title": "Tengku Tengah Zaharah Mosque",
+      "city": "Kuala Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/",
+      "gps_coordinates": {
+        "latitude": 5.2838094,
+        "longitude": 103.1706125
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_bukit_maras_paragliding",
+      "title": "Bukit Maras Paragliding",
+      "city": "Kuala Nerus",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Adventure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/",
+      "gps_coordinates": {
+        "latitude": 5.4223116,
+        "longitude": 103.0219369
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_terengganu_state_museum_complex",
+      "title": "Terengganu State Museum Complex",
+      "city": "Kuala Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/",
+      "gps_coordinates": {
+        "latitude": 5.3187303,
+        "longitude": 103.1028244
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_pantai_teluk_mak_nik",
+      "title": "Pantai Teluk Mak Nik",
+      "city": "Kemaman",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_pulau_lang_tengah",
+      "title": "Pulau Lang Tengah",
+      "city": "Kuala Nerus",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/",
+      "gps_coordinates": {
+        "latitude": 5.796016,
+        "longitude": 102.8960712
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_chemerong_waterfall",
+      "title": "Chemerong Waterfall",
+      "city": "Dungun",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/",
+      "gps_coordinates": {
+        "latitude": 4.6589399,
+        "longitude": 102.9880822
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_pulau_tenggol",
+      "title": "Pulau Tenggol",
+      "city": "Dungun",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_bukit_puteri",
+      "title": "Bukit Puteri",
+      "city": "Kuala Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_kuala_terengganu_river_cruise",
+      "title": "Kuala Terengganu River Cruise",
+      "city": "Kuala Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_batu_burok_recreational_park",
+      "title": "Batu Burok Recreational Park",
+      "city": "Kuala Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_kelulut_beach",
+      "title": "Kelulut Beach",
+      "city": "Marang",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_sekayu_herb_garden",
+      "title": "Sekayu Herb Garden",
+      "city": "Hulu Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_kelah_sanctuary",
+      "title": "Kelah Sanctuary",
+      "city": "Hulu Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_lasir_waterfall",
+      "title": "Lasir Waterfall",
+      "city": "Hulu Terengganu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_kemasik_beach",
+      "title": "Kemasik Beach",
+      "city": "Kemaman",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_bukit_keluang_beach",
+      "title": "Bukit Keluang Beach",
+      "city": "Besut",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_terengganu_setiu_wetland",
+      "title": "Setiu Wetland",
+      "city": "Setiu",
+      "state": "Terengganu",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/terengganu/"
+    },
+    {
+      "destinationId": "local_my_kelantan_siti_khadijah_market",
+      "title": "Siti Khadijah Market",
+      "city": "Kota Bharu",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_gunung_stong",
+      "title": "Gunung Stong",
+      "city": "Dabong",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/",
+      "gps_coordinates": {
+        "latitude": 5.3363889,
+        "longitude": 101.9377778
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_kuala_koh_national_park",
+      "title": "Kuala Koh National Park",
+      "city": "Gua Musang",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/",
+      "gps_coordinates": {
+        "latitude": 4.8711223,
+        "longitude": 102.4402574
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_wakaf_che_yeh_night_market",
+      "title": "Wakaf Che Yeh Night Market",
+      "city": "Kota Bharu",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/",
+      "gps_coordinates": {
+        "latitude": 6.0878938,
+        "longitude": 102.2381518
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_floating_market_pulau_suri",
+      "title": "Floating Market Pulau Suri",
+      "city": "Tumpat",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/",
+      "gps_coordinates": {
+        "latitude": 6.1387133,
+        "longitude": 102.3226915
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_gua_ikan",
+      "title": "Gua Ikan",
+      "city": "Dabong",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/",
+      "gps_coordinates": {
+        "latitude": 5.3535023,
+        "longitude": 102.0273618
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_gelanggang_seni",
+      "title": "Gelanggang Seni",
+      "city": "Kota Bharu",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/",
+      "gps_coordinates": {
+        "latitude": 6.1223737,
+        "longitude": 102.2409327
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_pak_safie_and_son_s_wau_gallery",
+      "title": "Pak Safie and Son's Wau Gallery",
+      "city": "Kota Bharu",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/",
+      "gps_coordinates": {
+        "latitude": 6.1766327,
+        "longitude": 102.2536523
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_handicraft_village_craft_museum",
+      "title": "Handicraft Village & Craft Museum",
+      "city": "Kota Bharu",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/",
+      "gps_coordinates": {
+        "latitude": 6.1319001,
+        "longitude": 102.2380731
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_al_muhammadi_mosque",
+      "title": "Al-Muhammadi Mosque",
+      "city": "Kota Bharu",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_islamic_museum",
+      "title": "Islamic Museum",
+      "city": "Kota Bharu",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_pantai_cahaya_bulan",
+      "title": "Pantai Cahaya Bulan",
+      "city": "Kota Bharu",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_gerbang_sultan_ismail_petra",
+      "title": "Gerbang Sultan Ismail Petra",
+      "city": "Kota Bharu",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_balai_kartun_rossem",
+      "title": "Balai Kartun Rossem",
+      "city": "Kota Bharu",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_gua_cha",
+      "title": "Gua Cha",
+      "city": "Gua Musang",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_lata_rek",
+      "title": "Lata Rek",
+      "city": "Kuala Krai",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_lata_beringin",
+      "title": "Lata Beringin",
+      "city": "Kuala Krai",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_jelawang_waterfall",
+      "title": "Jelawang Waterfall",
+      "city": "Dabong",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_irama_beach",
+      "title": "Irama Beach",
+      "city": "Bachok",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_pantai_bisikan_bayu",
+      "title": "Pantai Bisikan Bayu",
+      "city": "Pasir Puteh",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_jeram_linang_waterfall",
+      "title": "Jeram Linang Waterfall",
+      "city": "Pasir Puteh",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_jeram_pasu_waterfall",
+      "title": "Jeram Pasu Waterfall",
+      "city": "Pasir Puteh",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_kite_museum",
+      "title": "Kite Museum",
+      "city": "Tumpat",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_guillemard_bridge",
+      "title": "Guillemard Bridge",
+      "city": "Tanah Merah",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_kelantan_gunung_reng",
+      "title": "Gunung Reng",
+      "city": "Jeli",
+      "state": "Kelantan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/kelantan/"
+    },
+    {
+      "destinationId": "local_my_sabah_tunku_abdul_rahman_park",
+      "title": "Tunku Abdul Rahman Park",
+      "city": "Kota Kinabalu",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 5.9750449,
+        "longitude": 115.9997596
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_mount_kinabalu",
+      "title": "Mount Kinabalu",
+      "city": "Kundasang",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Adventure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 6.0058041,
+        "longitude": 116.5424977
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_tun_sakaran_marine_park",
+      "title": "Tun Sakaran Marine Park",
+      "city": "Semporna",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_poring_hot_springs",
+      "title": "Poring Hot Springs",
+      "city": "Ranau",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 6.0457242,
+        "longitude": 116.7033598
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_sabah_state_museum",
+      "title": "Sabah State Museum",
+      "city": "Kota Kinabalu",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 5.9606127,
+        "longitude": 116.071469
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_lok_kawi_wildlife_park",
+      "title": "Lok Kawi Wildlife Park",
+      "city": "Penampang",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_tawau_hills_park",
+      "title": "Tawau Hills Park",
+      "city": "Tawau",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 4.5037275,
+        "longitude": 117.9354433
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_sepilok_orangutan",
+      "title": "Sepilok Orang Utan Rehabilitation Centre",
+      "city": "Sandakan",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 5.8649991,
+        "longitude": 117.9487266
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_sabah_tea_garden",
+      "title": "Sabah Tea Garden",
+      "city": "Ranau",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_lower_kinabatangan_wildlife_sanctuary",
+      "title": "Lower Kinabatangan Wildlife Sanctuary",
+      "city": "Kinabatangan",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 5.4593657,
+        "longitude": 117.8370041
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_mari_mari_cultural_village",
+      "title": "Mari Mari Cultural Village",
+      "city": "Inanam",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 5.9738777,
+        "longitude": 116.203442
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_crocker_range_park",
+      "title": "Crocker Range Park",
+      "city": "Keningau",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 5.4007765,
+        "longitude": 116.1033037
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_sipadan",
+      "title": "Sipadan",
+      "city": "Semporna",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_upside_down_house",
+      "title": "Upside Down House",
+      "city": "Tamparuli",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 6.1443045,
+        "longitude": 116.2539788
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_pulau_mantanani",
+      "title": "Pulau Mantanani",
+      "city": "Kota Belud",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 6.7065881,
+        "longitude": 116.3575135
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_teck_guan_cocoa_village",
+      "title": "Teck Guan Cocoa Village",
+      "city": "Tawau",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 4.4008344,
+        "longitude": 118.0161721
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_monsopiad_heritage_village",
+      "title": "Monsopiad Heritage Village",
+      "city": "Penampang",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/",
+      "gps_coordinates": {
+        "latitude": 5.8888372,
+        "longitude": 116.0792522
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_turtle_islands_park",
+      "title": "Turtle Islands Park",
+      "city": "Sandakan",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_teck_guan_cocoa_museum",
+      "title": "Teck Guan Cocoa Museum",
+      "city": "Tawau",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_rainforest_discovery_centre",
+      "title": "Rainforest Discovery Centre",
+      "city": "Sandakan",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_tanjung_aru_beach",
+      "title": "Tanjung Aru Beach",
+      "city": "Kota Kinabalu",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_atkinson_clock_tower",
+      "title": "Atkinson Clock Tower",
+      "city": "Kota Kinabalu",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_kota_kinabalu_wetland_centre",
+      "title": "Kota Kinabalu Wetland Centre",
+      "city": "Kota Kinabalu",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_kundasang_war_memorial",
+      "title": "Kundasang War Memorial",
+      "city": "Kundasang",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sabah_bornean_sun_bear_conservation_centre",
+      "title": "Bornean Sun Bear Conservation Centre",
+      "city": "Sandakan",
+      "state": "Sabah",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sabah/"
+    },
+    {
+      "destinationId": "local_my_sarawak_gunung_mulu_national_park",
+      "title": "Gunung Mulu National Park",
+      "city": "Miri",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/",
+      "gps_coordinates": {
+        "latitude": 4.09207,
+        "longitude": 114.8958021
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_bako_national_park",
+      "title": "Bako National Park",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/",
+      "gps_coordinates": {
+        "latitude": 1.7166667,
+        "longitude": 110.4666667
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_sarawak_cultural_village",
+      "title": "Sarawak Cultural Village",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_semenggoh_nature_reserve",
+      "title": "Semenggoh Nature Reserve",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_niah_national_park",
+      "title": "Niah National Park",
+      "city": "Miri",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/",
+      "gps_coordinates": {
+        "latitude": 3.8014874,
+        "longitude": 113.7853389
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_darul_hana_bridge",
+      "title": "Darul Hana Bridge",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/",
+      "gps_coordinates": {
+        "latitude": 1.5612081,
+        "longitude": 110.3459377
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_darul_hana_musical_fountain",
+      "title": "Darul Hana Musical Fountain",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_medan_niaga_satok",
+      "title": "Medan Niaga Satok",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_sarawak_museum",
+      "title": "Sarawak Museum",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/",
+      "gps_coordinates": {
+        "latitude": 1.5547772,
+        "longitude": 110.3434815
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_annah_rais_longhouse",
+      "title": "Annah Rais Longhouse",
+      "city": "Padawan",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/",
+      "gps_coordinates": {
+        "latitude": 1.1567427,
+        "longitude": 110.2653325
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_gunung_gading_national_park",
+      "title": "Gunung Gading National Park",
+      "city": "Lundu",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/",
+      "gps_coordinates": {
+        "latitude": 1.6905556,
+        "longitude": 109.8458333
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_sibu_central_market",
+      "title": "Sibu Central Market",
+      "city": "Sibu",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/",
+      "gps_coordinates": {
+        "latitude": 2.2874029,
+        "longitude": 111.828318
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_cat_museum",
+      "title": "Cat Museum",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/",
+      "gps_coordinates": {
+        "latitude": 1.5863426,
+        "longitude": 110.3340274
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_lambir_hills_national_park",
+      "title": "Lambir Hills National Park",
+      "city": "Miri",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/",
+      "gps_coordinates": {
+        "latitude": 4.198371,
+        "longitude": 114.042873
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_sarawak_river_cruise",
+      "title": "Sarawak River Cruise",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_tua_pek_kong_temple",
+      "title": "Tua Pek Kong Temple",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_chinese_history_museum",
+      "title": "Chinese History Museum",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_textile_museum",
+      "title": "Textile Museum",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_tun_jugah_pua_kumbu_museum",
+      "title": "Tun Jugah Pua Kumbu Museum",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_kuching_wetlands_national_park",
+      "title": "Kuching Wetlands National Park",
+      "city": "Kuching",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_kubah_national_park",
+      "title": "Kubah National Park",
+      "city": "Matang",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_matang_wildlife_centre",
+      "title": "Matang Wildlife Centre",
+      "city": "Matang",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_grand_old_lady",
+      "title": "Grand Old Lady",
+      "city": "Miri",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_loagan_bunut_national_park",
+      "title": "Loagan Bunut National Park",
+      "city": "Miri",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_sarawak_similajau_national_park",
+      "title": "Similajau National Park",
+      "city": "Bintulu",
+      "state": "Sarawak",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/sarawak/"
+    },
+    {
+      "destinationId": "local_my_labuan_labuan_museum",
+      "title": "Labuan Museum",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/",
+      "gps_coordinates": {
+        "latitude": 5.2768661,
+        "longitude": 115.2453992
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_labuan_marine_park",
+      "title": "Labuan Marine Park",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/",
+      "gps_coordinates": {
+        "latitude": 5.2740511,
+        "longitude": 115.2550111
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_the_chimney",
+      "title": "The Chimney",
+      "city": "Tanjung Kubong",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/",
+      "gps_coordinates": {
+        "latitude": 5.3811233,
+        "longitude": 115.2487039
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_labuan_bird_park",
+      "title": "Labuan Bird Park",
+      "city": "Tanjung Kubong",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/",
+      "gps_coordinates": {
+        "latitude": 5.3814559,
+        "longitude": 115.2470047
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_labuan_international_golf_club",
+      "title": "Labuan International Golf Club",
+      "city": "Kiamsam",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/",
+      "gps_coordinates": {
+        "latitude": 5.2758519,
+        "longitude": 115.1716495
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_labuan_marine_museum",
+      "title": "Labuan Marine Museum",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/",
+      "gps_coordinates": {
+        "latitude": 5.2740511,
+        "longitude": 115.2550111
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_world_war_ii_memorial",
+      "title": "World War II Memorial",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/",
+      "gps_coordinates": {
+        "latitude": 5.2870353,
+        "longitude": 115.2620564
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_kampung_patau_patau_1",
+      "title": "Kampung Patau-patau 1",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_patau_patau_ii_water_village",
+      "title": "Patau-patau II Water Village",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_layang_layangan",
+      "title": "Layang-layangan",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_pancur_hitam",
+      "title": "Pancur Hitam",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_pohon_batu",
+      "title": "Pohon Batu",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_pulau_papan",
+      "title": "Pulau Papan",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/",
+      "gps_coordinates": {
+        "latitude": 5.253984,
+        "longitude": 115.2708408
+      },
+      "coordinatesSourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_labuan_square",
+      "title": "Labuan Square",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_museum_square",
+      "title": "Museum Square",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_tanjung_kubong_tunnel",
+      "title": "Tanjung Kubong Tunnel",
+      "city": "Tanjung Kubong",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_jamek_an_nur_mosque",
+      "title": "Jamek An'Nur Mosque",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_ba_xian_miao_temple",
+      "title": "Ba Xian Miao Temple",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_labuan_gurdwara_sahib",
+      "title": "Labuan Gurdwara Sahib",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Culture",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_labuan_central_market",
+      "title": "Labuan Central Market",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Shopping",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_labuan_international_sea_sports_complex",
+      "title": "Labuan International Sea Sports Complex",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Leisure",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_kinabenuwa_eco_tourism",
+      "title": "Kinabenuwa Eco Tourism",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Nature",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_gedung_ubat",
+      "title": "Gedung Ubat",
+      "city": "Labuan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/labuan/"
+    },
+    {
+      "destinationId": "local_my_labuan_peace_park",
+      "title": "Peace Park",
+      "city": "Layang-Layangan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://explorelabuan.my/destinasi/surrender-point?lang=en"
+    },
+    {
+      "destinationId": "local_my_labuan_surrender_point",
+      "title": "Surrender Point",
+      "city": "Layang-Layangan",
+      "state": "Labuan",
+      "country": "Malaysia",
+      "category": "Heritage",
+      "identitySourceUrl": "https://explorelabuan.my/destinasi/surrender-point?lang=en"
+    }
+  ]
+}

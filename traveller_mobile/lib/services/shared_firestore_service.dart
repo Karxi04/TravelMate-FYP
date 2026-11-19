@@ -141,6 +141,7 @@ class SharedFirestoreService {
       'moderationStatus': 'pending_review',
       'submittedAt': now,
       'updatedAt': now,
+      'editCount': 0,
     };
     final previous = (await ownReviews()).where((item) =>
         ReviewContract.destinationId('${item['destinationId'] ?? ''}') == destination).toList();
@@ -164,24 +165,36 @@ class SharedFirestoreService {
     if (_uid.isEmpty) throw Exception('Please sign in before updating a review.');
     if (!ReviewContract.valid(changes, partial: true)) throw Exception('Invalid review update.');
     final ref = _db.collection('feedback').doc(id);
-    final current = await ref.get();
+    final expectedUpdatedAt = changes['expectedUpdatedAt'];
+    changes = {...changes}..remove('expectedUpdatedAt');
+    return _db.runTransaction((transaction) async {
+    final current = await transaction.get(ref);
     if (!current.exists || (current.data()?['travellerId'] ?? '').toString() != _uid) {
       throw Exception('Review not found.');
     }
     if ((current.data()?['feedbackStatus'] ?? 'visible').toString() == 'removed') {
       throw Exception('This review was removed by the Administrator and cannot be republished by editing it.');
     }
+    if (changes.entries.every((entry) => current.data()?[entry.key] == entry.value)) {
+      return {'id': id, ...current.data()!};
+    }
+    if (expectedUpdatedAt != null && expectedUpdatedAt != current.data()?['updatedAt']) {
+      throw Exception('This review changed. Refresh before editing again.');
+    }
+    if (ReviewContract.editsRemaining(current.data()!) == 0) {
+      throw Exception('No edits remaining. Each review can be edited twice.');
+    }
     final updates = <String, dynamic>{
       ...changes,
+      'editCount': 3 - ReviewContract.editsRemaining(current.data()!),
       'feedbackStatus': 'visible',
       'moderationStatus': 'pending_review',
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     };
-    final batch = _db.batch();
-    batch.update(ref, updates);
-    batch.delete(_db.collection('public_destination_reviews').doc(id));
-    await batch.commit();
+    transaction.update(ref, updates);
+    transaction.delete(_db.collection('public_destination_reviews').doc(id));
     return {'id': id, ...current.data()!, ...updates};
+    });
   }
 
   Future<void> deleteReview(String id) async {
