@@ -325,6 +325,16 @@ def _flight_conflicts(itinerary, flight):
     if not segments:
         return []
     warnings = []
+    from services.flight_itinerary_adjustment import planning_assumptions
+    assumptions = planning_assumptions()
+
+    def minutes(raw):
+        try:
+            parsed = datetime.strptime(str(raw).strip(), '%H:%M')
+            return parsed.hour * 60 + parsed.minute
+        except (ValueError, TypeError):
+            return None
+
     arrival = next((x for x in reversed(flight.get('outboundSegments') or []) if isinstance(x, dict)), None)
     departure = next((x for x in (flight.get('returnSegments') or []) if isinstance(x, dict)), None)
     try:
@@ -348,10 +358,28 @@ def _flight_conflicts(itinerary, flight):
             continue
         day = int(activity.get('dayNo') or 1)
         time_value = str(activity.get('scheduledStartTime') or activity.get('timeSlot') or '').strip().lower()
-        if arrival_day and day == arrival_day and any(token in time_value for token in ('morning', '08:', '09:', '10:', '11:')):
-            warnings.append({'type': 'arrival_activity', 'activityId': activity.get('activityId'), 'message': 'This activity may begin before the outbound flight arrives.', 'precision': 'local_time_only', 'timezoneStatus': 'unavailable'})
-        if departure_day and day == departure_day and any(token in time_value for token in ('evening', '18:', '19:', '20:', '21:', '22:')):
-            warnings.append({'type': 'departure_activity', 'activityId': activity.get('activityId'), 'message': 'This activity may extend too close to the return flight.', 'precision': 'local_time_only', 'timezoneStatus': 'unavailable'})
+        start = minutes(activity.get('scheduledStartTime') or str(activity.get('timeSlot') or '').split('-')[0])
+        end = minutes(activity.get('scheduledEndTime'))
+        if end is None and start is not None:
+            duration = activity.get('recommendedDurationMinutes')
+            if type(duration) in (int, float) and math.isfinite(duration) and duration > 0:
+                end = start + duration
+        arrival_clock = minutes((arrival or {}).get('arrivalTime'))
+        departure_clock = minutes((departure or {}).get('departureTime'))
+        arrival_conflict = (start < arrival_clock + assumptions['arrivalClearanceMinutes']
+                            if start is not None and arrival_clock is not None
+                            else any(token in time_value for token in ('morning', '08:', '09:', '10:', '11:')))
+        departure_conflict = (end > departure_clock - assumptions['departureTransferMinutes'] - assumptions['departureCheckinMinutes']
+                              if end is not None and departure_clock is not None
+                              else any(token in time_value for token in ('evening', '18:', '19:', '20:', '21:', '22:')))
+        if arrival_day and day == arrival_day and arrival_conflict:
+            warnings.append({'type': 'arrival_activity', 'activityId': activity.get('activityId'),
+                             'message': 'This activity conflicts with flight arrival and the configured airport-clearance buffer.',
+                             'precision': 'planning_assumption', 'timezoneStatus': 'Malaysia_local_time'})
+        if departure_day and day == departure_day and departure_conflict:
+            warnings.append({'type': 'departure_activity', 'activityId': activity.get('activityId'),
+                             'message': 'This activity conflicts with return departure and the configured transfer/check-in buffer.',
+                             'precision': 'planning_assumption', 'timezoneStatus': 'Malaysia_local_time'})
     return warnings
 
 

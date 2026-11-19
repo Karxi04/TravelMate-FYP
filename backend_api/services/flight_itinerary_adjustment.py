@@ -145,7 +145,8 @@ def _trip_dates(trip):
 
 
 def _protected(activity):
-    return any(activity.get(key) is True for key in ('locked', 'isLocked', 'fixed', 'protected', 'userFixed', 'manualTime', 'manualOrder', 'userEdited')) or str(activity.get('editProvenance') or '').lower() in {'manual', 'user'}
+    from services.trip_budget_replan import protected_activity
+    return protected_activity(activity) or any(activity.get(key) is True for key in ('locked', 'isLocked', 'fixed', 'protected', 'userFixed', 'manualTime', 'manualOrder', 'userEdited')) or str(activity.get('editProvenance') or '').lower() in {'manual', 'user'}
 
 
 def _activity_date(trip, activity):
@@ -329,14 +330,33 @@ def build_preview(trip, flight, owner, preview_id):
             else:
                 changes.append({'activityId': before.get('activityId'), 'activityName': before.get('activityName'), 'kind': 'retained', 'protected': _protected(before)})
     proposed['activities'] = proposed_activities
+    # Keep the saved day cards in sync with the flight-constrained activity list.
+    if isinstance(current.get('dailySchedule'), list):
+        from services.activity_pricing import activity_pricing
+        days = []
+        for day in current['dailySchedule']:
+            day_rows = [row for row in proposed_activities if row.get('dayNo') == day.get('dayNo')]
+            prices = [activity_pricing(row, current.get('travellerCount')) for row in day_rows]
+            days.append({**day, 'activities': deepcopy(day_rows),
+                         'estimatedCost': None if any(price['pricingIssues'] for price in prices) else
+                             round(sum(price['effectiveCost'] for price in prices), 2),
+                         'estimatedMinutes': sum(_activity_duration(row)[0] + int(row.get('travelDurationMinutes') or 0)
+                                                 for row in day_rows)})
+        proposed['dailySchedule'] = days
     proposed['scheduledActivityCount'] = len(proposed.get('activities', []))
     proposed['unscheduledActivityCount'] = len(proposed.get('unscheduledSuggestions', []) or [])
     proposed['budgetEstimate'] = calculateBudget(proposed)
     current_fingerprint = fingerprint(current)
     flight_fingerprint = fingerprint(flight)
+    no_window = not any(day['availableMinutes'] > 0 for day in availability['days'].values())
+    reason = ('No sightseeing window remains between these flights after the configured airport buffers. Change the flight times or trip dates.'
+              if no_window else 'Protected activities conflict with the flight. Review the arrangement before adjusting.'
+              if remaining_conflicts else '')
     return {
-        'previewId': preview_id, 'tripId': trip.get('id'), 'status': 'ready', 'canApply': True,
-        'reason': '', 'assumptions': assumptions,
+        'previewId': preview_id, 'tripId': trip.get('id'), 'status': 'ready',
+        'canApply': not no_window and not remaining_conflicts,
+        'scheduleFeasibility': 'no_sightseeing_window' if no_window else 'protected_conflict' if remaining_conflicts else 'fits_flight_window',
+        'reason': reason, 'assumptions': assumptions,
         'boundaries': {k: v for k, v in boundaries.items() if k not in {'arrival', 'departure'}},
         'availability': availability, 'before': current, 'after': proposed,
         'changes': changes, 'newlyUnscheduled': newly_unscheduled, 'remainingConflicts': remaining_conflicts,
@@ -380,7 +400,7 @@ def apply_preview(preview_id, trip, flight, owner, update):
         proposed['flightAdjustmentFlightFingerprint'] = fingerprint(flight)
         proposed['flightAdjustmentReviewReason'] = None
         proposed['revision'] = int(trip.get('revision') or 0) + 1
-        patch = {key: proposed[key] for key in ('activities', 'unscheduledSuggestions', 'scheduledActivityCount', 'unscheduledActivityCount', 'budgetEstimate') if key in proposed}
+        patch = {key: proposed[key] for key in ('activities', 'dailySchedule', 'unscheduledSuggestions', 'scheduledActivityCount', 'unscheduledActivityCount', 'budgetEstimate') if key in proposed}
         patch.update({key: proposed[key] for key in ('flightAdjustmentPreviewId', 'flightAdjustmentAppliedAt', 'flightAdjustmentAssumptions', 'flightAdjustmentStatus', 'flightAdjustmentFlightFingerprint', 'flightAdjustmentReviewReason', 'revision')})
         updated = update(trip.get('id'), patch)
         if updated is None:

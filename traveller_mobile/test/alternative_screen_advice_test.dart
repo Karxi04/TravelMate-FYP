@@ -46,6 +46,29 @@ Widget _buildApp(Widget child, {Size size = const Size(390, 844), double textSca
 }
 
 void main() {
+  testWidgets('cancel budget replanning retains late verified comparisons without another search', (tester) async {
+    final prices = Completer<dynamic>();
+    final api = _FakeAlternativeApi(onGet: (_) async => {'ok': true, 'stateVersion': 'revision',
+      'budget': {'total': 728, 'limit': 700},
+      'budgetReplanOptions': {'allowances': {'foodCost': 360, 'transportCost': 105}}},
+      onPost: (path, [body]) => prices.future);
+    await tester.pumpWidget(_buildApp(AlternativeScreen(budget: BudgetModel(accommodation: 0,
+      food: 360, transportation: 105, activities: 0, flight: 263), userBudget: 700, tripId: 'owned', api: api)));
+    await tester.pump(); await tester.pump(const Duration(milliseconds: 100));
+    final options = find.text('Review budget options'); await tester.ensureVisible(options);
+    await tester.tap(options); await tester.pumpAndSettle();
+    prices.complete({'ok': true, 'stateVersion': 'revision', 'budget': {'total': 728, 'limit': 700},
+      'alternatives': [{'title': 'Verified lower fare', 'alternativeType': 'flight', 'canApply': true,
+      'stateVersion': 'revision', 'estimatedSavings': 40, 'currentEstimatedCost': 263, 'replacementEstimatedCost': 223}]});
+    await tester.pumpAndSettle();
+    expect(find.text('Budget replanning'), findsOneWidget);
+    expect(find.text('Current: RM 360.00'), findsOneWidget);
+    await tester.pageBack(); await tester.pumpAndSettle();
+    expect(find.text('Verified lower fare'), findsOneWidget);
+    expect(api.postCallCount, 1);
+    expect(api.postCalls.where((path) => path.endsWith('/apply')), isEmpty);
+  });
+
   testWidgets('budget explanation links Search Flights to the exact current Trip without searching', (tester) async {
     final api = _FakeAlternativeApi(onGet: (path) async {
       if (path.endsWith('/budget-replan')) return {'ok': true, 'stateVersion': 'revision', 'budget': {'total': 728, 'limit': 700},

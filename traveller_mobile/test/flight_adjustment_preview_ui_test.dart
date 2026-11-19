@@ -1,3 +1,4 @@
+import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/flight_adjustment_preview_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/trip_details_screen.dart';
@@ -132,6 +133,22 @@ Future<void> _pumpAdjustmentTrip(
 }
 
 void main() {
+  testWidgets('no sightseeing window explains impossibility and disables Apply without writes', (tester) async {
+    final api = _AdjustmentApi();
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: FlightAdjustmentPreviewSheet(
+      api: api, tripId: 'trip_target', trip: api.trip,
+      initialPreview: {'previewId': 'no-window', 'canApply': false,
+        'scheduleFeasibility': 'no_sightseeing_window',
+        'reason': 'No sightseeing window remains between these flights. Change the flight times or trip dates.',
+        'changes': [], 'newlyUnscheduled': [], 'remainingConflicts': []},
+    ))));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('No sightseeing window remains'), findsOneWidget);
+    final button = find.byKey(const ValueKey('apply-flight-adjustment-btn'));
+    expect(tester.widget<FilledButton>(button).onPressed, isNull);
+    expect(api.previewCalls, 0); expect(api.applyCalls, 0);
+  });
+
   testWidgets('reviews flight adjustment before explicit apply',
       (tester) async {
     final api = _AdjustmentApi();

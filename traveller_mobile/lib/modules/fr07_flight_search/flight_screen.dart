@@ -986,8 +986,11 @@ class _FlightScreenState extends State<FlightScreen> {
           final msg = isReplacement
               ? 'Flight replaced! Review itinerary changes to update your schedule.'
               : 'Flight attached to trip plan! Estimated trip total: RM ${budget['total'] ?? '-'}';
+          final overBy = budget['overBy'];
+          final budgetWarning = overBy is num && overBy.isFinite && overBy > 0
+              ? ' Known estimated costs exceed your budget by RM ${overBy.toStringAsFixed(2)}.' : '';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(msg)),
+            SnackBar(content: Text('$msg$budgetWarning')),
           );
           if (widget.targetTripId != null || widget.targetTrip != null) {
             if (Navigator.canPop(context)) {

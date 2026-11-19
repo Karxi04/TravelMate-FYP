@@ -172,8 +172,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     final options = replanOptions;
     final tripId = widget.tripId;
     if (options == null || tripId == null || applying) return;
-    ++_loadVersion; // Ignore a slow replacement lookup after opening safe planning adjustments.
-    setState(() { busy = false; checkingPrices = false; });
+    // The preview owns its options/revision. Keep the existing lookup for returning after Cancel.
     final updated = await Navigator.push<Map<String, dynamic>>(context, MaterialPageRoute(
       builder: (context) => BudgetReplanScreen(api: api, tripId: tripId, options: options, stateVersion: stateVersion)));
     if (!mounted || widget.tripId != tripId || updated == null) return;

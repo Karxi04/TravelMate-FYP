@@ -709,10 +709,10 @@ def flight_adjustment_apply(iid):
     flight = current.get('selectedFlight') if isinstance(current.get('selectedFlight'), dict) else {}
     result, error = apply_flight_adjustment_preview(
         preview_id, current, flight, g.uid,
-        lambda _iid, patch: updateRecord('itineraries', _iid, patch),
+        lambda _iid, patch: updateRecord('itineraries', _iid, patch, expected=current),
     )
     if error:
-        return jsonify({'ok': False, 'error': error}), 409 if 'stale' in error.lower() else 404
+        return jsonify({'ok': False, 'error': error}), 404 if error == 'Preview not found' else 409
     return jsonify(result)
 
 
@@ -1204,16 +1204,23 @@ def _resolve_activity_alternative(current, data, candidates):
 
 
 def _flight_cabin(current):
+    flight = current.get('selectedFlight') or {}
+    saved = flight.get('requestedTravelClass')
+    labels = {'economy': 1, 'premium economy': 2, 'business': 3, 'first': 4, 'first class': 4}
+    cabins = {labels.get(str(leg.get('travelClass') or '').strip().lower())
+              for leg in flight.get('outboundSegments') or []}
+    known = cabins - {None}
+    if saved is not None:
+        # The server-saved search cabin survives quote expiry; conflicting evidence does not.
+        return saved if type(saved) is int and saved in {1, 2, 3, 4} and (not known or known == {saved}) else None
+    if len(cabins) == 1 and None not in cabins:
+        return next(iter(cabins))
     from modules.fr07_flight_search.routes import _load_quote
     if current.get('flightSearchId'):
         quote = _load_quote(current['flightSearchId'])
         if quote:
             return (quote.get('criteria') or {}).get('travel_class', 1)
-    flight = current.get('selectedFlight') or {}
-    labels = {'economy': 1, 'premium economy': 2, 'business': 3, 'first': 4, 'first class': 4}
-    cabins = {labels.get(str(leg.get('travelClass') or '').strip().lower())
-              for leg in flight.get('outboundSegments') or []}
-    return next(iter(cabins)) if len(cabins) == 1 else None
+    return None
 
 
 def _flight_comparison_diagnostics(current):
