@@ -31,7 +31,7 @@ def _fixture():
                 'roomQuantity': 1, 'destination': 'Penang'}
     booking = {'travellerId': 'test_traveller_uid', 'bookingStatus': 'confirmed',
                'hotelCurrency': 'MYR', 'hotelCost': 120, 'amountSource': 'validated_offer',
-               'stayCriteria': criteria, 'selectedHotel': {'currency': 'MYR', 'sandbox': True},
+               'stayCriteria': criteria, 'selectedHotel': {'currency': 'MYR', 'sandbox': True, 'priceBasis': 'stay_total', 'taxesAndFeesStatus': 'included'},
                'source': 'sandbox_fixture'}
     bookings = {'new': booking, 'old': {**deepcopy(booking), 'hotelCost': 200}}
     trip = {'id': 'trip', 'title': 'Existing trip', 'travellerId': 'test_traveller_uid',
@@ -215,7 +215,7 @@ def test_round_trip_uses_final_return_fare_and_preserves_both_legs(client, mock_
     outbound = normalizeFlightResult(_outbound(price=1), traveller_count=2)
     inbound = normalizeFlightResult(_return(price=420), traveller_count=2)
     price_basis = 'provider_round_trip_ticket_price_requested_adults'
-    with _fixture() as (trip, _, _, update, _):
+    with _fixture() as (trip, quote, _, update, _):
         existing = {**outbound, 'price': 550, 'priceBasis': price_basis,
                     'returnSegments': inbound['outboundSegments'], 'requestedTravelClass': 1}
         trip.update(
@@ -224,15 +224,20 @@ def test_round_trip_uses_final_return_fare_and_preserves_both_legs(client, mock_
         )
         for segment in existing['outboundSegments']:
             segment['travelClass'] = 'Economy'
-        with patch('services.serpapi_service.retrieveFlightOptions', return_value={'items': [outbound]}) as search, \
-             patch('services.serpapi_service.retrieveFlightReturns', return_value={'items': [inbound]}) as returns:
+        completed = {**existing, 'price':420, 'optionId':'complete', 'quoteCompleteness':'complete',
+                     'budgetEligible':True}
+        quote['criteria'] = {'traveller_count':2,'travel_class':1,'departure_id':'KUL','arrival_id':'PEN',
+                             'outbound_date':'2027-02-10','return_date':'2027-02-12'}
+        quote['items']=[completed]
+        with patch('services.serpapi_service.retrieveFlightOptions', side_effect=AssertionError('No searches')) as search, \
+             patch('services.serpapi_service.retrieveFlightReturns', side_effect=AssertionError('No return searches')) as returns:
             preview = client.post(PATH, headers=HEADERS)
         assert preview.status_code == 200
         offer = next(option for option in preview.json['alternatives'] if option['alternativeType'] == 'flight')
         assert offer['replacementEstimatedCost'] == 420 and offer['estimatedSavings'] == 130
         assert 'departureToken' not in offer['data']
-        assert search.call_args.args[3] == '2027-02-12'
-        assert returns.call_args.kwargs['adults'] == 2
+        search.assert_not_called()
+        returns.assert_not_called()
         applied = client.post(PATH + '/apply', headers=HEADERS, json={'alternative': offer})
         assert applied.status_code == 200, applied.json
         assert applied.json['budget']['flight'] == 420

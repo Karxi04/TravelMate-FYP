@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from sequence_contract.domain_functions import (
     PACE_WINDOWS,
     _activity_duration,
-    _opening_window,
+    _activity_opening,
     _travel_leg,
     calculateBudget,
 )
@@ -110,15 +110,24 @@ def _airport_code(segment, field):
 def flight_boundaries(trip, flight, assumptions=None):
     assumptions = assumptions or planning_assumptions()
     outbound, returns = _segments(flight)
+    from services.flight_airports import MALAYSIAN_AIRPORT_CATALOG
+    from services.malaysian_locality import normalize_destination_scope
+    scope = normalize_destination_scope(trip.get('destinationArea'))
+    def at_destination(code):
+        airport = MALAYSIAN_AIRPORT_CATALOG.get(code, {})
+        if not airport:
+            return False
+        airport_scope = normalize_destination_scope(airport.get('state'))
+        return not scope.get('state') or scope['state'] == airport_scope.get('state')
     arrival = None
     for segment in reversed(outbound):
-        if _airport_code(segment, 'arrival') == 'PEN':
+        if at_destination(_airport_code(segment, 'arrival')):
             arrival = _date_time(segment.get('arrivalDate'), segment.get('arrivalTime'))
             if arrival:
                 break
     departure = None
     for segment in returns:
-        if _airport_code(segment, 'departure') == 'PEN':
+        if at_destination(_airport_code(segment, 'departure')):
             departure = _date_time(segment.get('departureDate'), segment.get('departureTime'))
             if departure:
                 break
@@ -204,6 +213,10 @@ def _availability(trip, boundaries, assumptions):
             days[key]['endMinutes'] = min(days[key]['endMinutes'], departure.hour * 60 + departure.minute - buffer)
             days[key]['departure'] = boundaries['departureLocal']
     for value in days.values():
+        current_date = date.fromisoformat(value['date'])
+        if (arrival and current_date < arrival.date()) or (departure and current_date > departure.date()):
+            value['endMinutes'] = value['startMinutes']
+            value['source'] = 'outside_flight_stay'
         value['availableMinutes'] = max(0, value['endMinutes'] - value['startMinutes'])
         value['availabilityStatus'] = 'available' if value['endMinutes'] > value['startMinutes'] else 'unavailable'
     return {'status': 'available', 'reason': '', 'days': days}
@@ -215,18 +228,29 @@ def _schedule_day(trip, activities, day_info):
     scheduled = []
     unscheduled = []
     protected_conflicts = []
-    for activity in activities:
+    for index, activity in enumerate(activities):
         if _protected(activity):
             start = _clock(activity.get('scheduledStartTime') or activity.get('timeSlot'))
             end = _clock(activity.get('scheduledEndTime'))
-            if start is None or end is None or start < day_info['startMinutes'] or end > day_info['endMinutes']:
+            if start is None or end is None or start < max(current, day_info['startMinutes']) or end > day_info['endMinutes']:
                 protected_conflicts.append({'activityId': activity.get('activityId'), 'message': 'Protected activity conflicts with flight availability; manual review required.', 'type': 'protected_activity'})
+            opening = _activity_opening(activity, date.fromisoformat(day_info['date']))
+            if opening['status'] == 'closed' or (opening.get('periods') and start is not None and end is not None
+                    and not any(left <= start and end <= right for left, right in opening['periods'])):
+                protected_conflicts.append({'activityId': activity.get('activityId'), 'message': 'Protected visit conflicts with venue hours; manual review required.', 'type': 'protected_activity'})
             scheduled.append(dict(activity))
             if start is not None and end is not None:
                 current = max(current, end)
                 previous = activity
             continue
-        planned, reason = _schedule_candidate(activity, previous, current, day_info)
+        bounded = dict(day_info)
+        following_fixed = next((row for row in activities[index + 1:] if _protected(row)), None)
+        if following_fixed:
+            fixed_start = _clock(following_fixed.get('scheduledStartTime') or following_fixed.get('timeSlot'))
+            transfer = _travel_leg(activity, following_fixed)[0]
+            if fixed_start is not None:
+                bounded['endMinutes'] = min(bounded['endMinutes'], fixed_start - transfer)
+        planned, reason = _schedule_candidate(activity, previous, current, bounded)
         if planned is None:
             unscheduled.append({**activity, 'unscheduledReason': reason})
             continue
@@ -245,16 +269,20 @@ def _schedule_day(trip, activities, day_info):
 def _schedule_candidate(activity, previous, current, day_info):
     duration, duration_source = _activity_duration(activity)
     travel_minutes, distance, travel_source = _travel_leg(previous, activity)
-    opening = _opening_window(activity.get('openingHours'), date.fromisoformat(day_info['date']))
+    opening = _activity_opening(activity, date.fromisoformat(day_info['date']))
     if opening.get('status') == 'closed':
         return None, 'Attraction is closed on this trip day.'
     start = current + travel_minutes
-    if opening.get('window'):
-        start = max(start, opening['window'][0])
+    periods = opening.get('periods') or []
+    if periods:
+        feasible = [max(start, left) for left, right in periods if max(start, left) + duration <= right]
+        if not feasible:
+            return None, 'Could not fit within attraction opening hours after flight availability.'
+        start = min(feasible)
     if start < 13 * 60 + 30 and start + duration > 12 * 60 + 30:
         start = 13 * 60 + 30
     end = start + duration
-    if opening.get('window') and end > opening['window'][1]:
+    if periods and not any(left <= start and end <= right for left, right in periods):
         return None, 'Could not fit within attraction opening hours after flight availability.'
     if end > day_info['endMinutes']:
         return None, 'Could not fit within the flight-constrained availability window.'
@@ -266,6 +294,7 @@ def _schedule_candidate(activity, previous, current, day_info):
         'durationEstimated': duration_source != 'provider', 'travelBufferMinutes': travel_minutes,
         'travelDurationMinutes': travel_minutes, 'travelDistanceKm': distance,
         'travelTimeSource': travel_source, '_startMinutes': start, '_endMinutes': end,
+        'openingHoursStatus': opening['status'], 'openingHoursEvidence': opening['evidence'],
         'scheduleNotes': [*(activity.get('scheduleNotes') or []), 'Adjusted within flight-derived availability.'],
     }, None
 
@@ -294,7 +323,8 @@ def build_preview(trip, flight, owner, preview_id):
         }
     activities = [dict(x) for x in current.get('activities', []) or []]
     proposed_activities = [dict(x) for x in activities]
-    affected_dates = {key for key, value in availability['days'].items() if value.get('arrival') or value.get('departure')}
+    affected_dates = {key for key, value in availability['days'].items()
+                      if value.get('arrival') or value.get('departure') or value.get('source') == 'outside_flight_stay'}
     if not affected_dates:
         return {
             'previewId': preview_id, 'tripId': trip.get('id'), 'status': 'no_flight_boundary',

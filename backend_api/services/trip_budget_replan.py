@@ -1,5 +1,7 @@
 """Preview planning changes from the saved itinerary. Payment and booking data stay outside the patch."""
 from math import isfinite
+from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
 
 from sequence_contract.domain_functions import calculateBudget, recalculateItinerary
 from services.activity_pricing import activity_pricing
@@ -15,8 +17,9 @@ def protected_activity(row):
     return (any(row.get(key) for key in (
         'completedAt', 'paidAt', 'paymentId', 'paymentRecordId', 'bookingId',
         'bookingReference', 'hotelBookingId', 'supplierArrangementId', 'checkoutOrderId',
-        'paid', 'completed', 'locked', 'packageIncluded', 'required',
-    )) or any(str(row.get(key) or '').lower() in {
+        'paid', 'completed', 'locked', 'isLocked', 'fixed', 'protected', 'userFixed',
+        'manualTime', 'manualOrder', 'userEdited', 'packageIncluded', 'required',
+    )) or str(row.get('editProvenance') or '').lower() in {'manual', 'user'} or any(str(row.get(key) or '').lower() in {
         'paid', 'succeeded', 'completed', 'booked', 'confirmed', 'settled', 'fulfilled',
     } for key in ('status', 'paymentStatus', 'bookingStatus')))
 
@@ -61,6 +64,50 @@ def budget_replan_options(trip, budget):
             for row in removable
         ],
     }
+
+
+def planning_alternatives(trip, budget):
+    """Independently validated local changes; never quotes or guaranteed booking savings."""
+    if budget.get('overBy', 0) <= 0:
+        return []
+    changes = []
+    # Suggest a modest reduction, not a claim about the cost of meals or travel.
+    # The user reviews the total allowance; existing preview validation is authoritative.
+    for field, label in (('foodCost', 'Food'), ('transportCost', 'Local transport')):
+        amount = Decimal(str(budget[_ALLOWANCES[field]]))
+        proposed = max(allowance_minimums(trip)[field], float((amount * Decimal('0.90')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)))
+        if proposed > 0 and proposed < float(amount):
+            changes.append((label, f'Review {label.lower()} allowance', {field: proposed}))
+    for row in _removable(trip):
+        price = activity_pricing(row, trip.get('travellerCount'))
+        if not price['pricingIssues'] and not price['overlapsAllowance'] and price['effectiveCost'] > 0:
+            changes.append(('Activities', f"Remove optional visit: {row.get('activityName') or 'Planned visit'}",
+                            {'removeActivityIds': [row['activityId']]}))
+    result = []
+    for category, title, command in changes:
+        try:
+            _, preview = preview_budget_replan(trip, command)
+        except (ValueError, TypeError, KeyError):
+            continue
+        saving = preview['estimatedReduction']
+        if saving <= 0:
+            continue
+        before = budget[_ALLOWANCES[next(iter(command))]] if next(iter(command)) in _ALLOWANCES else saving
+        result.append({'title': title, 'category': category, 'changes': command,
+                       'currentEstimatedCost': before, 'replacementEstimatedCost': round(before - saving, 2),
+                       'estimatedSavings': saving, 'remainingOverBy': preview['budget'].get('overBy', 0),
+                       'canApply': True, 'description': 'Estimated planning reduction; review before changing your saved trip.'})
+    return result
+
+
+def allowance_minimums(trip):
+    """Conservative suggestion floors, not verified meal prices or transport fares."""
+    from services.activity_pricing import traveller_count
+    try:
+        days = max(1, (date.fromisoformat(trip['endDate'][:10]) - date.fromisoformat(trip['startDate'][:10])).days + 1)
+    except (KeyError, TypeError, ValueError):
+        days = 1
+    return {'foodCost': 30 * traveller_count(trip.get('travellerCount')) * days, 'transportCost': 15 * days}
 
 
 def preview_budget_replan(trip, changes):
@@ -116,6 +163,17 @@ def preview_budget_replan(trip, changes):
                 raise ValueError('Removing this visit would change a protected arrangement. Adjust allowances instead.')
         if {row['activityId'] for row in planned['activities']} != {row['activityId'] for row in kept}:
             raise ValueError('The remaining visits cannot fit safely on their assigned days.')
+        if trip.get('selectedFlight'):
+            from services.flight_itinerary_adjustment import flight_boundaries, planning_assumptions, _availability, _clock
+            boundaries = flight_boundaries(trip, trip['selectedFlight'])
+            if not boundaries.get('arrival'):
+                raise ValueError('Flight arrival timing is needed before rearranging visits.')
+            availability = _availability(trip, boundaries, planning_assumptions())
+            for row in planned['activities']:
+                day = next((value for value in availability['days'].values() if value['dayNo'] == row.get('dayNo')), None)
+                start, end = _clock(row.get('scheduledStartTime')), _clock(row.get('scheduledEndTime'))
+                if day is None or start is None or end is None or start < day['startMinutes'] or end > day['endMinutes']:
+                    raise ValueError('Removing this visit would leave a flight-time conflict. Review the flight schedule first.')
         patch.update({key: planned[key] for key in _SCHEDULE if key in planned})
         patch['unscheduledSuggestions'] = [row for row in trip.get('unscheduledSuggestions') or []
                                            if row.get('activityId') not in removed]

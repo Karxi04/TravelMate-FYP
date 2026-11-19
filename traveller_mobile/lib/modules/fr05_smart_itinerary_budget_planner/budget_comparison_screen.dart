@@ -35,22 +35,23 @@ class _BudgetComparisonScreenState extends State<BudgetComparisonScreen> {
   @override
   void didUpdateWidget(covariant BudgetComparisonScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.budget != oldWidget.budget || widget.tripId != oldWidget.tripId) {
+    if (widget.budget != oldWidget.budget ||
+        widget.tripId != oldWidget.tripId) {
       _appliedBudget = null;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final canBrowse = (widget.tripId ?? '').isNotEmpty ||
-        budget.isOverBudget(widget.userBudget);
+    final canBrowse = budget.isOverBudget(widget.userBudget);
 
     return Scaffold(
         appBar: AppBar(
           title: const Text("Budget Comparison"),
         ),
         body: ListView(padding: const EdgeInsets.all(AppSpacing.lg), children: [
-          InkCard(child: BudgetBreakdown(budget: budget, limit: widget.userBudget)),
+          InkCard(
+              child: BudgetBreakdown(budget: budget, limit: widget.userBudget)),
           if (canBrowse)
             ElevatedButton(
               child: Text(budget.isOverBudget(widget.userBudget)
@@ -68,10 +69,11 @@ class _BudgetComparisonScreenState extends State<BudgetComparisonScreen> {
                               onApplied: (trip) {
                                 final estimate = trip['budgetEstimate'];
                                 if (mounted && estimate is Map) {
-                                  setState(() => _appliedBudget = BudgetModel.fromJson(
-                                    Map<String, dynamic>.from(estimate),
-                                    fallbackLimit: widget.userBudget,
-                                  ));
+                                  setState(() =>
+                                      _appliedBudget = BudgetModel.fromJson(
+                                        Map<String, dynamic>.from(estimate),
+                                        fallbackLimit: widget.userBudget,
+                                      ));
                                 }
                                 widget.onApplied?.call(trip);
                               },

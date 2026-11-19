@@ -2363,7 +2363,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               )),
             ),
           ),
-        if (!api.isStandalone || estimateOver)
+        if (estimateOver)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.sm),
             child: SecondaryButton(

@@ -520,15 +520,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Trip Details exposes alternatives directly for an under-budget saved trip', (tester) async {
+  testWidgets('Trip Details does not promote reductions for an under-budget saved trip', (tester) async {
     final api = _TripApi();
     await _pumpTrip(tester, api);
-    final action = find.text('Lower-Cost Alternatives');
-    await _show(tester, action);
-    await tester.tap(action.hitTestable());
-    await tester.pumpAndSettle();
-    expect(api.alternativeReads, 1);
-    expect(find.text('No comparable admission prices.'), findsOneWidget);
+    await _show(tester,find.text('Budget details'));
+    expect(find.text('Lower-Cost Alternatives'),findsNothing);
+    expect(find.text('Review budget options'),findsNothing);
+    expect(api.alternativeReads,0);
+    expect(tester.takeException(),isNull);
   });
 
   testWidgets('over-budget saved trip opens budget options from Trip Details',
