@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
+import '../../services/transaction_request.dart';
 import '../../widgets/ink_card.dart';
 import 'budget_service.dart';
 import 'budget_replan_screen.dart';
@@ -31,6 +32,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   int _loadVersion = 0;
   bool checkingPrices = false;
   bool applying = false;
+  String? discovering;
+  final searchMessages = <String, String>{};
   List<Map<String, dynamic>> planning = [];
   bool optionsChanged = false;
   String? stateVersion;
@@ -57,6 +60,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       replanOptions = null;
       optionsChanged = false;
       applying = false;
+      discovering = null;
+      searchMessages.clear();
       load();
     }
   }
@@ -187,7 +192,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       value is num ? value.toStringAsFixed(2) : 'Unavailable';
 
   Future<void> previewPlanning(Map<String, dynamic> item) async {
-    if (applying || widget.tripId == null) return;
+    if (applying || discovering != null || widget.tripId == null) return;
     setState(() => applying = true);
     final version = _loadVersion;
     final path = '/api/fr5/itineraries/' + widget.tripId! + '/budget-replan';
@@ -246,6 +251,17 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                         .isNotEmpty)
                       const Text(
                           'Important costs remain unpriced; this does not establish full-trip affordability.'),
+                    for (final change
+                        in (preview['itineraryChanges'] as List? ?? [])
+                            .whereType<Map>())
+                      Text((change['activityName'] ?? 'Visit').toString() +
+                          ' — ' +
+                          (change['kind'] ?? 'review').toString() +
+                          (change['to'] is Map
+                              ? ' ' +
+                                  (change['to']['scheduledStartTime'] ?? '')
+                                      .toString()
+                              : '')),
                     const Text(
                         'This changes your saved plan only. It does not book, cancel or refund a supplier arrangement.'),
                     for (final day in (preview['dailySchedule'] as List? ?? [])
@@ -269,6 +285,94 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
             ));
   }
 
+  Future<void> discover(String category) async {
+    if (discovering != null ||
+        applying ||
+        widget.tripId == null ||
+        stateVersion == null) return;
+    final tripId = widget.tripId!;
+    final state = stateVersion;
+    final version = _loadVersion;
+    setState(() => discovering = category);
+    try {
+      final accepted = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+                title: Text(category == 'flight'
+                    ? 'Find cheaper flights?'
+                    : 'Find cheaper hotels?'),
+                content: Text(category == 'flight'
+                    ? 'Search matching fares using up to 2 provider requests. This may use API quota. Quote records may be saved; your trip and bookings stay unchanged until you confirm a replacement.'
+                    : 'Search matching stays using 1 provider rates request. This may use API quota. A rate is not a reservation. Your trip stays unchanged until you confirm a replacement.'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Search now')),
+                ],
+              ));
+      if (!mounted ||
+          accepted != true ||
+          version != _loadVersion ||
+          widget.tripId != tripId) return;
+      final result = await api.post(
+          '/api/fr5/itineraries/$tripId/lower-cost-alternatives/discover', {
+        'category': category,
+        'providerSearchConfirmed': true,
+        'searchRequestId': newTransactionAttemptId('budget_search'),
+        'stateVersion': state
+      });
+      if (!mounted || version != _loadVersion) return;
+      final status = result['search']?['status'];
+      final message = switch (status) {
+        'completed' =>
+          'Search complete. Only cheaper compatible offers are shown.',
+        'pending' =>
+          'Search is still processing. Refresh saved results before trying again.',
+        'quota_limited' => 'Search limit reached. Try again next hour.',
+        _ =>
+          'Provider search is unavailable. Your local planning options remain available.',
+      };
+      setState(() => searchMessages[category] = message);
+      await load();
+    } catch (error) {
+      if (mounted && version == _loadVersion) {
+        setState(() => searchMessages[category] = error is ApiException &&
+                error.statusCode == 429
+            ? 'Search limit reached. Local planning options remain available.'
+            : error is ApiException && error.statusCode == 409
+                ? error.message
+                : 'Search could not be confirmed. Refresh saved results before trying again.');
+      }
+    } finally {
+      if (mounted && widget.tripId == tripId)
+        setState(() => discovering = null);
+    }
+  }
+
+  Widget discoveryCard(String category) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: InkCard(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(category == 'flight' ? 'Flights' : 'Hotels',
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+          const Text('Look for a cheaper comparable planning quote.'),
+          if (searchMessages[category] != null) Text(searchMessages[category]!),
+          OutlinedButton(
+              onPressed: discovering != null || applying || stateVersion == null
+                  ? null
+                  : () => discover(category),
+              child: Text(discovering == category
+                  ? 'Searching…'
+                  : category == 'flight'
+                      ? 'Find cheaper flights'
+                      : 'Find cheaper hotels')),
+        ])),
+      );
+
   double? _extractSavings(Map<String, dynamic> item) {
     final raw = item['estimatedSavings'] ?? item['saving'];
     if (raw == null) return null;
@@ -285,7 +389,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       _extractSavings(item) != null;
 
   Future<void> applyAlternative(Map<String, dynamic> item) async {
-    if (busy || applying || !_canApplyItem(item)) return;
+    if (busy || applying || discovering != null || !_canApplyItem(item)) return;
     final tripId = widget.tripId;
     final version = _loadVersion;
     setState(() => applying = true);
@@ -366,6 +470,23 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             Text((item['description'] ?? '').toString()),
+            if (item['data'] is Map && item['alternativeType'] == 'hotel')
+              Text(((item['data']['roomName'] ?? '')).toString() +
+                  ' · ' +
+                  ((item['data']['address'] ?? '')).toString()),
+            if (item['data'] is Map && item['alternativeType'] == 'flight')
+              for (final leg in ['outboundSegments', 'returnSegments'])
+                for (final segment
+                    in (item['data'][leg] as List? ?? []).whereType<Map>())
+                  Text((segment['departureAirportCode'] ?? '').toString() +
+                      ' ' +
+                      (segment['departureDate'] ?? '').toString() +
+                      ' ' +
+                      (segment['departureTime'] ?? '').toString() +
+                      ' → ' +
+                      (segment['arrivalAirportCode'] ?? '').toString() +
+                      ' ' +
+                      (segment['arrivalTime'] ?? '').toString()),
             if (before is num && after is num)
               Text('RM ' + money(before) + ' → RM ' + money(after)),
             if (saving != null && canApply)
@@ -380,7 +501,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
               Align(
                   alignment: Alignment.centerRight,
                   child: FilledButton.tonal(
-                    onPressed: applying
+                    onPressed: applying || discovering != null
                         ? null
                         : () => local
                             ? previewPlanning(item)
@@ -427,6 +548,15 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                         TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 12),
                 for (final item in planning) optionCard(item, local: true),
+                if (!api.isStandalone &&
+                    (widget.tripId ?? '').isNotEmpty &&
+                    (budget?['flight'] as num? ?? widget.budget.flight) > 0)
+                  discoveryCard('flight'),
+                if (!api.isStandalone &&
+                    (widget.tripId ?? '').isNotEmpty &&
+                    (budget?['hotel'] as num? ?? widget.budget.accommodation) >
+                        0)
+                  discoveryCard('hotel'),
                 for (final item in alternatives) optionCard(item),
                 if (replanOptions != null)
                   FilledButton(

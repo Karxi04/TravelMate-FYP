@@ -1,3 +1,4 @@
+import 'package:travelmate_traveller/services/transaction_request.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -55,31 +56,250 @@ Widget _buildApp(Widget child,
 }
 
 void main() {
-
-  testWidgets('changing Trip while a local preview is pending cannot confirm or overwrite the new Trip', (tester) async {
-    final pending=Completer<dynamic>();
-    final api=_FakeAlternativeApi(onGet:(path) async=>{
-      'ok':true,'stateVersion':path.contains('/first/')?'first-r':'second-r',
-      'budget':{'total':990,'limit':700},
-      'planningAlternatives':[{'title':'Review food allowance','category':'Food','changes':{'foodCost':324},
-        'currentEstimatedCost':360,'replacementEstimatedCost':324,'estimatedSavings':36,'remainingOverBy':254}],
-      'budgetReplanOptions':{'allowances':{'foodCost':360,'transportCost':105}}},
-      onPost:(path,[body]) async {
-        if(path.endsWith('/budget-replan/preview'))return pending.future;
-        return {'ok':true,'alternatives':[]};
-      });
-    Map<String,dynamic>? applied;
-    Widget page(String id)=>_buildApp(AlternativeScreen(budget:BudgetModel(accommodation:0,food:360,
-      transportation:105,activities:0,flight:525),userBudget:700,tripId:id,api:api,onApplied:(trip)=>applied=trip));
-    await tester.pumpWidget(page('first'));await tester.pumpAndSettle();
-    await tester.tap(find.text('Preview'));await tester.pump();
-    await tester.pumpWidget(page('second'));await tester.pumpAndSettle();
-    pending.complete({'before':{'total':990},'budget':{'total':954},'estimatedReduction':36,'previewToken':'first-token'});
+  testWidgets(
+      'provider discovery requires confirmation, prevents duplicates and reloads actual quotes',
+      (tester) async {
+    tester.view.physicalSize = const Size(600, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final response = Completer<dynamic>();
+    var found = false;
+    var searches = 0;
+    final api = _FakeAlternativeApi(
+        onGet: (_) async => {
+              'ok': true,
+              'stateVersion': 'revision',
+              'budget': {
+                'total': 1465,
+                'limit': 1000,
+                'flight': 600,
+                'hotel': 400
+              },
+              'budgetReplanOptions': {
+                'allowances': {'foodCost': 360, 'transportCost': 105}
+              }
+            },
+        onPost: (path, [body]) async {
+          if (path.endsWith('/discover')) {
+            expect(body?['providerSearchConfirmed'], true);
+            expect(body?['stateVersion'], 'revision');
+            expect(body?['category'], 'flight');
+            expect(body?['searchRequestId'], startsWith('budget_search_'));
+            searches++;
+            return response.future;
+          }
+          return {
+            'ok': true,
+            'stateVersion': 'revision',
+            'budget': {
+              'total': 1465,
+              'limit': 1000,
+              'flight': 600,
+              'hotel': 400
+            },
+            'alternatives': found
+                ? [
+                    {
+                      'alternativeType': 'flight',
+                      'title': 'Lower-cost flight: Synthetic Air',
+                      'stateVersion': 'revision',
+                      'canApply': true,
+                      'currentEstimatedCost': 600,
+                      'replacementEstimatedCost': 420,
+                      'estimatedSavings': 180,
+                      'data': {
+                        'outboundSegments': [
+                          {
+                            'departureAirportCode': 'KUL',
+                            'departureDate': '2027-02-10',
+                            'departureTime': '10:40',
+                            'arrivalAirportCode': 'PEN',
+                            'arrivalTime': '11:40'
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                : []
+          };
+        });
+    await tester.pumpWidget(_buildApp(AlternativeScreen(
+        budget: BudgetModel(
+            accommodation: 400,
+            food: 360,
+            transportation: 105,
+            activities: 0,
+            flight: 600),
+        userBudget: 1000,
+        tripId: 'owned',
+        api: api)));
     await tester.pumpAndSettle();
-    expect(find.text('Confirm change'),findsNothing);
-    expect(api.postCalls.where((path)=>path.endsWith('/apply')),isEmpty);
-    expect(applied,isNull);
-    expect(find.text('RM 360.00 → RM 324.00'),findsOneWidget);
+    expect(searches, 0);
+    expect(find.text('Search Flights'), findsNothing);
+    await tester.tap(find.text('Find cheaper flights'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('up to 2 provider requests'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(searches, 0);
+    await tester.tap(find.text('Find cheaper flights'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Search now'));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(searches, 1);
+    expect(
+        tester
+            .widget<OutlinedButton>(
+                find.widgetWithText(OutlinedButton, 'Searching…'))
+            .onPressed,
+        isNull);
+    expect(
+        tester
+            .widget<OutlinedButton>(
+                find.widgetWithText(OutlinedButton, 'Find cheaper hotels'))
+            .onPressed,
+        isNull);
+    found = true;
+    response.complete({
+      'ok': true,
+      'search': {'status': 'completed', 'requestsAttempted': 2}
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('Lower-cost flight: Synthetic Air'), findsOneWidget);
+    expect(find.textContaining('KUL 2027-02-10 10:40 → PEN 11:40'),
+        findsOneWidget);
+    expect(searches, 1);
+    expect(api.postCalls.where((path) => path.endsWith('/apply')), isEmpty);
+  });
+
+  testWidgets(
+      'hotel search failure is not retried and local planning options remain',
+      (tester) async {
+    var searches = 0;
+    final api = _FakeAlternativeApi(
+        onGet: (_) async => {
+              'ok': true,
+              'stateVersion': 'r',
+              'budget': {'total': 990, 'limit': 700, 'hotel': 400},
+              'budgetReplanOptions': {
+                'allowances': {'foodCost': 360, 'transportCost': 105}
+              },
+              'planningAlternatives': [
+                {
+                  'title': 'Review food allowance',
+                  'category': 'Food',
+                  'changes': {'foodCost': 324},
+                  'currentEstimatedCost': 360,
+                  'replacementEstimatedCost': 324,
+                  'estimatedSavings': 36,
+                  'remainingOverBy': 254
+                }
+              ]
+            },
+        onPost: (path, [body]) async {
+          if (path.endsWith('/discover')) {
+            searches++;
+            throw ApiException('timeout', 503, {});
+          }
+          return {'ok': true, 'alternatives': []};
+        });
+    await tester.pumpWidget(_buildApp(AlternativeScreen(
+        budget: BudgetModel(
+            accommodation: 400, food: 360, transportation: 105, activities: 0),
+        userBudget: 700,
+        tripId: 'owned',
+        api: api)));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Find cheaper hotels'), 200);
+    await tester.tap(find.text('Find cheaper hotels'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('1 provider rates request'), findsOneWidget);
+    await tester.tap(find.text('Search now'));
+    await tester.pumpAndSettle();
+    expect(searches, 1);
+    expect(
+        find.textContaining('Search could not be confirmed'), findsOneWidget);
+    expect(api.postCalls.where((path) => path.endsWith('/apply')), isEmpty);
+    await tester.drag(find.byType(ListView), const Offset(0, 700));
+    await tester.pumpAndSettle();
+    expect(find.text('Review food allowance'), findsOneWidget);
+    expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Preview'))
+            .onPressed,
+        isNotNull);
+  });
+
+  test(
+      'explicit provider discovery uses bounded provider timeout without changing payment timeout',
+      () {
+    expect(
+        RequestTimeouts.forPost(
+            '/api/fr5/itineraries/owned/lower-cost-alternatives/discover'),
+        const Duration(seconds: 90));
+    expect(RequestTimeouts.forPost('/api/fr9/checkout/session'),
+        RequestTimeouts.providerMutation);
+    expect(RequestTimeouts.forPost('/ordinary'), RequestTimeouts.ordinaryWrite);
+  });
+
+  testWidgets(
+      'changing Trip while a local preview is pending cannot confirm or overwrite the new Trip',
+      (tester) async {
+    final pending = Completer<dynamic>();
+    final api = _FakeAlternativeApi(
+        onGet: (path) async => {
+              'ok': true,
+              'stateVersion': path.contains('/first/') ? 'first-r' : 'second-r',
+              'budget': {'total': 990, 'limit': 700},
+              'planningAlternatives': [
+                {
+                  'title': 'Review food allowance',
+                  'category': 'Food',
+                  'changes': {'foodCost': 324},
+                  'currentEstimatedCost': 360,
+                  'replacementEstimatedCost': 324,
+                  'estimatedSavings': 36,
+                  'remainingOverBy': 254
+                }
+              ],
+              'budgetReplanOptions': {
+                'allowances': {'foodCost': 360, 'transportCost': 105}
+              }
+            },
+        onPost: (path, [body]) async {
+          if (path.endsWith('/budget-replan/preview')) return pending.future;
+          return {'ok': true, 'alternatives': []};
+        });
+    Map<String, dynamic>? applied;
+    Widget page(String id) => _buildApp(AlternativeScreen(
+        budget: BudgetModel(
+            accommodation: 0,
+            food: 360,
+            transportation: 105,
+            activities: 0,
+            flight: 525),
+        userBudget: 700,
+        tripId: id,
+        api: api,
+        onApplied: (trip) => applied = trip));
+    await tester.pumpWidget(page('first'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Preview'));
+    await tester.pump();
+    await tester.pumpWidget(page('second'));
+    await tester.pumpAndSettle();
+    pending.complete({
+      'before': {'total': 990},
+      'budget': {'total': 954},
+      'estimatedReduction': 36,
+      'previewToken': 'first-token'
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('Confirm change'), findsNothing);
+    expect(api.postCalls.where((path) => path.endsWith('/apply')), isEmpty);
+    expect(applied, isNull);
+    expect(find.text('RM 360.00 → RM 324.00'), findsOneWidget);
   });
 
   testWidgets(
@@ -1119,6 +1339,8 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('Activity budget guidance'), findsNothing);
+      await tester.scrollUntilVisible(
+          find.text('Estimated reduction: RM 85.00'), 200);
       expect(find.text('Estimated reduction: RM 85.00'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Preview'), findsOneWidget);
     });

@@ -1297,6 +1297,134 @@ def _flight_alternative_options(current):
     return options
 
 
+def _hotel_discovery_baseline(current):
+    """Resolve a planning-only stay, without releasing any supplier obligation."""
+    from modules.fr08_hotel_booking.routes import _quote_document_id, _normalise_occupancies, _hotel_trip_compatibility
+    if any(current.get(key) for key in ('hotelPaymentId', 'hotelOrderId', 'paymentId', 'paymentRecordId',
+                                       'paidTotal', 'checkoutOrderId', 'purchasedPackages')):
+        raise _AlternativeConflict('A protected arrangement cannot be replaced here.')
+    booking_id = current.get('hotelBookingId')
+    if booking_id:
+        record = retrieveRecord('hotel_bookings', booking_id) or {}
+        if (record.get('travellerId') != g.uid or record.get('saveDetailsOnly') is not True
+                or record.get('bookingStatus') != 'confirmed'
+                or any(record.get(key) for key in ('providerMutationCalled', 'bookingId', 'hotelConfirmationCode',
+                                                    'reconciliationRequired', 'verificationRequired'))
+                or record.get('itineraryId') not in (None, '', current.get('id'))):
+            raise _AlternativeConflict('Only an unpaid planning selection can be compared here.')
+        orders = retrieveRecord('checkout_orders', filters=[('travellerId', '==', g.uid),
+                                 ('hotelBookingId', '==', booking_id)], limit=20) or []
+        if any(row.get('paymentStatus') == 'paid' or row.get('status') in
+               {'paid', 'checkout_open', 'checkout_pending', 'payment_pending', 'payment_mismatch'} for row in orders):
+            raise _AlternativeConflict('An active hotel checkout protects this selection.')
+        original = record.get('selectedHotel') or {}
+        accepted = record.get('acceptedPrebookSnapshot') or {}
+        if record.get('amountSource') != 'validated_offer' or record.get('hotelCost') != current.get('hotelCost'):
+            raise _AlternativeConflict('The original hotel amount cannot be compared.')
+        criteria = record.get('stayCriteria') or {}
+    else:
+        identity = current.get('hotelOfferQuoteId')
+        record = retrieveRecord('hotel_offer_quotes', _quote_document_id(identity)) if identity else None
+        if not record or record.get('travellerId') != g.uid:
+            raise _AlternativeConflict('A validated hotel planning quote is needed.')
+        original = record.get('offer') or {}
+        accepted = {}
+        criteria = record.get('criteria') or {}
+        if original.get('price') != current.get('hotelCost'):
+            raise _AlternativeConflict('The original hotel amount cannot be compared.')
+    if (protected_activity(current.get('selectedHotel') or {})
+            or current.get('hotelCurrency') != 'MYR'
+            or (accepted.get('priceBasis') or original.get('priceBasis')) != 'stay_total'
+            or (accepted.get('taxesAndFeesStatus') or original.get('taxesAndFeesStatus')) != 'included'):
+        raise _AlternativeConflict('A comparable unpaid total-stay price including taxes is needed.')
+    if _hotel_trip_compatibility(current, criteria)[1]:
+        raise _AlternativeConflict('The stay dates or destination do not match this trip.')
+    try:
+        rooms = _normalise_occupancies(criteria, criteria['roomQuantity'])
+        if sum(room['adults'] + len(room.get('children') or []) for room in rooms) != traveller_count(current.get('travellerCount')):
+            raise ValueError
+    except (ValueError, TypeError, KeyError):
+        raise _AlternativeConflict('The hotel occupancy does not match this trip.') from None
+    return criteria
+
+
+def _resolve_hotel_rate(current, data):
+    from modules.fr08_hotel_booking.routes import _resolve_quote, _normalise_occupancies, _offer_matches_occupancies
+    from services.malaysian_locality import normalize_destination_scope
+    criteria = _hotel_discovery_baseline(current)
+    quote, error, _ = _resolve_quote({'quoteId': data.get('hotelOfferQuoteId')}, str(data.get('offerId') or ''))
+    if error:
+        raise _AlternativeConflict(error)
+    proposed = quote.get('criteria') or {}
+    keys = ('checkin', 'checkout', 'roomQuantity')
+    if any(proposed.get(key) != criteria.get(key) for key in keys):
+        raise _AlternativeConflict('Compare the same hotel dates and room count.')
+    rooms = _normalise_occupancies(criteria, criteria['roomQuantity'])
+    if _normalise_occupancies(proposed, proposed['roomQuantity']) != rooms:
+        raise _AlternativeConflict('Compare identical adult/child room occupancy.')
+    offer = quote.get('offer') or {}
+    location = normalize_destination_scope(offer.get('address'))
+    destination = normalize_destination_scope(current.get('destinationArea'))
+    if (not location.get('state') or location['state'] != destination.get('state')
+            or location.get('city') and destination.get('city') and location['city'] != destination['city']):
+        raise _AlternativeConflict('The hotel location could not be verified for this trip.')
+    if (quote.get('source') != 'liteapi' or offer.get('priceBasis') != 'stay_total'
+            or offer.get('priceStatus') != 'available' or offer.get('currency') != 'MYR'
+            or offer.get('taxesAndFeesStatus') != 'included' or offer.get('roomQuantity') != criteria['roomQuantity']
+            or not _offer_matches_occupancies(offer, rooms)):
+        raise _AlternativeConflict('A complete comparable MYR hotel rate is required.')
+    selected = {**offer, 'planningOnly': True, 'transactionMode': 'planning_reference'}
+    patch = {'selectedHotel': selected, 'hotelOfferQuoteId': quote['quoteId'], 'hotelBookingId': None,
+             'hotelCost': offer.get('price'), 'hotelCurrency': 'MYR', 'accommodationChoice': 'paid_hotel',
+             'hotelSelectionStatus': 'selected', 'hotelStayCriteria': proposed}
+    comparison = {key: criteria.get(key) for key in ('checkin', 'checkout', 'adults', 'children', 'occupancies', 'roomQuantity')}
+    trusted = {'name': offer.get('name'), 'roomName': offer.get('roomName'), 'address': offer.get('address'),
+               'price': offer.get('price'), 'currency': 'MYR', 'source': 'liteapi',
+               'hotelOfferQuoteId': quote['quoteId'], 'offerId': offer.get('offerId'),
+               'selectedHotel': selected, 'comparisonCriteria': comparison, '_validatedAlternative': True}
+    return trusted, patch, 'hotel-rate:' + quote['quoteId'], {**current, '_hotelComparisonCriteria': comparison}
+
+
+@bp.post('/itineraries/<iid>/lower-cost-alternatives/discover')
+@auth_required(['traveller'])
+def discover_cost_alternatives(iid):
+    current = _own(iid)
+    if not current:
+        return jsonify(ok=False, error='Itinerary not found'), 404
+    payload = request.get_json(silent=True) or {}
+    kind = payload.get('category')
+    if kind not in {'flight', 'hotel'} or payload.get('providerSearchConfirmed') is not True:
+        return jsonify(ok=False, error='Confirm a flight or hotel provider search.'), 400
+    from services.transaction_reliability import normalize_attempt_id
+    try:
+        search_request_id = normalize_attempt_id(payload.get('searchRequestId'), 'searchRequestId')
+    except ValueError as error:
+        return jsonify(ok=False, error=str(error)), 400
+    if not _can_replan(current) or calculateBudget(current).get('overBy', 0) <= 0:
+        return jsonify(ok=False, error='This trip does not need an eligible budget replacement.'), 409
+    state = _alternative_state(current)
+    if payload.get('stateVersion') != state:
+        return jsonify(ok=False, error='This trip changed. Refresh alternatives first.', code='STALE_ALTERNATIVE'), 409
+    from services.budget_provider_discovery import run_search, flight_search, hotel_search, DiscoveryError
+    try:
+        if kind == 'hotel':
+            criteria = _hotel_discovery_baseline(current)
+            search = lambda invoke: hotel_search(criteria, invoke)
+        else:
+            if (_flight_comparison_diagnostics(current)['status'] != 'eligible'
+                    or protected_activity(current.get('selectedFlight') or {})
+                    or any(current.get(key) for key in ('flightBookingId', 'flightPaymentId', 'flightOrderId',
+                                                        'paymentId', 'paymentRecordId', 'paidTotal'))):
+                raise _AlternativeConflict('The selected flight cannot safely be compared.')
+            search = lambda invoke: flight_search(current, invoke)
+        result = run_search(g.uid, current, kind, state, search, request_id=search_request_id)
+    except (DiscoveryError, _AlternativeConflict) as error:
+        return jsonify(ok=False, error=str(error)), 409
+    except Exception:
+        return jsonify(ok=False, error='Search state could not be verified. No automatic retry was made.'), 503
+    return jsonify(ok=True, search=result, stateVersion=state)
+
+
 def _resolve_cost_alternative(kind, data, current):
     """Resolve existing owned references; never accept client replacement prices."""
     if kind == 'flight':
@@ -1336,8 +1464,8 @@ def _resolve_cost_alternative(kind, data, current):
             old_segments = selected.get('outboundSegments') or []
             if not old_segments or criteria.get(field) != old_segments[segment].get(airport):
                 raise _AlternativeConflict('Compare flight prices for the same route.')
-        if _flight_trip_date_error(current, option) or _flight_conflicts(current, option):
-            raise _AlternativeConflict('Review flight date/activity conflicts through flight selection first.')
+        if _flight_trip_date_error(current, option):
+            raise _AlternativeConflict('The flight dates do not match this trip.')
         if selected.get('price') != current.get('flightCost'):
             raise _AlternativeConflict('The existing flight price is not comparable.')
         trusted = _sanitize_flight_snapshot({**option, 'searchId': quote['id'],
@@ -1358,8 +1486,23 @@ def _resolve_cost_alternative(kind, data, current):
         }
         from services.flight_itinerary_adjustment import flight_selection_change_patch
         patch.update(flight_selection_change_patch(current, patch['selectedFlight']))
+        if current.get('activities'):
+            from services.flight_itinerary_adjustment import build_preview, fingerprint
+            schedule = build_preview({**current, **patch}, patch['selectedFlight'], g.uid, 'budget-preview')
+            if not schedule['canApply'] or not schedule['after'].get('activities'):
+                raise _AlternativeConflict(schedule.get('reason') or 'No feasible sightseeing plan fits this flight.')
+            if schedule['newlyUnscheduled']:
+                raise _AlternativeConflict('This flight cannot retain all planned visits safely. Review the flight or trip dates first.')
+            patch.update({key: schedule['after'][key] for key in (
+                'activities', 'dailySchedule', 'unscheduledSuggestions', 'scheduledActivityCount', 'unscheduledActivityCount'
+            ) if key in schedule['after']})
+            patch.update(flightAdjustmentStatus='applied', flightAdjustmentFlightFingerprint=fingerprint(patch['selectedFlight']),
+                         flightAdjustmentAssumptions=schedule['assumptions'], flightAdjustmentReviewReason=None)
+            trusted['itineraryChanges'] = schedule['changes']
         reference = f"flight:{quote['id']}:{patch['flightOptionId']}"
         return trusted, patch, reference, current
+    if kind == 'hotel' and data.get('hotelOfferQuoteId'):
+        return _resolve_hotel_rate(current, data)
     if kind == 'hotel':
         from modules.fr08_hotel_booking.routes import _hotel_trip_compatibility, _is_expired
         from services.malaysian_locality import normalize_destination_scope
@@ -1481,6 +1624,13 @@ def lower_cost_alternatives(iid):
                   if row.get('id') and row['id'] != current['hotelBookingId']
                   and row.get('bookingStatus') in {'confirmed', 'paid'}]
 
+    try:
+        _hotel_discovery_baseline(current)
+        cached = retrieveRecord('hotel_offer_quotes', filters=[('travellerId', '==', g.uid)], limit=40) or []
+        hotels += [{'hotelOfferQuoteId': row['quoteId'], 'offerId': (row.get('offer') or {}).get('offerId')}
+                   for row in cached if row.get('quoteId')]
+    except Exception:
+        pass
     budget = calculateBudget(current)
     alternatives = []
     seen = set()
@@ -1699,7 +1849,8 @@ def apply_lower_cost_alternative(iid):
             already_applied = (
                 current.get('flightSearchId') == patch.get('flightSearchId')
                 and current.get('flightOptionId') == patch.get('flightOptionId')
-                if kind == 'flight' else current.get('hotelBookingId') == patch.get('hotelBookingId')
+                if kind == 'flight' else (current.get('hotelOfferQuoteId') == patch['hotelOfferQuoteId'] if patch.get('hotelOfferQuoteId')
+                      else current.get('hotelBookingId') == patch.get('hotelBookingId'))
             )
             if already_applied and current.get(f'{kind}Cost') == trusted.get('price'):
                 if alternative.get('alternativeId') and alternative['alternativeId'] != reference:
@@ -1728,7 +1879,7 @@ def apply_lower_cost_alternative(iid):
     if request.path.endswith('/preview'):
         return jsonify(ok=True, before=calculateBudget(current), budget=patch['budgetEstimate'],
                        estimatedReduction=savings, dailySchedule=patch.get('dailySchedule', current.get('dailySchedule', [])),
-                       stateVersion=_alternative_state(current))
+                       stateVersion=_alternative_state(current), itineraryChanges=trusted.get('itineraryChanges', []))
     try:
         updated = _commit_cost_alternative(iid, current, patch)
         if not updated:

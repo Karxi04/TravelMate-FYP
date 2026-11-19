@@ -957,7 +957,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           ? rawPayment : null;
       final accepted = payment?['acceptedPrebook'];
       final expires = accepted is Map ? DateTime.tryParse('${accepted['expiresAt']}') : null;
-      final hotelPaymentLabel = payment is! Map ? null : switch (payment['status']) {
+      final hotelPaymentLabel = payment is! Map ? (hotel['planningOnly'] == true ? 'Selected — Not Paid' : null) : switch (payment['status']) {
         'paid' when payment['paymentStatus'] == 'paid' => 'Paid · Stripe',
         'checkout_open' || 'checkout_pending' || 'payment_pending' => 'Payment pending',
         'payment_mismatch' => 'Payment needs verification',
