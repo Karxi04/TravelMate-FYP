@@ -621,11 +621,13 @@ class _HomeTabState extends State<HomeTab> {
                       color: AppColors.primaryStrong,
                     ),
                     const SizedBox(width: AppSpacing.xxs),
-                    Text(
-                      'Plan your next trip',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                    Expanded(
+                      child: Text(
+                        'Plan your next trip',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
                     ),
                   ],
                 ),
@@ -719,6 +721,7 @@ class _HomeTabState extends State<HomeTab> {
                       280,
                     ),
                     child: RecommendationCard(
+                      carousel: true,
                       recommendation: item,
                       discovery:true,
                       source: recommendationSource,

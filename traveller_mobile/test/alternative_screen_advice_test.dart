@@ -57,6 +57,238 @@ Widget _buildApp(Widget child,
 
 void main() {
   testWidgets(
+      'genuine search limit shows Malaysia retry time and clears before a fresh search',
+      (tester) async {
+    var searches = 0;
+    final fresh = Completer<dynamic>();
+    final retry = DateTime.now().toUtc().add(const Duration(hours: 2));
+    final local = retry
+        .add(const Duration(hours: 8))
+        .toIso8601String()
+        .substring(0, 16)
+        .replaceFirst('T', ' ');
+    final api = _FakeAlternativeApi(
+        onGet: (_) async => {
+              'ok': true,
+              'stateVersion': 'r',
+              'budget': {
+                'total': 900,
+                'limit': 700,
+                'flight': 300,
+                'hotel': 400
+              }
+            },
+        onPost: (path, [body]) async {
+          if (path.endsWith('/discover')) {
+            searches++;
+            if (searches == 1)
+              return {
+                'search': {
+                  'status': 'quota_limited',
+                  'retryAt': retry.toIso8601String()
+                }
+              };
+            return fresh.future;
+          }
+          return {
+            'ok': true,
+            'stateVersion': 'r',
+            'budget': {'total': 900, 'limit': 700, 'flight': 300, 'hotel': 400},
+            'alternatives': []
+          };
+        });
+    await tester.pumpWidget(_buildApp(AlternativeScreen(
+        budget: BudgetModel(
+            accommodation: 400, food: 360, transportation: 140, activities: 0),
+        userBudget: 700,
+        tripId: 'owned',
+        api: api)));
+    await tester.pumpAndSettle();
+    Future<void> search() async {
+      await tester.scrollUntilVisible(find.text('Find cheaper flights'), 200);
+      await tester.tap(find.text('Find cheaper flights'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Search now'));
+      await tester.pump();
+    }
+
+    await search();
+    await tester.pumpAndSettle();
+    expect(find.text('Flight search limit reached. Try again at $local MYT.'),
+        findsOneWidget);
+    await search();
+    expect(find.textContaining('search limit reached'), findsNothing);
+    fresh.complete({
+      'search': {'status': 'completed', 'requestsAttempted': 1}
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('No verified cheaper flight is currently available.'),
+        findsOneWidget);
+    expect(searches, 2);
+    expect(api.postCalls.where((path) => path.endsWith('/apply')), isEmpty);
+  });
+
+  testWidgets(
+      'hotel comparison rejection uses concise wording and does not apply or retry',
+      (tester) async {
+    var searches = 0;
+    final api = _FakeAlternativeApi(
+        onGet: (_) async => {
+              'ok': true,
+              'stateVersion': 'r',
+              'budget': {
+                'total': 900,
+                'limit': 700,
+                'flight': 300,
+                'hotel': 400
+              }
+            },
+        onPost: (path, [body]) async {
+          if (path.endsWith('/discover')) {
+            searches++;
+            throw ApiException(
+                'A comparable unpaid total-stay price including taxes is needed.',
+                409, {});
+          }
+          return {
+            'ok': true,
+            'stateVersion': 'r',
+            'budget': {'total': 900, 'limit': 700, 'flight': 300, 'hotel': 400},
+            'alternatives': []
+          };
+        });
+    await tester.pumpWidget(_buildApp(AlternativeScreen(
+        budget: BudgetModel(
+            accommodation: 400, food: 360, transportation: 140, activities: 0),
+        userBudget: 700,
+        tripId: 'owned',
+        api: api)));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Find cheaper hotels'), 200);
+    await tester.tap(find.text('Find cheaper hotels'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Search now'));
+    await tester.pumpAndSettle();
+    expect(
+        find.text(
+            'No verified cheaper hotel is currently available for this stay.'),
+        findsOneWidget);
+    expect(find.textContaining('total-stay price'), findsNothing);
+    expect(searches, 1);
+    expect(api.postCalls.where((path) => path.endsWith('/apply')), isEmpty);
+  });
+
+  for (final category in ['flight', 'hotel']) {
+    testWidgets(
+        'discovered $category renders and preview cancel confirm reopens once',
+        (tester) async {
+      tester.view.physicalSize = const Size(600, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var discovered = false, saved = false, applies = 0;
+      final api = _FakeAlternativeApi(
+          onGet: (_) async => {
+                'ok': true,
+                'stateVersion': saved ? 'new' : 'r',
+                'budget': {
+                  'total': saved ? 750 : 900,
+                  'limit': 800,
+                  'flight': 300,
+                  'hotel': 400
+                }
+              },
+          onPost: (path, [body]) async {
+            if (path.endsWith('/discover')) {
+              discovered = true;
+              return {
+                'search': {'status': 'completed', 'requestsAttempted': 1}
+              };
+            }
+            if (path.endsWith('/apply')) {
+              applies++;
+              saved = true;
+              return {
+                'ok': true,
+                'itinerary': {'id': 'owned'},
+                'budget': {'total': 750, 'limit': 800}
+              };
+            }
+            return {
+              'ok': true,
+              'stateVersion': 'r',
+              'budget': {
+                'total': 900,
+                'limit': 800,
+                'flight': 300,
+                'hotel': 400
+              },
+              'alternatives': discovered && !saved
+                  ? [
+                      {
+                        'alternativeType': category,
+                        'title': 'Verified cheaper $category',
+                        'canApply': true,
+                        'stateVersion': 'r',
+                        'currentEstimatedCost': 400,
+                        'replacementEstimatedCost': 250,
+                        'estimatedSavings': 150,
+                        'source': 'fixture_quote',
+                        'data': category == 'hotel'
+                            ? {'roomName': 'Twin', 'address': 'Penang'}
+                            : {}
+                      }
+                    ]
+                  : []
+            };
+          });
+      Widget screen() => _buildApp(AlternativeScreen(
+          budget: BudgetModel(
+              accommodation: 400,
+              food: 360,
+              transportation: 140,
+              activities: 0),
+          userBudget: 800,
+          tripId: 'owned',
+          api: api));
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+          find.text(
+              'Find cheaper ' + (category == 'hotel' ? 'hotels' : 'flights')),
+          200);
+      await tester.tap(find.text(
+          'Find cheaper ' + (category == 'hotel' ? 'hotels' : 'flights')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Search now'));
+      await tester.pumpAndSettle();
+      expect(find.text('Verified cheaper $category'), findsOneWidget);
+      await tester.scrollUntilVisible(
+          find.widgetWithText(FilledButton, 'Preview'), 200);
+      await tester.tap(find.text('Preview'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(saved, false);
+      expect(applies, 0);
+      await tester.tap(find.text('Preview'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm change'));
+      await tester.pumpAndSettle();
+      expect(saved, true);
+      expect(applies, 1);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+      expect(find.text('Verified cheaper $category'), findsNothing);
+      expect(
+          api.postCalls.where((path) => path.endsWith('/discover')).length, 1);
+      expect(applies, 1);
+    });
+  }
+
+  testWidgets(
       'provider discovery requires confirmation, prevents duplicates and reloads actual quotes',
       (tester) async {
     tester.view.physicalSize = const Size(600, 1200);

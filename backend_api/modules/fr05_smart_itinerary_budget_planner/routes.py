@@ -1297,6 +1297,51 @@ def _flight_alternative_options(current):
     return options
 
 
+def _hotel_baseline_evidence(record):
+    """Use only consistent server-validated evidence at the saved MYR amount."""
+    from math import isfinite
+    accepted = record.get('acceptedPrebookSnapshot') or {}
+    selected = record.get('selectedHotel') or record.get('offer') or {}
+    validated = record.get('validatedOffer') or {}
+    sources = (selected, validated, accepted)
+    amount = record.get('hotelCost', selected.get('price'))
+    try:
+        if isinstance(amount, bool) or not isfinite(float(amount)) or float(amount) <= 0:
+            raise ValueError
+        for source, field in ((selected, 'price'), (validated, 'price'), (accepted, 'amount')):
+            value = source.get(field)
+            if value is not None and (isinstance(value, bool) or float(value) != float(amount)):
+                raise ValueError
+    except (ValueError, TypeError, OverflowError):
+        raise _AlternativeConflict('The saved hotel pricing evidence is inconsistent.') from None
+    currencies = {str(row.get('currency')).strip().upper() for row in sources if row.get('currency')}
+    if record.get('hotelCurrency'):
+        currencies.add(str(record['hotelCurrency']).strip().upper())
+    if currencies - {'MYR'}:
+        raise _AlternativeConflict('The saved hotel currency evidence is inconsistent.')
+    bases = {row.get('priceBasis') for row in sources if row.get('priceBasis') not in (None, '', 'unknown')}
+    taxes = {row.get('taxesAndFeesStatus') for row in sources if row.get('taxesAndFeesStatus') not in (None, '', 'unknown')}
+    if bases != {'stay_total'} or taxes != {'included'}:
+        raise _AlternativeConflict('A consistent total-stay price with verified included charges is needed.')
+    offer = {**selected, **{key: value for key, value in validated.items() if value is not None}}
+    criteria = dict(record.get('stayCriteria') or record.get('criteria') or {})
+    for key in ('checkin', 'checkout', 'roomQuantity', 'occupancies', 'guestCount'):
+        saved, snapshot = criteria.get(key), accepted.get(key)
+        if saved not in (None, '', []) and snapshot not in (None, '', []) and saved != snapshot:
+            raise _AlternativeConflict('The saved hotel stay evidence is inconsistent.')
+        if saved in (None, '', []) and snapshot not in (None, '', []):
+            criteria[key] = snapshot
+    occupancies = criteria.get('occupancies') or []
+    if occupancies:
+        if criteria.get('adults') in (None, ''):
+            criteria['adults'] = sum(room.get('adults', 0) for room in occupancies)
+        if criteria.get('children') in (None, ''):
+            criteria['children'] = sum(len(room.get('children') or []) for room in occupancies)
+    if not criteria.get('destination'):
+        criteria['destination'] = offer.get('address') or ''
+    return criteria
+
+
 def _hotel_discovery_baseline(current):
     """Resolve a planning-only stay, without releasing any supplier obligation."""
     from modules.fr08_hotel_booking.routes import _quote_document_id, _normalise_occupancies, _hotel_trip_compatibility
@@ -1317,26 +1362,19 @@ def _hotel_discovery_baseline(current):
         if any(row.get('paymentStatus') == 'paid' or row.get('status') in
                {'paid', 'checkout_open', 'checkout_pending', 'payment_pending', 'payment_mismatch'} for row in orders):
             raise _AlternativeConflict('An active hotel checkout protects this selection.')
-        original = record.get('selectedHotel') or {}
-        accepted = record.get('acceptedPrebookSnapshot') or {}
         if record.get('amountSource') != 'validated_offer' or record.get('hotelCost') != current.get('hotelCost'):
             raise _AlternativeConflict('The original hotel amount cannot be compared.')
-        criteria = record.get('stayCriteria') or {}
     else:
         identity = current.get('hotelOfferQuoteId')
         record = retrieveRecord('hotel_offer_quotes', _quote_document_id(identity)) if identity else None
         if not record or record.get('travellerId') != g.uid:
             raise _AlternativeConflict('A validated hotel planning quote is needed.')
         original = record.get('offer') or {}
-        accepted = {}
-        criteria = record.get('criteria') or {}
         if original.get('price') != current.get('hotelCost'):
             raise _AlternativeConflict('The original hotel amount cannot be compared.')
-    if (protected_activity(current.get('selectedHotel') or {})
-            or current.get('hotelCurrency') != 'MYR'
-            or (accepted.get('priceBasis') or original.get('priceBasis')) != 'stay_total'
-            or (accepted.get('taxesAndFeesStatus') or original.get('taxesAndFeesStatus')) != 'included'):
-        raise _AlternativeConflict('A comparable unpaid total-stay price including taxes is needed.')
+    if protected_activity(current.get('selectedHotel') or {}) or current.get('hotelCurrency') != 'MYR':
+        raise _AlternativeConflict('The saved hotel selection is not safely comparable.')
+    criteria = _hotel_baseline_evidence(record)
     if _hotel_trip_compatibility(current, criteria)[1]:
         raise _AlternativeConflict('The stay dates or destination do not match this trip.')
     try:
@@ -1419,7 +1457,10 @@ def discover_cost_alternatives(iid):
             search = lambda invoke: flight_search(current, invoke)
         result = run_search(g.uid, current, kind, state, search, request_id=search_request_id)
     except (DiscoveryError, _AlternativeConflict) as error:
-        return jsonify(ok=False, error=str(error)), 409
+        logging.getLogger(__name__).info('budget_discovery_blocked category=%s reason=%s', kind, str(error))
+        message = ('No verified cheaper hotel is currently available for this stay.' if kind == 'hotel'
+                   else 'No verified cheaper flight is currently available.')
+        return jsonify(ok=False, error=message, code='DISCOVERY_COMPARISON_UNAVAILABLE'), 409
     except Exception:
         return jsonify(ok=False, error='Search state could not be verified. No automatic retry was made.'), 503
     return jsonify(ok=True, search=result, stateVersion=state)

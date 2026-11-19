@@ -1,3 +1,4 @@
+import 'package:travelmate_traveller/widgets/travel_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/core/home/home_tab.dart';
@@ -11,7 +12,7 @@ import 'package:travelmate_traveller/widgets/recommendation_card.dart';
 
 Map<String, dynamic> _recommendation() => {
       'destinationId': 'kek_lok_si',
-      'discoveryEligible':true,
+      'discoveryEligible': true,
       'title': 'Kek Lok Si Temple',
       'address': 'Air Itam, Penang',
       'category': 'Culture',
@@ -51,9 +52,11 @@ class _HomeApi extends ApiService {
   bool staleRecommendations = false;
   String? generatedArea;
   final List<Map<String, dynamic>> tripItems;
+  final List<Map<String, dynamic>>? recommendationItems;
 
   _HomeApi({
     this.failNextRecommendationLoad = false,
+    this.recommendationItems,
     List<Map<String, dynamic>>? trips,
   }) : tripItems = trips ?? [_trip()];
 
@@ -84,11 +87,12 @@ class _HomeApi extends ApiService {
         }
         return {
           'ok': true,
-          'recommendationGenerationId':'rec_hidden_123',
-          'stale':staleRecommendations,
-          'snapshot':{'requestedDestination':'Penang'},
-          'recommendations': emptyQualified ? [] : [_recommendation()],
-          'pagination':{'discoveryMode':'relevant_v1'},
+          'recommendationGenerationId': 'rec_hidden_123',
+          'stale': staleRecommendations,
+          'snapshot': {'requestedDestination': 'Penang'},
+          'recommendations':
+              emptyQualified ? [] : recommendationItems ?? [_recommendation()],
+          'pagination': {'discoveryMode': 'relevant_v1'},
           'source': 'fallback',
         };
       case '/api/public/tourism-packages':
@@ -114,9 +118,9 @@ class _HomeApi extends ApiService {
       generatedArea = body?['destinationArea'];
       return {
         'ok': true,
-        'recommendationGenerationId':'rec_hidden_123',
+        'recommendationGenerationId': 'rec_hidden_123',
         'recommendations': [_recommendation()],
-        'pagination':{'discoveryMode':'relevant_v1'},
+        'pagination': {'discoveryMode': 'relevant_v1'},
         'source': 'fallback',
       };
     }
@@ -128,10 +132,15 @@ class _HomeApi extends ApiService {
   }
 }
 
-Widget _home(_HomeApi api, {ValueChanged<AppShellTab>? onSelect}) {
+Widget _home(_HomeApi api,
+    {ValueChanged<AppShellTab>? onSelect, double textScale = 1}) {
   final home = HomeTab(api: api);
   return MaterialApp(
     theme: buildInkWashTheme(),
+    builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child!),
     home: onSelect == null
         ? home
         : AppShellNavigation(
@@ -164,7 +173,105 @@ Future<void> _showOnHome(WidgetTester tester, Finder target) async {
 }
 
 void main() {
-  testWidgets('stale saved recommendations regenerate in their selected Malaysian scope', (tester) async {
+  for (final width in [320.0, 390.0]) {
+    for (final scale in [1.0, 1.8]) {
+      testWidgets(
+          'Home carousel cards and actions align at width $width scale $scale',
+          (tester) async {
+        tester.view.physicalSize = Size(width, 1200);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final places = [
+          {
+            ..._recommendation(),
+            'destinationId': 'one',
+            'title': 'Short',
+            'address': 'Penang',
+            'matchReasons': ['One reason'],
+            'matchedInterests': [],
+            'imageUrl': ''
+          },
+          {
+            ..._recommendation(),
+            'destinationId': 'two',
+            'title':
+                'A much longer Malaysian destination name with several words that cannot fit on one line',
+            'address':
+                'A very long address in George Town, Penang, Malaysia, with street and locality details',
+            'category': 'A long category with detailed cultural information',
+            'matchedInterests': ['Photography', 'Food', 'Culture'],
+            'matchReasons': [
+              'A longer factual reason based on the selected interests and the verified available destination evidence.',
+              'Another longer explanation about visiting conditions and travel preferences.'
+            ],
+            'foodExperienceType': 'food_museum',
+            'nearbyDistanceKm': 2.5,
+            'city': 'George Town',
+            'imageUrl': ''
+          },
+          {
+            ..._recommendation(),
+            'destinationId': 'three',
+            'title': 'Medium name',
+            'address': '',
+            'matchReasons': [],
+            'imageUrl': ''
+          },
+        ];
+        final api = _HomeApi(recommendationItems: places);
+        await tester.pumpWidget(_home(api, textScale: scale));
+        await tester.pumpAndSettle();
+        for (var step = 0;
+            step < 15 && find.byType(RecommendationCard).evaluate().isEmpty;
+            step++) {
+          await tester.drag(find.byType(ListView).first, const Offset(0, -200));
+          await tester.pumpAndSettle();
+        }
+        expect(find.byType(RecommendationCard), findsNWidgets(3));
+        final cards = [
+          for (var i = 0; i < 3; i++)
+            tester.getRect(find.byType(RecommendationCard).at(i))
+        ];
+        for (final card in cards.skip(1)) {
+          expect(card.height, closeTo(cards.first.height, .1));
+          expect(card.top, closeTo(cards.first.top, .1));
+        }
+        for (final prefix in ['recommendation-view', 'recommendation-add']) {
+          final buttons = [
+            for (final id in ['one', 'two', 'three'])
+              tester.getRect(find.byKey(ValueKey('$prefix-$id')))
+          ];
+          for (final button in buttons.skip(1))
+            expect(button.top, closeTo(buttons.first.top, .1));
+        }
+        final images = [
+          for (var i = 0; i < 3; i++)
+            tester.getRect(find.descendant(
+                of: find.byType(RecommendationCard).at(i),
+                matching: find.byType(TravelPlaceImage)))
+        ];
+        for (final image in images.skip(1))
+          expect(image.height, closeTo(images.first.height, .1));
+        expect(
+            tester
+                .widget<Text>(find.text(places[1]['title'] as String))
+                .maxLines,
+            2);
+        expect(
+            tester
+                .widget<Text>(find.text(places[1]['address'] as String))
+                .maxLines,
+            2);
+        expect(tester.takeException(), isNull);
+        expect(api.generationCalls, 0);
+      });
+    }
+  }
+
+  testWidgets(
+      'stale saved recommendations regenerate in their selected Malaysian scope',
+      (tester) async {
     final api = _HomeApi()..staleRecommendations = true;
     await _settleHome(tester, api);
     await tester.pumpAndSettle();
@@ -267,7 +374,8 @@ void main() {
     await _settleHome(tester, api);
     await _showOnHome(tester, find.text('Try again'));
 
-    expect(find.text('Something went wrong. Please try again.'), findsOneWidget);
+    expect(
+        find.text('Something went wrong. Please try again.'), findsOneWidget);
     await tester.tap(find.text('Try again'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
@@ -304,11 +412,13 @@ void main() {
     expect(find.byType(HomeTab), findsOneWidget);
   });
 
-  testWidgets('qualified empty snapshot stays empty without repeated generation',(tester) async {
-    final api=_HomeApi()..emptyQualified=true;
-    await _settleHome(tester,api);
-    expect(api.generationCalls,0);
-    await _showOnHome(tester,find.text('See all'));
-    expect(find.text('No relevant suggestions available yet'),findsOneWidget);
+  testWidgets(
+      'qualified empty snapshot stays empty without repeated generation',
+      (tester) async {
+    final api = _HomeApi()..emptyQualified = true;
+    await _settleHome(tester, api);
+    expect(api.generationCalls, 0);
+    await _showOnHome(tester, find.text('See all'));
+    expect(find.text('No relevant suggestions available yet'), findsOneWidget);
   });
 }

@@ -14,6 +14,7 @@ class RecommendationCard extends StatelessWidget {
   final ValueChanged<String>? onPreferenceFeedback;
   final bool feedbackBusy;
   final bool discovery;
+  final bool carousel;
 
   const RecommendationCard({
     super.key,
@@ -24,6 +25,7 @@ class RecommendationCard extends StatelessWidget {
     this.onPreferenceFeedback,
     this.feedbackBusy = false,
     this.discovery = false,
+    this.carousel = false,
     this.source = '',
   });
 
@@ -50,7 +52,9 @@ class RecommendationCard extends StatelessWidget {
   }
 
   num? get _matchScore {
-    final raw = _hasPersonalScore ? recommendation['personalSuitabilityScore'] : recommendation['finalScore'] ?? recommendation['score'];
+    final raw = _hasPersonalScore
+        ? recommendation['personalSuitabilityScore']
+        : recommendation['finalScore'] ?? recommendation['score'];
     if (raw == null || raw == '') return null;
     final num? val = raw is num ? raw : num.tryParse(raw.toString());
     if (val == null || !val.isFinite) return null;
@@ -59,9 +63,16 @@ class RecommendationCard extends StatelessWidget {
 
   bool get _hasPersonalScore {
     final score = recommendation['personalSuitabilityScore'];
-    return const ['relevance_v2','recovery_v3'].contains(recommendation['scoringVersion']) && score is num && score.isFinite && score >= 0 && score <= 100;
+    return const ['relevance_v2', 'recovery_v3']
+            .contains(recommendation['scoringVersion']) &&
+        score is num &&
+        score.isFinite &&
+        score >= 0 &&
+        score <= 100;
   }
-  String get _scoreLabel => _hasPersonalScore ? 'Personal match' : 'Recommendation score';
+
+  String get _scoreLabel =>
+      _hasPersonalScore ? 'Personal match' : 'Recommendation score';
 
   List<String> get _matchedInterests {
     final raw = recommendation['matchedInterests'];
@@ -77,7 +88,8 @@ class RecommendationCard extends StatelessWidget {
 
   static bool _isScoreOrMatchToken(String value) {
     final lower = value.toLowerCase().trim();
-    return RegExp(r'^\d+(\.\d+)?/100 hybrid ranking$').hasMatch(lower) || RegExp(r'^\d+(\.\d+)?%\s*match$').hasMatch(lower) ||
+    return RegExp(r'^\d+(\.\d+)?/100 hybrid ranking$').hasMatch(lower) ||
+        RegExp(r'^\d+(\.\d+)?%\s*match$').hasMatch(lower) ||
         RegExp(r'^(?:recommendation\s+)?score:?\s*\d+(\.\d+)?(\/100)?$')
             .hasMatch(lower);
   }
@@ -87,9 +99,7 @@ class RecommendationCard extends StatelessWidget {
     if (rawReasons is List) {
       final list = rawReasons
           .map((value) => value.toString().trim())
-          .where((value) =>
-              value.isNotEmpty &&
-              !_isScoreOrMatchToken(value))
+          .where((value) => value.isNotEmpty && !_isScoreOrMatchToken(value))
           .take(2)
           .toList();
       if (list.isNotEmpty) return list;
@@ -103,9 +113,7 @@ class RecommendationCard extends StatelessWidget {
       final parts = raw
           .split('•')
           .map((value) => value.trim())
-          .where((value) =>
-              value.isNotEmpty &&
-              !_isScoreOrMatchToken(value))
+          .where((value) => value.isNotEmpty && !_isScoreOrMatchToken(value))
           .take(2)
           .toList();
       if (parts.isNotEmpty) return parts;
@@ -132,8 +140,232 @@ class RecommendationCard extends StatelessWidget {
         normalized != 'serpapi';
   }
 
+  PopupMenuButton<String> _feedbackMenu() => PopupMenuButton<String>(
+        key: ValueKey('recommendation-feedback-$_destinationKey'),
+        enabled: !feedbackBusy,
+        tooltip: 'Improve future recommendations',
+        icon: feedbackBusy
+            ? const SizedBox.square(
+                dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.more_vert_rounded),
+        onSelected: onPreferenceFeedback,
+        itemBuilder: (context) => [
+          PopupMenuItem(
+              value: 'more_like_this',
+              child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(preferenceFeedback == 'more_like_this'
+                      ? Icons.check_circle_rounded
+                      : Icons.thumb_up_alt_outlined),
+                  title: const Text('More like this'))),
+          PopupMenuItem(
+              value: 'not_for_me',
+              child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(preferenceFeedback == 'not_for_me'
+                      ? Icons.check_circle_rounded
+                      : Icons.thumb_down_alt_outlined),
+                  title: const Text('Not for me'))),
+        ],
+      );
+
+  Widget _carousel(BuildContext context) =>
+      LayoutBuilder(builder: (context, constraints) {
+        final theme = Theme.of(context).textTheme;
+        final scaler = MediaQuery.textScalerOf(context);
+        double lines(TextStyle? style, int count) =>
+            scaler.scale(style?.fontSize ?? 14) *
+                (style?.height ?? 1.4) *
+                count +
+            4;
+        final titleHeight =
+            lines(theme.titleLarge, 2).clamp(48.0, double.infinity);
+        final locationHeight = lines(theme.bodySmall, 2);
+        final metadataHeight = scaler.scale(13) * 1.4 + 20;
+        final notesHeight = lines(theme.bodySmall, 3);
+        final reasonsHeight = lines(theme.bodyMedium, 3);
+        final buttonHeight =
+            48 + (scaler.scale(14) - 14).clamp(0.0, double.infinity) * 1.4;
+        final imageHeight =
+            constraints.maxWidth / AppSizes.destinationImageAspectRatio;
+        final notes = [
+          if (recommendation['nearbyDistanceKm'] is num)
+            'Nearby · ' +
+                (recommendation['city'] ?? 'Locality not supplied').toString() +
+                ' · ' +
+                (recommendation['nearbyDistanceKm'] as num).toStringAsFixed(1) +
+                ' km straight-line',
+          if (preferenceFeedback != null)
+            preferenceFeedback == 'more_like_this'
+                ? 'More like this saved'
+                : 'Not for me saved',
+          if (discovery && recommendation['foodExperienceType'] != null)
+            switch (recommendation['foodExperienceType']) {
+              'dining' => 'Food stop / dining',
+              'food_museum' => 'Food-themed museum; dining is not implied.',
+              'cooking' => 'Cooking experience; check booking details.',
+              'culinary_culture' =>
+                'Spices and culinary culture; a cooking class is not implied.',
+              _ => 'Food-related experience; dining is not confirmed.',
+            },
+        ].join('\n');
+        final reasons = _reasons.join(' • ');
+        final score = _matchScore;
+        Widget slot(double height, Widget child) =>
+            SizedBox(height: height, child: child);
+        Widget horizontal(List<Widget> children) => SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              for (var i = 0; i < children.length; i++) ...[
+                if (i > 0) const SizedBox(width: AppSpacing.xs),
+                children[i]
+              ]
+            ]));
+        return SizedBox(
+          key: ValueKey('recommendation-carousel-$_destinationKey'),
+          height: imageHeight +
+              AppSpacing.card.vertical +
+              titleHeight +
+              locationHeight +
+              metadataHeight * 2 +
+              notesHeight +
+              reasonsHeight +
+              buttonHeight * 2 +
+              AppSpacing.xs * 7,
+          child: Semantics(
+              container: true,
+              label: 'Recommended destination, $_title',
+              child: InkCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TravelPlaceImage(
+                          key:
+                              ValueKey('recommendation-image-$_destinationKey'),
+                          place: recommendation,
+                          width: double.infinity,
+                          height: imageHeight,
+                          aspectRatio: AppSizes.destinationImageAspectRatio,
+                          borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(AppRadii.large))),
+                      Padding(
+                          padding: AppSpacing.card,
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                slot(
+                                    titleHeight,
+                                    Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                              child: Text(_title,
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: theme.titleLarge)),
+                                          if (onPreferenceFeedback != null)
+                                            _feedbackMenu(),
+                                        ])),
+                                const SizedBox(height: AppSpacing.xs),
+                                slot(
+                                    locationHeight,
+                                    Tooltip(
+                                        message: _location,
+                                        child: Text(_location,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.bodySmall?.copyWith(
+                                                color:
+                                                    AppColors.textSecondary)))),
+                                const SizedBox(height: AppSpacing.xs),
+                                slot(
+                                    metadataHeight,
+                                    horizontal([
+                                      if (score != null)
+                                        InkWell(
+                                            onTap: () => _showScoreExplanation(
+                                                context, score),
+                                            child: StatusChip(
+                                                text: discovery
+                                                    ? 'Why this suggestion'
+                                                    : _scoreLabel +
+                                                        ': ' +
+                                                        score
+                                                            .round()
+                                                            .toString() +
+                                                        '/100',
+                                                icon: Icons
+                                                    .auto_awesome_rounded)),
+                                      if (_category.isNotEmpty)
+                                        StatusChip(
+                                            text: _category,
+                                            tone: AppStatusTone.neutral),
+                                      LocalPlaceRating(place: recommendation),
+                                      for (final interest in _matchedInterests)
+                                        StatusChip(
+                                            text: interest,
+                                            icon: Icons
+                                                .check_circle_outline_rounded,
+                                            tone: AppStatusTone.neutral),
+                                    ])),
+                                const SizedBox(height: AppSpacing.xs),
+                                slot(
+                                    notesHeight,
+                                    Tooltip(
+                                        message: notes,
+                                        child: Text(notes,
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.bodySmall?.copyWith(
+                                                color:
+                                                    AppColors.textSecondary)))),
+                                const SizedBox(height: AppSpacing.xs),
+                                slot(
+                                    reasonsHeight,
+                                    Tooltip(
+                                        message: reasons,
+                                        child: Text(reasons,
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.bodyMedium))),
+                                const SizedBox(height: AppSpacing.xs),
+                                slot(
+                                    metadataHeight,
+                                    _showSourceDisclosure
+                                        ? horizontal([
+                                            SourceFallbackBadge(source: _source)
+                                          ])
+                                        : const SizedBox.shrink()),
+                                const SizedBox(height: AppSpacing.xs),
+                                slot(
+                                    buttonHeight,
+                                    SecondaryButton(
+                                        key: ValueKey(
+                                            'recommendation-view-$_destinationKey'),
+                                        label: 'View',
+                                        onPressed: onView)),
+                                const SizedBox(height: AppSpacing.xs),
+                                slot(
+                                    buttonHeight,
+                                    onAddToTrip == null
+                                        ? const SizedBox.shrink()
+                                        : PrimaryButton(
+                                            key: ValueKey(
+                                                'recommendation-add-$_destinationKey'),
+                                            label: 'Add to trip',
+                                            onPressed: onAddToTrip)),
+                              ])),
+                    ]),
+              )),
+        );
+      });
+
   @override
   Widget build(BuildContext context) {
+    if (carousel) return _carousel(context);
     final score = _matchScore;
     final reasons = _reasons;
 
@@ -172,49 +404,7 @@ class RecommendationCard extends StatelessWidget {
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                       ),
-                      if (onPreferenceFeedback != null)
-                        PopupMenuButton<String>(
-                          key: ValueKey(
-                            'recommendation-feedback-$_destinationKey',
-                          ),
-                          enabled: !feedbackBusy,
-                          tooltip: 'Improve future recommendations',
-                          icon: feedbackBusy
-                              ? const SizedBox.square(
-                                  dimension: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.more_vert_rounded),
-                          onSelected: onPreferenceFeedback,
-                          itemBuilder: (context) => [
-                            PopupMenuItem(
-                              value: 'more_like_this',
-                              child: ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                leading: Icon(
-                                  preferenceFeedback == 'more_like_this'
-                                      ? Icons.check_circle_rounded
-                                      : Icons.thumb_up_alt_outlined,
-                                ),
-                                title: const Text('More like this'),
-                              ),
-                            ),
-                            PopupMenuItem(
-                              value: 'not_for_me',
-                              child: ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                leading: Icon(
-                                  preferenceFeedback == 'not_for_me'
-                                      ? Icons.check_circle_rounded
-                                      : Icons.thumb_down_alt_outlined,
-                                ),
-                                title: const Text('Not for me'),
-                              ),
-                            ),
-                          ],
-                        ),
+                      if (onPreferenceFeedback != null) _feedbackMenu(),
                     ],
                   ),
                   if (preferenceFeedback != null) ...[
@@ -230,7 +420,8 @@ class RecommendationCard extends StatelessWidget {
                     ),
                   ],
                   if (recommendation['nearbyDistanceKm'] is num)
-                    Text('Nearby · ${recommendation['city'] ?? 'Locality not supplied'} · ${(recommendation['nearbyDistanceKm'] as num).toStringAsFixed(1)} km straight-line'),
+                    Text(
+                        'Nearby · ${recommendation['city'] ?? 'Locality not supplied'} · ${(recommendation['nearbyDistanceKm'] as num).toStringAsFixed(1)} km straight-line'),
                   if (_location.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.xxs),
                     Row(
@@ -266,10 +457,13 @@ class RecommendationCard extends StatelessWidget {
                           onTap: () => _showScoreExplanation(context, score),
                           borderRadius: BorderRadius.circular(AppRadii.pill),
                           child: Tooltip(
-                            message:
-                                discovery ? 'Why this suggestion' : '$_scoreLabel: ${score.round()}/100. Tap for details.',
+                            message: discovery
+                                ? 'Why this suggestion'
+                                : '$_scoreLabel: ${score.round()}/100. Tap for details.',
                             child: StatusChip(
-                              text: discovery ? 'Why this suggestion' : '$_scoreLabel: ${score.round()}/100',
+                              text: discovery
+                                  ? 'Why this suggestion'
+                                  : '$_scoreLabel: ${score.round()}/100',
                               icon: Icons.auto_awesome_rounded,
                             ),
                           ),
@@ -491,7 +685,9 @@ class RecommendationCard extends StatelessWidget {
                   const SizedBox(width: AppSpacing.xs),
                   Expanded(
                     child: Text(
-                      discovery ? 'Why this suggestion' : '${_hasPersonalScore ? 'Personal match' : 'Recommendation Score'} (${score.round()}/100)',
+                      discovery
+                          ? 'Why this suggestion'
+                          : '${_hasPersonalScore ? 'Personal match' : 'Recommendation Score'} (${score.round()}/100)',
                       style: Theme.of(sheetContext).textTheme.titleLarge,
                     ),
                   ),
@@ -506,9 +702,11 @@ class RecommendationCard extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               if (_hasPersonalScore) ...[
-                Text('Personal match averages only supported profile signals. Evidence coverage describes available metadata, not prediction accuracy. Hybrid ranking retains 60% content, 30% similar travellers and 10% popularity.'),
+                Text(
+                    'Personal match averages only supported profile signals. Evidence coverage describes available metadata, not prediction accuracy. Hybrid ranking retains 60% content, 30% similar travellers and 10% popularity.'),
                 const SizedBox(height: AppSpacing.sm),
-                Text('Hybrid ranking: ${recommendation['hybridRankingScore']} /100'),
+                Text(
+                    'Hybrid ranking: ${recommendation['hybridRankingScore']} /100'),
               ],
               if (breakdown != null) ...[
                 _breakdownCard(
@@ -536,7 +734,8 @@ class RecommendationCard extends StatelessWidget {
                   title: 'Destination popularity (10% weight)',
                   scoreText:
                       '${(breakdown['popularity'] as num?)?.round() ?? '-'}/100',
-                  description: '${recommendation['popularitySource']}'.startsWith('neutral_')
+                  description: '${recommendation['popularitySource']}'
+                          .startsWith('neutral_')
                       ? 'Verified provider popularity evidence is unavailable. A neutral 50/100 baseline is used; no business rating is invented.'
                       : 'Based on public ratings and review coverage across all visitors.',
                 ),

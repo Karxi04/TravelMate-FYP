@@ -34,6 +34,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   bool applying = false;
   String? discovering;
   final searchMessages = <String, String>{};
+  final searchRetryAt = <String, DateTime>{};
   List<Map<String, dynamic>> planning = [];
   bool optionsChanged = false;
   String? stateVersion;
@@ -62,6 +63,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       applying = false;
       discovering = null;
       searchMessages.clear();
+      searchRetryAt.clear();
       load();
     }
   }
@@ -104,6 +106,12 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     }
     final hadPrices = alternatives.isNotEmpty;
     setState(() {
+      for (final category in searchRetryAt.keys.toList()) {
+        if (!searchRetryAt[category]!.isAfter(DateTime.now().toUtc())) {
+          searchRetryAt.remove(category);
+          searchMessages.remove(category);
+        }
+      }
       busy = true;
       checkingPrices = true;
       loadError = null;
@@ -285,6 +293,20 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
             ));
   }
 
+  String noOffer(String category) => category == 'hotel'
+      ? 'No verified cheaper hotel is currently available for this stay.'
+      : 'No verified cheaper flight is currently available.';
+
+  String searchLimitMessage(String category, DateTime? retry) {
+    final label = category == 'hotel' ? 'Hotel' : 'Flight';
+    if (retry == null)
+      return '$label search limit reached. Please try again later.';
+    final malaysia = retry.toUtc().add(const Duration(hours: 8));
+    return '$label search limit reached. Try again at ' +
+        malaysia.toIso8601String().substring(0, 16).replaceFirst('T', ' ') +
+        ' MYT.';
+  }
+
   Future<void> discover(String category) async {
     if (discovering != null ||
         applying ||
@@ -317,6 +339,10 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
           accepted != true ||
           version != _loadVersion ||
           widget.tripId != tripId) return;
+      setState(() {
+        searchMessages.remove(category);
+        searchRetryAt.remove(category);
+      });
       final result = await api.post(
           '/api/fr5/itineraries/$tripId/lower-cost-alternatives/discover', {
         'category': category,
@@ -325,25 +351,40 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
         'stateVersion': state
       });
       if (!mounted || version != _loadVersion) return;
-      final status = result['search']?['status'];
+      final search = result['search'] as Map? ?? {};
+      final status = search['status'];
+      final retry = DateTime.tryParse(search['retryAt']?.toString() ?? '');
       final message = switch (status) {
-        'completed' =>
-          'Search complete. Only cheaper compatible offers are shown.',
+        'completed' => 'Checking returned offers…',
         'pending' =>
           'Search is still processing. Refresh saved results before trying again.',
-        'quota_limited' => 'Search limit reached. Try again next hour.',
+        'quota_limited' => searchLimitMessage(category, retry),
+        'retry_available' =>
+          'Search limit has reset. You can start a new search.',
+        'needs_review' => noOffer(category),
         _ =>
           'Provider search is unavailable. Your local planning options remain available.',
       };
-      setState(() => searchMessages[category] = message);
+      setState(() {
+        searchMessages[category] = message;
+        if (status == 'quota_limited' && retry != null)
+          searchRetryAt[category] = retry;
+      });
       await load();
+      if (mounted && widget.tripId == tripId && status == 'completed') {
+        final available = alternatives.any((item) =>
+            item['alternativeType'] == category && _canApplyItem(item));
+        setState(() => searchMessages[category] = available
+            ? 'Verified cheaper offers are ready to preview.'
+            : noOffer(category));
+      }
     } catch (error) {
       if (mounted && version == _loadVersion) {
         setState(() => searchMessages[category] = error is ApiException &&
                 error.statusCode == 429
-            ? 'Search limit reached. Local planning options remain available.'
+            ? searchLimitMessage(category, null)
             : error is ApiException && error.statusCode == 409
-                ? error.message
+                ? noOffer(category)
                 : 'Search could not be confirmed. Refresh saved results before trying again.');
       }
     } finally {

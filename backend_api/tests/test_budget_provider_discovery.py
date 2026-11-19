@@ -187,10 +187,10 @@ def test_expired_quote_and_changed_trip_reject_apply(client,scenario):
 
 def test_per_account_hourly_quota_is_not_reset_by_changing_trip(client,scenario):
     memory,_,provider,_,_,_,_=scenario
-    for amount in [360,361,362]:
+    for amount in range(360,367):
         memory.update('itineraries','trip',{'foodCost':amount})
         reply=discover(client,'flight')
-    assert reply.json['search']['status']=='quota_limited' and provider.call_count==2
+    assert reply.json['search']['status']=='quota_limited' and provider.call_count==6
 
 
 

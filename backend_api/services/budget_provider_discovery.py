@@ -1,5 +1,7 @@
 """Explicit bounded provider discovery. Quotes only: no itinerary or supplier mutation."""
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import os
+import logging
 
 from services.transaction_reliability import operation_document_id
 from sequence_contract.firebase_firestore import claimRecord, updateRecord
@@ -9,11 +11,22 @@ class DiscoveryError(ValueError):
     pass
 
 
+class _SearchLimitReached(Exception):
+    pass
+
+
+def searches_per_hour():
+    try:
+        return max(1, min(6, int(os.getenv('BUDGET_ALTERNATIVE_SEARCHES_PER_HOUR', '6'))))
+    except ValueError:
+        return 6
+
+
 def run_search(owner, trip, kind, state, search, request_id=None):
-    """Durable ten-minute deduplication and two searches/category/account/hour."""
+    """Durable deduplication; count submitted provider searches, not page visits or validation failures."""
     now = datetime.now(timezone.utc)
     bucket = int(now.timestamp()) // 600
-    identity = operation_document_id('budget_search', owner, f"{trip['id']}:{state}:{kind}:{bucket}")
+    identity = operation_document_id('budget_search', owner, f"v2:{trip['id']}:{state}:{kind}:{bucket}")
     if request_id:
         # Bind a submitted intent to its original cache bucket, even across a clock boundary.
         intent, _ = claimRecord('budget_alternative_search_intents',
@@ -31,33 +44,45 @@ def run_search(owner, trip, kind, state, search, request_id=None):
     if not created:
         if record.get('travellerId') != owner or record.get('stateVersion') != state:
             raise DiscoveryError('This search does not match the current trip.')
-        return {**record.get('result', {}), 'status': record.get('status'), 'reused': True}
-    for slot in range(2):
-        key = operation_document_id('budget_search_quota', owner, f"{kind}:{now.strftime('%Y%m%d%H')}:{slot}")
-        _, reserved = claimRecord('budget_alternative_search_quota', key, {
-            'travellerId': owner, 'searchId': identity, 'createdAt': now.isoformat(),
-        })
-        if reserved:
-            break
-    else:
-        result = {'status': 'quota_limited', 'requestsAttempted': 0}
-        updateRecord('budget_alternative_searches', identity, {'status': result['status'], 'result': result})
+        result = {**record.get('result', {}), 'status': record.get('status'), 'reused': True}
+        if result['status'] == 'quota_limited' and result.get('retryAt'):
+            retry_at = datetime.fromisoformat(result['retryAt'].replace('Z', '+00:00'))
+            if now >= retry_at:
+                return {**result, 'status': 'retry_available'}
         return result
-    # The service invokes at most two flight requests or one hotel rates request.
-    # A failure consumes its reservation; it is never automatically replayed.
+    reserved = False
+    limit = searches_per_hour()
+    retry_at = (now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)).isoformat()
     attempted = 0
     def invoke(call, *args, **kwargs):
-        nonlocal attempted
+        nonlocal attempted, reserved
         cap = 2 if kind == 'flight' else 1
         if attempted >= cap:
             raise DiscoveryError('The provider request limit was reached.')
+        if not reserved:
+            # Reserve only at the first actual provider boundary. Legacy slot IDs
+            # remain valid, so rollout does not reset earlier account usage.
+            for slot in range(limit):
+                key = operation_document_id('budget_search_quota', owner, f"{kind}:{now.strftime('%Y%m%d%H')}:{slot}")
+                _, reserved = claimRecord('budget_alternative_search_quota', key, {
+                    'travellerId': owner, 'searchId': identity, 'createdAt': now.isoformat(),
+                })
+                if reserved:
+                    break
+            if not reserved:
+                raise _SearchLimitReached
         attempted += 1
         return call(*args, **kwargs)
     try:
         references = search(invoke)
         result = {'status': 'completed', 'requestsAttempted': attempted, 'references': references}
+    except _SearchLimitReached:
+        result = {'status': 'quota_limited', 'requestsAttempted': 0, 'retryAt': retry_at, 'searchesPerHour': limit}
     except Exception:
-        result = {'status': 'unavailable', 'requestsAttempted': attempted}
+        # Submitted requests can consume provider credits even on timeout; keep
+        # their reservation. Pre-provider validation failures reserve nothing.
+        result = {'status': 'unavailable' if attempted else 'needs_review', 'requestsAttempted': attempted}
+        logging.getLogger(__name__).warning('budget_discovery_unavailable category=%s attempts=%s', kind, attempted)
     updateRecord('budget_alternative_searches', identity, {'status': result['status'], 'result': result})
     return result
 
