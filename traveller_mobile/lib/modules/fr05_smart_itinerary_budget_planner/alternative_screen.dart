@@ -36,6 +36,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   final searchMessages = <String, String>{};
   final searchRetryAt = <String, DateTime>{};
   List<Map<String, dynamic>> planning = [];
+  List<Map<String, dynamic>> flightTimingPreviews = [];
   bool optionsChanged = false;
   String? stateVersion;
   List<Map<String, dynamic>> alternatives = [];
@@ -117,6 +118,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       loadError = null;
       alternatives = [];
       planning = [];
+      flightTimingPreviews = [];
     });
     final before = stateVersion;
     var loadedTrip = false;
@@ -147,6 +149,10 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
         throw StateError('Alternatives could not be refreshed.');
       }
       setState(() {
+        flightTimingPreviews = (data['flightTimingPreviews'] as List? ?? [])
+            .whereType<Map>()
+            .map((row) => Map<String, dynamic>.from(row))
+            .toList();
         alternatives = (data['alternatives'] as List? ?? [])
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
@@ -297,6 +303,10 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       ? 'No verified cheaper hotel is currently available for this stay.'
       : 'No verified cheaper flight is currently available.';
 
+  String searchBlocked(String category) => category == 'hotel'
+      ? 'Hotel search has not run. Review the selected stay, total price and room details in Hotels first. Paid or pending stays cannot be replaced.'
+      : 'Flight search has not run. Review the selected route, dates, passengers and cabin first. Paid or booked flights cannot be replaced.';
+
   String searchLimitMessage(String category, DateTime? retry) {
     final label = category == 'hotel' ? 'Hotel' : 'Flight';
     if (retry == null)
@@ -361,7 +371,15 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
         'quota_limited' => searchLimitMessage(category, retry),
         'retry_available' =>
           'Search limit has reset. You can start a new search.',
-        'needs_review' => noOffer(category),
+        'needs_review' => searchBlocked(category),
+        'unavailable' => switch (search['failureCode']) {
+            'provider_timeout' =>
+              'The provider search timed out. No result was confirmed; refresh saved results before trying again.',
+            'provider_rate_limited' =>
+              'The provider search limit was reached. Please try again later.',
+            _ =>
+              'The provider could not complete the search. No result was confirmed.',
+          },
         _ =>
           'Provider search is unavailable. Your local planning options remain available.',
       };
@@ -376,7 +394,14 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
             item['alternativeType'] == category && _canApplyItem(item));
         setState(() => searchMessages[category] = available
             ? 'Verified cheaper offers are ready to preview.'
-            : noOffer(category));
+            : loadError != null
+                ? 'Search finished, but saved offers could not be loaded. Refresh saved results.'
+                : (status == 'completed' &&
+                        (search['requestsAttempted'] as num? ?? 0) == 0)
+                    ? searchBlocked(category)
+                    : category == 'flight' && flightTimingPreviews.isNotEmpty
+                        ? 'Cheaper flights need a timing review before they can be used.'
+                        : noOffer(category));
       }
     } catch (error) {
       if (mounted && version == _loadVersion) {
@@ -384,7 +409,9 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                 error.statusCode == 429
             ? searchLimitMessage(category, null)
             : error is ApiException && error.statusCode == 409
-                ? noOffer(category)
+                ? error.code == 'STALE_ALTERNATIVE'
+                    ? 'This trip changed. Refresh alternatives before searching again.'
+                    : searchBlocked(category)
                 : 'Search could not be confirmed. Refresh saved results before trying again.');
       }
     } finally {
@@ -413,6 +440,56 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                       : 'Find cheaper hotels')),
         ])),
       );
+
+  Widget timingReviewCard(Map<String, dynamic> preview) => Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InkCard(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Flight timing needs review',
+            style: TextStyle(fontWeight: FontWeight.w700)),
+        Text('MYR ' +
+            money(preview['currentCost']) +
+            ' → MYR ' +
+            money(preview['proposedCost'])),
+        Text((preview['reason'] ?? 'The flights conflict with planned visits.')
+            .toString()),
+        TextButton(
+            onPressed: () => showDialog<void>(
+                context: context,
+                builder: (context) => AlertDialog(
+                        title: const Text('Review flight timing'),
+                        scrollable: true,
+                        content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text((preview['reason'] ?? '').toString()),
+                              for (final change
+                                  in (preview['itineraryChanges'] as List? ??
+                                          [])
+                                      .whereType<Map>())
+                                Text((change['activityName'] ?? 'Visit')
+                                        .toString() +
+                                    ' — ' +
+                                    (change['kind'] ?? 'review').toString() +
+                                    (change['to'] is Map
+                                        ? ' ' +
+                                            (change['to'][
+                                                        'scheduledStartTime'] ??
+                                                    '')
+                                                .toString()
+                                        : '')),
+                              const Text(
+                                  'This flight cannot be applied while visits conflict. Choose different flight times or review your trip dates. Your trip is unchanged.'),
+                            ]),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Close'))
+                        ])),
+            child: const Text('Review timing')),
+      ])));
 
   double? _extractSavings(Map<String, dynamic> item) {
     final raw = item['estimatedSavings'] ?? item['saving'];
@@ -598,6 +675,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                     (budget?['hotel'] as num? ?? widget.budget.accommodation) >
                         0)
                   discoveryCard('hotel'),
+                for (final preview in flightTimingPreviews)
+                  timingReviewCard(preview),
                 for (final item in alternatives) optionCard(item),
                 if (replanOptions != null)
                   FilledButton(
@@ -617,17 +696,11 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                 ],
                 if (!checkingPrices && alternatives.isEmpty)
                   const Text(
-                      'No verified cheaper replacement offers are available for this trip.'),
+                      'No saved replacement quotes are available to preview. Use the search buttons to check current offers.'),
                 if (!checkingPrices &&
                     planning.isEmpty &&
                     replanOptions == null)
                   const Text('No eligible planning reductions are available.'),
-                if (budget?['hotel'] is num &&
-                    (budget!['hotel'] as num) > 0 &&
-                    !alternatives
-                        .any((item) => item['alternativeType'] == 'hotel'))
-                  const Text(
-                      'Hotel: no comparable replaceable stay is available.'),
               ],
             ],
           )),

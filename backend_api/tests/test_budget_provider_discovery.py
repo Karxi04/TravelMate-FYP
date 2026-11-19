@@ -384,3 +384,17 @@ def test_cheaper_flight_must_not_drop_visits_to_manufacture_a_feasible_saving(cl
         'dailySchedule':[{'dayNo':1,'dayDate':'2027-02-10','activities':[deepcopy(first),deepcopy(second)]}]})
     discover(client,'flight')
     assert options(client,'flight')==[] and not writes
+    response=client.post(BASE,headers=HEADERS).json
+    assert response['flightTimingPreviews']
+    preview=response['flightTimingPreviews'][0]
+    assert preview['canApply'] is False and preview['proposedCost']==420
+    assert preview['itineraryChanges'] and not writes
+
+
+def test_timing_preview_never_labels_an_incomparable_foreign_fare_as_myr(client,scenario):
+    memory,_,_,returns,_,writes,_=scenario
+    memory.update('itineraries','trip',{'activities':[visit()]})
+    returns.return_value['items'][0]['currency']='USD'
+    discover(client,'flight')
+    response=client.post(BASE,headers=HEADERS).json
+    assert not response['alternatives'] and not response['flightTimingPreviews'] and not writes

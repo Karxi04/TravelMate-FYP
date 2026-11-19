@@ -173,6 +173,50 @@ Future<void> _showOnHome(WidgetTester tester, Finder target) async {
 }
 
 void main() {
+  testWidgets(
+      'carousel lower menu explanation View and Add callbacks remain usable',
+      (tester) async {
+    var views = 0, adds = 0;
+    String? feedback;
+    await tester.pumpWidget(MaterialApp(
+        theme: buildInkWashTheme(),
+        home: Scaffold(
+            body: SingleChildScrollView(
+                child: SizedBox(
+                    width: 280,
+                    child: RecommendationCard(
+                        carousel: true,
+                        discovery: true,
+                        recommendation: _recommendation(),
+                        onView: () => views++,
+                        onAddToTrip: () => adds++,
+                        onPreferenceFeedback: (value) => feedback = value))))));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+        find.byKey(const ValueKey('recommendation-feedback-kek_lok_si')));
+    await tester
+        .tap(find.byKey(const ValueKey('recommendation-feedback-kek_lok_si')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('More like this'));
+    await tester.pumpAndSettle();
+    expect(feedback, 'more_like_this');
+    await tester.ensureVisible(find.text('Why this suggestion'));
+    await tester.tap(find.text('Why this suggestion'));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+    Navigator.of(tester.element(find.byType(RecommendationCard))).pop();
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('View'));
+    await tester.tap(find.text('View'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Add to trip'));
+    await tester.tap(find.text('Add to trip'));
+    await tester.pumpAndSettle();
+    expect(views, 1);
+    expect(adds, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final width in [320.0, 390.0]) {
     for (final scale in [1.0, 1.8]) {
       testWidgets(
@@ -263,6 +307,30 @@ void main() {
                 .widget<Text>(find.text(places[1]['address'] as String))
                 .maxLines,
             2);
+        for (final id in ['one', 'two', 'three']) {
+          final card = find.byKey(ValueKey('recommendation-carousel-$id'));
+          final labels =
+              tester.getRect(find.byKey(ValueKey('recommendation-labels-$id')));
+          final metadata = tester
+              .getRect(find.byKey(ValueKey('recommendation-metadata-$id')));
+          final title = tester.getRect(
+              find.descendant(of: card, matching: find.byType(Text)).first);
+          expect(labels.top, greaterThan(title.bottom));
+          expect(metadata.top, greaterThanOrEqualTo(labels.bottom));
+          final menu = tester
+              .getRect(find.byKey(ValueKey('recommendation-feedback-$id')));
+          expect(menu.top, greaterThanOrEqualTo(metadata.top));
+          expect(title.width,
+              closeTo(cards.first.width - AppSpacing.card.horizontal, .1));
+        }
+        final address =
+            tester.getRect(find.text(places[1]['address'] as String));
+        expect(
+            tester
+                .getRect(
+                    find.byKey(const ValueKey('recommendation-labels-two')))
+                .top,
+            greaterThanOrEqualTo(address.bottom));
         expect(tester.takeException(), isNull);
         expect(api.generationCalls, 0);
       });

@@ -178,27 +178,23 @@ class RecommendationCard extends StatelessWidget {
                 (style?.height ?? 1.4) *
                 count +
             4;
-        final titleHeight =
-            lines(theme.titleLarge, 2).clamp(48.0, double.infinity);
+        final titleHeight = lines(theme.titleLarge, 2);
         final locationHeight = lines(theme.bodySmall, 2);
-        final metadataHeight = scaler.scale(13) * 1.4 + 20;
-        final notesHeight = lines(theme.bodySmall, 3);
-        final reasonsHeight = lines(theme.bodyMedium, 3);
+        final chipHeight = scaler.scale(13) * 1.4 + 20;
+        final metadataHeight = chipHeight.clamp(48.0, double.infinity);
+        final explanationHeight = lines(theme.bodyMedium, 3);
         final buttonHeight =
             48 + (scaler.scale(14) - 14).clamp(0.0, double.infinity) * 1.4;
         final imageHeight =
             constraints.maxWidth / AppSizes.destinationImageAspectRatio;
-        final notes = [
+        final explanation = [
+          ..._reasons,
           if (recommendation['nearbyDistanceKm'] is num)
             'Nearby · ' +
                 (recommendation['city'] ?? 'Locality not supplied').toString() +
                 ' · ' +
                 (recommendation['nearbyDistanceKm'] as num).toStringAsFixed(1) +
                 ' km straight-line',
-          if (preferenceFeedback != null)
-            preferenceFeedback == 'more_like_this'
-                ? 'More like this saved'
-                : 'Not for me saved',
           if (discovery && recommendation['foodExperienceType'] != null)
             switch (recommendation['foodExperienceType']) {
               'dining' => 'Food stop / dining',
@@ -208,11 +204,12 @@ class RecommendationCard extends StatelessWidget {
                 'Spices and culinary culture; a cooking class is not implied.',
               _ => 'Food-related experience; dining is not confirmed.',
             },
-        ].join('\n');
-        final reasons = _reasons.join(' • ');
+          if (preferenceFeedback != null)
+            preferenceFeedback == 'more_like_this'
+                ? 'More like this saved'
+                : 'Not for me saved',
+        ].join(' • ');
         final score = _matchScore;
-        Widget slot(double height, Widget child) =>
-            SizedBox(height: height, child: child);
         Widget horizontal(List<Widget> children) => SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(children: [
@@ -227,15 +224,15 @@ class RecommendationCard extends StatelessWidget {
               AppSpacing.card.vertical +
               titleHeight +
               locationHeight +
-              metadataHeight * 2 +
-              notesHeight +
-              reasonsHeight +
+              chipHeight +
+              metadataHeight +
+              explanationHeight +
               buttonHeight * 2 +
-              AppSpacing.xs * 7,
+              AppSpacing.xs * 6,
           child: Semantics(
-              container: true,
-              label: 'Recommended destination, $_title',
-              child: InkCard(
+            container: true,
+            label: 'Recommended destination, $_title',
+            child: InkCard(
                 padding: EdgeInsets.zero,
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -254,25 +251,18 @@ class RecommendationCard extends StatelessWidget {
                           child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                slot(
-                                    titleHeight,
-                                    Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Expanded(
-                                              child: Text(_title,
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: theme.titleLarge)),
-                                          if (onPreferenceFeedback != null)
-                                            _feedbackMenu(),
-                                        ])),
+                                SizedBox(
+                                    height: titleHeight,
+                                    child: Tooltip(
+                                        message: _title,
+                                        child: Text(_title,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.titleLarge))),
                                 const SizedBox(height: AppSpacing.xs),
-                                slot(
-                                    locationHeight,
-                                    Tooltip(
+                                SizedBox(
+                                    height: locationHeight,
+                                    child: Tooltip(
                                         message: _location,
                                         child: Text(_location,
                                             maxLines: 2,
@@ -281,9 +271,11 @@ class RecommendationCard extends StatelessWidget {
                                                 color:
                                                     AppColors.textSecondary)))),
                                 const SizedBox(height: AppSpacing.xs),
-                                slot(
-                                    metadataHeight,
-                                    horizontal([
+                                SizedBox(
+                                    key: ValueKey(
+                                        'recommendation-labels-$_destinationKey'),
+                                    height: chipHeight,
+                                    child: horizontal([
                                       if (score != null)
                                         InkWell(
                                             onTap: () => _showScoreExplanation(
@@ -303,7 +295,6 @@ class RecommendationCard extends StatelessWidget {
                                         StatusChip(
                                             text: _category,
                                             tone: AppStatusTone.neutral),
-                                      LocalPlaceRating(place: recommendation),
                                       for (final interest in _matchedInterests)
                                         StatusChip(
                                             text: interest,
@@ -312,45 +303,41 @@ class RecommendationCard extends StatelessWidget {
                                             tone: AppStatusTone.neutral),
                                     ])),
                                 const SizedBox(height: AppSpacing.xs),
-                                slot(
-                                    notesHeight,
-                                    Tooltip(
-                                        message: notes,
-                                        child: Text(notes,
-                                            maxLines: 3,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: theme.bodySmall?.copyWith(
-                                                color:
-                                                    AppColors.textSecondary)))),
+                                SizedBox(
+                                    key: ValueKey(
+                                        'recommendation-metadata-$_destinationKey'),
+                                    height: metadataHeight,
+                                    child: Row(children: [
+                                      Expanded(
+                                          child: horizontal([
+                                        LocalPlaceRating(place: recommendation),
+                                        if (_showSourceDisclosure)
+                                          SourceFallbackBadge(source: _source),
+                                      ])),
+                                      if (onPreferenceFeedback != null)
+                                        _feedbackMenu(),
+                                    ])),
                                 const SizedBox(height: AppSpacing.xs),
-                                slot(
-                                    reasonsHeight,
-                                    Tooltip(
-                                        message: reasons,
-                                        child: Text(reasons,
+                                SizedBox(
+                                    height: explanationHeight,
+                                    child: Tooltip(
+                                        message: explanation,
+                                        child: Text(explanation,
                                             maxLines: 3,
                                             overflow: TextOverflow.ellipsis,
                                             style: theme.bodyMedium))),
                                 const SizedBox(height: AppSpacing.xs),
-                                slot(
-                                    metadataHeight,
-                                    _showSourceDisclosure
-                                        ? horizontal([
-                                            SourceFallbackBadge(source: _source)
-                                          ])
-                                        : const SizedBox.shrink()),
-                                const SizedBox(height: AppSpacing.xs),
-                                slot(
-                                    buttonHeight,
-                                    SecondaryButton(
+                                SizedBox(
+                                    height: buttonHeight,
+                                    child: SecondaryButton(
                                         key: ValueKey(
                                             'recommendation-view-$_destinationKey'),
                                         label: 'View',
                                         onPressed: onView)),
                                 const SizedBox(height: AppSpacing.xs),
-                                slot(
-                                    buttonHeight,
-                                    onAddToTrip == null
+                                SizedBox(
+                                    height: buttonHeight,
+                                    child: onAddToTrip == null
                                         ? const SizedBox.shrink()
                                         : PrimaryButton(
                                             key: ValueKey(
@@ -358,8 +345,8 @@ class RecommendationCard extends StatelessWidget {
                                             label: 'Add to trip',
                                             onPressed: onAddToTrip)),
                               ])),
-                    ]),
-              )),
+                    ])),
+          ),
         );
       });
 

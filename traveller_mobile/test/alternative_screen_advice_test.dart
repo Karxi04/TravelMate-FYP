@@ -57,6 +57,108 @@ Widget _buildApp(Widget child,
 
 void main() {
   testWidgets(
+      'flight timing preview explains rejected visits without allowing apply',
+      (tester) async {
+    var applies = 0, searches = 0;
+    final api = _FakeAlternativeApi(
+        onGet: (_) async => {
+              'ok': true,
+              'stateVersion': 'r',
+              'budget': {'total': 900, 'limit': 700, 'flight': 600}
+            },
+        onPost: (path, [body]) async {
+          if (path.endsWith('/apply')) applies++;
+          if (path.endsWith('/discover')) searches++;
+          return {
+            'ok': true,
+            'stateVersion': 'r',
+            'budget': {'total': 900, 'limit': 700, 'flight': 600},
+            'alternatives': [],
+            'flightTimingPreviews': [
+              {
+                'title': 'Flight timing needs review',
+                'currentCost': 600,
+                'proposedCost': 420,
+                'canApply': false,
+                'reason': 'The flight cannot retain all planned visits.',
+                'itineraryChanges': [
+                  {'activityName': 'Long planned visit', 'kind': 'unscheduled'}
+                ]
+              }
+            ]
+          };
+        });
+    await tester.pumpWidget(_buildApp(AlternativeScreen(
+        budget: BudgetModel(
+            accommodation: 0,
+            food: 200,
+            transportation: 100,
+            activities: 0,
+            flight: 600),
+        userBudget: 700,
+        tripId: 'owned',
+        api: api)));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Review timing'), 200);
+    await tester.tap(find.text('Review timing'));
+    await tester.pumpAndSettle();
+    expect(find.text('Long planned visit — unscheduled'), findsOneWidget);
+    expect(find.text('Confirm change'), findsNothing);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(applies, 0);
+    expect(searches, 0);
+  });
+
+  for (final status in ['needs_review', 'unavailable']) {
+    testWidgets(
+        '$status is not presented as an empty completed provider search',
+        (tester) async {
+      final api = _FakeAlternativeApi(
+          onGet: (_) async => {
+                'ok': true,
+                'stateVersion': 'r',
+                'budget': {'total': 900, 'limit': 700, 'hotel': 400}
+              },
+          onPost: (path, [body]) async => path.endsWith('/discover')
+              ? {
+                  'search': {
+                    'status': status,
+                    'requestsAttempted': status == 'needs_review' ? 0 : 1,
+                    'failureCode': 'provider_timeout'
+                  }
+                }
+              : {
+                  'ok': true,
+                  'stateVersion': 'r',
+                  'budget': {'total': 900, 'limit': 700, 'hotel': 400},
+                  'alternatives': []
+                });
+      await tester.pumpWidget(_buildApp(AlternativeScreen(
+          budget: BudgetModel(
+              accommodation: 400,
+              food: 300,
+              transportation: 200,
+              activities: 0),
+          userBudget: 700,
+          tripId: 'owned',
+          api: api)));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('No verified cheaper'), findsNothing);
+      await tester.scrollUntilVisible(find.text('Find cheaper hotels'), 200);
+      await tester.tap(find.text('Find cheaper hotels'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Search now'));
+      await tester.pumpAndSettle();
+      expect(
+          find.textContaining(status == 'needs_review'
+              ? 'Hotel search has not run.'
+              : 'The provider search timed out.'),
+          findsOneWidget);
+      expect(find.textContaining('No verified cheaper'), findsNothing);
+    });
+  }
+  testWidgets(
       'genuine search limit shows Malaysia retry time and clears before a fresh search',
       (tester) async {
     var searches = 0;
@@ -129,7 +231,7 @@ void main() {
   });
 
   testWidgets(
-      'hotel comparison rejection uses concise wording and does not apply or retry',
+      'blocked hotel comparison says search has not run and does not apply or retry',
       (tester) async {
     var searches = 0;
     final api = _FakeAlternativeApi(
@@ -169,10 +271,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Search now'));
     await tester.pumpAndSettle();
+    expect(find.textContaining('Hotel search has not run.'), findsOneWidget);
     expect(
         find.text(
             'No verified cheaper hotel is currently available for this stay.'),
-        findsOneWidget);
+        findsNothing);
     expect(find.textContaining('total-stay price'), findsNothing);
     expect(searches, 1);
     expect(api.postCalls.where((path) => path.endsWith('/apply')), isEmpty);
@@ -1013,7 +1116,7 @@ void main() {
     expect(find.text('Review budget options'), findsOneWidget);
     expect(find.textContaining('Earlier options may no longer apply'),
         findsOneWidget);
-    expect(find.textContaining('No verified cheaper replacement offers'),
+    expect(find.textContaining('No saved replacement quotes are available to preview.'),
         findsOneWidget);
 
     await tester.pumpWidget(page('b'));
@@ -1059,7 +1162,7 @@ void main() {
       expect(find.text('Activity budget guidance'), findsNothing);
       expect(
         find.text(
-            'No verified cheaper replacement offers are available for this trip.'),
+            'No saved replacement quotes are available to preview. Use the search buttons to check current offers.'),
         findsOneWidget,
       );
     });
@@ -1085,7 +1188,7 @@ void main() {
 
       expect(
           find.text(
-              'No verified cheaper replacement offers are available for this trip.'),
+              'No saved replacement quotes are available to preview. Use the search buttons to check current offers.'),
           findsOneWidget);
     });
 
@@ -1523,7 +1626,7 @@ void main() {
       );
       expect(
           find.text(
-              'No verified cheaper replacement offers are available for this trip.'),
+              'No saved replacement quotes are available to preview. Use the search buttons to check current offers.'),
           findsOneWidget);
     });
 

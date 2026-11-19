@@ -108,5 +108,26 @@ def test_no_hotel_evidence_is_invented_and_user_message_is_concise(client,scenar
     memory.update('hotel_bookings','original',{'selectedHotel':original,'acceptedPrebookSnapshot':accepted})
     reply=discover(client,'hotel')
     assert reply.status_code==409
-    assert reply.json['error']=='No verified cheaper hotel is currently available for this stay.'
+    assert reply.json['error'].startswith('Hotel search has not run.')
+    assert reply.json['code']=='DISCOVERY_COMPARISON_UNAVAILABLE'
     provider.assert_not_called()
+
+
+@pytest.mark.parametrize('status,code', [(429,'provider_rate_limited'),(503,'provider_unavailable'),(504,'provider_unavailable')])
+def test_provider_failures_are_distinct_from_empty_inventory(scenario,status,code):
+    from requests import HTTPError,Response
+    _,trip,*_=scenario
+    response=Response();response.status_code=status
+    def fail():
+        raise HTTPError(response=response)
+    result=discovery.run_search(trip['travellerId'],trip,'flight','error-'+str(status),
+        lambda invoke:invoke(fail))
+    assert result['status']=='unavailable'
+    assert result['requestsAttempted']==1 and result['failureCode']==code
+
+
+def test_provider_timeout_is_not_reported_as_no_results(scenario):
+    _,trip,*_=scenario
+    def fail():raise TimeoutError()
+    result=discovery.run_search(trip['travellerId'],trip,'hotel','timeout',lambda invoke:invoke(fail))
+    assert result['failureCode']=='provider_timeout' and result['requestsAttempted']==1

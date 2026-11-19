@@ -78,10 +78,16 @@ def run_search(owner, trip, kind, state, search, request_id=None):
         result = {'status': 'completed', 'requestsAttempted': attempted, 'references': references}
     except _SearchLimitReached:
         result = {'status': 'quota_limited', 'requestsAttempted': 0, 'retryAt': retry_at, 'searchesPerHour': limit}
-    except Exception:
+    except Exception as error:
         # Submitted requests can consume provider credits even on timeout; keep
         # their reservation. Pre-provider validation failures reserve nothing.
-        result = {'status': 'unavailable' if attempted else 'needs_review', 'requestsAttempted': attempted}
+        from requests.exceptions import Timeout
+        status = getattr(getattr(error, 'response', None), 'status_code', None)
+        failure = ('provider_timeout' if isinstance(error, (Timeout, TimeoutError)) else
+                   'provider_rate_limited' if status == 429 else
+                   'provider_unavailable' if status in (502, 503, 504) else 'provider_error')
+        result = {'status': 'unavailable' if attempted else 'needs_review', 'requestsAttempted': attempted,
+                  'failureCode': failure if attempted else 'search_not_started'}
         logging.getLogger(__name__).warning('budget_discovery_unavailable category=%s attempts=%s', kind, attempted)
     updateRecord('budget_alternative_searches', identity, {'status': result['status'], 'result': result})
     return result

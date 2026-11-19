@@ -1047,7 +1047,9 @@ def budget_comparison(iid):
 
 
 class _AlternativeConflict(ValueError):
-    pass
+    def __init__(self, message, *, timing_preview=None):
+        super().__init__(message)
+        self.timing_preview = timing_preview
 
 
 def _alternative_state(current):
@@ -1458,8 +1460,8 @@ def discover_cost_alternatives(iid):
         result = run_search(g.uid, current, kind, state, search, request_id=search_request_id)
     except (DiscoveryError, _AlternativeConflict) as error:
         logging.getLogger(__name__).info('budget_discovery_blocked category=%s reason=%s', kind, str(error))
-        message = ('No verified cheaper hotel is currently available for this stay.' if kind == 'hotel'
-                   else 'No verified cheaper flight is currently available.')
+        message = ('Hotel search has not run. Review the selected stay, price and room details first.' if kind == 'hotel'
+                   else 'Flight search has not run. Review the selected route, dates, passengers and cabin first.')
         return jsonify(ok=False, error=message, code='DISCOVERY_COMPARISON_UNAVAILABLE'), 409
     except Exception:
         return jsonify(ok=False, error='Search state could not be verified. No automatic retry was made.'), 503
@@ -1530,10 +1532,16 @@ def _resolve_cost_alternative(kind, data, current):
         if current.get('activities'):
             from services.flight_itinerary_adjustment import build_preview, fingerprint
             schedule = build_preview({**current, **patch}, patch['selectedFlight'], g.uid, 'budget-preview')
-            if not schedule['canApply'] or not schedule['after'].get('activities'):
-                raise _AlternativeConflict(schedule.get('reason') or 'No feasible sightseeing plan fits this flight.')
-            if schedule['newlyUnscheduled']:
-                raise _AlternativeConflict('This flight cannot retain all planned visits safely. Review the flight or trip dates first.')
+            reason = (schedule.get('reason') or 'No feasible sightseeing plan fits this flight.'
+                      if not schedule['canApply'] or not schedule['after'].get('activities')
+                      else 'This flight cannot retain all planned visits safely. Review the flight or trip dates first.'
+                      if schedule['newlyUnscheduled'] else None)
+            if reason:
+                raise _AlternativeConflict(reason, timing_preview={
+                    'title': 'Flight timing needs review', 'reason': reason,
+                    'currentCost': current.get('flightCost'), 'proposedCost': option.get('price'),
+                    'currency': 'MYR', 'canApply': False, 'itineraryChanges': schedule.get('changes') or [],
+                } if _alternative_savings('flight', trusted, current) is not None else None)
             patch.update({key: schedule['after'][key] for key in (
                 'activities', 'dailySchedule', 'unscheduledSuggestions', 'scheduledActivityCount', 'unscheduledActivityCount'
             ) if key in schedule['after']})
@@ -1677,6 +1685,7 @@ def lower_cost_alternatives(iid):
     seen = set()
     duplicate_count = 0
     travel_rejections = {}
+    timing_previews = []
     for kind, options in (('flight', flights), ('hotel', hotels)):
         for option in options:
             try:
@@ -1684,6 +1693,10 @@ def lower_cost_alternatives(iid):
             except Exception as error:
                 reason = str(error) if isinstance(error, _AlternativeConflict) else 'Incomplete comparison metadata.'
                 travel_rejections[reason] = travel_rejections.get(reason, 0) + 1
+                if (kind == 'flight' and isinstance(error, _AlternativeConflict)
+                        and error.timing_preview and len(timing_previews) < 3
+                        and (error.timing_preview.get('proposedCost') or float('inf')) < current.get('flightCost', 0)):
+                    timing_previews.append(error.timing_preview)
                 continue
             savings = _alternative_savings(kind, trusted, comparison)
             if savings is None:
@@ -1781,6 +1794,7 @@ def lower_cost_alternatives(iid):
         'activityAdvice': None if activity_items else activity_advice,
         'flightComparison': _flight_comparison_diagnostics(current),
         'travelRejectionCounts': travel_rejections,
+        'flightTimingPreviews': timing_previews,
         'flightCandidateCount': len(flights),
         'flightAdvice': (
             flight_advice or ' '.join(_flight_comparison_diagnostics(current)['reasons']) or 'No cheaper complete flight quote matched this trip. Search Flights for more options.'
