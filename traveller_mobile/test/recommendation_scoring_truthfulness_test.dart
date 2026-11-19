@@ -269,7 +269,7 @@ void main() {
       expect(find.text('Culture and heritage'), findsOneWidget);
       expect(find.text('Food Tour'), findsOneWidget);
       expect(find.text('4.9 rating'), findsNothing);
-      expect(find.text('4.0 · 2 reviews'), findsOneWidget);
+      expect(find.text('4.0 (2 reviews)'), findsOneWidget);
     });
 
     testWidgets('9. View button triggers navigation callback',

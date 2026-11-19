@@ -8,14 +8,27 @@ from math import isfinite
 from utils import utc_now_iso
 from services.review_sentiment import classify_review_sentiment
 
-SCREENING_POLICY = 'travelmate-review-auto-v1'
+SCREENING_POLICY = 'travelmate-review-auto-v2'
+MAX_REVIEW_EDITS = 2
+
+
+def edits_used(item):
+    # Legacy records start at zero; no historical edit history is invented.
+    value = item.get('editCount', 0)
+    return value if type(value) is int and value >= 0 else MAX_REVIEW_EDITS
 
 
 def valid_review(data, partial=False):
     if not isinstance(data, dict) or not data:
         return False
-    fields = {'rating', 'comment'} | (set() if partial else {'destinationId', 'destinationName', 'destinationAddress'})
+    fields = {'rating', 'comment'} | ({'expectedRevision', 'expectedUpdatedAt'} if partial else {'destinationId', 'destinationName', 'destinationAddress'})
     if not set(data) <= fields:
+        return False
+    if 'expectedRevision' in data and (not isinstance(data['expectedRevision'], str) or len(data['expectedRevision']) != 64):
+        return False
+    if 'expectedUpdatedAt' in data and (not isinstance(data['expectedUpdatedAt'], str) or len(data['expectedUpdatedAt']) > 100):
+        return False
+    if partial and not {'rating', 'comment'}.intersection(data):
         return False
     if not partial and not {'rating', 'comment', 'destinationId'} <= set(data):
         return False
@@ -34,7 +47,8 @@ def review_id(uid, destination):
 
 
 def review_revision(item):
-    fields = ('travellerId', 'destinationId', 'rating', 'comment', 'updatedAt', 'moderationStatus', 'feedbackStatus')
+    fields = ('travellerId', 'destinationId', 'rating', 'comment', 'updatedAt', 'moderationStatus', 'feedbackStatus',
+              'editCount', 'moderationDecision', 'reviewedBy', 'reviewedAt', 'removedBy', 'removedAt')
     return hashlib.sha256(json.dumps({key:item.get(key) for key in fields}, sort_keys=True, default=str).encode()).hexdigest()
 
 
@@ -80,7 +94,7 @@ def screen_submission(comment, rating):
     screening = _screening(comment, rating)
     sentiment = screening.get('sentiment', {})
     eligible_ratings = {
-        'positive': (4, 5), 'negative': (1, 2), 'neutral': (3,), 'mixed': (3,),
+        'positive': (4, 5), 'negative': (1, 2), 'neutral': (3, 4), 'mixed': (3,),
     }
     if screening['risk'] == 'low':
         if len(re.findall(r'\w+', comment)) < 3:
@@ -128,9 +142,8 @@ def approved_reviews(records):
     """One approved contribution per owner; preserve historical source duplicates."""
     unique = {}
     for item in sorted(records, key=lambda x: str(x.get('updatedAt') or x.get('submittedAt') or ''), reverse=True):
-        if published_review(item):
-            unique.setdefault(item.get('travellerId') or item.get('id'), item)
-    return list(unique.values())
+        unique.setdefault(item.get('travellerId') or item.get('id'), item)
+    return [item for item in unique.values() if published_review(item)]
 
 
 class ReviewConflict(ValueError):
@@ -178,6 +191,9 @@ def commit_feedback(document_id, expected, patch=None):
             transaction.delete(source)
             transaction.delete(projection)
             return True
+        if 'editCount' in patch and (edits_used(current) >= MAX_REVIEW_EDITS
+                or patch['editCount'] != edits_used(current) + 1):
+            raise ReviewConflict('No edits remaining. Each review can be edited twice.')
         updated = {**current, **patch}
         if patch:
             transaction.update(source, patch)

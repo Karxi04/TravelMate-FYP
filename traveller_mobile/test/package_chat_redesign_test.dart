@@ -880,7 +880,7 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      expect(find.text('3.8 · 11 reviews'), findsOneWidget);
+      expect(find.text('3.8 (11 reviews)'), findsOneWidget);
       expect(find.textContaining('FYP'), findsNothing);
       expect(find.text('View'), findsOneWidget);
       expect(find.text('Add to trip'), findsOneWidget);

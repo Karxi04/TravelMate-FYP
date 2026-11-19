@@ -49,6 +49,30 @@ bool isTourismPlanningCandidate(Map item) {
 }
 
 class RecommendationTaxonomy {
+  static Set<String> experienceTypes(Map<String, dynamic> item) {
+    const provider = {'botanical_garden': 'botanical_garden', 'garden': 'garden', 'national_park': 'national_park',
+      'park': 'park', 'hiking_area': 'hiking', 'beach': 'beach', 'wildlife_park': 'wildlife',
+      'shopping_mall': 'shopping', 'museum': 'museum', 'restaurant': 'dining', 'cafe': 'cafe',
+      'hindu_temple': 'religious_site', 'mosque': 'religious_site', 'zoo': 'zoo'};
+    final types = {for (final value in [item['type_id'], ...(item['type_ids'] is List ? item['type_ids'] as List : const [])])
+      if (provider.containsKey(value)) provider[value]!};
+    if (types.isNotEmpty) return types;
+    final values = [for (final key in ['category', 'type', 'subtype']) normalizePhrase(item[key])];
+    final generic = values.every((value) => const {'', 'nature', 'culture', 'shopping', 'attraction', 'tourist attraction'}.contains(value));
+    final text = '${values.join(' ')} ${generic ? normalizePhrase(item['title'] ?? item['name'] ?? item['activityName']) : ''}';
+    for (final entry in const {'botanic': 'botanical_garden', 'botanical': 'botanical_garden', 'national park': 'national_park',
+      'hiking': 'hiking', 'beach': 'beach', 'wildlife': 'wildlife', 'viewpoint': 'viewpoint', 'museum': 'museum',
+      'temple': 'religious_site', 'shopping mall': 'shopping', 'art gallery': 'art_gallery'}.entries) {
+      if (text.contains(entry.key)) types.add(entry.value);
+    }
+    if (types.isEmpty) {
+      for (final entry in const {'hill': 'hill_visit', 'bukit': 'hill_visit', 'lake': 'lake', 'waterfall': 'waterfall', 'forest': 'forest',
+        'garden': 'garden', 'park': 'park', 'cave': 'cave'}.entries) {
+        if (RegExp('\\b${entry.key}s?\\b').hasMatch(text)) types.add(entry.value);
+      }
+    }
+    return types;
+  }
   static const Map<String, Set<String>> conceptTerms = {
     'food': {
       'food',
@@ -808,13 +832,21 @@ class RecommendationScoring {
     final remaining = unique.map(Map<String, dynamic>.from).toList();
     final selected = <Map<String, dynamic>>[];
     final counts = <String, int>{};
+    final experiences = <String, int>{};
     while (remaining.isNotEmpty && selected.length < limit) {
       var bestIndex = 0;
       var bestAdjusted = double.negativeInfinity;
       var bestCategory = 'general';
       var bestPenalty = 0.0;
+      final topScore = remaining.map((row) => _number(row['score'])).reduce(max);
+      final focused = (preferences['interests'] as List? ?? []).any((value) => const {'hiking', 'temples', 'museums'}.contains('$value'.toLowerCase()));
+      final varied = focused || !experiences.values.any((count) => count >= 2) ? <Map<String, dynamic>>[] : remaining.where((row) {
+        final kinds = RecommendationTaxonomy.experienceTypes(row);
+        return kinds.isNotEmpty && kinds.map((kind) => experiences[kind] ?? 0).reduce(min) < 2 && _number(row['score']) >= topScore - 10;
+      }).toList();
       for (var index = 0; index < remaining.length; index++) {
         final item = remaining[index];
+        if (varied.isNotEmpty && !varied.contains(item)) continue;
         final concepts = (item['destinationConcepts'] as List? ?? [])
             .map((value) => value.toString())
             .toSet();
@@ -842,6 +874,9 @@ class RecommendationScoring {
       }
       selected.add(chosen);
       counts[bestCategory] = (counts[bestCategory] ?? 0) + 1;
+      for (final kind in RecommendationTaxonomy.experienceTypes(chosen)) {
+        experiences[kind] = (experiences[kind] ?? 0) + 1;
+      }
     }
     for (var index = 0; index < selected.length; index++) {
       selected[index]['rankNo'] = index + 1;

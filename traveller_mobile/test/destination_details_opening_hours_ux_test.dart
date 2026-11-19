@@ -95,7 +95,7 @@ void main() {
     await _pumpDestination(tester, initial: place, api: api);
     expect(find.text('Demonstration information'), findsNothing);
     await _scrollIntoView(tester, find.text('No TravelMate reviews yet.'));
-    expect(find.text('3.0 · 3 reviews'), findsNothing);
+    expect(find.text('3.0 (3 reviews)'), findsNothing);
     expect(find.text('Fictional Reviewer'), findsNothing);
     expect(find.text('Fictional comment.'), findsNothing);
     await _scrollIntoView(tester, find.text('Write a review'));

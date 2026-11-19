@@ -2,6 +2,15 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 class ReviewContract {
+  static int editsRemaining(Map review) {
+    final used = review['editCount'] ?? 0;
+    return used is int && used >= 0 ? (2 - used).clamp(0, 2) : 0;
+  }
+
+  static String editAllowance(Map review) {
+    final remaining = editsRemaining(review);
+    return remaining == 0 ? 'No edits remaining' : 'Edits remaining: $remaining of 2';
+  }
   static bool isGenuine(Map review) =>
       review['synthetic'] != true &&
       review['fypPreview'] != true &&
@@ -43,8 +52,9 @@ class ReviewContract {
       'review_${sha256.convert(utf8.encode('$uid\u0000${destination.trim()}'))}';
 
   static bool valid(Map<String, dynamic> data, {bool partial = false}) {
-    final allowed = {'rating', 'comment', if (!partial) ...{'destinationId', 'destinationName', 'destinationAddress'}};
+    final allowed = {'rating', 'comment', if (partial) 'expectedUpdatedAt', if (!partial) ...{'destinationId', 'destinationName', 'destinationAddress'}};
     if (data.isEmpty || !data.keys.every(allowed.contains)) return false;
+    if (data.containsKey('expectedUpdatedAt') && (data['expectedUpdatedAt'] is! String || data['expectedUpdatedAt'].length > 100)) return false;
     if (!partial && !{'rating', 'comment', 'destinationId'}.every(data.containsKey)) return false;
     if (data.containsKey('rating') && (data['rating'] is! int || data['rating'] < 1 || data['rating'] > 5)) return false;
     if (data.containsKey('comment') && (data['comment'] is! String || data['comment'].trim().length < 5 || data['comment'].trim().length > 2000)) return false;

@@ -551,8 +551,20 @@ def diversifyRecommendations(items, preferenceProfile=None, limit=12, coverageAw
         available = {c for matches in strong.values() for c in matches if coverage_counts[c] < 2}
         target = min(available, key=lambda c: (coverage_counts[c], c)) if (
             coverageAware and len(preferred) > 1 and len(selected) < max(6, 2 * len(preferred)) and available) else None
+        pool = [row for i, row in enumerate(remaining) if not target or target in strong.get(i, set())]
+        top_score = max((_score_number(row.get('score')) for row in pool), default=0)
+        # Prefer a different evidenced experience within a ten-point quality band.
+        # This changes display ordering only; specialized hiking requests keep their intent.
+        focused = any(
+            str(value).casefold() in {'hiking', 'temples', 'museums'} for value in (preferenceProfile or {}).get('interests', []))
+        varied = [row for row in pool if experience_types(row)
+                  and min(experience_counts.get(kind, 0) for kind in experience_types(row)) < 2
+                  and _score_number(row.get('score')) >= top_score - 10] if not focused and any(
+                      count >= 2 for count in experience_counts.values()) else []
         for index, item in enumerate(remaining):
             if target and target not in strong.get(index, set()):
+                continue
+            if varied and item not in varied:
                 continue
             concepts = set(item.get('destinationConcepts') or candidate_concepts(item))
             preferred_matches = sorted(concepts.intersection(preferred))
@@ -578,6 +590,8 @@ def diversifyRecommendations(items, preferenceProfile=None, limit=12, coverageAw
         chosen['diversityAdjustedScore'] = round(best_adjusted, 2)
         chosen['diversityPenalty'] = round(best_penalty, 2)
         chosen['experienceTypes'] = experience_types(chosen)
+        if varied and len(varied) < len(pool):
+            chosen['experienceDiversityReason'] = 'Different evidenced experience within ten hybrid points; original scores unchanged'
         if coverageAware:
             chosen['selectionPolicy'] = 'strong_interest_coverage_v1'
             chosen['selectionReason'] = ('Early coverage of a strongly evidenced selected interest' if target else 'Hybrid score with bounded diversity')

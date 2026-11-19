@@ -1033,9 +1033,8 @@ def _chat_turn(payload):
     if requirements_changed or date_error:
         planning_state.pop('activePlan', None)
     active_plan = planning_state.get('activePlan') or {}
-    saved_regeneration = (message.casefold() == 'regenerate itinerary'
-                          and active_plan.get('draftId') in (planning_state.get('savedPlans') or {}))
-    existing_plan = active_plan if (_show_plan_request(message) or saved_regeneration) and not planning_state.get('dateClarification') else None
+    regenerate = message.strip().casefold() == 'regenerate itinerary' and bool(active_plan)
+    existing_plan = active_plan if _show_plan_request(message) and not regenerate and not planning_state.get('dateClarification') else None
     if not is_conversational and geo.get('is_multi_destination'):
         planning_state['tripMode'] = 'road_trip'
         planning_state['multipleDestinations'] = list(geo.get('multiple_destinations') or [])
@@ -1199,7 +1198,7 @@ def _chat_turn(payload):
             reply = item['reply'] = 'This plan was saved to Trips. You can reopen it from Trips.'
     if (
         not existing_plan and not guided_activities and not is_conversational
-        and (guided_ready or (guided_check is None and classify_user_intent(message, planning_state) == 'PLANNING_REQUEST'))
+        and (regenerate or guided_ready or (guided_check is None and classify_user_intent(message, planning_state) == 'PLANNING_REQUEST'))
         and dest_for_planning
         and planning_state.get('tripMode') != 'road_trip'
     ):
@@ -1214,6 +1213,15 @@ def _chat_turn(payload):
         indoor_val = planning_state.get('preferIndoor', False)
 
         catalog = _planning_catalog(dest_for_planning, dest_state_for_planning, ints_val)
+        prior_ids = {str(row.get('destinationId') or '') for row in active_plan.get('activities', [])} if regenerate else set()
+        recent_ids = set(planning_state.get('recentPlanDestinationIds') or []) | prior_ids
+        from services.itinerary_identity import same_attraction
+        alternatives = [row for row in catalog if not any(same_attraction(row, old)
+                        for old in active_plan.get('activities', []))] if regenerate else catalog
+        alternate_catalog = [row for row in alternatives if str(row.get('destinationId') or row.get('place_id') or '') not in recent_ids] if regenerate else catalog
+        # A complete alternative must pass the same geographic, date and budget scheduler.
+        if regenerate and len(alternate_catalog) < dur_val:
+            alternate_catalog = alternatives
         plan, plan_status = build_structured_trip_plan(
             destination_area=dest_for_planning,
             destination_state=dest_state_for_planning,
@@ -1226,7 +1234,7 @@ def _chat_turn(payload):
             excluded_interests=ex_ints_val,
             excluded_activity_types=ex_types_val,
             prefer_indoor=indoor_val,
-            catalog=catalog,
+            catalog=alternate_catalog,
             preference_profile={**effective_preference_profile(retrieveRecord('travel_preferences', g.uid) or {},
                 retrieveRecord('learned_preference_profiles', g.uid)),
                 **{key:planning_state[key] for key in ('travelPace','travelPersonality','budgetRange') if key in planning_state}},
@@ -1234,6 +1242,16 @@ def _chat_turn(payload):
             peer_preferences={str(row.get('travellerId') or row.get('id')):row for row in (retrieveRecord('travel_preferences',limit=500) or []) if isinstance(row,dict)},
             current_traveller_id=g.uid,
         )
+        if regenerate and (not plan or plan_status != 'ready' or plan.get('coverageStatus') != 'complete'):
+            # Do not relabel the old selection as a successful new alternative.
+            plan, plan_status = deepcopy(active_plan), 'ready'
+            reply = item['reply'] = 'I could not establish a complete different itinerary that meets your constraints. Your previous draft is unchanged. Try changing the dates, duration or interests.'
+            source = item['source'] = 'travelmate-assistant'
+        elif regenerate:
+            planning_state['recentPlanDestinationIds'] = sorted(recent_ids)[:150]
+            plan['draftVersion'] = int(active_plan.get('draftVersion') or 1) + 1
+            reply = item['reply'] = 'Here is a different itinerary using verified alternatives with your destination, dates, group and budget retained. Review it before saving.'
+            source = item['source'] = 'travelmate-assistant'
         if plan and plan_status == 'ready':
             if planning_state.get('avoidCrowds'):
                 plan['planningLimitations'] = ['Verified crowd-level data is unavailable; quieter conditions cannot be guaranteed.']

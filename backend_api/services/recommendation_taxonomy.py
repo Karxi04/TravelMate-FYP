@@ -53,6 +53,11 @@ def experience_types(item):
                         ('shopping mall', 'shopping'), ('art gallery', 'art_gallery')):
         if phrase in text:
             types.add(kind)
+    if not types:
+        for phrase, kind in (('hill', 'hill_visit'), ('bukit', 'hill_visit'), ('lake', 'lake'), ('waterfall', 'waterfall'),
+                             ('forest', 'forest'), ('garden', 'garden'), ('park', 'park'), ('cave', 'cave')):
+            if re.search(r'\b' + phrase + r's?\b', text):
+                types.add(kind)
     return sorted(types)
 
 

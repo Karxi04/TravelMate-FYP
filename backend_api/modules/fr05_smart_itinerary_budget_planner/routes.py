@@ -2,8 +2,10 @@ import hashlib
 import os
 import re
 import json
-from datetime import date
-from flask import Blueprint, request, jsonify, g
+import logging
+from datetime import date, datetime, timezone, timedelta
+from time import perf_counter
+from flask import Blueprint, request, jsonify, g, current_app
 from auth_utils import auth_required
 from utils import utc_now_iso
 from services.activity_pricing import (
@@ -20,7 +22,7 @@ from services.itinerary_identity import POLICY, same_attraction, consolidate_gen
 from services.trip_budget_replan import budget_replan_options, preview_budget_replan, protected_activity
 from services.itinerary_history import history_patch, history_metadata, HistoryConflict
 from sequence_contract.validators import validateItineraryInput, validateItineraryForSaving, validateSelectedDestination
-from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord, deleteRecord
+from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord, deleteRecord, claimRecord
 from sequence_contract.domain_functions import (
     createItinerary, addActivity, removeActivity, rearrangeActivity, updateActivity,
     checkDestinationLimit, calculateBudget, compareBudget,
@@ -406,6 +408,7 @@ def _destination_candidates(current, snapshot=None):
 
 
 def _generate_itinerary_data(current, payload, snapshot=None):
+    started = perf_counter()
     if snapshot:
         generation_id = str(snapshot.get('recommendationGenerationId') or '')
         for activity in current.get('activities', []) or []:
@@ -459,8 +462,11 @@ def _generate_itinerary_data(current, payload, snapshot=None):
         working['activities'] = [dict(x) for x in working.get('activities', [])]
 
     selected = [x for x in working.get('activities', []) if x.get('destinationId')]
+    candidates_done = perf_counter()
     locations = retrieveLocationAndTravelTime(selected)
+    locations_done = perf_counter()
     forecast, coords = _forecast_for(working, payload)
+    weather_done = perf_counter()
 
     if apply_selection:
         generated = generate_with_budget_selection(working, forecast, locations)
@@ -480,6 +486,12 @@ def _generate_itinerary_data(current, payload, snapshot=None):
         ),
         **({'budgetAwareSelectionApplied': apply_selection} if selection_enabled else {}),
     }
+    timings = {'candidates': round((candidates_done - started) * 1000),
+               'locations': round((locations_done - candidates_done) * 1000),
+               'weather': round((weather_done - locations_done) * 1000),
+               'scheduling': round((perf_counter() - weather_done) * 1000)}
+    logging.getLogger(__name__).info('itinerary_stage_timings_ms=%s', timings,
+                                   extra={'planning_timings_ms': timings})
     return generated
 
 
@@ -494,20 +506,23 @@ def _transition_to_generating(iid, current):
         'generationFailedAt': None,
         'retryable': False,
     }
-    updated = updateRecord('itineraries', iid, patch)
+    updated = updateRecord('itineraries', iid, patch, expected=current)
     return updated or {**current, **patch, 'id': iid}
 
 
 def _run_generation_state_machine(iid, current, payload, snapshot):
     stage = 'itinerary_generation'
     partial = None
+    started = perf_counter()
     try:
         partial = _generate_itinerary_data(current, payload, snapshot)
         stage = 'budget_calculation'
+        budget_started = perf_counter()
         budget = calculateBudget(partial)
         if partial.get('generationContext', {}).get('budgetAwareSelectionApplied') is True:
             budget = qualify_selection_budget(budget, partial['budgetAwareSelection'])
         budget['comparison'] = compareBudget(budget)
+        budget_ms = round((perf_counter() - budget_started) * 1000)
 
         stage = 'save_generated_trip'
         now = utc_now_iso()
@@ -521,11 +536,18 @@ def _run_generation_state_machine(iid, current, payload, snapshot):
             'generationFailedAt': None,
             'retryable': False,
         }
+        save_started = perf_counter()
         persisted = updateRecord('itineraries', iid, planned)
         if persisted is None:
             raise RuntimeError('Generated trip could not be saved')
+        current_app.logger.info('itinerary_generation_completed total_ms=%d save_ms=%d budget_ms=%d',
+                                round((perf_counter() - started) * 1000),
+                                round((perf_counter() - save_started) * 1000),
+                                budget_ms)
         return persisted, None, None
     except Exception as error:
+        current_app.logger.warning('itinerary_generation_failed stage=%s elapsed_ms=%d type=%s',
+                                   stage, round((perf_counter() - started) * 1000), type(error).__name__)
         message = _generation_error_text(error)
         now = utc_now_iso()
         failure = {
@@ -542,6 +564,12 @@ def _run_generation_state_machine(iid, current, payload, snapshot):
 
 
 def _forecast_for(current, payload):
+    try:
+        start = date.fromisoformat(str(current.get('startDate') or payload.get('startDate'))[:10])
+        if start > datetime.now(timezone(timedelta(hours=8))).date() + timedelta(days=7):
+            return {}, None  # A seven-day forecast cannot describe a later trip.
+    except ValueError:
+        pass
     coords = payload.get('destinationCoordinates')
     if not coords:
         destination = str(payload.get('destinationName') or current.get('destinationArea') or '').strip()
@@ -1637,6 +1665,22 @@ def apply_lower_cost_alternative(iid):
     return jsonify({'ok': True, 'itinerary': updated, 'budget': patch['budgetEstimate'], 'applied': applied})
 
 
+@bp.get('/personalised-trips/status')
+@auth_required(['traveller'])
+def personalised_generation_status():
+    request_id = request.args.get('generationRequestId', '').strip()
+    if not 8 <= len(request_id) <= 128:
+        return jsonify(ok=False, error='A valid generation request ID is required.'), 400
+    iid = _personalised_trip_id(g.uid, request_id)
+    current = retrieveRecord('itineraries', iid)
+    if not current or current.get('travellerId') != g.uid:
+        return jsonify(ok=False, status='not_found'), 404
+    return jsonify(ok=True, tripId=iid, status=current.get('status'),
+                   stage=current.get('generationFailureStage'),
+                   retryable=current.get('retryable') is True,
+                   itinerary=current)
+
+
 @bp.post('/personalised-trips/generate')
 @auth_required(['traveller'])
 def generate_personalised_trip_route():
@@ -1680,6 +1724,12 @@ def generate_personalised_trip_route():
             'error': 'Generation request is already linked to a different destination',
             'tripId': iid,
         }), 409
+
+    # Recovery of an owned completed/in-flight operation does not reload a large snapshot.
+    if existing and existing.get('status') in {'planned', 'generating'}:
+        in_progress = existing['status'] == 'generating'
+        return jsonify(ok=True, id=iid, tripId=iid, status=existing['status'],
+                       itinerary=existing, inProgress=in_progress, reused=True), (202 if in_progress else 200)
 
     candidate = existing or {
         **payload,
@@ -1746,7 +1796,13 @@ def generate_personalised_trip_route():
             'retryable': False,
         }, g.uid)
         try:
-            current = storeRecord('itineraries', initial, iid)
+            current, created = claimRecord('itineraries', iid, initial)
+            if not created:
+                if current.get('travellerId') != g.uid:
+                    return jsonify(ok=False, error='Trip generation request conflict'), 409
+                return jsonify(ok=True, id=iid, tripId=iid, status=current.get('status'),
+                               itinerary=current, reused=True,
+                               inProgress=current.get('status') == 'generating'), (200 if current.get('status') == 'planned' else 202)
         except Exception as error:
             return jsonify({
                 'ok': False,

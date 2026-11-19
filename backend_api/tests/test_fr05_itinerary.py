@@ -190,7 +190,7 @@ def test_itinerary_generation_uses_linked_destination_snapshot(client, mock_trav
          patch('modules.fr05_smart_itinerary_budget_planner.routes.adjustWeatherSensitiveActivities', side_effect=identity), \
          patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord') as mock_update:
         stored = dict(itinerary)
-        def update_itinerary(collection, document_id, patch_data):
+        def update_itinerary(collection, document_id, patch_data, expected=None):
             stored.update(patch_data)
             return dict(stored)
         mock_update.side_effect = update_itinerary
@@ -347,13 +347,24 @@ def _memory_storage(snapshot=None):
         records[collection][key] = result
         return dict(result)
 
-    def update(collection, document_id, data):
+    def update(collection, document_id, data, expected=None):
         if document_id not in records.setdefault(collection, {}):
             return None
+        if expected is not None:
+            assert records[collection][document_id] == expected
         records[collection][document_id].update(data)
         return dict(records[collection][document_id])
 
     return records, retrieve, store, update
+
+
+@pytest.fixture(autouse=True)
+def isolated_generation_claim(monkeypatch):
+    from modules.fr05_smart_itinerary_budget_planner import routes
+    def claim(collection, identity, data):
+        existing = routes.retrieveRecord(collection, identity)
+        return (existing, False) if existing else (routes.storeRecord(collection, data, identity), True)
+    monkeypatch.setattr(routes, 'claimRecord', claim)
 
 
 def _generated_itinerary(current, payload, snapshot):

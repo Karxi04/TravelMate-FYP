@@ -36,12 +36,17 @@ def destination_id(item):
     return 'place_' + hashlib.sha256(f'{name}|{geo.get("state")}|{geo.get("city")}'.encode()).hexdigest()[:24]
 
 
+def identity_aliases(item):
+    values = item.get('identityAliases')
+    return {value for value in values[:8] if isinstance(value, str) and 0 < len(value) <= 512} if isinstance(values, list) else set()
+
+
 def same_place(a, b):
     if not isinstance(a, dict) or not isinstance(b, dict):
         return False
-    fields = ('destinationId', 'place_id', 'data_id', 'data_cid', 'id')
-    left = {str(a[k]) for k in fields if a.get(k)}
-    if left & {str(b[k]) for k in fields if b.get(k)}:
+    fields = ('destinationId', 'place_id', 'data_id', 'data_cid', 'id', 'reviewDestinationId')
+    left = {str(a[k]) for k in fields if a.get(k)} | identity_aliases(a)
+    if left & ({str(b[k]) for k in fields if b.get(k)} | identity_aliases(b)):
         return True
     def canonical_name(row):
         name = normalize_phrase(row.get('title') or row.get('name')).replace('kek loksi', 'kek lok si')
@@ -53,6 +58,8 @@ def same_place(a, b):
     if not ga.get('state') or not gb.get('state'):
         return not ga.get('state') and not gb.get('state')
     if ga.get('state') != gb.get('state'):
+        return False
+    if ga.get('conflict') or gb.get('conflict'):
         return False
     if all(g.get('latitude') is not None and g.get('longitude') is not None for g in (ga, gb)):
         lat1, lat2 = radians(ga['latitude']), radians(gb['latitude'])
@@ -123,7 +130,7 @@ def merge_candidates(*groups):
         merged = {**old, **{k: v for k, v in row.items() if v not in (None, '', [], {})}}
         merged['destinationId'] = destination_id(old)
         merged['identityAliases'] = sorted({destination_id(old), destination_id(row),
-                                            *(old.get('identityAliases') or []), *(row.get('identityAliases') or [])})[:8]
+                                            *identity_aliases(old), *identity_aliases(row)})[:8]
         if old.get('costProvenance') == 'verified_ticket' and row.get('costProvenance') != 'verified_ticket':
             merged.update({k: old[k] for k in PRICING_FIELDS if k in old})
         output[index] = merged

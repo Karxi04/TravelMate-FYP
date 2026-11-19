@@ -81,6 +81,18 @@ Future<void> frame(WidgetTester tester, Widget child) async {
 Future<void> flush() async { await Future<void>.delayed(Duration.zero); }
 
 void main() {
+  test('merged destination aliases preserve the saved record and remove its exact owner reference', () async {
+    final api = BatchApi();
+    api.records.add({'id': 'owned-alias-record', 'destinationId': 'provider-b', 'title': 'Batu Caves'});
+    final controller = FavouritesController(api);
+    await controller.load();
+    const merged = {'destinationId': 'provider-a', 'title': 'Batu Caves', 'identityAliases': ['provider-a', 'provider-b']};
+    expect(controller.containsPlace(merged), isTrue);
+    await controller.toggle(merged);
+    expect(api.posts, isEmpty);
+    expect(api.records, isEmpty);
+    controller.dispose();
+  });
   test('persisted add/remove/add synchronizes controllers and reopening', () async {
     final api = BatchApi(); final explore = FavouritesController(api); final details = FavouritesController(api);
     addTearDown(explore.dispose); addTearDown(details.dispose); await flush();

@@ -166,8 +166,13 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     try {
       final place = selectedPlace!;
       final existing = reviewsFor(placeId(place));
+      if (existing.isNotEmpty && ReviewContract.editsRemaining(existing.first as Map) == 0) {
+        throw StateError('No edits remaining. Each review can be edited twice.');
+      }
       final response = existing.isNotEmpty
-          ? await api.put('/api/fr10/feedback/${existing.first['id']}', {'rating': rating, 'comment': comment.text.trim()})
+          ? await api.put('/api/fr10/feedback/${existing.first['id']}', {'rating': rating, 'comment': comment.text.trim(),
+              if (existing.first['revision'] != null) 'expectedRevision': existing.first['revision'],
+              if (existing.first['updatedAt'] is String) 'expectedUpdatedAt': existing.first['updatedAt']})
           : await api.post('/api/fr10/feedback', {
         'destinationId': placeId(place),
         'destinationName': placeName(place),
@@ -210,6 +215,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   }
 
   Future<void> edit(Map<String, dynamic> item) async {
+    if (ReviewContract.editsRemaining(item) == 0) return;
     int newRating = int.tryParse('${item['rating']}') ?? 5;
     final newComment = TextEditingController(text: (item['comment'] ?? '').toString());
     final result = await showDialog<Map<String, dynamic>>(
@@ -221,6 +227,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text(ReviewContract.editAllowance(item)),
               Row(
                 children: List.generate(5, (i) {
                   final star = i + 1;
@@ -245,7 +252,9 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     );
     if (result == null) return;
     try {
-      await api.put('/api/fr10/feedback/${item['id']}', result);
+      await api.put('/api/fr10/feedback/${item['id']}', {...result,
+        if (item['revision'] != null) 'expectedRevision': item['revision'],
+        if (item['updatedAt'] is String) 'expectedUpdatedAt': item['updatedAt']});
       LocalReviewRatings.invalidate();
       await load();
     } catch (e) {
@@ -277,6 +286,8 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedReviews = selectedPlace == null ? <dynamic>[] : reviewsFor(placeId(selectedPlace!)).toList();
+    final existing = selectedReviews.isEmpty ? null : selectedReviews.first as Map;
     return Scaffold(
       appBar: AppBar(title: const Text('Ratings & reviews')),
       body: ListView(
@@ -329,7 +340,8 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
           const SizedBox(height: 8),
           TextField(controller: comment, maxLines: 5, decoration: const InputDecoration(labelText: 'Tell other travellers about your experience', hintText: 'What did you like? What should other travellers know?')),
           const SizedBox(height: 12),
-          FilledButton.icon(onPressed: busy ? null : submit, icon: const Icon(Icons.rate_review_outlined), label: Text(busy ? 'Submitting...' : 'Submit review')),
+          if (existing != null) Text(ReviewContract.editAllowance(existing), key: const ValueKey('selected-review-allowance')),
+          FilledButton.icon(onPressed: busy || (existing != null && ReviewContract.editsRemaining(existing) == 0) ? null : submit, icon: const Icon(Icons.rate_review_outlined), label: Text(busy ? 'Submitting...' : 'Submit review')),
           const SizedBox(height: 24),
           const TravelSectionHeader(title: 'My reviews', subtitle: 'View, update or remove your own reviews.'),
           const SizedBox(height: 10),
@@ -358,6 +370,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text((item['comment'] ?? '').toString()),
+                    Text(ReviewContract.editAllowance(item)),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
@@ -375,7 +388,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                             label: const Text('Place details'),
                           ),
                         OutlinedButton.icon(
-                          onPressed: (item['feedbackStatus'] ?? 'visible').toString() == 'removed' ? null : () => edit(item),
+                          onPressed: (item['feedbackStatus'] ?? 'visible').toString() == 'removed' || ReviewContract.editsRemaining(item) == 0 ? null : () => edit(item),
                           icon: const Icon(Icons.edit_outlined),
                           label: const Text('Edit'),
                         ),

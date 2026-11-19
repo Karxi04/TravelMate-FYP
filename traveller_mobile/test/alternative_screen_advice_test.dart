@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/alternative_screen.dart';
@@ -44,6 +45,31 @@ Widget _buildApp(Widget child, {Size size = const Size(390, 844), double textSca
 }
 
 void main() {
+  testWidgets('safe budget adjustments remain actionable while provider lookup is delayed', (tester) async {
+    final pending = Completer<dynamic>();
+    final api = _FakeAlternativeApi(
+      onGet: (_) async => {'ok': true, 'stateVersion': 'owned-trip-revision',
+        'budget': {'total': 900, 'limit': 800},
+        'budgetReplanOptions': {'allowances': {'foodCost': 200, 'transportCost': 100}, 'optionalVisits': []}},
+      onPost: (path, [body]) => pending.future,
+    );
+    await tester.pumpWidget(_buildApp(AlternativeScreen(
+      budget: BudgetModel(accommodation: 300, food: 200, transportation: 100, activities: 300),
+      userBudget: 800, tripId: 'owned', api: api)));
+    await tester.pump(); await tester.pump(const Duration(milliseconds: 100));
+    final review = find.widgetWithText(FilledButton, 'Review budget options');
+    await tester.ensureVisible(review);
+    expect(tester.widget<FilledButton>(review).onPressed, isNotNull);
+    await tester.tap(review); await tester.pumpAndSettle();
+    expect(find.text('Budget replanning'), findsOneWidget);
+    expect(find.text('Food allowance (MYR)'), findsOneWidget);
+    expect(api.postCalls, ['/api/fr5/itineraries/owned/lower-cost-alternatives']);
+    pending.complete({'ok': true, 'budget': {'total': 1}, 'budgetReplanOptions': {}});
+    await tester.pumpAndSettle();
+    expect(find.text('Budget replanning'), findsOneWidget);
+    expect(find.text('Current: RM 200.00'), findsOneWidget);
+    expect(api.postCalls.where((path) => path.endsWith('/apply')), isEmpty);
+  });
   final testBudgetModel = BudgetModel(
     accommodation: 300,
     food: 200,

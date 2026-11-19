@@ -10,6 +10,10 @@ os.environ["TRAVELMATE_TESTING"] = "true"
 os.environ["FALLBACK_MODE"] = "true"
 os.environ["LOCAL_LAN_DEMO"] = "false"
 os.environ["TRAVELMATE_BUDGET_AWARE_SELECTION_ENABLED"] = "false"
+# The owner's worker scope must not change isolated notification fixtures.
+os.environ['TRAVELMATE_PUSH_ENABLED'] = 'false'
+os.environ['PUSH_TRAVELLER_UID'] = ''
+os.environ['PUSH_DISPATCH_ENABLED'] = 'true'  # Synthetic push fixtures explicitly opt in.
 for _provider_key in (
     "FIREBASE_SERVICE_ACCOUNT",
     "FIREBASE_SERVICE_ACCOUNT_JSON",

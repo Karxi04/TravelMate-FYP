@@ -3,6 +3,7 @@ import '../../widgets/local_place_rating.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/api_service.dart';
+import '../../services/transaction_request.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
@@ -53,6 +54,9 @@ class _PersonalizedPlanningScreenState
   String? failedTripId;
   String? failureMessage;
   bool retryable = false;
+  String generationStage = 'Arranging your itinerary and budget';
+  late final String generationOwner;
+  Map<String, dynamic>? pendingPayload;
 
   String dateText(DateTime date) =>
       '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
@@ -61,6 +65,7 @@ class _PersonalizedPlanningScreenState
   void initState() {
     super.initState();
     api = widget.api ?? ApiService();
+    generationOwner = LocalReviewRatings.accountUid;
     final start = DateTime.now().add(const Duration(days: 30));
     startDate = TextEditingController(text: dateText(start));
     endDate = TextEditingController(
@@ -81,10 +86,35 @@ class _PersonalizedPlanningScreenState
   }
 
   Future<void> _loadInitialData() async {
+    Map<String, dynamic>? pending;
+    try {
+      pending = await ItineraryGenerationStore.read(generationOwner);
+      if (pending != null && mounted) {
+        destination.text = '${pending['destinationArea'] ?? destination.text}';
+        startDate.text = '${pending['startDate'] ?? startDate.text}';
+        endDate.text = '${pending['endDate'] ?? endDate.text}';
+        travellers.text = '${pending['travellerCount'] ?? travellers.text}';
+        budget.text = '${pending['budgetLimit'] ?? budget.text}';
+        origin.text = '${pending['originLocation'] ?? ''}';
+        travelMode = '${pending['travelMode'] ?? travelMode}';
+        sightseeingMode = '${pending['transportMode'] ?? sightseeingMode}';
+        accommodationChoice = '${pending['accommodationChoice'] ?? accommodationChoice}';
+        carRentalChoice = '${pending['carRentalChoice'] ?? carRentalChoice}';
+      }
+    } catch (_) { /* Invalid local recovery data never starts another request. */ }
     await Future.wait([
       _loadProfile(),
       _loadSuggestions(regenerate: false),
     ]);
+    if (pending != null && mounted && LocalReviewRatings.accountUid == generationOwner) {
+      setState(() {
+        generationRequestId = pending!['generationRequestId']?.toString();
+        pendingPayload = pending;
+        generationSignature = _inputSignature;
+        retryable = true;
+        failureMessage = 'A previous build may have finished. Check its saved result before starting again.';
+      });
+    }
   }
 
   Future<void> _loadProfile() async {
@@ -128,6 +158,7 @@ class _PersonalizedPlanningScreenState
       !snapshotConflict;
 
   void _clearGenerationState() {
+    pendingPayload = null;
     generationRequestId = null;
     generationSignature = null;
     completedTripId = null;
@@ -369,6 +400,12 @@ class _PersonalizedPlanningScreenState
   Future<void> _buildPlan({bool retry = false}) async {
     if (generating) return;
     FocusScope.of(context).unfocus();
+    if (retry && generationRequestId != null) {
+      setState(() => generating = true);
+      final status = await _recoverGeneration();
+      if (mounted) setState(() => generating = false);
+      if (status != 'generation_failed' && status != 'not_found') return;
+    }
     setState(() => showValidationErrors = true);
     if (_validationErrors().isNotEmpty) return;
     if (!_snapshotReady) {
@@ -382,6 +419,7 @@ class _PersonalizedPlanningScreenState
 
     final signature = _inputSignature;
     if (generationSignature != signature) {
+      pendingPayload = null;
       generationSignature = signature;
       generationRequestId =
           'personalised_${DateTime.now().microsecondsSinceEpoch}';
@@ -395,13 +433,17 @@ class _PersonalizedPlanningScreenState
 
     setState(() {
       generating = true;
+      generationStage = 'Arranging your itinerary and budget';
       failureMessage = null;
       retryable = false;
     });
     try {
+      pendingPayload ??= _tripPayload();
+      await ItineraryGenerationStore.save(generationOwner, pendingPayload!);
+      if (!mounted || LocalReviewRatings.accountUid != generationOwner) return;
       final generated = await api.post(
         '/api/fr5/personalised-trips/generate',
-        _tripPayload(),
+        pendingPayload,
       );
       if (generated is! Map || generated['ok'] != true) {
         final data = generated is Map
@@ -417,6 +459,10 @@ class _PersonalizedPlanningScreenState
         return;
       }
       if (generated['status'] != 'planned') {
+        if (generated['status'] == 'generating') {
+          await _recoverGeneration();
+          return;
+        }
         if (mounted) {
           setState(() => _recordFailure({
                 ...Map<String, dynamic>.from(generated),
@@ -427,12 +473,13 @@ class _PersonalizedPlanningScreenState
         return;
       }
       completedTripId = tripId;
+      await ItineraryGenerationStore.clear(generationOwner);
       failedTripId = null;
       if (!mounted) return;
       await _openTrip(tripId);
     } on ApiException catch (error) {
       if (!mounted) return;
-      if (error.statusCode == 409) {
+      if (error.statusCode == 409 && error.data['stage'] == 'snapshot_validation') {
         setState(() {
           snapshotConflict = true;
           retryable = false;
@@ -440,15 +487,62 @@ class _PersonalizedPlanningScreenState
               'Your recommendations are out of date. Refresh suggestions for this destination and try again.';
         });
       } else {
-        setState(() => _recordFailure(error.data));
+        if (error.statusCode == 409 || (error.statusCode >= 500 && error.data['status'] != 'generation_failed')) {
+          await _recoverGeneration();
+        } else {
+          setState(() => _recordFailure(error.data));
+        }
       }
     } catch (_) {
-      if (mounted) {
-        setState(() => _recordFailure(const {}, transportFailure: true));
-      }
+      if (mounted) await _recoverGeneration();
     } finally {
       if (mounted) setState(() => generating = false);
     }
+  }
+
+  Future<String> _recoverGeneration() async {
+    final requestId = generationRequestId;
+    if (requestId == null) return 'not_found';
+    if (mounted) setState(() => generationStage = 'Checking the result of your existing build');
+    final recoveryClock = Stopwatch()..start();
+    for (var attempt = 0; attempt < 5; attempt++) {
+      if (!mounted || LocalReviewRatings.accountUid != generationOwner || requestId != generationRequestId) return 'stale';
+      try {
+        final remaining = 20000 - recoveryClock.elapsedMilliseconds;
+        if (remaining <= 0) break;
+        final data = await api.get('/api/fr5/personalised-trips/status', {'generationRequestId': requestId})
+            .timeout(Duration(milliseconds: remaining < 8000 ? remaining : 8000));
+        if (!mounted || requestId != generationRequestId || LocalReviewRatings.accountUid != generationOwner) return 'stale';
+        final status = data is Map ? '${data['status'] ?? ''}' : '';
+        if (status == 'planned' && '${data['tripId'] ?? ''}'.isNotEmpty) {
+          completedTripId = '${data['tripId']}';
+          failedTripId = null;
+          await ItineraryGenerationStore.clear(generationOwner);
+          if (mounted) await _openTrip(completedTripId!);
+          return status;
+        }
+        if (status == 'generation_failed') {
+          setState(() => _recordFailure(Map<String, dynamic>.from(data)));
+          return status;
+        }
+        if (status != 'generating') break;
+        if (attempt < 4) await Future<void>.delayed(const Duration(seconds: 2));
+      } on ApiException catch (error) {
+        if (error.statusCode == 404) {
+          if (mounted) setState(() {
+            retryable = true;
+            failureMessage = 'No saved result was found for this build. Retry will reuse its request identity.';
+          });
+          return 'not_found';
+        }
+        break;
+      } catch (_) { break; }
+    }
+    if (mounted) setState(() {
+      retryable = true;
+      failureMessage = 'The result is not confirmed yet. Retry checks this same build; it will not create a second trip.';
+    });
+    return 'unconfirmed';
   }
 
   Future<void> _adjustPreferences() async {
@@ -989,8 +1083,8 @@ class _PersonalizedPlanningScreenState
               label: 'Recommendations selected',
               complete: true,
             ),
-            const _ProgressLine(
-              label: 'Arranging your itinerary and budget',
+            _ProgressLine(
+              label: generationStage,
               complete: false,
             ),
             const SizedBox(height: AppSpacing.xs),

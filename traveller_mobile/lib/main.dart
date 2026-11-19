@@ -11,6 +11,7 @@ import 'services/api_service.dart';
 import 'widgets/travel_widgets.dart';
 import 'services/android_push_service.dart';
 import 'modules/traveller_notifications/notification_center.dart';
+import 'widgets/local_place_rating.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -136,8 +137,11 @@ class _TravelMateAppState extends State<TravelMateApp> {
       debugShowCheckedModeBanner: false,
       title: 'TravelMate',
       builder: (context, child) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: LocalReviewRatings.privateEnvironment,
+          builder: (context, localReviewDemo, _) {
         final content = child ?? const SizedBox.shrink();
-        if (privateReviewDemo) {
+        if (privateReviewDemo || localReviewDemo) {
           final colors = Theme.of(context).colorScheme;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -149,7 +153,7 @@ class _TravelMateAppState extends State<TravelMateApp> {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
                     child: Text(
-                      'Private FYP preview · Fictional reviews',
+                      'Non-production · Includes example reviews',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: colors.onSecondaryContainer),
                     ),
@@ -174,6 +178,8 @@ class _TravelMateAppState extends State<TravelMateApp> {
           );
         }
         return content;
+          },
+        );
       },
       theme: buildInkWashTheme(),
       home: FutureBuilder<void>(
@@ -207,6 +213,7 @@ class _TravelMateAppState extends State<TravelMateApp> {
               if(authOwnerKnown && navigationOwner!=nextOwner) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if(mounted && auth.currentUser?.uid==nextOwner) {
+                    LocalReviewRatings.privateEnvironment.value = false;
                     navigatorKey.currentState?.popUntil((route)=>route.isFirst);
                   }
                 });

@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -91,5 +92,25 @@ class CheckoutAttemptStore {
   Future<void> clear(String scope) async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.remove(_key(scope));
+  }
+}
+
+/// Owner-scoped recovery identity; contains no authentication tokens.
+class ItineraryGenerationStore {
+  static String key(String owner) => 'travelmate_planning_${Uri.encodeComponent(owner)}';
+  static Future<Map<String, dynamic>?> read(String owner) async {
+    if (owner.isEmpty) return null;
+    final raw = (await SharedPreferences.getInstance()).getString(key(owner));
+    if (raw == null) return null;
+    final value = jsonDecode(raw);
+    return value is Map ? Map<String, dynamic>.from(value) : null;
+  }
+  static Future<void> save(String owner, Map<String, dynamic> payload) async {
+    if (owner.isEmpty) return;
+    final saved = await (await SharedPreferences.getInstance()).setString(key(owner), jsonEncode(payload));
+    if (!saved) throw StateError('Could not retain trip recovery information. Please try again.');
+  }
+  static Future<void> clear(String owner) async {
+    if (owner.isNotEmpty) await (await SharedPreferences.getInstance()).remove(key(owner));
   }
 }

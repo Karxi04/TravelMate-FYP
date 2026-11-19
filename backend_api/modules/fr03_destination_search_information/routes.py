@@ -9,6 +9,7 @@ from flask import Blueprint, current_app, request, jsonify, g
 from auth_utils import auth_required
 from utils import utc_now_iso
 from services.local_catalog import DESTINATIONS
+from services.destination_research import named_attractions, attraction_identity
 from services.serpapi_service import (
     retrieveDestinationResults,
     retrieveDestinationDetails,
@@ -315,18 +316,25 @@ def _deduplicate_results(items):
     for item in items or []:
         if not isinstance(item, dict):
             continue
-        if any(_same_place(item, existing) or
+        index = next((i for i, existing in enumerate(output) if _same_place(item, existing) or
                (item.get('reviewDestinationId') and (
                     item['reviewDestinationId'] == existing.get('reviewDestinationId')
                     or item['reviewDestinationId'] == _destination_id(existing)))
                or (existing.get('reviewDestinationId') and existing['reviewDestinationId'] == _destination_id(item))
-               for existing in output):
+               ), None)
+        if index is not None:
+            from services.destination_candidates import merge_candidates
+            existing = output[index]
+            merged = merge_candidates([existing], [item])
+            if len(merged) == 1:
+                output[index] = merged[0]
             continue
         output.append(item)
     return output
 
 
 _CATALOG_ALIASES = {
+    'local_batu_caves': ('batu caves',),
     'local_klcc': ('klcc', 'petronas twin towers', 'menara berkembar petronas', 'petronas skybridge', 'sky bridge'),
     'local_penang_hill': ('bukit bendera',),
     'local_langkawi_skycab': ('langkawi sky bridge', 'langkawi skycab', 'langkawi cable car', 'sky bridge'),
@@ -441,6 +449,9 @@ def _local_destination(reference):
     reference = str(reference or '').strip()
     if not reference:
         return None
+    known_identity = attraction_identity(reference)
+    if known_identity and not any(_destination_id(row) == reference for row in DESTINATIONS):
+        return known_identity
     lowered = reference.lower()
     for item in _all_destinations():
         candidates = {
@@ -583,7 +594,7 @@ def search_destinations():
     interpretation = 'keyword'
     query_area = normalize_destination_scope(q)
     name_query = _search_text(q)
-    catalogue_named = [item for item in DESTINATIONS if _named_match(item, name_query)]
+    catalogue_named = _deduplicate_results([item for item in DESTINATIONS if _named_match(item, name_query)] + named_attractions(q))
     if (location.lower() == 'malaysia'
             and not any(name_query in _place_names(item) for item in catalogue_named)
             and query_area.get('resolved') and query_area.get('city')):
@@ -788,6 +799,9 @@ def search_destinations():
 @bp.get('/destinations/<path:place_id>')
 @auth_required(['traveller'])
 def destination_details(place_id):
+    researched = attraction_identity(place_id)
+    if researched and not any(_destination_id(row) == place_id for row in DESTINATIONS):
+        return jsonify(ok=True, destination=researched, source='official_identity', detailsAvailable=False)
     regional = regional_demo_destinations().get(review_destination_id(place_id)) if _local_demo_request() else None
     if regional:
         return jsonify(ok=True, destination=regional, source='fyp_private', detailsAvailable=True)
