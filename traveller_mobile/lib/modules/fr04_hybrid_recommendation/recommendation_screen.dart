@@ -65,6 +65,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     super.initState();
     api = widget.api ?? ApiService();
     destination = TextEditingController(text: widget.initialDestination);
+    recommendationGenerationId = widget.initialGenerationId;
     Future.microtask(loadExisting);
     Future.microtask(() async {
       try {
@@ -101,8 +102,8 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     bool stale = false;
     try {
       final data = await api.get('/api/fr4/recommendations', {'discoveryMode':recommendationDiscoveryMode,
-        if (widget.initialGenerationId.isNotEmpty || widget.initialDestination != 'Malaysia') 'destinationArea':widget.initialDestination,
-        if (widget.initialGenerationId.isNotEmpty) 'generationId':widget.initialGenerationId});
+        if (recommendationGenerationId.isNotEmpty || destination.text != 'Malaysia') 'destinationArea':destination.text,
+        if (recommendationGenerationId.isNotEmpty) 'generationId':recommendationGenerationId});
       if (mounted && version == requestVersion && data is Map) {
         validateDiscoveryResponse(data);
         stale = data['stale'] == true;
@@ -512,6 +513,10 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
               const SizedBox(height: AppSpacing.md),
               _profileSummary(),
             ],
+            if (recommendationsNeedEvidenceUpdate(items)) ...[
+              const SizedBox(height: AppSpacing.md),
+              RecommendationEvidenceNotice(onRegenerate: busy ? null : () => generate()),
+            ],
             const SizedBox(height: AppSpacing.md),
             LayoutBuilder(key: const ValueKey('recommendation-location-field'), builder: (context, constraints) => RawAutocomplete<Map<String, dynamic>>(
               key: ValueKey('destination-$generatedDestination-$destinationSelection'),
@@ -612,6 +617,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.md),
                   child: RecommendationCard(
+                    onRefreshEvidence: busy ? null : () => generate(),
                     recommendation: item,
                     discovery:true,
                     source: source,

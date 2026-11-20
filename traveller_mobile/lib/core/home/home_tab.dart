@@ -687,6 +687,10 @@ class _HomeTabState extends State<HomeTab> {
           ),
         ],
         const SizedBox(height: AppSpacing.xs),
+        if (recommendationsNeedEvidenceUpdate(recommendations)) ...[
+          RecommendationEvidenceNotice(onRegenerate: loadingForYou ? null : () => loadRecommendations(regenerate: true)),
+          const SizedBox(height: AppSpacing.sm),
+        ],
         if (loadingForYou && recommendations.isEmpty)
           const _SectionLoading(message: 'Finding places for you…')
         else if (recommendationError != null && recommendations.isEmpty)
@@ -709,8 +713,8 @@ class _HomeTabState extends State<HomeTab> {
         else
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: IntrinsicHeight(child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: recommendations.take(4).map((raw) {
                 final item = Map<String, dynamic>.from(raw as Map);
                 return Padding(
@@ -722,6 +726,7 @@ class _HomeTabState extends State<HomeTab> {
                     ),
                     child: RecommendationCard(
                       carousel: true,
+                      onRefreshEvidence: loadingForYou ? null : () => loadRecommendations(regenerate: true),
                       recommendation: item,
                       discovery:true,
                       source: recommendationSource,
@@ -742,7 +747,7 @@ class _HomeTabState extends State<HomeTab> {
                   ),
                 );
               }).toList(),
-            ),
+            )),
           ),
       ],
     );

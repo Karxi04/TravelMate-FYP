@@ -10,6 +10,8 @@ from services.recommendation_discovery import enrich_discovery_candidate, is_pla
 from services.recommendation_taxonomy import normalize_phrase, provider_categories, experience_types
 from services.serpapi_service import destination_pagination
 from services.activity_pricing import PRICING_FIELDS
+from services.review_destination import review_destination_id
+from services.recommendation_review_evidence import verified_provider_rating
 
 CACHE_DAYS = 7
 PAGE_SIZE = 20
@@ -45,8 +47,11 @@ def same_place(a, b):
     if not isinstance(a, dict) or not isinstance(b, dict):
         return False
     fields = ('destinationId', 'place_id', 'data_id', 'data_cid', 'id', 'reviewDestinationId')
-    left = {str(a[k]) for k in fields if a.get(k)} | identity_aliases(a)
-    if left & ({str(b[k]) for k in fields if b.get(k)} | identity_aliases(b)):
+    left = {review_destination_id(value) for value in
+            ({str(a[k]) for k in fields if a.get(k)} | identity_aliases(a))}
+    right = {review_destination_id(value) for value in
+             ({str(b[k]) for k in fields if b.get(k)} | identity_aliases(b))}
+    if left & right:
         return True
     def canonical_name(row):
         name = normalize_phrase(row.get('title') or row.get('name')).replace('kek loksi', 'kek lok si')
@@ -76,6 +81,11 @@ def timestamp(value):
         return datetime.min.replace(tzinfo=timezone.utc)
 
 
+def _rating_time(item):
+    # A later description/cache update must not refresh an older rating observation.
+    return timestamp(item.get('ratingEvidenceAt') if 'ratingEvidenceAt' in item else item.get('cachedAt'))
+
+
 def normalise(items, scope, *, source=None, now=None):
     now = now or datetime.now(timezone.utc)
     accepted, _ = filter_candidates(items, scope)
@@ -91,6 +101,8 @@ def normalise(items, scope, *, source=None, now=None):
         row['candidateSource'] = origin
         if origin == 'live_provider' and 'rating' in row:
             row['ratingSource'] = 'provider'
+            if verified_provider_rating(row) is not None:
+                row['ratingEvidenceAt'] = now.isoformat()
         elif origin == 'local_catalog' and 'rating' in row:
             row['ratingSource'] = 'unverified_local_catalog'
         if origin == 'cache':
@@ -133,14 +145,27 @@ def merge_candidates(*groups):
                                             *identity_aliases(old), *identity_aliases(row)})[:8]
         if old.get('costProvenance') == 'verified_ticket' and row.get('costProvenance') != 'verified_ticket':
             merged.update({k: old[k] for k in PRICING_FIELDS if k in old})
+        # Keep rating, count and provenance together; newer descriptive facts are independent.
+        verified = [r for r in (old, row) if verified_provider_rating(r) is not None]
+        evidence = max(enumerate(verified), key=lambda pair: (_rating_time(pair[1]), pair[0]))[1] if verified else None
+        if evidence is not None:
+            for key in ('rating', 'reviews', 'ratingSource'):
+                if key in evidence:
+                    merged[key] = evidence[key]
+                else:
+                    merged.pop(key, None)
+            observed = _rating_time(evidence)
+            merged['ratingEvidenceAt'] = observed.isoformat() if observed.year > 1 else None
         output[index] = merged
     return sorted(output, key=lambda row: (normalize_phrase(row.get('title') or row.get('name')), destination_id(row)))
 
 
 def facts_signature(rows):
     fields = ('destinationId', 'title', 'name', 'category', 'type', 'types', 'type_id', 'type_ids',
-              'description', 'address', 'gps_coordinates', 'rating', 'reviews', 'cachedAt')
-    return json.dumps(sorted(({k: row[k] for k in fields if k in row} for row in rows),
+              'description', 'address', 'gps_coordinates', 'rating', 'reviews', 'ratingSource', 'cachedAt')
+    return json.dumps(sorted(({**{k: row[k] for k in fields if k in row},
+                              'ratingEvidenceAt': _rating_time(row).isoformat() if verified_provider_rating(row) is not None and _rating_time(row).year > 1 else None}
+                             for row in rows),
                              key=lambda row: destination_id(row)), sort_keys=True, default=str)
 
 

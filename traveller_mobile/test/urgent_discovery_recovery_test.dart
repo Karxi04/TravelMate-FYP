@@ -95,7 +95,7 @@ void main() {
       final api=HtmlFailureApi(cached);
       await tester.pumpWidget(MaterialApp(home:RecommendationScreen(api:api,initialDestination:'Penang')));
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('Refresh for you'),-300,scrollable:find.byType(Scrollable).first);
+      await tester.scrollUntilVisible(find.text('Refresh for you'),300,scrollable:find.byType(Scrollable).first);
       await tester.ensureVisible(find.text('Refresh for you'));await tester.pumpAndSettle();
       await tester.tap(find.text('Refresh for you'));await tester.pumpAndSettle();
       await tester.scrollUntilVisible(find.text(backendUnavailableMessage),300,scrollable:find.byType(Scrollable).first);

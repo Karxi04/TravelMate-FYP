@@ -1,5 +1,24 @@
 import 'recommendation_taxonomy.dart';
 
+const recommendationEvidenceUpdateMessage =
+    'These saved recommendations use an older evidence format. Their scores have not been '
+    're-evaluated against current reviews. Regenerate recommendations to see the latest evidence.';
+
+bool recommendationHasCurrentEvidence(Map item) {
+  final popularity = item['popularityEvidence'];
+  final peers = item['collaborativeRatingCount'];
+  final confidence = item['collaborativeConfidence'];
+  final raw = item['rawCollaborativeScore'];
+  return popularity is Map && popularity['source'] is String &&
+      (popularity['source'] as String).isNotEmpty && item['popularitySource'] == popularity['source'] &&
+      peers is num && peers.isFinite && peers >= 0 && peers == peers.roundToDouble() &&
+      confidence is num && confidence.isFinite && confidence >= 0 && confidence <= 1 &&
+      raw is num && raw.isFinite && raw >= 0 && raw <= 100;
+}
+
+bool recommendationsNeedEvidenceUpdate(Iterable items) =>
+    items.whereType<Map>().any((item) => !recommendationHasCurrentEvidence(item));
+
 /// Append a continuation of one destination search without resetting visible results.
 List<Map<String, dynamic>> appendRecommendationResults(List previous, List received) {
   String identity(Map row) => '${row['destinationId'] ?? row['place_id'] ?? row['id'] ?? ''}';

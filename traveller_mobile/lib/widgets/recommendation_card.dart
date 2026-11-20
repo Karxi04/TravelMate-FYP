@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../core/utils/recommendation_page.dart';
 import 'ink_card.dart';
 import 'travel_widgets.dart';
 import 'local_place_rating.dart';
@@ -15,6 +16,7 @@ class RecommendationCard extends StatelessWidget {
   final bool feedbackBusy;
   final bool discovery;
   final bool carousel;
+  final VoidCallback? onRefreshEvidence;
 
   const RecommendationCard({
     super.key,
@@ -26,6 +28,7 @@ class RecommendationCard extends StatelessWidget {
     this.feedbackBusy = false,
     this.discovery = false,
     this.carousel = false,
+    this.onRefreshEvidence,
     this.source = '',
   });
 
@@ -36,8 +39,8 @@ class RecommendationCard extends StatelessWidget {
   bool get _demonstration => recommendation['recommendationEvidenceMode'] == 'demonstration' && recommendation['synthetic'] == true;
   VoidCallback? get _addToTrip => _demonstration ? null : onAddToTrip;
   Widget get _reviewRating => _demonstration
-      ? LocalReviewRatingBadge(summary: Map<String, dynamic>.from(recommendation['demonstrationReviewSummary'] as Map? ?? {}))
-      : LocalPlaceRating(place: recommendation);
+      ? LocalReviewRatingBadge(summary: Map<String, dynamic>.from(recommendation['demonstrationReviewSummary'] as Map? ?? {}), maxLines: null)
+      : LocalPlaceRating(place: recommendation, maxLines: null);
 
   String get _location => (recommendation['address'] ??
           recommendation['location'] ??
@@ -86,7 +89,6 @@ class RecommendationCard extends StatelessWidget {
       return raw
           .map((e) => e.toString().trim())
           .where((e) => e.isNotEmpty)
-          .take(3)
           .toList();
     }
     return const [];
@@ -106,7 +108,6 @@ class RecommendationCard extends StatelessWidget {
       final list = rawReasons
           .map((value) => value.toString().trim())
           .where((value) => value.isNotEmpty && !_isScoreOrMatchToken(value))
-          .take(2)
           .toList();
       if (list.isNotEmpty) return list;
     }
@@ -120,7 +121,6 @@ class RecommendationCard extends StatelessWidget {
           .split('•')
           .map((value) => value.trim())
           .where((value) => value.isNotEmpty && !_isScoreOrMatchToken(value))
-          .take(2)
           .toList();
       if (parts.isNotEmpty) return parts;
     }
@@ -175,466 +175,103 @@ class RecommendationCard extends StatelessWidget {
         ],
       );
 
-  Widget _carousel(BuildContext context) =>
-      LayoutBuilder(builder: (context, constraints) {
-        final theme = Theme.of(context).textTheme;
-        final scaler = MediaQuery.textScalerOf(context);
-        double lines(TextStyle? style, int count) =>
-            scaler.scale(style?.fontSize ?? 14) *
-                (style?.height ?? 1.4) *
-                count +
-            4;
-        final titleHeight = lines(theme.titleLarge, 2);
-        final locationHeight = lines(theme.bodySmall, 2);
-        final chipHeight = scaler.scale(13) * 1.4 + 20;
-        final metadataHeight = chipHeight.clamp(48.0, double.infinity);
-        final explanationHeight = lines(theme.bodyMedium, 3);
-        final buttonHeight =
-            48 + (scaler.scale(14) - 14).clamp(0.0, double.infinity) * 1.4;
-        final imageHeight =
-            constraints.maxWidth / AppSizes.destinationImageAspectRatio;
-        final explanation = [
-          ..._reasons,
-          if (recommendation['nearbyDistanceKm'] is num)
-            'Nearby · ' +
-                (recommendation['city'] ?? 'Locality not supplied').toString() +
-                ' · ' +
-                (recommendation['nearbyDistanceKm'] as num).toStringAsFixed(1) +
-                ' km straight-line',
-          if (discovery && recommendation['foodExperienceType'] != null)
-            switch (recommendation['foodExperienceType']) {
-              'dining' => 'Food stop / dining',
-              'food_museum' => 'Food-themed museum; dining is not implied.',
-              'cooking' => 'Cooking experience; check booking details.',
-              'culinary_culture' =>
-                'Spices and culinary culture; a cooking class is not implied.',
-              _ => 'Food-related experience; dining is not confirmed.',
-            },
-          if (preferenceFeedback != null)
-            preferenceFeedback == 'more_like_this'
-                ? 'More like this saved'
-                : 'Not for me saved',
-        ].join(' • ');
-        final score = _matchScore;
-        Widget horizontal(List<Widget> children) => SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(children: [
-              for (var i = 0; i < children.length; i++) ...[
-                if (i > 0) const SizedBox(width: AppSpacing.xs),
-                children[i]
-              ]
-            ]));
-        return SizedBox(
-          key: ValueKey('recommendation-carousel-$_destinationKey'),
-          height: imageHeight +
-              AppSpacing.card.vertical +
-              titleHeight +
-              locationHeight +
-              chipHeight +
-              metadataHeight +
-              explanationHeight +
-              buttonHeight * 2 +
-              AppSpacing.xs * 6,
-          child: Semantics(
-            container: true,
-            label: 'Recommended destination, $_title',
-            child: InkCard(
-                padding: EdgeInsets.zero,
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      TravelPlaceImage(
-                          key:
-                              ValueKey('recommendation-image-$_destinationKey'),
-                          place: recommendation,
-                          width: double.infinity,
-                          height: imageHeight,
-                          aspectRatio: AppSizes.destinationImageAspectRatio,
-                          borderRadius: const BorderRadius.vertical(
-                              top: Radius.circular(AppRadii.large))),
-                      Padding(
-                          padding: AppSpacing.card,
-                          child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                SizedBox(
-                                    height: titleHeight,
-                                    child: Tooltip(
-                                        message: _title,
-                                        child: Text(_title,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: theme.titleLarge))),
-                                const SizedBox(height: AppSpacing.xs),
-                                SizedBox(
-                                    height: locationHeight,
-                                    child: Tooltip(
-                                        message: _location,
-                                        child: Text(_location,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: theme.bodySmall?.copyWith(
-                                                color:
-                                                    AppColors.textSecondary)))),
-                                const SizedBox(height: AppSpacing.xs),
-                                SizedBox(
-                                    key: ValueKey(
-                                        'recommendation-labels-$_destinationKey'),
-                                    height: chipHeight,
-                                    child: horizontal([
-                                      if (score != null)
-                                        InkWell(
-                                            onTap: () => _showScoreExplanation(
-                                                context, score),
-                                            child: StatusChip(
-                                                text: discovery
-                                                    ? 'Why this suggestion'
-                                                    : _scoreLabel +
-                                                        ': ' +
-                                                        score
-                                                            .round()
-                                                            .toString() +
-                                                        '/100',
-                                                icon: Icons
-                                                    .auto_awesome_rounded)),
-                                      if (_category.isNotEmpty)
-                                        StatusChip(
-                                            text: _category,
-                                            tone: AppStatusTone.neutral),
-                                      for (final interest in _matchedInterests)
-                                        StatusChip(
-                                            text: interest,
-                                            icon: Icons
-                                                .check_circle_outline_rounded,
-                                            tone: AppStatusTone.neutral),
-                                    ])),
-                                const SizedBox(height: AppSpacing.xs),
-                                SizedBox(
-                                    key: ValueKey(
-                                        'recommendation-metadata-$_destinationKey'),
-                                    height: metadataHeight,
-                                    child: Row(children: [
-                                      Expanded(
-                                          child: horizontal([
-                                        if (_demonstration) const Text('Demonstration review data'),
-                                        _reviewRating,
-                                        if (_showSourceDisclosure)
-                                          SourceFallbackBadge(source: _source),
-                                      ])),
-                                      if (onPreferenceFeedback != null && !_demonstration)
-                                        _feedbackMenu(),
-                                    ])),
-                                const SizedBox(height: AppSpacing.xs),
-                                SizedBox(
-                                    height: explanationHeight,
-                                    child: Tooltip(
-                                        message: explanation,
-                                        child: Text(explanation,
-                                            maxLines: 3,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: theme.bodyMedium))),
-                                const SizedBox(height: AppSpacing.xs),
-                                SizedBox(
-                                    height: buttonHeight,
-                                    child: SecondaryButton(
-                                        key: ValueKey(
-                                            'recommendation-view-$_destinationKey'),
-                                        label: _demonstration ? 'View simulation' : 'View',
-                                        onPressed: onView)),
-                                const SizedBox(height: AppSpacing.xs),
-                                SizedBox(
-                                    height: buttonHeight,
-                                    child: _addToTrip == null
-                                        ? const SizedBox.shrink()
-                                        : PrimaryButton(
-                                            key: ValueKey(
-                                                'recommendation-add-$_destinationKey'),
-                                            label: 'Add to trip',
-                                            onPressed: _addToTrip)),
-                              ])),
-                    ])),
-          ),
-        );
-      });
-
   @override
   Widget build(BuildContext context) {
-    if (carousel) return _carousel(context);
     final score = _matchScore;
-    final reasons = _reasons;
-
-    return Semantics(
-      container: true,
-      label: score == null
-          ? 'Recommended destination, $_title'
-          : 'Recommended destination, $_title, $_scoreLabel ${score.round()} out of 100',
-      child: InkCard(
-        padding: EdgeInsets.zero,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final theme = Theme.of(context).textTheme;
+    final detail = Padding(
+      padding: AppSpacing.card,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(_title, style: theme.titleLarge),
+        if (_location.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xxs),
+          Text(_location, style: theme.bodySmall?.copyWith(color: AppColors.textSecondary)),
+        ],
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          key: ValueKey('recommendation-labels-$_destinationKey'),
+          spacing: AppSpacing.xs, runSpacing: AppSpacing.xs,
           children: [
-            TravelPlaceImage(
-              place: recommendation,
-              width: double.infinity,
-              height: null,
-              aspectRatio: AppSizes.destinationImageAspectRatio,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppRadii.large),
-              ),
-            ),
-            Padding(
-              padding: AppSpacing.card,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_demonstration) ...[
-                    const Text('Demonstration review data', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: AppSpacing.sm),
-                  ],
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                      ),
-                      if (onPreferenceFeedback != null && !_demonstration) _feedbackMenu(),
-                    ],
-                  ),
-                  if (preferenceFeedback != null) ...[
-                    const SizedBox(height: AppSpacing.xs),
-                    StatusChip(
-                      text: preferenceFeedback == 'more_like_this'
-                          ? 'More like this saved'
-                          : 'Not for me saved',
-                      icon: preferenceFeedback == 'more_like_this'
-                          ? Icons.thumb_up_alt_outlined
-                          : Icons.thumb_down_alt_outlined,
-                      tone: AppStatusTone.neutral,
-                    ),
-                  ],
-                  if (recommendation['nearbyDistanceKm'] is num)
-                    Text(
-                        'Nearby · ${recommendation['city'] ?? 'Locality not supplied'} · ${(recommendation['nearbyDistanceKm'] as num).toStringAsFixed(1)} km straight-line'),
-                  if (_location.isNotEmpty) ...[
-                    const SizedBox(height: AppSpacing.xxs),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(
-                          Icons.location_on_outlined,
-                          size: AppSizes.iconSmall,
-                          color: AppColors.textSecondary,
-                        ),
-                        const SizedBox(width: AppSpacing.xxs),
-                        Expanded(
-                          child: Text(
-                            _location,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: AppColors.textSecondary),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: AppSpacing.sm),
-                  Wrap(
-                    spacing: AppSpacing.xs,
-                    runSpacing: AppSpacing.xs,
-                    children: [
-                      if (score != null)
-                        InkWell(
-                          onTap: () => _showScoreExplanation(context, score),
-                          borderRadius: BorderRadius.circular(AppRadii.pill),
-                          child: Tooltip(
-                            message: discovery
-                                ? 'Why this suggestion'
-                                : '$_scoreLabel: ${score.round()}/100. Tap for details.',
-                            child: StatusChip(
-                              text: discovery
-                                  ? 'Why this suggestion'
-                                  : '$_scoreLabel: ${score.round()}/100',
-                              icon: Icons.auto_awesome_rounded,
-                            ),
-                          ),
-                        ),
-                      if (_category.isNotEmpty)
-                        StatusChip(
-                          text: _category,
-                          tone: AppStatusTone.neutral,
-                        ),
-                      _reviewRating,
-                      for (final interest in _matchedInterests)
-                        StatusChip(
-                          text: interest,
-                          icon: Icons.check_circle_outline_rounded,
-                          tone: AppStatusTone.neutral,
-                        ),
-                    ],
-                  ),
-                  if (!discovery &&
-                      const ['relevance_v2', 'recovery_v3']
-                          .contains(recommendation['scoringVersion']) &&
-                      !_hasPersonalScore)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.xs),
-                      child: Text(
-                        'Personal match unavailable — interest evidence missing.',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: AppColors.textSecondary),
-                      ),
-                    ),
-                  if (!discovery && _hasPersonalScore) ...[
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      'Hybrid ranking: ${((recommendation['hybridRankingScore'] ?? recommendation['finalScore']) as num?)?.toStringAsFixed(1) ?? '-'} /100',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: AppColors.textSecondary),
-                    ),
-                    if ((recommendation['evidenceConfidence'] as num? ?? 0) < 1)
-                      Padding(
-                        padding: const EdgeInsets.only(top: AppSpacing.xxs),
-                        child: Text(
-                          'Limited profile metadata (${((recommendation['evidenceConfidence'] as num? ?? 0) * 100).round()}% of requested evidence available)',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: AppColors.textSecondary),
-                        ),
-                      ),
-                    if (recommendation['collaborativeConfidence'] == 0)
-                      Padding(
-                        padding: const EdgeInsets.only(top: AppSpacing.xxs),
-                        child: Text(
-                          'No qualifying similar-traveller ratings in this result',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: AppColors.textSecondary),
-                        ),
-                      ),
-                  ],
-                  if (discovery && recommendation['foodExperienceType'] != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.xs),
-                      child: Text(
-                        switch (recommendation['foodExperienceType']) {
-                          'dining' => 'Food stop / dining',
-                          'food_museum' =>
-                            'Food-themed museum; dining is not implied.',
-                          'cooking' =>
-                            'Cooking experience; check booking details.',
-                          'culinary_culture' =>
-                            'Spices and culinary culture; a cooking class is not implied.',
-                          _ =>
-                            'Food-related experience; dining is not confirmed.',
-                        },
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: AppColors.textSecondary),
-                      ),
-                    ),
-                  if (reasons.isNotEmpty) ...[
-                    const SizedBox(height: AppSpacing.sm),
-                    ...reasons.map(
-                      (reason) => Padding(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.xxs),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Icon(
-                                reason ==
-                                        'Recommended based on available destination information.'
-                                    ? Icons.info_outline_rounded
-                                    : Icons.check_circle_outline_rounded,
-                                size: AppSizes.iconSmall,
-                                color: reason ==
-                                        'Recommended based on available destination information.'
-                                    ? AppColors.textSecondary
-                                    : AppColors.primary,
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.xs),
-                            Expanded(
-                              child: Text(
-                                reason,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (_showSourceDisclosure) ...[
-                    const SizedBox(height: AppSpacing.xs),
-                    SourceFallbackBadge(source: _source),
-                  ],
-                  const SizedBox(height: AppSpacing.md),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final stackButtons = _addToTrip != null &&
-                          (constraints.maxWidth < 290 ||
-                              MediaQuery.textScalerOf(context).scale(14) > 19);
-                      final viewButton = SecondaryButton(
-                        key: ValueKey('recommendation-view-$_destinationKey'),
-                        label: _demonstration ? 'View simulation' : 'View',
-                        onPressed: onView,
-                      );
-                      final addButton = _addToTrip == null
-                          ? null
-                          : PrimaryButton(
-                              key: ValueKey(
-                                'recommendation-add-$_destinationKey',
-                              ),
-                              label: 'Add to trip',
-                              onPressed: _addToTrip,
-                            );
-                      if (stackButtons && addButton != null) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            viewButton,
-                            const SizedBox(height: AppSpacing.xs),
-                            addButton,
-                          ],
-                        );
-                      }
-                      return Row(
-                        children: [
-                          Expanded(child: viewButton),
-                          if (addButton != null) ...[
-                            const SizedBox(width: AppSpacing.xs),
-                            Expanded(child: addButton),
-                          ],
-                        ],
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
+            if (score != null) InkWell(
+              onTap: () => _showScoreExplanation(context, score),
+              borderRadius: BorderRadius.circular(AppRadii.pill),
+              child: StatusChip(maxLines: null,
+                text: discovery ? 'Why this suggestion' : '$_scoreLabel: ${score.round()}/100',
+                icon: Icons.auto_awesome_rounded)),
+            if (_category.isNotEmpty) StatusChip(text: _category, maxLines: null, tone: AppStatusTone.neutral),
+            for (final interest in _matchedInterests) StatusChip(text: interest, maxLines: null,
+              icon: Icons.check_circle_outline_rounded, tone: AppStatusTone.neutral),
           ],
         ),
-      ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(key: ValueKey('recommendation-metadata-$_destinationKey'),
+          crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: [
+              _reviewRating,
+              if (_demonstration) const StatusChip(text: 'Demonstration review data', maxLines: null,
+                icon: Icons.science_outlined, tone: AppStatusTone.info),
+              if (_showSourceDisclosure) SourceFallbackBadge(source: _source, maxLines: null),
+            ])),
+            if (onPreferenceFeedback != null && !_demonstration) _feedbackMenu(),
+          ]),
+        if (preferenceFeedback != null && !_demonstration) ...[
+          const SizedBox(height: AppSpacing.xs),
+          StatusChip(maxLines: null, text: preferenceFeedback == 'more_like_this'
+              ? 'More like this saved' : 'Not for me saved', tone: AppStatusTone.neutral),
+        ],
+        if (recommendation['nearbyDistanceKm'] is num) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text('Nearby · ${recommendation['city'] ?? 'Locality not supplied'} · '
+              '${(recommendation['nearbyDistanceKm'] as num).toStringAsFixed(1)} km straight-line'),
+        ],
+        if (!discovery && const ['relevance_v2', 'recovery_v3'].contains(recommendation['scoringVersion']) && !_hasPersonalScore)
+          const Padding(padding: EdgeInsets.only(top: AppSpacing.xs),
+            child: Text('Personal match unavailable — interest evidence missing.')),
+        if (!discovery && _hasPersonalScore) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text('Hybrid ranking: ${((recommendation['hybridRankingScore'] ?? recommendation['finalScore']) as num?)?.toStringAsFixed(1) ?? '-'} /100', style: theme.bodySmall),
+          if ((recommendation['evidenceConfidence'] as num? ?? 0) < 1)
+            Text('Limited profile metadata (${((recommendation['evidenceConfidence'] as num? ?? 0) * 100).round()}% of requested evidence available)', style: theme.bodySmall),
+          if (recommendation['collaborativeConfidence'] == 0)
+            Text('No qualifying similar-traveller ratings in this result', style: theme.bodySmall),
+        ],
+        if (discovery && recommendation['foodExperienceType'] != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(switch (recommendation['foodExperienceType']) {
+            'dining' => 'Food stop / dining',
+            'food_museum' => 'Food-themed museum; dining is not implied.',
+            'cooking' => 'Cooking experience; check booking details.',
+            'culinary_culture' => 'Spices and culinary culture; a cooking class is not implied.',
+            _ => 'Food-related experience; dining is not confirmed.',
+          }, style: theme.bodySmall),
+        ],
+        const SizedBox(height: AppSpacing.sm),
+        for (final reason in _reasons) Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.xxs),
+          child: Text(reason, style: theme.bodyMedium)),
+        if (carousel) const Spacer(),
+        const SizedBox(height: AppSpacing.md),
+        SecondaryButton(key: ValueKey('recommendation-view-$_destinationKey'),
+          label: _demonstration ? 'View simulation' : 'View', onPressed: onView),
+        if (_addToTrip != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          PrimaryButton(key: ValueKey('recommendation-add-$_destinationKey'),
+            label: 'Add to trip', onPressed: _addToTrip),
+        ],
+      ]),
     );
+    final card = Semantics(container: true, label: score == null ? 'Recommended destination, $_title'
+        : 'Recommended destination, $_title, $_scoreLabel ${score.round()} out of 100',
+      child: InkCard(padding: EdgeInsets.zero, child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          TravelPlaceImage(key: ValueKey('recommendation-image-$_destinationKey'),
+            place: recommendation, width: double.infinity, height: null,
+            aspectRatio: AppSizes.destinationImageAspectRatio,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadii.large))),
+          if (carousel) Expanded(child: detail) else detail,
+        ])));
+    // At most four Home cards share their actual intrinsic height, including all wrapped rows.
+    return carousel ? IntrinsicHeight(key: ValueKey('recommendation-carousel-$_destinationKey'), child: card) : card;
   }
 
   void _showScoreExplanation(BuildContext context, num score) {
@@ -658,7 +295,7 @@ class RecommendationCard extends StatelessWidget {
     final popularityCount = popularityEvidence?['reviewCount'];
     final popularitySource = popularityEvidence?['source'];
     final popularityDescription = popularityEvidence == null
-        ? 'This saved recommendation has no rating-source details. Refresh recommendations to verify the popularity evidence.'
+        ? 'This saved recommendation uses an older evidence format. Detailed popularity provenance is unavailable in this format. Regenerate recommendations to evaluate current evidence.'
         : popularitySource == 'provider_rating_review_count'
             ? 'Verified provider rating: ${popularityRating?.toStringAsFixed(1)}/5. ${popularityCount == null ? 'Provider review count unavailable.' : '$popularityCount provider reviews.'}'
         : popularitySource == 'genuine_approved_local_reviews'
@@ -740,6 +377,13 @@ class RecommendationCard extends StatelessWidget {
                   description:
                       'Evaluates compatibility with your saved travel interests, budget preference, and travel pace.',
                 ),
+                if (!_demonstration && !recommendationHasCurrentEvidence(recommendation)) ...[
+                  const Text(recommendationEvidenceUpdateMessage),
+                  if (onRefreshEvidence != null) TextButton.icon(
+                    key: const ValueKey('regenerate-recommendation-evidence'),
+                    onPressed: () { Navigator.pop(sheetContext); onRefreshEvidence!(); },
+                    icon: const Icon(Icons.refresh_rounded), label: const Text('Regenerate recommendations')),
+                ],
                 const SizedBox(height: AppSpacing.sm),
                 _breakdownCard(
                   sheetContext,
@@ -839,4 +483,18 @@ class RecommendationCard extends StatelessWidget {
       ),
     );
   }
+}
+
+
+class RecommendationEvidenceNotice extends StatelessWidget {
+  final VoidCallback? onRegenerate;
+  const RecommendationEvidenceNotice({super.key, this.onRegenerate});
+  @override
+  Widget build(BuildContext context) => InkCard(child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text(recommendationEvidenceUpdateMessage),
+      TextButton.icon(key: const ValueKey('update-recommendation-evidence'),
+        onPressed: onRegenerate, icon: const Icon(Icons.refresh_rounded),
+        label: const Text('Regenerate recommendations')),
+    ]));
 }
