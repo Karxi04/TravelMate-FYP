@@ -89,3 +89,25 @@ def test_private_source_is_carried_to_filters_history_and_actions(auth_client):
     assert all(kwargs['params'] == {'source': 'fyp_penang'} for _, _, kwargs in calls[1:])
     assert calls[-1][2]['json']['expectedRevision'] == 'expected'
     assert result.status_code == 302 and 'source=' not in result.location
+
+
+def test_regional_overlay_form_is_read_only_until_explicitly_configured(auth_client):
+    calls = []
+    row = {'id': 'regional', 'destinationName': 'Regional attraction', 'reviewSource': 'fyp_regional',
+           'moderationCategory': 'flagged', 'reviewRevision': 'regional-version', 'moderationWritable': False}
+    def api(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        response = MagicMock(ok=True)
+        response.json.return_value = {'items': [row]}
+        return response
+    with _patch_admin_api(api):
+        read_only = auth_client.get('/admin/feedback?status=all').get_data(as_text=True)
+        assert 'Read-only fixture' in read_only and 'name="source" value="fyp_regional"' not in read_only
+        row['moderationWritable'] = True
+        writable = auth_client.get('/admin/feedback?status=all').get_data(as_text=True)
+        assert 'name="source" value="fyp_regional"' in writable
+        result = auth_client.post('/admin/feedback/regional/review', data={
+            'source': 'fyp_regional', 'decision': 'keep', 'expectedRevision': 'regional-version'})
+        assert result.status_code == 302
+    assert calls[-1][2]['params'] == {'source': 'fyp_regional'}
+    assert calls[-1][2]['json']['expectedRevision'] == 'regional-version'

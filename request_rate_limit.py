@@ -36,6 +36,7 @@ _LIMIT_ENVIRONMENT = {
 }
 
 API_LIMITS = {
+    "fr05_itineraries.discover_cost_alternatives": "provider_search",
     "fr12_operator.search_operator_hotels": "provider_search",
     "fr12_operator.operator_hotel_detail": "provider_search",
     "fr01_users.create_or_update_profile": "authentication",

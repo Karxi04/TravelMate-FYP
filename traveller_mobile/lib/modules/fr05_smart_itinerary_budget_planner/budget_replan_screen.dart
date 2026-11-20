@@ -81,16 +81,18 @@ class _BudgetReplanScreenState extends State<BudgetReplanScreen> {
           scrollable: true,
           content:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Previous estimate: RM ${_money(before['total'])}'),
-            Text('Revised estimate: RM ${_money(budget['total'])}'),
+            Text('Previous known estimated subtotal: RM ${_money(before['total'])}'),
+            Text('Proposed known estimated subtotal: RM ${_money(budget['total'])}'),
             Text(reduction < 0
                 ? 'Estimated increase: RM ${_money(-reduction)}'
                 : 'Estimated planning reduction: RM ${_money(reduction)}'),
             if (detached.isNotEmpty)
               Text('Remove unpaid planning selections: ${detached.join(', ')}. Review replacement travel costs before relying on this estimate.'),
-            Text('Food allowance: RM ${_money(budget['food'])}'),
+            Text('Food allowance: RM ${_money(before['food'])} → RM ${_money(budget['food'])}'),
+            Text('Food allowance reduction: RM ${_money((before['food'] as num) - (budget['food'] as num))}'),
             Text(
-                'Local transport allowance: RM ${_money(budget['transport'])}'),
+                'Local transport allowance: RM ${_money(before['transport'])} → RM ${_money(budget['transport'])}'),
+            Text('Local transport reduction: RM ${_money((before['transport'] as num) - (budget['transport'] as num))}'),
             if ((budget['overBy'] as num? ?? 0) > 0)
               Text(
                   'This plan is still RM ${_money(budget['overBy'])} over budget.'),
@@ -102,7 +104,7 @@ class _BudgetReplanScreenState extends State<BudgetReplanScreen> {
                   'Changing food and transport allowances alone cannot meet your budget.'),
             if (pending.isNotEmpty)
               const Text(
-                  'Some costs are still unpriced. Check the expense breakdown before relying on this estimate.'),
+                  'Some costs are still unpriced. This reduction concerns the known subtotal and does not establish full-trip affordability.'),
             const Text(
                 'Allowances are planning amounts. Verified payments are recorded separately.'),
             if (removed.isNotEmpty)

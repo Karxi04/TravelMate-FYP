@@ -231,8 +231,8 @@ void main() {
     await tester.enterText(find.byType(TextField).last, '65');
     await tester.tap(find.text('Preview revised budget'));
     await tester.pumpAndSettle();
-    expect(find.text('Previous estimate: RM 285.00'), findsOneWidget);
-    expect(find.text('Revised estimate: RM 200.00'), findsOneWidget);
+    expect(find.text('Previous known estimated subtotal: RM 285.00'), findsOneWidget);
+    expect(find.text('Proposed known estimated subtotal: RM 200.00'), findsOneWidget);
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(api.calls.where((value) => value.endsWith('/apply')), isEmpty);

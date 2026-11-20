@@ -210,8 +210,13 @@ def test_known_flight_hotel_costs_leave_only_residual_activity_budget():
 ])
 def test_unknown_mandatory_non_activity_expenses_keep_selection_provisional(changes, category):
     result = select_budget_aware_activities([activity('free', 0)], trip(**changes))
-    assert result['budget']['status'] == 'provisional' and result['isProvisional']
-    assert category in result['budget']['unresolvedExpenseCategories']
+    if category == 'carRental':
+        assert result['budget']['status'] == 'within_known_estimates' and not result['isProvisional']
+        assert category not in result['budget']['unresolvedExpenseCategories']
+        assert result['budget']['categoryTotals']['carRental'] == 0
+    else:
+        assert result['budget']['status'] == 'provisional' and result['isProvisional']
+        assert category in result['budget']['unresolvedExpenseCategories']
 
 
 def test_unavoidable_fixed_overrun_does_not_become_affordable_by_selecting_free():

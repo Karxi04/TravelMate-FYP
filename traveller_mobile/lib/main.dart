@@ -11,7 +11,6 @@ import 'services/api_service.dart';
 import 'widgets/travel_widgets.dart';
 import 'services/android_push_service.dart';
 import 'modules/traveller_notifications/notification_center.dart';
-import 'widgets/local_place_rating.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -137,39 +136,7 @@ class _TravelMateAppState extends State<TravelMateApp> {
       debugShowCheckedModeBanner: false,
       title: 'TravelMate',
       builder: (context, child) {
-        return ValueListenableBuilder<bool>(
-          valueListenable: LocalReviewRatings.privateEnvironment,
-          builder: (context, localReviewDemo, _) {
         final content = child ?? const SizedBox.shrink();
-        if (privateReviewDemo || localReviewDemo) {
-          final colors = Theme.of(context).colorScheme;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Material(
-                color: colors.secondaryContainer,
-                child: SafeArea(
-                  bottom: false,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                    child: Text(
-                      'Non-production · Includes example reviews',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: colors.onSecondaryContainer),
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: MediaQuery.removePadding(
-                  context: context,
-                  removeTop: true,
-                  child: content,
-                ),
-              ),
-            ],
-          );
-        }
         if (pushTestBuild) {
           return Banner(
             message: 'Push Test Sandbox',
@@ -178,8 +145,6 @@ class _TravelMateAppState extends State<TravelMateApp> {
           );
         }
         return content;
-          },
-        );
       },
       theme: buildInkWashTheme(),
       home: FutureBuilder<void>(
@@ -213,7 +178,6 @@ class _TravelMateAppState extends State<TravelMateApp> {
               if(authOwnerKnown && navigationOwner!=nextOwner) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if(mounted && auth.currentUser?.uid==nextOwner) {
-                    LocalReviewRatings.privateEnvironment.value = false;
                     navigatorKey.currentState?.popUntil((route)=>route.isFirst);
                   }
                 });

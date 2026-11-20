@@ -156,7 +156,9 @@ def bridge_main():
     # No HTTP listener or production authentication is used.
     for name in ('FIREBASE_SERVICE_ACCOUNT','FIREBASE_SERVICE_ACCOUNT_JSON','GOOGLE_APPLICATION_CREDENTIALS','SERPAPI_KEY','LITEAPI_KEY','STRIPE_SECRET_KEY','GEMINI_API_KEY'):
         os.environ[name]=''
-    os.environ.update(TRAVELMATE_TESTING='true',FALLBACK_MODE='true',PYTHONDONTWRITEBYTECODE='1')
+    # The portal's PORT must not activate the developer's Backend-only LAN setup.
+    os.environ.update(TRAVELMATE_TESTING='true', FALLBACK_MODE='true',
+                      LOCAL_LAN_DEMO='false', PYTHONDONTWRITEBYTECODE='1')
     import pytest_socket
     pytest_socket.disable_socket()
     backend=IsolatedBackend()

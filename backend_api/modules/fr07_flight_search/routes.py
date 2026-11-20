@@ -325,6 +325,16 @@ def _flight_conflicts(itinerary, flight):
     if not segments:
         return []
     warnings = []
+    from services.flight_itinerary_adjustment import planning_assumptions
+    assumptions = planning_assumptions()
+
+    def minutes(raw):
+        try:
+            parsed = datetime.strptime(str(raw).strip(), '%H:%M')
+            return parsed.hour * 60 + parsed.minute
+        except (ValueError, TypeError):
+            return None
+
     arrival = next((x for x in reversed(flight.get('outboundSegments') or []) if isinstance(x, dict)), None)
     departure = next((x for x in (flight.get('returnSegments') or []) if isinstance(x, dict)), None)
     try:
@@ -348,10 +358,28 @@ def _flight_conflicts(itinerary, flight):
             continue
         day = int(activity.get('dayNo') or 1)
         time_value = str(activity.get('scheduledStartTime') or activity.get('timeSlot') or '').strip().lower()
-        if arrival_day and day == arrival_day and any(token in time_value for token in ('morning', '08:', '09:', '10:', '11:')):
-            warnings.append({'type': 'arrival_activity', 'activityId': activity.get('activityId'), 'message': 'This activity may begin before the outbound flight arrives.', 'precision': 'local_time_only', 'timezoneStatus': 'unavailable'})
-        if departure_day and day == departure_day and any(token in time_value for token in ('evening', '18:', '19:', '20:', '21:', '22:')):
-            warnings.append({'type': 'departure_activity', 'activityId': activity.get('activityId'), 'message': 'This activity may extend too close to the return flight.', 'precision': 'local_time_only', 'timezoneStatus': 'unavailable'})
+        start = minutes(activity.get('scheduledStartTime') or str(activity.get('timeSlot') or '').split('-')[0])
+        end = minutes(activity.get('scheduledEndTime'))
+        if end is None and start is not None:
+            duration = activity.get('recommendedDurationMinutes')
+            if type(duration) in (int, float) and math.isfinite(duration) and duration > 0:
+                end = start + duration
+        arrival_clock = minutes((arrival or {}).get('arrivalTime'))
+        departure_clock = minutes((departure or {}).get('departureTime'))
+        arrival_conflict = (start < arrival_clock + assumptions['arrivalClearanceMinutes']
+                            if start is not None and arrival_clock is not None
+                            else any(token in time_value for token in ('morning', '08:', '09:', '10:', '11:')))
+        departure_conflict = (end > departure_clock - assumptions['departureTransferMinutes'] - assumptions['departureCheckinMinutes']
+                              if end is not None and departure_clock is not None
+                              else any(token in time_value for token in ('evening', '18:', '19:', '20:', '21:', '22:')))
+        if arrival_day and day == arrival_day and arrival_conflict:
+            warnings.append({'type': 'arrival_activity', 'activityId': activity.get('activityId'),
+                             'message': 'This activity conflicts with flight arrival and the configured airport-clearance buffer.',
+                             'precision': 'planning_assumption', 'timezoneStatus': 'Malaysia_local_time'})
+        if departure_day and day == departure_day and departure_conflict:
+            warnings.append({'type': 'departure_activity', 'activityId': activity.get('activityId'),
+                             'message': 'This activity conflicts with return departure and the configured transfer/check-in buffer.',
+                             'precision': 'planning_assumption', 'timezoneStatus': 'Malaysia_local_time'})
     return warnings
 
 
@@ -659,6 +687,10 @@ def select_flight():
         return jsonify({'ok': False, 'error': 'Select a valid itinerary first'}), 404
     if current.get('tripType') == 'package' or current.get('packageTrip'):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
+    from services.trip_budget_replan import protected_activity
+    if protected_activity(current.get('selectedFlight') or {}) or any(current.get(key) for key in (
+            'flightBookingId', 'flightPaymentId', 'flightOrderId', 'paymentId', 'paymentRecordId', 'paidTotal')):
+        return jsonify(ok=False, error='A paid or booked flight cannot be replaced here. Open its original record.'), 409
     quote, trusted, quote_error = _quote_item(payload)
     client_match_target = trusted
     return_option = None
@@ -715,6 +747,12 @@ def select_flight():
         date_error = _flight_trip_date_error(current, trusted)
         if date_error:
             return jsonify({'ok': False, **date_error}), 409
+    if quote:
+        count = current.get('travellerCount')
+        if (type(count) not in (int, float) or not math.isfinite(count) or count < 1 or int(count) != count
+                or trusted.get('travellerCount') != int(count)):
+            return _flight_error('flight_trip_passenger_mismatch',
+                                 'The flight passenger count must match this Trip. Confirm the Trip group and search again.', 409)
     if completed_selection_created:
         try:
             _persist_quote(quote)

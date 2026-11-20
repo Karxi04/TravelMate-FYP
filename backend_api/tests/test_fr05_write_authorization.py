@@ -27,8 +27,9 @@ def storage(monkeypatch, mock_traveller_auth):
             return deepcopy(records.get(document_id)) if document_id else list(deepcopy(records).values())
         return None
 
-    def update(collection, document_id, patch):
+    def update(collection, document_id, patch, expected=None):
         assert collection == 'itineraries'
+        assert expected is not None and expected == records[document_id]
         writes.append(deepcopy(patch))
         records[document_id].update(deepcopy(patch))
         return deepcopy(records[document_id])

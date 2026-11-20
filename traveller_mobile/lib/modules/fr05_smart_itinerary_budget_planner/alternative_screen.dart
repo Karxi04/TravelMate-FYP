@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
-import '../../theme/app_theme.dart';
+import '../../services/transaction_request.dart';
 import '../../widgets/ink_card.dart';
-import '../../widgets/travel_widgets.dart';
 import 'budget_service.dart';
 import 'budget_replan_screen.dart';
 import 'models/budget_model.dart';
@@ -33,15 +32,16 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   int _loadVersion = 0;
   bool checkingPrices = false;
   bool applying = false;
+  String? discovering;
+  final searchMessages = <String, String>{};
+  final searchRetryAt = <String, DateTime>{};
+  List<Map<String, dynamic>> planning = [];
+  List<Map<String, dynamic>> flightTimingPreviews = [];
   bool optionsChanged = false;
   String? stateVersion;
   List<Map<String, dynamic>> alternatives = [];
   Map<String, dynamic>? budget;
   Map<String, dynamic>? replanOptions;
-  String? activityAdvice;
-  String? flightAdvice;
-  String? hotelAdvice;
-  String? activityAlternativeStatus;
   String? loadError;
   bool busy = false;
 
@@ -62,15 +62,26 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       replanOptions = null;
       optionsChanged = false;
       applying = false;
+      discovering = null;
+      searchMessages.clear();
+      searchRetryAt.clear();
       load();
     }
   }
 
   void _setTripState(Map data) {
+    if (data['planningAlternatives'] is List) {
+      planning = (data['planningAlternatives'] as List)
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    }
     budget = data['budget'] is Map
-        ? Map<String, dynamic>.from(data['budget']) : null;
+        ? Map<String, dynamic>.from(data['budget'])
+        : null;
     replanOptions = data['budgetReplanOptions'] is Map
-        ? Map<String, dynamic>.from(data['budgetReplanOptions']) : null;
+        ? Map<String, dynamic>.from(data['budgetReplanOptions'])
+        : null;
     stateVersion = data['stateVersion'] as String?;
   }
 
@@ -91,21 +102,23 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                   'canApply': item['canApply'] ?? false,
                 })
             .toList();
-        activityAdvice =
-            'Draft suggestions are general recommendations. Open a saved trip to review and apply verified options.';
-        activityAlternativeStatus = 'priced_replacement_unavailable';
       });
       return;
     }
     final hadPrices = alternatives.isNotEmpty;
     setState(() {
+      for (final category in searchRetryAt.keys.toList()) {
+        if (!searchRetryAt[category]!.isAfter(DateTime.now().toUtc())) {
+          searchRetryAt.remove(category);
+          searchMessages.remove(category);
+        }
+      }
       busy = true;
       checkingPrices = true;
       loadError = null;
       alternatives = [];
-      activityAdvice = null;
-      flightAdvice = null;
-      hotelAdvice = null;
+      planning = [];
+      flightTimingPreviews = [];
     });
     final before = stateVersion;
     var loadedTrip = false;
@@ -124,14 +137,22 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       // An older Backend can still return the complete state from the POST.
     }
     if (!current()) return;
+    if (loadedTrip && !_overBudget) {
+      setState(() => checkingPrices = false);
+      return;
+    }
     try {
-      final data = await api.post(
-          '/api/fr5/itineraries/$tripId/lower-cost-alternatives');
+      final data = await api
+          .post('/api/fr5/itineraries/$tripId/lower-cost-alternatives');
       if (!current()) return;
       if (data is! Map || data['ok'] == false) {
         throw StateError('Alternatives could not be refreshed.');
       }
       setState(() {
+        flightTimingPreviews = (data['flightTimingPreviews'] as List? ?? [])
+            .whereType<Map>()
+            .map((row) => Map<String, dynamic>.from(row))
+            .toList();
         alternatives = (data['alternatives'] as List? ?? [])
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
@@ -141,22 +162,19 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
           optionsChanged = before != null && before != stateVersion;
         }
         optionsChanged = optionsChanged || (hadPrices && alternatives.isEmpty);
-        activityAdvice = data['activityAdvice']?.toString();
-        flightAdvice = data['flightAdvice']?.toString();
-        hotelAdvice = data['hotelAdvice']?.toString();
-        activityAlternativeStatus =
-            data['activityAlternativeStatus']?.toString();
       });
     } catch (e) {
-      if (current()) setState(() {
-        loadError = userFacingApiError(e);
-        if (!loadedTrip) replanOptions = null;
-      });
+      if (current())
+        setState(() {
+          loadError = userFacingApiError(e);
+          if (!loadedTrip) replanOptions = null;
+        });
     } finally {
-      if (current()) setState(() {
-        busy = false;
-        checkingPrices = false;
-      });
+      if (current())
+        setState(() {
+          busy = false;
+          checkingPrices = false;
+        });
     }
   }
 
@@ -164,14 +182,314 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     final options = replanOptions;
     final tripId = widget.tripId;
     if (options == null || tripId == null || applying) return;
-    ++_loadVersion; // Ignore a slow replacement lookup after opening safe planning adjustments.
-    setState(() { busy = false; checkingPrices = false; });
-    final updated = await Navigator.push<Map<String, dynamic>>(context, MaterialPageRoute(
-      builder: (context) => BudgetReplanScreen(api: api, tripId: tripId, options: options, stateVersion: stateVersion)));
+    // The preview owns its options/revision. Keep the existing lookup for returning after Cancel.
+    final updated = await Navigator.push<Map<String, dynamic>>(
+        context,
+        MaterialPageRoute(
+            builder: (context) => BudgetReplanScreen(
+                api: api,
+                tripId: tripId,
+                options: options,
+                stateVersion: stateVersion)));
     if (!mounted || widget.tripId != tripId || updated == null) return;
     if (updated['id'] == tripId) widget.onApplied?.call(updated);
     await load();
   }
+
+  bool get _overBudget {
+    final total = budget?['total'] ?? widget.budget.totalCost;
+    final limit = budget?['limit'] ?? widget.userBudget;
+    return total is num && limit is num && limit > 0 && total > limit;
+  }
+
+  String money(Object? value) =>
+      value is num ? value.toStringAsFixed(2) : 'Unavailable';
+
+  Future<void> previewPlanning(Map<String, dynamic> item) async {
+    if (applying || discovering != null || widget.tripId == null) return;
+    setState(() => applying = true);
+    final version = _loadVersion;
+    final path = '/api/fr5/itineraries/' + widget.tripId! + '/budget-replan';
+    final command = <String, dynamic>{
+      'changes': item['changes'],
+      'stateVersion': stateVersion
+    };
+    var refresh = false;
+    try {
+      final preview = await api.post('$path/preview', command);
+      if (!mounted || version != _loadVersion) return;
+      final accepted = await confirmPreview(item, preview);
+      if (!mounted || accepted != true || version != _loadVersion) return;
+      final saved = await api.post('$path/apply', {
+        ...command,
+        'confirmed': true,
+        'previewToken': preview['previewToken']
+      });
+      if (!mounted || version != _loadVersion) return;
+      final trip = saved['itinerary'];
+      if (trip is! Map || trip['id'] != widget.tripId)
+        throw StateError('The trip update could not be confirmed.');
+      if (!mounted) return;
+      widget.onApplied?.call(Map<String, dynamic>.from(trip));
+      refresh = true;
+    } catch (error) {
+      if (mounted && version == _loadVersion) showError(context, error);
+      refresh = error is ApiException && error.statusCode == 409;
+    } finally {
+      if (mounted && version == _loadVersion) setState(() => applying = false);
+    }
+    if (refresh && mounted && version == _loadVersion) await load();
+  }
+
+  Future<bool?> confirmPreview(Map<String, dynamic> item, dynamic preview) {
+    final before = preview['before'] as Map? ?? {};
+    final after = preview['budget'] as Map? ?? {};
+    return showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: Text((item['title'] ?? 'Review alternative').toString()),
+              scrollable: true,
+              content: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Original known estimate: RM ' +
+                        money(before['total'])),
+                    Text(
+                        'Proposed known estimate: RM ' + money(after['total'])),
+                    Text('Estimated planning reduction: RM ' +
+                        money(preview['estimatedReduction'])),
+                    Text('Remaining over budget: RM ' +
+                        money(after['overBy'] ?? 0)),
+                    if ((after['pendingExpenseCategories'] as List? ?? [])
+                        .isNotEmpty)
+                      const Text(
+                          'Important costs remain unpriced; this does not establish full-trip affordability.'),
+                    for (final change
+                        in (preview['itineraryChanges'] as List? ?? [])
+                            .whereType<Map>())
+                      Text((change['activityName'] ?? 'Visit').toString() +
+                          ' — ' +
+                          (change['kind'] ?? 'review').toString() +
+                          (change['to'] is Map
+                              ? ' ' +
+                                  (change['to']['scheduledStartTime'] ?? '')
+                                      .toString()
+                              : '')),
+                    const Text(
+                        'This changes your saved plan only. It does not book, cancel or refund a supplier arrangement.'),
+                    for (final day in (preview['dailySchedule'] as List? ?? [])
+                        .whereType<Map>()) ...[
+                      Text('Day ' + day['dayNo'].toString()),
+                      for (final row in (day['activities'] as List? ?? [])
+                          .whereType<Map>())
+                        Text((row['scheduledStartTime'] ?? '').toString() +
+                            ' ' +
+                            (row['activityName'] ?? '').toString()),
+                    ],
+                  ]),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Confirm change')),
+              ],
+            ));
+  }
+
+  String noOffer(String category) => category == 'hotel'
+      ? 'No verified cheaper hotel is currently available for this stay.'
+      : 'No verified cheaper flight is currently available.';
+
+  String searchBlocked(String category) => category == 'hotel'
+      ? 'Hotel search has not run. Review the selected stay, total price and room details in Hotels first. Paid or pending stays cannot be replaced.'
+      : 'Flight search has not run. Review the selected route, dates, passengers and cabin first. Paid or booked flights cannot be replaced.';
+
+  String searchLimitMessage(String category, DateTime? retry) {
+    final label = category == 'hotel' ? 'Hotel' : 'Flight';
+    if (retry == null)
+      return '$label search limit reached. Please try again later.';
+    final malaysia = retry.toUtc().add(const Duration(hours: 8));
+    return '$label search limit reached. Try again at ' +
+        malaysia.toIso8601String().substring(0, 16).replaceFirst('T', ' ') +
+        ' MYT.';
+  }
+
+  Future<void> discover(String category) async {
+    if (discovering != null ||
+        applying ||
+        widget.tripId == null ||
+        stateVersion == null) return;
+    final tripId = widget.tripId!;
+    final state = stateVersion;
+    final version = _loadVersion;
+    setState(() => discovering = category);
+    try {
+      final accepted = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+                title: Text(category == 'flight'
+                    ? 'Find cheaper flights?'
+                    : 'Find cheaper hotels?'),
+                content: Text(category == 'flight'
+                    ? 'Search matching fares using up to 2 provider requests. This may use API quota. Quote records may be saved; your trip and bookings stay unchanged until you confirm a replacement.'
+                    : 'Search matching stays using 1 provider rates request. This may use API quota. A rate is not a reservation. Your trip stays unchanged until you confirm a replacement.'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Search now')),
+                ],
+              ));
+      if (!mounted ||
+          accepted != true ||
+          version != _loadVersion ||
+          widget.tripId != tripId) return;
+      setState(() {
+        searchMessages.remove(category);
+        searchRetryAt.remove(category);
+      });
+      final result = await api.post(
+          '/api/fr5/itineraries/$tripId/lower-cost-alternatives/discover', {
+        'category': category,
+        'providerSearchConfirmed': true,
+        'searchRequestId': newTransactionAttemptId('budget_search'),
+        'stateVersion': state
+      });
+      if (!mounted || version != _loadVersion) return;
+      final search = result['search'] as Map? ?? {};
+      final status = search['status'];
+      final retry = DateTime.tryParse(search['retryAt']?.toString() ?? '');
+      final message = switch (status) {
+        'completed' => 'Checking returned offers…',
+        'pending' =>
+          'Search is still processing. Refresh saved results before trying again.',
+        'quota_limited' => searchLimitMessage(category, retry),
+        'retry_available' =>
+          'Search limit has reset. You can start a new search.',
+        'needs_review' => searchBlocked(category),
+        'unavailable' => switch (search['failureCode']) {
+            'provider_timeout' =>
+              'The provider search timed out. No result was confirmed; refresh saved results before trying again.',
+            'provider_rate_limited' =>
+              'The provider search limit was reached. Please try again later.',
+            _ =>
+              'The provider could not complete the search. No result was confirmed.',
+          },
+        _ =>
+          'Provider search is unavailable. Your local planning options remain available.',
+      };
+      setState(() {
+        searchMessages[category] = message;
+        if (status == 'quota_limited' && retry != null)
+          searchRetryAt[category] = retry;
+      });
+      await load();
+      if (mounted && widget.tripId == tripId && status == 'completed') {
+        final available = alternatives.any((item) =>
+            item['alternativeType'] == category && _canApplyItem(item));
+        setState(() => searchMessages[category] = available
+            ? 'Verified cheaper offers are ready to preview.'
+            : loadError != null
+                ? 'Search finished, but saved offers could not be loaded. Refresh saved results.'
+                : (status == 'completed' &&
+                        (search['requestsAttempted'] as num? ?? 0) == 0)
+                    ? searchBlocked(category)
+                    : category == 'flight' && flightTimingPreviews.isNotEmpty
+                        ? 'Cheaper flights need a timing review before they can be used.'
+                        : noOffer(category));
+      }
+    } catch (error) {
+      if (mounted && version == _loadVersion) {
+        setState(() => searchMessages[category] = error is ApiException &&
+                error.statusCode == 429
+            ? searchLimitMessage(category, null)
+            : error is ApiException && error.statusCode == 409
+                ? error.code == 'STALE_ALTERNATIVE'
+                    ? 'This trip changed. Refresh alternatives before searching again.'
+                    : searchBlocked(category)
+                : 'Search could not be confirmed. Refresh saved results before trying again.');
+      }
+    } finally {
+      if (mounted && widget.tripId == tripId)
+        setState(() => discovering = null);
+    }
+  }
+
+  Widget discoveryCard(String category) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: InkCard(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(category == 'flight' ? 'Flights' : 'Hotels',
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+          const Text('Look for a cheaper comparable planning quote.'),
+          if (searchMessages[category] != null) Text(searchMessages[category]!),
+          OutlinedButton(
+              onPressed: discovering != null || applying || stateVersion == null
+                  ? null
+                  : () => discover(category),
+              child: Text(discovering == category
+                  ? 'Searching…'
+                  : category == 'flight'
+                      ? 'Find cheaper flights'
+                      : 'Find cheaper hotels')),
+        ])),
+      );
+
+  Widget timingReviewCard(Map<String, dynamic> preview) => Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InkCard(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Flight timing needs review',
+            style: TextStyle(fontWeight: FontWeight.w700)),
+        Text('MYR ' +
+            money(preview['currentCost']) +
+            ' → MYR ' +
+            money(preview['proposedCost'])),
+        Text((preview['reason'] ?? 'The flights conflict with planned visits.')
+            .toString()),
+        TextButton(
+            onPressed: () => showDialog<void>(
+                context: context,
+                builder: (context) => AlertDialog(
+                        title: const Text('Review flight timing'),
+                        scrollable: true,
+                        content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text((preview['reason'] ?? '').toString()),
+                              for (final change
+                                  in (preview['itineraryChanges'] as List? ??
+                                          [])
+                                      .whereType<Map>())
+                                Text((change['activityName'] ?? 'Visit')
+                                        .toString() +
+                                    ' — ' +
+                                    (change['kind'] ?? 'review').toString() +
+                                    (change['to'] is Map
+                                        ? ' ' +
+                                            (change['to'][
+                                                        'scheduledStartTime'] ??
+                                                    '')
+                                                .toString()
+                                        : '')),
+                              const Text(
+                                  'This flight cannot be applied while visits conflict. Choose different flight times or review your trip dates. Your trip is unchanged.'),
+                            ]),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Close'))
+                        ])),
+            child: const Text('Review timing')),
+      ])));
 
   double? _extractSavings(Map<String, dynamic> item) {
     final raw = item['estimatedSavings'] ?? item['saving'];
@@ -188,38 +506,28 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       item['stateVersion'] is String &&
       _extractSavings(item) != null;
 
-  String? _comparison(Map<String, dynamic> item) {
-    final before = item['currentEstimatedCost'];
-    final after = item['replacementEstimatedCost'];
-    if (before is! num || after is! num) return null;
-    final basis = switch (item['alternativeType']) {
-      'flight' => 'Estimated fare',
-      'hotel' => 'Estimated stay total',
-      _ => 'Estimated admission',
-    };
-    return '$basis: MYR ${before.toStringAsFixed(2)} → MYR ${after.toStringAsFixed(2)}';
-  }
-
   Future<void> applyAlternative(Map<String, dynamic> item) async {
-    if (busy || applying || !_canApplyItem(item)) return;
+    if (busy || applying || discovering != null || !_canApplyItem(item)) return;
     final tripId = widget.tripId;
     final version = _loadVersion;
-    final savings = _extractSavings(item)!;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text((item['title'] ?? 'Apply alternative?').toString()),
-        content: Text("${item['description'] ?? ''}\n\n"
-            "${_comparison(item) == null ? '' : '${_comparison(item)}\n'}"
-            "Estimated reduction: MYR ${savings.toStringAsFixed(2)}. "
-            "This changes your saved trip plan only."),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirm change')),
-        ],
-      ),
-    );
-    if (!mounted || confirmed != true || busy || version != _loadVersion) return;
+    setState(() => applying = true);
+    dynamic preview;
+    try {
+      preview = await api.post(
+          '/api/fr5/itineraries/$tripId/lower-cost-alternatives/preview',
+          {'alternative': item});
+    } catch (error) {
+      if (mounted) {
+        setState(() => applying = false);
+        showError(context, error);
+      }
+      return;
+    }
+    if (!mounted || version != _loadVersion) return;
+    final confirmed = await confirmPreview(item, preview);
+    if (mounted) setState(() => applying = false);
+    if (!mounted || confirmed != true || busy || version != _loadVersion)
+      return;
     setState(() => applying = true);
     var refresh = false;
     try {
@@ -234,6 +542,12 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       }
       widget.onApplied?.call(Map<String, dynamic>.from(updated));
       setState(() {
+        if (data['planningAlternatives'] is List) {
+          planning = (data['planningAlternatives'] as List)
+              .whereType<Map>()
+              .map((row) => Map<String, dynamic>.from(row))
+              .toList();
+        }
         budget = data['budget'] is Map
             ? Map<String, dynamic>.from(data['budget'] as Map)
             : budget;
@@ -252,188 +566,144 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     if (refresh && mounted && version == _loadVersion) await load();
   }
 
-  Widget _buildAdviceCard() {
-    final isUnavailable =
-        activityAlternativeStatus == 'priced_replacement_unavailable';
+  Widget optionCard(Map<String, dynamic> item, {bool local = false}) {
+    final canApply = local || _canApplyItem(item);
+    final saving = _extractSavings(item);
+    final before = item['currentEstimatedCost'];
+    final after = item['replacementEstimatedCost'];
+    final remaining = item['remainingOverBy'];
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: InkCard(
-        child: Row(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: InkCard(
+            child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const CircleAvatar(
-              backgroundColor: InkWashColors.paleBlue,
-              child: Icon(Icons.lightbulb_outline,
-                  color: InkWashColors.blueGrey),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Activity budget guidance',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    activityAdvice!,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                  ),
-                  if (isUnavailable) ...[
-                    const SizedBox(height: 8),
-                    const TravelStatusPill(
-                      text: 'Priced replacement unavailable',
-                      icon: Icons.info_outline,
-                    ),
-                  ],
-                ],
-              ),
-            ),
+            Text(
+                (item['category'] ??
+                        item['alternativeType'] ??
+                        'Planning advice')
+                    .toString(),
+                style: Theme.of(context).textTheme.labelLarge),
+            Text((item['title'] ?? 'Lower-cost option').toString(),
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Text((item['description'] ?? '').toString()),
+            if (item['data'] is Map && item['alternativeType'] == 'hotel')
+              Text(((item['data']['roomName'] ?? '')).toString() +
+                  ' · ' +
+                  ((item['data']['address'] ?? '')).toString()),
+            if (item['data'] is Map && item['alternativeType'] == 'flight')
+              for (final leg in ['outboundSegments', 'returnSegments'])
+                for (final segment
+                    in (item['data'][leg] as List? ?? []).whereType<Map>())
+                  Text((segment['departureAirportCode'] ?? '').toString() +
+                      ' ' +
+                      (segment['departureDate'] ?? '').toString() +
+                      ' ' +
+                      (segment['departureTime'] ?? '').toString() +
+                      ' → ' +
+                      (segment['arrivalAirportCode'] ?? '').toString() +
+                      ' ' +
+                      (segment['arrivalTime'] ?? '').toString()),
+            if (before is num && after is num)
+              Text('RM ' + money(before) + ' → RM ' + money(after)),
+            if (saving != null && canApply)
+              Text('Estimated reduction: RM ' + money(saving)),
+            if (remaining is num)
+              Text('Remaining over budget: RM ' + money(remaining)),
+            if (item['source'] != null)
+              Text('Source: ' + item['source'].toString(),
+                  style: Theme.of(context).textTheme.bodySmall),
+            if (!canApply) const Text('Advisory guidance'),
+            if (canApply)
+              Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.tonal(
+                    onPressed: applying || discovering != null
+                        ? null
+                        : () => local
+                            ? previewPlanning(item)
+                            : applyAlternative(item),
+                    child: const Text('Preview'),
+                  )),
           ],
-        ),
-      ),
-    );
+        )));
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentTotal = budget?['total'] ?? widget.budget.totalCost;
+    final total = budget?['total'] ?? widget.budget.totalCost;
     final limit = budget?['limit'] ?? widget.userBudget;
-    final hasAdvice =
-        activityAdvice != null && activityAdvice!.trim().isNotEmpty;
-    final supplierAdvice = [flightAdvice, hotelAdvice].whereType<String>();
-
+    final pending = (budget?['pendingExpenseCategories'] as List? ??
+        widget.budget.pendingExpenseCategories);
     return Scaffold(
-      appBar: AppBar(title: const Text('Lower-cost alternatives')),
+      appBar: AppBar(title: const Text('Lower-Cost Alternatives')),
       body: RefreshIndicator(
-        onRefresh: load,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
-          children: [
-            TravelSectionHeader(
-              title: 'Budget alternatives',
-              subtitle: 'Estimated total RM $currentTotal / budget RM $limit',
-            ),
-            const SizedBox(height: 12),
-            if (replanOptions != null) ...[
-              const Text('Adjust planned food, local transport or eligible optional visits.'),
-              FilledButton(onPressed: applying ? null : openReplan, child: const Text('Review budget options')),
-            ],
-            if (optionsChanged)
-              const Text('Options have been refreshed for this trip. Earlier options may no longer apply.'),
-            if (loadError != null)
-              AppErrorState(
-                title: replanOptions == null ? 'Alternatives unavailable' : 'Could not verify replacement prices',
-                message: loadError!,
-                onRetry: load,
-              )
-            else if (checkingPrices)
-              const SizedBox(
-                  height: 160,
-                  child: Center(child: CircularProgressIndicator()))
-            else if (alternatives.isEmpty)
-              TravelEmptyState(
-                icon: Icons.savings_outlined,
-                title: replanOptions == null
-                    ? 'No priced replacements are available for this itinerary yet.'
-                    : 'No comparable replacement prices for the current trip',
-                message: [if (hasAdvice) activityAdvice!, ...supplierAdvice].join('\n\n'),
-              )
-            else ...[
-              if (hasAdvice) _buildAdviceCard(),
-              for (final advice in supplierAdvice)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: InkCard(child: Text(advice)),
-                ),
-              ...alternatives.map((item) {
-                final savings = _extractSavings(item);
-                final canApply = _canApplyItem(item);
-                final source = item['source']?.toString().trim();
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: InkCard(
-                    child: Column(
+          onRefresh: load,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
+            children: [
+              InkCard(
+                  child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const CircleAvatar(
-                              backgroundColor: InkWashColors.paleBlue,
-                              child: Icon(Icons.savings_outlined,
-                                  color: InkWashColors.blueGrey),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    (item['title'] ?? 'Lower-cost option')
-                                        .toString(),
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w900),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  if (savings != null && canApply)
-                                    TravelStatusPill(
-                                      text:
-                                          'Est. save RM ${savings.toStringAsFixed(2)}',
-                                      icon: Icons.payments_outlined,
-                                    )
-                                  else
-                                    const TravelStatusPill(
-                                      text: 'Advisory guidance',
-                                      icon: Icons.info_outline,
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text((item['description'] ?? item['data'] ?? '')
-                            .toString()),
-                        if (canApply && _comparison(item) != null)
-                          Text(_comparison(item)!),
-                        if (source != null && source.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            'Source: $source',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(
-                                  color: AppColors.textSecondary,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                          ),
-                        ],
-                        if (canApply) ...[
-                          const SizedBox(height: 10),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: FilledButton.tonalIcon(
-                              onPressed:
-                                  busy || applying ? null : () => applyAlternative(item),
-                              icon: const Icon(Icons.check_rounded),
-                              label: const Text('Apply'),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                );
-              }),
+                    Text('Budget: RM ' + money(limit)),
+                    Text('Known estimate: RM ' + money(total)),
+                    if (_overBudget)
+                      Text('Over budget: RM ' +
+                          money((total as num) - (limit as num))),
+                    if (!_overBudget && !busy)
+                      const Text(
+                          'Your known estimate does not exceed the budget.'),
+                    if (pending.isNotEmpty)
+                      const Text(
+                          'Some costs are unpriced. The known subtotal does not establish full-trip affordability.'),
+                  ])),
+              const SizedBox(height: 16),
+              if (_overBudget) ...[
+                const Text('Available ways to save',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 12),
+                for (final item in planning) optionCard(item, local: true),
+                if (!api.isStandalone &&
+                    (widget.tripId ?? '').isNotEmpty &&
+                    (budget?['flight'] as num? ?? widget.budget.flight) > 0)
+                  discoveryCard('flight'),
+                if (!api.isStandalone &&
+                    (widget.tripId ?? '').isNotEmpty &&
+                    (budget?['hotel'] as num? ?? widget.budget.accommodation) >
+                        0)
+                  discoveryCard('hotel'),
+                for (final preview in flightTimingPreviews)
+                  timingReviewCard(preview),
+                for (final item in alternatives) optionCard(item),
+                if (replanOptions != null)
+                  FilledButton(
+                      onPressed: applying ? null : openReplan,
+                      child: const Text('Review budget options')),
+                if (optionsChanged)
+                  const Text(
+                      'Options have been refreshed for this trip. Earlier options may no longer apply.'),
+                if (checkingPrices)
+                  const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: LinearProgressIndicator()),
+                if (loadError != null) ...[
+                  const Text(
+                      'Replacement prices are unavailable. You can still review available planning changes.'),
+                  TextButton(onPressed: load, child: const Text('Try again')),
+                ],
+                if (!checkingPrices && alternatives.isEmpty)
+                  const Text(
+                      'No saved replacement quotes are available to preview. Use the search buttons to check current offers.'),
+                if (!checkingPrices &&
+                    planning.isEmpty &&
+                    replanOptions == null)
+                  const Text('No eligible planning reductions are available.'),
+              ],
             ],
-          ],
-        ),
-      ),
+          )),
     );
   }
 }

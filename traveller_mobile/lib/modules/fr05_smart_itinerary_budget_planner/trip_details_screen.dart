@@ -957,7 +957,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           ? rawPayment : null;
       final accepted = payment?['acceptedPrebook'];
       final expires = accepted is Map ? DateTime.tryParse('${accepted['expiresAt']}') : null;
-      final hotelPaymentLabel = payment is! Map ? null : switch (payment['status']) {
+      final hotelPaymentLabel = payment is! Map ? (hotel['planningOnly'] == true ? 'Selected — Not Paid' : null) : switch (payment['status']) {
         'paid' when payment['paymentStatus'] == 'paid' => 'Paid · Stripe',
         'checkout_open' || 'checkout_pending' || 'payment_pending' => 'Payment pending',
         'payment_mismatch' => 'Payment needs verification',
@@ -1354,7 +1354,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     );
     if (payload == null) return;
     try {
-      await api.put('/api/fr5/itineraries/${widget.tripId}', payload);
+      await api.put('/api/fr5/itineraries/${widget.tripId}', {
+        ...payload,
+        if (!api.isStandalone)
+          'expectedItineraryRevision': t['itineraryRevision'] ?? 1,
+      });
       await load();
     } catch (e) {
       if (mounted) showError(context, e);
@@ -2363,7 +2367,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               )),
             ),
           ),
-        if (!api.isStandalone || estimateOver)
+        if (estimateOver)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.sm),
             child: SecondaryButton(
@@ -2543,6 +2547,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             MaterialPageRoute(
               builder: (_) => FlightScreen(
                 api: api,
+                targetTripId: widget.tripId,
+                targetTrip: t,
                 initialOutboundDate: (t['startDate'] ?? '').toString(),
                 initialReturnDate: (t['endDate'] ?? '').toString(),
               ),

@@ -348,7 +348,8 @@ def test_13_other_incomplete_expenses_remain_pending():
     assert 'flight' not in budget['pendingExpenseCategories']
     # Other undecided expenses remain pending
     assert 'hotel' in budget['pendingExpenseCategories']
-    assert 'carRental' in budget['pendingExpenseCategories']
+    assert 'carRental' not in budget['pendingExpenseCategories']
+    assert budget['carRental'] == 0
     assert budget['completenessStatus'] == 'incomplete'
     assert budget['affordabilityStatus'] == 'incomplete'
     assert 'incomplete' in compareBudget(budget).lower()

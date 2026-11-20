@@ -68,7 +68,8 @@ def test_review_test_mode_is_explicit_separate_and_read_only(client, app, memory
     with patch.object(routes,'_private_review_dataset',return_value=('ref',{'local_penang_hill':{}})), patch.object(routes,'dataset_reviews',return_value=[fake]):
         normal=client.get(url,headers=auth).json
         demo=client.get(url+'?view=test',headers=auth).json
-        assert normal['result']['rating']==4 and normal['result']['reviews']==1
+        assert normal['result']['rating']==2.5 and normal['result']['reviews']==2
+        assert normal['result']['genuineSummary']=={'rating':4,'reviews':1}
         assert demo['result']['rating']==1 and demo['result']['reviews']==1
         assert demo['disclosure'] and demo['result']['fypPreview']
         assert client.get(url+'?view=test',headers=headers()).status_code==403

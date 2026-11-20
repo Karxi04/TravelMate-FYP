@@ -158,12 +158,12 @@ class FlightReplacementSheet extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Text(
+                            Expanded(child: Text(
                               '${currentFlight['airline'] ?? 'Airline'} ${currentFlight['flightNumber'] ?? ''}',
                               style:
                                   const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            const Spacer(),
+                            )),
+                            const SizedBox(width: 8),
                             Text(
                               'RM ${currentFare.toStringAsFixed(2)}',
                               style: const TextStyle(
@@ -226,12 +226,12 @@ class FlightReplacementSheet extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Text(
+                            Expanded(child: Text(
                               '${newFlight['airline'] ?? 'Airline'} ${newFlight['flightNumber'] ?? ''}',
                               style:
                                   const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            const Spacer(),
+                            )),
+                            const SizedBox(width: 8),
                             Text(
                               'RM ${newFare.toStringAsFixed(2)}',
                               style: const TextStyle(

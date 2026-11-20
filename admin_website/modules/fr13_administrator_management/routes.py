@@ -176,11 +176,11 @@ def feedback():
     history_id = request.args.get("history", "")
     history_source = request.args.get("history_source", request.args.get("source", "traveller"))
     history = None
-    if history_source in {"traveller", "fyp_penang"} and any(
+    if history_source in {"traveller", "fyp_penang", "fyp_regional"} and any(
         item.get("id") == history_id and item.get("reviewSource", "traveller") == history_source for item in items
     ):
         response = call_api("GET", f"/api/fr13/feedback/{history_id}/history",
-                            **({"params": {"source": history_source}} if history_source == "fyp_penang" else {}))
+                            **({"params": {"source": history_source}} if history_source != "traveller" else {}))
         history = response.json().get("items", []) if response.ok else None
     return render_template("fr13_administrator_management/feedback.html", items=items, counts=counts,
                            categories=categories, status=status, query=query, history_id=history_id,
@@ -318,9 +318,9 @@ def review_feedback(feedback_id):
     if not guard():
         return redirect(url_for("admin_fr01.login"))
     source = request.form.get("source", "traveller")
-    if source not in {"traveller", "fyp_penang"}:
+    if source not in {"traveller", "fyp_penang", "fyp_regional"}:
         abort(400)
-    source_args = {"params": {"source": source}} if source == "fyp_penang" else {}
+    source_args = {"params": {"source": source}} if source != "traveller" else {}
     decision = request.form.get("decision", "keep")
     response = call_api("POST", f"/api/fr13/feedback/{feedback_id}/review", json={
         "decision": decision,

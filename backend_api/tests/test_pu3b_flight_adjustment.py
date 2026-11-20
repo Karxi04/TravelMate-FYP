@@ -17,7 +17,7 @@ from services.flight_itinerary_adjustment import (
 def _flight(arrival_date='2026-11-01', arrival_time='15:00', departure_date='2026-11-03', departure_time='10:00'):
     return {
         'id': 'flight_pu3b', 'departureAirport': 'KUL', 'arrivalAirport': 'PEN',
-        'price': 180, 'currency': 'MYR', 'priceBasis': 'itinerary_total',
+        'price': 180, 'currency': 'MYR', 'priceBasis': 'itinerary_total', 'travellerCount': 1,
         'outboundSegments': [{'departureAirportCode': 'KUL', 'arrivalAirportCode': 'PEN', 'departureDate': arrival_date, 'arrivalDate': arrival_date, 'departureTime': '13:30', 'arrivalTime': arrival_time, 'durationMinutes': 90}],
         'returnSegments': [{'departureAirportCode': 'PEN', 'arrivalAirportCode': 'KUL', 'departureDate': departure_date, 'arrivalDate': departure_date, 'departureTime': departure_time, 'arrivalTime': '11:30', 'durationMinutes': 90}],
     }
@@ -62,13 +62,14 @@ def test_protected_activity_stays_unchanged_and_conflict_is_visible(client, mock
     after = {x['activityId']: x for x in preview['after']['activities']}
     assert after['morning']['scheduledStartTime'] == '10:00'
     assert any(x['activityId'] == 'morning' for x in preview['remainingConflicts'])
+    assert preview['canApply'] is False
 
 
 def test_apply_requires_fresh_trip_and_is_idempotent(client, mock_traveller_auth):
     reset_flight_adjustment_previews()
     original = _trip()
     saved = deepcopy(original)
-    with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord', side_effect=lambda collection, document_id=None, **_: deepcopy(saved)), patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord', side_effect=lambda collection, document_id, patch_data: saved.update(patch_data) or deepcopy(saved)):
+    with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord', side_effect=lambda collection, document_id=None, **_: deepcopy(saved)), patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord', side_effect=lambda collection, document_id, patch_data, expected=None: saved.update(patch_data) or deepcopy(saved)):
         preview_response = client.post('/api/fr5/itineraries/pu3b_trip/flight-adjustment/preview', headers={'Authorization': 'Bearer valid_test_token'})
         preview_id = preview_response.get_json()['preview']['previewId']
         first = client.post('/api/fr5/itineraries/pu3b_trip/flight-adjustment/apply', headers={'Authorization': 'Bearer valid_test_token'}, json={'previewId': preview_id})
@@ -183,7 +184,7 @@ def lifecycle_store(monkeypatch):
         'selectedCarRental': {'id': 'synthetic-rental'}, 'hotelBookingId': 'synthetic-hotel',
         'transportCost': 70, 'foodCost': 90,
     })
-    trip['activities'][0]['userFixed'] = True
+    trip['activities'][0].update(userFixed=True, scheduledStartTime='16:30', scheduledEndTime='17:30')
     trip['budgetEstimate'] = calculateBudget(trip)
     records, writes = {trip['id']: trip}, []
 
@@ -258,7 +259,7 @@ def _apply_current(client):
 
 
 def _select_http(client, option=None):
-    option = deepcopy(option or {**_flight(arrival_time='18:00'), 'id': 'flight_b', 'price': 360})
+    option = deepcopy(option or {**_flight(arrival_time='14:00'), 'id': 'flight_b', 'price': 360})
     option.update({'quoteCompleteness': 'complete', 'budgetEligible': True})
     quote = {'id': 'synthetic-owned-search', 'criteria': {}, 'source': 'serpapi'}
     with patch('modules.fr07_flight_search.routes._quote_item', return_value=(quote, option, None)):

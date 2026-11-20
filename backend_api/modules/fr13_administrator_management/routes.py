@@ -27,7 +27,8 @@ from services.report_service import (
 )
 from services.package_service import package_for_read, package_submission_error
 from services.review_service import ReviewConflict, current_screen, review_revision, published_review, review_history
-from services.fyp_reviews import private_dataset, dataset_reviews, moderation_history, moderate_review
+from services.fyp_reviews import private_dataset, dataset_reviews, moderation_history, moderate_review, all_regional_reviews, _regional_sources
+from services import review_staging
 from services.public_content_projection import active_campaign, eligible_package
 from services.campaign_schedule import campaign_package_ids
 from modules.fr12_tourism_operator_management.analytics_service import is_paid_order
@@ -415,6 +416,10 @@ def _private_feedback(source=None, *, optional=False):
     source = source or request.args.get('source', 'traveller')
     if source == 'traveller':
         return None, []
+    if source == 'fyp_regional':
+        if not current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS'):
+            _fail('Regional review staging is unavailable.', 403)
+        return 'regional', all_regional_reviews()
     if source != 'fyp_penang':
         _fail('Unknown review source.', 400)
     try:
@@ -434,11 +439,13 @@ def all_feedback():
     unified = request.args.get('source') == 'all'
     ref, private_rows = _private_feedback('fyp_penang' if unified else None, optional=unified)
     sources = [('fyp_penang', item) for item in private_rows]
+    if unified and current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS'):
+        sources.extend(('fyp_regional', item) for item in all_regional_reviews())
     if unified or ref is None:
         sources.extend(('traveller', item) for item in _load('feedback'))
     items = []
     for source, item in sources:
-        screening = item['screening'] if source == 'fyp_penang' else current_screen(item)
+        screening = item['screening'] if source in {'fyp_penang', 'fyp_regional'} else current_screen(item)
         decision = item.get('moderationDecision') or {}
         if item.get('feedbackStatus') == 'removed':
             category = 'hidden'
@@ -447,7 +454,8 @@ def all_feedback():
         else:
             category = 'flagged' if screening['risk'] == 'flagged' else 'needs_review'
         items.append({**item, 'screening': screening, 'moderationCategory': category, 'reviewSource': source,
-                      'reviewRevision': review_revision(item)})
+                      'reviewRevision': review_revision(item),
+                      'moderationWritable': source != 'fyp_regional' or review_staging.staging_path() is not None})
     items.sort(key=lambda item: str(item.get('submittedAt') or ''), reverse=True)
     response = jsonify({'ok': True, 'items': items,
                         **({'privateUnavailable': ref is None,
@@ -465,7 +473,7 @@ def feedback_history(fid):
         record = next((item for item in rows if item['id'] == fid), None)
         if not record:
             _fail('Feedback not found', 404)
-        response = jsonify({'ok': True, 'items': moderation_history(ref, record)})
+        response = jsonify({'ok': True, 'items': review_staging.history(record) if ref == 'regional' else moderation_history(ref, record)})
         response.headers['Cache-Control'] = 'private, no-store'
         return response
     return jsonify({'ok': True, 'items': review_history(fid)})
@@ -473,7 +481,10 @@ def feedback_history(fid):
 
 def _commit_review(fid, current, updates, *, private_ref=None, **extra):
     try:
-        if private_ref is not None:
+        if private_ref == 'regional':
+            source = next(row for row in _regional_sources(current['destinationId']) if row['id'] == fid)
+            result = review_staging.moderate(current, updates, source)
+        elif private_ref is not None:
             result = moderate_review(private_ref, current, updates)
         else:
             updates['screening'] = current_screen(current)

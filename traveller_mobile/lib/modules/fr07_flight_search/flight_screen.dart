@@ -42,6 +42,7 @@ class _FlightScreenState extends State<FlightScreen> {
   List<dynamic> items = [];
   final Set<String> compareIds = {};
   bool busy = false;
+  bool selecting = false;
   bool roundTrip = false;
   bool nonstopOnly = false;
   String sort = 'top';
@@ -138,6 +139,29 @@ class _FlightScreenState extends State<FlightScreen> {
             ? widget.initialReturnDate!.trim()
             : dateText(start.add(const Duration(days: 3))));
     roundTrip = widget.initialReturnDate?.trim().isNotEmpty == true;
+    final trip = widget.targetTrip;
+    if (trip != null) {
+      final selected = trip['selectedFlight'] is Map ? trip['selectedFlight'] as Map : const {};
+      final legs = (selected['outboundSegments'] as List? ?? []).whereType<Map>().toList();
+      if (widget.initialDeparture == null) {
+        final airport = legs.isNotEmpty ? legs.first['departureAirportCode'] :
+            cityToIata['${trip['originLocation'] ?? ''}'.split(',').first.trim().toUpperCase()];
+        if (airport != null) from.text = '$airport';
+      }
+      if (widget.initialArrival == null) {
+        final airport = legs.isNotEmpty ? legs.last['arrivalAirportCode'] :
+            cityToIata['${trip['destinationArea'] ?? ''}'.split(',').first.trim().toUpperCase()];
+        if (airport != null) to.text = '$airport';
+      }
+      final count = trip['travellerCount'];
+      travellers.text = count is num && count.isFinite && count >= 1 && count % 1 == 0
+          ? '${count.toInt()}' : '${count ?? 1}';
+      final cabin = selected['travelClass'];
+      if (cabin is int && cabin >= 1 && cabin <= 4) travelClass = cabin;
+      final cabins = legs.map((leg) => const {'economy': 1, 'premium economy': 2,
+        'business': 3, 'first': 4, 'first class': 4}['${leg['travelClass'] ?? ''}'.toLowerCase().trim()]).toSet();
+      if (cabins.length == 1 && cabins.single != null) travelClass = cabins.single!;
+    }
     for (final controller in [from, to, travellers, outbound, returnDate]) {
       controller.addListener(_invalidateResults);
     }
@@ -715,15 +739,22 @@ class _FlightScreenState extends State<FlightScreen> {
 
   Future<void> selectFlight(Map<String, dynamic> flight,
       {Map<String, dynamic>? returnOption}) async {
+    if (selecting) return;
     if (!_quoteMatchesCriteria()) return;
     if (isQuoteExpired()) {
       showError(
           context, 'This flight quote has expired. Please search again.');
       return;
     }
+    setState(() => selecting = true);
     try {
-      final data = await api.get('/api/fr5/itineraries');
-      final trips = data['items'] as List? ?? [];
+      final targetId = widget.targetTripId ?? widget.targetTrip?['id']?.toString();
+      final data = await api.get(targetId == null ? '/api/fr5/itineraries' : '/api/fr5/itineraries/$targetId');
+      final target = targetId == null ? null : data['itinerary'];
+      if (targetId != null && (target is! Map || target['id'] != targetId)) {
+        throw StateError('The original Trip could not be loaded. Return to Trips and try again.');
+      }
+      final trips = targetId == null ? (data['items'] as List? ?? []) : [target];
       if (!mounted) return;
       if (trips.isEmpty) {
         final createNow = await showDialog<bool>(
@@ -813,14 +844,8 @@ class _FlightScreenState extends State<FlightScreen> {
         return;
       }
       while (true) {
-        Map<String, dynamic>? targetedTrip = widget.targetTrip;
-        if (targetedTrip == null && widget.targetTripId != null) {
-          final match = trips.firstWhere(
-            (t) => t is Map && t['id'] == widget.targetTripId,
-            orElse: () => null,
-          );
-          if (match is Map) targetedTrip = Map<String, dynamic>.from(match);
-        }
+        final Map<String, dynamic>? targetedTrip = target is Map
+            ? Map<String, dynamic>.from(target) : null;
 
         final Map<String, dynamic>? selected = targetedTrip ??
             await showModalBottomSheet<Map<String, dynamic>>(
@@ -961,8 +986,11 @@ class _FlightScreenState extends State<FlightScreen> {
           final msg = isReplacement
               ? 'Flight replaced! Review itinerary changes to update your schedule.'
               : 'Flight attached to trip plan! Estimated trip total: RM ${budget['total'] ?? '-'}';
+          final overBy = budget['overBy'];
+          final budgetWarning = overBy is num && overBy.isFinite && overBy > 0
+              ? ' Known estimated costs exceed your budget by RM ${overBy.toStringAsFixed(2)}.' : '';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(msg)),
+            SnackBar(content: Text('$msg$budgetWarning')),
           );
           if (widget.targetTripId != null || widget.targetTrip != null) {
             if (Navigator.canPop(context)) {
@@ -974,6 +1002,8 @@ class _FlightScreenState extends State<FlightScreen> {
       }
     } catch (e) {
       if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => selecting = false);
     }
   }
 
@@ -1274,7 +1304,7 @@ class _FlightScreenState extends State<FlightScreen> {
                           const SizedBox(width: 6),
                           FilledButton.tonal(
                               key: ValueKey('flight-select-${idOf(item)}'),
-                              onPressed: returnLoading
+                              onPressed: returnLoading || selecting
                                   ? null
                                   : () => roundTrip
                                       ? chooseReturn(item)
