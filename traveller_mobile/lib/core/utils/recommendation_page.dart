@@ -103,6 +103,11 @@ Map<String,dynamic> discoveryAnnotations(Map item, Map preference) {
 }
 
 void validateDiscoveryResponse(Map data) {
+  if (data['recommendationEvidenceMode'] == 'demonstration' ||
+      (data['recommendations'] as List? ?? []).whereType<Map>().any((r) =>
+        r['synthetic'] == true || r['recommendationEvidenceMode'] == 'demonstration')) {
+    throw StateError('Demonstration results belong in the separate review-data simulation.');
+  }
   if (data['stale'] == true) return;
   if (data['ok'] == false || data['pagination'] is! Map ||
       data['pagination']['discoveryMode'] != recommendationDiscoveryMode) {

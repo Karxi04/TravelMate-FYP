@@ -6,7 +6,7 @@ import traceback
 from pathlib import Path
 from uuid import uuid4
 from math import isfinite
-from flask import Blueprint, jsonify, g, request
+from flask import Blueprint, jsonify, g, request, current_app
 from google.cloud.firestore_v1 import GeoPoint
 from google.api_core.exceptions import GoogleAPICallError, InvalidArgument
 from werkzeug.exceptions import HTTPException
@@ -16,8 +16,10 @@ from services.serpapi_service import retrieveDestinationResults
 from services.destination_candidates import provider_page, cached_candidates, discovery_pool, merge_candidates, normalise, facts_signature
 from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
-from services.review_service import approved_reviews, genuine_review
-from services.review_destination import review_destination_id
+from services.review_destination import review_destination_id, review_candidate_id
+from services.review_service import genuine_review
+from services.recommendation_review_evidence import approved_contributions, review_summaries
+from services import demonstration_recommendations
 from services.recommendation_taxonomy import candidate_concepts, preference_concepts, display_concepts
 from services.recommendation_taxonomy import planning_preferences
 from services.recommendation_discovery import (
@@ -55,6 +57,12 @@ from sequence_contract.domain_functions import (
 
 bp = Blueprint('fr04_recommendations', __name__, url_prefix='/api/fr4')
 logger = logging.getLogger(__name__)
+
+
+def _demonstration_allowed():
+    return request.headers.get('X-TravelMate-Review-Context') == 'fyp-v1' and (
+        bool(current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS')) or
+        bool(os.getenv('FYP_REVIEW_VIEWER_UID', '').strip() == g.uid))
 
 
 def _correlation_id():
@@ -245,7 +253,8 @@ def _snapshot_response_view(record):
             record.get('requestedDestination') or record.get('destinationArea')
         )
     safe_results, rejected = filter_candidates(
-        record.get('recommendationResults', []),
+        [row for row in record.get('recommendationResults', [])
+         if row.get('synthetic') is not True and row.get('recommendationEvidenceMode', 'genuine') == 'genuine'],
         scope,
     )
     if rejected:
@@ -344,6 +353,8 @@ def generate():
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload,dict):
         return jsonify(ok=False,error='Use a JSON object.'),400
+    if payload.get('evidenceMode', 'genuine') != 'genuine':
+        return jsonify(ok=False, error='Use the separate Demonstration review data view.'), 400
     if _page({}, payload) is None:
         return jsonify(ok=False, error='Invalid recommendation threshold or page.'), 400
     destination_area = str(payload.get('destinationArea') or payload.get('location') or 'Malaysia').strip()
@@ -371,7 +382,8 @@ def generate():
     previous_key = previous_scope.get('scopeKey') if isinstance(previous_scope,dict) else None
     if previous and not previous_key:
         previous_key = _requested_area(previous.get('requestedDestination') or previous.get('destinationArea'))
-    if previous_id and (not previous or previous.get('travellerId') != g.uid or previous_key != destination_scope['scopeKey']):
+    if previous_id and (not previous or previous.get('travellerId') != g.uid or previous_key != destination_scope['scopeKey']
+                        or previous.get('recommendationEvidenceMode', 'genuine') != 'genuine'):
         return jsonify(ok=False, error='Recommendation snapshot not found for this destination.'), 404
     expand = payload.get('expandCandidates') is True
     displayed = payload.get('displayedDestinationIds', [])
@@ -451,23 +463,21 @@ def generate():
     local_ids = {_destination_id(item) for item in DESTINATIONS}
     candidates = [{**item,'ratingSource':'unverified_local_catalog'} if
                   _destination_id(item) in local_ids and item.get('ratingSource') != 'provider' else item for item in candidates]
-    candidates = [enrich_discovery_candidate(item) for item in candidates]
+    candidates = [enrich_discovery_candidate(item) for item in candidates
+                  if item.get('synthetic') is not True and item.get('recommendationEvidenceMode', 'genuine') == 'genuine']
 
     # This is a retrieval cap, not a minimum evidence requirement.
-    reviews_by_destination = {}
-    for row in retrieveRecord('feedback', limit=500) or []:
-        if genuine_review(row):
-            identity = review_destination_id(str(row.get('destinationId') or ''))
-            reviews_by_destination.setdefault(identity, []).append(row)
-    # Select latest owner contributions before moderation filtering, as in Local Reviews.
-    collaborative = [row for group in reviews_by_destination.values() for row in approved_reviews(group)]
-    candidate_ids = {review_destination_id(_destination_id(row)) for row in candidates}
+    groups = approved_contributions(retrieveRecord('feedback', limit=500) or [])
+    summaries = review_summaries(groups)
+    collaborative = [row for group in groups.values() for row in group]
+    candidate_ids = {review_candidate_id(row) for row in candidates}
     reviewer_ids = {str(row.get('travellerId') or '') for row in collaborative
                     if review_destination_id(str(row.get('destinationId') or '')) in candidate_ids} - {'', str(g.uid)}
     peer_profiles = {}
     for profile in retrieveRecordsById('travel_preferences', reviewer_ids):
         uid = str(profile.get('id') or '')
-        if uid in reviewer_ids and str(profile.get('travellerId') or uid) == uid:
+        if (uid in reviewer_ids and str(profile.get('travellerId') or uid) == uid and genuine_review(profile)
+                and profile.get('recommendationEvidenceMode', 'genuine') == 'genuine'):
             peer_profiles[uid] = profile
 
     prepared = prepareRecommendationInput(
@@ -480,7 +490,7 @@ def generate():
         currentPreference=pref,
         currentTravellerId=g.uid,
     )
-    scored = calculateRecommendationScore(combined)
+    scored = calculateRecommendationScore(combined, summaries)
     unique_candidates = deduplicateRecommendations(scored)
     ranked_candidates = diversifyRecommendations(
         rankRecommendations(unique_candidates),
@@ -515,6 +525,7 @@ def generate():
     generation_id = uuid4().hex
     record = {
         'recommendationGenerationId': generation_id,
+        'recommendationEvidenceMode': 'genuine',
         'userId': g.uid,
         'travellerId': g.uid,
         'generatedAt': utc_now_iso(),
@@ -585,12 +596,15 @@ def generate():
 @bp.get('/recommendations')
 @auth_required(['traveller'])
 def get_recommendations():
+    if request.args.get('evidenceMode', 'genuine') != 'genuine':
+        return jsonify(ok=False, error='Use the separate Demonstration review data view.'), 400
     generation_id = str(request.args.get('generationId') or '').strip()
     destination_area = str(request.args.get('destinationArea') or '').strip()
     record = None
     if generation_id:
         record = retrieveRecord('recommendation_snapshots', generation_id) or {}
-        if not record or record.get('travellerId') != g.uid:
+        if (not record or record.get('travellerId') != g.uid
+                or record.get('recommendationEvidenceMode', 'genuine') != 'genuine'):
             return jsonify({'ok': False, 'error': 'Recommendation snapshot not found'}), 404
     scope = resolve_destination_scope(destination_area) if destination_area else None
     stored = record.get('canonicalDestinationScope') if record else None
@@ -619,6 +633,8 @@ def get_recommendations():
     else:
         record = latest_snapshot(retrieveRecord, loadRecommendationSnapshot, g.uid,
                                  scope)
+    if record and record.get('recommendationEvidenceMode', 'genuine') != 'genuine':
+        return jsonify(ok=False, error='Recommendation snapshot not found'), 404
     preference = retrieveRecord('travel_preferences', g.uid)
     learned = retrieveRecord('learned_preference_profiles', g.uid)
     stale = bool(record and isinstance(preference, dict) and isinstance(preference.get('interests'), list)
@@ -644,7 +660,43 @@ def get_recommendations():
         'engine': response_record.get('engine', {}),
         'pagination': response_record['pagination'],
         'stale': stale,
+        'demonstrationAvailable': _demonstration_allowed(),
     })
+
+
+@bp.get('/recommendations/demonstration')
+@auth_required(['traveller'])
+def demonstration_recommendations_view():
+    if not _demonstration_allowed():
+        return jsonify(ok=False, error='Demonstration review data is unavailable in this context.'), 403
+    key = request.args.get('profileKey', 'current')
+    if key not in {'current', *demonstration_recommendations.SIMULATED_PROFILES}:
+        return jsonify(ok=False, error='Choose a supported demonstration profile.'), 400
+    areas = sorted({'Penang', 'Malaysia', *(row.get('state') for row in
+        demonstration_recommendations.regional_demo_destinations().values() if row.get('state'))})
+    area = request.args.get('destinationArea', 'Penang')
+    if area not in areas:
+        return jsonify(ok=False, error='Choose an available demonstration area.'), 400
+    profile = (retrieveRecord('travel_preferences', g.uid) if key == 'current' else
+               demonstration_recommendations.SIMULATED_PROFILES[key])
+    if not profile or not profile.get('interests'):
+        return jsonify(ok=False, error='Complete your preferences or choose a simulated profile.'), 400
+    try:
+        candidates, rows = demonstration_recommendations.load_sources(area)
+        results = demonstration_recommendations.evaluate(profile, candidates, rows)
+    except (ValueError, GoogleAPICallError, TimeoutError):
+        return jsonify(ok=False, error='Existing demonstration reviews and approvals could not be loaded. No saved recommendations were changed.'), 503
+    generation_id = 'demonstration-' + hashlib.sha256(json.dumps(
+        [area, profile, results], sort_keys=True, default=str).encode()).hexdigest()[:24]
+    response = jsonify(ok=True, recommendationEvidenceMode='demonstration', synthetic=True,
+        label='Demonstration review data', recommendationGenerationId=generation_id,
+        recommendations=results, destinationArea=area, profileKey=key, areas=areas,
+        profiles=[{'key': 'current', 'label': 'My preferences (simulation only)'},
+            *[{'key': identity, 'label': value['label']} for identity, value in
+              demonstration_recommendations.SIMULATED_PROFILES.items()]],
+        disclosure='Simulated traveller profiles and approved demonstration reviews. Read-only results; genuine saved recommendations are unchanged.')
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response
 
 
 @bp.get('/locations')

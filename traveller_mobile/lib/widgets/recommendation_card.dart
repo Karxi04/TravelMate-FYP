@@ -33,6 +33,12 @@ class RecommendationCard extends StatelessWidget {
       (recommendation['title'] ?? recommendation['name'] ?? 'Destination')
           .toString();
 
+  bool get _demonstration => recommendation['recommendationEvidenceMode'] == 'demonstration' && recommendation['synthetic'] == true;
+  VoidCallback? get _addToTrip => _demonstration ? null : onAddToTrip;
+  Widget get _reviewRating => _demonstration
+      ? LocalReviewRatingBadge(summary: Map<String, dynamic>.from(recommendation['demonstrationReviewSummary'] as Map? ?? {}))
+      : LocalPlaceRating(place: recommendation);
+
   String get _location => (recommendation['address'] ??
           recommendation['location'] ??
           recommendation['city'] ??
@@ -133,7 +139,7 @@ class RecommendationCard extends StatelessWidget {
 
   bool get _showSourceDisclosure {
     final normalized = _source.toLowerCase();
-    return normalized.isNotEmpty &&
+    return !_demonstration && normalized.isNotEmpty &&
         normalized != 'live' &&
         normalized != 'provider' &&
         normalized != 'live_provider' &&
@@ -310,11 +316,12 @@ class RecommendationCard extends StatelessWidget {
                                     child: Row(children: [
                                       Expanded(
                                           child: horizontal([
-                                        LocalPlaceRating(place: recommendation),
+                                        if (_demonstration) const Text('Demonstration review data'),
+                                        _reviewRating,
                                         if (_showSourceDisclosure)
                                           SourceFallbackBadge(source: _source),
                                       ])),
-                                      if (onPreferenceFeedback != null)
+                                      if (onPreferenceFeedback != null && !_demonstration)
                                         _feedbackMenu(),
                                     ])),
                                 const SizedBox(height: AppSpacing.xs),
@@ -332,18 +339,18 @@ class RecommendationCard extends StatelessWidget {
                                     child: SecondaryButton(
                                         key: ValueKey(
                                             'recommendation-view-$_destinationKey'),
-                                        label: 'View',
+                                        label: _demonstration ? 'View simulation' : 'View',
                                         onPressed: onView)),
                                 const SizedBox(height: AppSpacing.xs),
                                 SizedBox(
                                     height: buttonHeight,
-                                    child: onAddToTrip == null
+                                    child: _addToTrip == null
                                         ? const SizedBox.shrink()
                                         : PrimaryButton(
                                             key: ValueKey(
                                                 'recommendation-add-$_destinationKey'),
                                             label: 'Add to trip',
-                                            onPressed: onAddToTrip)),
+                                            onPressed: _addToTrip)),
                               ])),
                     ])),
           ),
@@ -380,6 +387,10 @@ class RecommendationCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (_demonstration) ...[
+                    const Text('Demonstration review data', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -391,7 +402,7 @@ class RecommendationCard extends StatelessWidget {
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                       ),
-                      if (onPreferenceFeedback != null) _feedbackMenu(),
+                      if (onPreferenceFeedback != null && !_demonstration) _feedbackMenu(),
                     ],
                   ),
                   if (preferenceFeedback != null) ...[
@@ -460,7 +471,7 @@ class RecommendationCard extends StatelessWidget {
                           text: _category,
                           tone: AppStatusTone.neutral,
                         ),
-                      LocalPlaceRating(place: recommendation),
+                      _reviewRating,
                       for (final interest in _matchedInterests)
                         StatusChip(
                           text: interest,
@@ -579,22 +590,22 @@ class RecommendationCard extends StatelessWidget {
                   const SizedBox(height: AppSpacing.md),
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      final stackButtons = onAddToTrip != null &&
+                      final stackButtons = _addToTrip != null &&
                           (constraints.maxWidth < 290 ||
                               MediaQuery.textScalerOf(context).scale(14) > 19);
                       final viewButton = SecondaryButton(
                         key: ValueKey('recommendation-view-$_destinationKey'),
-                        label: 'View',
+                        label: _demonstration ? 'View simulation' : 'View',
                         onPressed: onView,
                       );
-                      final addButton = onAddToTrip == null
+                      final addButton = _addToTrip == null
                           ? null
                           : PrimaryButton(
                               key: ValueKey(
                                 'recommendation-add-$_destinationKey',
                               ),
                               label: 'Add to trip',
-                              onPressed: onAddToTrip,
+                              onPressed: _addToTrip,
                             );
                       if (stackButtons && addButton != null) {
                         return Column(
@@ -641,6 +652,22 @@ class RecommendationCard extends StatelessWidget {
         recommendation['collaborativeRatingCount'] != null;
     final isColdStart = !hasPeerEvidence && hasEvidenceDetails;
     final rawPeerScore = num.tryParse('${recommendation['rawCollaborativeScore']}');
+    final popularityEvidence = recommendation['popularityEvidence'] is Map
+        ? Map<String, dynamic>.from(recommendation['popularityEvidence'] as Map) : null;
+    final popularityRating = num.tryParse('${popularityEvidence?['rating']}');
+    final popularityCount = popularityEvidence?['reviewCount'];
+    final popularitySource = popularityEvidence?['source'];
+    final popularityDescription = popularityEvidence == null
+        ? 'This saved recommendation has no rating-source details. Refresh recommendations to verify the popularity evidence.'
+        : popularitySource == 'provider_rating_review_count'
+            ? 'Verified provider rating: ${popularityRating?.toStringAsFixed(1)}/5. ${popularityCount == null ? 'Provider review count unavailable.' : '$popularityCount provider reviews.'}'
+        : popularitySource == 'genuine_approved_local_reviews'
+            ? 'Approved genuine TravelMate reviews: ${popularityRating?.toStringAsFixed(1)}/5 from $popularityCount reviews loaded for this generation. Demonstration reviews are excluded.'
+        : popularitySource == 'demonstration_approved_reviews'
+            ? 'Demonstration review data: ${popularityRating?.toStringAsFixed(1)}/5 from $popularityCount approved simulated reviews. These are not genuine visitor ratings.'
+        : _demonstration
+            ? 'No approved demonstration reviews were available. A neutral 50/100 baseline is used.'
+            : 'No verified provider rating or approved genuine local review evidence was available. A neutral 50/100 baseline is used. Demonstration reviews do not affect this score.';
     final fallbackDetail = const {
       'missing_current_preferences': 'Your preference profile was unavailable for this generation.',
       'missing_peer_preferences': 'Reviewers had no matching saved preference profiles.',
@@ -650,8 +677,8 @@ class RecommendationCard extends StatelessWidget {
     final collaborativeDescription = !hasEvidenceDetails
         ? 'This saved recommendation has no peer-evidence details. Refresh recommendations to evaluate current feedback; the saved score has not been recalculated.'
         : isColdStart
-            ? 'No peer ratings from similar travellers qualified in this generation. A neutral 50/100 ranking prior is used, not an average review rating. Personal match is assessed separately.${fallbackDetail == null ? '' : ' $fallbackDetail'}'
-            : '$collaborativeRatingCount qualifying peer rating(s). '
+            ? '${_demonstration ? 'No simulated peer ratings' : 'No peer ratings from similar travellers'} qualified in this generation. Eligible reviewers: 0. Evidence confidence: 0%. A neutral 50/100 ranking prior is used, not an average review rating. Personal match is assessed separately.${fallbackDetail == null ? '' : ' $fallbackDetail'}'
+            : 'Eligible reviewers: $collaborativeRatingCount. ${_demonstration ? 'Simulated p' : 'P'}eer ratings are similarity-weighted. '
               '${rawPeerScore == null ? '' : 'Raw peer score: ${rawPeerScore.toStringAsFixed(1)}/100. '}'
               'Evidence confidence: ${(collaborativeConfidence * 100).round()}%. '
               'Sparse evidence is blended toward 50; confidence is not prediction accuracy. '
@@ -716,7 +743,7 @@ class RecommendationCard extends StatelessWidget {
                 const SizedBox(height: AppSpacing.sm),
                 _breakdownCard(
                   sheetContext,
-                  title: 'Similar traveller evidence (30% weight)',
+                  title: '${_demonstration ? 'Simulated' : 'Similar'} traveller evidence (30% weight)',
                   scoreText: isColdStart
                       ? '50/100 (Neutral baseline)'
                       : '${(breakdown['collaborative'] as num?)?.round() ?? '-'}/100 (${hasPeerEvidence ? 'Peer evidence' : 'Evidence unavailable'})',
@@ -725,13 +752,10 @@ class RecommendationCard extends StatelessWidget {
                 const SizedBox(height: AppSpacing.sm),
                 _breakdownCard(
                   sheetContext,
-                  title: 'Destination popularity (10% weight)',
+                  title: '${_demonstration ? 'Demonstration' : 'Destination'} popularity (10% weight)',
                   scoreText:
                       '${(breakdown['popularity'] as num?)?.round() ?? '-'}/100',
-                  description: '${recommendation['popularitySource']}'
-                          .startsWith('neutral_')
-                      ? 'Verified provider popularity evidence is unavailable. A neutral 50/100 baseline is used; no business rating is invented.'
-                      : 'Based on public ratings and review coverage across all visitors.',
+                  description: popularityDescription,
                 ),
               ] else ...[
                 Container(

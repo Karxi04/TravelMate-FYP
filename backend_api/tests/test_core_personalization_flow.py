@@ -11,6 +11,8 @@ from sequence_contract.domain_functions import (applyContentBasedFiltering, appl
     calculateRecommendationScore, prepareRecommendationInput)
 from services.recommendation_taxonomy import concepts_for
 from services.preference_learning import effective_preference_profile, apply_explicit_feedback
+from services.recommendation_review_evidence import approved_contributions, review_summaries
+from services.review_destination import review_candidate_id
 from modules.fr11_chatbot_travel_assistant.nlp_extractor import extract_interests, extract_excluded_interests
 
 AUTH={'Authorization':'Bearer fixture'}
@@ -24,6 +26,7 @@ def demo():
 
 def test_same_verified_penang_pool_three_authenticated_handler_profiles(demo):
     assert demo['candidateCount']==16 and demo['providerCalls']==demo['productionWrites']==0
+    summaries = review_summaries(approved_contributions(demo['peerFeedback']))
     rankings=[];plans=[]
     for label,result in demo['profiles'].items():
         phases=result['phases']
@@ -35,7 +38,15 @@ def test_same_verified_penang_pool_three_authenticated_handler_profiles(demo):
         assert result['actions']['dislike'] not in {r['destinationId'] for r in negative}
         for row in initial:
             assert row['finalScore']==pytest.approx(round(.6*row['contentScore']+.3*row['collaborativeScore']+.1*row['popularityScore'],2))
-            assert row['popularitySource']=='neutral_missing_rating'
+            summary = summaries.get(review_candidate_id(row))
+            if summary:
+                assert row['popularitySource']=='genuine_approved_local_reviews'
+                assert row['popularityEvidence']['reviewCount']==summary['reviews']
+                assert row['popularityScore']==pytest.approx(round(min(100,
+                    summary['rating']/5*80+min(20,summary['reviews']/500)),2))
+            else:
+                assert row['popularitySource']=='neutral_missing_rating'
+                assert row['popularityScore']==50
             assert row['recommendationReason'] and row['destinationConcepts']
         plan=result['chat']['structuredPlan']
         assert plan['tripDays']==3 and plan['budgetLimit']==600 and plan['destinationArea']=='Penang'

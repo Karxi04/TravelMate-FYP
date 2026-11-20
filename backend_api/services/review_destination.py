@@ -20,3 +20,8 @@ def review_destination_id(identity):
 def review_destination_ids(identity):
     canonical = review_destination_id(identity)
     return (canonical, *_ALIASES.get(canonical, ()))
+
+
+def review_candidate_id(item):
+    return review_destination_id(str(item.get('reviewDestinationId') or item.get('destinationId')
+        or item.get('place_id') or item.get('data_id') or item.get('id') or item.get('title') or ''))

@@ -286,7 +286,8 @@ def test_duplicate_ids_are_rejected_and_tie_breaking_is_deterministic():
 
 def test_original_scoring_generation_and_persistence_are_untouched():
     candidates, data = scenarios()['high_budget']
-    score_input = [{'contentScore': 80, 'collaborativeScore': 50, 'rating': 4, 'reviews': 500}]
+    score_input = [{'contentScore': 80, 'collaborativeScore': 50, 'rating': 4, 'reviews': 500,
+                    'ratingSource': 'provider'}]
     score_before = calculateRecommendationScore(score_input)
     baseline = generateItinerary([], {}, {**data, 'activities': candidates})
     with patch('sequence_contract.firebase_firestore.storeRecord') as store, \
@@ -301,6 +302,9 @@ def test_original_scoring_generation_and_persistence_are_untouched():
     assert calculateRecommendationScore(score_input) == score_before
     # 60%*80 + 30%*50 + 10%*(64+1), not a budget-adjusted personality score.
     assert score_before[0]['score'] == 69.5
+    assert score_before[0]['popularitySource'] == 'provider_rating_review_count'
+    # An unverified number must not masquerade as provider evidence.
+    assert calculateRecommendationScore([{**score_input[0], 'ratingSource': 'unknown'}])[0]['score'] == 68
     project = Path(__file__).resolve().parents[1]
     for module in ('modules/fr04_hybrid_recommendation/routes.py',):
         assert 'budget_aware_selection' not in (project / module).read_text(encoding='utf-8')

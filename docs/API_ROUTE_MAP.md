@@ -12,6 +12,8 @@ Source-backed reference, audited 20 November 2026. Exact paths below are derived
 - Car Rental UI is retired. Historical rental cost fields and legacy standalone compatibility code are not new live rental functionality. Smart Packing is the supported replacement.
 - Standalone local simulation is a separate capability subset: it does not provide all Backend features (including cloud packing/history/provider settlement). Do not infer live provider capabilities from simulated data.
 - Admin data-loading helpers currently cap lists at500 and expose a limited-data condition. Reported totals must respect that scope.
+- Genuine recommendation generations preserve the 60/30/10 weights and use verified provider popularity first, then approved genuine local review evidence from the existing bounded feedback query. Its limit of 500 is a retrieval cap, not a minimum number of reviews. New snapshots preserve the source, rating, loaded review count and neutral-fallback reason; older snapshots are not recalculated by GET.
+- `GET /api/fr4/recommendations/demonstration` is an authenticated, read-only simulation. It requires the existing `fyp-v1` review context and local-demo/viewer authorization, preserves current private-review moderation, and never generates genuine snapshots or changes preferences. Failure to load existing private data returns 503, without substituting initial definition files. Simulation results are explicitly synthetic and cannot be used as genuine saved generations.
 
 ## Backend methods and paths
 
@@ -58,6 +60,7 @@ Source-backed reference, audited 20 November 2026. Exact paths below are derived
 - `DELETE /api/fr4/preference-feedback` — `reset_preference_feedback`
 - `POST /api/fr4/recommendations/generate` — `generate`
 - `GET /api/fr4/recommendations` — `get_recommendations`
+- `GET /api/fr4/recommendations/demonstration` — `demonstration_recommendations_view`
 - `GET /api/fr4/locations` — `supported_locations`
 - `GET /api/fr4/locations/search` — `location_lookup`
 - `GET /api/fr4/settings` — `recommendation_settings`

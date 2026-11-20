@@ -12,6 +12,7 @@ import '../../widgets/local_place_rating.dart';
 import '../../widgets/travel_widgets.dart';
 import '../fr03_destination_search_information/destination_details_screen.dart';
 import '../fr02_travel_preference/preferences_screen.dart';
+import 'demonstration_recommendations_screen.dart';
 
 class RecommendationScreen extends StatefulWidget {
   final String initialDestination;
@@ -53,6 +54,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   Map<String, dynamic> generatedScope = {};
   String geographicMode = 'strict';
   bool nearbyAvailable = false;
+  bool demonstrationAvailable = false;
   List<Map<String, dynamic>> locations = [];
   Map<String, dynamic>? selectedLocation;
   String? searchMessage;
@@ -106,6 +108,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         stale = data['stale'] == true;
         setState(() {
           items = data['recommendations'] as List? ?? [];
+          demonstrationAvailable = data['demonstrationAvailable'] == true;
           source = (data['source'] ?? '').toString();
           pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
           discoveryNotice = data['snapshot']?['cacheFallbackNotice']?.toString();
@@ -487,7 +490,11 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   Widget build(BuildContext context) {
     final qualified = items.whereType<Map>().where((item) => item['discoveryEligible'] == true).toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('For you')),
+      appBar: AppBar(title: const Text('For you'), actions: [
+        if (demonstrationAvailable) IconButton(icon: const Icon(Icons.science_outlined),
+          tooltip: 'Demonstration review data', onPressed: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => DemonstrationRecommendationsScreen(api: api)))),
+      ]),
       body: RefreshIndicator(
         onRefresh: () async {
           LocalReviewRatings.invalidate();

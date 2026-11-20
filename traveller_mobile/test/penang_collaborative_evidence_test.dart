@@ -82,7 +82,7 @@ void main() {
     await explain(tester, {'collaborativeConfidence': .667, 'collaborativeRatingCount': 2,
       'rawCollaborativeScore': 50, 'collaborativeSource': 'neutral (legacy wording)'});
     expect(find.text('50/100 (Peer evidence)'), findsOneWidget);
-    expect(find.textContaining('2 qualifying peer rating(s)'), findsOneWidget);
+    expect(find.textContaining('Eligible reviewers: 2'), findsOneWidget);
     expect(find.textContaining('Raw peer score: 50.0/100'), findsOneWidget);
     expect(find.text('50/100 (Neutral baseline)'), findsNothing);
   });
