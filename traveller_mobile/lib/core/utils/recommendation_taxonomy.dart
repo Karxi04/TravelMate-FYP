@@ -1,4 +1,5 @@
 import 'dart:math';
+import '../../services/review_contract.dart';
 
 import 'preference_learning.dart';
 
@@ -486,7 +487,7 @@ class RecommendationScoring {
     Map<String, dynamic> currentPreference,
     String currentUserId,
   ) {
-    final destinationId = _destinationId(item);
+    final destinationId = ReviewContract.destinationId(_destinationId(item));
     final currentInterests =
         RecommendationTaxonomy.conceptsFor(currentPreference['interests']);
     final values = <({double rating, double similarity})>[];
@@ -496,11 +497,15 @@ class RecommendationScoring {
       return time != 0 ? time : '${b['id'] ?? ''}'.compareTo('${a['id'] ?? ''}');
     });
     for (final row in ordered) {
-      if ((row['destinationId'] ?? '').toString() != destinationId) continue;
+      if (!ReviewContract.isGenuine(row)) continue;
+      if (ReviewContract.destinationId((row['destinationId'] ?? '').toString()) != destinationId) continue;
       final uid = (row['travellerId'] ?? '').toString();
       if (uid.isEmpty || uid == currentUserId) continue;
       final rating = _number(row['rating']);
       if (rating < 1 || rating > 5 || !seenRatings.add(uid)) continue;
+      if ((row.containsKey('feedbackStatus') || row.containsKey('moderationStatus')) &&
+          !(row['feedbackStatus'] == 'visible' &&
+            const {'reviewed', 'approved'}.contains(row['moderationStatus']))) continue;
       final peer = peerPreferences[uid];
       if (peer == null) continue;
       final peerInterests =

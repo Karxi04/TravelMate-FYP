@@ -503,13 +503,11 @@ class RecommendationCard extends StatelessWidget {
                               ?.copyWith(color: AppColors.textSecondary),
                         ),
                       ),
-                    if ((recommendation['collaborativeConfidence'] as num? ??
-                            0) ==
-                        0)
+                    if (recommendation['collaborativeConfidence'] == 0)
                       Padding(
                         padding: const EdgeInsets.only(top: AppSpacing.xxs),
                         child: Text(
-                          'No similar-traveller ratings yet',
+                          'No qualifying similar-traveller ratings in this result',
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall
@@ -638,15 +636,26 @@ class RecommendationCard extends StatelessWidget {
     final collaborativeRatingCount = int.tryParse(
             (recommendation['collaborativeRatingCount'] ?? '').toString()) ??
         0;
-    final collaborativeSource =
-        (recommendation['collaborativeSource'] ?? '').toString().toLowerCase();
-    final isColdStart = collaborativeConfidence <= 0 ||
-        collaborativeRatingCount == 0 ||
-        collaborativeSource.contains('no similar traveller') ||
-        collaborativeSource.contains('neutral') ||
-        (breakdown != null &&
-            (breakdown['collaborative'] as num?)?.round() == 50 &&
-            collaborativeRatingCount == 0);
+    final hasPeerEvidence = collaborativeConfidence > 0 && collaborativeRatingCount > 0;
+    final hasEvidenceDetails = recommendation['collaborativeConfidence'] != null ||
+        recommendation['collaborativeRatingCount'] != null;
+    final isColdStart = !hasPeerEvidence && hasEvidenceDetails;
+    final rawPeerScore = num.tryParse('${recommendation['rawCollaborativeScore']}');
+    final fallbackDetail = const {
+      'missing_current_preferences': 'Your preference profile was unavailable for this generation.',
+      'missing_peer_preferences': 'Reviewers had no matching saved preference profiles.',
+      'no_similar_peers': 'Available reviewer profiles were below the similarity threshold.',
+      'missing_or_dissimilar_peer_profiles': 'Reviewer preferences were missing or below the similarity threshold.',
+    }[recommendation['collaborativeFallbackReason']];
+    final collaborativeDescription = !hasEvidenceDetails
+        ? 'This saved recommendation has no peer-evidence details. Refresh recommendations to evaluate current feedback; the saved score has not been recalculated.'
+        : isColdStart
+            ? 'No peer ratings from similar travellers qualified in this generation. A neutral 50/100 ranking prior is used, not an average review rating. Personal match is assessed separately.${fallbackDetail == null ? '' : ' $fallbackDetail'}'
+            : '$collaborativeRatingCount qualifying peer rating(s). '
+              '${rawPeerScore == null ? '' : 'Raw peer score: ${rawPeerScore.toStringAsFixed(1)}/100. '}'
+              'Evidence confidence: ${(collaborativeConfidence * 100).round()}%. '
+              'Sparse evidence is blended toward 50; confidence is not prediction accuracy. '
+              'A result of 50 can be evidence-backed and is not automatically a cold start.';
 
     showModalBottomSheet<void>(
       context: context,
@@ -710,10 +719,8 @@ class RecommendationCard extends StatelessWidget {
                   title: 'Similar traveller evidence (30% weight)',
                   scoreText: isColdStart
                       ? '50/100 (Neutral baseline)'
-                      : '${(breakdown['collaborative'] as num?)?.round() ?? '-'}/100',
-                  description: isColdStart
-                      ? 'No peer ratings from similar travellers are recorded yet. A neutral 50/100 ranking prior is used. Personal match is assessed separately.'
-                      : 'Based on feedback and ratings from travellers with similar travel styles.',
+                      : '${(breakdown['collaborative'] as num?)?.round() ?? '-'}/100 (${hasPeerEvidence ? 'Peer evidence' : 'Evidence unavailable'})',
+                  description: collaborativeDescription,
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 _breakdownCard(
@@ -782,13 +789,14 @@ class RecommendationCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xxs,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleSmall,
               ),
               StatusChip(
                 text: scoreText,

@@ -123,7 +123,7 @@ def current_screen(item):
 
 
 def genuine_review(item):
-    return item.get('synthetic') is not True and str(item.get('source') or '').strip().lower() not in {
+    return item.get('synthetic') is not True and item.get('fypPreview') is not True and str(item.get('source') or '').strip().lower() not in {
         'sample', 'synthetic', 'demo', 'fyp_private',
     }
 

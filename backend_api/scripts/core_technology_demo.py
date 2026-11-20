@@ -72,6 +72,8 @@ def run_demo():
     with ExitStack() as stack:
         stack.enter_context(patch.dict(os.environ,{'FALLBACK_MODE':'false','SERPAPI_KEY':'','TRAVELMATE_TESTING':'true'}))
         stack.enter_context(patch('requests.sessions.Session.request',side_effect=AssertionError('Network disabled in isolated demo')))
+        for module in ('firebase_service', 'sequence_contract.firebase_firestore'):
+            stack.enter_context(patch(module+'.get_db', side_effect=AssertionError('Firebase disabled in isolated demo')))
         stack.enter_context(patch('app.init_firebase'))
         from app import create_app
         app=create_app();app.config['TESTING']=True
@@ -85,6 +87,9 @@ def run_demo():
             for name,operation in [('retrieveRecord',repo.read),('storeRecord',repo.store),('updateRecord',repo.update),('claimRecord',repo.claim)]:
                 stack.enter_context(patch(module+'.'+name,side_effect=operation,create=True))
         stack.enter_context(patch('modules.fr04_hybrid_recommendation.routes.transactPreferenceLearning',side_effect=repo.learning))
+        stack.enter_context(patch('modules.fr04_hybrid_recommendation.routes.retrieveRecordsById',
+            side_effect=lambda collection, identities: [row for uid in sorted(identities)
+                if (row := repo.read(collection, uid))]))
         chat='modules.fr11_chatbot_travel_assistant.routes.'
         stack.enter_context(patch(chat+'DESTINATIONS',deepcopy(fixture['candidates'])))
         for name in ('generateChatbotResponse','generateFollowUpResponse'):

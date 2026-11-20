@@ -16,7 +16,8 @@ from services.serpapi_service import retrieveDestinationResults
 from services.destination_candidates import provider_page, cached_candidates, discovery_pool, merge_candidates, normalise, facts_signature
 from services.local_catalog import DESTINATIONS
 from services.pricing_registry import enrich_candidate_pricing
-from services.review_service import published_review
+from services.review_service import approved_reviews, genuine_review
+from services.review_destination import review_destination_id
 from services.recommendation_taxonomy import candidate_concepts, preference_concepts, display_concepts
 from services.recommendation_taxonomy import planning_preferences
 from services.recommendation_discovery import (
@@ -40,7 +41,7 @@ from services.malaysian_locality import (
     discovery_scope,
 )
 from sequence_contract.firebase_firestore import (
-    loadRecommendationSnapshot, retrieveRecord, storeRecord, transactPreferenceLearning,
+    loadRecommendationSnapshot, retrieveRecord, retrieveRecordsById, storeRecord, transactPreferenceLearning,
 )
 from sequence_contract.domain_functions import (
     prepareRecommendationInput,
@@ -452,13 +453,22 @@ def generate():
                   _destination_id(item) in local_ids and item.get('ratingSource') != 'provider' else item for item in candidates]
     candidates = [enrich_discovery_candidate(item) for item in candidates]
 
-    collaborative = [x for x in retrieveRecord('feedback', limit=500) if published_review(x)]
-    peer_profiles_raw = retrieveRecord('travel_preferences', limit=500)
-    peer_profiles = {
-        str(row.get('travellerId') or row.get('id') or ''): row
-        for row in (peer_profiles_raw or [])
-        if str(row.get('travellerId') or row.get('id') or '')
-    }
+    # This is a retrieval cap, not a minimum evidence requirement.
+    reviews_by_destination = {}
+    for row in retrieveRecord('feedback', limit=500) or []:
+        if genuine_review(row):
+            identity = review_destination_id(str(row.get('destinationId') or ''))
+            reviews_by_destination.setdefault(identity, []).append(row)
+    # Select latest owner contributions before moderation filtering, as in Local Reviews.
+    collaborative = [row for group in reviews_by_destination.values() for row in approved_reviews(group)]
+    candidate_ids = {review_destination_id(_destination_id(row)) for row in candidates}
+    reviewer_ids = {str(row.get('travellerId') or '') for row in collaborative
+                    if review_destination_id(str(row.get('destinationId') or '')) in candidate_ids} - {'', str(g.uid)}
+    peer_profiles = {}
+    for profile in retrieveRecordsById('travel_preferences', reviewer_ids):
+        uid = str(profile.get('id') or '')
+        if uid in reviewer_ids and str(profile.get('travellerId') or uid) == uid:
+            peer_profiles[uid] = profile
 
     prepared = prepareRecommendationInput(
         effective_pref, candidates, collaborative)

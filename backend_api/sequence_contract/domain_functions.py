@@ -19,7 +19,8 @@ from services.recommendation_taxonomy import (
     experience_types,
 )
 from services.preference_learning import LEARNED_INTEREST_STRENGTH
-from services.review_service import genuine_review
+from services.review_service import genuine_review, published_review
+from services.review_destination import review_destination_id
 from services.activity_pricing import activity_pricing, traveller_count
 from sequence_contract.validators import (
     ACCOMMODATION_CHOICES,
@@ -337,11 +338,13 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
     current_interests = concepts_for(current.get('interests', []))
 
     ratings = {}
+    missing_profiles = {}
+    dissimilar_peers = {}
     seen_ratings = set()
-    for row in sorted(collaborativeData or [],key=lambda row:(str(row.get('updatedAt') or row.get('createdAt') or ''),str(row.get('id') or '')),reverse=True):
+    for row in sorted(collaborativeData or [],key=lambda row:(str(row.get('updatedAt') or row.get('submittedAt') or row.get('createdAt') or ''),str(row.get('id') or '')),reverse=True):
         if not genuine_review(row):
             continue
-        did = str(row.get('destinationId') or '')
+        did = review_destination_id(str(row.get('destinationId') or ''))
         if not did:
             continue
         uid = str(row.get('travellerId') or '')
@@ -351,8 +354,11 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
         if not uid or not 1 <= rating <= 5 or (uid,did) in seen_ratings:
             continue
         seen_ratings.add((uid,did))
+        if any(key in row for key in ('feedbackStatus', 'moderationStatus')) and not published_review(row):
+            continue
         peer = peer_preferences.get(uid) if isinstance(peer_preferences, dict) else None
         if not peer or not current:
+            missing_profiles[did] = missing_profiles.get(did, 0) + 1
             continue
         peer_interests = concepts_for(peer.get('interests', []))
         union = current_interests.union(peer_interests)
@@ -377,13 +383,20 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
             + 0.05 * personality_match
         )
         if similarity < 0.25:
+            dissimilar_peers[did] = dissimilar_peers.get(did, 0) + 1
             continue
         ratings.setdefault(did, []).append((rating, similarity))
 
     output = []
     for item in items or []:
-        did = _destination_id(item)
+        did = review_destination_id(_destination_id(item))
         values = ratings.get(did, [])
+        missing_count = missing_profiles.get(did, 0)
+        dissimilar_count = dissimilar_peers.get(did, 0)
+        fallback_reason = (None if values else 'missing_current_preferences' if not current
+            else 'missing_or_dissimilar_peer_profiles' if missing_count and dissimilar_count
+            else 'missing_peer_preferences' if missing_count
+            else 'no_similar_peers' if dissimilar_count else 'no_eligible_peer_ratings')
         if values:
             weighted_sum = sum(r * w for r, w in values)
             total_weight = sum(w for _, w in values) or 1.0
@@ -406,6 +419,10 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
             'collaborativeConfidence': round(collaborative_confidence, 3),
             'collaborativeRatingCount': len(values),
             'collaborativeSource': collaborative_source,
+            'collaborativeEvidenceStatus': 'peer_ratings' if values else 'cold_start',
+            'collaborativeFallbackReason': fallback_reason,
+            'collaborativeMissingProfileCount': missing_count,
+            'collaborativeDissimilarPeerCount': dissimilar_count,
         })
     return output
 
