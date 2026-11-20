@@ -10,7 +10,8 @@ from .routes import bp
 
 
 @bp.route('/itineraries/<iid>/packing-checklist', methods=['GET', 'POST', 'PATCH'])
-@auth_required(['traveller'])
+# Keep the bounded stream parser below responsible for JSON shape and size.
+@auth_required(['traveller'], validate_json=False)
 def packing_checklist(iid):
     try:
         if not valid_trip_id(iid):

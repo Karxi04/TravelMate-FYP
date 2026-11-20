@@ -92,7 +92,7 @@ def validate_trip_write(payload, *, update=False, generation=False):
     A hotel booking ID is only a lookup command; the existing owned-booking resolver
     supplies its snapshot and amount. Other selections use their dedicated routes.
     """
-    allowed = EDITABLE_FIELDS | ({'hotelBookingId'} if update else {'activities'})
+    allowed = EDITABLE_FIELDS | ({'hotelBookingId', 'expectedItineraryRevision'} if update else {'activities'})
     if generation:
         allowed |= GENERATION_FIELDS
     if not isinstance(payload, dict) or not payload or not set(payload) <= allowed:
@@ -100,6 +100,9 @@ def validate_trip_write(payload, *, update=False, generation=False):
     for key, value in payload.items():
         if key == 'activities':
             if not isinstance(value, list) or not all(_activity(item) for item in value):
+                raise ValueError(ERROR)
+        elif key == 'expectedItineraryRevision':
+            if type(value) is not int or value < 1:
                 raise ValueError(ERROR)
         elif key == 'travellerCount':
             if not _number(value, positive=True, integer=True):

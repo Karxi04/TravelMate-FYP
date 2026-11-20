@@ -12,7 +12,11 @@ bp=Blueprint('fr01_users',__name__,url_prefix='/api/fr1')
 @bp.post('/profile')
 @auth_required()
 def create_or_update_profile():
-    payload=request.get_json(silent=True) or {}; requested_role=payload.get('role','traveller')
+    payload=request.get_json(silent=True)
+    validation_error = getUpdatedProfileValidationError(payload)
+    if validation_error:
+        return jsonify(ok=False, error=validation_error), 400
+    requested_role=payload.get('role','traveller')
     if requested_role not in {'traveller','operator'}: return jsonify({'ok':False,'error':'Only traveller or operator self-registration is allowed'}),400
     email=g.firebase_user.get('email','')
     required=['name'] + (['companyName','registrationNo'] if requested_role=='operator' else [])

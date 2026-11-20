@@ -1354,7 +1354,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     );
     if (payload == null) return;
     try {
-      await api.put('/api/fr5/itineraries/${widget.tripId}', payload);
+      await api.put('/api/fr5/itineraries/${widget.tripId}', {
+        ...payload,
+        if (!api.isStandalone)
+          'expectedItineraryRevision': t['itineraryRevision'] ?? 1,
+      });
       await load();
     } catch (e) {
       if (mounted) showError(context, e);

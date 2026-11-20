@@ -166,7 +166,8 @@ def test_package_trip_budget_preserves_immutable_costs(client, mock_traveller_au
 def test_personalized_trip_remains_modifiable(client, mock_traveller_auth):
     headers = {'Authorization': 'Bearer valid_test_token'}
     with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord', return_value=PERSONALIZED_TRIP), \
-         patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord', side_effect=lambda _c, _i, d: {**PERSONALIZED_TRIP, **d}):
+         patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord', side_effect=lambda _c, _i, d, expected: {**PERSONALIZED_TRIP, **d}) as update:
         res = client.put('/api/fr5/itineraries/personalized_trip_123', headers=headers, json={'title': 'Updated Title'})
         assert res.status_code == 200
         assert res.get_json()['ok'] is True
+        assert update.call_args.kwargs['expected'] == PERSONALIZED_TRIP

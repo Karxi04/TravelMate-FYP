@@ -72,12 +72,13 @@ def test_trip_date_update_persists_when_no_attached_travel_conflicts(client, moc
         'travellerCount': 1, 'budgetLimit': 500, 'activities': [],
     }
     with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord', return_value=itinerary), \
-         patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord', side_effect=lambda _c, _i, data: {**itinerary, **data}):
+         patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord', side_effect=lambda _c, _i, data, expected: {**itinerary, **data}) as update:
         response = client.put('/api/fr5/itineraries/editable-trip', headers={'Authorization': 'Bearer valid_test_token'}, json={
             'startDate': '2026-11-02', 'endDate': '2026-11-04',
         })
     assert response.status_code == 200
     assert response.get_json()['itinerary']['startDate'] == '2026-11-02'
+    assert update.call_args.kwargs['expected'] == itinerary
 
 
 def test_trip_date_update_redates_existing_schedule_and_adds_new_days(client, mock_traveller_auth):
@@ -93,7 +94,7 @@ def test_trip_date_update_redates_existing_schedule_and_adds_new_days(client, mo
         ],
     }
     with patch('modules.fr05_smart_itinerary_budget_planner.routes.retrieveRecord', return_value=itinerary), \
-         patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord', side_effect=lambda _c, _i, data: {**itinerary, **data}):
+         patch('modules.fr05_smart_itinerary_budget_planner.routes.updateRecord', side_effect=lambda _c, _i, data, expected: {**itinerary, **data}) as update:
         response = client.put('/api/fr5/itineraries/schedule-trip', headers={'Authorization': 'Bearer valid_test_token'}, json={
             'startDate': '2026-11-05', 'endDate': '2026-11-09',
         })
@@ -104,6 +105,7 @@ def test_trip_date_update_redates_existing_schedule_and_adds_new_days(client, mo
         '2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08', '2026-11-09',
     ]
     assert updated['dailySchedule'][1]['activities'] == [{'title': 'Keep this activity'}]
+    assert update.call_args.kwargs['expected'] == itinerary
 
 
 def test_trip_date_update_does_not_remove_scheduled_activity(client, mock_traveller_auth):

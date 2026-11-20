@@ -171,6 +171,7 @@ class _TripApi extends ApiService {
   List<Map<String, dynamic>> searchResults = [];
   Map<String, dynamic>? lastGenerationBody;
   Map<String, dynamic>? lastMoveBody;
+  Map<String, dynamic>? lastTripBody;
   List<String> lastOrder = [];
 
   _TripApi({String status = 'planned'}) : trip = _richTrip(status: status) {
@@ -277,6 +278,11 @@ class _TripApi extends ApiService {
       _syncDays();
       return {'ok': true, 'itinerary': trip};
     }
+    if (path.endsWith('/trip_target')) {
+      lastTripBody = Map<String,dynamic>.from(body ?? {});
+      trip.addAll({...?body}..remove('expectedItineraryRevision'));
+      return {'ok':true,'itinerary':trip};
+    }
     throw StateError('Unexpected PUT $path');
   }
 
@@ -343,6 +349,18 @@ Future<void> _scrollTripToTop(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('trip detail edit carries the revision seen by its editor', (tester) async {
+    final api = _TripApi()..trip['itineraryRevision']=7;
+    await _pumpTrip(tester,api);
+    await tester.tap(find.byTooltip('Edit trip details'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Save trip details'));
+    await tester.tap(find.text('Save trip details'));
+    await tester.pumpAndSettle();
+    expect(api.lastTripBody?['expectedItineraryRevision'],7);
+    expect(api.trip.containsKey('expectedItineraryRevision'),false);
+  });
+
   testWidgets('Flights from Trip essentials retains the exact Trip context', (tester) async {
     final api = _TripApi();
     await _pumpTrip(tester, api);

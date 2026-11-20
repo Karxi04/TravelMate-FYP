@@ -17,7 +17,7 @@ def _error(message, status=401):
     return jsonify({"ok": False, "error": message}), status
 
 
-def auth_required(roles=None):
+def auth_required(roles=None, *, validate_json=True):
     allowed_roles = set(roles or [])
 
     def decorator(fn):
@@ -83,6 +83,10 @@ def auth_required(roles=None):
             limited = rate_limit_response(API_LIMITS.get(request.endpoint), uid)
             if limited is not None:
                 return limited
+            if (validate_json and request.method in {"POST", "PUT", "PATCH"} and request.is_json
+                    and not isinstance(request.get_json(silent=True), dict)):
+                return jsonify(ok=False, error="Use a JSON object for this request.",
+                               code="invalid_json_object"), 400
             return fn(*args, **kwargs)
 
         return wrapper

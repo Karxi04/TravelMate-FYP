@@ -644,6 +644,10 @@ def update_itinerary_route(iid):
         payload = validate_trip_write(request.get_json(silent=True), update=True)
     except ValueError as error:
         return jsonify({'ok': False, 'error': str(error)}), 400
+    expected_revision = payload.pop('expectedItineraryRevision', None)
+    if expected_revision is not None and expected_revision != int(current.get('itineraryRevision') or 1):
+        return jsonify(ok=False, error='This trip changed. Reopen it before saving your edits.',
+                       code='STALE_ITINERARY'), 409
     payload, hotel_error = _trusted_hotel_update(current, payload)
     if hotel_error:
         return jsonify({'ok': False, 'error': hotel_error}), 409
@@ -669,7 +673,7 @@ def update_itinerary_route(iid):
         payload.update(refresh_activity_costs(merged))
         merged = {**current, **payload}
     payload['budgetEstimate'] = calculateBudget(merged)
-    return jsonify({'ok': True, 'itinerary': updateRecord('itineraries', iid, payload)})
+    return jsonify({'ok': True, 'itinerary': updateRecord('itineraries', iid, payload, expected=current)})
 
 
 def _public_flight_preview(preview):
