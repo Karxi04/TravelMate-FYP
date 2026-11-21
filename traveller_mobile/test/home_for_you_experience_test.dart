@@ -2,6 +2,7 @@ import 'package:travelmate_traveller/widgets/travel_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travelmate_traveller/core/home/home_tab.dart';
+import 'package:travelmate_traveller/core/utils/recommendation_page.dart';
 import 'package:travelmate_traveller/core/navigation/app_shell_navigation.dart';
 import 'package:travelmate_traveller/modules/fr03_destination_search_information/destination_details_screen.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/personalized_planning_screen.dart';
@@ -9,6 +10,7 @@ import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner
 import 'package:travelmate_traveller/services/api_service.dart';
 import 'package:travelmate_traveller/theme/app_theme.dart';
 import 'package:travelmate_traveller/widgets/recommendation_card.dart';
+import 'fyp_evaluation_journey_test.dart' show evaluationEnvelope;
 
 Map<String, dynamic> _recommendation() => {
       'destinationId': 'kek_lok_si',
@@ -132,6 +134,44 @@ class _HomeApi extends ApiService {
   }
 }
 
+class _EvidenceHomeApi extends _HomeApi {
+  Map updated(Map data) => {...data, 'recommendationGenerationId':'new-evidence-generation',
+    'recommendations':[{..._recommendation(),
+      'collaborativeRatingCount':0,'collaborativeConfidence':0.0,'rawCollaborativeScore':50.0,
+      'popularitySource':'provider_rating_review_count',
+      'popularityEvidence':{'source':'provider_rating_review_count','rating':4.5,'reviewCount':9000}}]};
+  @override
+  Future<dynamic> get(String path,[Map<String,String>? query]) async {
+    final data=await super.get(path,query);
+    return path=='/api/fr4/recommendations' && generationCalls>0 ? updated(data as Map):data;
+  }
+  @override
+  Future<dynamic> post(String path,[Map<String,dynamic>? body]) async {
+    final data=await super.post(path,body);
+    return path=='/api/fr4/recommendations/generate' ? updated(data as Map):data;
+  }
+}
+
+class _EvaluationHomeApi extends _HomeApi {
+  final attached=<Map>[];
+  bool initialEmpty=false;
+  @override
+  Future<dynamic> get(String path,[Map<String,String>? query]) async {
+    final data=await super.get(path,query);
+    if(path=='/api/fr4/recommendations' && initialEmpty) return {
+      ...evaluationEnvelope(data as Map),'recommendationGenerationId':'',
+      'recommendations':[],'requiresExplicitRegeneration':true};
+    return path=='/api/fr4/recommendations' ? evaluationEnvelope(data as Map):data;
+  }
+  @override
+  Future<dynamic> post(String path,[Map<String,dynamic>? body]) async {
+    final data=await super.post(path,body);
+    if(path.endsWith('/activities')) attached.add({...?body});
+    if(path=='/api/fr4/recommendations/generate') staleRecommendations=false;
+    return path=='/api/fr4/recommendations/generate' ? evaluationEnvelope(data as Map):data;
+  }
+}
+
 Widget _home(_HomeApi api,
     {ValueChanged<AppShellTab>? onSelect, double textScale = 1}) {
   final home = HomeTab(api: api);
@@ -173,6 +213,42 @@ Future<void> _showOnHome(WidgetTester tester, Finder target) async {
 }
 
 void main() {
+  testWidgets('first Home evaluation visit waits for the user',(tester) async {
+    final api=_EvaluationHomeApi()..initialEmpty=true;
+    await _settleHome(tester,api);await tester.pumpAndSettle();
+    expect(api.generationCalls,0);
+    await _showOnHome(tester,find.text(recommendationStartMessage));
+    await tester.tap(find.byKey(const ValueKey('update-recommendation-evidence')));await tester.pumpAndSettle();
+    expect(api.generationCalls,1);expect(tester.takeException(),isNull);
+  });
+  testWidgets('Home evaluation preference change waits for explicit regeneration',(tester) async {
+    final api=_EvaluationHomeApi()..staleRecommendations=true;
+    await _settleHome(tester,api);await tester.pumpAndSettle();
+    expect(api.generationCalls,0);
+    await _showOnHome(tester,find.text(recommendationPreferenceUpdateMessage));
+    await tester.tap(find.byKey(const ValueKey('update-recommendation-evidence')));await tester.pumpAndSettle();
+    expect(api.generationCalls,1);expect(find.text(recommendationPreferenceUpdateMessage),findsNothing);
+    expect(tester.takeException(),isNull);
+  });
+  testWidgets('integrated Home evaluation retains View and confirmed real destination attachment',(tester) async {
+    final api=_EvaluationHomeApi();
+    await _settleHome(tester,api);await tester.pumpAndSettle();
+    await _showOnHome(tester,find.text('Recommendation data sources'));
+    await tester.tap(find.text('Recommendation data sources'));await tester.pumpAndSettle();
+    expect(find.text('FYP evaluation configuration'),findsOneWidget);
+    await tester.tapAt(const Offset(10,10));await tester.pumpAndSettle();
+    await _showOnHome(tester,find.text('View').first);await tester.tap(find.text('View').first);await tester.pumpAndSettle();
+    expect(find.byType(DestinationDetailsScreen),findsOneWidget);
+    await tester.tap(find.byTooltip('Back'));await tester.pumpAndSettle();
+    await _showOnHome(tester,find.text('Add to trip').first);await tester.tap(find.text('Add to trip').first);await tester.pumpAndSettle();
+    expect(api.attached,isEmpty); // Destination selection alone does not save anything.
+    await tester.tap(find.text('Penang Getaway').last);await tester.pumpAndSettle();
+    expect(api.attached.single['destinationId'],'kek_lok_si');
+    expect(api.attached.single.keys, isNot(contains('synthetic')));
+    expect(api.attached.single.keys, isNot(contains('recommendationEvidenceMode')));
+    expect(api.attached.single.keys, isNot(contains('collaborativeScore')));
+    expect(api.generationCalls,0);expect(tester.takeException(),isNull);
+  });
   testWidgets(
       'carousel lower menu explanation View and Add callbacks remain usable',
       (tester) async {
@@ -217,7 +293,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  for (final width in [320.0, 390.0]) {
+  for (final width in [320.0, 360.0, 390.0]) {
     for (final scale in [1.0, 1.8]) {
       testWidgets(
           'Home carousel cards and actions align at width $width scale $scale',
@@ -244,7 +320,8 @@ void main() {
             'address':
                 'A very long address in George Town, Penang, Malaysia, with street and locality details',
             'category': 'A long category with detailed cultural information',
-            'matchedInterests': ['Photography', 'Food', 'Culture'],
+            'matchedInterests': ['Photography', 'Food', 'Culture', 'Nature', 'Family',
+              'Relaxation', 'History', 'Architecture', 'Outdoor scenery'],
             'matchReasons': [
               'A longer factual reason based on the selected interests and the verified available destination evidence.',
               'Another longer explanation about visiting conditions and travel preferences.'
@@ -301,12 +378,12 @@ void main() {
             tester
                 .widget<Text>(find.text(places[1]['title'] as String))
                 .maxLines,
-            2);
+            isNull);
         expect(
             tester
                 .widget<Text>(find.text(places[1]['address'] as String))
                 .maxLines,
-            2);
+            isNull);
         for (final id in ['one', 'two', 'three']) {
           final card = find.byKey(ValueKey('recommendation-carousel-$id'));
           final labels =
@@ -345,6 +422,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.generationCalls, 1);
     expect(api.generatedArea, 'Penang');
+  });
+
+  testWidgets('Home explains old evidence without generating until the explicit action', (tester) async {
+    final api=_EvidenceHomeApi();
+    await _settleHome(tester,api);await tester.pumpAndSettle();
+    expect(api.generationCalls,0);
+    expect(find.text(recommendationEvidenceUpdateMessage),findsOneWidget);
+    final action=find.byKey(const ValueKey('update-recommendation-evidence'));
+    await _showOnHome(tester,action);await tester.tap(action);await tester.pumpAndSettle();
+    expect(api.generationCalls,1);expect(api.generatedArea,'Penang');
+    expect(find.text(recommendationEvidenceUpdateMessage),findsNothing);
+    expect(tester.takeException(),isNull);
   });
 
   testWidgets('recommendation card shows match and factual reasons only',

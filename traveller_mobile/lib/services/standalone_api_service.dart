@@ -332,6 +332,9 @@ class StandaloneApiService {
     if (path == '/api/fr1/profile') return _saveProfile(payload);
     if (path == '/api/fr3/favourites') return _saveFavourite(payload);
     if (path == '/api/fr4/recommendations/generate') {
+      if ((payload['evidenceMode'] ?? 'genuine') != 'genuine') {
+        throw StateError('Use the authorized Backend demonstration review view.');
+      }
       return _learningAction(() => _generateRecommendations(payload));
     }
     if (path == '/api/fr4/preference-feedback') {
@@ -3138,6 +3141,7 @@ class StandaloneApiService {
       feedback: feedback,
       currentUserId: _uid,
       limit: 150,
+      reviewSummaries: RecommendationScoring.reviewSummaries(feedback),
     );
     final top = scored
         .map((item) => {...item, ...discoveryAnnotations(item,effectivePreferences), 'recommendationSource': item['source']=='openstreetmap' ? 'cache' : 'fallback'})

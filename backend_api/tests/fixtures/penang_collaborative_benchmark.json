@@ -1,0 +1,749 @@
+{
+  "synthetic": true,
+  "usage": "ISOLATED CF EVALUATION ONLY. Never import as real reviews, seed Firebase, or use in public recommendation snapshots. Stored rows must fail genuine_review. The test-only qualifying projection simulates approved genuine-shaped observations to exercise the existing formula; it does not turn these into genuine customers.",
+  "frozenBeforeComparison": "2026-11-20",
+  "currentProfiles": {
+    "culture_photography": {
+      "interests": [
+        "Culture",
+        "Photography"
+      ],
+      "travelType": "Culture",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Planner"
+    },
+    "nature_adventure": {
+      "interests": [
+        "Nature",
+        "Adventure"
+      ],
+      "travelType": "Nature",
+      "travelPace": "Active",
+      "travelPurpose": "Adventure",
+      "travelPersonality": "Explorer"
+    },
+    "family_relaxation": {
+      "interests": [
+        "Family",
+        "Relaxation"
+      ],
+      "travelType": "Family",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Relaxed"
+    }
+  },
+  "peerPreferences": {
+    "cf_benchmark_peer_01": {
+      "interests": [
+        "Culture",
+        "Photography"
+      ],
+      "travelType": "Culture",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Planner",
+      "synthetic": true,
+      "benchmarkGroup": "high_culture"
+    },
+    "cf_benchmark_peer_02": {
+      "interests": [
+        "Culture",
+        "Photography"
+      ],
+      "travelType": "Culture",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Planner",
+      "synthetic": true,
+      "benchmarkGroup": "high_culture"
+    },
+    "cf_benchmark_peer_03": {
+      "interests": [
+        "Culture",
+        "Photography"
+      ],
+      "travelType": "Culture",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Planner",
+      "synthetic": true,
+      "benchmarkGroup": "high_culture"
+    },
+    "cf_benchmark_peer_04": {
+      "interests": [
+        "Nature",
+        "Adventure"
+      ],
+      "travelType": "Nature",
+      "travelPace": "Active",
+      "travelPurpose": "Adventure",
+      "travelPersonality": "Explorer",
+      "synthetic": true,
+      "benchmarkGroup": "high_nature"
+    },
+    "cf_benchmark_peer_05": {
+      "interests": [
+        "Nature",
+        "Adventure"
+      ],
+      "travelType": "Nature",
+      "travelPace": "Active",
+      "travelPurpose": "Adventure",
+      "travelPersonality": "Explorer",
+      "synthetic": true,
+      "benchmarkGroup": "high_nature"
+    },
+    "cf_benchmark_peer_06": {
+      "interests": [
+        "Family",
+        "Relaxation"
+      ],
+      "travelType": "Family",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Relaxed",
+      "synthetic": true,
+      "benchmarkGroup": "high_family"
+    },
+    "cf_benchmark_peer_07": {
+      "interests": [
+        "Family",
+        "Relaxation"
+      ],
+      "travelType": "Family",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Relaxed",
+      "synthetic": true,
+      "benchmarkGroup": "high_family"
+    },
+    "cf_benchmark_peer_08": {
+      "interests": [
+        "Culture",
+        "Food"
+      ],
+      "travelType": "Culture",
+      "travelPace": "Moderate",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Planner",
+      "synthetic": true,
+      "benchmarkGroup": "medium_culture"
+    },
+    "cf_benchmark_peer_09": {
+      "interests": [
+        "Culture",
+        "Food"
+      ],
+      "travelType": "Culture",
+      "travelPace": "Moderate",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Planner",
+      "synthetic": true,
+      "benchmarkGroup": "medium_culture"
+    },
+    "cf_benchmark_peer_10": {
+      "interests": [
+        "Shopping",
+        "Nightlife"
+      ],
+      "travelType": "Shopping",
+      "travelPace": "Packed",
+      "travelPurpose": "Business",
+      "travelPersonality": "Social",
+      "synthetic": true,
+      "benchmarkGroup": "dissimilar_culture"
+    }
+  },
+  "candidates": [
+    {
+      "destinationId": "local_kek_lok_si",
+      "title": "Kek Lok Si Temple",
+      "category": "Culture Heritage Photography",
+      "address": "Penang, Malaysia"
+    },
+    {
+      "destinationId": "local_penang_hill",
+      "title": "Penang Hill",
+      "category": "Nature Adventure Photography",
+      "address": "Penang, Malaysia"
+    },
+    {
+      "destinationId": "demo_penang_street_art",
+      "title": "George Town Street Art",
+      "category": "Culture Photography",
+      "address": "Penang, Malaysia"
+    },
+    {
+      "destinationId": "local_peranakan_mansion",
+      "title": "Pinang Peranakan Mansion",
+      "category": "Culture Heritage Museum",
+      "address": "Penang, Malaysia"
+    },
+    {
+      "destinationId": "local_chew_jetty",
+      "title": "Chew Jetty",
+      "category": "Heritage Culture Food Photography",
+      "address": "Penang, Malaysia"
+    },
+    {
+      "destinationId": "local_botanical_gardens",
+      "title": "Penang Botanic Gardens",
+      "category": "Nature Relaxed Photography",
+      "address": "Penang, Malaysia"
+    }
+  ],
+  "ratingContributions": [
+    {
+      "id": "cf_benchmark_rating_01",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_01",
+      "destinationId": "penang_hill",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-01T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_02",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_01",
+      "destinationId": "demo_penang_street_art",
+      "rating": 5,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-01T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_03",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_01",
+      "destinationId": "ChIJCWvz3I_DSjAR5hveCXjdfIs",
+      "rating": 5,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-01T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_04",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_01",
+      "destinationId": "local_chew_jetty",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-01T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_05",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_01",
+      "destinationId": "ChIJWeDiIPHCSjAROzyNNz_QUx8",
+      "rating": 2,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-01T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_06",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_02",
+      "destinationId": "ChIJZYb8XRjCSjARxD5Df-qEkCw",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-02T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_07",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_02",
+      "destinationId": "demo_penang_street_art",
+      "rating": 5,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-02T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_08",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_02",
+      "destinationId": "local_peranakan_mansion",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-02T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_09",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_02",
+      "destinationId": "ChIJ50W1D43DSjARlPqYV1MqscE",
+      "rating": 5,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-02T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_10",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_02",
+      "destinationId": "local_botanical_gardens",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-02T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_11",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_03",
+      "destinationId": "local_kek_lok_si",
+      "rating": 5,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-03T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_12",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_03",
+      "destinationId": "penang_hill",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-03T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_13",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_03",
+      "destinationId": "ChIJCWvz3I_DSjAR5hveCXjdfIs",
+      "rating": 5,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-03T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_14",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_03",
+      "destinationId": "local_chew_jetty",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-03T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_15",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_03",
+      "destinationId": "ChIJWeDiIPHCSjAROzyNNz_QUx8",
+      "rating": 2,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-03T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_16",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_04",
+      "destinationId": "ChIJZYb8XRjCSjARxD5Df-qEkCw",
+      "rating": 2,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-04T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_17",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_04",
+      "destinationId": "local_penang_hill",
+      "rating": 5,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-04T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_18",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_04",
+      "destinationId": "demo_penang_street_art",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-04T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_19",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_04",
+      "destinationId": "ChIJ50W1D43DSjARlPqYV1MqscE",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-04T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_20",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_04",
+      "destinationId": "local_botanical_gardens",
+      "rating": 5,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-04T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_21",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_05",
+      "destinationId": "local_kek_lok_si",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-05T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_22",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_05",
+      "destinationId": "penang_hill",
+      "rating": 5,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-05T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_23",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_05",
+      "destinationId": "demo_penang_street_art",
+      "rating": 2,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-05T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_24",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_05",
+      "destinationId": "ChIJCWvz3I_DSjAR5hveCXjdfIs",
+      "rating": 1,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-05T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_25",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_05",
+      "destinationId": "ChIJWeDiIPHCSjAROzyNNz_QUx8",
+      "rating": 5,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-05T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_26",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_06",
+      "destinationId": "ChIJZYb8XRjCSjARxD5Df-qEkCw",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-06T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_27",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_06",
+      "destinationId": "local_penang_hill",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-06T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_28",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_06",
+      "destinationId": "demo_penang_street_art",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-06T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_29",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_06",
+      "destinationId": "local_peranakan_mansion",
+      "rating": 2,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-06T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_30",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_06",
+      "destinationId": "ChIJ50W1D43DSjARlPqYV1MqscE",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-06T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_31",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_07",
+      "destinationId": "penang_hill",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-07T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_32",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_07",
+      "destinationId": "demo_penang_street_art",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-07T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_33",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_07",
+      "destinationId": "ChIJCWvz3I_DSjAR5hveCXjdfIs",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-07T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_34",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_07",
+      "destinationId": "local_chew_jetty",
+      "rating": 2,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-07T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_35",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_07",
+      "destinationId": "ChIJWeDiIPHCSjAROzyNNz_QUx8",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-07T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_36",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_08",
+      "destinationId": "ChIJZYb8XRjCSjARxD5Df-qEkCw",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-08T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_37",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_08",
+      "destinationId": "demo_penang_street_art",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-08T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_38",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_08",
+      "destinationId": "local_peranakan_mansion",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-08T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_39",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_08",
+      "destinationId": "ChIJ50W1D43DSjARlPqYV1MqscE",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-08T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_40",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_08",
+      "destinationId": "local_botanical_gardens",
+      "rating": 2,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-08T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_41",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_09",
+      "destinationId": "local_kek_lok_si",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-09T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_42",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_09",
+      "destinationId": "penang_hill",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-09T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_43",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_09",
+      "destinationId": "ChIJCWvz3I_DSjAR5hveCXjdfIs",
+      "rating": 4,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-09T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_44",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_09",
+      "destinationId": "local_chew_jetty",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-09T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_45",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_09",
+      "destinationId": "ChIJWeDiIPHCSjAROzyNNz_QUx8",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-09T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_46",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_10",
+      "destinationId": "ChIJZYb8XRjCSjARxD5Df-qEkCw",
+      "rating": 2,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-10T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_47",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_10",
+      "destinationId": "local_penang_hill",
+      "rating": 1,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-10T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_48",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_10",
+      "destinationId": "demo_penang_street_art",
+      "rating": 3,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-10T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_49",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_10",
+      "destinationId": "ChIJ50W1D43DSjARlPqYV1MqscE",
+      "rating": 2,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-10T09:00:00+08:00"
+    },
+    {
+      "id": "cf_benchmark_rating_50",
+      "synthetic": true,
+      "source": "synthetic",
+      "travellerId": "cf_benchmark_peer_10",
+      "destinationId": "local_botanical_gardens",
+      "rating": 1,
+      "feedbackStatus": "visible",
+      "moderationStatus": "approved",
+      "updatedAt": "2026-11-10T09:00:00+08:00"
+    }
+  ]
+}

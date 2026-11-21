@@ -39,6 +39,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   Map<String, String> feedbackByDestination = {};
   final Set<String> feedbackInFlight = {};
   String recommendationGenerationId = '';
+  bool requiresExplicitRegeneration = false;
   String? errorMessage;
   Map<String, dynamic> pagination = {};
   int requestVersion = 0;
@@ -63,6 +64,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     super.initState();
     api = widget.api ?? ApiService();
     destination = TextEditingController(text: widget.initialDestination);
+    recommendationGenerationId = widget.initialGenerationId;
     Future.microtask(loadExisting);
     Future.microtask(() async {
       try {
@@ -99,13 +101,14 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     bool stale = false;
     try {
       final data = await api.get('/api/fr4/recommendations', {'discoveryMode':recommendationDiscoveryMode,
-        if (widget.initialGenerationId.isNotEmpty || widget.initialDestination != 'Malaysia') 'destinationArea':widget.initialDestination,
-        if (widget.initialGenerationId.isNotEmpty) 'generationId':widget.initialGenerationId});
+        if (recommendationGenerationId.isNotEmpty || destination.text != 'Malaysia') 'destinationArea':destination.text,
+        if (recommendationGenerationId.isNotEmpty) 'generationId':recommendationGenerationId});
       if (mounted && version == requestVersion && data is Map) {
         validateDiscoveryResponse(data);
         stale = data['stale'] == true;
         setState(() {
           items = data['recommendations'] as List? ?? [];
+          requiresExplicitRegeneration = data['requiresExplicitRegeneration'] == true;
           source = (data['source'] ?? '').toString();
           pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
           discoveryNotice = data['snapshot']?['cacheFallbackNotice']?.toString();
@@ -164,7 +167,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         errorMessage = _errorText(recommendationError);
       }
     });
-    if (recommendationError == null && (stale || recommendationGenerationId.isEmpty) && preferences.isNotEmpty) await generate(reuseCandidates:stale);
+    if (recommendationError == null && !requiresExplicitRegeneration && (stale || recommendationGenerationId.isEmpty) && preferences.isNotEmpty) await generate(reuseCandidates:stale);
   }
 
   Future<void> generate({bool reuseCandidates = false, bool expand = false}) async {
@@ -199,6 +202,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       validateDiscoveryResponse(data);
       setState(() {
         final received = data['recommendations'] as List? ?? [];
+        requiresExplicitRegeneration = data['requiresExplicitRegeneration'] == true;
         items = expand ? appendRecommendationResults(items, received) : received;
         discoveryNotice = data['discoveryMessage']?.toString();
         searchMessage = data['snapshot']?['searchMessage']?.toString();
@@ -285,6 +289,10 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       });
       if (!mounted || version != requestVersion) return;
       if (data['stale'] == true) {
+        if (data['requiresExplicitRegeneration'] == true) {
+          setState(() { requiresExplicitRegeneration = true; items = []; loadingMore = false; });
+          return;
+        }
         setState(() => loadingMore = false);
         await generate(reuseCandidates:true);
         return;
@@ -501,9 +509,16 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
               subtitle:
                   'Based on your saved interests and travel style. Refresh only when you want a new list.',
             ),
+            if (source.isNotEmpty) RecommendationDataSources(evaluation: source == 'fyp_evaluation'),
             if (preferences.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.md),
               _profileSummary(),
+            ],
+            if (requiresExplicitRegeneration || recommendationsNeedEvidenceUpdate(items)) ...[
+              const SizedBox(height: AppSpacing.md),
+              RecommendationEvidenceNotice(message: requiresExplicitRegeneration
+                  ? (recommendationGenerationId.isEmpty ? recommendationStartMessage : recommendationPreferenceUpdateMessage) : recommendationEvidenceUpdateMessage,
+                onRegenerate: busy ? null : () => generate()),
             ],
             const SizedBox(height: AppSpacing.md),
             LayoutBuilder(key: const ValueKey('recommendation-location-field'), builder: (context, constraints) => RawAutocomplete<Map<String, dynamic>>(
@@ -605,6 +620,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.md),
                   child: RecommendationCard(
+                    onRefreshEvidence: busy ? null : () => generate(),
                     recommendation: item,
                     discovery:true,
                     source: source,

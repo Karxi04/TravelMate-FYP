@@ -68,6 +68,17 @@ def retrieveRecord(collectionName, documentId=None, filters=None, limit=None, or
     return [doc_to_dict(doc) for doc in query.stream()]
 
 
+def retrieveRecordsById(collectionName, documentIds):
+    """Batch only the referenced documents; do not scan unrelated profiles."""
+    identities = sorted(set(documentIds))
+    if not identities:
+        return []
+    db = get_db()
+    collection = db.collection(collectionName)
+    return [doc_to_dict(doc) for doc in db.get_all(
+        [collection.document(identity) for identity in identities]) if doc.exists]
+
+
 def loadRecommendationSnapshot(record):
     """Hydrate a selected list result after filtering and sorting its headers."""
     if 'recommendationPayloadFormat' not in record:

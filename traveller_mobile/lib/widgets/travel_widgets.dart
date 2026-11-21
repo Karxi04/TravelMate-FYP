@@ -481,12 +481,14 @@ class StatusChip extends StatelessWidget {
   final String text;
   final IconData? icon;
   final AppStatusTone tone;
+  final int? maxLines;
 
   const StatusChip({
     super.key,
     required this.text,
     this.icon,
     this.tone = AppStatusTone.info,
+    this.maxLines = 2,
   });
 
   (Color, Color) get _colors => switch (tone) {
@@ -520,8 +522,8 @@ class StatusChip extends StatelessWidget {
           Flexible(
             child: Text(
               text,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+              maxLines: maxLines,
+              overflow: maxLines == null ? TextOverflow.visible : TextOverflow.ellipsis,
               style: Theme.of(context)
                   .textTheme
                   .labelMedium
@@ -536,8 +538,9 @@ class StatusChip extends StatelessWidget {
 
 class SourceFallbackBadge extends StatelessWidget {
   final String source;
+  final int? maxLines;
 
-  const SourceFallbackBadge({super.key, required this.source});
+  const SourceFallbackBadge({super.key, required this.source, this.maxLines = 2});
 
   @override
   Widget build(BuildContext context) {
@@ -554,7 +557,7 @@ class SourceFallbackBadge extends StatelessWidget {
     final icon = isLive
         ? Icons.cloud_done_outlined
         : (isCache ? Icons.cached_rounded : Icons.offline_bolt_outlined);
-    return StatusChip(text: label, icon: icon, tone: tone);
+    return StatusChip(text: label, icon: icon, tone: tone, maxLines: maxLines);
   }
 }
 

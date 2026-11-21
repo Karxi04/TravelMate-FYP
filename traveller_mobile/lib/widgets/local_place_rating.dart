@@ -83,7 +83,8 @@ class LocalReviewRatings {
 class LocalPlaceRating extends StatelessWidget {
   final Map<String, dynamic> place;
   final ApiService? api;
-  const LocalPlaceRating({super.key, required this.place, this.api});
+  final int? maxLines;
+  const LocalPlaceRating({super.key, required this.place, this.api, this.maxLines = 2});
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<int>(
         valueListenable: LocalReviewRatings.revision,
@@ -92,7 +93,7 @@ class LocalPlaceRating extends StatelessWidget {
               api: api),
           builder: (_, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) return const SizedBox.shrink();
-            return LocalReviewRatingBadge(summary: snapshot.data ?? const {});
+            return LocalReviewRatingBadge(summary: snapshot.data ?? const {}, maxLines: maxLines);
           },
         ),
       );
@@ -100,8 +101,9 @@ class LocalPlaceRating extends StatelessWidget {
 
 class LocalReviewRatingBadge extends StatelessWidget {
   final Map<String, dynamic> summary;
+  final int? maxLines;
 
-  const LocalReviewRatingBadge({super.key, required this.summary});
+  const LocalReviewRatingBadge({super.key, required this.summary, this.maxLines = 2});
 
   @override
   Widget build(BuildContext context) {
@@ -115,7 +117,7 @@ class LocalReviewRatingBadge extends StatelessWidget {
     return Semantics(
       label: '$score out of 5, $reviews',
       excludeSemantics: true,
-      child: StatusChip(text: '$score ($reviews)', icon: Icons.star_rounded),
+      child: StatusChip(text: '$score ($reviews)', icon: Icons.star_rounded, maxLines: maxLines),
     );
   }
 }

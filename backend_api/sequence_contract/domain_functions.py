@@ -19,7 +19,9 @@ from services.recommendation_taxonomy import (
     experience_types,
 )
 from services.preference_learning import LEARNED_INTEREST_STRENGTH
-from services.review_service import genuine_review
+from services.review_service import genuine_review, published_review
+from services.review_destination import review_destination_id, review_candidate_id
+from services.recommendation_review_evidence import popularity_evidence
 from services.activity_pricing import activity_pricing, traveller_count
 from sequence_contract.validators import (
     ACCOMMODATION_CHOICES,
@@ -324,7 +326,7 @@ def _personality_suitability(requested, item):
 
 
 def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=None,
-                                currentPreference=None, currentTravellerId=None):
+                                currentPreference=None, currentTravellerId=None, *, evidenceMode='genuine'):
     """Compute an explainable collaborative score (0-100).
 
     Feedback from other travellers is used directly. If peer preference profiles are
@@ -332,16 +334,21 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
     Sparse data is blended toward a neutral constant. This preserves the documented
     30% collaborative component without pretending provider ratings are peer evidence.
     """
+    if evidenceMode not in {'genuine', 'demonstration', 'fyp_evaluation'}:
+        raise ValueError('Unsupported review evidence mode.')
+    demonstration = evidenceMode in {'demonstration', 'fyp_evaluation'}
     peer_preferences = peerPreferences or {}
     current = currentPreference or {}
     current_interests = concepts_for(current.get('interests', []))
 
     ratings = {}
+    missing_profiles = {}
+    dissimilar_peers = {}
     seen_ratings = set()
-    for row in sorted(collaborativeData or [],key=lambda row:(str(row.get('updatedAt') or row.get('createdAt') or ''),str(row.get('id') or '')),reverse=True):
-        if not genuine_review(row):
+    for row in sorted(collaborativeData or [],key=lambda row:(str(row.get('updatedAt') or row.get('submittedAt') or row.get('createdAt') or ''),str(row.get('id') or '')),reverse=True):
+        if not (row.get('synthetic') is True if demonstration else genuine_review(row)):
             continue
-        did = str(row.get('destinationId') or '')
+        did = review_destination_id(str(row.get('destinationId') or ''))
         if not did:
             continue
         uid = str(row.get('travellerId') or '')
@@ -351,8 +358,11 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
         if not uid or not 1 <= rating <= 5 or (uid,did) in seen_ratings:
             continue
         seen_ratings.add((uid,did))
+        if (demonstration or any(key in row for key in ('feedbackStatus', 'moderationStatus'))) and not published_review(row):
+            continue
         peer = peer_preferences.get(uid) if isinstance(peer_preferences, dict) else None
         if not peer or not current:
+            missing_profiles[did] = missing_profiles.get(did, 0) + 1
             continue
         peer_interests = concepts_for(peer.get('interests', []))
         union = current_interests.union(peer_interests)
@@ -377,13 +387,20 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
             + 0.05 * personality_match
         )
         if similarity < 0.25:
+            dissimilar_peers[did] = dissimilar_peers.get(did, 0) + 1
             continue
         ratings.setdefault(did, []).append((rating, similarity))
 
     output = []
     for item in items or []:
-        did = _destination_id(item)
+        did = review_candidate_id(item)
         values = ratings.get(did, [])
+        missing_count = missing_profiles.get(did, 0)
+        dissimilar_count = dissimilar_peers.get(did, 0)
+        fallback_reason = (None if values else 'missing_current_preferences' if not current
+            else 'missing_or_dissimilar_peer_profiles' if missing_count and dissimilar_count
+            else 'missing_peer_preferences' if missing_count
+            else 'no_similar_peers' if dissimilar_count else 'no_eligible_peer_ratings')
         if values:
             weighted_sum = sum(r * w for r, w in values)
             total_weight = sum(w for _, w in values) or 1.0
@@ -392,7 +409,7 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
             collaborative_confidence = min(1.0, total_weight / 3.0)
             collaborative_score = 50.0 + (
                 raw_collaborative_score - 50.0) * collaborative_confidence
-            collaborative_source = f'{len(values)} similar traveller rating(s)'
+            collaborative_source = f'{len(values)} {"simulated " if demonstration else ""}similar traveller rating(s)'
         else:
             raw_collaborative_score = 50.0
             collaborative_confidence = 0.0
@@ -406,6 +423,11 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
             'collaborativeConfidence': round(collaborative_confidence, 3),
             'collaborativeRatingCount': len(values),
             'collaborativeSource': collaborative_source,
+            'collaborativeEvidenceStatus': 'peer_ratings' if values else 'cold_start',
+            'collaborativeFallbackReason': fallback_reason,
+            'collaborativeMissingProfileCount': missing_count,
+            'collaborativeDissimilarPeerCount': dissimilar_count,
+            'recommendationEvidenceMode': evidenceMode,
         })
     return output
 
@@ -421,23 +443,21 @@ def _exact_profile_match(peer, current, field, normalizer):
     return 1.0 if peer_value and peer_value == current_value else 0.0
 
 
-def calculateRecommendationScore(items):
+def calculateRecommendationScore(items, reviewSummaries=None, *, evidenceMode='genuine'):
     """Weighted scoring: 60% content + 30% collaborative + 10% popularity."""
+    if evidenceMode not in {'genuine', 'demonstration', 'fyp_evaluation'}:
+        raise ValueError('Unsupported review evidence mode.')
     output = []
     for item in items or []:
         content = max(0.0, min(100.0, _score_number(item.get('contentScore'))))
         collaborative = max(0.0, min(100.0, _score_number(item.get('collaborativeScore'))))
-        rating = _score_number(item.get('rating')) if not isinstance(item.get('rating'),bool) else 0.0
-        if not 1 <= rating <= 5:rating=0.0
-        unverified_local = item.get('ratingSource') == 'unverified_local_catalog'
-        if unverified_local:
-            rating = 0.0
-        reviews = max(0.0, _score_number(item.get('reviews')))
-        # Rating dominates popularity; review count adds only a small saturation boost.
-        popularity = min(100.0, (rating / 5.0) * 80.0 + min(20.0, reviews / 500.0)) if rating > 0 else 50.0
+        evidence = popularity_evidence(item, reviewSummaries,
+            demonstration=evidenceMode in {'demonstration', 'fyp_evaluation'},
+            provider_first=evidenceMode == 'fyp_evaluation')
+        popularity = evidence['score']
         score = content * 0.60 + collaborative * 0.30 + popularity * 0.10
 
-        reasons = _recommendation_reasons(item, popularity)
+        reasons = _recommendation_reasons({**item, 'recommendationEvidenceMode': evidenceMode}, popularity)
         reason = f"{round(score)}/100 hybrid ranking"
         if reasons:
             reason += ' • ' + ' • '.join(reasons)
@@ -449,7 +469,10 @@ def calculateRecommendationScore(items):
             'popularityScore': round(popularity, 2),
             'contentScore': round(content, 2),
             'collaborativeScore': round(collaborative, 2),
-            'popularitySource': 'neutral_unverified_local_catalog' if unverified_local else 'provider_rating_review_count' if rating > 0 else 'neutral_missing_rating',
+            'popularitySource': evidence['source'],
+            'popularityEvidence': {**evidence, 'score': round(popularity, 2)},
+            'recommendationEvidenceMode': evidenceMode,
+            **({'synthetic': True} if evidenceMode in {'demonstration', 'fyp_evaluation'} else {}),
             'score': round(score, 2),
             'finalScore': round(score, 2),
             'hybridRankingScore': round(score, 2),
@@ -490,7 +513,7 @@ def _recommendation_reasons(item, popularity):
             reasons.append(f'Fits your {label}')
     confidence = _score_number(item.get('collaborativeConfidence'))
     if confidence >= 0.25 and _score_number(item.get('rawCollaborativeScore')) >= 70.0:
-        reasons.append('Highly rated by similar travellers')
+        reasons.append('Highly rated in sample community data' if item.get('recommendationEvidenceMode') in {'demonstration', 'fyp_evaluation'} else 'Highly rated by similar travellers')
     for key, label in (
         ('travelPurpose', 'travel purpose'),
         ('travelPersonality', 'traveller personality'),
@@ -499,14 +522,16 @@ def _recommendation_reasons(item, popularity):
         if signal.get('applied') and _score_number(signal.get('score')) >= 80.0:
             reasons.append(f'Fits your {label}')
     if popularity >= 85.0:
-        reasons.append('Popular and well reviewed')
+        reasons.append('Popular in sample community data' if item.get('popularitySource') == 'demonstration_approved_reviews' else 'Popular and well reviewed')
     return reasons[:5]
 
 
 def _ranking_evidence(item):
     if str(item.get('popularitySource') or '').startswith('neutral'):
         return 0.0,0.0
-    return _score_number(item.get('rating')),_score_number(item.get('reviews'))
+    evidence = item.get('popularityEvidence') or {}
+    return (_score_number(evidence.get('rating', item.get('rating'))),
+            _score_number(evidence.get('reviewCount', item.get('reviews'))))
 
 
 def rankRecommendations(items):

@@ -151,7 +151,7 @@ void main() {
       // Verifies breakdown explains cold-start neutral baseline
       expect(find.text('Recommendation Score (58/100)'), findsOneWidget);
       expect(find.text('50/100 (Neutral baseline)'), findsOneWidget);
-      expect(find.textContaining('No peer ratings from similar travellers are recorded yet'), findsOneWidget);
+      expect(find.textContaining('No peer ratings from similar travellers qualified in this generation'), findsOneWidget);
       expect(find.textContaining('not an enjoyment probability'), findsOneWidget);
 
       // Close modal

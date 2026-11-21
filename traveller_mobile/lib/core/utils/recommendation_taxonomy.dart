@@ -1,4 +1,5 @@
 import 'dart:math';
+import '../../services/review_contract.dart';
 
 import 'preference_learning.dart';
 
@@ -335,6 +336,70 @@ class RecommendationTaxonomy {
 }
 
 class RecommendationScoring {
+  static List<Map<String, dynamic>> approvedContributions(
+      List<Map<String, dynamic>> records, {bool demonstration = false}) {
+    final ordered = List<Map<String, dynamic>>.from(records)..sort((a, b) =>
+      '${b['updatedAt'] ?? b['submittedAt'] ?? ''}'.compareTo('${a['updatedAt'] ?? a['submittedAt'] ?? ''}'));
+    final latest = <String, Map<String, dynamic>>{};
+    for (final row in ordered) {
+      if (!(demonstration ? row['synthetic'] == true : ReviewContract.isGenuine(row))) continue;
+      if (row['rating'] is bool) continue;
+      final identity = ReviewContract.destinationId('${row['destinationId'] ?? ''}');
+      final owner = '${row['travellerId'] ?? row['id'] ?? ''}';
+      latest.putIfAbsent('$identity\u0000$owner', () => row);
+    }
+    return latest.values.where((row) => row['feedbackStatus'] == 'visible' &&
+      const {'reviewed', 'approved'}.contains(row['moderationStatus']) &&
+      ReviewContract.approvedRating(row) != null).toList();
+  }
+
+  static Map<String, Map<String, dynamic>> reviewSummaries(
+      List<Map<String, dynamic>> records, {bool demonstration = false}) {
+    final groups = <String, List<double>>{};
+    for (final row in approvedContributions(records, demonstration: demonstration)) {
+      groups.putIfAbsent(ReviewContract.destinationId('${row['destinationId']}'), () => [])
+          .add(ReviewContract.approvedRating(row)!);
+    }
+    return groups.map((key, ratings) => MapEntry(key, <String, dynamic>{
+      'rating': ratings.reduce((a,b) => a+b) / ratings.length, 'reviews': ratings.length,
+      'synthetic': demonstration,
+      'source': demonstration ? 'demonstration_approved_reviews' : 'genuine_approved_local_reviews',
+    }));
+  }
+
+  static Map<String, dynamic> _popularityEvidence(Map<String, dynamic> item,
+      Map<String, Map<String, dynamic>> summaries, bool demonstration) {
+    double? validRating(dynamic value) {
+      final v = double.tryParse('$value');
+      return value is! bool && v != null && v.isFinite && v >= 1 && v <= 5 ? v : null;
+    }
+    int? validCount(dynamic value) {
+      final v = double.tryParse('$value');
+      return value is! bool && v != null && v.isFinite && v >= 0 && v == v.roundToDouble() ? v.toInt() : null;
+    }
+    var source = item['ratingSource'] == 'unverified_local_catalog'
+        ? 'neutral_unverified_local_catalog' : 'neutral_missing_rating';
+    double? rating;
+    int? count;
+    if (!demonstration && ReviewContract.isGenuine(item) && item['ratingSource'] == 'provider') {
+      rating = validRating(item['rating']); count = validCount(item['reviews']);
+      if (rating != null) source = 'provider_rating_review_count';
+    }
+    if (rating == null) {
+      final summary = summaries[ReviewContract.destinationId('${item['reviewDestinationId'] ?? _destinationId(item)}')] ?? {};
+      final expected = demonstration ? 'demonstration_approved_reviews' : 'genuine_approved_local_reviews';
+      if (summary['source'] == expected && summary['synthetic'] == demonstration) {
+        final localRating = validRating(summary['rating']), localCount = validCount(summary['reviews']);
+        if (localRating != null && localCount != null && localCount > 0) {
+          rating = localRating; count = localCount; source = expected;
+        }
+      }
+    }
+    return {'score': rating == null ? 50.0 : min(100.0, rating/5*80 + min(20.0, (count ?? 0)/500)),
+      'source': source, 'rating': rating, 'reviewCount': count,
+      'fallbackReason': rating != null ? null : demonstration ? 'no_approved_demonstration_reviews'
+        : 'no_verified_provider_or_approved_genuine_local_reviews'};
+  }
   static double _number(dynamic value, [double fallback = 0]) {
     final number = double.tryParse((value ?? '').toString());
     return number != null && number.isFinite ? number : fallback;
@@ -485,8 +550,9 @@ class RecommendationScoring {
     Map<String, Map<String, dynamic>> peerPreferences,
     Map<String, dynamic> currentPreference,
     String currentUserId,
+    bool demonstration,
   ) {
-    final destinationId = _destinationId(item);
+    final destinationId = ReviewContract.destinationId('${item['reviewDestinationId'] ?? _destinationId(item)}');
     final currentInterests =
         RecommendationTaxonomy.conceptsFor(currentPreference['interests']);
     final values = <({double rating, double similarity})>[];
@@ -496,11 +562,15 @@ class RecommendationScoring {
       return time != 0 ? time : '${b['id'] ?? ''}'.compareTo('${a['id'] ?? ''}');
     });
     for (final row in ordered) {
-      if ((row['destinationId'] ?? '').toString() != destinationId) continue;
+      if (!(demonstration ? row['synthetic'] == true : ReviewContract.isGenuine(row))) continue;
+      if (ReviewContract.destinationId((row['destinationId'] ?? '').toString()) != destinationId) continue;
       final uid = (row['travellerId'] ?? '').toString();
       if (uid.isEmpty || uid == currentUserId) continue;
       final rating = _number(row['rating']);
       if (rating < 1 || rating > 5 || !seenRatings.add(uid)) continue;
+      if ((demonstration || row.containsKey('feedbackStatus') || row.containsKey('moderationStatus')) &&
+          !(row['feedbackStatus'] == 'visible' &&
+            const {'reviewed', 'approved'}.contains(row['moderationStatus']))) continue;
       final peer = peerPreferences[uid];
       if (peer == null) continue;
       final peerInterests =
@@ -547,7 +617,7 @@ class RecommendationScoring {
       raw: raw,
       confidence: confidence,
       count: values.length,
-      source: '${values.length} similar traveller rating(s)',
+      source: '${values.length} ${demonstration ? 'simulated ' : ''}similar traveller rating(s)',
     );
   }
 
@@ -587,7 +657,7 @@ class RecommendationScoring {
     }
     if (_number(item['collaborativeConfidence']) >= .25 &&
         _number(item['rawCollaborativeScore']) >= 70) {
-      reasons.add('Highly rated by similar travellers');
+      reasons.add(item['recommendationEvidenceMode'] == 'demonstration' ? 'Highly rated by simulated travellers' : 'Highly rated by similar travellers');
     }
     const secondaryLabels = {
       'travelPurpose': 'travel purpose',
@@ -600,7 +670,7 @@ class RecommendationScoring {
         reasons.add('Fits your ${entry.value}');
       }
     }
-    if (popularity >= 85) reasons.add('Popular and well reviewed');
+    if (popularity >= 85) reasons.add(item['recommendationEvidenceMode'] == 'demonstration' ? 'Popular in demonstration reviews' : 'Popular and well reviewed');
     return reasons.take(5).toList();
   }
 
@@ -610,7 +680,10 @@ class RecommendationScoring {
     List<Map<String, dynamic>> feedback = const [],
     Map<String, Map<String, dynamic>> peerPreferences = const {},
     String currentUserId = '',
+    Map<String, Map<String, dynamic>> reviewSummaries = const {},
+    String evidenceMode = 'genuine',
   }) {
+    if (!const {'genuine', 'demonstration'}.contains(evidenceMode)) throw ArgumentError('Unsupported evidence mode');
     final item = Map<String, dynamic>.from(candidate);
     final destinationConcepts = RecommendationTaxonomy.candidateConcepts(item);
     final rawInterests = preferences['interests'] as List? ?? const [];
@@ -732,15 +805,10 @@ class RecommendationScoring {
       if (signals[entry.key]['applied'] == true) { knownWeight += entry.value; knownScore += entry.value * (signals[entry.key]['score'] as num); }
     }
     final collaborative = _collaborativeScore(
-        item, feedback, peerPreferences, preferences, currentUserId);
-    final unverifiedLocal = item['ratingSource']=='unverified_local_catalog';
-    final rawRating = _number(item['rating']);
-    final rating = unverifiedLocal || rawRating < 1 || rawRating > 5 ? 0.0 : rawRating;
-    final reviews = max(0, _number(item['reviews']));
-    final popularity = rating > 0
-        ? min(100.0, rating / 5 * 80 + min(20.0, reviews / 500))
-        : 50.0;
-    final finalScore = weightedScore(_round2(content), _round2(collaborative.score), _round2(popularity))
+        item, feedback, peerPreferences, preferences, currentUserId, evidenceMode == 'demonstration');
+    final popularityEvidence = _popularityEvidence(item, reviewSummaries, evidenceMode == 'demonstration');
+    final popularity = popularityEvidence['score'] as double;
+    final finalScore = weightedScore(_round2(content), _round2(collaborative.score), popularity)
         .clamp(0, 100)
         .toDouble();
     item.addAll({
@@ -759,7 +827,10 @@ class RecommendationScoring {
       'collaborativeRatingCount': collaborative.count,
       'collaborativeSource': collaborative.source,
       'popularityScore': _round2(popularity),
-      'popularitySource': unverifiedLocal ? 'neutral_unverified_local_catalog' : rating > 0 ? 'provider_rating_review_count' : 'neutral_missing_rating',
+      'popularitySource': popularityEvidence['source'],
+      'popularityEvidence': {...popularityEvidence, 'score': _round2(popularity)},
+      'recommendationEvidenceMode': evidenceMode,
+      if (evidenceMode == 'demonstration') 'synthetic': true,
       'score': _round2(finalScore),
       'finalScore': _round2(finalScore),
       'hybridRankingScore': _round2(finalScore),
@@ -788,6 +859,8 @@ class RecommendationScoring {
     Map<String, Map<String, dynamic>> peerPreferences = const {},
     String currentUserId = '',
     int limit = 12,
+    Map<String, Map<String, dynamic>> reviewSummaries = const {},
+    String evidenceMode = 'genuine',
   }) {
     final scored = candidates
         .where((item) => (preferences['destinationFeedback'] as Map?)?[_destinationId(item)] != 'not_for_me')
@@ -799,12 +872,15 @@ class RecommendationScoring {
               feedback: feedback,
               peerPreferences: peerPreferences,
               currentUserId: currentUserId,
+              reviewSummaries: reviewSummaries,
+              evidenceMode: evidenceMode,
             ))
         .toList()
       ..sort((a, b) {
         for (final key in ['score','rating','reviews']) {
-          final bv = key != 'score' && '${b['popularitySource'] ?? ''}'.startsWith('neutral') ? 0.0 : _number(b[key]);
-          final av = key != 'score' && '${a['popularitySource'] ?? ''}'.startsWith('neutral') ? 0.0 : _number(a[key]);
+          final evidenceKey = key == 'rating' ? 'rating' : 'reviewCount';
+          final bv = key != 'score' && '${b['popularitySource'] ?? ''}'.startsWith('neutral') ? 0.0 : _number(key == 'score' ? b[key] : b['popularityEvidence']?[evidenceKey] ?? b[key]);
+          final av = key != 'score' && '${a['popularitySource'] ?? ''}'.startsWith('neutral') ? 0.0 : _number(key == 'score' ? a[key] : a['popularityEvidence']?[evidenceKey] ?? a[key]);
           final difference = bv.compareTo(av);
           if (difference != 0) return difference;
         }
@@ -815,7 +891,7 @@ class RecommendationScoring {
     final seenIds = <String>{};
     final seenNames = <String>{};
     for (final item in scored) {
-      final id = RecommendationTaxonomy.normalizePhrase(_destinationId(item));
+      final id = RecommendationTaxonomy.normalizePhrase(ReviewContract.destinationId('${item['reviewDestinationId'] ?? _destinationId(item)}'));
       final name =
           RecommendationTaxonomy.normalizePhrase(item['title'] ?? item['name']);
       if ((id.isNotEmpty && seenIds.contains(id)) ||

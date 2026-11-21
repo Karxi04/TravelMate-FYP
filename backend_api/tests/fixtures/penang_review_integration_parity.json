@@ -1,0 +1,4257 @@
+{
+  "synthetic": true,
+  "input": {
+    "synthetic": true,
+    "scope": "Isolated model evaluation only; no real customers or provider observations.",
+    "candidates": [
+      {
+        "destinationId": "penang_armenian_street",
+        "place_id": "penang_armenian_street",
+        "title": "Armenian Street",
+        "address": "Penang, Malaysia",
+        "state": "Penang",
+        "reviewDestinationId": "penang_armenian_street",
+        "ratingSource": "unverified_local_catalog"
+      },
+      {
+        "place_id": "local_penang_hill",
+        "destinationId": "local_penang_hill",
+        "title": "Penang Hill",
+        "address": "Penang, Malaysia",
+        "category": "Nature Adventure Photography",
+        "type": "Nature / Scenic attraction",
+        "rating": 4.6,
+        "reviews": 16400,
+        "description": "Hilltop views, forest walks and cooler weather above George Town.",
+        "gps_coordinates": {
+          "latitude": 5.4244,
+          "longitude": 100.2684
+        },
+        "indoor": false,
+        "estimatedCost": 30,
+        "openingHours": "06:30-23:00",
+        "recommendedDurationMinutes": 180,
+        "imageUrl": null,
+        "thumbnail": null,
+        "photoAuthor": null,
+        "photoSourceUrl": null,
+        "photoLicense": null,
+        "photoLicenseUrl": null,
+        "photoAttribution": null,
+        "imageSource": null,
+        "imageStatus": "unverified",
+        "lastValidatedAt": null,
+        "state": "Penang",
+        "reviewDestinationId": "local_penang_hill",
+        "ratingSource": "unverified_local_catalog"
+      },
+      {
+        "place_id": "local_kek_lok_si",
+        "destinationId": "local_kek_lok_si",
+        "title": "Kek Lok Si Temple",
+        "address": "Penang, Malaysia",
+        "category": "Culture Heritage Photography",
+        "type": "Temple / Heritage",
+        "rating": 4.7,
+        "reviews": 12600,
+        "description": "Large hillside Buddhist temple complex with panoramic views.",
+        "gps_coordinates": {
+          "latitude": 5.3995,
+          "longitude": 100.273
+        },
+        "indoor": false,
+        "estimatedCost": 12,
+        "openingHours": "08:30-17:30",
+        "recommendedDurationMinutes": 120,
+        "imageUrl": null,
+        "thumbnail": null,
+        "photoAuthor": null,
+        "photoSourceUrl": null,
+        "photoLicense": null,
+        "photoLicenseUrl": null,
+        "photoAttribution": null,
+        "imageSource": null,
+        "imageStatus": "unverified",
+        "lastValidatedAt": null,
+        "state": "Penang",
+        "reviewDestinationId": "local_kek_lok_si",
+        "ratingSource": "unverified_local_catalog"
+      },
+      {
+        "place_id": "local_chew_jetty",
+        "destinationId": "local_chew_jetty",
+        "title": "Chew Jetty",
+        "address": "Penang, Malaysia",
+        "category": "Heritage Culture Food Photography",
+        "type": "Heritage village / Outdoor",
+        "rating": 4.3,
+        "reviews": 7600,
+        "description": "Historic clan jetty with wooden homes, snacks and waterfront scenery.",
+        "gps_coordinates": {
+          "latitude": 5.411,
+          "longitude": 100.3408
+        },
+        "indoor": false,
+        "estimatedCost": 10,
+        "openingHours": "09:00-21:00",
+        "recommendedDurationMinutes": 70,
+        "imageUrl": null,
+        "thumbnail": null,
+        "photoAuthor": null,
+        "photoSourceUrl": null,
+        "photoLicense": null,
+        "photoLicenseUrl": null,
+        "photoAttribution": null,
+        "imageSource": null,
+        "imageStatus": "unverified",
+        "lastValidatedAt": null,
+        "state": "Penang",
+        "reviewDestinationId": "local_chew_jetty",
+        "ratingSource": "unverified_local_catalog"
+      },
+      {
+        "destinationId": "penang_gurney_drive",
+        "place_id": "penang_gurney_drive",
+        "title": "Gurney Drive Hawker Centre",
+        "address": "Penang, Malaysia",
+        "state": "Penang",
+        "reviewDestinationId": "penang_gurney_drive",
+        "ratingSource": "unverified_local_catalog"
+      },
+      {
+        "place_id": "local_batu_ferringhi",
+        "destinationId": "local_batu_ferringhi",
+        "title": "Batu Ferringhi Beach",
+        "address": "Penang, Malaysia",
+        "category": "Beach Leisure Nature Adventure",
+        "type": "Beach / Outdoor",
+        "rating": 4.4,
+        "reviews": 8700,
+        "description": "Beach leisure, water activities and sunset views.",
+        "gps_coordinates": {
+          "latitude": 5.4709,
+          "longitude": 100.245
+        },
+        "indoor": false,
+        "estimatedCost": 35,
+        "openingHours": "06:00-20:00",
+        "recommendedDurationMinutes": 150,
+        "imageUrl": null,
+        "thumbnail": null,
+        "photoAuthor": null,
+        "photoSourceUrl": null,
+        "photoLicense": null,
+        "photoLicenseUrl": null,
+        "photoAttribution": null,
+        "imageSource": null,
+        "imageStatus": "unverified",
+        "lastValidatedAt": null,
+        "state": "Penang",
+        "reviewDestinationId": "local_batu_ferringhi",
+        "ratingSource": "unverified_local_catalog"
+      },
+      {
+        "destinationId": "demo_penang_street_art",
+        "title": "George Town Street Art",
+        "city": "George Town",
+        "state": "Penang",
+        "country": "Malaysia",
+        "category": "Culture",
+        "identitySourceUrl": "https://ebrochures.malaysia.travel/en/malaysia-travel-guide/penang/",
+        "place_id": "demo_penang_street_art",
+        "address": "Penang, Malaysia",
+        "reviewDestinationId": "demo_penang_street_art",
+        "ratingSource": "unverified_local_catalog"
+      },
+      {
+        "place_id": "local_peranakan_mansion",
+        "destinationId": "local_peranakan_mansion",
+        "title": "Pinang Peranakan Mansion",
+        "address": "Penang, Malaysia",
+        "category": "Culture Heritage Museum",
+        "type": "Museum / Indoor",
+        "rating": 4.5,
+        "reviews": 5600,
+        "description": "Indoor museum presenting Peranakan architecture, antiques and culture.",
+        "gps_coordinates": {
+          "latitude": 5.4187,
+          "longitude": 100.3416
+        },
+        "indoor": true,
+        "estimatedCost": 25,
+        "openingHours": "09:30-17:00",
+        "recommendedDurationMinutes": 100,
+        "imageUrl": null,
+        "thumbnail": null,
+        "photoAuthor": null,
+        "photoSourceUrl": null,
+        "photoLicense": null,
+        "photoLicenseUrl": null,
+        "photoAttribution": null,
+        "imageSource": null,
+        "imageStatus": "unverified",
+        "lastValidatedAt": null,
+        "state": "Penang",
+        "reviewDestinationId": "local_peranakan_mansion",
+        "ratingSource": "unverified_local_catalog"
+      },
+      {
+        "place_id": "local_botanical_gardens",
+        "destinationId": "local_botanical_gardens",
+        "title": "Penang Botanic Gardens",
+        "address": "Penang, Malaysia",
+        "category": "Nature Relaxed Photography",
+        "type": "Garden / Outdoor",
+        "rating": 4.5,
+        "reviews": 7400,
+        "description": "Green walking trails, tropical plants and relaxed nature scenery.",
+        "gps_coordinates": {
+          "latitude": 5.4372,
+          "longitude": 100.2909
+        },
+        "indoor": false,
+        "estimatedCost": 0,
+        "openingHours": "05:00-20:00",
+        "recommendedDurationMinutes": 100,
+        "imageUrl": null,
+        "thumbnail": null,
+        "photoAuthor": null,
+        "photoSourceUrl": null,
+        "photoLicense": null,
+        "photoLicenseUrl": null,
+        "photoAttribution": null,
+        "imageSource": null,
+        "imageStatus": "unverified",
+        "lastValidatedAt": null,
+        "state": "Penang",
+        "reviewDestinationId": "local_botanical_gardens",
+        "ratingSource": "unverified_local_catalog"
+      },
+      {
+        "destinationId": "tropical_spice_garden",
+        "place_id": "tropical_spice_garden",
+        "title": "Tropical Spice Garden",
+        "address": "Penang, Malaysia",
+        "state": "Penang",
+        "reviewDestinationId": "tropical_spice_garden",
+        "ratingSource": "unverified_local_catalog"
+      },
+      {
+        "destinationId": "entopia",
+        "place_id": "entopia",
+        "title": "Entopia by Penang Butterfly Farm",
+        "address": "Penang, Malaysia",
+        "state": "Penang",
+        "reviewDestinationId": "entopia",
+        "ratingSource": "unverified_local_catalog"
+      },
+      {
+        "place_id": "local_wonderfood",
+        "destinationId": "local_wonderfood",
+        "title": "Wonderfood Museum",
+        "address": "Penang, Malaysia",
+        "category": "Food Museum Photography",
+        "type": "Museum / Indoor",
+        "rating": 4.3,
+        "reviews": 3100,
+        "description": "Indoor food-themed museum celebrating Malaysian dishes and food culture.",
+        "gps_coordinates": {
+          "latitude": 5.4167,
+          "longitude": 100.3405
+        },
+        "indoor": true,
+        "estimatedCost": 20,
+        "openingHours": "09:00-18:00",
+        "recommendedDurationMinutes": 75,
+        "imageUrl": null,
+        "thumbnail": null,
+        "photoAuthor": null,
+        "photoSourceUrl": null,
+        "photoLicense": null,
+        "photoLicenseUrl": null,
+        "photoAttribution": null,
+        "imageSource": null,
+        "imageStatus": "unverified",
+        "lastValidatedAt": null,
+        "state": "Penang",
+        "reviewDestinationId": "local_wonderfood",
+        "ratingSource": "unverified_local_catalog"
+      }
+    ],
+    "examples": [
+      {
+        "travellerId": "penang_fixture_a",
+        "destinationId": "penang_armenian_street",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_b",
+        "destinationId": "penang_armenian_street",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_c",
+        "destinationId": "penang_armenian_street",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_a",
+        "destinationId": "local_penang_hill",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_b",
+        "destinationId": "local_penang_hill",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_c",
+        "destinationId": "local_penang_hill",
+        "rating": 1,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_a",
+        "destinationId": "local_kek_lok_si",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_b",
+        "destinationId": "local_kek_lok_si",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_c",
+        "destinationId": "local_kek_lok_si",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_a",
+        "destinationId": "local_chew_jetty",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_b",
+        "destinationId": "local_chew_jetty",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_c",
+        "destinationId": "local_chew_jetty",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_a",
+        "destinationId": "penang_gurney_drive",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_b",
+        "destinationId": "penang_gurney_drive",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_c",
+        "destinationId": "penang_gurney_drive",
+        "rating": 1,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_a",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_b",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_c",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_a",
+        "destinationId": "demo_penang_street_art",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_b",
+        "destinationId": "demo_penang_street_art",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_c",
+        "destinationId": "demo_penang_street_art",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_a",
+        "destinationId": "local_peranakan_mansion",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_b",
+        "destinationId": "local_peranakan_mansion",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_c",
+        "destinationId": "local_peranakan_mansion",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_a",
+        "destinationId": "local_botanical_gardens",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_b",
+        "destinationId": "local_botanical_gardens",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_c",
+        "destinationId": "local_botanical_gardens",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_a",
+        "destinationId": "tropical_spice_garden",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_b",
+        "destinationId": "tropical_spice_garden",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_c",
+        "destinationId": "tropical_spice_garden",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_a",
+        "destinationId": "entopia",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_b",
+        "destinationId": "entopia",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_c",
+        "destinationId": "entopia",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_a",
+        "destinationId": "local_wonderfood",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_b",
+        "destinationId": "local_wonderfood",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_fixture_c",
+        "destinationId": "local_wonderfood",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-11T09:00:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_c015d94da0c1e52233666532",
+        "destinationId": "penang_armenian_street",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-09T09:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_0609bbd66093e12429940a0d",
+        "destinationId": "penang_armenian_street",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-08T10:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_a2efcb35eae87b0d2cab7563",
+        "destinationId": "penang_armenian_street",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-07T11:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_8a31b57d64fa9ce30ade33d1",
+        "destinationId": "penang_armenian_street",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-06T12:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_37a00a9d52445aea7a0a8c49",
+        "destinationId": "penang_armenian_street",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-05T13:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_6b48c78c4d700b0f70cc2246",
+        "destinationId": "penang_armenian_street",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-04T14:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_bbfa8e8584d1a5c49fb9d226",
+        "destinationId": "penang_armenian_street",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-03T15:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_7fadffb7a627921ccb43575a",
+        "destinationId": "local_penang_hill",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-02T16:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_d99ebbc9118fd6a444e8adc9",
+        "destinationId": "local_penang_hill",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-11-01T17:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_904b8f223fa9daa54ffe40dc",
+        "destinationId": "local_penang_hill",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-31T09:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_ad9826b9ef6b68b2f671bb63",
+        "destinationId": "local_penang_hill",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-30T10:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_9d804bb34f844abc15c879ef",
+        "destinationId": "local_penang_hill",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-29T11:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_692f2b52ca94672aee6a6f33",
+        "destinationId": "local_penang_hill",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-28T12:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_b2696f74927ccb96f8cb5aea",
+        "destinationId": "local_penang_hill",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-27T13:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_dcad65a233d38e0e787937a5",
+        "destinationId": "local_penang_hill",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-26T14:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_d3a8ec4f528c84f2ef2809ae",
+        "destinationId": "local_kek_lok_si",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-25T15:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_6ff5d7052593b8fa9e8a8ff8",
+        "destinationId": "local_kek_lok_si",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-24T16:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_cade616d0e3fb893d4231e89",
+        "destinationId": "local_kek_lok_si",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-23T17:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_e8bcdac9916afb9bbc51cb07",
+        "destinationId": "local_kek_lok_si",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-22T09:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_7a35837d1c8b0ffd597a6b9f",
+        "destinationId": "local_kek_lok_si",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-21T10:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_6f1d46c0eaf0c20c952e8ad9",
+        "destinationId": "local_kek_lok_si",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-20T11:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_c708908b5d72ac70b9d958f0",
+        "destinationId": "local_chew_jetty",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-19T12:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_0935d42849594fba9561783b",
+        "destinationId": "local_chew_jetty",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-18T13:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_0347f86da1fdce9bdd0dc6df",
+        "destinationId": "local_chew_jetty",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-17T14:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_821b988de0407bbb2722d0ec",
+        "destinationId": "local_chew_jetty",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-16T15:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_f5283aeba446b17e4b6f5251",
+        "destinationId": "penang_gurney_drive",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-15T16:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_8583d269f4cdf4396bd83d82",
+        "destinationId": "penang_gurney_drive",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-14T17:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_ec9bf205de664c7a98eabcff",
+        "destinationId": "penang_gurney_drive",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-13T09:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_e90da908a064f15c415cd4b1",
+        "destinationId": "penang_gurney_drive",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-12T10:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_568760df11d8c72da43a8a80",
+        "destinationId": "penang_gurney_drive",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-11T11:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_f8737482dcf222b476507a45",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-10T12:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_420d1fb45e53e8f5def8a75d",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-09T13:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_4de9a5d9077d12797d76cf25",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 1,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-08T14:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_ab3fe665d44dcb26adbea2e1",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-07T15:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_79358bb623adfecff27d14b9",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-06T16:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_4f118f9e8f357701f61d48d5",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-05T17:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_7f0b0f73d7988bba94a8ef41",
+        "destinationId": "demo_penang_street_art",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-04T09:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_3bdc8cac7a61829d4ca5f8be",
+        "destinationId": "demo_penang_street_art",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-03T10:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_42a435672ef2f63ed7683c15",
+        "destinationId": "demo_penang_street_art",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-02T11:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_ca1e2320306e1ddbad34d296",
+        "destinationId": "demo_penang_street_art",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-10-01T12:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_f55380e550bd42e401bbd653",
+        "destinationId": "demo_penang_street_art",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-30T13:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_175b7ea9e0ca0fb5ab4e60ac",
+        "destinationId": "local_peranakan_mansion",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-29T14:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_5c55ed294e9d0cfb70b5576c",
+        "destinationId": "local_peranakan_mansion",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-28T15:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_5159aa9c55d149fa4190a4fe",
+        "destinationId": "local_peranakan_mansion",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-27T16:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_816f8f8425d16318f19aab12",
+        "destinationId": "local_peranakan_mansion",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-26T17:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_aa12279c182e0301895e2e94",
+        "destinationId": "local_botanical_gardens",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-25T09:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_341bdf3a50f87e6898c72500",
+        "destinationId": "local_botanical_gardens",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-24T10:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_53f48707217e859095f77753",
+        "destinationId": "local_botanical_gardens",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-23T11:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_c6b16614617136b21be7eab9",
+        "destinationId": "tropical_spice_garden",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-22T12:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_b831a0ae737574ac4dcc0ecf",
+        "destinationId": "tropical_spice_garden",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-21T13:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_e0095dfd2f4f27115952c914",
+        "destinationId": "tropical_spice_garden",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-20T14:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_dbe848e0b3814ff2f5304e7f",
+        "destinationId": "tropical_spice_garden",
+        "rating": 1,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-19T15:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_ad9fc2ad31da7e0e8cc2360a",
+        "destinationId": "entopia",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-18T16:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_0b3d4965c3d1c7bda704e9c5",
+        "destinationId": "entopia",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-17T17:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_b19b6d53d2d82816ec23b1a7",
+        "destinationId": "entopia",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-16T09:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_c3ad212e1f249ec944cc5eaf",
+        "destinationId": "entopia",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-15T10:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_fc38a9a99f3413f19d54a665",
+        "destinationId": "entopia",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-14T11:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_22e5284cdc8baa7930e62a7c",
+        "destinationId": "local_wonderfood",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-13T12:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_4e6bb5d69f9d31df53e37cb1",
+        "destinationId": "local_wonderfood",
+        "rating": 3,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-12T13:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_9cdd1d22862add173e8f87f9",
+        "destinationId": "local_wonderfood",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "reviewed",
+        "updatedAt": "2026-09-11T14:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_683a1fb0a0e9ce4f0b318f28",
+        "destinationId": "local_penang_hill",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "pending_review",
+        "updatedAt": "2026-09-10T15:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_bec8c8f8c163bb4635494c4e",
+        "destinationId": "local_chew_jetty",
+        "rating": 1,
+        "feedbackStatus": "visible",
+        "moderationStatus": "pending_review",
+        "updatedAt": "2026-09-09T16:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_4144ff76fd67d674ed1050b8",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "pending_review",
+        "updatedAt": "2026-09-08T17:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_3fe4ba989057070287ebe0e1",
+        "destinationId": "local_kek_lok_si",
+        "rating": 2,
+        "feedbackStatus": "visible",
+        "moderationStatus": "pending_review",
+        "updatedAt": "2026-09-07T09:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_f6c1679bfb77edfcd944a97c",
+        "destinationId": "local_wonderfood",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "pending_review",
+        "updatedAt": "2026-09-06T10:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_431fdce945d556f00fa857fb",
+        "destinationId": "entopia",
+        "rating": 1,
+        "feedbackStatus": "visible",
+        "moderationStatus": "pending_review",
+        "updatedAt": "2026-09-05T11:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_9e95492124dcf91714dd3c5c",
+        "destinationId": "local_peranakan_mansion",
+        "rating": 5,
+        "feedbackStatus": "visible",
+        "moderationStatus": "pending_review",
+        "updatedAt": "2026-09-04T12:30:00+08:00",
+        "synthetic": true
+      },
+      {
+        "travellerId": "penang_v2_0f2422c8ae4b18c9160f223b",
+        "destinationId": "penang_gurney_drive",
+        "rating": 4,
+        "feedbackStatus": "visible",
+        "moderationStatus": "pending_review",
+        "updatedAt": "2026-09-03T13:30:00+08:00",
+        "synthetic": true
+      }
+    ],
+    "exampleProfiles": {
+      "penang_v2_ad9826b9ef6b68b2f671bb63": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_ab3fe665d44dcb26adbea2e1": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_821b988de0407bbb2722d0ec": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_4f118f9e8f357701f61d48d5": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_0609bbd66093e12429940a0d": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_f55380e550bd42e401bbd653": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_904b8f223fa9daa54ffe40dc": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_e8bcdac9916afb9bbc51cb07": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_d3a8ec4f528c84f2ef2809ae": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_4de9a5d9077d12797d76cf25": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_7fadffb7a627921ccb43575a": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_5159aa9c55d149fa4190a4fe": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_ad9fc2ad31da7e0e8cc2360a": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_0b3d4965c3d1c7bda704e9c5": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_175b7ea9e0ca0fb5ab4e60ac": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_e0095dfd2f4f27115952c914": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_7f0b0f73d7988bba94a8ef41": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_53f48707217e859095f77753": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_683a1fb0a0e9ce4f0b318f28": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_b19b6d53d2d82816ec23b1a7": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_3bdc8cac7a61829d4ca5f8be": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_0347f86da1fdce9bdd0dc6df": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_aa12279c182e0301895e2e94": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_3fe4ba989057070287ebe0e1": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_c708908b5d72ac70b9d958f0": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_568760df11d8c72da43a8a80": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_fixture_b": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_9d804bb34f844abc15c879ef": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_dbe848e0b3814ff2f5304e7f": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_9cdd1d22862add173e8f87f9": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_431fdce945d556f00fa857fb": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_37a00a9d52445aea7a0a8c49": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_341bdf3a50f87e6898c72500": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_42a435672ef2f63ed7683c15": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_c6b16614617136b21be7eab9": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_8583d269f4cdf4396bd83d82": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_c3ad212e1f249ec944cc5eaf": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_e90da908a064f15c415cd4b1": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_6b48c78c4d700b0f70cc2246": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_9e95492124dcf91714dd3c5c": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_692f2b52ca94672aee6a6f33": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_0f2422c8ae4b18c9160f223b": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_fc38a9a99f3413f19d54a665": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_fixture_c": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_dcad65a233d38e0e787937a5": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_bec8c8f8c163bb4635494c4e": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_ec9bf205de664c7a98eabcff": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_6ff5d7052593b8fa9e8a8ff8": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_d99ebbc9118fd6a444e8adc9": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_79358bb623adfecff27d14b9": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_c015d94da0c1e52233666532": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_816f8f8425d16318f19aab12": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_ca1e2320306e1ddbad34d296": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_4e6bb5d69f9d31df53e37cb1": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_f6c1679bfb77edfcd944a97c": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_0935d42849594fba9561783b": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_6f1d46c0eaf0c20c952e8ad9": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_4144ff76fd67d674ed1050b8": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_f5283aeba446b17e4b6f5251": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_fixture_a": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_cade616d0e3fb893d4231e89": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_f8737482dcf222b476507a45": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_420d1fb45e53e8f5def8a75d": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_5c55ed294e9d0cfb70b5576c": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_bbfa8e8584d1a5c49fb9d226": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_b831a0ae737574ac4dcc0ecf": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_8a31b57d64fa9ce30ade33d1": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_22e5284cdc8baa7930e62a7c": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_b2696f74927ccb96f8cb5aea": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      },
+      "penang_v2_a2efcb35eae87b0d2cab7563": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "synthetic": true
+      },
+      "penang_v2_7a35837d1c8b0ffd597a6b9f": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "synthetic": true
+      }
+    },
+    "currentProfiles": {
+      "culture": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer"
+      },
+      "nature": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer"
+      },
+      "family": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner"
+      }
+    },
+    "genuineEligibilityFixtures": [
+      {
+        "id": "isolated_0_0",
+        "travellerId": "isolated_culture",
+        "destinationId": "penang_armenian_street",
+        "rating": 5,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_0_1",
+        "travellerId": "isolated_nature",
+        "destinationId": "penang_armenian_street",
+        "rating": 4,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_0_2",
+        "travellerId": "isolated_family",
+        "destinationId": "penang_armenian_street",
+        "rating": 2,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_1_0",
+        "travellerId": "isolated_culture",
+        "destinationId": "local_penang_hill",
+        "rating": 2,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_1_1",
+        "travellerId": "isolated_nature",
+        "destinationId": "local_penang_hill",
+        "rating": 3,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_1_2",
+        "travellerId": "isolated_family",
+        "destinationId": "local_penang_hill",
+        "rating": 4,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_2_0",
+        "travellerId": "isolated_kek_peer_0",
+        "destinationId": "local_kek_lok_si",
+        "rating": 5,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_2_1",
+        "travellerId": "isolated_kek_peer_1",
+        "destinationId": "local_kek_lok_si",
+        "rating": 5,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_2_2",
+        "travellerId": "isolated_kek_peer_2",
+        "destinationId": "local_kek_lok_si",
+        "rating": 4,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_2_3",
+        "travellerId": "isolated_kek_peer_3",
+        "destinationId": "local_kek_lok_si",
+        "rating": 4,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_2_4",
+        "travellerId": "isolated_kek_peer_4",
+        "destinationId": "local_kek_lok_si",
+        "rating": 4,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_2_5",
+        "travellerId": "isolated_kek_peer_5",
+        "destinationId": "local_kek_lok_si",
+        "rating": 4,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_2_6",
+        "travellerId": "isolated_kek_peer_6",
+        "destinationId": "local_kek_lok_si",
+        "rating": 3,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_2_7",
+        "travellerId": "isolated_kek_peer_7",
+        "destinationId": "local_kek_lok_si",
+        "rating": 3,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_2_8",
+        "travellerId": "isolated_kek_peer_8",
+        "destinationId": "local_kek_lok_si",
+        "rating": 3,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_2_9",
+        "travellerId": "isolated_kek_peer_9",
+        "destinationId": "local_kek_lok_si",
+        "rating": 3,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_3_0",
+        "travellerId": "isolated_culture",
+        "destinationId": "local_chew_jetty",
+        "rating": 2,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_3_1",
+        "travellerId": "isolated_nature",
+        "destinationId": "local_chew_jetty",
+        "rating": 2,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_3_2",
+        "travellerId": "isolated_family",
+        "destinationId": "local_chew_jetty",
+        "rating": 3,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_4_0",
+        "travellerId": "isolated_culture",
+        "destinationId": "penang_gurney_drive",
+        "rating": 5,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_4_1",
+        "travellerId": "isolated_nature",
+        "destinationId": "penang_gurney_drive",
+        "rating": 4,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_4_2",
+        "travellerId": "isolated_family",
+        "destinationId": "penang_gurney_drive",
+        "rating": 2,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_5_0",
+        "travellerId": "isolated_culture",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 2,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_5_1",
+        "travellerId": "isolated_nature",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 3,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_5_2",
+        "travellerId": "isolated_family",
+        "destinationId": "local_batu_ferringhi",
+        "rating": 4,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_6_0",
+        "travellerId": "isolated_culture",
+        "destinationId": "demo_penang_street_art",
+        "rating": 5,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_6_1",
+        "travellerId": "isolated_nature",
+        "destinationId": "demo_penang_street_art",
+        "rating": 5,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_6_2",
+        "travellerId": "isolated_family",
+        "destinationId": "demo_penang_street_art",
+        "rating": 4,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_7_0",
+        "travellerId": "isolated_culture",
+        "destinationId": "local_peranakan_mansion",
+        "rating": 2,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_7_1",
+        "travellerId": "isolated_nature",
+        "destinationId": "local_peranakan_mansion",
+        "rating": 2,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_7_2",
+        "travellerId": "isolated_family",
+        "destinationId": "local_peranakan_mansion",
+        "rating": 3,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_8_0",
+        "travellerId": "isolated_culture",
+        "destinationId": "local_botanical_gardens",
+        "rating": 5,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_8_1",
+        "travellerId": "isolated_nature",
+        "destinationId": "local_botanical_gardens",
+        "rating": 4,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_8_2",
+        "travellerId": "isolated_family",
+        "destinationId": "local_botanical_gardens",
+        "rating": 2,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_9_0",
+        "travellerId": "isolated_culture",
+        "destinationId": "tropical_spice_garden",
+        "rating": 2,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_9_1",
+        "travellerId": "isolated_nature",
+        "destinationId": "tropical_spice_garden",
+        "rating": 3,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_9_2",
+        "travellerId": "isolated_family",
+        "destinationId": "tropical_spice_garden",
+        "rating": 4,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_10_0",
+        "travellerId": "isolated_culture",
+        "destinationId": "entopia",
+        "rating": 5,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_10_1",
+        "travellerId": "isolated_nature",
+        "destinationId": "entopia",
+        "rating": 5,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_10_2",
+        "travellerId": "isolated_family",
+        "destinationId": "entopia",
+        "rating": 4,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_11_0",
+        "travellerId": "isolated_culture",
+        "destinationId": "local_wonderfood",
+        "rating": 2,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_11_1",
+        "travellerId": "isolated_nature",
+        "destinationId": "local_wonderfood",
+        "rating": 2,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      },
+      {
+        "id": "isolated_11_2",
+        "travellerId": "isolated_family",
+        "destinationId": "local_wonderfood",
+        "rating": 3,
+        "fixtureScope": "isolated_genuine_contract",
+        "feedbackStatus": "visible",
+        "moderationStatus": "approved"
+      }
+    ],
+    "genuineFixtureProfiles": {
+      "isolated_culture": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "fixtureScope": "isolated_genuine_contract"
+      },
+      "isolated_nature": {
+        "label": "Nature and adventure",
+        "interests": [
+          "Nature",
+          "Adventure",
+          "Photography"
+        ],
+        "travelType": "Lesser-known places",
+        "travelPace": "Packed",
+        "travelPurpose": "Solo travel",
+        "travelPersonality": "Explorer",
+        "fixtureScope": "isolated_genuine_contract"
+      },
+      "isolated_family": {
+        "label": "Family and cultural visits",
+        "interests": [
+          "Family",
+          "Culture",
+          "Photography"
+        ],
+        "travelType": "Popular landmarks",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Family trip",
+        "travelPersonality": "Planner",
+        "fixtureScope": "isolated_genuine_contract"
+      },
+      "isolated_kek_peer_0": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "fixtureScope": "isolated_genuine_contract"
+      },
+      "isolated_kek_peer_1": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "fixtureScope": "isolated_genuine_contract"
+      },
+      "isolated_kek_peer_2": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "fixtureScope": "isolated_genuine_contract"
+      },
+      "isolated_kek_peer_3": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "fixtureScope": "isolated_genuine_contract"
+      },
+      "isolated_kek_peer_4": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "fixtureScope": "isolated_genuine_contract"
+      },
+      "isolated_kek_peer_5": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "fixtureScope": "isolated_genuine_contract"
+      },
+      "isolated_kek_peer_6": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "fixtureScope": "isolated_genuine_contract"
+      },
+      "isolated_kek_peer_7": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "fixtureScope": "isolated_genuine_contract"
+      },
+      "isolated_kek_peer_8": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "fixtureScope": "isolated_genuine_contract"
+      },
+      "isolated_kek_peer_9": {
+        "label": "Culture and photography",
+        "interests": [
+          "Culture",
+          "Photography",
+          "Food"
+        ],
+        "travelType": "Mixed",
+        "travelPace": "Relaxed",
+        "travelPurpose": "Holiday",
+        "travelPersonality": "Explorer",
+        "fixtureScope": "isolated_genuine_contract"
+      }
+    }
+  },
+  "expected": [
+    {
+      "profile": "culture",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "penang_armenian_street",
+      "title": "Armenian Street",
+      "content": 25.5,
+      "eligiblePeers": 2,
+      "rawPeer": 80.8,
+      "confidence": 0.417,
+      "collaborative": 62.83,
+      "popularity": 58.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 58.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.6666666666666665,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 40.02
+    },
+    {
+      "profile": "culture",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_penang_hill",
+      "title": "Penang Hill",
+      "content": 71.33,
+      "eligiblePeers": 2,
+      "rawPeer": 52.8,
+      "confidence": 0.417,
+      "collaborative": 51.17,
+      "popularity": 48.01,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 48.01,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.0,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 62.95
+    },
+    {
+      "profile": "culture",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_kek_lok_si",
+      "title": "Kek Lok Si Temple",
+      "content": 80.5,
+      "eligiblePeers": 10,
+      "rawPeer": 76.0,
+      "confidence": 1.0,
+      "collaborative": 76.0,
+      "popularity": 60.82,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 60.82,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.8,
+        "reviewCount": 10,
+        "fallbackReason": null
+      },
+      "hybrid": 77.18
+    },
+    {
+      "profile": "culture",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_chew_jetty",
+      "title": "Chew Jetty",
+      "content": 77.06,
+      "eligiblePeers": 2,
+      "rawPeer": 46.4,
+      "confidence": 0.417,
+      "collaborative": 48.5,
+      "popularity": 37.34,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 37.34,
+        "source": "genuine_approved_local_reviews",
+        "rating": 2.3333333333333335,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 64.52
+    },
+    {
+      "profile": "culture",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "penang_gurney_drive",
+      "title": "Gurney Drive Hawker Centre",
+      "content": 80.5,
+      "eligiblePeers": 2,
+      "rawPeer": 80.8,
+      "confidence": 0.417,
+      "collaborative": 62.83,
+      "popularity": 58.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 58.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.6666666666666665,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 73.02
+    },
+    {
+      "profile": "culture",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_batu_ferringhi",
+      "title": "Batu Ferringhi Beach",
+      "content": 25.5,
+      "eligiblePeers": 2,
+      "rawPeer": 52.8,
+      "confidence": 0.417,
+      "collaborative": 51.17,
+      "popularity": 48.01,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 48.01,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.0,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 35.45
+    },
+    {
+      "profile": "culture",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "demo_penang_street_art",
+      "title": "George Town Street Art",
+      "content": 80.5,
+      "eligiblePeers": 2,
+      "rawPeer": 93.6,
+      "confidence": 0.417,
+      "collaborative": 68.17,
+      "popularity": 74.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 74.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 4.666666666666667,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 76.22
+    },
+    {
+      "profile": "culture",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_peranakan_mansion",
+      "title": "Pinang Peranakan Mansion",
+      "content": 80.5,
+      "eligiblePeers": 2,
+      "rawPeer": 46.4,
+      "confidence": 0.417,
+      "collaborative": 48.5,
+      "popularity": 37.34,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 37.34,
+        "source": "genuine_approved_local_reviews",
+        "rating": 2.3333333333333335,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 66.58
+    },
+    {
+      "profile": "culture",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_botanical_gardens",
+      "title": "Penang Botanic Gardens",
+      "content": 71.33,
+      "eligiblePeers": 2,
+      "rawPeer": 80.8,
+      "confidence": 0.417,
+      "collaborative": 62.83,
+      "popularity": 58.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 58.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.6666666666666665,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 67.51
+    },
+    {
+      "profile": "culture",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "tropical_spice_garden",
+      "title": "Tropical Spice Garden",
+      "content": 25.5,
+      "eligiblePeers": 2,
+      "rawPeer": 52.8,
+      "confidence": 0.417,
+      "collaborative": 51.17,
+      "popularity": 48.01,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 48.01,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.0,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 35.45
+    },
+    {
+      "profile": "culture",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "entopia",
+      "title": "Entopia by Penang Butterfly Farm",
+      "content": 25.5,
+      "eligiblePeers": 2,
+      "rawPeer": 93.6,
+      "confidence": 0.417,
+      "collaborative": 68.17,
+      "popularity": 74.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 74.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 4.666666666666667,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 43.22
+    },
+    {
+      "profile": "culture",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_wonderfood",
+      "title": "Wonderfood Museum",
+      "content": 80.5,
+      "eligiblePeers": 2,
+      "rawPeer": 46.4,
+      "confidence": 0.417,
+      "collaborative": 48.5,
+      "popularity": 37.34,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 37.34,
+        "source": "genuine_approved_local_reviews",
+        "rating": 2.3333333333333335,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 66.58
+    },
+    {
+      "profile": "culture",
+      "mode": "demonstration",
+      "destinationId": "local_peranakan_mansion",
+      "title": "Pinang Peranakan Mansion",
+      "content": 80.5,
+      "eligiblePeers": 5,
+      "rawPeer": 71.38,
+      "confidence": 0.967,
+      "collaborative": 70.67,
+      "popularity": 59.44,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 59.44,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.7142857142857144,
+        "reviewCount": 7,
+        "fallbackReason": null
+      },
+      "hybrid": 75.45
+    },
+    {
+      "profile": "culture",
+      "mode": "demonstration",
+      "destinationId": "demo_penang_street_art",
+      "title": "George Town Street Art",
+      "content": 80.5,
+      "eligiblePeers": 8,
+      "rawPeer": 70.83,
+      "confidence": 1.0,
+      "collaborative": 70.83,
+      "popularity": 56.02,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 56.02,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.5,
+        "reviewCount": 8,
+        "fallbackReason": null
+      },
+      "hybrid": 75.15
+    },
+    {
+      "profile": "culture",
+      "mode": "demonstration",
+      "destinationId": "local_kek_lok_si",
+      "title": "Kek Lok Si Temple",
+      "content": 80.5,
+      "eligiblePeers": 5,
+      "rawPeer": 66.12,
+      "confidence": 0.817,
+      "collaborative": 63.17,
+      "popularity": 58.68,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 58.68,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.6666666666666665,
+        "reviewCount": 9,
+        "fallbackReason": null
+      },
+      "hybrid": 73.12
+    },
+    {
+      "profile": "culture",
+      "mode": "demonstration",
+      "destinationId": "penang_gurney_drive",
+      "title": "Gurney Drive Hawker Centre",
+      "content": 80.5,
+      "eligiblePeers": 8,
+      "rawPeer": 61.46,
+      "confidence": 1.0,
+      "collaborative": 61.46,
+      "popularity": 54.02,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 54.02,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.375,
+        "reviewCount": 8,
+        "fallbackReason": null
+      },
+      "hybrid": 72.14
+    },
+    {
+      "profile": "culture",
+      "mode": "demonstration",
+      "destinationId": "local_penang_hill",
+      "title": "Penang Hill",
+      "content": 71.33,
+      "eligiblePeers": 6,
+      "rawPeer": 73.07,
+      "confidence": 1.0,
+      "collaborative": 73.07,
+      "popularity": 61.11,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 61.11,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.8181818181818183,
+        "reviewCount": 11,
+        "fallbackReason": null
+      },
+      "hybrid": 70.83
+    },
+    {
+      "profile": "culture",
+      "mode": "demonstration",
+      "destinationId": "local_chew_jetty",
+      "title": "Chew Jetty",
+      "content": 77.06,
+      "eligiblePeers": 5,
+      "rawPeer": 62.39,
+      "confidence": 1.0,
+      "collaborative": 62.39,
+      "popularity": 52.59,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 52.59,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.2857142857142856,
+        "reviewCount": 7,
+        "fallbackReason": null
+      },
+      "hybrid": 70.21
+    },
+    {
+      "profile": "culture",
+      "mode": "demonstration",
+      "destinationId": "local_wonderfood",
+      "title": "Wonderfood Museum",
+      "content": 80.5,
+      "eligiblePeers": 6,
+      "rawPeer": 56.84,
+      "confidence": 0.95,
+      "collaborative": 56.5,
+      "popularity": 48.01,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 48.01,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.0,
+        "reviewCount": 6,
+        "fallbackReason": null
+      },
+      "hybrid": 70.05
+    },
+    {
+      "profile": "culture",
+      "mode": "demonstration",
+      "destinationId": "local_botanical_gardens",
+      "title": "Penang Botanic Gardens",
+      "content": 71.33,
+      "eligiblePeers": 6,
+      "rawPeer": 59.39,
+      "confidence": 1.0,
+      "collaborative": 59.39,
+      "popularity": 53.35,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 53.35,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.3333333333333335,
+        "reviewCount": 6,
+        "fallbackReason": null
+      },
+      "hybrid": 65.95
+    },
+    {
+      "profile": "culture",
+      "mode": "demonstration",
+      "destinationId": "entopia",
+      "title": "Entopia by Penang Butterfly Farm",
+      "content": 25.5,
+      "eligiblePeers": 7,
+      "rawPeer": 75.41,
+      "confidence": 1.0,
+      "collaborative": 75.41,
+      "popularity": 62.02,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 62.02,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.875,
+        "reviewCount": 8,
+        "fallbackReason": null
+      },
+      "hybrid": 44.12
+    },
+    {
+      "profile": "culture",
+      "mode": "demonstration",
+      "destinationId": "penang_armenian_street",
+      "title": "Armenian Street",
+      "content": 25.5,
+      "eligiblePeers": 6,
+      "rawPeer": 62.12,
+      "confidence": 1.0,
+      "collaborative": 62.12,
+      "popularity": 60.82,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 60.82,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.8,
+        "reviewCount": 10,
+        "fallbackReason": null
+      },
+      "hybrid": 40.02
+    },
+    {
+      "profile": "culture",
+      "mode": "demonstration",
+      "destinationId": "tropical_spice_garden",
+      "title": "Tropical Spice Garden",
+      "content": 25.5,
+      "eligiblePeers": 6,
+      "rawPeer": 63.81,
+      "confidence": 1.0,
+      "collaborative": 63.81,
+      "popularity": 52.59,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 52.59,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.2857142857142856,
+        "reviewCount": 7,
+        "fallbackReason": null
+      },
+      "hybrid": 39.7
+    },
+    {
+      "profile": "culture",
+      "mode": "demonstration",
+      "destinationId": "local_batu_ferringhi",
+      "title": "Batu Ferringhi Beach",
+      "content": 25.5,
+      "eligiblePeers": 8,
+      "rawPeer": 55.37,
+      "confidence": 1.0,
+      "collaborative": 55.37,
+      "popularity": 51.57,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 51.57,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.2222222222222223,
+        "reviewCount": 9,
+        "fallbackReason": null
+      },
+      "hybrid": 37.07
+    },
+    {
+      "profile": "nature",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "penang_armenian_street",
+      "title": "Armenian Street",
+      "content": 25.5,
+      "eligiblePeers": 1,
+      "rawPeer": 80.0,
+      "confidence": 0.283,
+      "collaborative": 58.5,
+      "popularity": 58.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 58.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.6666666666666665,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 38.72
+    },
+    {
+      "profile": "nature",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_penang_hill",
+      "title": "Penang Hill",
+      "content": 80.5,
+      "eligiblePeers": 1,
+      "rawPeer": 60.0,
+      "confidence": 0.283,
+      "collaborative": 52.83,
+      "popularity": 48.01,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 48.01,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.0,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 68.95
+    },
+    {
+      "profile": "nature",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_kek_lok_si",
+      "title": "Kek Lok Si Temple",
+      "content": 73.63,
+      "eligiblePeers": 0,
+      "rawPeer": 50.0,
+      "confidence": 0.0,
+      "collaborative": 50.0,
+      "popularity": 60.82,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 60.82,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.8,
+        "reviewCount": 10,
+        "fallbackReason": null
+      },
+      "hybrid": 65.26
+    },
+    {
+      "profile": "nature",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_chew_jetty",
+      "title": "Chew Jetty",
+      "content": 73.63,
+      "eligiblePeers": 1,
+      "rawPeer": 40.0,
+      "confidence": 0.283,
+      "collaborative": 47.17,
+      "popularity": 37.34,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 37.34,
+        "source": "genuine_approved_local_reviews",
+        "rating": 2.3333333333333335,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 62.06
+    },
+    {
+      "profile": "nature",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "penang_gurney_drive",
+      "title": "Gurney Drive Hawker Centre",
+      "content": 25.5,
+      "eligiblePeers": 1,
+      "rawPeer": 80.0,
+      "confidence": 0.283,
+      "collaborative": 58.5,
+      "popularity": 58.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 58.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.6666666666666665,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 38.72
+    },
+    {
+      "profile": "nature",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_batu_ferringhi",
+      "title": "Batu Ferringhi Beach",
+      "content": 75.92,
+      "eligiblePeers": 1,
+      "rawPeer": 60.0,
+      "confidence": 0.283,
+      "collaborative": 52.83,
+      "popularity": 48.01,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 48.01,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.0,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 66.2
+    },
+    {
+      "profile": "nature",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "demo_penang_street_art",
+      "title": "George Town Street Art",
+      "content": 73.63,
+      "eligiblePeers": 1,
+      "rawPeer": 100.0,
+      "confidence": 0.283,
+      "collaborative": 64.17,
+      "popularity": 74.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 74.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 4.666666666666667,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 70.9
+    },
+    {
+      "profile": "nature",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_peranakan_mansion",
+      "title": "Pinang Peranakan Mansion",
+      "content": 64.0,
+      "eligiblePeers": 1,
+      "rawPeer": 40.0,
+      "confidence": 0.283,
+      "collaborative": 47.17,
+      "popularity": 37.34,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 37.34,
+        "source": "genuine_approved_local_reviews",
+        "rating": 2.3333333333333335,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 56.28
+    },
+    {
+      "profile": "nature",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_botanical_gardens",
+      "title": "Penang Botanic Gardens",
+      "content": 75.92,
+      "eligiblePeers": 1,
+      "rawPeer": 80.0,
+      "confidence": 0.283,
+      "collaborative": 58.5,
+      "popularity": 58.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 58.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.6666666666666665,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 68.97
+    },
+    {
+      "profile": "nature",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "tropical_spice_garden",
+      "title": "Tropical Spice Garden",
+      "content": 80.5,
+      "eligiblePeers": 1,
+      "rawPeer": 60.0,
+      "confidence": 0.283,
+      "collaborative": 52.83,
+      "popularity": 48.01,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 48.01,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.0,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 68.95
+    },
+    {
+      "profile": "nature",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "entopia",
+      "title": "Entopia by Penang Butterfly Farm",
+      "content": 25.5,
+      "eligiblePeers": 1,
+      "rawPeer": 100.0,
+      "confidence": 0.283,
+      "collaborative": 64.17,
+      "popularity": 74.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 74.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 4.666666666666667,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 42.02
+    },
+    {
+      "profile": "nature",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_wonderfood",
+      "title": "Wonderfood Museum",
+      "content": 71.33,
+      "eligiblePeers": 1,
+      "rawPeer": 40.0,
+      "confidence": 0.283,
+      "collaborative": 47.17,
+      "popularity": 37.34,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 37.34,
+        "source": "genuine_approved_local_reviews",
+        "rating": 2.3333333333333335,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 60.68
+    },
+    {
+      "profile": "nature",
+      "mode": "demonstration",
+      "destinationId": "local_penang_hill",
+      "title": "Penang Hill",
+      "content": 80.5,
+      "eligiblePeers": 5,
+      "rawPeer": 76.0,
+      "confidence": 1.0,
+      "collaborative": 76.0,
+      "popularity": 61.11,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 61.11,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.8181818181818183,
+        "reviewCount": 11,
+        "fallbackReason": null
+      },
+      "hybrid": 77.21
+    },
+    {
+      "profile": "nature",
+      "mode": "demonstration",
+      "destinationId": "local_kek_lok_si",
+      "title": "Kek Lok Si Temple",
+      "content": 73.63,
+      "eligiblePeers": 4,
+      "rawPeer": 75.0,
+      "confidence": 1.0,
+      "collaborative": 75.0,
+      "popularity": 58.68,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 58.68,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.6666666666666665,
+        "reviewCount": 9,
+        "fallbackReason": null
+      },
+      "hybrid": 72.55
+    },
+    {
+      "profile": "nature",
+      "mode": "demonstration",
+      "destinationId": "tropical_spice_garden",
+      "title": "Tropical Spice Garden",
+      "content": 80.5,
+      "eligiblePeers": 1,
+      "rawPeer": 60.0,
+      "confidence": 0.283,
+      "collaborative": 52.83,
+      "popularity": 52.59,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 52.59,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.2857142857142856,
+        "reviewCount": 7,
+        "fallbackReason": null
+      },
+      "hybrid": 69.41
+    },
+    {
+      "profile": "nature",
+      "mode": "demonstration",
+      "destinationId": "local_batu_ferringhi",
+      "title": "Batu Ferringhi Beach",
+      "content": 75.92,
+      "eligiblePeers": 1,
+      "rawPeer": 80.0,
+      "confidence": 0.283,
+      "collaborative": 58.5,
+      "popularity": 51.57,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 51.57,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.2222222222222223,
+        "reviewCount": 9,
+        "fallbackReason": null
+      },
+      "hybrid": 68.26
+    },
+    {
+      "profile": "nature",
+      "mode": "demonstration",
+      "destinationId": "local_chew_jetty",
+      "title": "Chew Jetty",
+      "content": 73.63,
+      "eligiblePeers": 2,
+      "rawPeer": 70.0,
+      "confidence": 0.567,
+      "collaborative": 61.33,
+      "popularity": 52.59,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 52.59,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.2857142857142856,
+        "reviewCount": 7,
+        "fallbackReason": null
+      },
+      "hybrid": 67.84
+    },
+    {
+      "profile": "nature",
+      "mode": "demonstration",
+      "destinationId": "local_botanical_gardens",
+      "title": "Penang Botanic Gardens",
+      "content": 75.92,
+      "eligiblePeers": 0,
+      "rawPeer": 50.0,
+      "confidence": 0.0,
+      "collaborative": 50.0,
+      "popularity": 53.35,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 53.35,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.3333333333333335,
+        "reviewCount": 6,
+        "fallbackReason": null
+      },
+      "hybrid": 65.89
+    },
+    {
+      "profile": "nature",
+      "mode": "demonstration",
+      "destinationId": "demo_penang_street_art",
+      "title": "George Town Street Art",
+      "content": 73.63,
+      "eligiblePeers": 0,
+      "rawPeer": 50.0,
+      "confidence": 0.0,
+      "collaborative": 50.0,
+      "popularity": 56.02,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 56.02,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.5,
+        "reviewCount": 8,
+        "fallbackReason": null
+      },
+      "hybrid": 64.78
+    },
+    {
+      "profile": "nature",
+      "mode": "demonstration",
+      "destinationId": "local_peranakan_mansion",
+      "title": "Pinang Peranakan Mansion",
+      "content": 64.0,
+      "eligiblePeers": 2,
+      "rawPeer": 80.0,
+      "confidence": 0.567,
+      "collaborative": 67.0,
+      "popularity": 59.44,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 59.44,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.7142857142857144,
+        "reviewCount": 7,
+        "fallbackReason": null
+      },
+      "hybrid": 64.44
+    },
+    {
+      "profile": "nature",
+      "mode": "demonstration",
+      "destinationId": "local_wonderfood",
+      "title": "Wonderfood Museum",
+      "content": 71.33,
+      "eligiblePeers": 0,
+      "rawPeer": 50.0,
+      "confidence": 0.0,
+      "collaborative": 50.0,
+      "popularity": 48.01,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 48.01,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.0,
+        "reviewCount": 6,
+        "fallbackReason": null
+      },
+      "hybrid": 62.6
+    },
+    {
+      "profile": "nature",
+      "mode": "demonstration",
+      "destinationId": "penang_armenian_street",
+      "title": "Armenian Street",
+      "content": 25.5,
+      "eligiblePeers": 4,
+      "rawPeer": 90.0,
+      "confidence": 1.0,
+      "collaborative": 90.0,
+      "popularity": 60.82,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 60.82,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.8,
+        "reviewCount": 10,
+        "fallbackReason": null
+      },
+      "hybrid": 48.38
+    },
+    {
+      "profile": "nature",
+      "mode": "demonstration",
+      "destinationId": "entopia",
+      "title": "Entopia by Penang Butterfly Farm",
+      "content": 25.5,
+      "eligiblePeers": 1,
+      "rawPeer": 80.0,
+      "confidence": 0.283,
+      "collaborative": 58.5,
+      "popularity": 62.02,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 62.02,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.875,
+        "reviewCount": 8,
+        "fallbackReason": null
+      },
+      "hybrid": 39.05
+    },
+    {
+      "profile": "nature",
+      "mode": "demonstration",
+      "destinationId": "penang_gurney_drive",
+      "title": "Gurney Drive Hawker Centre",
+      "content": 25.5,
+      "eligiblePeers": 0,
+      "rawPeer": 50.0,
+      "confidence": 0.0,
+      "collaborative": 50.0,
+      "popularity": 54.02,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 54.02,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.375,
+        "reviewCount": 8,
+        "fallbackReason": null
+      },
+      "hybrid": 35.7
+    },
+    {
+      "profile": "family",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "penang_armenian_street",
+      "title": "Armenian Street",
+      "content": 25.5,
+      "eligiblePeers": 2,
+      "rawPeer": 59.2,
+      "confidence": 0.417,
+      "collaborative": 53.83,
+      "popularity": 58.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 58.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.6666666666666665,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 37.32
+    },
+    {
+      "profile": "family",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_penang_hill",
+      "title": "Penang Hill",
+      "content": 71.33,
+      "eligiblePeers": 2,
+      "rawPeer": 67.2,
+      "confidence": 0.417,
+      "collaborative": 57.17,
+      "popularity": 48.01,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 48.01,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.0,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 64.75
+    },
+    {
+      "profile": "family",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_kek_lok_si",
+      "title": "Kek Lok Si Temple",
+      "content": 80.5,
+      "eligiblePeers": 10,
+      "rawPeer": 76.0,
+      "confidence": 1.0,
+      "collaborative": 76.0,
+      "popularity": 60.82,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 60.82,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.8,
+        "reviewCount": 10,
+        "fallbackReason": null
+      },
+      "hybrid": 77.18
+    },
+    {
+      "profile": "family",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_chew_jetty",
+      "title": "Chew Jetty",
+      "content": 73.63,
+      "eligiblePeers": 2,
+      "rawPeer": 53.6,
+      "confidence": 0.417,
+      "collaborative": 51.5,
+      "popularity": 37.34,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 37.34,
+        "source": "genuine_approved_local_reviews",
+        "rating": 2.3333333333333335,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 63.36
+    },
+    {
+      "profile": "family",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "penang_gurney_drive",
+      "title": "Gurney Drive Hawker Centre",
+      "content": 25.5,
+      "eligiblePeers": 2,
+      "rawPeer": 59.2,
+      "confidence": 0.417,
+      "collaborative": 53.83,
+      "popularity": 58.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 58.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.6666666666666665,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 37.32
+    },
+    {
+      "profile": "family",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_batu_ferringhi",
+      "title": "Batu Ferringhi Beach",
+      "content": 25.5,
+      "eligiblePeers": 2,
+      "rawPeer": 67.2,
+      "confidence": 0.417,
+      "collaborative": 57.17,
+      "popularity": 48.01,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 48.01,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.0,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 37.25
+    },
+    {
+      "profile": "family",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "demo_penang_street_art",
+      "title": "George Town Street Art",
+      "content": 80.5,
+      "eligiblePeers": 2,
+      "rawPeer": 86.4,
+      "confidence": 0.417,
+      "collaborative": 65.17,
+      "popularity": 74.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 74.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 4.666666666666667,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 75.32
+    },
+    {
+      "profile": "family",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_peranakan_mansion",
+      "title": "Pinang Peranakan Mansion",
+      "content": 80.5,
+      "eligiblePeers": 2,
+      "rawPeer": 53.6,
+      "confidence": 0.417,
+      "collaborative": 51.5,
+      "popularity": 37.34,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 37.34,
+        "source": "genuine_approved_local_reviews",
+        "rating": 2.3333333333333335,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 67.48
+    },
+    {
+      "profile": "family",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_botanical_gardens",
+      "title": "Penang Botanic Gardens",
+      "content": 71.33,
+      "eligiblePeers": 2,
+      "rawPeer": 59.2,
+      "confidence": 0.417,
+      "collaborative": 53.83,
+      "popularity": 58.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 58.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.6666666666666665,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 64.81
+    },
+    {
+      "profile": "family",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "tropical_spice_garden",
+      "title": "Tropical Spice Garden",
+      "content": 25.5,
+      "eligiblePeers": 2,
+      "rawPeer": 67.2,
+      "confidence": 0.417,
+      "collaborative": 57.17,
+      "popularity": 48.01,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 48.01,
+        "source": "genuine_approved_local_reviews",
+        "rating": 3.0,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 37.25
+    },
+    {
+      "profile": "family",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "entopia",
+      "title": "Entopia by Penang Butterfly Farm",
+      "content": 25.5,
+      "eligiblePeers": 2,
+      "rawPeer": 86.4,
+      "confidence": 0.417,
+      "collaborative": 65.17,
+      "popularity": 74.67,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 74.67,
+        "source": "genuine_approved_local_reviews",
+        "rating": 4.666666666666667,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 42.32
+    },
+    {
+      "profile": "family",
+      "mode": "genuine_eligibility_fixture",
+      "destinationId": "local_wonderfood",
+      "title": "Wonderfood Museum",
+      "content": 75.92,
+      "eligiblePeers": 2,
+      "rawPeer": 53.6,
+      "confidence": 0.417,
+      "collaborative": 51.5,
+      "popularity": 37.34,
+      "popularitySource": "genuine_approved_local_reviews",
+      "popularityEvidence": {
+        "score": 37.34,
+        "source": "genuine_approved_local_reviews",
+        "rating": 2.3333333333333335,
+        "reviewCount": 3,
+        "fallbackReason": null
+      },
+      "hybrid": 64.74
+    },
+    {
+      "profile": "family",
+      "mode": "demonstration",
+      "destinationId": "local_kek_lok_si",
+      "title": "Kek Lok Si Temple",
+      "content": 80.5,
+      "eligiblePeers": 5,
+      "rawPeer": 75.79,
+      "confidence": 1.0,
+      "collaborative": 75.79,
+      "popularity": 58.68,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 58.68,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.6666666666666665,
+        "reviewCount": 9,
+        "fallbackReason": null
+      },
+      "hybrid": 76.91
+    },
+    {
+      "profile": "family",
+      "mode": "demonstration",
+      "destinationId": "local_peranakan_mansion",
+      "title": "Pinang Peranakan Mansion",
+      "content": 80.5,
+      "eligiblePeers": 5,
+      "rawPeer": 72.54,
+      "confidence": 1.0,
+      "collaborative": 72.54,
+      "popularity": 59.44,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 59.44,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.7142857142857144,
+        "reviewCount": 7,
+        "fallbackReason": null
+      },
+      "hybrid": 76.01
+    },
+    {
+      "profile": "family",
+      "mode": "demonstration",
+      "destinationId": "demo_penang_street_art",
+      "title": "George Town Street Art",
+      "content": 80.5,
+      "eligiblePeers": 8,
+      "rawPeer": 69.01,
+      "confidence": 1.0,
+      "collaborative": 69.01,
+      "popularity": 56.02,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 56.02,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.5,
+        "reviewCount": 8,
+        "fallbackReason": null
+      },
+      "hybrid": 74.6
+    },
+    {
+      "profile": "family",
+      "mode": "demonstration",
+      "destinationId": "local_penang_hill",
+      "title": "Penang Hill",
+      "content": 71.33,
+      "eligiblePeers": 6,
+      "rawPeer": 80.27,
+      "confidence": 1.0,
+      "collaborative": 80.27,
+      "popularity": 61.11,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 61.11,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.8181818181818183,
+        "reviewCount": 11,
+        "fallbackReason": null
+      },
+      "hybrid": 72.99
+    },
+    {
+      "profile": "family",
+      "mode": "demonstration",
+      "destinationId": "local_botanical_gardens",
+      "title": "Penang Botanic Gardens",
+      "content": 71.33,
+      "eligiblePeers": 6,
+      "rawPeer": 72.38,
+      "confidence": 1.0,
+      "collaborative": 72.38,
+      "popularity": 53.35,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 53.35,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.3333333333333335,
+        "reviewCount": 6,
+        "fallbackReason": null
+      },
+      "hybrid": 69.85
+    },
+    {
+      "profile": "family",
+      "mode": "demonstration",
+      "destinationId": "local_chew_jetty",
+      "title": "Chew Jetty",
+      "content": 73.63,
+      "eligiblePeers": 5,
+      "rawPeer": 65.86,
+      "confidence": 0.967,
+      "collaborative": 65.33,
+      "popularity": 52.59,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 52.59,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.2857142857142856,
+        "reviewCount": 7,
+        "fallbackReason": null
+      },
+      "hybrid": 69.04
+    },
+    {
+      "profile": "family",
+      "mode": "demonstration",
+      "destinationId": "local_wonderfood",
+      "title": "Wonderfood Museum",
+      "content": 75.92,
+      "eligiblePeers": 6,
+      "rawPeer": 61.94,
+      "confidence": 1.0,
+      "collaborative": 61.94,
+      "popularity": 48.01,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 48.01,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.0,
+        "reviewCount": 6,
+        "fallbackReason": null
+      },
+      "hybrid": 68.94
+    },
+    {
+      "profile": "family",
+      "mode": "demonstration",
+      "destinationId": "entopia",
+      "title": "Entopia by Penang Butterfly Farm",
+      "content": 25.5,
+      "eligiblePeers": 7,
+      "rawPeer": 78.42,
+      "confidence": 1.0,
+      "collaborative": 78.42,
+      "popularity": 62.02,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 62.02,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.875,
+        "reviewCount": 8,
+        "fallbackReason": null
+      },
+      "hybrid": 45.03
+    },
+    {
+      "profile": "family",
+      "mode": "demonstration",
+      "destinationId": "penang_armenian_street",
+      "title": "Armenian Street",
+      "content": 25.5,
+      "eligiblePeers": 6,
+      "rawPeer": 70.24,
+      "confidence": 1.0,
+      "collaborative": 70.24,
+      "popularity": 60.82,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 60.82,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.8,
+        "reviewCount": 10,
+        "fallbackReason": null
+      },
+      "hybrid": 42.45
+    },
+    {
+      "profile": "family",
+      "mode": "demonstration",
+      "destinationId": "penang_gurney_drive",
+      "title": "Gurney Drive Hawker Centre",
+      "content": 25.5,
+      "eligiblePeers": 8,
+      "rawPeer": 71.69,
+      "confidence": 1.0,
+      "collaborative": 71.69,
+      "popularity": 54.02,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 54.02,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.375,
+        "reviewCount": 8,
+        "fallbackReason": null
+      },
+      "hybrid": 42.21
+    },
+    {
+      "profile": "family",
+      "mode": "demonstration",
+      "destinationId": "tropical_spice_garden",
+      "title": "Tropical Spice Garden",
+      "content": 25.5,
+      "eligiblePeers": 6,
+      "rawPeer": 70.3,
+      "confidence": 1.0,
+      "collaborative": 70.3,
+      "popularity": 52.59,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 52.59,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.2857142857142856,
+        "reviewCount": 7,
+        "fallbackReason": null
+      },
+      "hybrid": 41.65
+    },
+    {
+      "profile": "family",
+      "mode": "demonstration",
+      "destinationId": "local_batu_ferringhi",
+      "title": "Batu Ferringhi Beach",
+      "content": 25.5,
+      "eligiblePeers": 8,
+      "rawPeer": 67.46,
+      "confidence": 1.0,
+      "collaborative": 67.46,
+      "popularity": 51.57,
+      "popularitySource": "demonstration_approved_reviews",
+      "popularityEvidence": {
+        "score": 51.57,
+        "source": "demonstration_approved_reviews",
+        "rating": 3.2222222222222223,
+        "reviewCount": 9,
+        "fallbackReason": null
+      },
+      "hybrid": 40.7
+    }
+  ]
+}

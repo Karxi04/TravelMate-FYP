@@ -1,5 +1,28 @@
 import 'recommendation_taxonomy.dart';
 
+const recommendationEvidenceUpdateMessage =
+    'These saved recommendations use an older evidence format. Their scores have not been '
+    're-evaluated against current reviews. Regenerate recommendations to see the latest evidence.';
+const recommendationPreferenceUpdateMessage =
+    'Your saved preferences have changed. Regenerate recommendations to calculate new scores for your updated profile.';
+const recommendationStartMessage =
+    'Generate recommendations when you are ready. Your saved preferences will be used.';
+
+bool recommendationHasCurrentEvidence(Map item) {
+  final popularity = item['popularityEvidence'];
+  final peers = item['collaborativeRatingCount'];
+  final confidence = item['collaborativeConfidence'];
+  final raw = item['rawCollaborativeScore'];
+  return popularity is Map && popularity['source'] is String &&
+      (popularity['source'] as String).isNotEmpty && item['popularitySource'] == popularity['source'] &&
+      peers is num && peers.isFinite && peers >= 0 && peers == peers.roundToDouble() &&
+      confidence is num && confidence.isFinite && confidence >= 0 && confidence <= 1 &&
+      raw is num && raw.isFinite && raw >= 0 && raw <= 100;
+}
+
+bool recommendationsNeedEvidenceUpdate(Iterable items) =>
+    items.whereType<Map>().any((item) => !recommendationHasCurrentEvidence(item));
+
 /// Append a continuation of one destination search without resetting visible results.
 List<Map<String, dynamic>> appendRecommendationResults(List previous, List received) {
   String identity(Map row) => '${row['destinationId'] ?? row['place_id'] ?? row['id'] ?? ''}';
@@ -103,6 +126,17 @@ Map<String,dynamic> discoveryAnnotations(Map item, Map preference) {
 }
 
 void validateDiscoveryResponse(Map data) {
+  final evaluation = data['recommendationEvidenceMode'] == 'fyp_evaluation';
+  final provenance = data['evidenceProvenance'];
+  if (![null,'genuine','fyp_evaluation'].contains(data['recommendationEvidenceMode']) ||
+      (evaluation && (data['synthetic'] != true || provenance is! Map ||
+          provenance['source'] != 'sample_community_evaluation' || provenance['synthetic'] != true)) ||
+      data['recommendationEvidenceMode'] == 'demonstration' ||
+      (data['recommendations'] as List? ?? []).whereType<Map>().any((r) => evaluation
+        ? r['synthetic'] != true || r['recommendationEvidenceMode'] != 'fyp_evaluation'
+        : r['synthetic'] == true || ![null,'genuine'].contains(r['recommendationEvidenceMode']))) {
+    throw StateError('Recommendation evidence does not match the authorized data configuration.');
+  }
   if (data['stale'] == true) return;
   if (data['ok'] == false || data['pagination'] is! Map ||
       data['pagination']['discoveryMode'] != recommendationDiscoveryMode) {

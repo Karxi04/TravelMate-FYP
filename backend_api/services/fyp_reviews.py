@@ -121,7 +121,7 @@ def moderate_review(ref, expected, updates):
 
 
 
-# Regional local-demo fixtures. They never enter feedback, recommendation inputs or
+# Regional local-demo fixtures. They never enter feedback, genuine recommendations or
 # public projections. The existing separately moderated Penang dataset stays in Firestore.
 _REGIONAL_REVIEWS = {
     'local_batu_caves': (
