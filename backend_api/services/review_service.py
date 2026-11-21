@@ -146,6 +146,17 @@ def approved_reviews(records):
     return [item for item in unique.values() if published_review(item)]
 
 
+def moderation_state(item):
+    if item.get('feedbackStatus') in {'hidden','removed'} or item.get('moderationStatus') in {'removed','rejected'}:
+        return 'rejected' if item.get('moderationStatus')=='rejected' or (item.get('moderationDecision') or {}).get('outcome') in {'reject','revoke'} else 'hidden'
+    return 'approved' if published_review(item) else 'pending'
+
+
+def moderation_actions(item):
+    return {'pending':['keep','reject','hide'],'approved':['hide','reverse'],
+            'hidden':['restore'],'rejected':['restore']}[moderation_state(item)]
+
+
 class ReviewConflict(ValueError):
     pass
 

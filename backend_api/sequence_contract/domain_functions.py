@@ -452,8 +452,7 @@ def calculateRecommendationScore(items, reviewSummaries=None, *, evidenceMode='g
         content = max(0.0, min(100.0, _score_number(item.get('contentScore'))))
         collaborative = max(0.0, min(100.0, _score_number(item.get('collaborativeScore'))))
         evidence = popularity_evidence(item, reviewSummaries,
-            demonstration=evidenceMode in {'demonstration', 'fyp_evaluation'},
-            provider_first=evidenceMode == 'fyp_evaluation')
+            demonstration=evidenceMode in {'demonstration', 'fyp_evaluation'})
         popularity = evidence['score']
         score = content * 0.60 + collaborative * 0.30 + popularity * 0.10
 
@@ -513,7 +512,7 @@ def _recommendation_reasons(item, popularity):
             reasons.append(f'Fits your {label}')
     confidence = _score_number(item.get('collaborativeConfidence'))
     if confidence >= 0.25 and _score_number(item.get('rawCollaborativeScore')) >= 70.0:
-        reasons.append('Highly rated in sample community data' if item.get('recommendationEvidenceMode') in {'demonstration', 'fyp_evaluation'} else 'Highly rated by similar travellers')
+        reasons.append('Popular among reviewers' if item.get('recommendationEvidenceMode') in {'demonstration', 'fyp_evaluation'} else 'Highly rated by similar travellers')
     for key, label in (
         ('travelPurpose', 'travel purpose'),
         ('travelPersonality', 'traveller personality'),
@@ -522,7 +521,7 @@ def _recommendation_reasons(item, popularity):
         if signal.get('applied') and _score_number(signal.get('score')) >= 80.0:
             reasons.append(f'Fits your {label}')
     if popularity >= 85.0:
-        reasons.append('Popular in sample community data' if item.get('popularitySource') == 'demonstration_approved_reviews' else 'Popular and well reviewed')
+        reasons.append('Popular among reviewers' if item.get('popularitySource') == 'demonstration_approved_reviews' else 'Popular and well reviewed')
     return reasons[:5]
 
 

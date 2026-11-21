@@ -14,6 +14,10 @@ from test_local_reviews import headers, memory
 
 @pytest.fixture
 def planned_dataset(monkeypatch):
+    # This fixture exercises the original 36-record dataset in isolation.
+    # Combined dataset/supplement behaviour is covered by test_local_evaluation_review_first.
+    monkeypatch.setattr('modules.fr03_destination_search_information.routes.regional_demo_reviews', lambda *_: [])
+    monkeypatch.setattr('modules.fr03_destination_search_information.routes.all_regional_reviews', lambda: [])
     plan = build_plan()
     documents = plan['documents']
     ref = Mock()
@@ -300,6 +304,7 @@ def test_regional_reviews_use_exact_catalog_identity_and_stay_private(
         client, app, memory, identity, state, average, monkeypatch):
     monkeypatch.setattr('modules.fr03_destination_search_information.routes._private_review_dataset', lambda **kw: None)
     from services.fyp_reviews import regional_demo_destinations, regional_demo_reviews
+    from services.review_service import approved_reviews
     from services.malaysian_locality import normalize_candidate_geography
     from services.recommendation_discovery import is_planning_candidate
 
@@ -308,9 +313,11 @@ def test_regional_reviews_use_exact_catalog_identity_and_stay_private(
     assert normalize_candidate_geography(place)['state'] == state
     assert is_planning_candidate(place)
     rows = regional_demo_reviews(identity)
-    assert len(rows) == 3 and all(row['synthetic'] and row['destinationId'] == identity for row in rows)
+    original = [row for row in rows if row['dataset']=='fyp-regional-v1']
+    visible = approved_reviews(rows)
+    assert len(original) == 3 and all(row['synthetic'] and row['destinationId'] == identity for row in rows)
     assert len({row['id'] for key in regional_demo_destinations()
-                for row in regional_demo_reviews(key)}) == 45
+                for row in regional_demo_reviews(key) if row['dataset']=='fyp-regional-v1'}) == 45
 
     memory['feedback', 'genuine'] = {'id': 'genuine', 'travellerId': 'owner', 'destinationId': identity,
         'rating': 4, 'comment': 'Genuine review.', 'moderationStatus': 'reviewed', 'feedbackStatus': 'visible'}
@@ -326,11 +333,11 @@ def test_regional_reviews_use_exact_catalog_identity_and_stay_private(
     result = data.json['result']
     assert 'no-store' in data.headers['Cache-Control']
     assert result['genuineSummary'] == {'rating': 4, 'reviews': 1}
-    assert result['reviews'] == 4
-    assert result['rating'] == round((4 + sum(row['rating'] for row in rows)) / 4, 1)
-    assert round(sum(row['rating'] for row in rows) / len(rows), 1) == average
-    assert result['sampleSummary'] == {'rating': average, 'reviews': 3}
-    assert [row['source'] for row in result['user_reviews']] == ['travelmate'] + ['fyp_private'] * 3
+    assert result['reviews'] == len(visible)+1
+    assert result['rating'] == round((4 + sum(row['rating'] for row in visible)) / (len(visible)+1), 1)
+    assert round(sum(row['rating'] for row in original) / len(original), 1) == average
+    assert result['sampleSummary'] == {'rating': round(sum(row['rating'] for row in visible)/len(visible),1), 'reviews': len(visible)}
+    assert [row['source'] for row in result['user_reviews']] == ['travelmate'] + ['fyp_private'] * len(visible)
     assert client.get(path + '?view=samples', headers=auth).status_code == 404
     assert client.get(path + '?view=unified', headers=headers('ordinary-traveller')).json['result']['reviews'] == 1
     assert 'sampleSummary' not in client.get(path + '?view=unified', headers=headers('ordinary-traveller')).json['result']

@@ -65,7 +65,9 @@ def test_review_test_mode_is_explicit_separate_and_read_only(client, app, memory
     auth={**headers(), 'X-TravelMate-Review-Context':'fyp-v1'}
     fake={**source,'id':'fiction','travellerId':'fictional','synthetic':True,'rating':1}
     url='/api/fr3/destinations/penang_hill/ratings-reviews'
-    with patch.object(routes,'_private_review_dataset',return_value=('ref',{'local_penang_hill':{}})), patch.object(routes,'dataset_reviews',return_value=[fake]):
+    with patch.object(routes,'_private_review_dataset',return_value=('ref',{'local_penang_hill':{}})), \
+         patch.object(routes,'regional_demo_reviews',return_value=[]), \
+         patch.object(routes,'dataset_reviews',return_value=[fake]):
         normal=client.get(url,headers=auth).json
         demo=client.get(url+'?view=test',headers=auth).json
         assert normal['result']['rating']==2.5 and normal['result']['reviews']==2

@@ -46,7 +46,7 @@ class LocalReviewRatings {
     _recent[canonical] = {
       'rating': summary['rating'],
       'reviews': summary['reviews'],
-      for (final key in ['ratingBasis', 'reviewEnvironment', 'privateExamplesAllowed'])
+      for (final key in ['ratingBasis', 'reviewEnvironment', 'privateExamplesAllowed','recommendationEvidenceMode','sampleSummary'])
         if (summary.containsKey(key)) key: summary[key],
     };
     _recentUntil[canonical] = DateTime.now().add(const Duration(seconds: 30));
@@ -107,9 +107,11 @@ class LocalReviewRatingBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rating = num.tryParse('${summary['rating']}');
-    final count = int.tryParse('${summary['reviews']}') ?? 0;
-    if (!ReviewContract.isDisplaySummary(summary) || rating == null || !rating.isFinite || rating < 1 || rating > 5 || count < 1) {
+    final evaluation = summary['recommendationEvidenceMode']=='fyp_evaluation';
+    final values = evaluation && summary['sampleSummary'] is Map ? summary['sampleSummary'] as Map : summary;
+    final rating = num.tryParse('${values['rating']}');
+    final count = int.tryParse('${values['reviews']}') ?? 0;
+    if (!ReviewContract.isDisplaySummary(summary) || (evaluation && summary['ratingBasis']!='private_illustrative') || rating == null || !rating.isFinite || rating < 1 || rating > 5 || count < 1) {
       return const Text('Not rated yet');
     }
     final score = rating.toStringAsFixed(1);
@@ -117,7 +119,7 @@ class LocalReviewRatingBadge extends StatelessWidget {
     return Semantics(
       label: '$score out of 5, $reviews',
       excludeSemantics: true,
-      child: StatusChip(text: '$score ($reviews)', icon: Icons.star_rounded, maxLines: maxLines),
+      child: StatusChip(text: evaluation ? '$score · $count ${count==1 ? 'Review' : 'Reviews'}' : '$score ($reviews)', icon: Icons.star_rounded, maxLines: maxLines),
     );
   }
 }

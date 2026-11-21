@@ -170,7 +170,7 @@ void main() {
   for (final entry in [
     ('provider_rating_review_count','Verified provider rating: 4.5/5'),
     ('genuine_approved_local_reviews','Approved genuine TravelMate reviews: 4.5/5'),
-    ('demonstration_approved_reviews','Sample community data: 4.5/5'),
+    ('demonstration_approved_reviews','local approved evaluation review rating 4.5/5'),
   ]) {
     testWidgets('score explanation identifies ${entry.$1} without creating trip/feedback actions', (tester) async {
       final simulation = entry.$1 == 'demonstration_approved_reviews';
@@ -185,7 +185,7 @@ void main() {
       if (simulation) {
         expect(find.text('Add to Trip'),findsNothing);
         expect(find.byType(PopupMenuButton<String>),findsNothing);
-        expect(find.text('Demonstration review data'),findsOneWidget);
+        expect(find.text('Demonstration review data'),findsNothing);
       }
       await tester.ensureVisible(find.text('Recommendation score: 62/100'));
       await tester.tap(find.text('Recommendation score: 62/100')); await tester.pumpAndSettle();

@@ -1,0 +1,110 @@
+{
+  "dataset": "fyp-malaysia-coverage-v1",
+  "version": 1,
+  "synthetic": true,
+  "profiles": {
+    "fyp-malaysia-coverage-v1-culture": {
+      "interests": [
+        "Culture",
+        "Heritage"
+      ],
+      "travelType": "Mixed",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Explorer",
+      "synthetic": true,
+      "dataset": "fyp-malaysia-coverage-v1"
+    },
+    "fyp-malaysia-coverage-v1-food": {
+      "interests": [
+        "Food",
+        "Culture",
+        "Social"
+      ],
+      "travelType": "Mixed",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Explorer",
+      "synthetic": true,
+      "dataset": "fyp-malaysia-coverage-v1"
+    },
+    "fyp-malaysia-coverage-v1-photography": {
+      "interests": [
+        "Photography",
+        "Culture",
+        "Nature"
+      ],
+      "travelType": "Mixed",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Explorer",
+      "synthetic": true,
+      "dataset": "fyp-malaysia-coverage-v1"
+    },
+    "fyp-malaysia-coverage-v1-nature": {
+      "interests": [
+        "Nature",
+        "Adventure",
+        "Photography"
+      ],
+      "travelType": "Lesser-known places",
+      "travelPace": "Packed",
+      "travelPurpose": "Solo travel",
+      "travelPersonality": "Explorer",
+      "synthetic": true,
+      "dataset": "fyp-malaysia-coverage-v1"
+    },
+    "fyp-malaysia-coverage-v1-family": {
+      "interests": [
+        "Family",
+        "Culture",
+        "Relaxation"
+      ],
+      "travelType": "Popular landmarks",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Family trip",
+      "travelPersonality": "Planner",
+      "synthetic": true,
+      "dataset": "fyp-malaysia-coverage-v1"
+    },
+    "fyp-malaysia-coverage-v1-relaxation": {
+      "interests": [
+        "Relaxation",
+        "Nature",
+        "Photography"
+      ],
+      "travelType": "Mixed",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Planner",
+      "synthetic": true,
+      "dataset": "fyp-malaysia-coverage-v1"
+    },
+    "fyp-malaysia-coverage-v1-city": {
+      "interests": [
+        "Shopping",
+        "Food",
+        "Culture"
+      ],
+      "travelType": "Popular landmarks",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Holiday",
+      "travelPersonality": "Planner",
+      "synthetic": true,
+      "dataset": "fyp-malaysia-coverage-v1"
+    },
+    "fyp-malaysia-coverage-v1-family-culture": {
+      "interests": [
+        "Family",
+        "Culture",
+        "Food"
+      ],
+      "travelType": "Mixed",
+      "travelPace": "Relaxed",
+      "travelPurpose": "Family trip",
+      "travelPersonality": "Planner",
+      "synthetic": true,
+      "dataset": "fyp-malaysia-coverage-v1"
+    }
+  }
+}

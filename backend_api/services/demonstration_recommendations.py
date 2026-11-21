@@ -9,6 +9,9 @@ from services.local_catalog import DESTINATIONS
 from services.destination_research import attraction_identities
 from services.review_destination import review_candidate_id
 from services.recommendation_review_evidence import approved_contributions, review_summaries
+from services.penang_evaluation_coverage import REVIEWER_PROFILES
+from services import national_evaluation_reviews
+from services.malaysian_locality import normalize_destination_scope, filter_candidates
 
 
 SIMULATED_PROFILES = {
@@ -24,27 +27,36 @@ SIMULATED_PROFILES = {
 def simulated_profiles(rows):
     # Assignment is stable per fictional author and independent of their rating/comment.
     choices = list(SIMULATED_PROFILES.values())
-    return {uid: {**deepcopy(choices[int(sha256(uid.encode()).hexdigest(), 16) % len(choices)]), 'synthetic': True}
+    registered = {**REVIEWER_PROFILES, **national_evaluation_reviews.profiles()}
+    return {uid: {**deepcopy(registered.get(uid) or choices[int(sha256(uid.encode()).hexdigest(), 16) % len(choices)]), 'synthetic': True}
             for uid in {str(row.get('travellerId') or '') for row in rows if row.get('synthetic') is True} if uid}
 
 
 def load_sources(area='Penang'):
+    scope = area if isinstance(area, dict) else normalize_destination_scope(area)
+    if not scope.get('resolved'):
+        raise ValueError('Choose a supported Malaysian evaluation area.')
     candidates, rows = [], []
-    if area in {'Penang', 'Malaysia'}:
+    if scope.get('state') in {None, 'Penang'}:
         dataset = private_dataset()
         if not dataset:
             raise ValueError('The existing approved demonstration review data is unavailable.')
         ref, destinations = dataset
         rows.extend(dataset_reviews(ref, destinations))
         candidates.extend(deepcopy(list(destinations.values())))
-    regional = regional_demo_destinations()
-    for identity, place in regional.items():
-        if area == 'Malaysia' or place.get('state') == area:
-            candidates.append(deepcopy(place))
-            rows.extend(regional_demo_reviews(identity))
+    regional = {**regional_demo_destinations(), **national_evaluation_reviews.destinations()}
+    candidates.extend(deepcopy(list(regional.values())))
+    candidates, _ = filter_candidates(prepare_candidates(candidates), scope)
+    # A valid locality can have no curated reviews. The normal route may still
+    # use its geographically validated cache, with neutral local-review evidence.
     if not candidates:
-        raise ValueError('No existing demonstration review data is available for this area.')
-    return prepare_candidates(candidates), rows
+        return [], []
+    identities = {review_candidate_id(row) for row in candidates}
+    rows = [row for row in rows if review_candidate_id(row) in identities]
+    for identity in sorted(identities):
+        rows.extend(regional_demo_reviews(identity))
+    unique = {row['id']: row for row in rows}
+    return candidates, list(unique.values())
 
 
 def prepare_candidates(candidates):
@@ -85,6 +97,15 @@ class EvaluationSession:
     def __init__(self):
         self.snapshots, self.profiles = OrderedDict(), OrderedDict()
         self.lock = Lock()
+        self._evidence_version=0
+
+    def evidence_revision(self):
+        with self.lock:
+            return self._evidence_version
+
+    def mark_evidence_changed(self):
+        with self.lock:
+            self._evidence_version+=1
 
     def _prune(self, records):
         for key, (expires, _) in list(records.items()):

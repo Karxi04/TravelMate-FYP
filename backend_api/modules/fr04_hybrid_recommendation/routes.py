@@ -19,7 +19,7 @@ from services.pricing_registry import enrich_candidate_pricing
 from services.review_destination import review_destination_id, review_candidate_id
 from services.review_service import genuine_review
 from services.recommendation_review_evidence import approved_contributions, review_summaries
-from services import demonstration_recommendations
+from services import demonstration_recommendations, review_staging
 from services.recommendation_taxonomy import candidate_concepts, preference_concepts, display_concepts
 from services.recommendation_taxonomy import planning_preferences
 from services.recommendation_discovery import (
@@ -73,6 +73,10 @@ def _evaluation_session():
     return current_app.extensions.setdefault('recommendation_evaluation', demonstration_recommendations.EvaluationSession())
 
 
+def _evaluation_evidence_revision(session):
+    return f'local-only-v1:{session.evidence_revision()}:{review_staging.evidence_revision()}'
+
+
 def _evaluation_recommendations(options, *, generate=False):
     if not _demonstration_allowed():
         return jsonify(ok=False, error='Evaluation recommendations require the authorized local review context.'), 403
@@ -101,33 +105,46 @@ def _evaluation_recommendations(options, *, generate=False):
     learning = session.learning(g.uid)
     profile = effective_preference_profile(preference, learning)
     record = previous or session.snapshot(g.uid, scope_key=scope['scopeKey'])
+    try:
+        evidence_revision=_evaluation_evidence_revision(session)
+    except review_staging.ReviewStagingUnavailable:
+        return jsonify(ok=False,error='Local review evidence is unavailable. Saved evaluations were not changed.'),503
     if generate:
         try:
-            places, rows = demonstration_recommendations.load_sources('Penang')
+            places, rows = demonstration_recommendations.load_sources(scope)
             candidates = merge_candidates(normalise([*DESTINATIONS, *places], scope, source='local_catalog'),
                                           cached_candidates(retrieveRecord, scope))[:150]
             candidates = [row for row in candidates if row.get('synthetic') is not True
                           and row.get('recommendationEvidenceMode', 'genuine') == 'genuine']
             ranked = demonstration_recommendations.evaluate(profile, candidates, rows, evidence_mode='fyp_evaluation')
-        except (ValueError, GoogleAPICallError, TimeoutError):
+        except (ValueError, GoogleAPICallError, TimeoutError,review_staging.ReviewStagingUnavailable):
             return jsonify(ok=False, error='Approved sample community evidence is unavailable. No genuine recommendations were changed.'), 503
         ranked = [{**_snapshot_item(row, 'fyp_evaluation'), **discovery_annotations(row, profile)} for row in ranked]
+        datasets = sorted({str(row.get('dataset') or 'penang_private') for row in rows})
         record = {'recommendationGenerationId': 'fyp-evaluation-' + uuid4().hex,
             'travellerId': g.uid, 'recommendationEvidenceMode': 'fyp_evaluation', 'synthetic': True,
             'generatedAt': utc_now_iso(), 'requestedDestination': area, 'canonicalDestinationScope': scope,
             'preferenceProfileVersion': _preference_version(preference, learning),
             'preferenceFingerprint': _profile_fingerprint(preference),
+            'reviewEvidenceRevision':evidence_revision,
             'planningPreferences': planning_preferences(profile),
             'recommendationResults': ranked, 'source': 'fyp_evaluation', 'providerHasMore': False,
             'requestedInterestConcepts': sorted(preference_concepts(profile.get('interests') or [])),
-            'evidenceProvenance': {'source': 'sample_community_evaluation', 'dataset': 'penang_v1_v2',
+            'evidenceProvenance': {'source': 'sample_community_evaluation',
+                'dataset': '+'.join(datasets), 'datasets': datasets,
+                'localReviewPolicy': 'approved_local_only',
                 'synthetic': True, 'persistence': 'owner_scoped_process_memory',
                 'approvedContributions': sum(map(len, approved_contributions(rows, demonstration=True).values()))},
             'engine': {'discoveryVersion': DISCOVERY_MODE, 'scoringVersion': 'recovery_v3',
                 'weightedScoring': {'content': .6, 'collaborative': .3, 'popularity': .1}}}
         session.save(record)
-    stale = bool(record and (record['preferenceProfileVersion'] != _preference_version(preference, learning)
+    try:
+        evidence_changed=bool(record and record.get('reviewEvidenceRevision')!=_evaluation_evidence_revision(session))
+    except review_staging.ReviewStagingUnavailable:
+        return jsonify(ok=False,error='Local review evidence is unavailable. Saved evaluations were not changed.'),503
+    preference_changed=bool(record and (record['preferenceProfileVersion'] != _preference_version(preference, learning)
                             or record['preferenceFingerprint'] != _profile_fingerprint(preference)))
+    stale=evidence_changed or preference_changed
     page = _page(record or {'canonicalDestinationScope': scope, 'requestedDestination': area}, options, evidence_mode='fyp_evaluation')
     page.pop('travellerId', None)
     if stale:
@@ -137,6 +154,7 @@ def _evaluation_recommendations(options, *, generate=False):
         recommendationGenerationId=(record or {}).get('recommendationGenerationId', ''),
         snapshot=page, recommendations=page['recommendationResults'], pagination=page['pagination'],
         engine=(record or {}).get('engine', {}), source='fyp_evaluation', stale=stale,
+        staleReason='review_evidence_changed' if evidence_changed else 'preferences_changed' if preference_changed else None,
         requiresExplicitRegeneration=not record or stale,
         discoveryMessage='No further saved destination candidates are available. No provider search was made.' if options.get('expandCandidates') else None)
     response.headers['Cache-Control'] = 'private, no-store'

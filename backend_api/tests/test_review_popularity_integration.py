@@ -17,7 +17,8 @@ from test_penang_collaborative_evidence import generation
 def penang():
     base, expanded = base_plan(), expansion_plan()
     places = list(base['documents']['fyp_review_datasets/penang_v1']['destinations'].values())
-    reviews = [row for row in [*base['documents'].values(), *expanded['documents'].values()] if 'rating' in row]
+    reviews = [{**row,'id':path.rsplit('/',1)[-1]} for path,row in
+               [*base['documents'].items(), *expanded['documents'].items()] if 'rating' in row]
     return places, reviews
 
 
@@ -177,9 +178,12 @@ def test_demo_load_uses_existing_moderation_overlay_and_canonical_ids(monkeypatc
     reader = Mock(return_value=changed)
     monkeypatch.setattr(demo, 'dataset_reviews', reader)
     places, loaded = demo.load_sources('Penang')
-    assert {row['destinationId'] for row in places} == set(source)
+    assert set(source) <= {row['destinationId'] for row in places}
+    assert len(places)==18  # Six additional canonical Penang attractions now have review evidence.
     assert reader.call_args.args == ('isolated-ref', source)
-    assert not approved_contributions(loaded, demonstration=True)['local_penang_hill']
+    approved=approved_contributions(loaded, demonstration=True)['local_penang_hill']
+    assert not {row['travellerId'] for row in changed if row['destinationId']=='local_penang_hill'} & {row['travellerId'] for row in approved}
+    assert len(approved)==6  # New independently screened contributions do not resurrect hidden old rows.
 
 
 def test_synthetic_preference_documents_do_not_become_genuine_peer_profiles(generation, monkeypatch):
@@ -228,6 +232,7 @@ def test_regional_demo_reuses_existing_identities_and_moderation_reader(monkeypa
     identity = 'isolated_johor_attraction'
     place = {'destinationId': identity, 'title': 'Isolated attraction', 'state': 'Johor'}
     monkeypatch.setattr(demo, 'regional_demo_destinations', lambda: {identity: place})
+    monkeypatch.setattr(demo.national_evaluation_reviews, 'destinations', lambda: {})
     rows = [{**genuine_review(identity=identity), 'synthetic': True, 'feedbackStatus': 'hidden'}]
     reader = Mock(return_value=rows)
     monkeypatch.setattr(demo, 'regional_demo_reviews', reader)

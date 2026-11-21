@@ -186,9 +186,44 @@ Evaluation uses the normal Home/For You routes, the signed-in Traveller's saved
 questionnaire, existing canonical destination records and the existing approved
 Penang sample reviews with their effective moderation decisions. Simulated
 reviewer profiles remain explicitly simulated. The existing 60/30/10 formula,
-similarity threshold and confidence calculation are unchanged. Verified provider
-popularity takes precedence; otherwise approved sample-review popularity is
-labelled as such. Provider reviews never become similar-Traveller ratings.
+similarity threshold and confidence calculation are unchanged. Approved local
+evaluation-review aggregates are the only evaluation popularity source. Missing
+local evidence uses the neutral 50 prior and a Not rated yet badge; provider
+ratings never fill an evaluation rating or review count. Collaborative uses
+similarity-weighted peer ratings and confidence, while popularity uses the
+unweighted approved destination mean/count. Provider reviews never become peers.
+
+The original 104 Penang definitions remain unchanged. A source-controlled,
+explicitly synthetic coverage supplement adds six contributions per canonical
+Penang attraction (72 total) and six associated simulated preference profiles.
+Each new contribution passes the existing FR10 rating/sentiment screening; no
+pending row is forced approved. Existing local staging overlays and Administrator
+moderation apply, and the authorized Local Reviews list/summary includes both
+sources. No Firebase import or genuine projection is created by this supplement.
+
+The nationwide refinement adds 688 contributions in six regional JSON files under
+`services/data/evaluation_reviews`, with eight explicitly simulated profile groups.
+The curated combined set covers 100 attractions across all 16 states/territories;
+it does not bulk-promote the 400 identity records. New candidate records must have
+an existing canonical name, coordinates and pass the existing geographic/tourism
+checks. Unknown hours/admission remain unknown. The offline source still has five
+original Penang and two older regional identities without exact coordinates;
+these remain unchanged and are not newly promoted to pinned Trip stops.
+The new rows initially screen as 661 approved and 27 pending (seven or eight
+approved per newly covered attraction). Pending/hidden/removed rows do not score.
+Existing 104 Penang, 72 Penang supplement and 45 regional definitions are unchanged.
+The combined initial source totals are 909 contributions, 874 approved, before
+any effective Administrator overlay. These are evaluation fixtures, not customers.
+
+Normal evaluation generation now loads the resolved requested state/city/country
+scope instead of always loading Penang. It filters candidate identities and review
+contributions to the same scope, deduplicates review IDs, and only accesses the
+original private Penang dataset for Penang or Malaysia-wide requests. No live
+provider search, genuine snapshot write or profile mutation is introduced.
+Valid localities without curated evidence can use the normal verified cache
+fallback or return no results; they do not borrow another state's reviews.
+The bounded moderation-source cache covers the curated set and excludes empty
+lookups, preserving existing review revisions while browsing the larger dataset.
 
 Evaluation generations and More like this / Not for me learning are owner-scoped
 in process memory: up to 64 generations and 64 learning profiles, each expiring
@@ -207,7 +242,63 @@ not evaluation scores or review identities. Questionnaire and Trip changes still
 require their normal user actions. The separate simulation engine and its tests
 remain internal, without a science-icon navigation entry in the ordinary UI.
 The Recommendation data sources action and score explanation disclose sample
-community evidence; compact rating labels distinguish sample and provider counts.
+community evidence. Ordinary evaluation badges use `3.5 · 16 Reviews` with the
+approved local mean/count only; provenance remains available in the details.
+
+### Persistent local Administrator moderation
+
+Regional/nationwide source definitions are immutable. Without a configured,
+initialized local overlay they remain read-only. The owner-controlled Windows
+setup script defaults to a plan without changing files or runtime configuration:
+
+```powershell
+./scripts/prepare_review_staging.ps1
+# Only after separate owner approval:
+./scripts/prepare_review_staging.ps1 -Apply
+```
+
+Its default dedicated database is
+`D:\workspace\TravelMate\local_review_moderation\review-overlay.sqlite3`.
+The script rejects unrelated files/databases and reparse points, and verifies
+protected directory/file ACLs granting only the current Windows user and SYSTEM.
+The Backend must run under that same user. A different service identity requires
+a separately reviewed permission change. Do not move this file into tracked source.
+
+After separate rollout approval, set `FYP_REVIEW_STAGING_PATH` to that absolute
+path in the existing local Backend environment and reload only the verified
+Backend. The script itself does not edit `.env` or restart anything. Updating the
+Administrator portal and Traveller APK requires their own approved rollout.
+GETs and moderation requests never create or repair the database. A missing,
+corrupt or inaccessible configured overlay fails closed: affected review data is
+withheld, generation returns 503, and no source defaults are silently republished.
+
+The overlay accepts only moderation fields on existing synthetic records. It
+cannot change ratings, comments, author/provenance or genuine Firebase feedback.
+Original private Penang reviews retain their existing private Firestore moderation
+adapter; genuine reviews retain their owner/public-projection protections. This
+local database covers the source-controlled Penang supplement and regional and
+nationwide contributions, with no Firebase import.
+
+Pending reviews allow Approve/Reject/Hide. Approved reviews allow Hide or explicit
+Revoke approval. Hidden/rejected reviews allow Restore and approve. Revoke and
+restore require a note and current revision; every mutation retains its actor,
+timestamp and decision history. SQLite immediate transactions and existing
+Firebase compare-and-set adapters reject stale or concurrent decisions. The
+Administrator list has source/status filters and 50-row pagination; unavailable
+local storage is reported rather than represented as an empty successful source.
+
+New generations use the effective approved rows for both the independent peer
+calculation and the unweighted popularity aggregate. Older evaluation generations
+are immutable and request explicit regeneration when the local overlay hash or an
+in-process private moderation revision changes. The local single-worker scope
+still applies: external changes to private Firestore moderation are read on the
+next explicit generation, not polled on every saved-generation GET.
+
+For rollback, preserve the database and its ACLs. Revert code/config only through
+an approved service reload; never delete decisions to roll back presentation.
+Removing the overlay setting restores immutable fixture defaults and therefore
+must not be used as a routine moderation reset. Genuine mode and genuine records
+are independent of this local evaluation overlay.
 
 For an approved rollout, retain the existing genuine configuration as rollback,
 select `fyp_evaluation`, then use the controlled Backend reload procedure. No

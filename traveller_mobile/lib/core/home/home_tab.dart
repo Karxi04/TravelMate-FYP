@@ -62,6 +62,7 @@ class _HomeTabState extends State<HomeTab> {
   String recommendationSource = '';
   String recommendationGenerationId = '';
   bool recommendationNeedsRegeneration = false;
+  String? recommendationStaleReason;
   Map<String, String> feedbackByDestination = {};
   final Set<String> feedbackInFlight = {};
   int notificationRefresh=0;
@@ -183,6 +184,7 @@ class _HomeTabState extends State<HomeTab> {
         recommendationArea = (data['snapshot']?['requestedDestination'] ?? recommendationArea).toString();
         recommendationSource = (data['source'] ?? '').toString();
         recommendationNeedsRegeneration = data['requiresExplicitRegeneration'] == true;
+        recommendationStaleReason = data['staleReason']?.toString();
         recommendationGenerationId = (data['recommendationGenerationId'] ??
                 data['snapshot']?['recommendationGenerationId'] ??
                 '')
@@ -692,7 +694,7 @@ class _HomeTabState extends State<HomeTab> {
         if (recommendationSource.isNotEmpty) RecommendationDataSources(evaluation: recommendationSource == 'fyp_evaluation'),
         if (recommendationNeedsRegeneration || recommendationsNeedEvidenceUpdate(recommendations)) ...[
           RecommendationEvidenceNotice(message: recommendationNeedsRegeneration
-              ? (recommendationGenerationId.isEmpty ? recommendationStartMessage : recommendationPreferenceUpdateMessage) : recommendationEvidenceUpdateMessage,
+              ? recommendationRegenerationMessage(recommendationGenerationId,recommendationStaleReason) : recommendationEvidenceUpdateMessage,
             onRegenerate: loadingForYou ? null : () => loadRecommendations(regenerate: true)),
           const SizedBox(height: AppSpacing.sm),
         ],

@@ -42,10 +42,10 @@ def verified_provider_rating(item):
     return _rating(item.get('rating')) if genuine_review(item) and item.get('ratingSource') == 'provider' else None
 
 
-def popularity_evidence(item, summaries=None, *, demonstration=False, provider_first=False):
+def popularity_evidence(item, summaries=None, *, demonstration=False):
     source = 'neutral_unverified_local_catalog' if item.get('ratingSource') == 'unverified_local_catalog' else 'neutral_missing_rating'
     rating = count = None
-    if not demonstration or provider_first:
+    if not demonstration:
         rating = verified_provider_rating(item)
         if rating is not None:
             count = _count(item.get('reviews'))

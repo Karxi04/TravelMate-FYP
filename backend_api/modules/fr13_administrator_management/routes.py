@@ -26,7 +26,7 @@ from services.report_service import (
     export_system_report_pdf
 )
 from services.package_service import package_for_read, package_submission_error
-from services.review_service import ReviewConflict, current_screen, review_revision, published_review, review_history
+from services.review_service import ReviewConflict, current_screen, review_revision, published_review, review_history, moderation_state, moderation_actions
 from services.fyp_reviews import private_dataset, dataset_reviews, moderation_history, moderate_review, all_regional_reviews, _regional_sources
 from services import review_staging
 from services.public_content_projection import active_campaign, eligible_package
@@ -419,7 +419,10 @@ def _private_feedback(source=None, *, optional=False):
     if source == 'fyp_regional':
         if not current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS'):
             _fail('Regional review staging is unavailable.', 403)
-        return 'regional', all_regional_reviews()
+        try:
+            return 'regional', all_regional_reviews()
+        except review_staging.ReviewStagingUnavailable:
+            _fail('Local review moderation storage is unavailable.',503)
     if source != 'fyp_penang':
         _fail('Unknown review source.', 400)
     try:
@@ -439,25 +442,32 @@ def all_feedback():
     unified = request.args.get('source') == 'all'
     ref, private_rows = _private_feedback('fyp_penang' if unified else None, optional=unified)
     sources = [('fyp_penang', item) for item in private_rows]
+    regional_unavailable=False
     if unified and current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS'):
-        sources.extend(('fyp_regional', item) for item in all_regional_reviews())
+        try:
+            sources.extend(('fyp_regional', item) for item in all_regional_reviews())
+        except review_staging.ReviewStagingUnavailable:
+            regional_unavailable=True
     if unified or ref is None:
         sources.extend(('traveller', item) for item in _load('feedback'))
     items = []
+    regional_writable=review_staging.ready() if any(source=='fyp_regional' for source,_ in sources) else False
     for source, item in sources:
         screening = item['screening'] if source in {'fyp_penang', 'fyp_regional'} else current_screen(item)
         decision = item.get('moderationDecision') or {}
-        if item.get('feedbackStatus') == 'removed':
-            category = 'hidden'
+        state=moderation_state(item)
+        if state in {'hidden','rejected'}:
+            category = state
         elif published_review(item):
             category = 'automatic' if decision.get('actor') == 'system' else 'manual'
         else:
             category = 'flagged' if screening['risk'] == 'flagged' else 'needs_review'
         items.append({**item, 'screening': screening, 'moderationCategory': category, 'reviewSource': source,
+                      'moderationState':state,'moderationActions':moderation_actions(item),
                       'reviewRevision': review_revision(item),
-                      'moderationWritable': source != 'fyp_regional' or review_staging.staging_path() is not None})
+                      'moderationWritable': source != 'fyp_regional' or regional_writable})
     items.sort(key=lambda item: str(item.get('submittedAt') or ''), reverse=True)
-    response = jsonify({'ok': True, 'items': items,
+    response = jsonify({'ok': True, 'items': items, 'regionalUnavailable':regional_unavailable,
                         **({'privateUnavailable': ref is None,
                             'dataLimited': getattr(g, 'admin_data_limited', False)} if unified else {})})
     if ref is not None or unified:
@@ -489,9 +499,15 @@ def _commit_review(fid, current, updates, *, private_ref=None, **extra):
         else:
             updates['screening'] = current_screen(current)
             result = updateRecord('feedback', fid, updates, expected=current)
+        if private_ref is not None:
+            evaluation=current_app.extensions.get('recommendation_evaluation')
+            if evaluation:
+                evaluation.mark_evidence_changed()
         return jsonify({'ok': True, 'feedback': result, **extra})
     except ReviewConflict as error:
         return jsonify({'ok': False, 'error': str(error)}), 409
+    except review_staging.ReviewStagingUnavailable as error:
+        return jsonify({'ok':False,'error':str(error)}),503
     except Exception:
         return jsonify({'ok': False, 'error': 'Review moderation is temporarily unavailable.'}), 503
 
@@ -516,27 +532,42 @@ def review_feedback(fid):
         return jsonify({'ok':False,'error':'This review changed. Refresh and try again.'}),409
     if not isinstance(payload.get('comment',''), str) or len(payload.get('comment','')) > 2000:
         return jsonify({'ok':False,'error':'Use a moderation note of at most 2000 characters.'}),400
-    if decision not in {'keep', 'remove', 'reject', 'hide'}:
+    if decision not in {'keep', 'remove', 'reject', 'hide','reverse','restore'}:
         return jsonify({'ok': False, 'error': 'Choose Approve, Reject or Hide.'}), 400
-    if ref is not None and (current.get('feedbackStatus') == 'removed'
-                            or (published_review(current) and decision in {'keep', 'reject'})):
+    requested_decision=decision
+    if decision=='remove':
+        decision='hide' if published_review(current) else 'reject'
+    # Preserve the genuine-review API's explicit manual confirmation of an
+    # automatic approval, including its revision/audit change for open edit forms.
+    confirm_automatic=(ref is None and decision=='keep' and moderation_state(current)=='approved'
+                       and (current.get('moderationDecision') or {}).get('actor')=='system')
+    if ref is None and decision=='keep' and moderation_state(current)=='approved' and not confirm_automatic:
+        if payload.get('comment','').strip()!=str(current.get('reviewComment') or '').strip():
+            return jsonify(ok=False,error='This review is already approved. Use an explicit moderation action.'),409
+        return jsonify(ok=True,feedback=current,idempotent=True)
+    if decision not in moderation_actions(current) and not confirm_automatic:
         return jsonify({'ok': False, 'error': 'That action is unavailable for this review status.'}), 409
-    note = payload.get('comment', '')
-    if decision != 'keep':
-        outcome = ('hide' if published_review(current) else 'reject') if decision == 'remove' else decision
+    note = payload.get('comment', '').strip()
+    if decision in {'reverse','restore'} and (not note or payload.get('expectedRevision')!=review_revision(current)):
+        return jsonify(ok=False,error='A moderation note and current review revision are required for reversal or restoration.'),400
+    now=utc_now_iso()
+    if decision not in {'keep','restore'}:
+        outcome = 'revoke' if decision=='reverse' else decision
         updates={
             'moderationStatus':'removed',
             'feedbackStatus':'removed',
             'reviewComment':note,
             'removedBy':g.uid,
-            'removedAt':utc_now_iso(),
-            'updatedAt':utc_now_iso(),
+            'removedAt':now,'reviewedBy':g.uid,'reviewedAt':now,
+            'updatedAt':now,
             'moderationDecision':_admin_review_decision(outcome, note),
         }
-        return _commit_review(fid, current, updates, private_ref=ref, removedId=fid, decision=decision)
-    updates={'moderationStatus':'reviewed','feedbackStatus':'visible','reviewComment':note,'reviewedBy':g.uid,'reviewedAt':utc_now_iso(),'updatedAt':utc_now_iso(),
-             'moderationDecision':_admin_review_decision('approve', note)}
-    return _commit_review(fid, current, updates, private_ref=ref, decision='keep')
+        return _commit_review(fid, current, updates, private_ref=ref, removedId=fid, decision=requested_decision)
+    updates={'moderationStatus':'reviewed','feedbackStatus':'visible','reviewComment':note,'reviewedBy':g.uid,'reviewedAt':now,'updatedAt':now,
+             'moderationDecision':_admin_review_decision('restore' if decision=='restore' else 'approve', note)}
+    if decision=='restore':
+        updates.update(removedBy=None,removedAt=None)
+    return _commit_review(fid, current, updates, private_ref=ref, decision=decision)
 
 @bp.delete('/feedback/<fid>')
 @auth_required(['admin'])
