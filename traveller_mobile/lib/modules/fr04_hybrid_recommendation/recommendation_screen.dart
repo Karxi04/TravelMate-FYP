@@ -516,7 +516,8 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
             ],
             if (requiresExplicitRegeneration || recommendationsNeedEvidenceUpdate(items)) ...[
               const SizedBox(height: AppSpacing.md),
-              RecommendationEvidenceNotice(message: requiresExplicitRegeneration ? recommendationPreferenceUpdateMessage : recommendationEvidenceUpdateMessage,
+              RecommendationEvidenceNotice(message: requiresExplicitRegeneration
+                  ? (recommendationGenerationId.isEmpty ? recommendationStartMessage : recommendationPreferenceUpdateMessage) : recommendationEvidenceUpdateMessage,
                 onRegenerate: busy ? null : () => generate()),
             ],
             const SizedBox(height: AppSpacing.md),

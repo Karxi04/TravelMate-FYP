@@ -46,6 +46,7 @@ def test_normal_home_get_generate_and_paging_are_owner_scoped_without_genuine_hi
     before = deepcopy(state)
     empty = client.get(URL, headers=HEADERS, query_string={'discoveryMode':routes.DISCOVERY_MODE})
     assert empty.status_code == 200 and empty.json['recommendationGenerationId'] == ''
+    assert empty.json['requiresExplicitRegeneration'] is True
     generated = generate()
     assert generated['recommendationEvidenceMode'] == 'fyp_evaluation'
     assert generated['evidenceProvenance']['approvedContributions'] == 96

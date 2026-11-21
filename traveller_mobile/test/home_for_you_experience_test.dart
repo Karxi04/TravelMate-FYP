@@ -154,9 +154,13 @@ class _EvidenceHomeApi extends _HomeApi {
 
 class _EvaluationHomeApi extends _HomeApi {
   final attached=<Map>[];
+  bool initialEmpty=false;
   @override
   Future<dynamic> get(String path,[Map<String,String>? query]) async {
     final data=await super.get(path,query);
+    if(path=='/api/fr4/recommendations' && initialEmpty) return {
+      ...evaluationEnvelope(data as Map),'recommendationGenerationId':'',
+      'recommendations':[],'requiresExplicitRegeneration':true};
     return path=='/api/fr4/recommendations' ? evaluationEnvelope(data as Map):data;
   }
   @override
@@ -209,6 +213,14 @@ Future<void> _showOnHome(WidgetTester tester, Finder target) async {
 }
 
 void main() {
+  testWidgets('first Home evaluation visit waits for the user',(tester) async {
+    final api=_EvaluationHomeApi()..initialEmpty=true;
+    await _settleHome(tester,api);await tester.pumpAndSettle();
+    expect(api.generationCalls,0);
+    await _showOnHome(tester,find.text(recommendationStartMessage));
+    await tester.tap(find.byKey(const ValueKey('update-recommendation-evidence')));await tester.pumpAndSettle();
+    expect(api.generationCalls,1);expect(tester.takeException(),isNull);
+  });
   testWidgets('Home evaluation preference change waits for explicit regeneration',(tester) async {
     final api=_EvaluationHomeApi()..staleRecommendations=true;
     await _settleHome(tester,api);await tester.pumpAndSettle();

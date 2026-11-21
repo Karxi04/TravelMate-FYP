@@ -137,7 +137,7 @@ def _evaluation_recommendations(options, *, generate=False):
         recommendationGenerationId=(record or {}).get('recommendationGenerationId', ''),
         snapshot=page, recommendations=page['recommendationResults'], pagination=page['pagination'],
         engine=(record or {}).get('engine', {}), source='fyp_evaluation', stale=stale,
-        requiresExplicitRegeneration=stale,
+        requiresExplicitRegeneration=not record or stale,
         discoveryMessage='No further saved destination candidates are available. No provider search was made.' if options.get('expandCandidates') else None)
     response.headers['Cache-Control'] = 'private, no-store'
     return response

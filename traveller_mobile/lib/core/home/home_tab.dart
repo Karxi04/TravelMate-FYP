@@ -167,8 +167,8 @@ class _HomeTabState extends State<HomeTab> {
         if (data is Map && version == _recommendationVersion) {
           recommendationArea = (data['snapshot']?['requestedDestination'] ?? recommendationArea).toString();
         }
-        final needsGeneration = data is! Map || (data['stale'] == true && data['requiresExplicitRegeneration'] != true) ||
-            '${data['recommendationGenerationId'] ?? ''}'.isEmpty;
+        final needsGeneration = data is! Map || (data['requiresExplicitRegeneration'] != true &&
+            (data['stale'] == true || '${data['recommendationGenerationId'] ?? ''}'.isEmpty));
         if (needsGeneration && preferences != null) {
           data = await api.post('/api/fr4/recommendations/generate', {
             'destinationArea': recommendationArea, 'discoveryMode':recommendationDiscoveryMode,
@@ -691,7 +691,8 @@ class _HomeTabState extends State<HomeTab> {
         const SizedBox(height: AppSpacing.xs),
         if (recommendationSource.isNotEmpty) RecommendationDataSources(evaluation: recommendationSource == 'fyp_evaluation'),
         if (recommendationNeedsRegeneration || recommendationsNeedEvidenceUpdate(recommendations)) ...[
-          RecommendationEvidenceNotice(message: recommendationNeedsRegeneration ? recommendationPreferenceUpdateMessage : recommendationEvidenceUpdateMessage,
+          RecommendationEvidenceNotice(message: recommendationNeedsRegeneration
+              ? (recommendationGenerationId.isEmpty ? recommendationStartMessage : recommendationPreferenceUpdateMessage) : recommendationEvidenceUpdateMessage,
             onRegenerate: loadingForYou ? null : () => loadRecommendations(regenerate: true)),
           const SizedBox(height: AppSpacing.sm),
         ],

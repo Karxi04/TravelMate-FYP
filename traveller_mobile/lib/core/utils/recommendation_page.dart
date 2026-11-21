@@ -5,6 +5,8 @@ const recommendationEvidenceUpdateMessage =
     're-evaluated against current reviews. Regenerate recommendations to see the latest evidence.';
 const recommendationPreferenceUpdateMessage =
     'Your saved preferences have changed. Regenerate recommendations to calculate new scores for your updated profile.';
+const recommendationStartMessage =
+    'Generate recommendations when you are ready. Your saved preferences will be used.';
 
 bool recommendationHasCurrentEvidence(Map item) {
   final popularity = item['popularityEvidence'];

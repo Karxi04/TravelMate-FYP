@@ -30,9 +30,13 @@ Map<String,dynamic> evaluationEnvelope(Map data) => {...data,
 
 class EvaluationRecsApi extends RecsApi {
   bool stale=false;
+  bool initialEmpty=false;
   @override
   Future<dynamic> get(String path,[Map<String,String>? query]) async {
     final data=await super.get(path,query);
+    if(path=='/api/fr4/recommendations' && initialEmpty) return {
+      ...evaluationEnvelope(data as Map),'recommendationGenerationId':'',
+      'recommendations':[],'requiresExplicitRegeneration':true};
     return path=='/api/fr4/recommendations' ? evaluationEnvelope({...data as Map,'stale':stale}):data;
   }
   @override
@@ -43,6 +47,16 @@ class EvaluationRecsApi extends RecsApi {
 }
 
 void main() {
+  testWidgets('first evaluation visit does not generate before an explicit tap',(tester) async {
+    final api=EvaluationRecsApi()..initialEmpty=true;
+    await tester.pumpWidget(MaterialApp(theme:buildInkWashTheme(),home:RecommendationScreen(api:api,initialDestination:'Penang')));
+    await tester.pumpAndSettle();
+    expect(api.generations,0);expect(find.text(recommendationStartMessage),findsOneWidget);
+    await tester.ensureVisible(find.byKey(const ValueKey('update-recommendation-evidence')));
+    await tester.tap(find.byKey(const ValueKey('update-recommendation-evidence')));await tester.pumpAndSettle();
+    expect(api.generations,1);expect(find.text('Kek Lok Si Temple'),findsOneWidget);
+    expect(tester.takeException(),isNull);
+  });
   testWidgets('evaluation questionnaire changes wait for explicit regeneration',(tester) async {
     final api=EvaluationRecsApi()..stale=true;
     await tester.pumpWidget(MaterialApp(theme:buildInkWashTheme(),home:RecommendationScreen(api:api,initialDestination:'Penang')));
