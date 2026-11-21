@@ -4,7 +4,7 @@ import os
 import logging
 
 from services.transaction_reliability import operation_document_id
-from sequence_contract.firebase_firestore import claimRecord, updateRecord
+from sequence_contract.firebase_firestore import claimRecord, updateRecord, retrieveRecord
 
 
 class DiscoveryError(ValueError):
@@ -29,6 +29,11 @@ def run_search(owner, trip, kind, state, search, request_id=None, comparison=Non
     variant = f":{comparison['mode']}:{comparison['comparisonCabin']}" if comparison else ''
     identity = operation_document_id('budget_search', owner, f"v2:{trip['id']}:{state}:{kind}{variant}:{bucket}")
     if request_id:
+        previous = retrieveRecord('budget_alternative_searches', identity)
+        expiry = ((previous or {}).get('result') or {}).get('expiresAt')
+        if expiry and datetime.fromisoformat(expiry.replace('Z', '+00:00')) <= now:
+            # Only a new explicit intent can refresh expired evidence; replay keeps its original binding.
+            identity = operation_document_id('budget_search', owner, f'{identity}:refresh:{request_id}')
         # Bind a submitted intent to its original cache bucket, even across a clock boundary.
         intent, _ = claimRecord('budget_alternative_search_intents',
             operation_document_id('budget_search_intent', owner, f'{kind}:{request_id}'), {
@@ -42,12 +47,12 @@ def run_search(owner, trip, kind, state, search, request_id=None, comparison=Non
         identity = intent['cacheId']
     record, created = claimRecord('budget_alternative_searches', identity, {
         'travellerId': owner, 'tripId': trip['id'], 'stateVersion': state, 'category': kind,
-        'status': 'pending', 'createdAt': now.isoformat(),
+        'comparison':comparison, 'status': 'pending', 'createdAt': now.isoformat(),
     })
     if not created:
         if record.get('travellerId') != owner or record.get('stateVersion') != state:
             raise DiscoveryError('This search does not match the current trip.')
-        result = {**record.get('result', {}), 'status': record.get('status'), 'reused': True}
+        result = {**record.get('result', {}), 'status': record.get('status'), 'reused': True, 'searchId': identity}
         if result['status'] == 'quota_limited' and result.get('retryAt'):
             retry_at = datetime.fromisoformat(result['retryAt'].replace('Z', '+00:00'))
             if now >= retry_at:
@@ -93,7 +98,7 @@ def run_search(owner, trip, kind, state, search, request_id=None, comparison=Non
         result = {'status': 'unavailable' if attempted else 'needs_review', 'requestsAttempted': attempted,
                   'failureCode': failure if attempted else 'search_not_started'}
         logging.getLogger(__name__).warning('budget_discovery_unavailable category=%s attempts=%s', kind, attempted)
-    result.update(providerReached=attempted > 0,comparison=comparison)
+    result.update(providerReached=attempted > 0, comparison=comparison, searchId=identity, reused=False)
     updateRecord('budget_alternative_searches', identity, {'status': result['status'], 'result': result})
     return result
 
@@ -139,8 +144,11 @@ def flight_search(trip, invoke, comparison=None):
                     travelClass=criteria['travel_class'], adults=criteria['traveller_count'])
     items = [{**row, 'source': 'serpapi', 'planningOnly': True} for row in result.get('items', [])
              if isinstance(row, dict) and _provider_route_matches(row, criteria)][:5]
+    outbound_count = candidate_count = len(result.get('items', []))
+    return_count = None
     if not items:
-        return []
+        return {'references': [], 'candidateCount': candidate_count, 'validQuoteCount': 0,
+                'rejectedCount': candidate_count, 'rejectionCounts': {'route_mismatch': candidate_count} if candidate_count else {}}
     identity, stored = _store_quote(criteria, items, 'serpapi')
     quote = _FLIGHT_QUOTES[identity]
     if criteria.get('return_date'):
@@ -153,6 +161,8 @@ def flight_search(trip, invoke, comparison=None):
             if outbound:
                 returned = invoke(retrieveFlightReturns, outbound['departureToken'], *args,
                                   adults=criteria['traveller_count'], travelClass=criteria['travel_class'])
+                return_count = len(returned.get('items', []))
+                candidate_count = return_count or outbound_count
                 for index, row in enumerate(returned.get('items', [])[:8]):
                     segments = _return_segments(row, criteria)
                     if segments:
@@ -161,8 +171,12 @@ def flight_search(trip, invoke, comparison=None):
         options = quote['completedOptions'].values()
     else:
         options = stored
-    return [{'searchId': identity, 'optionId': row['optionId']} for row in options
-            if row.get('quoteCompleteness') == 'complete']
+    references = [{'searchId': identity, 'optionId': row['optionId']} for row in options
+                  if row.get('quoteCompleteness') == 'complete']
+    rejected = max(0, candidate_count - len(references))
+    return {'references': references, 'candidateCount': candidate_count, 'validQuoteCount': len(references),
+            'rejectedCount': rejected, 'rejectionCounts': {'incomplete_or_uncompared_fare': rejected} if rejected else {},
+            'outboundCandidateCount': outbound_count, 'returnCandidateCount': return_count, 'expiresAt':quote['expiresAt']}
 
 
 def hotel_search(criteria, invoke):
@@ -198,7 +212,8 @@ def hotel_search(criteria, invoke):
         else:
             reason=('currency' if offer.get('currency')!='MYR' else 'incomplete_price_or_charges')
             rejected[reason]=rejected.get(reason,0)+1
-    return {'references':[{'hotelOfferQuoteId': row['quoteId'], 'offerId': row['offerId']}
-            for row in _persist_quotes(items, criteria, 'liteapi')],
+    persisted = _persist_quotes(items, criteria, 'liteapi')
+    return {'references':[{'hotelOfferQuoteId': row['quoteId'], 'offerId': row['offerId']} for row in persisted],
+            'expiresAt':min((row['quoteExpiresAt'] for row in persisted if row.get('quoteExpiresAt')),default=None),
             'candidateCount':len(rates),'validQuoteCount':len(items),'rejectedCount':sum(rejected.values()),
             'rejectionCounts':rejected}

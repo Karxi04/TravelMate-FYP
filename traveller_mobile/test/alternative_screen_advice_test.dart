@@ -99,6 +99,10 @@ void main() {
         tripId: 'owned',
         api: api)));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Unavailable options · details'), 200);
+    await tester.pump();
+    await tester.tap(find.text('Unavailable options · details'));
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Review timing'), 200);
     await tester.tap(find.text('Review timing'));
     await tester.pumpAndSettle();
@@ -146,6 +150,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('No verified cheaper'), findsNothing);
       await tester.scrollUntilVisible(find.text('Find cheaper hotels'), 200);
+      await tester.pump();
       await tester.tap(find.text('Find cheaper hotels'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Search now'));
@@ -221,10 +226,11 @@ void main() {
     await search();
     expect(find.textContaining('search limit reached'), findsNothing);
     fresh.complete({
-      'search': {'status': 'completed', 'requestsAttempted': 1}
+      'search': {'status': 'completed', 'requestsAttempted': 1, 'reasonCode':'no_offers',
+        'candidateCount':0,'validQuoteCount':0}
     });
     await tester.pumpAndSettle();
-    expect(find.text('No verified cheaper flight is currently available.'),
+    expect(find.text('Provider search completed with no offers returned.'),
         findsOneWidget);
     expect(searches, 2);
     expect(api.postCalls.where((path) => path.endsWith('/apply')), isEmpty);
@@ -267,6 +273,7 @@ void main() {
         api: api)));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Find cheaper hotels'), 200);
+    await tester.pump();
     await tester.tap(find.text('Find cheaper hotels'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Search now'));
@@ -551,6 +558,7 @@ void main() {
         api: api)));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Find cheaper hotels'), 200);
+    await tester.pump();
     await tester.tap(find.text('Find cheaper hotels'));
     await tester.pumpAndSettle();
     expect(find.textContaining('1 provider rates request'), findsOneWidget);
@@ -714,6 +722,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Known estimate: RM 990.00'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('RM 360.00 → RM 324.00'), 200);
+    await tester.pump();
     expect(find.text('RM 360.00 → RM 324.00'), findsOneWidget);
     expect(find.text('Remaining over budget: RM 254.00'), findsOneWidget);
     await tester.ensureVisible(find.text('Preview'));await tester.pump();
@@ -1120,7 +1130,7 @@ void main() {
 
     failPrices = false;
     revision = 'r2';
-    await tester.ensureVisible(find.text('Try again'));await tester.pump();
+    await tester.scrollUntilVisible(find.text('Try again'), 200);await tester.pump();
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
     expect(find.text('Review budget options'), findsOneWidget);
@@ -1580,6 +1590,8 @@ void main() {
       await tester.tap(find.text('Confirm change'));
       await tester.pumpAndSettle();
 
+      await tester.scrollUntilVisible(find.text('Known estimate: RM 900.00'), -200);
+      await tester.pump();
       // Budget subtitle must remain unchanged
       expect(find.text('Known estimate: RM 900.00'), findsOneWidget);
     });

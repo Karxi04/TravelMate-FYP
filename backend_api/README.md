@@ -344,3 +344,34 @@ For an approved rollout, retain the existing genuine configuration as rollback,
 select `fyp_evaluation`, then use the controlled Backend reload procedure. No
 database migration or data rewrite is needed. To restore genuine mode, restore
 `genuine` and reload only with approval; original genuine histories are retained.
+
+### Lower-cost supplier search evidence
+
+Explicit `/api/fr5/itineraries/<id>/lower-cost-alternatives/discover` keeps its
+existing confirmation, revision, quota and provider limits (two flight calls or
+one hotel rates call). Its `search` result includes the durable `searchId`,
+`status`, `reused`, `providerReached`, `requestsAttempted`, returned
+`candidateCount`, complete `validQuoteCount`, and provider rejection counts.
+Flight counts describe the final comparison stage; `outboundCandidateCount` and
+`returnCandidateCount` distinguish outbound options from the one bounded return
+branch. Uncompleted/uncompared fares are identified, never priced as completed
+round trips. Quote expiry is preserved.
+
+The existing alternatives POST accepts optional `searchIds: {flight: id,
+hotel: id}`. It reads these exact saved searches and resolves their owned quote
+references before the capped historical scan. Each search must match the owner,
+trip, current revision, category and selected cabin comparison. No price from
+the client is accepted. The response's `searches` map retains provider evidence
+and adds `searchStatus`, `cheaperCandidateCount`, `timingConflictCount`,
+`comparisonRejectionCounts` and `reasonCode`. Counts distinguish provider quote
+rejections from later comparison failures. A cheaper timing-conflicted candidate
+is counted separately from an applicable replacement.
+
+`not_started` means this view has no confirmed submitted search; it does not
+claim the account has never searched. Completed searches distinguish no offers,
+rejected quotes, expired quotes, non-cheaper comparable offers, impossible
+timing and previewable savings. Reused search evidence is labelled. A new
+explicit intent can refresh expired cached evidence, while replaying the old
+intent never repeats its provider requests. Normal expiry and quota protections
+still apply. Preview, Cancel and confirmed CAS/history persistence use the
+existing contracts; no schema migration or owner-record rewrite is required.
