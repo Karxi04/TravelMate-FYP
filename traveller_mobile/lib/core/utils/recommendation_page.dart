@@ -5,6 +5,12 @@ const recommendationEvidenceUpdateMessage =
     're-evaluated against current reviews. Regenerate recommendations to see the latest evidence.';
 const recommendationPreferenceUpdateMessage =
     'Your saved preferences have changed. Regenerate recommendations to calculate new scores for your updated profile.';
+const recommendationReviewUpdateMessage =
+    'Review evidence has changed. Regenerate recommendations to use the latest approved local reviews. Your saved scores have not been rewritten.';
+
+String recommendationRegenerationMessage(String generation,String? reason) => generation.isEmpty
+    ? recommendationStartMessage : reason=='review_evidence_changed'
+    ? recommendationReviewUpdateMessage : recommendationPreferenceUpdateMessage;
 const recommendationStartMessage =
     'Generate recommendations when you are ready. Your saved preferences will be used.';
 

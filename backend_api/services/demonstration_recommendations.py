@@ -48,7 +48,7 @@ def load_sources(area='Penang'):
     candidates.extend(deepcopy(list(regional.values())))
     candidates, _ = filter_candidates(prepare_candidates(candidates), scope)
     # A valid locality can have no curated reviews. The normal route may still
-    # use its geographically validated cache with explicit provider/neutral fallback.
+    # use its geographically validated cache, with neutral local-review evidence.
     if not candidates:
         return [], []
     identities = {review_candidate_id(row) for row in candidates}
@@ -97,6 +97,15 @@ class EvaluationSession:
     def __init__(self):
         self.snapshots, self.profiles = OrderedDict(), OrderedDict()
         self.lock = Lock()
+        self._evidence_version=0
+
+    def evidence_revision(self):
+        with self.lock:
+            return self._evidence_version
+
+    def mark_evidence_changed(self):
+        with self.lock:
+            self._evidence_version+=1
 
     def _prune(self, records):
         for key, (expires, _) in list(records.items()):

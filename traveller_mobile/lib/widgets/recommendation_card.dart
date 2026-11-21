@@ -55,16 +55,19 @@ class RecommendationCard extends StatelessWidget {
   }
 
   Widget get _evaluationRating {
-    final evidence = _localEvaluationSummary ?? recommendation['popularityEvidence'];
-    final rating = evidence is Map ? num.tryParse('${evidence['rating']}') : null;
+    final popularity = recommendation['popularityEvidence'];
+    final evidence = _localEvaluationSummary ??
+        (popularity is Map && popularity['source']=='demonstration_approved_reviews' ? popularity : null);
+    if (evidence == null) return const StatusChip(text: 'Not rated yet', maxLines: null);
+    final rating = num.tryParse('${evidence['rating']}');
     if (rating == null || !rating.isFinite || rating < 1 || rating > 5 ||
-        !['provider_rating_review_count','demonstration_approved_reviews'].contains(evidence['source'])) {
+        evidence['source']!='demonstration_approved_reviews') {
       return const StatusChip(text: 'Not rated yet', maxLines: null);
     }
     final count = evidence['reviewCount'];
-    final sample = evidence['source'] == 'demonstration_approved_reviews';
-    return StatusChip(text: '${rating.toStringAsFixed(1)} · ${count == null ? 'Review count unavailable' : '$count ${sample ? 'sample reviews' : 'provider reviews'}'}',
-      maxLines: null, icon: Icons.star_rounded);
+    return LocalReviewRatingBadge(summary:{'rating':rating,'reviews':count,
+      'recommendationEvidenceMode':'fyp_evaluation','ratingBasis':'private_illustrative',
+      'reviewEnvironment':'private_demo','privateExamplesAllowed':true}, maxLines:null);
   }
 
   String get _location => (recommendation['address'] ??
@@ -131,7 +134,7 @@ class RecommendationCard extends StatelessWidget {
     final rawReasons = recommendation['matchReasons'];
     if (rawReasons is List) {
       final list = rawReasons
-          .map((value) => value.toString().trim())
+          .map((value) => _naturalReason(value.toString().trim()))
           .where((value) => value.isNotEmpty && !_isScoreOrMatchToken(value))
           .toList();
       if (list.isNotEmpty) return list;
@@ -144,7 +147,7 @@ class RecommendationCard extends StatelessWidget {
     if (raw.trim().isNotEmpty) {
       final parts = raw
           .split('•')
-          .map((value) => value.trim())
+          .map((value) => _naturalReason(value.trim()))
           .where((value) => value.isNotEmpty && !_isScoreOrMatchToken(value))
           .toList();
       if (parts.isNotEmpty) return parts;
@@ -152,6 +155,10 @@ class RecommendationCard extends StatelessWidget {
 
     return const ['Recommended based on available destination information.'];
   }
+
+  String _naturalReason(String value) => _sampleEvidence ? value
+      .replaceAll('Highly rated in sample community data','Popular among reviewers')
+      .replaceAll('Popular in sample community data','Popular among reviewers') : value;
 
   String get _source =>
       (recommendation['recommendationSource'] ?? source).toString().trim();
@@ -235,8 +242,6 @@ class RecommendationCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(child: Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: [
               _reviewRating,
-              if (_demonstration) const StatusChip(text: 'Demonstration review data', maxLines: null,
-                icon: Icons.science_outlined, tone: AppStatusTone.info),
               if (_showSourceDisclosure) SourceFallbackBadge(source: _source, maxLines: null),
             ])),
             if (onPreferenceFeedback != null && !_demonstration) _feedbackMenu(),
@@ -324,7 +329,7 @@ class RecommendationCard extends StatelessWidget {
     final popularityDescription = popularityEvidence == null
         ? 'This saved recommendation uses an older evidence format. Detailed popularity provenance is unavailable in this format. Regenerate recommendations to evaluate current evidence.'
         : popularitySource == 'provider_rating_review_count'
-            ? '${_evaluation ? (_localEvaluationSummary != null ? 'This earlier evaluation used provider popularity although local reviews are available. Regenerate to apply local-review-first popularity. ' : 'No approved local evaluation review summary was available; using provider fallback. ') : ''}Verified provider rating: ${popularityRating?.toStringAsFixed(1)}/5. ${popularityCount == null ? 'Provider review count unavailable.' : '$popularityCount provider reviews.'}'
+            ? '${_evaluation ? 'This saved evaluation predates the local-only policy. Regenerate to use current local evidence; provider popularity is no longer used in FYP evaluation. ' : ''}Verified provider rating: ${popularityRating?.toStringAsFixed(1)}/5. ${popularityCount == null ? 'Provider review count unavailable.' : '$popularityCount provider reviews.'}'
         : popularitySource == 'genuine_approved_local_reviews'
             ? 'Approved genuine TravelMate reviews: ${popularityRating?.toStringAsFixed(1)}/5 from $popularityCount reviews loaded for this generation. Demonstration reviews are excluded.'
         : popularitySource == 'demonstration_approved_reviews'
@@ -545,7 +550,7 @@ class RecommendationDataSources extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: AppSpacing.sm),
               Text(evaluation
-                ? 'Your saved preferences drive the same 60% content, 30% similar-traveller and 10% popularity calculation. Approved TravelMate sample community reviews are preferred. Similarity-weighted peer ratings and the unweighted popularity aggregate remain separate. Provider ratings are fallback only when no qualifying local summary exists. Sample contributors are not verified real tourists. Evaluation results and recommendation feedback remain in owner-scoped server memory for up to one hour or restart. Your questionnaire and genuine history are unchanged. Destination and Trip actions use the normal records and confirmations.'
+                ? 'Your saved preferences drive the same 60% content, 30% similar-traveller and 10% popularity calculation. FYP evaluation uses approved TravelMate sample community reviews only. Similarity-weighted peer ratings and the unweighted popularity aggregate remain separate. Missing local evidence uses a neutral ranking prior and Not rated yet. Provider ratings are excluded. Sample contributors are not verified real tourists. Evaluation results remain in owner-scoped server memory for one hour or restart. Your questionnaire and genuine history are unchanged. Trip actions use normal confirmations.'
                 : 'Recommendations use your saved preferences, qualifying independent genuine reviews and verified provider ratings or approved genuine local ratings. Sample community reviews do not contribute. Missing peer evidence uses a confidence-aware neutral score.'),
             ]))))));
 }

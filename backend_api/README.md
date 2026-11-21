@@ -187,8 +187,9 @@ questionnaire, existing canonical destination records and the existing approved
 Penang sample reviews with their effective moderation decisions. Simulated
 reviewer profiles remain explicitly simulated. The existing 60/30/10 formula,
 similarity threshold and confidence calculation are unchanged. Approved local
-evaluation-review aggregates supply popularity first; verified provider evidence
-is fallback only when that local summary is unavailable. Collaborative uses
+evaluation-review aggregates are the only evaluation popularity source. Missing
+local evidence uses the neutral 50 prior and a Not rated yet badge; provider
+ratings never fill an evaluation rating or review count. Collaborative uses
 similarity-weighted peer ratings and confidence, while popularity uses the
 unweighted approved destination mean/count. Provider reviews never become peers.
 
@@ -241,7 +242,63 @@ not evaluation scores or review identities. Questionnaire and Trip changes still
 require their normal user actions. The separate simulation engine and its tests
 remain internal, without a science-icon navigation entry in the ordinary UI.
 The Recommendation data sources action and score explanation disclose sample
-community evidence; compact rating labels distinguish sample and provider counts.
+community evidence. Ordinary evaluation badges use `3.5 · 16 Reviews` with the
+approved local mean/count only; provenance remains available in the details.
+
+### Persistent local Administrator moderation
+
+Regional/nationwide source definitions are immutable. Without a configured,
+initialized local overlay they remain read-only. The owner-controlled Windows
+setup script defaults to a plan without changing files or runtime configuration:
+
+```powershell
+./scripts/prepare_review_staging.ps1
+# Only after separate owner approval:
+./scripts/prepare_review_staging.ps1 -Apply
+```
+
+Its default dedicated database is
+`D:\workspace\TravelMate\local_review_moderation\review-overlay.sqlite3`.
+The script rejects unrelated files/databases and reparse points, and verifies
+protected directory/file ACLs granting only the current Windows user and SYSTEM.
+The Backend must run under that same user. A different service identity requires
+a separately reviewed permission change. Do not move this file into tracked source.
+
+After separate rollout approval, set `FYP_REVIEW_STAGING_PATH` to that absolute
+path in the existing local Backend environment and reload only the verified
+Backend. The script itself does not edit `.env` or restart anything. Updating the
+Administrator portal and Traveller APK requires their own approved rollout.
+GETs and moderation requests never create or repair the database. A missing,
+corrupt or inaccessible configured overlay fails closed: affected review data is
+withheld, generation returns 503, and no source defaults are silently republished.
+
+The overlay accepts only moderation fields on existing synthetic records. It
+cannot change ratings, comments, author/provenance or genuine Firebase feedback.
+Original private Penang reviews retain their existing private Firestore moderation
+adapter; genuine reviews retain their owner/public-projection protections. This
+local database covers the source-controlled Penang supplement and regional and
+nationwide contributions, with no Firebase import.
+
+Pending reviews allow Approve/Reject/Hide. Approved reviews allow Hide or explicit
+Revoke approval. Hidden/rejected reviews allow Restore and approve. Revoke and
+restore require a note and current revision; every mutation retains its actor,
+timestamp and decision history. SQLite immediate transactions and existing
+Firebase compare-and-set adapters reject stale or concurrent decisions. The
+Administrator list has source/status filters and 50-row pagination; unavailable
+local storage is reported rather than represented as an empty successful source.
+
+New generations use the effective approved rows for both the independent peer
+calculation and the unweighted popularity aggregate. Older evaluation generations
+are immutable and request explicit regeneration when the local overlay hash or an
+in-process private moderation revision changes. The local single-worker scope
+still applies: external changes to private Firestore moderation are read on the
+next explicit generation, not polled on every saved-generation GET.
+
+For rollback, preserve the database and its ACLs. Revert code/config only through
+an approved service reload; never delete decisions to roll back presentation.
+Removing the overlay setting restores immutable fixture defaults and therefore
+must not be used as a routine moderation reset. Genuine mode and genuine records
+are independent of this local evaluation overlay.
 
 For an approved rollout, retain the existing genuine configuration as rollback,
 select `fyp_evaluation`, then use the controlled Backend reload procedure. No

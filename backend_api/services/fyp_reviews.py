@@ -213,9 +213,10 @@ def regional_demo_reviews(identity):
 
 
 def all_regional_reviews():
+    from services.review_staging import overlay_rows
     identities = dict.fromkeys([*regional_demo_destinations(), *penang_evaluation_coverage.ATTRACTIONS,
                                *national_evaluation_reviews.destinations()])
-    return [row for identity in identities for row in regional_demo_reviews(identity)]
+    return overlay_rows([row for identity in identities for row in _regional_sources(identity)])
 
 
 def illustrative_reviews(genuine, examples):

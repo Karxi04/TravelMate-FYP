@@ -40,6 +40,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   final Set<String> feedbackInFlight = {};
   String recommendationGenerationId = '';
   bool requiresExplicitRegeneration = false;
+  String? recommendationStaleReason;
   String? errorMessage;
   Map<String, dynamic> pagination = {};
   int requestVersion = 0;
@@ -109,6 +110,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         setState(() {
           items = data['recommendations'] as List? ?? [];
           requiresExplicitRegeneration = data['requiresExplicitRegeneration'] == true;
+          recommendationStaleReason = data['staleReason']?.toString();
           source = (data['source'] ?? '').toString();
           pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
           discoveryNotice = data['snapshot']?['cacheFallbackNotice']?.toString();
@@ -203,6 +205,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       setState(() {
         final received = data['recommendations'] as List? ?? [];
         requiresExplicitRegeneration = data['requiresExplicitRegeneration'] == true;
+        recommendationStaleReason = data['staleReason']?.toString();
         items = expand ? appendRecommendationResults(items, received) : received;
         discoveryNotice = data['discoveryMessage']?.toString();
         searchMessage = data['snapshot']?['searchMessage']?.toString();
@@ -290,7 +293,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       if (!mounted || version != requestVersion) return;
       if (data['stale'] == true) {
         if (data['requiresExplicitRegeneration'] == true) {
-          setState(() { requiresExplicitRegeneration = true; items = []; loadingMore = false; });
+          setState(() { requiresExplicitRegeneration = true; recommendationStaleReason=data['staleReason']?.toString(); items = []; loadingMore = false; });
           return;
         }
         setState(() => loadingMore = false);
@@ -517,7 +520,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
             if (requiresExplicitRegeneration || recommendationsNeedEvidenceUpdate(items)) ...[
               const SizedBox(height: AppSpacing.md),
               RecommendationEvidenceNotice(message: requiresExplicitRegeneration
-                  ? (recommendationGenerationId.isEmpty ? recommendationStartMessage : recommendationPreferenceUpdateMessage) : recommendationEvidenceUpdateMessage,
+                  ? recommendationRegenerationMessage(recommendationGenerationId,recommendationStaleReason) : recommendationEvidenceUpdateMessage,
                 onRegenerate: busy ? null : () => generate()),
             ],
             const SizedBox(height: AppSpacing.md),

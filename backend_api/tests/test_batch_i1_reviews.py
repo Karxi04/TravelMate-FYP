@@ -11,6 +11,8 @@ from services.review_service import review_revision
 def test_private_combined_summary_matches_list_cards_and_moderation(client, memory, monkeypatch, tmp_path):
     from modules.fr03_destination_search_information import routes
     monkeypatch.setenv('FYP_REVIEW_STAGING_PATH', str(tmp_path / 'review-overlay.sqlite3'))
+    from services.review_staging import initialize
+    initialize()
     monkeypatch.setattr('modules.fr13_administrator_management.routes.private_dataset', lambda: None)
     client.application.config['LOCAL_FYP_SAMPLE_REVIEWS'] = True
     monkeypatch.setattr(routes, '_private_review_dataset', lambda **kw: None)
@@ -73,10 +75,12 @@ def test_regional_coverage_is_canonical_and_overlay_read_only_by_default(client,
 
 
 def test_reading_overlay_never_creates_database(monkeypatch, tmp_path):
-    from services.review_staging import overlay_rows, staging_path
+    from services.review_staging import overlay_rows, staging_path, ReviewStagingUnavailable
     target = tmp_path / 'untouched.sqlite3'
     monkeypatch.setenv('FYP_REVIEW_STAGING_PATH', str(target))
-    assert overlay_rows([{'id': 'a'}]) == [{'id': 'a'}] and not target.exists()
+    with pytest.raises(ReviewStagingUnavailable):
+        overlay_rows([{'id':'a'}])
+    assert not target.exists()
     monkeypatch.setenv('FYP_REVIEW_STAGING_PATH', 'C:/unsafe/overlay.sqlite3')
     with pytest.raises(ValueError):
         staging_path()

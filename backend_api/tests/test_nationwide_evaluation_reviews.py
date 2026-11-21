@@ -101,7 +101,7 @@ def test_actual_normal_generation_uses_the_requested_scope_and_matching_reviews(
     assert body['recommendationEvidenceMode'] == 'fyp_evaluation'
     assert body['recommendationGenerationId'].startswith('fyp-evaluation-')
     assert body['evidenceProvenance']['approvedContributions'] == sum(map(len, approved_contributions(rows, demonstration=True).values()))
-    assert body['evidenceProvenance']['localReviewPolicy'] == 'approved_local_first'
+    assert body['evidenceProvenance']['localReviewPolicy'] == 'approved_local_only'
     expected_datasets=sorted({r.get('dataset') or 'penang_private' for r in rows})
     assert body['evidenceProvenance']['datasets']==expected_datasets
     assert body['evidenceProvenance']['dataset']=='+'.join(expected_datasets)
@@ -136,7 +136,7 @@ def test_uncovered_valid_locality_can_use_verified_cache_fallback_without_live_s
     body=generate(client,'Kulim, Kedah')
     assert len(body['recommendations'])==1
     row=body['recommendations'][0]
-    assert row['popularitySource']=='provider_rating_review_count' and row['popularityScore']==72.2
+    assert row['popularityScore']==50 and row['popularityEvidence']['rating'] is None
     assert row['collaborativeScore']==50 and row['collaborativeRatingCount']==0
     assert body['evidenceProvenance']['approvedContributions']==0
     assert body['evidenceProvenance']['datasets']==[]
@@ -180,9 +180,9 @@ def test_new_data_moderation_duplicates_and_provider_neutral_fallback(nationwide
     assert len(groups[identity]) == expected and expected in {4,5}
     summary = review_summaries(groups, demonstration=True)
     place = {**national.destinations()[identity], 'ratingSource': 'provider', 'rating': 4.5, 'reviews': 1234}
-    assert popularity_evidence(place, summary, demonstration=True, provider_fallback=True)['reviewCount'] == expected
-    assert popularity_evidence(place, {}, demonstration=True, provider_fallback=True)['source'] == 'provider_rating_review_count'
-    assert popularity_evidence({**place, 'ratingSource': 'unknown'}, {}, demonstration=True, provider_fallback=True)['score'] == 50
+    assert popularity_evidence(place, summary, demonstration=True)['reviewCount'] == expected
+    assert popularity_evidence(place, {}, demonstration=True)['score'] == 50
+    assert popularity_evidence({**place, 'ratingSource': 'unknown'}, {}, demonstration=True)['score'] == 50
     assert national.sources(identity) == rows
 
 
@@ -213,6 +213,8 @@ def test_nationwide_local_badges_and_single_review_list_share_approved_counts(cl
 def test_new_regional_contribution_keeps_existing_admin_cas_and_history(client,nationwide,monkeypatch,tmp_path,memory):
     from modules.fr13_administrator_management import routes
     monkeypatch.setenv('FYP_REVIEW_STAGING_PATH',str(tmp_path/'nationwide-overlay.sqlite3'))
+    from services.review_staging import initialize
+    initialize()
     monkeypatch.setattr(routes,'private_dataset',lambda:None)
     before=deepcopy(memory)
     listed=client.get('/api/fr13/feedback?source=all',headers=headers('admin'))

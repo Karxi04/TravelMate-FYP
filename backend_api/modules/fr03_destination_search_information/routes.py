@@ -30,6 +30,7 @@ from sequence_contract.firebase_firestore import (
 )
 from services.public_content_projection import public_review
 from services.review_service import approved_reviews, genuine_review
+from services.review_staging import ReviewStagingUnavailable
 from services.fyp_reviews import (
     dataset_for, dataset_reviews, private_dataset, regional_demo_destinations, regional_demo_reviews,
     PENANG_DESTINATION_IDS, all_regional_reviews, illustrative_reviews,
@@ -45,6 +46,13 @@ from services.malaysian_locality import (
 )
 
 bp = Blueprint('fr03_destinations', __name__, url_prefix='/api/fr3')
+
+
+@bp.errorhandler(ReviewStagingUnavailable)
+def review_storage_unavailable(_error):
+    return jsonify(ok=False,error='Local review evidence is temporarily unavailable. Please try again.'),503
+
+
 REVIEW_CONTEXT_HEADER = 'X-TravelMate-Review-Context'
 
 
@@ -578,6 +586,7 @@ def local_ratings():
             continue
         if _local_demo_request():
             summary = illustrative_reviews(summary, examples.get(identity, []))
+            summary['recommendationEvidenceMode']=current_app.config.get('RECOMMENDATION_EVIDENCE_MODE','genuine')
         summary = {key: value for key, value in summary.items() if key not in {'user_reviews', 'review_summary'}}
         for alias in review_destination_ids(identity):
             result[alias] = summary
@@ -952,6 +961,7 @@ def ratings_reviews(place_id):
                 current_app.logger.warning('Private review examples unavailable (%s)', type(exc).__name__)
                 example_status = 'unavailable'
         result = illustrative_reviews(result, records)
+        result['recommendationEvidenceMode']=current_app.config.get('RECOMMENDATION_EVIDENCE_MODE','genuine')
         return jsonify(ok=True, source='travelmate_database', result=result,
                        reviewEnvironment='private_demo', exampleReviewStatus=example_status)
     return jsonify(ok=True, source='travelmate_database', result=result,

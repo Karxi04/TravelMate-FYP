@@ -2,6 +2,7 @@
 {% block title %}Feedback Moderation | TravelMate{% endblock %}
 
 {% block content %}
+{% set selected_source = review_source|default('all') %}
 {% include '_admin_data_state.html' %}
 <div class="page-title">
   <div>
@@ -11,8 +12,9 @@
 </div>
 
 {% if private_unavailable %}
-<p role="status">Private review examples are unavailable. The counts below cover Traveller feedback.</p>
+<p role="status">The private Penang source is unavailable. Only available sources are included in these counts.</p>
 {% endif %}
+{% if regional_unavailable %}<p role="alert">Local evaluation moderation storage is unavailable. Its reviews are withheld until storage recovers; counts are incomplete.</p>{% endif %}
 
 {% if not backend_error %}
 <div class="grid g4" style="margin-bottom: 20px;">
@@ -21,8 +23,8 @@
     ('needs_review', 'Needs review', counts.needs_review),
     ('normal', 'Normal reviews', counts.automatic + counts.manual),
     ('hidden', 'Hidden reviews', counts.hidden)
-  ] %}
-  <a class="card metric-card" href="{{ url_for('admin_fr13.feedback', status=value, q=query) }}">
+  ] + ([('rejected','Rejected / revoked',counts.rejected)] if counts.rejected is defined else []) %}
+  <a class="card metric-card" href="{{ url_for('admin_fr13.feedback', status=value, q=query,review_source=review_source) }}">
     <div class="metric">{{ count }}</div>
     <div class="metric-label">{{ label }}</div>
     {% if value == 'normal' %}
@@ -46,6 +48,12 @@
       {% endfor %}
     </select>
   </div>
+  {% if source_labels is defined %}<div class="field">
+    <label for="review-source">Review source</label>
+    <select class="input" id="review-source" name="review_source">
+      {% for value,label in source_labels.items() %}<option value="{{ value }}" {% if review_source==value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>{% endif %}
   <button class="btn primary" type="submit">Apply filters</button>
 </form>
 
@@ -58,14 +66,17 @@
     {% set tone = 'success' if risk == 'low' else 'warning' %}
     {% set sentiment = screening.get('sentiment') or {} %}
     {% set decision = x.get('moderationDecision') or {} %}
-    <article class="card review-card" style="overflow-wrap: anywhere;">
+    {% set actions = x.get('moderationActions', [] if category in ['hidden','rejected'] else ['hide'] if category in ['automatic','manual'] else ['keep','reject','hide']) %}
+    <article class="card review-card" data-review-id="{{ x.id }}" data-review-source="{{ review_source }}" style="overflow-wrap: anywhere;">
       <div class="actions" style="justify-content: space-between;">
-        <span class="status {{ 'rejected' if category == 'hidden' else 'pending' if category in ['flagged', 'needs_review'] else 'approved' }}">
+        <span class="status {{ 'rejected' if category in ['hidden','rejected'] else 'pending' if category in ['flagged', 'needs_review'] else 'approved' }}">
           {{ categories[category] }}
           {% if category == 'hidden' and decision.get('outcome') == 'reject' %} · Rejected{% endif %}
         </span>
         <strong aria-label="{{ x.get('rating', '-') }} out of 5 stars">★ {{ x.get('rating', '-') }} / 5</strong>
       </div>
+      <p class="muted"><strong>{{ 'FYP evaluation contribution · fictional' if review_source!='traveller' or x.get('synthetic') else 'Genuine Traveller feedback' }}</strong>
+        {% if x.get('dataset') %} · {{ x.dataset }}{% endif %}</p>
       <h3>{{ x.get('destinationName') or x.get('destinationId', 'Destination') }}</h3>
       {% if x.get('destinationAddress') %}<p class="muted">{{ x.destinationAddress }}</p>{% endif %}
       <p class="muted">{{ x.get('travellerName') or 'Traveller' }} · {{ (x.get('submittedAt') or '')[:10] or 'Date unavailable' }}</p>
@@ -89,7 +100,7 @@
       {% if screening.get('reason') %}
         <p>Screening reason: {{ screening.reason|replace('_', ' ') }}</p>
       {% endif %}
-      {% if category in ['automatic', 'manual', 'hidden'] %}
+      {% if category in ['automatic', 'manual', 'hidden','rejected'] %}
         <p class="muted">
           {% if decision.get('actor') == 'system' %}
             System decision · {{ decision.get('policyVersion', '') }}
@@ -118,10 +129,10 @@
           {% endfor %}
         </details>
       {% elif decision or x.get('reviewedBy') or x.get('removedBy') %}
-        <p><a href="{{ url_for('admin_fr13.feedback', history_source=review_source, q=query, status=status, history=x.id) }}">Decision history</a></p>
+        <p><a href="{{ url_for('admin_fr13.feedback', history_source=review_source, q=query, status=status, history=x.id,review_source=selected_source,page=page|default(1)) }}">Decision history</a></p>
       {% endif %}
-      {% if x.get('moderationWritable') == false %}<p class="muted">Read-only fixture · local staging overlay is not configured.</p>{% endif %}
-      {% if category != 'hidden' and x.get('moderationWritable', true) %}
+      {% if x.get('moderationWritable') == false %}<p class="muted">Read-only fixture · local moderation storage is not configured or writable.</p>{% endif %}
+      {% if x.get('moderationWritable', true) %}
         <form method="post" action="{{ url_for('admin_fr13.review_feedback', feedback_id=x.id) }}" style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="expectedUpdatedAt" value="{{ x.get('updatedAt', '') }}">
@@ -129,16 +140,24 @@
           <input type="hidden" name="status" value="{{ status }}">
           <input type="hidden" name="q" value="{{ query }}">
           <input type="hidden" name="source" value="{{ review_source }}">
+          {% if source_labels is defined %}<input type="hidden" name="review_source" value="{{ selected_source }}">
+          <input type="hidden" name="page" value="{{ page }}">{% endif %}
           <div class="field">
-            <label for="note-{{ loop.index }}">Moderation note</label>
+            <label for="note-{{ loop.index }}">Moderation note (required for revoke / restore)</label>
             <textarea class="input" id="note-{{ loop.index }}" name="comment" rows="2" maxlength="2000"></textarea>
           </div>
           <div class="actions">
-            {% if category in ['flagged', 'needs_review'] %}
+            {% if 'keep' in actions %}
               <button class="btn primary btn-sm" name="decision" value="keep" type="submit">Approve</button>
+            {% endif %}
+            {% if 'reject' in actions %}
               <button class="btn danger btn-sm" name="decision" value="reject" type="submit">Reject</button>
             {% endif %}
+            {% if 'hide' in actions %}
             <button class="btn danger btn-sm" name="decision" value="hide" type="submit">Hide</button>
+            {% endif %}
+            {% if 'reverse' in actions %}<button class="btn danger btn-sm" name="decision" value="reverse" type="submit" onclick="this.form.comment.required=true">Revoke approval</button>{% endif %}
+            {% if 'restore' in actions %}<button class="btn primary btn-sm" name="decision" value="restore" type="submit" onclick="this.form.comment.required=true">Restore and approve</button>{% endif %}
           </div>
         </form>
       {% endif %}
@@ -149,4 +168,9 @@
     </div>
   {% endfor %}
 </div>
+{% if pages is defined %}<nav class="actions" aria-label="Review pagination" style="margin-top:20px;">
+  <span>{{ total_filtered }} matching reviews · Page {{ page }} of {{ pages }}</span>
+  {% if page>1 %}<a class="btn" href="{{ url_for('admin_fr13.feedback',status=status,q=query,review_source=selected_source,page=page-1) }}">Previous</a>{% endif %}
+  {% if page<pages %}<a class="btn" href="{{ url_for('admin_fr13.feedback',status=status,q=query,review_source=selected_source,page=page+1) }}">Next</a>{% endif %}
+</nav>{% endif %}
 {% endblock %}

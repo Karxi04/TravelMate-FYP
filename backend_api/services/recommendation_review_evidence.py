@@ -42,7 +42,7 @@ def verified_provider_rating(item):
     return _rating(item.get('rating')) if genuine_review(item) and item.get('ratingSource') == 'provider' else None
 
 
-def popularity_evidence(item, summaries=None, *, demonstration=False, provider_fallback=False):
+def popularity_evidence(item, summaries=None, *, demonstration=False):
     source = 'neutral_unverified_local_catalog' if item.get('ratingSource') == 'unverified_local_catalog' else 'neutral_missing_rating'
     rating = count = None
     if not demonstration:
@@ -57,12 +57,7 @@ def popularity_evidence(item, summaries=None, *, demonstration=False, provider_f
             local_rating, local_count = _rating(summary.get('rating')), _count(summary.get('reviews'))
             if local_rating is not None and local_count and local_count > 0:
                 rating, count, source = local_rating, local_count, expected
-    if rating is None and demonstration and provider_fallback:
-        rating = verified_provider_rating(item)
-        if rating is not None:
-            count, source = _count(item.get('reviews')), 'provider_rating_review_count'
     score = min(100.0, rating / 5 * 80 + min(20.0, (count or 0) / 500)) if rating is not None else 50.0
     return {'score': score, 'source': source, 'rating': rating, 'reviewCount': count,
-            'fallbackReason': 'no_approved_local_evaluation_reviews' if demonstration and source == 'provider_rating_review_count'
-                              else None if rating is not None else 'no_approved_demonstration_reviews' if demonstration
+            'fallbackReason': None if rating is not None else 'no_approved_demonstration_reviews' if demonstration
                               else 'no_verified_provider_or_approved_genuine_local_reviews'}

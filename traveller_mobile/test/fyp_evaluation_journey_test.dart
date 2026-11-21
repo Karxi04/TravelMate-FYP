@@ -73,7 +73,7 @@ void main() {
           'demonstrationReviewSummary':{'source':'demonstration_approved_reviews','synthetic':true,'rating':3.5,'reviews':8}},
           onView:()=>views++,onAddToTrip:()=>adds++)))));
       await tester.pumpAndSettle();
-      expect(find.text(place.$2),findsOneWidget);expect(find.text('3.5 · 8 sample reviews'),findsOneWidget);
+      expect(find.text(place.$2),findsOneWidget);expect(find.text('3.5 · 8 Reviews'),findsOneWidget);
       expect(find.textContaining('provider reviews'),findsNothing);
       await tester.ensureVisible(find.text('View'));await tester.tap(find.text('View'));
       await tester.ensureVisible(find.text('Add to trip'));await tester.tap(find.text('Add to trip'));
@@ -130,7 +130,7 @@ void main() {
             child:RecommendationCard(carousel:true,discovery:true,recommendation:evaluationRecommendation(),
               onView:()=>views++,onAddToTrip:()=>adds++,onPreferenceFeedback:(value)=>feedback=value))))));
         await tester.pumpAndSettle();
-        expect(find.text('3.8 · 10 sample reviews'),findsOneWidget);
+        expect(find.text('3.8 · 10 Reviews'),findsOneWidget);
         expect(find.text('Hybrid score: 62.1/100'),findsOneWidget);
         expect(find.text('Scenery'),findsOneWidget);
         expect(find.text('Demonstration review data'),findsNothing);
@@ -170,12 +170,13 @@ void main() {
     expect(api.generations,1);expect(tester.takeException(),isNull);
   });
 
-  testWidgets('provider counts remain provider evidence in evaluation cards',(tester) async {
+  testWidgets('provider-only evidence never becomes an evaluation rating badge',(tester) async {
     await tester.pumpWidget(MaterialApp(home:Scaffold(body:SingleChildScrollView(child:RecommendationCard(
       recommendation:{...evaluationRecommendation(),'popularityEvidence':{
         'source':'provider_rating_review_count','rating':4.4,'reviewCount':15505}},onView:(){})))));
     await tester.pumpAndSettle();
-    expect(find.text('4.4 · 15505 provider reviews'),findsOneWidget);
+    expect(find.text('Not rated yet'),findsOneWidget);
+    expect(find.textContaining('provider reviews'),findsNothing);
     expect(find.textContaining('sample reviews'),findsNothing);expect(tester.takeException(),isNull);
   });
 
@@ -185,23 +186,24 @@ void main() {
         'demonstrationReviewSummary':{'source':'demonstration_approved_reviews','synthetic':true,'rating':3.8,'reviews':15},
         'popularityEvidence':{'source':'provider_rating_review_count','rating':4.4,'reviewCount':15505}},onView:(){})))));
     await tester.pumpAndSettle();
-    expect(find.text('3.8 · 15 sample reviews'),findsOneWidget);
+    expect(find.text('3.8 · 15 Reviews'),findsOneWidget);
     expect(find.textContaining('provider reviews'),findsNothing);
     expect(tester.takeException(),isNull);
     await tester.ensureVisible(find.text('Recommendation score: 62/100'));
     await tester.tap(find.text('Recommendation score: 62/100'));await tester.pumpAndSettle();
-    expect(find.textContaining('This earlier evaluation used provider popularity although local reviews are available'),findsOneWidget);
+    expect(find.textContaining('This saved evaluation predates the local-only policy'),findsOneWidget);
     expect(tester.takeException(),isNull);
   });
 
   for(final invalid in [<String,dynamic>{'reviews':0},{'synthetic':false},{'rating':6}]) {
-    testWidgets('invalid local summary uses honest provider fallback $invalid',(tester) async {
+    testWidgets('invalid local summary never falls back to provider badge $invalid',(tester) async {
       await tester.pumpWidget(MaterialApp(home:Scaffold(body:SingleChildScrollView(child:RecommendationCard(
         recommendation:{...evaluationRecommendation(),
           'demonstrationReviewSummary':{'source':'demonstration_approved_reviews','synthetic':true,'rating':3.8,'reviews':15,...invalid},
           'popularityEvidence':{'source':'provider_rating_review_count','rating':4.4,'reviewCount':15505}},onView:(){})))));
       await tester.pumpAndSettle();
-      expect(find.text('4.4 · 15505 provider reviews'),findsOneWidget);
+      expect(find.text('Not rated yet'),findsOneWidget);
+      expect(find.textContaining('provider reviews'),findsNothing);
       expect(find.textContaining('sample reviews'),findsNothing);expect(tester.takeException(),isNull);
     });
   }

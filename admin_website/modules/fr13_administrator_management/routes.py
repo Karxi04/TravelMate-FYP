@@ -152,8 +152,13 @@ def feedback():
     data = response.json() if response.ok else {}
     categories = {
         "flagged": "Flagged", "needs_review": "Needs review", "automatic": "Automatically approved",
-        "manual": "Manually approved", "hidden": "Hidden",
+        "manual": "Manually approved", "hidden": "Hidden", "rejected":"Rejected / revoked",
     }
+    source_labels={'all':'All sources','traveller':'Genuine Traveller feedback','evaluation':'FYP evaluation',
+                   'fyp_penang':'FYP evaluation · Penang database','fyp_regional':'FYP evaluation · local overlay'}
+    review_source=request.args.get('review_source','all')
+    if review_source not in source_labels:
+        review_source='all'
     counts = dict.fromkeys(categories, 0)
     status = request.args.get("status", "queue")
     if status not in {*categories, "queue", "normal", "all"}:
@@ -163,6 +168,11 @@ def feedback():
     group = {"flagged", "needs_review"} if status == "queue" else {"automatic", "manual"} if status == "normal" else {status}
     items = []
     for item in data.get("items", []):
+        origin=item.get('reviewSource','traveller')
+        evaluation=origin!='traveller' or item.get('synthetic') is True
+        if ((review_source=='traveller' and evaluation) or (review_source=='evaluation' and not evaluation)
+                or (review_source in {'fyp_penang','fyp_regional'} and origin!=review_source)):
+            continue
         category = item.get("moderationCategory", "needs_review")
         if category not in categories:
             category = "needs_review"
@@ -173,6 +183,14 @@ def feedback():
                               for key in ("comment", "destinationName", "destinationId", "travellerName", "travellerId")):
             continue
         items.append({**item, "moderationCategory": category})
+    total_filtered=len(items)
+    try:
+        page=max(1,int(request.args.get('page','1')))
+    except ValueError:
+        page=1
+    pages=max(1,(total_filtered+49)//50)
+    page=min(page,pages)
+    items=items[(page-1)*50:page*50]
     history_id = request.args.get("history", "")
     history_source = request.args.get("history_source", request.args.get("source", "traveller"))
     history = None
@@ -185,7 +203,8 @@ def feedback():
     return render_template("fr13_administrator_management/feedback.html", items=items, counts=counts,
                            categories=categories, status=status, query=query, history_id=history_id,
                            history=history, history_source=history_source,
-                           private_unavailable=data.get("privateUnavailable", False))
+                           private_unavailable=data.get("privateUnavailable", False),regional_unavailable=data.get('regionalUnavailable',False),
+                           review_source=review_source,source_labels=source_labels,page=page,pages=pages,total_filtered=total_filtered)
 
 @bp.route("/destinations")
 def destinations():
@@ -329,12 +348,12 @@ def review_feedback(feedback_id):
         **({"expectedRevision": request.form["expectedRevision"]} if "expectedRevision" in request.form else {}),
     }, **source_args)
     if response.ok:
-        flash({"keep": "Review approved.", "reject": "Review rejected."}.get(
+        flash({"keep": "Review approved.", "reject": "Review rejected.",'restore':'Review restored and approved.','reverse':'Approval revoked.'}.get(
             decision, "Review hidden from Traveller view."), "success")
     else:
         flash(_error(response), "error")
     return redirect(url_for("admin_fr13.feedback", status=request.form.get("status", "queue"),
-                            q=request.form.get("q", "")))
+                            q=request.form.get("q", ""),review_source=request.form.get('review_source','all'),page=request.form.get('page','1')))
 
 @bp.post("/feedback/<feedback_id>/remove")
 def remove_feedback(feedback_id):

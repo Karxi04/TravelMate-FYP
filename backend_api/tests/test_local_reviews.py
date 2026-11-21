@@ -175,7 +175,7 @@ def test_admin_stale_form_detects_content_change_even_with_unchanged_client_time
 
 @pytest.mark.parametrize(('action', 'comment', 'category'), [
     ('keep', 'There are four paths leading towards the water.', 'manual'),
-    ('reject', 'Click here https://example.invalid', 'hidden'),
+    ('reject', 'Click here https://example.invalid', 'rejected'),
     ('hide', 'Beautiful views and a peaceful visit.', 'hidden'),
 ])
 def test_admin_actions_record_outcomes(client, memory, action, comment, category):
@@ -189,7 +189,7 @@ def test_admin_actions_record_outcomes(client, memory, action, comment, category
     assert decision['actor'] == 'administrator' and decision['actorId'] == 'admin'
     assert decision['outcome'] == ('approve' if action == 'keep' else action)
     assert client.get('/api/fr13/feedback', headers=headers('admin')).json['items'][0]['moderationCategory'] == category
-    if category == 'hidden':
+    if category in {'hidden','rejected'}:
         assert client.put(f'/api/fr10/feedback/{fid}', headers=headers(), json={'rating': 4}).status_code == 409
 
 

@@ -185,7 +185,7 @@ void main() {
       if (simulation) {
         expect(find.text('Add to Trip'),findsNothing);
         expect(find.byType(PopupMenuButton<String>),findsNothing);
-        expect(find.text('Demonstration review data'),findsOneWidget);
+        expect(find.text('Demonstration review data'),findsNothing);
       }
       await tester.ensureVisible(find.text('Recommendation score: 62/100'));
       await tester.tap(find.text('Recommendation score: 62/100')); await tester.pumpAndSettle();

@@ -77,13 +77,13 @@ def test_local_aggregate_independent_of_profile_but_collaborative_is_personalize
 def test_provider_only_when_no_qualifying_local_summary(invalid):
     place={'destinationId':'local_kek_lok_si','ratingSource':'provider','rating':4.5,'reviews':9000}
     local={'rating':3,'reviews':12,'synthetic':True,'source':'demonstration_approved_reviews'}
-    valid=popularity_evidence(place,{'local_kek_lok_si':local},demonstration=True,provider_fallback=True)
+    valid=popularity_evidence(place,{'local_kek_lok_si':local},demonstration=True)
     assert valid['rating']==3 and valid['reviewCount']==12 and valid['source']=='demonstration_approved_reviews'
     broken={**local,**invalid} if isinstance(invalid,dict) else invalid
-    fallback=popularity_evidence(place,{'local_kek_lok_si':broken} if broken else {},demonstration=True,provider_fallback=True)
+    fallback=popularity_evidence(place,{'local_kek_lok_si':broken} if broken else {},demonstration=True)
     if invalid=={}:assert fallback['source']=='demonstration_approved_reviews'
-    else:assert fallback['source']=='provider_rating_review_count' and fallback['fallbackReason']=='no_approved_local_evaluation_reviews'
-    neutral=popularity_evidence({**place,'ratingSource':'unknown'},{},demonstration=True,provider_fallback=True)
+    else:assert fallback['score']==50 and fallback['rating'] is None and fallback['reviewCount'] is None
+    neutral=popularity_evidence({**place,'ratingSource':'unknown'},{},demonstration=True)
     assert neutral['score']==50
     assert popularity_evidence(place,{'local_kek_lok_si':local})['source']=='provider_rating_review_count'
 
@@ -91,6 +91,7 @@ def test_provider_only_when_no_qualifying_local_summary(invalid):
 def test_supplement_respects_existing_staging_moderation_and_audit_history(monkeypatch,tmp_path,penang):
     path=tmp_path/'isolated-review-moderation.sqlite3'
     monkeypatch.setenv('FYP_REVIEW_STAGING_PATH',str(path))
+    review_staging.initialize()
     identity='local_kek_lok_si';source=coverage.sources(identity)[0]
     updates={'feedbackStatus':'hidden','updatedAt':'2026-11-21T03:00:00Z',
              'moderationDecision':{'actor':'admin','outcome':'hide','at':'2026-11-21T03:00:00Z'}}
@@ -105,6 +106,7 @@ def test_supplement_respects_existing_staging_moderation_and_audit_history(monke
 def test_admin_unified_source_includes_new_rows_and_can_moderate_through_existing_contract(client,mock_admin_auth,monkeypatch,tmp_path,penang):
     from modules.fr13_administrator_management import routes
     monkeypatch.setenv('FYP_REVIEW_STAGING_PATH',str(tmp_path/'admin-review-moderation.sqlite3'))
+    review_staging.initialize()
     client.application.config['LOCAL_FYP_SAMPLE_REVIEWS']=True
     monkeypatch.setattr(routes,'private_dataset',lambda:None)
     monkeypatch.setattr(routes,'_load',lambda *_:[])
@@ -128,6 +130,7 @@ def test_penang_review_lists_badges_and_evaluation_share_moderated_counts(client
     places,original=penang
     source={p['destinationId']:p for p in places}
     monkeypatch.setenv('FYP_REVIEW_STAGING_PATH',str(tmp_path/'penang-review-overlay.sqlite3'))
+    review_staging.initialize()
     monkeypatch.setattr(routes,'_private_review_dataset',lambda **_:('isolated-ref',source))
     monkeypatch.setattr(routes,'dataset_reviews',lambda *_:deepcopy(original))
     client.application.config['LOCAL_FYP_SAMPLE_REVIEWS']=True

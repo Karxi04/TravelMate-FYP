@@ -78,7 +78,7 @@ def test_private_source_is_carried_to_filters_history_and_actions(auth_client):
             'source': 'fyp_penang', 'decision': 'keep', 'expectedRevision': 'expected',
         })
     html = page.get_data(as_text=True)
-    assert 'Review source' not in html and 'FYP Penang Reviews' not in html
+    assert 'Review source' in html and 'FYP evaluation contribution' in html
     assert 'Penang Hill' in html and 'Genuine place' in html
     assert 'name="source" value="fyp_penang"' in html and 'name="source" value="traveller"' in html
     assert html.count('<details open>') == 1
@@ -88,7 +88,7 @@ def test_private_source_is_carried_to_filters_history_and_actions(auth_client):
     assert calls[0][2]['params'] == {'source': 'all'}
     assert all(kwargs['params'] == {'source': 'fyp_penang'} for _, _, kwargs in calls[1:])
     assert calls[-1][2]['json']['expectedRevision'] == 'expected'
-    assert result.status_code == 302 and 'source=' not in result.location
+    assert result.status_code == 302 and 'review_source=all' in result.location
 
 
 def test_regional_overlay_form_is_read_only_until_explicitly_configured(auth_client):

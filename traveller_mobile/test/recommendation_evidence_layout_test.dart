@@ -115,7 +115,7 @@ void main() {
         onView:(){},onAddToTrip:()=>throw StateError('Must be hidden'),onPreferenceFeedback:(_)=>throw StateError('Must be hidden')))))));
     await tester.pumpAndSettle();
     expect(find.text('Not rated yet'),findsOneWidget);
-    expect(find.text('Demonstration review data'),findsOneWidget);
+    expect(find.text('Demonstration review data'),findsNothing);
     expect(find.text('Demo interest 8'),findsOneWidget);
     expect(find.text('Add to trip'),findsNothing);
     expect(find.byType(PopupMenuButton<String>),findsNothing);
