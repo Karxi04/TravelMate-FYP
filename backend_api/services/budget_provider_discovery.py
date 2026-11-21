@@ -4,7 +4,7 @@ import os
 import logging
 
 from services.transaction_reliability import operation_document_id
-from sequence_contract.firebase_firestore import claimRecord, updateRecord
+from sequence_contract.firebase_firestore import claimRecord, updateRecord, retrieveRecord
 
 
 class DiscoveryError(ValueError):
@@ -22,29 +22,37 @@ def searches_per_hour():
         return 6
 
 
-def run_search(owner, trip, kind, state, search, request_id=None):
+def run_search(owner, trip, kind, state, search, request_id=None, comparison=None):
     """Durable deduplication; count submitted provider searches, not page visits or validation failures."""
     now = datetime.now(timezone.utc)
     bucket = int(now.timestamp()) // 600
-    identity = operation_document_id('budget_search', owner, f"v2:{trip['id']}:{state}:{kind}:{bucket}")
+    variant = f":{comparison['mode']}:{comparison['comparisonCabin']}" if comparison else ''
+    identity = operation_document_id('budget_search', owner, f"v2:{trip['id']}:{state}:{kind}{variant}:{bucket}")
     if request_id:
+        previous = retrieveRecord('budget_alternative_searches', identity)
+        expiry = ((previous or {}).get('result') or {}).get('expiresAt')
+        if expiry and datetime.fromisoformat(expiry.replace('Z', '+00:00')) <= now:
+            # Only a new explicit intent can refresh expired evidence; replay keeps its original binding.
+            identity = operation_document_id('budget_search', owner, f'{identity}:refresh:{request_id}')
         # Bind a submitted intent to its original cache bucket, even across a clock boundary.
         intent, _ = claimRecord('budget_alternative_search_intents',
             operation_document_id('budget_search_intent', owner, f'{kind}:{request_id}'), {
                 'travellerId': owner, 'tripId': trip['id'], 'stateVersion': state,
+                'comparison': comparison,
                 'cacheId': identity, 'createdAt': now.isoformat(),
             })
-        if intent.get('travellerId') != owner or intent.get('tripId') != trip['id'] or intent.get('stateVersion') != state:
+        if (intent.get('travellerId') != owner or intent.get('tripId') != trip['id'] or intent.get('stateVersion') != state
+                or intent.get('comparison') != comparison):
             raise DiscoveryError('This search intent belongs to another trip revision.')
         identity = intent['cacheId']
     record, created = claimRecord('budget_alternative_searches', identity, {
         'travellerId': owner, 'tripId': trip['id'], 'stateVersion': state, 'category': kind,
-        'status': 'pending', 'createdAt': now.isoformat(),
+        'comparison':comparison, 'status': 'pending', 'createdAt': now.isoformat(),
     })
     if not created:
         if record.get('travellerId') != owner or record.get('stateVersion') != state:
             raise DiscoveryError('This search does not match the current trip.')
-        result = {**record.get('result', {}), 'status': record.get('status'), 'reused': True}
+        result = {**record.get('result', {}), 'status': record.get('status'), 'reused': True, 'searchId': identity}
         if result['status'] == 'quota_limited' and result.get('retryAt'):
             retry_at = datetime.fromisoformat(result['retryAt'].replace('Z', '+00:00'))
             if now >= retry_at:
@@ -74,8 +82,9 @@ def run_search(owner, trip, kind, state, search, request_id=None):
         attempted += 1
         return call(*args, **kwargs)
     try:
-        references = search(invoke)
-        result = {'status': 'completed', 'requestsAttempted': attempted, 'references': references}
+        found = search(invoke)
+        result = {'status': 'completed', 'requestsAttempted': attempted,
+                  **(found if isinstance(found, dict) else {'references': found})}
     except _SearchLimitReached:
         result = {'status': 'quota_limited', 'requestsAttempted': 0, 'retryAt': retry_at, 'searchesPerHour': limit}
     except Exception as error:
@@ -89,12 +98,26 @@ def run_search(owner, trip, kind, state, search, request_id=None):
         result = {'status': 'unavailable' if attempted else 'needs_review', 'requestsAttempted': attempted,
                   'failureCode': failure if attempted else 'search_not_started'}
         logging.getLogger(__name__).warning('budget_discovery_unavailable category=%s attempts=%s', kind, attempted)
+    result.update(providerReached=attempted > 0, comparison=comparison, searchId=identity, reused=False)
     updateRecord('budget_alternative_searches', identity, {'status': result['status'], 'result': result})
     return result
 
 
-def flight_search(trip, invoke):
+def flight_comparison(trip, mode='same_cabin', target=None):
+    """Only server-established cabin evidence defines a permitted downgrade."""
     from modules.fr05_smart_itinerary_budget_planner.routes import _flight_cabin
+    original=_flight_cabin(trip)
+    if original not in {1,2,3,4} or not isinstance(mode,str) or mode not in {'same_cabin','include_lower'}:
+        raise DiscoveryError('Choose a supported cabin comparison for a verified selected flight.')
+    allowed=list(range(1,original+1)) if mode=='include_lower' else [original]
+    target=(1 if mode=='include_lower' else original) if target is None else target
+    if type(target) is not int or target not in allowed:
+        raise DiscoveryError('The comparison cabin must retain the original cabin or be an explicitly selected lower cabin.')
+    return {'mode':mode,'originalCabin':original,'comparisonCabin':target,'allowedCabins':allowed,
+            'cabinDowngrade':target < original}
+
+
+def flight_search(trip, invoke, comparison=None):
     from modules.fr07_flight_search.routes import (
         _criteria, _provider_route_matches, _store_quote, _FLIGHT_QUOTES,
         _return_segments, _completed_option, _persist_quote,
@@ -112,7 +135,8 @@ def flight_search(trip, invoke):
         'arrival_id': outbound[-1].get('arrivalAirportCode'),
         'outbound_date': outbound[0].get('departureDate'),
         'return_date': returns[0].get('departureDate') if returns else None,
-    }, 'MYR', traveller_count(trip.get('travellerCount')), _flight_cabin(trip), None)
+    }, 'MYR', traveller_count(trip.get('travellerCount')),
+       (comparison or flight_comparison(trip))['comparisonCabin'], None)
     if flightSearchValidationError(criteria) or criteria.get('travel_class') not in {1, 2, 3, 4}:
         raise DiscoveryError('The route, dates or cabin need review.')
     args = (criteria['departure_id'], criteria['arrival_id'], criteria['outbound_date'], criteria.get('return_date'))
@@ -120,8 +144,11 @@ def flight_search(trip, invoke):
                     travelClass=criteria['travel_class'], adults=criteria['traveller_count'])
     items = [{**row, 'source': 'serpapi', 'planningOnly': True} for row in result.get('items', [])
              if isinstance(row, dict) and _provider_route_matches(row, criteria)][:5]
+    outbound_count = candidate_count = len(result.get('items', []))
+    return_count = None
     if not items:
-        return []
+        return {'references': [], 'candidateCount': candidate_count, 'validQuoteCount': 0,
+                'rejectedCount': candidate_count, 'rejectionCounts': {'route_mismatch': candidate_count} if candidate_count else {}}
     identity, stored = _store_quote(criteria, items, 'serpapi')
     quote = _FLIGHT_QUOTES[identity]
     if criteria.get('return_date'):
@@ -134,6 +161,8 @@ def flight_search(trip, invoke):
             if outbound:
                 returned = invoke(retrieveFlightReturns, outbound['departureToken'], *args,
                                   adults=criteria['traveller_count'], travelClass=criteria['travel_class'])
+                return_count = len(returned.get('items', []))
+                candidate_count = return_count or outbound_count
                 for index, row in enumerate(returned.get('items', [])[:8]):
                     segments = _return_segments(row, criteria)
                     if segments:
@@ -142,8 +171,12 @@ def flight_search(trip, invoke):
         options = quote['completedOptions'].values()
     else:
         options = stored
-    return [{'searchId': identity, 'optionId': row['optionId']} for row in options
-            if row.get('quoteCompleteness') == 'complete']
+    references = [{'searchId': identity, 'optionId': row['optionId']} for row in options
+                  if row.get('quoteCompleteness') == 'complete']
+    rejected = max(0, candidate_count - len(references))
+    return {'references': references, 'candidateCount': candidate_count, 'validQuoteCount': len(references),
+            'rejectedCount': rejected, 'rejectionCounts': {'incomplete_or_uncompared_fare': rejected} if rejected else {},
+            'outboundCandidateCount': outbound_count, 'returnCandidateCount': return_count, 'expiresAt':quote['expiresAt']}
 
 
 def hotel_search(criteria, invoke):
@@ -160,8 +193,11 @@ def hotel_search(criteria, invoke):
            'limit': 10, 'offset': 0, 'maxRatesPerHotel': 2, 'includeHotelData': True, 'roomMapping': True}
     response = invoke(retrieveHotelOffers, req)
     items = []
-    for offer in normalizeHotelOffers(response)[:20]:
+    rejected = {}
+    rates=normalizeHotelOffers(response)[:20]
+    for offer in rates:
         if offer.get('roomQuantity') not in (None, rooms) or not _offer_matches_occupancies(offer, occupancies):
+            rejected['occupancy_or_rooms']=rejected.get('occupancy_or_rooms',0)+1
             continue
         offer = {**offer, **_provenance('liteapi', provider_sandbox=_provider_sandbox(response)), 'roomQuantity': rooms}
         if offer.get('priceBasis') == 'per_room_night' and offer.get('priceStatus') == 'available':
@@ -173,5 +209,11 @@ def hotel_search(criteria, invoke):
         if (offer.get('priceBasis') == 'stay_total' and offer.get('taxesAndFeesStatus') == 'included'
                 and offer.get('currency') == 'MYR' and offer.get('priceStatus') == 'available'):
             items.append(offer)
-    return [{'hotelOfferQuoteId': row['quoteId'], 'offerId': row['offerId']}
-            for row in _persist_quotes(items, criteria, 'liteapi')]
+        else:
+            reason=('currency' if offer.get('currency')!='MYR' else 'incomplete_price_or_charges')
+            rejected[reason]=rejected.get(reason,0)+1
+    persisted = _persist_quotes(items, criteria, 'liteapi')
+    return {'references':[{'hotelOfferQuoteId': row['quoteId'], 'offerId': row['offerId']} for row in persisted],
+            'expiresAt':min((row['quoteExpiresAt'] for row in persisted if row.get('quoteExpiresAt')),default=None),
+            'candidateCount':len(rates),'validQuoteCount':len(items),'rejectedCount':sum(rejected.values()),
+            'rejectionCounts':rejected}

@@ -6,6 +6,7 @@ import '../../widgets/ink_card.dart';
 import 'budget_service.dart';
 import 'budget_replan_screen.dart';
 import 'models/budget_model.dart';
+import '../fr08_hotel_booking/hotel_screen.dart';
 
 class AlternativeScreen extends StatefulWidget {
   final BudgetModel budget;
@@ -35,6 +36,9 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   String? discovering;
   final searchMessages = <String, String>{};
   final searchRetryAt = <String, DateTime>{};
+  final searchIds = <String, String>{};
+  final searches = <String, Map<String, dynamic>>{};
+  final reusedSearches = <String, bool>{};
   List<Map<String, dynamic>> planning = [];
   List<Map<String, dynamic>> flightTimingPreviews = [];
   bool optionsChanged = false;
@@ -44,6 +48,21 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   Map<String, dynamic>? replanOptions;
   String? loadError;
   bool busy = false;
+  Map<String, dynamic> flightComparison = {}, hotelComparison = {};
+  Map categoryRejections = {};
+  bool includeLowerCabins = false;
+  int? comparisonCabin;
+  static const cabins = {
+    1: 'Economy',
+    2: 'Premium Economy',
+    3: 'Business',
+    4: 'First'
+  };
+  Map<String, dynamic> get cabinRequest => {
+        'cabinComparison': includeLowerCabins ? 'include_lower' : 'same_cabin',
+        if (includeLowerCabins && comparisonCabin != null)
+          'comparisonCabin': comparisonCabin
+      };
 
   @override
   void initState() {
@@ -63,13 +82,42 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       optionsChanged = false;
       applying = false;
       discovering = null;
+      includeLowerCabins = false;
+      comparisonCabin = null;
+      flightComparison = {};
+      hotelComparison = {};
+      categoryRejections = {};
       searchMessages.clear();
       searchRetryAt.clear();
+      searchIds.clear();
+      searches.clear();
+      reusedSearches.clear();
       load();
     }
   }
 
   void _setTripState(Map data) {
+    if (stateVersion != null &&
+        data['stateVersion'] is String &&
+        data['stateVersion'] != stateVersion) {
+      searchIds.clear();
+      searches.clear();
+      reusedSearches.clear();
+      searchMessages.clear();
+    }
+    if (data['searches'] is Map) {
+      for (final entry in (data['searches'] as Map).entries) {
+        if (entry.value is Map)
+          searches[entry.key.toString()] =
+              Map<String, dynamic>.from(entry.value);
+      }
+    }
+    if (data['categoryRejectionCounts'] is Map)
+      categoryRejections = data['categoryRejectionCounts'];
+    if (data['flightComparison'] is Map)
+      flightComparison = Map<String, dynamic>.from(data['flightComparison']);
+    if (data['hotelComparison'] is Map)
+      hotelComparison = Map<String, dynamic>.from(data['hotelComparison']);
     if (data['planningAlternatives'] is List) {
       planning = (data['planningAlternatives'] as List)
           .whereType<Map>()
@@ -85,8 +133,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     stateVersion = data['stateVersion'] as String?;
   }
 
-  Future<void> load() async {
-    if (!mounted || applying) return;
+  Future<void> load({bool afterSearch = false}) async {
+    if (!mounted || applying || discovering != null && !afterSearch) return;
     final version = ++_loadVersion;
     final tripId = widget.tripId;
     bool current() => mounted && version == _loadVersion;
@@ -142,8 +190,9 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       return;
     }
     try {
-      final data = await api
-          .post('/api/fr5/itineraries/$tripId/lower-cost-alternatives');
+      final data = await api.post(
+          '/api/fr5/itineraries/$tripId/lower-cost-alternatives',
+          {...cabinRequest, 'searchIds': searchIds});
       if (!current()) return;
       if (data is! Map || data['ok'] == false) {
         throw StateError('Alternatives could not be refreshed.');
@@ -253,6 +302,9 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (item['alternativeType'] == 'flight' ||
+                        item['alternativeType'] == 'hotel')
+                      ...selectionDetails(item),
                     Text('Original known estimate: RM ' +
                         money(before['total'])),
                     Text(
@@ -299,9 +351,46 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
             ));
   }
 
-  String noOffer(String category) => category == 'hotel'
-      ? 'No verified cheaper hotel is currently available for this stay.'
-      : 'No verified cheaper flight is currently available.';
+  String searchSummary(String category) {
+    final search = searches[category] ?? {};
+    final status = search['searchStatus'] ?? search['status'];
+    if (status == null || status == 'not_started')
+      return 'Provider search has not started in this comparison. Saved quotes are checked separately.';
+    if (status == 'completed') {
+      return switch (search['reasonCode']) {
+        'cheaper_offers' => 'Verified cheaper offers are ready to preview.',
+        'schedule_conflict' =>
+          'Cheaper flights were found, but cannot retain all planned visits. Review timing below.',
+        'expired_quote' =>
+          'Returned quotes expired before comparison. Search again for current evidence.',
+        'no_offers' => 'Provider search completed with no offers returned.',
+        'no_cheaper_comparable_offers' =>
+          'Provider search completed with no cheaper comparable offers.',
+        'quotes_rejected' =>
+          'Provider offers were returned, but none qualified. Review rejection details.',
+        'evidence_unavailable' =>
+          'This saved search has no candidate-count evidence. A fresh provider search is needed to establish availability.',
+        _ =>
+          'Search completed. Review saved options and comparison details below.',
+      };
+    }
+    if (status == 'pending')
+      return 'Search is still processing. Refresh saved results before trying again.';
+    if (status == 'quota_limited')
+      return searchLimitMessage(
+          category, DateTime.tryParse(search['retryAt']?.toString() ?? ''));
+    if (status == 'retry_available')
+      return 'Search limit has reset. You can start a new search.';
+    if (status == 'needs_review') return searchBlocked(category);
+    return switch (search['failureCode']) {
+      'provider_timeout' =>
+        'The provider search timed out. No result was confirmed; refresh saved results before trying again.',
+      'provider_rate_limited' =>
+        'The provider search limit was reached. Please try again later.',
+      _ =>
+        'The provider could not complete the search. No result was confirmed.',
+    };
+  }
 
   String searchBlocked(String category) => category == 'hotel'
       ? 'Hotel search has not run. Review the selected stay, total price and room details in Hotels first. Paid or pending stays cannot be replaced.'
@@ -320,6 +409,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
   Future<void> discover(String category) async {
     if (discovering != null ||
         applying ||
+        busy ||
+        checkingPrices ||
         widget.tripId == null ||
         stateVersion == null) return;
     final tripId = widget.tripId!;
@@ -352,56 +443,35 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       setState(() {
         searchMessages.remove(category);
         searchRetryAt.remove(category);
+        searches[category] = {'searchStatus':'pending'};
       });
       final result = await api.post(
           '/api/fr5/itineraries/$tripId/lower-cost-alternatives/discover', {
         'category': category,
         'providerSearchConfirmed': true,
         'searchRequestId': newTransactionAttemptId('budget_search'),
+        if (category == 'flight') ...cabinRequest,
         'stateVersion': state
       });
       if (!mounted || version != _loadVersion) return;
       final search = result['search'] as Map? ?? {};
       final status = search['status'];
       final retry = DateTime.tryParse(search['retryAt']?.toString() ?? '');
-      final message = switch (status) {
-        'completed' => 'Checking returned offers…',
-        'pending' =>
-          'Search is still processing. Refresh saved results before trying again.',
-        'quota_limited' => searchLimitMessage(category, retry),
-        'retry_available' =>
-          'Search limit has reset. You can start a new search.',
-        'needs_review' => searchBlocked(category),
-        'unavailable' => switch (search['failureCode']) {
-            'provider_timeout' =>
-              'The provider search timed out. No result was confirmed; refresh saved results before trying again.',
-            'provider_rate_limited' =>
-              'The provider search limit was reached. Please try again later.',
-            _ =>
-              'The provider could not complete the search. No result was confirmed.',
-          },
-        _ =>
-          'Provider search is unavailable. Your local planning options remain available.',
-      };
       setState(() {
-        searchMessages[category] = message;
+        searches[category] = Map<String, dynamic>.from(search);
+        if (search['searchId'] is String)
+          searchIds[category] = search['searchId'];
+        reusedSearches[category] = search['reused'] == true;
         if (status == 'quota_limited' && retry != null)
           searchRetryAt[category] = retry;
       });
-      await load();
-      if (mounted && widget.tripId == tripId && status == 'completed') {
-        final available = alternatives.any((item) =>
-            item['alternativeType'] == category && _canApplyItem(item));
-        setState(() => searchMessages[category] = available
-            ? 'Verified cheaper offers are ready to preview.'
-            : loadError != null
-                ? 'Search finished, but saved offers could not be loaded. Refresh saved results.'
-                : (status == 'completed' &&
-                        (search['requestsAttempted'] as num? ?? 0) == 0)
-                    ? searchBlocked(category)
-                    : category == 'flight' && flightTimingPreviews.isNotEmpty
-                        ? 'Cheaper flights need a timing review before they can be used.'
-                        : noOffer(category));
+      await load(afterSearch: true);
+      if (mounted &&
+          widget.tripId == tripId &&
+          status == 'completed' &&
+          loadError != null) {
+        setState(() => searchMessages[category] =
+            'Search finished, but saved offers could not be loaded. Refresh saved results.');
       }
     } catch (error) {
       if (mounted && version == _loadVersion) {
@@ -411,13 +481,91 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
             : error is ApiException && error.statusCode == 409
                 ? error.code == 'STALE_ALTERNATIVE'
                     ? 'This trip changed. Refresh alternatives before searching again.'
-                    : searchBlocked(category)
+                    : userFacingApiError(error)
                 : 'Search could not be confirmed. Refresh saved results before trying again.');
       }
     } finally {
       if (mounted && widget.tripId == tripId)
         setState(() => discovering = null);
     }
+  }
+
+  Future<void> openHotels() async {
+    final criteria = hotelComparison['searchCriteria'] as Map? ?? {};
+    await Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => HotelScreen(
+                api: api,
+                targetTripId: widget.tripId,
+                initialDestination: criteria['destination']?.toString(),
+                initialCheckin: criteria['checkin']?.toString(),
+                initialCheckout: criteria['checkout']?.toString(),
+                initialAdults: criteria['adults'] as int?,
+                initialChildren: criteria['children'] is num
+                    ? (criteria['children'] as num).toInt()
+                    : null,
+                initialOccupancies: (criteria['occupancies'] as List?)
+                    ?.whereType<Map>()
+                    .map((r) => Map<String, dynamic>.from(r))
+                    .toList())));
+    if (mounted) await load();
+  }
+
+  List<Widget> flightDetails(String label, Map flight) => [
+        if (flight.isNotEmpty)
+          Text('$label flight: ${flight['airline'] ?? 'Airline not supplied'}'),
+        for (final leg in ['outboundSegments', 'returnSegments'])
+          for (final segment in (flight[leg] as List? ?? []).whereType<Map>())
+            Text(
+                '${segment['departureAirportCode'] ?? ''} ${segment['departureDate'] ?? ''} ${segment['departureTime'] ?? ''}'
+                ' → ${segment['arrivalAirportCode'] ?? ''} ${segment['arrivalTime'] ?? ''}'),
+        if (flight['durationMinutes'] != null)
+          Text('$label duration: ${flight['durationMinutes']} minutes'),
+        if (flight['stops'] != null) Text('$label stops: ${flight['stops']}'),
+        if (flight['baggage'] != null) Text('Baggage: ${flight['baggage']}'),
+        if (flight.isNotEmpty && flight['baggage'] == null)
+          const Text(
+              'Baggage and fare conditions: not supplied; verify with the airline.'),
+      ];
+
+  List<Widget> selectionDetails(Map item) {
+    final data =
+        item['data'] is Map ? item['data'] as Map : <String, dynamic>{};
+    final original = item['originalSelection'] is Map
+        ? item['originalSelection'] as Map
+        : <String, dynamic>{};
+    if (item['alternativeType'] == 'flight') {
+      final cabin = data['cabin'] as Map? ?? {};
+      return [
+        if (cabin.isNotEmpty)
+          Text(
+              '${cabin['cabinDowngrade'] == true ? 'Cabin downgrade' : 'Same cabin'}: '
+              '${cabins[cabin['originalCabin']]} → ${cabins[cabin['comparisonCabin']]}'),
+        ...flightDetails('Original', original),
+        ...flightDetails('Proposed', data),
+        Text(item['comparisonStatus'] == 'requires_schedule_adjustment'
+            ? 'Requires Schedule Adjustment'
+            : 'Ready to Preview'),
+      ];
+    }
+    if (item['alternativeType'] == 'hotel') {
+      final criteria = data['comparisonCriteria'] as Map? ??
+          data['stayCriteria'] as Map? ??
+          {};
+      return [
+        Text('Original stay: ${original['name'] ?? 'Selected hotel'}'),
+        Text(
+            'Proposed stay: ${data['name'] ?? 'Hotel'} · ${data['roomName'] ?? 'Room details unavailable'}'),
+        Text(
+            '${criteria['checkin'] ?? ''} – ${criteria['checkout'] ?? ''} · ${criteria['roomQuantity'] ?? '?'} room(s)'),
+        Text(
+            'Adults: ${criteria['adults'] ?? '?'} · Children: ${criteria['children'] ?? 0}'),
+        const Text(
+            'Selected planning quote — not paid or a confirmed reservation.')
+      ];
+    }
+    return [];
   }
 
   Widget discoveryCard(String category) => Padding(
@@ -428,9 +576,102 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
           Text(category == 'flight' ? 'Flights' : 'Hotels',
               style: const TextStyle(fontWeight: FontWeight.w700)),
           const Text('Look for a cheaper comparable planning quote.'),
-          if (searchMessages[category] != null) Text(searchMessages[category]!),
+          if (category == 'flight') ...[
+            Text(
+                'Original cabin: ${cabins[flightComparison['originalCabin']] ?? 'Not established'}'),
+            Text(includeLowerCabins
+                ? 'Comparison: Include Lower Cabin Classes · ${cabins[comparisonCabin] ?? ''}'
+                : 'Comparison: Same Cabin Class'),
+            if ((flightComparison['originalCabin'] as num? ?? 1) > 1)
+              SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Include lower cabin classes'),
+                  subtitle: const Text(
+                      'Choose one cabin per search. No silent downgrade.'),
+                  value: includeLowerCabins,
+                  onChanged: discovering != null || applying
+                      ? null
+                      : (value) {
+                          setState(() {
+                            includeLowerCabins = value;
+                            comparisonCabin = value ? 1 : null;
+                            searchMessages.remove('flight');
+                            searchIds.remove('flight');
+                            searches.remove('flight');
+                            reusedSearches.remove('flight');
+                          });
+                          load();
+                        }),
+            if (includeLowerCabins)
+              DropdownButtonFormField<int>(
+                  initialValue: comparisonCabin,
+                  isExpanded: true,
+                  decoration:
+                      const InputDecoration(labelText: 'Cabin to compare'),
+                  items: [
+                    for (final cabin in cabins.entries)
+                      if (cabin.key <=
+                          (flightComparison['originalCabin'] as num? ?? 1))
+                        DropdownMenuItem(
+                            value: cabin.key, child: Text(cabin.value))
+                  ],
+                  onChanged: discovering != null || applying
+                      ? null
+                      : (value) {
+                          setState(() {
+                            comparisonCabin = value;
+                            searchIds.remove('flight');
+                            searches.remove('flight');
+                            searchMessages.remove('flight');
+                            reusedSearches.remove('flight');
+                          });
+                          load();
+                        }),
+          ],
+          for (final reason in ((category == 'hotel'
+                  ? hotelComparison
+                  : flightComparison)['reasons'] as List? ??
+              []))
+            Text('$reason'),
+          if (category == 'hotel' &&
+              hotelComparison['nextAction'] == 'search_hotels')
+            TextButton(
+                onPressed: applying || discovering != null ? null : openHotels,
+                child: const Text('Review selected stay in Hotels')),
+          Text(searchMessages[category] ?? searchSummary(category)),
+          if (reusedSearches[category] == true)
+            const Text(
+                'Reused saved search evidence; no new provider request.'),
+          if (searches[category]?['providerReached'] == true)
+            Text(
+                'Provider requests in this search: ${searches[category]?['requestsAttempted'] ?? 'Unknown'}'),
+          if (searches[category]?['candidateCount'] != null)
+            Text(
+                'Returned candidates: ${searches[category]?['candidateCount']} · Complete quotes: ${searches[category]?['validQuoteCount'] ?? 'Unknown'} · Cheaper candidates: ${searches[category]?['cheaperCandidateCount'] ?? 'Checking'}'),
+          for (final field in ['rejectionCounts', 'comparisonRejectionCounts'])
+            if (searches[category]?[field] is Map &&
+                (searches[category]![field] as Map).isNotEmpty)
+              ExpansionTile(
+                  title: Text(field == 'rejectionCounts'
+                      ? 'Provider quote rejections'
+                      : 'Comparison rejections'),
+                  children: [
+                    for (final entry
+                        in (searches[category]![field] as Map).entries)
+                      ListTile(
+                          title: Text('${entry.key}'),
+                          trailing: Text('${entry.value}'))
+                  ]),
           OutlinedButton(
-              onPressed: discovering != null || applying || stateVersion == null
+              onPressed: discovering != null ||
+                      applying ||
+                      busy ||
+                      checkingPrices ||
+                      stateVersion == null ||
+                      (category == 'hotel'
+                              ? hotelComparison
+                              : flightComparison)['status'] ==
+                          'needs_review'
                   ? null
                   : () => discover(category),
               child: Text(discovering == category
@@ -446,14 +687,24 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       child: InkCard(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Flight timing needs review',
+        Text(
+            '${(preview['proposedFlight'] as Map?)?['airline'] ?? 'Flight option'} · MYR ${money(preview['proposedCost'])}',
             style: TextStyle(fontWeight: FontWeight.w700)),
         Text('MYR ' +
             money(preview['currentCost']) +
             ' → MYR ' +
             money(preview['proposedCost'])),
-        Text((preview['reason'] ?? 'The flights conflict with planned visits.')
-            .toString()),
+        Text(
+            'Estimated reduction: MYR ${money((preview['currentCost'] as num? ?? 0) - (preview['proposedCost'] as num? ?? 0))}'),
+        if ((preview['affectedDays'] as List? ?? []).isNotEmpty)
+          Text(
+              'Affected days: ${(preview['affectedDays'] as List).join(', ')}'),
+        for (final entry in {
+          'Original': preview['originalFlight'],
+          'Proposed': preview['proposedFlight']
+        }.entries)
+          ...flightDetails(
+              entry.key, entry.value is Map ? entry.value as Map : {}),
         TextButton(
             onPressed: () => showDialog<void>(
                 context: context,
@@ -588,23 +839,23 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             Text((item['description'] ?? '').toString()),
+            if (item['alternativeType'] == 'flight' ||
+                item['alternativeType'] == 'hotel') ...[
+              if (item['data'] is Map &&
+                  item['data']['cabin'] is Map &&
+                  item['data']['cabin']['cabinDowngrade'] == true)
+                Text(
+                    'Cabin downgrade: ${cabins[item['data']['cabin']['originalCabin']]} → ${cabins[item['data']['cabin']['comparisonCabin']]}'),
+              ExpansionTile(
+                  title: Text(item['alternativeType'] == 'flight'
+                      ? 'Compare flight details'
+                      : 'Compare stay details'),
+                  children: selectionDetails(item)),
+            ],
             if (item['data'] is Map && item['alternativeType'] == 'hotel')
               Text(((item['data']['roomName'] ?? '')).toString() +
                   ' · ' +
                   ((item['data']['address'] ?? '')).toString()),
-            if (item['data'] is Map && item['alternativeType'] == 'flight')
-              for (final leg in ['outboundSegments', 'returnSegments'])
-                for (final segment
-                    in (item['data'][leg] as List? ?? []).whereType<Map>())
-                  Text((segment['departureAirportCode'] ?? '').toString() +
-                      ' ' +
-                      (segment['departureDate'] ?? '').toString() +
-                      ' ' +
-                      (segment['departureTime'] ?? '').toString() +
-                      ' → ' +
-                      (segment['arrivalAirportCode'] ?? '').toString() +
-                      ' ' +
-                      (segment['arrivalTime'] ?? '').toString()),
             if (before is num && after is num)
               Text('RM ' + money(before) + ' → RM ' + money(after)),
             if (saving != null && canApply)
@@ -624,10 +875,60 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                         : () => local
                             ? previewPlanning(item)
                             : applyAlternative(item),
-                    child: const Text('Preview'),
+                    child: Text(item['comparisonStatus'] ==
+                            'requires_schedule_adjustment'
+                        ? 'Review schedule'
+                        : 'Preview'),
                   )),
           ],
         )));
+  }
+
+  List<Widget> comparisonResults(String kind) {
+    final rows =
+        alternatives.where((row) => row['alternativeType'] == kind).toList();
+    final ready = rows
+        .where(
+            (row) => row['comparisonStatus'] != 'requires_schedule_adjustment')
+        .toList();
+    final changes = rows
+        .where(
+            (row) => row['comparisonStatus'] == 'requires_schedule_adjustment')
+        .toList();
+    final rejected = categoryRejections[kind] as Map? ?? {};
+    final timingGroups = <String, List<Map<String, dynamic>>>{};
+    if (kind == 'flight')
+      for (final row in flightTimingPreviews) {
+        final reason =
+            (row['reason'] ?? 'The flights conflict with planned visits.')
+                .toString();
+        timingGroups.putIfAbsent(reason, () => []).add(row);
+      }
+    return [
+      if (ready.isNotEmpty)
+        const Text('Ready to Preview',
+            style: TextStyle(fontWeight: FontWeight.w700)),
+      for (final row in ready) optionCard(row),
+      if (changes.isNotEmpty)
+        const Text('Requires Schedule Adjustment',
+            style: TextStyle(fontWeight: FontWeight.w700)),
+      for (final row in changes) optionCard(row),
+      if (timingGroups.isNotEmpty || rejected.isNotEmpty)
+        ExpansionTile(
+            title: const Text('Unavailable options · details'),
+            children: [
+              for (final group in timingGroups.entries) ...[
+                Padding(
+                    padding: const EdgeInsets.all(12), child: Text(group.key)),
+                for (final row in group.value) timingReviewCard(row),
+              ],
+              for (final entry in rejected.entries)
+                if (!timingGroups.containsKey(entry.key))
+                  ListTile(
+                      title: Text('${entry.key}'),
+                      trailing: Text('${entry.value}'))
+            ]),
+    ];
   }
 
   @override
@@ -647,6 +948,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                    const Text('Budget overview',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
                     Text('Budget: RM ' + money(limit)),
                     Text('Known estimate: RM ' + money(total)),
                     if (_overBudget)
@@ -656,8 +959,8 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                       const Text(
                           'Your known estimate does not exceed the budget.'),
                     if (pending.isNotEmpty)
-                      const Text(
-                          'Some costs are unpriced. The known subtotal does not establish full-trip affordability.'),
+                      Text(
+                          'Unpriced: ${pending.join(', ')}. The known subtotal does not establish full-trip affordability.'),
                   ])),
               const SizedBox(height: 16),
               if (_overBudget) ...[
@@ -665,19 +968,32 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
                     style:
                         TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 12),
-                for (final item in planning) optionCard(item, local: true),
+                const Text('Flight comparison',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 if (!api.isStandalone &&
                     (widget.tripId ?? '').isNotEmpty &&
                     (budget?['flight'] as num? ?? widget.budget.flight) > 0)
                   discoveryCard('flight'),
+                ...comparisonResults('flight'),
+                const SizedBox(height: 16),
+                const Text('Hotel comparison',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 if (!api.isStandalone &&
                     (widget.tripId ?? '').isNotEmpty &&
                     (budget?['hotel'] as num? ?? widget.budget.accommodation) >
                         0)
                   discoveryCard('hotel'),
-                for (final preview in flightTimingPreviews)
-                  timingReviewCard(preview),
-                for (final item in alternatives) optionCard(item),
+                ...comparisonResults('hotel'),
+                const SizedBox(height: 16),
+                const Text('Other budget adjustments',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                for (final item in planning) optionCard(item, local: true),
+                for (final item in alternatives.where((row) =>
+                    !['flight', 'hotel'].contains(row['alternativeType'])))
+                  optionCard(item),
                 if (replanOptions != null)
                   FilledButton(
                       onPressed: applying ? null : openReplan,

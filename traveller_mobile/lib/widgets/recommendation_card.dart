@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../theme/app_theme.dart';
 import '../core/utils/recommendation_page.dart';
@@ -538,11 +539,12 @@ class RecommendationEvidenceNotice extends StatelessWidget {
 
 class RecommendationDataSources extends StatelessWidget {
   final bool evaluation;
-  const RecommendationDataSources({super.key, required this.evaluation});
+  final String label;
+  const RecommendationDataSources({super.key, required this.evaluation,this.label='Recommendation data sources'});
   @override
   Widget build(BuildContext context) => Align(alignment: Alignment.centerLeft,
     child: TextButton.icon(icon: const Icon(Icons.info_outline_rounded, size: 18),
-      label: const Text('Recommendation data sources'), onPressed: () => showModalBottomSheet<void>(
+      label: Text(label), onPressed: () => showModalBottomSheet<void>(
         context: context, showDragHandle: true, builder: (context) => SafeArea(child: SingleChildScrollView(
           padding: AppSpacing.page, child: Column(mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -552,5 +554,11 @@ class RecommendationDataSources extends StatelessWidget {
               Text(evaluation
                 ? 'Your saved preferences drive the same 60% content, 30% similar-traveller and 10% popularity calculation. FYP evaluation uses approved TravelMate sample community reviews only. Similarity-weighted peer ratings and the unweighted popularity aggregate remain separate. Missing local evidence uses a neutral ranking prior and Not rated yet. Provider ratings are excluded. Sample contributors are not verified real tourists. Evaluation results remain in owner-scoped server memory for one hour or restart. Your questionnaire and genuine history are unchanged. Trip actions use normal confirmations.'
                 : 'Recommendations use your saved preferences, qualifying independent genuine reviews and verified provider ratings or approved genuine local ratings. Sample community reviews do not contribute. Missing peer evidence uses a confidence-aware neutral score.'),
+              const SizedBox(height:AppSpacing.md),
+              const Text('Data attribution'),
+              TextButton(onPressed:()=>launchUrl(Uri.parse('https://www.geonames.org/'),mode:LaunchMode.externalApplication),
+                child:const Text('GeoNames · CC BY 4.0')),
+              TextButton(onPressed:()=>launchUrl(Uri.parse('https://open-meteo.com/en/docs/geocoding-api'),mode:LaunchMode.externalApplication),
+                child:const Text('Location lookup by Open-Meteo · CC BY-NC 4.0')),
             ]))))));
 }

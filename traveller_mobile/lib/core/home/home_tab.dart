@@ -1,4 +1,4 @@
-import '../../modules/fr05_smart_itinerary_budget_planner/activity_payload_helper.dart';
+import '../../modules/fr03_destination_search_information/destination_trip_actions.dart';
 import '../utils/package_pricing.dart';
 import 'dart:math' as math;
 
@@ -417,103 +417,8 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Future<void> addToTrip(Map<String, dynamic> item) async {
-    try {
-      final data = await api.get('/api/fr5/itineraries');
-      final available = (data['items'] as List? ?? [])
-          .whereType<Map>()
-          .where((t) => t['tripType'] != 'package' && t['packageTrip'] != true)
-          .toList();
-      if (!mounted) return;
-      if (available.isEmpty) {
-        final plan = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Plan a trip first'),
-            content: const Text(
-              'Create your trip plan, then add this recommendation to it.',
-            ),
-            actions: [
-              TertiaryButton(
-                label: 'Not now',
-                onPressed: () => Navigator.pop(context, false),
-              ),
-              PrimaryButton(
-                label: 'Plan a trip',
-                onPressed: () => Navigator.pop(context, true),
-              ),
-            ],
-          ),
-        );
-        if (plan == true && mounted) {
-          await open(
-            PersonalizedPlanningScreen(api: widget.api),
-            refreshCoreOnReturn: true,
-          );
-        }
-        return;
-      }
-
-      final selected = await showModalBottomSheet<Map<String, dynamic>>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
-              0,
-              AppSpacing.md,
-              AppSpacing.xl,
-            ),
-            children: [
-              Text(
-                'Add to trip',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              ...available.map((raw) {
-                final trip = Map<String, dynamic>.from(raw);
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(
-                    backgroundColor: InkWashColors.cream,
-                    child: Icon(Icons.luggage_outlined),
-                  ),
-                  title: Text((trip['title'] ?? 'Trip').toString()),
-                  subtitle: Text((trip['destinationArea'] ?? '').toString()),
-                  onTap: () => Navigator.pop(context, trip),
-                );
-              }),
-            ],
-          ),
-        ),
-      );
-      if (selected == null) return;
-      if (!mounted || !await addTripVisit(context, api, selected['id'].toString(), {
-        'activityName': (item['title'] ?? item['name'] ?? 'Place').toString(),
-        'destinationId': destinationId(item),
-        'address': item['address'] ?? '',
-        'estimatedCost': item['estimatedCost'] ?? 0,
-        'gps_coordinates':
-            item['gps_coordinates'] ?? item['gpsCoordinates'] ?? {},
-        'type': item['type'] ?? item['category'] ?? '',
-        'category': item['category'] ?? item['type'] ?? '',
-        'description': item['description'] ?? '',
-        'indoor': item['indoor'] ?? false,
-        'openingHours': item['openingHours'] ?? '',
-        'recommendedDurationMinutes': item['recommendedDurationMinutes'] ?? 90,
-        'dayNo': 1,
-      })) return;
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Added to ${selected['title'] ?? 'trip'}')),
-        );
-      }
-    } catch (error) {
-      if (mounted) showError(context, error);
-    }
+    await addDestinationToTrip(context:context,api:api,destination:item,resumeAfterCreation:true);
   }
-
 
   String _packagePrice(Map<String, dynamic> item) => PackagePricing.label(item);
 
@@ -691,7 +596,6 @@ class _HomeTabState extends State<HomeTab> {
           ),
         ],
         const SizedBox(height: AppSpacing.xs),
-        if (recommendationSource.isNotEmpty) RecommendationDataSources(evaluation: recommendationSource == 'fyp_evaluation'),
         if (recommendationNeedsRegeneration || recommendationsNeedEvidenceUpdate(recommendations)) ...[
           RecommendationEvidenceNotice(message: recommendationNeedsRegeneration
               ? recommendationRegenerationMessage(recommendationGenerationId,recommendationStaleReason) : recommendationEvidenceUpdateMessage,

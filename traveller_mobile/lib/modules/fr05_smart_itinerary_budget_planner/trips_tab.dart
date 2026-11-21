@@ -37,6 +37,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
   String? loadError;
   int selectedSegment = 0; // 0: My Plans, 1: Package Trips
   TripFilter selectedFilter = TripFilter.all;
+  final _search = TextEditingController();
   Timer? _midnightTimer;
   bool? _isShellTripsSelected;
   int _loadVersion = 0;
@@ -588,7 +589,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
       .toList();
 
   List<Map<String, dynamic>> get _plans => TripStatusHelper.sortAndFilterTrips(
-        _allPlans,
+        _allPlans.where(_matchesSearch).toList(),
         filter: selectedFilter,
         referenceDate: widget.referenceDate,
       );
@@ -601,10 +602,18 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
 
   List<Map<String, dynamic>> get _packages =>
       TripStatusHelper.sortAndFilterTrips(
-        _allPackages,
+        _allPackages.where(_matchesSearch).toList(),
         filter: selectedFilter,
         referenceDate: widget.referenceDate,
       );
+
+  bool _matchesSearch(Map<String,dynamic> trip) {
+    String normalize(String value) => value.toLowerCase().trim().replaceAll(RegExp(r'\s+'),' ');
+    final query=normalize(_search.text);
+    final text=normalize(['title','destinationArea','destination','destinationCity','destinationState','city','state','destinationLabel']
+        .map((key)=>'${trip[key] ?? ''}').join(' '));
+    return query.isEmpty || text.contains(query);
+  }
 
   Future<void> openTrip(Map<String, dynamic> trip) async {
     if (widget.selectForActivity) {
@@ -665,6 +674,7 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _search.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _midnightTimer?.cancel();
     super.dispose();
@@ -758,6 +768,11 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
             const SizedBox(height: 14),
 
             // Temporal Filter Chips
+            TextField(controller:_search,onChanged:(_)=>setState((){}),
+              decoration:InputDecoration(hintText:'Search trips or destinations',prefixIcon:const Icon(Icons.search),
+                suffixIcon:_search.text.isEmpty ? null : IconButton(tooltip:'Clear trip search',icon:const Icon(Icons.clear),
+                  onPressed:()=>setState(()=>_search.clear())))),
+            const SizedBox(height:14),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
@@ -799,6 +814,8 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                 const AppLoadingState(message: 'Loading your trips…')
               else if (loadError != null)
                 AppErrorState(message: loadError!, onRetry: load)
+              else if (_search.text.trim().isNotEmpty && plans.isEmpty)
+                const TravelEmptyState(icon:Icons.search_off,title:'No trips match your search.',message:'Try another trip title or destination.')
               else if (allPlans.isEmpty)
                 TravelEmptyState(
                   icon: Icons.luggage_outlined,
@@ -985,6 +1002,8 @@ class _TripsTabState extends State<TripsTab> with WidgetsBindingObserver {
                 const AppLoadingState(message: 'Loading purchased packages…')
               else if (loadError != null)
                 AppErrorState(message: loadError!, onRetry: load)
+              else if (_search.text.trim().isNotEmpty && packages.isEmpty)
+                const TravelEmptyState(icon:Icons.search_off,title:'No trips match your search.',message:'Try another trip title or destination.')
               else if (allPackages.isEmpty)
                 const TravelEmptyState(
                   icon: Icons.verified_outlined,

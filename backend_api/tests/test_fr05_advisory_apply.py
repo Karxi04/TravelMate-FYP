@@ -19,13 +19,13 @@ PATH = '/api/fr5/itineraries/trip/lower-cost-alternatives'
 def _fixture():
     segment = {'departureAirportCode': 'KUL', 'arrivalAirportCode': 'PEN',
                'departureDate': '2026-11-01', 'arrivalDate': '2026-11-01'}
-    old_flight = {'price': 200, 'currency': 'MYR', 'priceBasis': 'group_total',
+    old_flight = {'price': 200, 'currency': 'MYR', 'priceBasis': 'group_total','requestedTravelClass':1,
                   'travellerCount': 2, 'outboundSegments': [segment], 'returnSegments': []}
     option = {**old_flight, 'price': 120, 'optionId': 'option', 'quoteCompleteness': 'complete',
               'budgetEligible': True, 'source': 'test_fixture', 'transactionMode': 'planning_reference'}
     quote = {'id': 'search', 'travellerId': 'test_traveller_uid',
              'expiresAt': (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-             'criteria': {'traveller_count': 2, 'outbound_date': '2026-11-01',
+             'criteria': {'traveller_count': 2, 'travel_class':1,'outbound_date': '2026-11-01',
                           'departure_id': 'KUL', 'arrival_id': 'PEN'}, 'items': [option]}
     criteria = {'checkin': '2026-11-01', 'checkout': '2026-11-03', 'adults': 2,
                 'roomQuantity': 1, 'destination': 'Penang'}

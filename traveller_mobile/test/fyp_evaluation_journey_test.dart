@@ -75,10 +75,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(place.$2),findsOneWidget);expect(find.text('3.5 · 8 Reviews'),findsOneWidget);
       expect(find.textContaining('provider reviews'),findsNothing);
-      await tester.ensureVisible(find.text('View'));await tester.tap(find.text('View'));
-      await tester.ensureVisible(find.text('Add to trip'));await tester.tap(find.text('Add to trip'));
+      await tester.ensureVisible(find.text('View'));await tester.pump();await tester.tap(find.text('View'));
+      await tester.ensureVisible(find.text('Add to trip'));await tester.pump();await tester.tap(find.text('Add to trip'));
       expect(views,1);expect(adds,1);
-      await tester.ensureVisible(find.text('Why this suggestion'));await tester.tap(find.text('Why this suggestion'));
+      await tester.ensureVisible(find.text('Why this suggestion'));await tester.pump();await tester.tap(find.text('Why this suggestion'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Qualifying evaluation contributors: 3'),findsOneWidget);
       expect(find.textContaining('unweighted destination aggregate'),findsOneWidget);
@@ -90,7 +90,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme:buildInkWashTheme(),home:RecommendationScreen(api:api,initialDestination:'Penang')));
     await tester.pumpAndSettle();
     expect(api.generations,0);expect(find.text(recommendationStartMessage),findsOneWidget);
-    await tester.ensureVisible(find.byKey(const ValueKey('update-recommendation-evidence')));
+    await tester.ensureVisible(find.byKey(const ValueKey('update-recommendation-evidence')));await tester.pump();
     await tester.tap(find.byKey(const ValueKey('update-recommendation-evidence')));await tester.pumpAndSettle();
     expect(api.generations,1);expect(find.text('Kek Lok Si Temple'),findsOneWidget);
     expect(tester.takeException(),isNull);
@@ -101,7 +101,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.generations,0);
     expect(find.text(recommendationPreferenceUpdateMessage),findsOneWidget);
-    await tester.ensureVisible(find.byKey(const ValueKey('update-recommendation-evidence')));
+    await tester.ensureVisible(find.byKey(const ValueKey('update-recommendation-evidence')));await tester.pump();
     await tester.tap(find.byKey(const ValueKey('update-recommendation-evidence')));await tester.pumpAndSettle();
     expect(api.generations,1);expect(find.text(recommendationPreferenceUpdateMessage),findsNothing);
     expect(find.text('Kek Lok Si Temple'),findsOneWidget);expect(tester.takeException(),isNull);
@@ -137,12 +137,12 @@ void main() {
         expect(find.text('View simulation'),findsNothing);
         expect(find.descendant(of:find.byType(RecommendationCard),matching:find.byWidgetPredicate((w)=>
           w is SingleChildScrollView && w.scrollDirection==Axis.horizontal)),findsNothing);
-        await tester.ensureVisible(find.text('View'));await tester.tap(find.text('View'));
-        await tester.ensureVisible(find.text('Add to trip'));await tester.tap(find.text('Add to trip'));
-        await tester.ensureVisible(find.byType(PopupMenuButton<String>));await tester.tap(find.byType(PopupMenuButton<String>));
+        await tester.ensureVisible(find.text('View'));await tester.pump();await tester.tap(find.text('View'));
+        await tester.ensureVisible(find.text('Add to trip'));await tester.pump();await tester.tap(find.text('Add to trip'));
+        await tester.ensureVisible(find.byType(PopupMenuButton<String>));await tester.pump();await tester.tap(find.byType(PopupMenuButton<String>));
         await tester.pumpAndSettle();await tester.tap(find.text('More like this'));await tester.pumpAndSettle();
         expect(views,1);expect(adds,1);expect(feedback,'more_like_this');
-        await tester.ensureVisible(find.text('Why this suggestion'));await tester.tap(find.text('Why this suggestion'));
+        await tester.ensureVisible(find.text('Why this suggestion'));await tester.pump();await tester.tap(find.text('Why this suggestion'));
         await tester.pumpAndSettle();
         expect(find.textContaining('not genuine customer peer evidence'),findsOneWidget);
         expect(find.textContaining('Qualifying evaluation contributors: 3'),findsOneWidget);
@@ -158,12 +158,13 @@ void main() {
     expect(find.text('Kek Lok Si Temple'),findsOneWidget);
     expect(find.byIcon(Icons.science_outlined),findsNothing);
     expect(find.text('View simulation'),findsNothing);
-    await tester.ensureVisible(find.text('Recommendation data sources'));
-    await tester.tap(find.text('Recommendation data sources'));await tester.pumpAndSettle();
-    expect(find.text('FYP evaluation configuration'),findsOneWidget);
-    expect(find.textContaining('not verified real tourists'),findsOneWidget);
+    expect(find.text('Recommendation data sources'),findsNothing);
+    expect(find.text('GeoNames · CC BY 4.0'),findsNothing);
+    await tester.ensureVisible(find.text('Why this suggestion'));await tester.pump();
+    await tester.tap(find.text('Why this suggestion'));await tester.pumpAndSettle();
+    expect(find.textContaining('not genuine customer peer evidence'),findsOneWidget);
     await tester.tapAt(const Offset(10,10));await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byType(PopupMenuButton<String>));await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byType(PopupMenuButton<String>));await tester.pump();await tester.pumpAndSettle();
     await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();await tester.tap(find.text('Not for me'));await tester.pumpAndSettle();
     expect(api.feedback.single['recommendationGenerationId'],'fyp-evaluation-widget');
@@ -189,7 +190,7 @@ void main() {
     expect(find.text('3.8 · 15 Reviews'),findsOneWidget);
     expect(find.textContaining('provider reviews'),findsNothing);
     expect(tester.takeException(),isNull);
-    await tester.ensureVisible(find.text('Recommendation score: 62/100'));
+    await tester.ensureVisible(find.text('Recommendation score: 62/100'));await tester.pump();
     await tester.tap(find.text('Recommendation score: 62/100'));await tester.pumpAndSettle();
     expect(find.textContaining('This saved evaluation predates the local-only policy'),findsOneWidget);
     expect(tester.takeException(),isNull);

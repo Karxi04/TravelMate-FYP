@@ -4,6 +4,7 @@ import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
+import '../../widgets/recommendation_card.dart';
 import '../../theme/app_theme.dart';
 import '../fr02_travel_preference/preferences_screen.dart';
 import 'edit_profile_screen.dart';
@@ -483,6 +484,9 @@ class _ProfileTabState extends State<ProfileTab> {
               const SizedBox(height: 18),
               const TravelSectionHeader(title: 'Settings'),
               const SizedBox(height: 8),
+              const TravelSectionHeader(title:'About · Methodology and data attribution'),
+              const RecommendationDataSources(evaluation:false,label:'Genuine recommendation methodology'),
+              const RecommendationDataSources(evaluation:true,label:'FYP evaluation methodology'),
               menuTile(
                 Icons.logout_rounded,
                 'Sign out',
