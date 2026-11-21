@@ -20,9 +20,8 @@ Future<bool> addDestinationToTrip({
     final trips = (data['items'] as List? ?? const [])
         .whereType<Map>()
         .map((trip) => Map<String, dynamic>.from(trip))
-        .where((trip) =>
-            !resumeAfterCreation ||
-            (trip['tripType'] != 'package' && trip['packageTrip'] != true))
+        .where((trip) => trip['tripType'] != 'package' && trip['packageTrip'] != true &&
+            !['completed','cancelled'].contains('${trip['status']}'.toLowerCase()))
         .toList();
 
     if (!context.mounted) return false;
@@ -33,7 +32,7 @@ Future<bool> addDestinationToTrip({
         builder: (dialogContext) => AlertDialog(
           title: const Text('Create a trip first'),
           content: const Text(
-            'Create a trip before adding this place to your itinerary.',
+            'Choose a personal trip to add this attraction. Package itineraries are managed by the tour operator.',
           ),
           actions: [
             TextButton(

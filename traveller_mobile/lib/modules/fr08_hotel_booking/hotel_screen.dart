@@ -45,6 +45,7 @@ class HotelScreen extends StatefulWidget {
   final String? initialCheckout;
   final int? initialAdults;
   final int? initialChildren;
+  final List<Map<String,dynamic>>? initialOccupancies;
   final bool requiresGuestConfirmation;
   final ApiService? api;
 
@@ -56,6 +57,7 @@ class HotelScreen extends StatefulWidget {
     this.initialCheckout,
     this.initialAdults,
     this.initialChildren,
+    this.initialOccupancies,
     this.requiresGuestConfirmation = false,
     this.api,
   });
@@ -276,6 +278,14 @@ class _HotelScreenState extends State<HotelScreen> {
         childAges: List.generate(initialChildCount, (_) => null),
       ),
     ];
+    if(widget.initialOccupancies?.isNotEmpty==true) {
+      rooms.clear();
+      rooms.addAll(widget.initialOccupancies!.map((room)=>RoomOccupancyConfig(
+        adults:room['adults'] as int? ?? 2,childAges:(room['children'] as List? ?? []).map((age)=>age as int?).toList())));
+      adults.text='${rooms.fold<int>(0,(total,room)=>total+room.adults)}';
+      children.text='${rooms.fold<int>(0,(total,room)=>total+room.childAges.length)}';
+      roomQuantity.text='${rooms.length}';
+    }
     for (final controller in [destination, checkin, checkout, adults, children]) {
       controller.addListener(_invalidateResults);
     }

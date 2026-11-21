@@ -172,6 +172,46 @@ from Stripe CLI or the Dashboard before treating webhook delivery as verified.
 
 External API code is under `services/`. Keep API keys only in `backend_api/.env`, never in Flutter/HTML/JavaScript source.
 
+## Explicit lower-cost travel comparisons
+
+Budget discovery retains its explicit confirmation, owner/revision checks, hourly
+quota and two-provider-call flight / one-call hotel limits. Opening the screen
+only reads saved quotes; it does not purchase a provider search.
+
+Flight comparison defaults to `cabinComparison=same_cabin`. With
+`cabinComparison=include_lower`, the user chooses a `comparisonCabin` (1 Economy,
+2 Premium Economy, 3 Business, 4 First). The server establishes the original
+cabin from saved evidence and permits only that cabin or a lower one. Missing
+or conflicting cabin evidence does not imply Economy. A search compares one
+chosen cabin at a time, preserving the two-call limit for a complete return fare;
+the user can separately choose another eligible cabin. Search-cache/intent
+identity includes the comparison so changing mode cannot reuse an incompatible
+search. Quote ownership, route, dates, passengers, complete MYR price and expiry
+are revalidated at preview and apply; client prices are never authoritative.
+
+Feasible flight schedule adjustments are grouped separately and shown in the
+replacement preview. Infeasible quotes remain read-only with their flight times,
+affected days/visits and conflict reason. A replacement never silently drops
+activities or modifies protected arrangements. The existing itinerary CAS/history
+write updates flight selection, schedule and budget together.
+
+Hotel eligibility reports sanitized reason codes before the provider boundary:
+missing/expired original quote, inconsistent stay total/currency/charges, dates or
+location, occupancy, protected arrangement and unavailable storage. Consistent
+validated evidence on an owned details-only selection remains supported. Rates
+return candidate/valid/rejected counts and rejection categories; a completed
+search with no cheaper comparable rates is different from a blocked search or
+provider failure. Recovery opens Hotels with the same trip, dates and known room
+occupancy. Quote selection is still neither payment nor supplier reservation.
+
+Home/For You additions reuse the existing destination/day picker. Only personal
+editable trips qualify; package/ownership/day checks also run on the Backend.
+An addition that cannot remain on the requested day is rejected without a write.
+Trips search filters the already-owned in-memory list, preserving status/sorting
+and making no new Firestore query. Recommendation methodology and retained
+GeoNames/Open-Meteo attribution are accessible under Profile's About area;
+recommendation score details and review provenance remain intact.
+
 ## Local FYP recommendation evidence
 
 `RECOMMENDATION_EVIDENCE_MODE=genuine` is the default and retains genuine-only

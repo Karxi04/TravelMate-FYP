@@ -233,9 +233,10 @@ void main() {
   testWidgets('integrated Home evaluation retains View and confirmed real destination attachment',(tester) async {
     final api=_EvaluationHomeApi();
     await _settleHome(tester,api);await tester.pumpAndSettle();
-    await _showOnHome(tester,find.text('Recommendation data sources'));
-    await tester.tap(find.text('Recommendation data sources'));await tester.pumpAndSettle();
-    expect(find.text('FYP evaluation configuration'),findsOneWidget);
+    expect(find.text('Recommendation data sources'),findsNothing);
+    await _showOnHome(tester,find.text('Why this suggestion').first);
+    await tester.tap(find.text('Why this suggestion').first);await tester.pumpAndSettle();
+    expect(find.textContaining('not genuine customer peer evidence'),findsOneWidget);
     await tester.tapAt(const Offset(10,10));await tester.pumpAndSettle();
     await _showOnHome(tester,find.text('View').first);await tester.tap(find.text('View').first);await tester.pumpAndSettle();
     expect(find.byType(DestinationDetailsScreen),findsOneWidget);
@@ -243,6 +244,7 @@ void main() {
     await _showOnHome(tester,find.text('Add to trip').first);await tester.tap(find.text('Add to trip').first);await tester.pumpAndSettle();
     expect(api.attached,isEmpty); // Destination selection alone does not save anything.
     await tester.tap(find.text('Penang Getaway').last);await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('day-option-1')));await tester.pumpAndSettle();
     expect(api.attached.single['destinationId'],'kek_lok_si');
     expect(api.attached.single.keys, isNot(contains('synthetic')));
     expect(api.attached.single.keys, isNot(contains('recommendationEvidenceMode')));
@@ -522,6 +524,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Penang Getaway').last);
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('day-option-1')));await tester.pumpAndSettle();
 
     expect(api.addedActivities, 1);
   });

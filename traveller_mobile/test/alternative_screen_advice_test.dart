@@ -271,12 +271,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Search now'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Hotel search has not run.'), findsOneWidget);
+    expect(find.textContaining('A comparable unpaid total-stay price including taxes is needed.'), findsOneWidget);
     expect(
         find.text(
             'No verified cheaper hotel is currently available for this stay.'),
         findsNothing);
-    expect(find.textContaining('total-stay price'), findsNothing);
+    expect(find.textContaining('total-stay price'), findsOneWidget);
     expect(searches, 1);
     expect(api.postCalls.where((path) => path.endsWith('/apply')), isEmpty);
   });
@@ -368,13 +368,15 @@ void main() {
       expect(find.text('Verified cheaper $category'), findsOneWidget);
       await tester.scrollUntilVisible(
           find.widgetWithText(FilledButton, 'Preview'), 200);
-      await tester.tap(find.text('Preview'));
+      await tester.ensureVisible(find.text('Preview'));await tester.pump();
+    await tester.tap(find.text('Preview'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(saved, false);
       expect(applies, 0);
-      await tester.tap(find.text('Preview'));
+      await tester.ensureVisible(find.text('Preview'));await tester.pump();
+    await tester.tap(find.text('Preview'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Confirm change'));
       await tester.pumpAndSettle();
@@ -502,6 +504,8 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(find.text('Lower-cost flight: Synthetic Air'), findsOneWidget);
+    await tester.ensureVisible(find.text('Compare flight details'));await tester.pump();
+    await tester.tap(find.text('Compare flight details'));await tester.pumpAndSettle();
     expect(find.textContaining('KUL 2027-02-10 10:40 → PEN 11:40'),
         findsOneWidget);
     expect(searches, 1);
@@ -620,6 +624,7 @@ void main() {
         onApplied: (trip) => applied = trip));
     await tester.pumpWidget(page('first'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Preview'));await tester.pump();
     await tester.tap(find.text('Preview'));
     await tester.pump();
     await tester.pumpWidget(page('second'));
@@ -711,6 +716,7 @@ void main() {
     expect(find.text('Known estimate: RM 990.00'), findsOneWidget);
     expect(find.text('RM 360.00 → RM 324.00'), findsOneWidget);
     expect(find.text('Remaining over budget: RM 254.00'), findsOneWidget);
+    await tester.ensureVisible(find.text('Preview'));await tester.pump();
     await tester.tap(find.text('Preview'));
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('Proposed known estimate: RM 954.00'), findsOneWidget);
@@ -718,6 +724,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     expect(writes, 0);
     expect(food, 360);
+    await tester.ensureVisible(find.text('Preview'));await tester.pump();
     await tester.tap(find.text('Preview'));
     await tester.pump(const Duration(milliseconds: 350));
     await tester.tap(find.text('Confirm change'));
@@ -797,7 +804,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     final options = find.text('Review budget options');
-    await tester.ensureVisible(options);
+    await tester.ensureVisible(options);await tester.pump();
     await tester.tap(options);
     await tester.pumpAndSettle();
     prices.complete({
@@ -860,7 +867,7 @@ void main() {
         api: api)));
     await tester.pumpAndSettle();
     expect(find.text('Search Flights'), findsNothing);
-    expect(find.text('Passenger count is missing.'), findsNothing);
+    expect(find.text('Passenger count is missing.'), findsOneWidget);
     expect(find.textContaining('Comparable fares must retain'), findsNothing);
     expect(find.text('Review budget options'), findsOneWidget);
     expect(api.postCalls.where((path) => path.contains('/fr7/')), isEmpty);
@@ -918,7 +925,7 @@ void main() {
     await tester.pumpAndSettle();
     Future<void> open() async {
       final options = find.text('Review budget options');
-      await tester.ensureVisible(options);
+      await tester.ensureVisible(options);await tester.pump();
       await tester.tap(options);
       await tester.pumpAndSettle();
     }
@@ -927,7 +934,7 @@ void main() {
     await tester.enterText(
         find.widgetWithText(TextField, 'Food allowance (MYR)'), '320');
     final preview = find.text('Preview revised budget');
-    await tester.ensureVisible(preview);
+    await tester.ensureVisible(preview);await tester.pump();
     await tester.tap(preview);
     await tester.pumpAndSettle();
     expect(find.text('Previous known estimated subtotal: RM 728.00'),
@@ -941,7 +948,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(applies, 0);
     expect(food, 360);
-    await tester.ensureVisible(preview);
+    await tester.ensureVisible(preview);await tester.pump();
     await tester.tap(preview);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Confirm budget changes'));
@@ -994,7 +1001,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     final review = find.widgetWithText(FilledButton, 'Review budget options');
-    await tester.ensureVisible(review);
+    await tester.ensureVisible(review);await tester.pump();
     expect(tester.widget<FilledButton>(review).onPressed, isNotNull);
     await tester.tap(review);
     await tester.pumpAndSettle();
@@ -1056,6 +1063,7 @@ void main() {
       onApplied: (trip) => updated = trip,
     )));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Preview'));await tester.pump();
     await tester.tap(find.text('Preview'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Estimated planning reduction: RM 80.00'),
@@ -1063,6 +1071,7 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(applied, isFalse);
+    await tester.ensureVisible(find.text('Preview'));await tester.pump();
     await tester.tap(find.text('Preview'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Confirm change'));
@@ -1111,6 +1120,7 @@ void main() {
 
     failPrices = false;
     revision = 'r2';
+    await tester.ensureVisible(find.text('Try again'));await tester.pump();
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
     expect(find.text('Review budget options'), findsOneWidget);
@@ -1333,7 +1343,8 @@ void main() {
       final applyButton = find.widgetWithText(FilledButton, 'Preview');
       expect(applyButton, findsOneWidget);
 
-      await tester.tap(applyButton);
+      await tester.ensureVisible(applyButton);await tester.pump();
+    await tester.tap(applyButton);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Confirm change'));
       await tester.pumpAndSettle();
@@ -1387,7 +1398,8 @@ void main() {
       final applyButton = find.widgetWithText(FilledButton, 'Preview');
       expect(applyButton, findsOneWidget);
 
-      await tester.tap(applyButton);
+      await tester.ensureVisible(applyButton);await tester.pump();
+    await tester.tap(applyButton);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Confirm change'));
       await tester.pumpAndSettle();
@@ -1471,7 +1483,8 @@ void main() {
       await tester.pumpAndSettle();
 
       final applyButton = find.widgetWithText(FilledButton, 'Preview');
-      await tester.tap(applyButton);
+      await tester.ensureVisible(applyButton);await tester.pump();
+    await tester.tap(applyButton);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Confirm change'));
       await tester.pumpAndSettle();
@@ -1517,7 +1530,8 @@ void main() {
       )));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Preview'));
+      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Preview'));await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Preview'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Confirm change'));
       await tester.pumpAndSettle();
@@ -1560,7 +1574,8 @@ void main() {
 
       expect(find.text('Known estimate: RM 900.00'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Preview'));
+      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Preview'));await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Preview'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Confirm change'));
       await tester.pumpAndSettle();

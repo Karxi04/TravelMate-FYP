@@ -1,6 +1,5 @@
-import '../fr05_smart_itinerary_budget_planner/activity_payload_helper.dart';
+import '../fr03_destination_search_information/destination_trip_actions.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/api_service.dart';
 import '../../core/utils/recommendation_page.dart';
@@ -360,91 +359,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   }
 
   Future<void> addToItinerary(Map<String, dynamic> item) async {
-    try {
-      final data = await api.get('/api/fr5/itineraries');
-      final trips = data['items'] as List? ?? [];
-      if (!mounted) return;
-      if (trips.isEmpty) {
-        showError(context, 'Plan a trip before adding this recommendation.');
-        return;
-      }
-      final selected = await showModalBottomSheet<Map<String, dynamic>>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
-              0,
-              AppSpacing.md,
-              AppSpacing.lg,
-            ),
-            children: [
-              Text(
-                'Add to trip',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              ...trips.map((raw) {
-                final trip = Map<String, dynamic>.from(raw as Map);
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(
-                    backgroundColor: InkWashColors.cream,
-                    child: Icon(
-                      Icons.luggage_outlined,
-                      color: InkWashColors.blueGrey,
-                    ),
-                  ),
-                  title: Text((trip['title'] ?? 'Trip').toString()),
-                  subtitle: Text((trip['destinationArea'] ?? '').toString()),
-                  onTap: () => Navigator.pop(context, trip),
-                );
-              }),
-            ],
-          ),
-        ),
-      );
-      if (selected == null) return;
-      if (!mounted || !await addTripVisit(context, api, selected['id'].toString(), {
-        'activityName':
-            (item['title'] ?? item['name'] ?? 'Destination').toString(),
-        'destinationId':
-            (item['destinationId'] ?? item['place_id'] ?? '').toString(),
-        'address': item['address'] ?? '',
-        'dayNo': 1,
-        'estimatedCost': item['estimatedCost'] ?? 0,
-        'gps_coordinates':
-            item['gps_coordinates'] ?? item['gpsCoordinates'] ?? {},
-        'type': item['type'] ?? item['category'] ?? '',
-        'category': item['category'] ?? item['type'] ?? '',
-        'description': item['description'] ?? '',
-        'openingHours': item['openingHours'] ?? '',
-        'indoor': item['indoor'] ?? false,
-        'recommendedDurationMinutes': item['recommendedDurationMinutes'] ?? 90,
-        for (final key in const [
-          'thumbnail',
-          'image',
-          'imageUrl',
-          'mainPhoto',
-          'main_photo',
-          'photo',
-          'photos',
-          'images',
-          'heroImage',
-          'galleryImages',
-        ])
-          if (item[key] != null) key: item[key],
-      })) return;
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Added to ${selected['title'] ?? 'trip'}')),
-        );
-      }
-    } catch (error) {
-      if (mounted) showError(context, error);
-    }
+    await addDestinationToTrip(context:context,api:api,destination:item,resumeAfterCreation:true);
   }
 
   List<String> get interests => (preferences['interests'] as List? ?? [])
@@ -512,7 +427,6 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
               subtitle:
                   'Based on your saved interests and travel style. Refresh only when you want a new list.',
             ),
-            if (source.isNotEmpty) RecommendationDataSources(evaluation: source == 'fyp_evaluation'),
             if (preferences.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.md),
               _profileSummary(),
@@ -554,13 +468,6 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
               label: const Text('Find more Malaysian locations'),
             )),
             if (locationNotice != null) Text(locationNotice!),
-            Wrap(children: [
-              TextButton(onPressed: () => launchUrl(Uri.parse('https://www.geonames.org/'), mode: LaunchMode.externalApplication),
-                child: const Text('GeoNames · CC BY 4.0')),
-              if (selectedLocation?['dataSource'] == 'open_meteo_geonames' || lookupMatches.any((row) => row['dataSource'] == 'open_meteo_geonames'))
-                TextButton(onPressed: () => launchUrl(Uri.parse('https://open-meteo.com/en/docs/geocoding-api'), mode: LaunchMode.externalApplication),
-                  child: const Text('Location lookup by Open-Meteo · CC BY-NC 4.0')),
-            ]),
             if (lookupMatches.isNotEmpty) SizedBox(height: 200, child: ListView(
               children: lookupMatches.map((row) => ListTile(
                 title: Text('${row['canonicalName']}'),
