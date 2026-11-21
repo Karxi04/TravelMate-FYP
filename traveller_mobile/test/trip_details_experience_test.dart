@@ -449,6 +449,7 @@ void main() {
       ..remove('imageUrl');
 
     await _pumpTrip(tester, api);
+    await _show(tester,find.byType(TravelPlaceImage));
 
     final image = tester
         .widgetList<TravelPlaceImage>(find.byType(TravelPlaceImage))

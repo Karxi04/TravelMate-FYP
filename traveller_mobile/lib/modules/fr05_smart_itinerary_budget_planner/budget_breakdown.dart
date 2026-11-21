@@ -40,7 +40,7 @@ class BudgetBreakdown extends StatelessWidget {
       else if (!over)
         Text('Estimated balance: ${money(limit - budget.totalCost)}'),
       const SizedBox(height: AppSpacing.md),
-      for (final entry in BudgetModel.categoryLabels.entries.where((entry) => entry.key != 'carRental' || budget.carRental > 0))
+      for (final entry in {...BudgetModel.categoryLabels,if(budget.personalPlans>0)'personalPlans':'Personal planning estimates'}.entries.where((entry) => entry.key != 'carRental' || budget.carRental > 0))
         Padding(
           key: ValueKey('budget-category-${entry.key}'),
           padding: const EdgeInsets.only(bottom: AppSpacing.sm),

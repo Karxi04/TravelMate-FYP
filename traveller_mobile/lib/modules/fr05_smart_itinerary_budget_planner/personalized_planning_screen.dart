@@ -12,8 +12,9 @@ import 'trip_details_screen.dart';
 
 class PersonalizedPlanningScreen extends StatefulWidget {
   final ApiService? api;
+  final String initialPlanningMode;
 
-  const PersonalizedPlanningScreen({super.key, this.api});
+  const PersonalizedPlanningScreen({super.key, this.api,this.initialPlanningMode='smart'});
 
   @override
   State<PersonalizedPlanningScreen> createState() =>
@@ -27,6 +28,8 @@ class _PersonalizedPlanningScreenState
   final travellers = TextEditingController(text: '1');
   final budget = TextEditingController(text: '1200');
   final origin = TextEditingController();
+  final tripName = TextEditingController();
+  late String planningMode;
   String travelMode = 'undecided';
   String sightseeingMode = 'auto';
   String accommodationChoice = 'undecided';
@@ -65,6 +68,7 @@ class _PersonalizedPlanningScreenState
   void initState() {
     super.initState();
     api = widget.api ?? ApiService();
+    planningMode=widget.initialPlanningMode;
     generationOwner = LocalReviewRatings.accountUid;
     final start = DateTime.now().add(const Duration(days: 30));
     startDate = TextEditingController(text: dateText(start));
@@ -80,6 +84,7 @@ class _PersonalizedPlanningScreenState
     travellers.dispose();
     budget.dispose();
     origin.dispose();
+    tripName.dispose();
     startDate.dispose();
     endDate.dispose();
     super.dispose();
@@ -100,11 +105,13 @@ class _PersonalizedPlanningScreenState
         sightseeingMode = '${pending['transportMode'] ?? sightseeingMode}';
         accommodationChoice = '${pending['accommodationChoice'] ?? accommodationChoice}';
         carRentalChoice = '${pending['carRentalChoice'] ?? carRentalChoice}';
+        planningMode='${pending['planningMode'] ?? planningMode}';
+        tripName.text='${pending['title'] ?? ''}';
       }
     } catch (_) { /* Invalid local recovery data never starts another request. */ }
     await Future.wait([
       _loadProfile(),
-      _loadSuggestions(regenerate: false),
+      if(planningMode=='smart') _loadSuggestions(regenerate: false),
     ]);
     if (pending != null && mounted && LocalReviewRatings.accountUid == generationOwner) {
       setState(() {
@@ -158,6 +165,7 @@ class _PersonalizedPlanningScreenState
       !snapshotConflict;
 
   void _clearGenerationState() {
+    if(planningMode!='smart' && pendingPayload!=null && completedTripId==null && failureMessage!=null)return;
     pendingPayload = null;
     generationRequestId = null;
     generationSignature = null;
@@ -326,12 +334,14 @@ class _PersonalizedPlanningScreenState
   }
 
   String get _derivedTitle {
+    if(tripName.text.trim().isNotEmpty)return tripName.text.trim();
     final area = destination.text.trim().split(',').first.trim();
     return area.isEmpty ? 'My Personalised Trip' : 'My Personalised $area Trip';
   }
 
   String get _inputSignature => [
         _derivedTitle,
+        planningMode,
         _normaliseDestination(destination.text),
         startDate.text.trim(),
         endDate.text.trim(),
@@ -342,7 +352,7 @@ class _PersonalizedPlanningScreenState
         sightseeingMode,
         accommodationChoice,
         carRentalChoice,
-        recommendationGenerationId ?? '',
+        planningMode=='smart' ? recommendationGenerationId ?? '':'',
       ].join('|');
 
   Map<String, dynamic> _tripPayload() => {
@@ -358,6 +368,8 @@ class _PersonalizedPlanningScreenState
         if (sightseeingMode != 'auto') 'transportMode': sightseeingMode,
         'accommodationChoice': accommodationChoice,
         'carRentalChoice': carRentalChoice,
+        'planningMode':planningMode,
+        'travelDayPreferences':<String,dynamic>{},
         'recommendationGenerationId': recommendationGenerationId,
         'generationRequestId': generationRequestId,
       };
@@ -398,6 +410,7 @@ class _PersonalizedPlanningScreenState
   }
 
   Future<void> _buildPlan({bool retry = false}) async {
+    if(planningMode!='smart'){await _createEditablePlan();return;}
     if (generating) return;
     FocusScope.of(context).unfocus();
     if (retry && generationRequestId != null) {
@@ -498,6 +511,33 @@ class _PersonalizedPlanningScreenState
     } finally {
       if (mounted) setState(() => generating = false);
     }
+  }
+
+  Future<void> _createEditablePlan() async {
+    if(generating)return;
+    FocusScope.of(context).unfocus();
+    setState(()=>showValidationErrors=true);
+    if(_validationErrors().isNotEmpty)return;
+    if(completedTripId!=null && generationSignature==_inputSignature){await _openTrip(completedTripId!);return;}
+    if(pendingPayload==null && (generationSignature!=_inputSignature || generationRequestId==null)){
+      generationSignature=_inputSignature;generationRequestId=newTransactionAttemptId('personal_trip');pendingPayload=null;
+    }
+    final payload=_tripPayload()..remove('recommendationGenerationId');
+    pendingPayload ??= {...payload,'activities':<Map<String,dynamic>>[]};
+    setState((){generating=true;failureMessage=null;retryable=false;});
+    try{
+      await ItineraryGenerationStore.save(generationOwner,pendingPayload!);
+      if(!mounted || LocalReviewRatings.accountUid!=generationOwner)return;
+      final data=await api.post('/api/fr5/itineraries',pendingPayload);
+      if(!mounted || LocalReviewRatings.accountUid!=generationOwner)return;
+      if(data is! Map || data['ok']!=true || data['id']==null)throw StateError('Trip result was not confirmed.');
+      completedTripId=data['id'].toString();
+      await ItineraryGenerationStore.clear(generationOwner);
+      if(mounted)await _openTrip(completedTripId!);
+    }catch(error){
+      if(mounted)setState((){failureMessage=error is ApiException && error.statusCode<500 ? userFacingApiError(error):
+        'The creation result is not confirmed. Retry checks this same request and will not create another trip.';retryable=true;});
+    }finally{if(mounted)setState(()=>generating=false);}
   }
 
   Future<String> _recoverGeneration() async {
@@ -1110,7 +1150,7 @@ class _PersonalizedPlanningScreenState
       retryLabel: conflict ? 'Refresh suggestions' : 'Retry this trip',
       onRetry: conflict
           ? () => _loadSuggestions(regenerate: true)
-          : retryable && recommendationGenerationId != null
+          : retryable && (planningMode!='smart' || recommendationGenerationId != null)
               ? () => _buildPlan(retry: true)
               : null,
     );
@@ -1141,11 +1181,26 @@ class _PersonalizedPlanningScreenState
             const SizedBox(height: AppSpacing.md),
             _tripBasics(),
             const SizedBox(height: AppSpacing.md),
+            InkCard(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              const Text('Planning style',style:TextStyle(fontWeight:FontWeight.w700)),
+              Wrap(spacing:8,runSpacing:8,children:[for(final entry in const {
+                'smart':'Smart Planning','manual':'Manual Planning','assisted':'Assisted Planning'}.entries)
+                ChoiceChip(label:Text(entry.value),selected:planningMode==entry.key,onSelected:generating || pendingPayload!=null && failureMessage!=null ? null:(_) {
+                  setState((){planningMode=entry.key;_clearGenerationState();});
+                  if(planningMode=='smart' && recommendations.isEmpty)_loadSuggestions(regenerate:false);
+                })]),
+              Text(switch(planningMode){'manual'=>'Create an empty trip and choose your places and times. No recommendations or arrangements are required.',
+                'assisted'=>'Choose your places in the trip, then preview a practical schedule. Suggestions are applied only after confirmation.',
+                _=>'Let TravelMate suggest an itinerary using your saved preferences.'}),
+              TextField(controller:tripName,decoration:const InputDecoration(labelText:'Trip name (optional)'),
+                onChanged:(_)=>_onFieldChanged('title')),
+            ])),
+            const SizedBox(height: AppSpacing.md),
             _travelArrangements(),
             const SizedBox(height: AppSpacing.md),
-            _profileSummary(),
+            if(planningMode=='smart') _profileSummary(),
             const SizedBox(height: AppSpacing.md),
-            _suggestionsReview(),
+            if(planningMode=='smart') _suggestionsReview(),
             if (generating) ...[
               const SizedBox(height: AppSpacing.md),
               _generationProgress(),
@@ -1157,20 +1212,21 @@ class _PersonalizedPlanningScreenState
             const SizedBox(height: AppSpacing.lg),
             Semantics(
               button: true,
-              enabled: _snapshotReady && !generating,
+              enabled: (planningMode!='smart' || _snapshotReady) && !generating,
               label:
                   generating ? 'Building your itinerary' : 'Build my itinerary',
               child: PrimaryButton(
                 key: const ValueKey('build-itinerary-button'),
-                label: 'Build my itinerary',
+                label: planningMode=='smart' ? 'Build my itinerary':'Create editable trip',
                 icon: Icons.auto_awesome_rounded,
                 loading: generating,
-                onPressed: _snapshotReady && !generating ? _buildPlan : null,
+                onPressed: (planningMode!='smart' || _snapshotReady) && !generating ? _buildPlan : null,
               ),
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'TravelMate will create a day-by-day plan and estimate the budget using the selected suggestions.',
+              planningMode=='smart' ? 'TravelMate will create a day-by-day plan and estimate the budget using the selected suggestions.'
+                :'Your trip starts empty. Add places and personal time; flights and hotels are optional.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: AppColors.textSecondary,
