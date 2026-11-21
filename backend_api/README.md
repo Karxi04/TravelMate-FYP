@@ -186,9 +186,19 @@ Evaluation uses the normal Home/For You routes, the signed-in Traveller's saved
 questionnaire, existing canonical destination records and the existing approved
 Penang sample reviews with their effective moderation decisions. Simulated
 reviewer profiles remain explicitly simulated. The existing 60/30/10 formula,
-similarity threshold and confidence calculation are unchanged. Verified provider
-popularity takes precedence; otherwise approved sample-review popularity is
-labelled as such. Provider reviews never become similar-Traveller ratings.
+similarity threshold and confidence calculation are unchanged. Approved local
+evaluation-review aggregates supply popularity first; verified provider evidence
+is fallback only when that local summary is unavailable. Collaborative uses
+similarity-weighted peer ratings and confidence, while popularity uses the
+unweighted approved destination mean/count. Provider reviews never become peers.
+
+The original 104 Penang definitions remain unchanged. A source-controlled,
+explicitly synthetic coverage supplement adds six contributions per canonical
+Penang attraction (72 total) and six associated simulated preference profiles.
+Each new contribution passes the existing FR10 rating/sentiment screening; no
+pending row is forced approved. Existing local staging overlays and Administrator
+moderation apply, and the authorized Local Reviews list/summary includes both
+sources. No Firebase import or genuine projection is created by this supplement.
 
 Evaluation generations and More like this / Not for me learning are owner-scoped
 in process memory: up to 64 generations and 64 learning profiles, each expiring

@@ -59,7 +59,9 @@ def test_regional_coverage_is_canonical_and_overlay_read_only_by_default(client,
     listed = client.get(url + '?source=all', headers=headers('admin')).json['items']
     # private Penang reads are mocked away so this proves local-only regional behaviour.
     regional = [row for row in listed if row['reviewSource'] == 'fyp_regional']
-    assert len(regional) == 45 and all(row['moderationWritable'] is False for row in regional)
+    assert len(regional) == 117 and all(row['moderationWritable'] is False for row in regional)
+    assert len([row for row in regional if row['dataset']=='fyp-regional-v1'])==45
+    assert {row['id'] for row in rows} <= {row['id'] for row in regional}
     row = regional[0]
     response = client.post(url + '/' + row['id'] + '/review?source=fyp_regional', headers=headers('admin'),
                            json={'decision': 'hide', 'expectedRevision': row['reviewRevision']})

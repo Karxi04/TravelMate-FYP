@@ -5,6 +5,7 @@ from functools import lru_cache
 
 from firebase_service import get_db
 from services.review_service import ReviewConflict, review_id, review_revision, screen_submission, stage_review_decision
+from services import penang_evaluation_coverage
 
 
 PROJECT = 'travelmate2-30a8a'
@@ -177,6 +178,8 @@ def regional_demo_destinations():
 
 @lru_cache(maxsize=64)
 def _regional_sources(identity):
+    if identity in penang_evaluation_coverage.ATTRACTIONS:
+        return penang_evaluation_coverage.sources(identity)
     rows = []
     place = regional_demo_destinations().get(identity)
     examples = _REGIONAL_REVIEWS.get(identity, ())
@@ -206,7 +209,8 @@ def regional_demo_reviews(identity):
 
 
 def all_regional_reviews():
-    return [row for identity in regional_demo_destinations() for row in regional_demo_reviews(identity)]
+    identities = dict.fromkeys([*regional_demo_destinations(), *penang_evaluation_coverage.ATTRACTIONS])
+    return [row for identity in identities for row in regional_demo_reviews(identity)]
 
 
 def illustrative_reviews(genuine, examples):

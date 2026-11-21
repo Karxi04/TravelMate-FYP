@@ -14,6 +14,10 @@ from test_local_reviews import headers, memory
 
 @pytest.fixture
 def planned_dataset(monkeypatch):
+    # This fixture exercises the original 36-record dataset in isolation.
+    # Combined dataset/supplement behaviour is covered by test_local_evaluation_review_first.
+    monkeypatch.setattr('modules.fr03_destination_search_information.routes.regional_demo_reviews', lambda *_: [])
+    monkeypatch.setattr('modules.fr03_destination_search_information.routes.all_regional_reviews', lambda: [])
     plan = build_plan()
     documents = plan['documents']
     ref = Mock()

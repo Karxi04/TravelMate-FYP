@@ -158,7 +158,8 @@ def bridge_main():
         os.environ[name]=''
     # The portal's PORT must not activate the developer's Backend-only LAN setup.
     os.environ.update(TRAVELMATE_TESTING='true', FALLBACK_MODE='true',
-                      LOCAL_LAN_DEMO='false', PYTHONDONTWRITEBYTECODE='1')
+                      LOCAL_LAN_DEMO='false', RECOMMENDATION_EVIDENCE_MODE='genuine',
+                      FYP_REVIEW_STAGING_PATH='', PYTHONDONTWRITEBYTECODE='1')
     import pytest_socket
     pytest_socket.disable_socket()
     backend=IsolatedBackend()

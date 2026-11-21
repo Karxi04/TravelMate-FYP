@@ -925,7 +925,7 @@ def ratings_reviews(place_id):
         records = regional_demo_reviews(canonical)
         demo = _private_review_dataset(discovery=True) if _local_demo_request() else dataset_for(g.uid)
         if demo and canonical in demo[1]:
-            records = [row for row in dataset_reviews(*demo) if row['destinationId'] == canonical]
+            records += [row for row in dataset_reviews(*demo) if row['destinationId'] == canonical]
         visible = approved_reviews(records)
         result = {
             'rating': round(sum(float(row['rating']) for row in visible) / len(visible), 1) if visible else None,
@@ -942,12 +942,12 @@ def ratings_reviews(place_id):
         # One authorized list; genuine aggregates and private provenance stay independent.
         records = regional_demo_reviews(canonical)
         example_status = 'available'
-        if not records and canonical in PENANG_DESTINATION_IDS:
+        if canonical in PENANG_DESTINATION_IDS:
             from google.api_core.exceptions import GoogleAPICallError
             try:
                 demo = _private_review_dataset(discovery=True)
                 if demo and canonical in demo[1]:
-                    records = [row for row in dataset_reviews(*demo) if row['destinationId'] == canonical]
+                    records += [row for row in dataset_reviews(*demo) if row['destinationId'] == canonical]
             except (ValueError, GoogleAPICallError, TimeoutError) as exc:
                 current_app.logger.warning('Private review examples unavailable (%s)', type(exc).__name__)
                 example_status = 'unavailable'

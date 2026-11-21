@@ -170,7 +170,7 @@ void main() {
   for (final entry in [
     ('provider_rating_review_count','Verified provider rating: 4.5/5'),
     ('genuine_approved_local_reviews','Approved genuine TravelMate reviews: 4.5/5'),
-    ('demonstration_approved_reviews','Sample community data: 4.5/5'),
+    ('demonstration_approved_reviews','local approved evaluation review rating 4.5/5'),
   ]) {
     testWidgets('score explanation identifies ${entry.$1} without creating trip/feedback actions', (tester) async {
       final simulation = entry.$1 == 'demonstration_approved_reviews';

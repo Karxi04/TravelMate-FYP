@@ -123,7 +123,7 @@ void main() {
     await tester.ensureVisible(find.text('Recommendation data sources'));
     await tester.tap(find.text('Recommendation data sources'));await tester.pumpAndSettle();
     expect(find.text('FYP evaluation configuration'),findsOneWidget);
-    expect(find.textContaining('not verified real tourist submissions'),findsOneWidget);
+    expect(find.textContaining('not verified real tourists'),findsOneWidget);
     await tester.tapAt(const Offset(10,10));await tester.pumpAndSettle();
     await tester.ensureVisible(find.byType(PopupMenuButton<String>));await tester.pumpAndSettle();
     await tester.tap(find.byType(PopupMenuButton<String>));
@@ -140,4 +140,31 @@ void main() {
     expect(find.text('4.4 · 15505 provider reviews'),findsOneWidget);
     expect(find.textContaining('sample reviews'),findsNothing);expect(tester.takeException(),isNull);
   });
+
+  testWidgets('local summary hides provider badge even in an older provider-first generation',(tester) async {
+    await tester.pumpWidget(MaterialApp(home:Scaffold(body:SingleChildScrollView(child:RecommendationCard(
+      recommendation:{...evaluationRecommendation(),
+        'demonstrationReviewSummary':{'source':'demonstration_approved_reviews','synthetic':true,'rating':3.8,'reviews':15},
+        'popularityEvidence':{'source':'provider_rating_review_count','rating':4.4,'reviewCount':15505}},onView:(){})))));
+    await tester.pumpAndSettle();
+    expect(find.text('3.8 · 15 sample reviews'),findsOneWidget);
+    expect(find.textContaining('provider reviews'),findsNothing);
+    expect(tester.takeException(),isNull);
+    await tester.ensureVisible(find.text('Recommendation score: 62/100'));
+    await tester.tap(find.text('Recommendation score: 62/100'));await tester.pumpAndSettle();
+    expect(find.textContaining('This earlier evaluation used provider popularity although local reviews are available'),findsOneWidget);
+    expect(tester.takeException(),isNull);
+  });
+
+  for(final invalid in [<String,dynamic>{'reviews':0},{'synthetic':false},{'rating':6}]) {
+    testWidgets('invalid local summary uses honest provider fallback $invalid',(tester) async {
+      await tester.pumpWidget(MaterialApp(home:Scaffold(body:SingleChildScrollView(child:RecommendationCard(
+        recommendation:{...evaluationRecommendation(),
+          'demonstrationReviewSummary':{'source':'demonstration_approved_reviews','synthetic':true,'rating':3.8,'reviews':15,...invalid},
+          'popularityEvidence':{'source':'provider_rating_review_count','rating':4.4,'reviewCount':15505}},onView:(){})))));
+      await tester.pumpAndSettle();
+      expect(find.text('4.4 · 15505 provider reviews'),findsOneWidget);
+      expect(find.textContaining('sample reviews'),findsNothing);expect(tester.takeException(),isNull);
+    });
+  }
 }

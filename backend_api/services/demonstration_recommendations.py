@@ -9,6 +9,7 @@ from services.local_catalog import DESTINATIONS
 from services.destination_research import attraction_identities
 from services.review_destination import review_candidate_id
 from services.recommendation_review_evidence import approved_contributions, review_summaries
+from services.penang_evaluation_coverage import REVIEWER_PROFILES
 
 
 SIMULATED_PROFILES = {
@@ -24,7 +25,7 @@ SIMULATED_PROFILES = {
 def simulated_profiles(rows):
     # Assignment is stable per fictional author and independent of their rating/comment.
     choices = list(SIMULATED_PROFILES.values())
-    return {uid: {**deepcopy(choices[int(sha256(uid.encode()).hexdigest(), 16) % len(choices)]), 'synthetic': True}
+    return {uid: {**deepcopy(REVIEWER_PROFILES.get(uid) or choices[int(sha256(uid.encode()).hexdigest(), 16) % len(choices)]), 'synthetic': True}
             for uid in {str(row.get('travellerId') or '') for row in rows if row.get('synthetic') is True} if uid}
 
 
@@ -36,6 +37,8 @@ def load_sources(area='Penang'):
             raise ValueError('The existing approved demonstration review data is unavailable.')
         ref, destinations = dataset
         rows.extend(dataset_reviews(ref, destinations))
+        for identity in destinations:
+            rows.extend(regional_demo_reviews(identity))
         candidates.extend(deepcopy(list(destinations.values())))
     regional = regional_demo_destinations()
     for identity, place in regional.items():

@@ -23,7 +23,8 @@ def test_local_demo_has_one_illustrative_list_and_separate_genuine_rating(client
     url = '/api/fr3/destinations/penang_hill/ratings-reviews?view=unified'
     context = {'X-TravelMate-Review-Context': 'fyp-v1'}
     with patch.object(routes, '_private_review_dataset', return_value=('ref', {'local_penang_hill': {}})), \
-         patch.object(routes, 'dataset_reviews', return_value=examples):
+         patch.object(routes, 'dataset_reviews', return_value=examples), \
+         patch.object(routes, 'regional_demo_reviews', return_value=[]):
         for account in ['first', 'second', 'new-registration']:
             response = client.get(url, headers={**headers(account), **context})
             body = response.json
@@ -44,7 +45,8 @@ def test_local_demo_has_one_illustrative_list_and_separate_genuine_rating(client
 def test_example_failure_does_not_hide_genuine_reviews(client, memory):
     from modules.fr03_destination_search_information import routes
     client.application.config['LOCAL_FYP_SAMPLE_REVIEWS'] = True
-    with patch.object(routes, '_private_review_dataset', side_effect=ValueError('Invalid fixture state')):
+    with patch.object(routes, '_private_review_dataset', side_effect=ValueError('Invalid fixture state')), \
+         patch.object(routes, 'regional_demo_reviews', return_value=[]):
         response = client.get('/api/fr3/destinations/penang_hill/ratings-reviews?view=unified',
                               headers={**headers(), 'X-TravelMate-Review-Context': 'fyp-v1'})
     assert response.status_code == 200

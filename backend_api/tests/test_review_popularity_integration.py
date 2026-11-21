@@ -179,7 +179,9 @@ def test_demo_load_uses_existing_moderation_overlay_and_canonical_ids(monkeypatc
     places, loaded = demo.load_sources('Penang')
     assert {row['destinationId'] for row in places} == set(source)
     assert reader.call_args.args == ('isolated-ref', source)
-    assert not approved_contributions(loaded, demonstration=True)['local_penang_hill']
+    approved=approved_contributions(loaded, demonstration=True)['local_penang_hill']
+    assert not {row['travellerId'] for row in changed if row['destinationId']=='local_penang_hill'} & {row['travellerId'] for row in approved}
+    assert len(approved)==6  # New independently screened contributions do not resurrect hidden old rows.
 
 
 def test_synthetic_preference_documents_do_not_become_genuine_peer_profiles(generation, monkeypatch):

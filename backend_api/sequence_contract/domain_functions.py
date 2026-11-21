@@ -453,7 +453,7 @@ def calculateRecommendationScore(items, reviewSummaries=None, *, evidenceMode='g
         collaborative = max(0.0, min(100.0, _score_number(item.get('collaborativeScore'))))
         evidence = popularity_evidence(item, reviewSummaries,
             demonstration=evidenceMode in {'demonstration', 'fyp_evaluation'},
-            provider_first=evidenceMode == 'fyp_evaluation')
+            provider_fallback=evidenceMode == 'fyp_evaluation')
         popularity = evidence['score']
         score = content * 0.60 + collaborative * 0.30 + popularity * 0.10
 

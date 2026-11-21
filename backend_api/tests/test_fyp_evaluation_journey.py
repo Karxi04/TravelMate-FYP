@@ -110,15 +110,23 @@ def test_current_moderation_and_negative_ratings_are_not_raised_or_reclassified(
     assert all(r['synthetic'] is True for r in state['reviews'])
 
 
-def test_existing_provider_rating_wins_without_becoming_peer_evidence(evaluation):
+def test_existing_local_summary_wins_and_provider_is_fallback_without_becoming_peer_evidence(evaluation):
     state, generate, _, _ = evaluation
     place=state['places'][0]
     # Simulate the existing approved provider cache, not a provider request.
     with patch.object(routes,'cached_candidates',return_value=[{**place,'ratingSource':'provider','rating':4.5,'reviews':9000}]):
         row=next(r for r in generate(limit=50)['recommendations'] if r['destinationId']==place['destinationId'])
-    assert row['popularitySource']=='provider_rating_review_count'
-    assert row['popularityScore']==90
+    assert row['popularitySource']=='demonstration_approved_reviews'
+    assert row['popularityEvidence']['reviewCount'] < 9000
     assert row['collaborativeRatingCount'] < 9000
+    for review in state['reviews']:
+        if review['destinationId']==place['destinationId']:
+            review['feedbackStatus']='hidden'
+    with patch.object(routes,'cached_candidates',return_value=[{**place,'ratingSource':'provider','rating':4.5,'reviews':9000}]):
+        row=next(r for r in generate(limit=50)['recommendations'] if r['destinationId']==place['destinationId'])
+    assert row['popularitySource']=='provider_rating_review_count' and row['popularityScore']==90
+    assert row['collaborativeRatingCount']==0 and row['collaborativeScore']==50
+    assert row['popularityEvidence']['fallbackReason']=='no_approved_local_evaluation_reviews'
 
 
 def test_learning_changes_only_temporary_evaluation_profile_and_preserves_questionnaire(client, evaluation):
