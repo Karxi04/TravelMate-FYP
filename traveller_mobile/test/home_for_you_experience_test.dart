@@ -10,6 +10,7 @@ import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner
 import 'package:travelmate_traveller/services/api_service.dart';
 import 'package:travelmate_traveller/theme/app_theme.dart';
 import 'package:travelmate_traveller/widgets/recommendation_card.dart';
+import 'fyp_evaluation_journey_test.dart' show evaluationEnvelope;
 
 Map<String, dynamic> _recommendation() => {
       'destinationId': 'kek_lok_si',
@@ -151,6 +152,22 @@ class _EvidenceHomeApi extends _HomeApi {
   }
 }
 
+class _EvaluationHomeApi extends _HomeApi {
+  final attached=<Map>[];
+  @override
+  Future<dynamic> get(String path,[Map<String,String>? query]) async {
+    final data=await super.get(path,query);
+    return path=='/api/fr4/recommendations' ? evaluationEnvelope(data as Map):data;
+  }
+  @override
+  Future<dynamic> post(String path,[Map<String,dynamic>? body]) async {
+    final data=await super.post(path,body);
+    if(path.endsWith('/activities')) attached.add({...?body});
+    if(path=='/api/fr4/recommendations/generate') staleRecommendations=false;
+    return path=='/api/fr4/recommendations/generate' ? evaluationEnvelope(data as Map):data;
+  }
+}
+
 Widget _home(_HomeApi api,
     {ValueChanged<AppShellTab>? onSelect, double textScale = 1}) {
   final home = HomeTab(api: api);
@@ -192,6 +209,34 @@ Future<void> _showOnHome(WidgetTester tester, Finder target) async {
 }
 
 void main() {
+  testWidgets('Home evaluation preference change waits for explicit regeneration',(tester) async {
+    final api=_EvaluationHomeApi()..staleRecommendations=true;
+    await _settleHome(tester,api);await tester.pumpAndSettle();
+    expect(api.generationCalls,0);
+    await _showOnHome(tester,find.text(recommendationPreferenceUpdateMessage));
+    await tester.tap(find.byKey(const ValueKey('update-recommendation-evidence')));await tester.pumpAndSettle();
+    expect(api.generationCalls,1);expect(find.text(recommendationPreferenceUpdateMessage),findsNothing);
+    expect(tester.takeException(),isNull);
+  });
+  testWidgets('integrated Home evaluation retains View and confirmed real destination attachment',(tester) async {
+    final api=_EvaluationHomeApi();
+    await _settleHome(tester,api);await tester.pumpAndSettle();
+    await _showOnHome(tester,find.text('Recommendation data sources'));
+    await tester.tap(find.text('Recommendation data sources'));await tester.pumpAndSettle();
+    expect(find.text('FYP evaluation configuration'),findsOneWidget);
+    await tester.tapAt(const Offset(10,10));await tester.pumpAndSettle();
+    await _showOnHome(tester,find.text('View').first);await tester.tap(find.text('View').first);await tester.pumpAndSettle();
+    expect(find.byType(DestinationDetailsScreen),findsOneWidget);
+    await tester.tap(find.byTooltip('Back'));await tester.pumpAndSettle();
+    await _showOnHome(tester,find.text('Add to trip').first);await tester.tap(find.text('Add to trip').first);await tester.pumpAndSettle();
+    expect(api.attached,isEmpty); // Destination selection alone does not save anything.
+    await tester.tap(find.text('Penang Getaway').last);await tester.pumpAndSettle();
+    expect(api.attached.single['destinationId'],'kek_lok_si');
+    expect(api.attached.single.keys, isNot(contains('synthetic')));
+    expect(api.attached.single.keys, isNot(contains('recommendationEvidenceMode')));
+    expect(api.attached.single.keys, isNot(contains('collaborativeScore')));
+    expect(api.generationCalls,0);expect(tester.takeException(),isNull);
+  });
   testWidgets(
       'carousel lower menu explanation View and Add callbacks remain usable',
       (tester) async {

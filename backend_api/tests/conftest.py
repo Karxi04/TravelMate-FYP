@@ -9,6 +9,7 @@ from unittest.mock import patch, MagicMock
 os.environ["TRAVELMATE_TESTING"] = "true"
 os.environ["FALLBACK_MODE"] = "true"
 os.environ["LOCAL_LAN_DEMO"] = "false"
+os.environ['RECOMMENDATION_EVIDENCE_MODE'] = 'genuine'
 os.environ["TRAVELMATE_BUDGET_AWARE_SELECTION_ENABLED"] = "false"
 # The owner's worker scope must not change isolated notification fixtures.
 os.environ['TRAVELMATE_PUSH_ENABLED'] = 'false'

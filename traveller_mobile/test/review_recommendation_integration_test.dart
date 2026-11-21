@@ -123,23 +123,19 @@ void main() {
     expect(memory, isEmpty);
   });
 
-  testWidgets('For You opens a read-only simulation and returns to the original generation', (tester) async {
+  testWidgets('ordinary For You has no separate demonstration navigation or profile selector', (tester) async {
     tester.view.physicalSize = const Size(800,1600); tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
     final api = _EvidenceApi();
     await tester.pumpWidget(MaterialApp(theme:buildInkWashTheme(), home:RecommendationScreen(api:api,initialDestination:'Penang')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Demonstration review data')); await tester.pumpAndSettle();
-    expect(find.text('Demonstration reviews'), findsOneWidget);
-    expect(find.text('Kek Lok Si Temple'), findsOneWidget);
-    await tester.ensureVisible(find.text('View simulation')); await tester.tap(find.text('View simulation'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('existing destination identity'), findsOneWidget);
-    await tester.tap(find.text('Close')); await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Back')); await tester.pumpAndSettle();
+    expect(find.byTooltip('Demonstration review data'), findsNothing);
+    expect(find.byIcon(Icons.science_outlined), findsNothing);
+    expect(find.byType(DemonstrationRecommendationsScreen), findsNothing);
+    expect(find.text('My preferences (simulation only)'), findsNothing);
     expect(find.byType(RecommendationScreen), findsOneWidget);
     expect(api.generations, 0); expect(api.feedback, isEmpty);
-    expect(api.simulationReads, [{'profileKey':'current','destinationArea':'Penang'}]);
+    expect(api.simulationReads, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
@@ -174,7 +170,7 @@ void main() {
   for (final entry in [
     ('provider_rating_review_count','Verified provider rating: 4.5/5'),
     ('genuine_approved_local_reviews','Approved genuine TravelMate reviews: 4.5/5'),
-    ('demonstration_approved_reviews','Demonstration review data: 4.5/5'),
+    ('demonstration_approved_reviews','Sample community data: 4.5/5'),
   ]) {
     testWidgets('score explanation identifies ${entry.$1} without creating trip/feedback actions', (tester) async {
       final simulation = entry.$1 == 'demonstration_approved_reviews';
@@ -194,7 +190,7 @@ void main() {
       await tester.ensureVisible(find.text('Recommendation score: 62/100'));
       await tester.tap(find.text('Recommendation score: 62/100')); await tester.pumpAndSettle();
       expect(find.textContaining(entry.$2),findsOneWidget);
-      expect(find.textContaining('Eligible reviewers: 3'),findsOneWidget);
+      expect(find.textContaining(simulation ? 'Qualifying evaluation contributors: 3' : 'Eligible reviewers: 3'),findsOneWidget);
       expect(actions,0); expect(tester.takeException(),isNull);
     });
   }

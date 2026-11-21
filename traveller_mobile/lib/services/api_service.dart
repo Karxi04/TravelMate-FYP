@@ -194,9 +194,9 @@ class ApiService {
   }) async {
     Future<Map<String, String>> headers() async {
       final result = await _headers();
-      if (method == 'GET' &&
-          (path == '/api/fr3/local-ratings' || path.startsWith('/api/fr3/destinations/') ||
-           path == '/api/fr4/recommendations' || path == '/api/fr4/recommendations/demonstration')) {
+      if ((method == 'GET' && (path == '/api/fr3/local-ratings' || path.startsWith('/api/fr3/destinations/'))) ||
+          {'/api/fr4/recommendations', '/api/fr4/recommendations/generate',
+           '/api/fr4/preference-feedback', '/api/fr4/recommendations/demonstration'}.contains(path)) {
         result['X-TravelMate-Review-Context'] = 'fyp-v1';
       }
       return result;

@@ -12,7 +12,6 @@ import '../../widgets/local_place_rating.dart';
 import '../../widgets/travel_widgets.dart';
 import '../fr03_destination_search_information/destination_details_screen.dart';
 import '../fr02_travel_preference/preferences_screen.dart';
-import 'demonstration_recommendations_screen.dart';
 
 class RecommendationScreen extends StatefulWidget {
   final String initialDestination;
@@ -40,6 +39,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   Map<String, String> feedbackByDestination = {};
   final Set<String> feedbackInFlight = {};
   String recommendationGenerationId = '';
+  bool requiresExplicitRegeneration = false;
   String? errorMessage;
   Map<String, dynamic> pagination = {};
   int requestVersion = 0;
@@ -54,7 +54,6 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   Map<String, dynamic> generatedScope = {};
   String geographicMode = 'strict';
   bool nearbyAvailable = false;
-  bool demonstrationAvailable = false;
   List<Map<String, dynamic>> locations = [];
   Map<String, dynamic>? selectedLocation;
   String? searchMessage;
@@ -109,7 +108,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         stale = data['stale'] == true;
         setState(() {
           items = data['recommendations'] as List? ?? [];
-          demonstrationAvailable = data['demonstrationAvailable'] == true;
+          requiresExplicitRegeneration = data['requiresExplicitRegeneration'] == true;
           source = (data['source'] ?? '').toString();
           pagination = Map<String, dynamic>.from(data['pagination'] as Map? ?? {});
           discoveryNotice = data['snapshot']?['cacheFallbackNotice']?.toString();
@@ -168,7 +167,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         errorMessage = _errorText(recommendationError);
       }
     });
-    if (recommendationError == null && (stale || recommendationGenerationId.isEmpty) && preferences.isNotEmpty) await generate(reuseCandidates:stale);
+    if (recommendationError == null && !requiresExplicitRegeneration && (stale || recommendationGenerationId.isEmpty) && preferences.isNotEmpty) await generate(reuseCandidates:stale);
   }
 
   Future<void> generate({bool reuseCandidates = false, bool expand = false}) async {
@@ -203,6 +202,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       validateDiscoveryResponse(data);
       setState(() {
         final received = data['recommendations'] as List? ?? [];
+        requiresExplicitRegeneration = data['requiresExplicitRegeneration'] == true;
         items = expand ? appendRecommendationResults(items, received) : received;
         discoveryNotice = data['discoveryMessage']?.toString();
         searchMessage = data['snapshot']?['searchMessage']?.toString();
@@ -289,6 +289,10 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       });
       if (!mounted || version != requestVersion) return;
       if (data['stale'] == true) {
+        if (data['requiresExplicitRegeneration'] == true) {
+          setState(() { requiresExplicitRegeneration = true; items = []; loadingMore = false; });
+          return;
+        }
         setState(() => loadingMore = false);
         await generate(reuseCandidates:true);
         return;
@@ -491,11 +495,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
   Widget build(BuildContext context) {
     final qualified = items.whereType<Map>().where((item) => item['discoveryEligible'] == true).toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('For you'), actions: [
-        if (demonstrationAvailable) IconButton(icon: const Icon(Icons.science_outlined),
-          tooltip: 'Demonstration review data', onPressed: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => DemonstrationRecommendationsScreen(api: api)))),
-      ]),
+      appBar: AppBar(title: const Text('For you')),
       body: RefreshIndicator(
         onRefresh: () async {
           LocalReviewRatings.invalidate();
@@ -509,13 +509,15 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
               subtitle:
                   'Based on your saved interests and travel style. Refresh only when you want a new list.',
             ),
+            if (source.isNotEmpty) RecommendationDataSources(evaluation: source == 'fyp_evaluation'),
             if (preferences.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.md),
               _profileSummary(),
             ],
-            if (recommendationsNeedEvidenceUpdate(items)) ...[
+            if (requiresExplicitRegeneration || recommendationsNeedEvidenceUpdate(items)) ...[
               const SizedBox(height: AppSpacing.md),
-              RecommendationEvidenceNotice(onRegenerate: busy ? null : () => generate()),
+              RecommendationEvidenceNotice(message: requiresExplicitRegeneration ? recommendationPreferenceUpdateMessage : recommendationEvidenceUpdateMessage,
+                onRegenerate: busy ? null : () => generate()),
             ],
             const SizedBox(height: AppSpacing.md),
             LayoutBuilder(key: const ValueKey('recommendation-location-field'), builder: (context, constraints) => RawAutocomplete<Map<String, dynamic>>(

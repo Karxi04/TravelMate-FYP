@@ -171,3 +171,45 @@ from Stripe CLI or the Dashboard before treating webhook delivery as verified.
 ## Provider adapters
 
 External API code is under `services/`. Keep API keys only in `backend_api/.env`, never in Flutter/HTML/JavaScript source.
+
+## Local FYP recommendation evidence
+
+`RECOMMENDATION_EVIDENCE_MODE=genuine` is the default and retains genuine-only
+peer evidence and genuine recommendation snapshots. An owner-approved local
+Viva rollout can explicitly select `fyp_evaluation`. Startup rejects that value
+unless the existing restricted `LOCAL_LAN_DEMO` / `TRUSTED_LAN_CIDR` configuration
+is active. Authenticated Traveller requests must also carry the existing
+`X-TravelMate-Review-Context: fyp-v1` header. Query/body parameters cannot switch
+the configured evidence mode. Do not change a running service without approval.
+
+Evaluation uses the normal Home/For You routes, the signed-in Traveller's saved
+questionnaire, existing canonical destination records and the existing approved
+Penang sample reviews with their effective moderation decisions. Simulated
+reviewer profiles remain explicitly simulated. The existing 60/30/10 formula,
+similarity threshold and confidence calculation are unchanged. Verified provider
+popularity takes precedence; otherwise approved sample-review popularity is
+labelled as such. Provider reviews never become similar-Traveller ratings.
+
+Evaluation generations and More like this / Not for me learning are owner-scoped
+in process memory: up to 64 generations and 64 learning profiles, each expiring
+after one hour or process restart. They never write genuine feedback, preferences,
+public projections or recommendation snapshots. This local mode expects the
+existing single Backend worker; it is not a distributed production history store.
+GET reads an existing evaluation generation; the normal explicit regeneration
+action recalculates using current preferences and approvals. Missing data fails
+closed instead of falling back to genuine results or unmoderated definitions.
+Evaluation discovery uses existing catalogue and saved cache data, without live
+provider searches. It can therefore have limited destination coverage.
+
+The normal destination View and confirmed Add to Trip actions remain available;
+only destination/activity facts enter the existing itinerary write contract,
+not evaluation scores or review identities. Questionnaire and Trip changes still
+require their normal user actions. The separate simulation engine and its tests
+remain internal, without a science-icon navigation entry in the ordinary UI.
+The Recommendation data sources action and score explanation disclose sample
+community evidence; compact rating labels distinguish sample and provider counts.
+
+For an approved rollout, retain the existing genuine configuration as rollback,
+select `fyp_evaluation`, then use the controlled Backend reload procedure. No
+database migration or data rewrite is needed. To restore genuine mode, restore
+`genuine` and reload only with approval; original genuine histories are retained.

@@ -61,6 +61,7 @@ class _HomeTabState extends State<HomeTab> {
   String? recommendationError;
   String recommendationSource = '';
   String recommendationGenerationId = '';
+  bool recommendationNeedsRegeneration = false;
   Map<String, String> feedbackByDestination = {};
   final Set<String> feedbackInFlight = {};
   int notificationRefresh=0;
@@ -166,7 +167,7 @@ class _HomeTabState extends State<HomeTab> {
         if (data is Map && version == _recommendationVersion) {
           recommendationArea = (data['snapshot']?['requestedDestination'] ?? recommendationArea).toString();
         }
-        final needsGeneration = data is! Map || data['stale'] == true ||
+        final needsGeneration = data is! Map || (data['stale'] == true && data['requiresExplicitRegeneration'] != true) ||
             '${data['recommendationGenerationId'] ?? ''}'.isEmpty;
         if (needsGeneration && preferences != null) {
           data = await api.post('/api/fr4/recommendations/generate', {
@@ -181,6 +182,7 @@ class _HomeTabState extends State<HomeTab> {
         recommendations = (data['recommendations'] as List? ?? []).whereType<Map>().where((item) => item['discoveryEligible'] == true).toList();
         recommendationArea = (data['snapshot']?['requestedDestination'] ?? recommendationArea).toString();
         recommendationSource = (data['source'] ?? '').toString();
+        recommendationNeedsRegeneration = data['requiresExplicitRegeneration'] == true;
         recommendationGenerationId = (data['recommendationGenerationId'] ??
                 data['snapshot']?['recommendationGenerationId'] ??
                 '')
@@ -687,8 +689,10 @@ class _HomeTabState extends State<HomeTab> {
           ),
         ],
         const SizedBox(height: AppSpacing.xs),
-        if (recommendationsNeedEvidenceUpdate(recommendations)) ...[
-          RecommendationEvidenceNotice(onRegenerate: loadingForYou ? null : () => loadRecommendations(regenerate: true)),
+        if (recommendationSource.isNotEmpty) RecommendationDataSources(evaluation: recommendationSource == 'fyp_evaluation'),
+        if (recommendationNeedsRegeneration || recommendationsNeedEvidenceUpdate(recommendations)) ...[
+          RecommendationEvidenceNotice(message: recommendationNeedsRegeneration ? recommendationPreferenceUpdateMessage : recommendationEvidenceUpdateMessage,
+            onRegenerate: loadingForYou ? null : () => loadRecommendations(regenerate: true)),
           const SizedBox(height: AppSpacing.sm),
         ],
         if (loadingForYou && recommendations.isEmpty)

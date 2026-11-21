@@ -65,6 +65,84 @@ def _demonstration_allowed():
         bool(os.getenv('FYP_REVIEW_VIEWER_UID', '').strip() == g.uid))
 
 
+def _evaluation_mode():
+    return current_app.config.get('RECOMMENDATION_EVIDENCE_MODE', 'genuine') == 'fyp_evaluation'
+
+
+def _evaluation_session():
+    return current_app.extensions.setdefault('recommendation_evaluation', demonstration_recommendations.EvaluationSession())
+
+
+def _evaluation_recommendations(options, *, generate=False):
+    if not _demonstration_allowed():
+        return jsonify(ok=False, error='Evaluation recommendations require the authorized local review context.'), 403
+    if options.get('evidenceMode', 'genuine') != 'genuine' or _page({}, options) is None:
+        return jsonify(ok=False, error='Evidence configuration is server-controlled; use valid recommendation options.'), 400
+    session = _evaluation_session()
+    generation_id = str(options.get('previousGenerationId' if generate else 'generationId') or '')
+    previous = session.snapshot(g.uid, generation_id) if generation_id else None
+    if generation_id and not previous:
+        return jsonify(ok=False, error='Evaluation recommendations expired or belong to another context. Regenerate recommendations.'), 404
+    if not generate and not generation_id and not options.get('destinationArea'):
+        previous = session.snapshot(g.uid)  # Home follows the owner's latest area, as genuine mode does.
+    area = str(options.get('destinationArea') or (previous or {}).get('requestedDestination') or 'Malaysia').strip()
+    try:
+        geographic_mode = options.get('geographicMode', (previous or {}).get('canonicalDestinationScope', {}).get('geographicMode'))
+        scope = discovery_scope(resolve_selected_scope(area, options.get('destinationScopeKey'), options.get('destinationLocationId')), geographic_mode)
+        if not scope.get('resolved'):
+            raise ValueError
+    except ValueError:
+        return jsonify(ok=False, error='Choose a supported Malaysian destination area.'), 400
+    if previous and previous['canonicalDestinationScope']['scopeKey'] != scope['scopeKey']:
+        return jsonify(ok=False, error='Recommendation generation does not belong to this destination.'), 404
+    preference = retrieveRecord('travel_preferences', g.uid)
+    if not isinstance(preference, dict) or not isinstance(preference.get('interests'), list):
+        return jsonify(ok=False, error='Complete travel preferences first'), 400
+    learning = session.learning(g.uid)
+    profile = effective_preference_profile(preference, learning)
+    record = previous or session.snapshot(g.uid, scope_key=scope['scopeKey'])
+    if generate:
+        try:
+            places, rows = demonstration_recommendations.load_sources('Penang')
+            candidates = merge_candidates(normalise([*DESTINATIONS, *places], scope, source='local_catalog'),
+                                          cached_candidates(retrieveRecord, scope))[:150]
+            candidates = [row for row in candidates if row.get('synthetic') is not True
+                          and row.get('recommendationEvidenceMode', 'genuine') == 'genuine']
+            ranked = demonstration_recommendations.evaluate(profile, candidates, rows, evidence_mode='fyp_evaluation')
+        except (ValueError, GoogleAPICallError, TimeoutError):
+            return jsonify(ok=False, error='Approved sample community evidence is unavailable. No genuine recommendations were changed.'), 503
+        ranked = [{**_snapshot_item(row, 'fyp_evaluation'), **discovery_annotations(row, profile)} for row in ranked]
+        record = {'recommendationGenerationId': 'fyp-evaluation-' + uuid4().hex,
+            'travellerId': g.uid, 'recommendationEvidenceMode': 'fyp_evaluation', 'synthetic': True,
+            'generatedAt': utc_now_iso(), 'requestedDestination': area, 'canonicalDestinationScope': scope,
+            'preferenceProfileVersion': _preference_version(preference, learning),
+            'preferenceFingerprint': _profile_fingerprint(preference),
+            'planningPreferences': planning_preferences(profile),
+            'recommendationResults': ranked, 'source': 'fyp_evaluation', 'providerHasMore': False,
+            'requestedInterestConcepts': sorted(preference_concepts(profile.get('interests') or [])),
+            'evidenceProvenance': {'source': 'sample_community_evaluation', 'dataset': 'penang_v1_v2',
+                'synthetic': True, 'persistence': 'owner_scoped_process_memory',
+                'approvedContributions': sum(map(len, approved_contributions(rows, demonstration=True).values()))},
+            'engine': {'discoveryVersion': DISCOVERY_MODE, 'scoringVersion': 'recovery_v3',
+                'weightedScoring': {'content': .6, 'collaborative': .3, 'popularity': .1}}}
+        session.save(record)
+    stale = bool(record and (record['preferenceProfileVersion'] != _preference_version(preference, learning)
+                            or record['preferenceFingerprint'] != _profile_fingerprint(preference)))
+    page = _page(record or {'canonicalDestinationScope': scope, 'requestedDestination': area}, options, evidence_mode='fyp_evaluation')
+    page.pop('travellerId', None)
+    if stale:
+        page['recommendationResults'] = []
+    response = jsonify(ok=True, recommendationEvidenceMode='fyp_evaluation', synthetic=True,
+        evidenceProvenance=(record or {}).get('evidenceProvenance', {'source': 'sample_community_evaluation', 'synthetic': True}),
+        recommendationGenerationId=(record or {}).get('recommendationGenerationId', ''),
+        snapshot=page, recommendations=page['recommendationResults'], pagination=page['pagination'],
+        engine=(record or {}).get('engine', {}), source='fyp_evaluation', stale=stale,
+        requiresExplicitRegeneration=stale,
+        discoveryMessage='No further saved destination candidates are available. No provider search was made.' if options.get('expandCandidates') else None)
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response
+
+
 def _correlation_id():
     return g.setdefault('recommendation_request_id',uuid4().hex[:16])
 
@@ -78,6 +156,7 @@ def correlate_request():
 def correlate_response(response):
     response.headers['X-Request-ID'] = _correlation_id()
     response.headers['X-TravelMate-Recommendations'] = DISCOVERY_MODE
+    response.headers['X-TravelMate-Recommendation-Evidence'] = current_app.config.get('RECOMMENDATION_EVIDENCE_MODE', 'genuine')
     return response
 
 
@@ -160,7 +239,8 @@ def _feedback_destination(payload, user_id):
     if not destination_id:
         return None, 'destinationId is required', 400
     if generation_id:
-        snapshot = retrieveRecord('recommendation_snapshots', generation_id)
+        snapshot = (_evaluation_session().snapshot(user_id, generation_id) if _evaluation_mode()
+                    else None if generation_id.startswith('fyp-evaluation-') else retrieveRecord('recommendation_snapshots', generation_id))
         owner_id = str((snapshot or {}).get('travellerId') or
                        (snapshot or {}).get('userId') or '')
         if not snapshot or owner_id != user_id:
@@ -169,6 +249,8 @@ def _feedback_destination(payload, user_id):
             if _destination_id(item) == destination_id:
                 return dict(item), '', 200
         return None, 'Destination does not belong to this recommendation snapshot', 409
+    if _evaluation_mode():
+        return None, 'Choose a destination from your current evaluation recommendations.', 409
     concepts = canonical_concepts(payload.get('destinationConcepts', []))
     if not concepts:
         concepts = sorted(candidate_concepts(payload))
@@ -179,13 +261,17 @@ def _feedback_destination(payload, user_id):
 @bp.get('/preference-feedback')
 @auth_required(['traveller'])
 def get_preference_feedback():
-    profile = retrieveRecord('learned_preference_profiles', g.uid)
+    if _evaluation_mode() and not _demonstration_allowed():
+        return jsonify(ok=False, error='Evaluation recommendations require the authorized local review context.'), 403
+    profile = _evaluation_session().learning(g.uid) if _evaluation_mode() else retrieveRecord('learned_preference_profiles', g.uid)
     return jsonify({'ok': True, 'learning': public_learning_state(profile)})
 
 
 @bp.post('/preference-feedback')
 @auth_required(['traveller'])
 def submit_preference_feedback():
+    if _evaluation_mode() and not _demonstration_allowed():
+        return jsonify(ok=False, error='Evaluation recommendations require the authorized local review context.'), 403
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload,dict):
         return jsonify(ok=False,error='Use a JSON object.'),400
@@ -195,7 +281,7 @@ def submit_preference_feedback():
     concepts = canonical_concepts(
         item.get('destinationConcepts') or candidate_concepts(item))
     try:
-        updated, event, changed = transactPreferenceLearning(g.uid, lambda current: apply_explicit_feedback(
+        update = lambda current: apply_explicit_feedback(
             current,
             user_id=g.uid,
             destination_id=_destination_id(item),
@@ -205,7 +291,9 @@ def submit_preference_feedback():
                 'recommendationGenerationId', ''),
             source_context=payload.get(
                 'sourceContext', 'recommendation_card'),
-        ))
+        )
+        updated, event, changed = (_evaluation_session().learning(g.uid, update) if _evaluation_mode()
+                                 else transactPreferenceLearning(g.uid, update))
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 400
     except Exception:
@@ -222,8 +310,12 @@ def submit_preference_feedback():
 @bp.delete('/preference-feedback')
 @auth_required(['traveller'])
 def reset_preference_feedback():
+    if _evaluation_mode() and not _demonstration_allowed():
+        return jsonify(ok=False, error='Evaluation recommendations require the authorized local review context.'), 403
     try:
-        reset, event, had_learning = transactPreferenceLearning(g.uid, lambda current: reset_learning_profile(current, user_id=g.uid))
+        update = lambda current: reset_learning_profile(current, user_id=g.uid)
+        reset, event, had_learning = (_evaluation_session().learning(g.uid, update) if _evaluation_mode()
+                                     else transactPreferenceLearning(g.uid, update))
     except Exception:
         return jsonify(ok=False,error='Preference learning could not be reset. Please retry.'),503
     return jsonify({
@@ -245,7 +337,7 @@ def _snapshot_item(item, source):
     return result
 
 
-def _snapshot_response_view(record):
+def _snapshot_response_view(record, evidence_mode='genuine'):
     record = _firestore_json_values(dict(record or {}))
     scope = record.get('canonicalDestinationScope')
     if not isinstance(scope, dict):
@@ -254,7 +346,8 @@ def _snapshot_response_view(record):
         )
     safe_results, rejected = filter_candidates(
         [row for row in record.get('recommendationResults', [])
-         if row.get('synthetic') is not True and row.get('recommendationEvidenceMode', 'genuine') == 'genuine'],
+         if row.get('recommendationEvidenceMode', 'genuine') == evidence_mode
+         and (row.get('synthetic') is True if evidence_mode == 'fyp_evaluation' else row.get('synthetic') is not True)],
         scope,
     )
     if rejected:
@@ -265,7 +358,7 @@ def _snapshot_response_view(record):
     return {**record, 'recommendationResults': safe_results}
 
 
-def _page(record, options):
+def _page(record, options, *, evidence_mode='genuine'):
     try:
         discovery = options.get('discoveryMode')
         if discovery not in (None,'',DISCOVERY_MODE):raise ValueError
@@ -282,7 +375,7 @@ def _page(record, options):
             raise ValueError
     except (ValueError, TypeError, OverflowError):
         return None
-    view = _snapshot_response_view(record)
+    view = _snapshot_response_view(record, evidence_mode)
     all_items = view['recommendationResults']
     qualified = []
     for item in all_items:
@@ -336,6 +429,11 @@ def _page(record, options):
 @bp.post('/recommendations/generate')
 @auth_required(['traveller'])
 def generate():
+    if _evaluation_mode():
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            return jsonify(ok=False, error='Use a JSON object.'), 400
+        return _evaluation_recommendations(payload, generate=True)
     pref = retrieveRecord('travel_preferences', g.uid)
     if not pref:
         return jsonify({'ok': False, 'error': 'Complete travel preferences first'}), 400
@@ -596,9 +694,13 @@ def generate():
 @bp.get('/recommendations')
 @auth_required(['traveller'])
 def get_recommendations():
+    if _evaluation_mode():
+        return _evaluation_recommendations(request.args)
     if request.args.get('evidenceMode', 'genuine') != 'genuine':
         return jsonify(ok=False, error='Use the separate Demonstration review data view.'), 400
     generation_id = str(request.args.get('generationId') or '').strip()
+    if generation_id.startswith('fyp-evaluation-'):
+        return jsonify(ok=False, error='Recommendation snapshot not found'), 404
     destination_area = str(request.args.get('destinationArea') or '').strip()
     record = None
     if generation_id:

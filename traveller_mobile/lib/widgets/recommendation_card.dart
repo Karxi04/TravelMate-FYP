@@ -37,10 +37,22 @@ class RecommendationCard extends StatelessWidget {
           .toString();
 
   bool get _demonstration => recommendation['recommendationEvidenceMode'] == 'demonstration' && recommendation['synthetic'] == true;
+  bool get _evaluation => recommendation['recommendationEvidenceMode'] == 'fyp_evaluation' && recommendation['synthetic'] == true;
+  bool get _sampleEvidence => _demonstration || _evaluation;
   VoidCallback? get _addToTrip => _demonstration ? null : onAddToTrip;
-  Widget get _reviewRating => _demonstration
+  Widget get _reviewRating => _evaluation ? _evaluationRating : _demonstration
       ? LocalReviewRatingBadge(summary: Map<String, dynamic>.from(recommendation['demonstrationReviewSummary'] as Map? ?? {}), maxLines: null)
       : LocalPlaceRating(place: recommendation, maxLines: null);
+
+  Widget get _evaluationRating {
+    final evidence = recommendation['popularityEvidence'];
+    final rating = evidence is Map ? num.tryParse('${evidence['rating']}') : null;
+    if (rating == null) return const StatusChip(text: 'Not rated yet', maxLines: null);
+    final count = evidence['reviewCount'];
+    final sample = evidence['source'] == 'demonstration_approved_reviews';
+    return StatusChip(text: '${rating.toStringAsFixed(1)} · ${count == null ? 'Review count unavailable' : '$count ${sample ? 'sample reviews' : 'provider reviews'}'}',
+      maxLines: null, icon: Icons.star_rounded);
+  }
 
   String get _location => (recommendation['address'] ??
           recommendation['location'] ??
@@ -139,7 +151,7 @@ class RecommendationCard extends StatelessWidget {
 
   bool get _showSourceDisclosure {
     final normalized = _source.toLowerCase();
-    return !_demonstration && normalized.isNotEmpty &&
+    return !_sampleEvidence && normalized.isNotEmpty &&
         normalized != 'live' &&
         normalized != 'provider' &&
         normalized != 'live_provider' &&
@@ -198,6 +210,8 @@ class RecommendationCard extends StatelessWidget {
               child: StatusChip(maxLines: null,
                 text: discovery ? 'Why this suggestion' : '$_scoreLabel: ${score.round()}/100',
                 icon: Icons.auto_awesome_rounded)),
+            if (_evaluation && recommendation['finalScore'] is num)
+              StatusChip(text: 'Hybrid score: ${(recommendation['finalScore'] as num).toStringAsFixed(1)}/100', maxLines: null),
             if (_category.isNotEmpty) StatusChip(text: _category, maxLines: null, tone: AppStatusTone.neutral),
             for (final interest in _matchedInterests) StatusChip(text: interest, maxLines: null,
               icon: Icons.check_circle_outline_rounded, tone: AppStatusTone.neutral),
@@ -301,9 +315,9 @@ class RecommendationCard extends StatelessWidget {
         : popularitySource == 'genuine_approved_local_reviews'
             ? 'Approved genuine TravelMate reviews: ${popularityRating?.toStringAsFixed(1)}/5 from $popularityCount reviews loaded for this generation. Demonstration reviews are excluded.'
         : popularitySource == 'demonstration_approved_reviews'
-            ? 'Demonstration review data: ${popularityRating?.toStringAsFixed(1)}/5 from $popularityCount approved simulated reviews. These are not genuine visitor ratings.'
-        : _demonstration
-            ? 'No approved demonstration reviews were available. A neutral 50/100 baseline is used.'
+            ? 'Sample community data: ${popularityRating?.toStringAsFixed(1)}/5 from $popularityCount approved evaluation reviews. These were generated for FYP evaluation, not submitted by verified real tourists.'
+        : _sampleEvidence
+            ? 'No eligible rating evidence was available for this evaluation. A neutral 50/100 baseline is used.'
             : 'No verified provider rating or approved genuine local review evidence was available. A neutral 50/100 baseline is used. Demonstration reviews do not affect this score.';
     final fallbackDetail = const {
       'missing_current_preferences': 'Your preference profile was unavailable for this generation.',
@@ -314,8 +328,8 @@ class RecommendationCard extends StatelessWidget {
     final collaborativeDescription = !hasEvidenceDetails
         ? 'This saved recommendation has no peer-evidence details. Refresh recommendations to evaluate current feedback; the saved score has not been recalculated.'
         : isColdStart
-            ? '${_demonstration ? 'No simulated peer ratings' : 'No peer ratings from similar travellers'} qualified in this generation. Eligible reviewers: 0. Evidence confidence: 0%. A neutral 50/100 ranking prior is used, not an average review rating. Personal match is assessed separately.${fallbackDetail == null ? '' : ' $fallbackDetail'}'
-            : 'Eligible reviewers: $collaborativeRatingCount. ${_demonstration ? 'Simulated p' : 'P'}eer ratings are similarity-weighted. '
+            ? '${_sampleEvidence ? 'No evaluation contributor ratings' : 'No peer ratings from similar travellers'} qualified in this generation. Eligible reviewers: 0. Evidence confidence: 0%. A neutral 50/100 ranking prior is used, not an average review rating. Personal match is assessed separately.${fallbackDetail == null ? '' : ' $fallbackDetail'}'
+            : '${_sampleEvidence ? 'Qualifying evaluation contributors' : 'Eligible reviewers'}: $collaborativeRatingCount. ${_sampleEvidence ? 'Sample p' : 'P'}eer ratings are similarity-weighted. '
               '${rawPeerScore == null ? '' : 'Raw peer score: ${rawPeerScore.toStringAsFixed(1)}/100. '}'
               'Evidence confidence: ${(collaborativeConfidence * 100).round()}%. '
               'Sparse evidence is blended toward 50; confidence is not prediction accuracy. '
@@ -361,6 +375,10 @@ class RecommendationCard extends StatelessWidget {
                     ),
               ),
               const SizedBox(height: AppSpacing.md),
+              if (_sampleEvidence) ...[
+                const Text('Data sources: your saved preferences are compared with approved sample community reviews and associated simulated reviewer profiles. This is an FYP evaluation, not genuine customer peer evidence. Genuine recommendation history is unchanged.'),
+                const SizedBox(height: AppSpacing.sm),
+              ],
               if (_hasPersonalScore) ...[
                 Text(
                     'Personal match averages only supported profile signals. Evidence coverage describes available metadata, not prediction accuracy. Hybrid ranking retains 60% content, 30% similar travellers and 10% popularity.'),
@@ -377,7 +395,7 @@ class RecommendationCard extends StatelessWidget {
                   description:
                       'Evaluates compatibility with your saved travel interests, budget preference, and travel pace.',
                 ),
-                if (!_demonstration && !recommendationHasCurrentEvidence(recommendation)) ...[
+                if (!_sampleEvidence && !recommendationHasCurrentEvidence(recommendation)) ...[
                   const Text(recommendationEvidenceUpdateMessage),
                   if (onRefreshEvidence != null) TextButton.icon(
                     key: const ValueKey('regenerate-recommendation-evidence'),
@@ -387,7 +405,7 @@ class RecommendationCard extends StatelessWidget {
                 const SizedBox(height: AppSpacing.sm),
                 _breakdownCard(
                   sheetContext,
-                  title: '${_demonstration ? 'Simulated' : 'Similar'} traveller evidence (30% weight)',
+                  title: 'Similar traveller evidence (30% weight)',
                   scoreText: isColdStart
                       ? '50/100 (Neutral baseline)'
                       : '${(breakdown['collaborative'] as num?)?.round() ?? '-'}/100 (${hasPeerEvidence ? 'Peer evidence' : 'Evidence unavailable'})',
@@ -396,7 +414,7 @@ class RecommendationCard extends StatelessWidget {
                 const SizedBox(height: AppSpacing.sm),
                 _breakdownCard(
                   sheetContext,
-                  title: '${_demonstration ? 'Demonstration' : 'Destination'} popularity (10% weight)',
+                  title: 'Destination popularity (10% weight)',
                   scoreText:
                       '${(breakdown['popularity'] as num?)?.round() ?? '-'}/100',
                   description: popularityDescription,
@@ -488,13 +506,33 @@ class RecommendationCard extends StatelessWidget {
 
 class RecommendationEvidenceNotice extends StatelessWidget {
   final VoidCallback? onRegenerate;
-  const RecommendationEvidenceNotice({super.key, this.onRegenerate});
+  final String message;
+  const RecommendationEvidenceNotice({super.key, this.onRegenerate, this.message = recommendationEvidenceUpdateMessage});
   @override
   Widget build(BuildContext context) => InkCard(child: Column(
     crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text(recommendationEvidenceUpdateMessage),
+      Text(message),
       TextButton.icon(key: const ValueKey('update-recommendation-evidence'),
         onPressed: onRegenerate, icon: const Icon(Icons.refresh_rounded),
         label: const Text('Regenerate recommendations')),
     ]));
+}
+
+class RecommendationDataSources extends StatelessWidget {
+  final bool evaluation;
+  const RecommendationDataSources({super.key, required this.evaluation});
+  @override
+  Widget build(BuildContext context) => Align(alignment: Alignment.centerLeft,
+    child: TextButton.icon(icon: const Icon(Icons.info_outline_rounded, size: 18),
+      label: const Text('Recommendation data sources'), onPressed: () => showModalBottomSheet<void>(
+        context: context, showDragHandle: true, builder: (context) => SafeArea(child: SingleChildScrollView(
+          padding: AppSpacing.page, child: Column(mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(evaluation ? 'FYP evaluation configuration' : 'Genuine community configuration',
+                style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: AppSpacing.sm),
+              Text(evaluation
+                ? 'Your saved preferences drive the same 60% content, 30% similar-traveller and 10% popularity calculation. Approved sample community reviews and simulated reviewer profiles supply evaluation evidence. They are not verified real tourist submissions. Provider ratings remain separately identified. Evaluation recommendations and recommendation feedback stay in temporary, owner-scoped server memory for up to one hour; they can expire on restart. Your questionnaire and genuine recommendation history are unchanged. Destination and Trip actions use the normal records and confirmation steps.'
+                : 'Recommendations use your saved preferences, qualifying independent genuine reviews and verified provider ratings or approved genuine local ratings. Sample community reviews do not contribute. Missing peer evidence uses a confidence-aware neutral score.'),
+            ]))))));
 }

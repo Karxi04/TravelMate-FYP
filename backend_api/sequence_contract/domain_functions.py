@@ -334,9 +334,9 @@ def applyCollaborativeFiltering(items, collaborativeData=None, peerPreferences=N
     Sparse data is blended toward a neutral constant. This preserves the documented
     30% collaborative component without pretending provider ratings are peer evidence.
     """
-    if evidenceMode not in {'genuine', 'demonstration'}:
+    if evidenceMode not in {'genuine', 'demonstration', 'fyp_evaluation'}:
         raise ValueError('Unsupported review evidence mode.')
-    demonstration = evidenceMode == 'demonstration'
+    demonstration = evidenceMode in {'demonstration', 'fyp_evaluation'}
     peer_preferences = peerPreferences or {}
     current = currentPreference or {}
     current_interests = concepts_for(current.get('interests', []))
@@ -445,13 +445,15 @@ def _exact_profile_match(peer, current, field, normalizer):
 
 def calculateRecommendationScore(items, reviewSummaries=None, *, evidenceMode='genuine'):
     """Weighted scoring: 60% content + 30% collaborative + 10% popularity."""
-    if evidenceMode not in {'genuine', 'demonstration'}:
+    if evidenceMode not in {'genuine', 'demonstration', 'fyp_evaluation'}:
         raise ValueError('Unsupported review evidence mode.')
     output = []
     for item in items or []:
         content = max(0.0, min(100.0, _score_number(item.get('contentScore'))))
         collaborative = max(0.0, min(100.0, _score_number(item.get('collaborativeScore'))))
-        evidence = popularity_evidence(item, reviewSummaries, demonstration=evidenceMode == 'demonstration')
+        evidence = popularity_evidence(item, reviewSummaries,
+            demonstration=evidenceMode in {'demonstration', 'fyp_evaluation'},
+            provider_first=evidenceMode == 'fyp_evaluation')
         popularity = evidence['score']
         score = content * 0.60 + collaborative * 0.30 + popularity * 0.10
 
@@ -470,7 +472,7 @@ def calculateRecommendationScore(items, reviewSummaries=None, *, evidenceMode='g
             'popularitySource': evidence['source'],
             'popularityEvidence': {**evidence, 'score': round(popularity, 2)},
             'recommendationEvidenceMode': evidenceMode,
-            **({'synthetic': True} if evidenceMode == 'demonstration' else {}),
+            **({'synthetic': True} if evidenceMode in {'demonstration', 'fyp_evaluation'} else {}),
             'score': round(score, 2),
             'finalScore': round(score, 2),
             'hybridRankingScore': round(score, 2),
@@ -511,7 +513,7 @@ def _recommendation_reasons(item, popularity):
             reasons.append(f'Fits your {label}')
     confidence = _score_number(item.get('collaborativeConfidence'))
     if confidence >= 0.25 and _score_number(item.get('rawCollaborativeScore')) >= 70.0:
-        reasons.append('Highly rated by simulated travellers' if item.get('recommendationEvidenceMode') == 'demonstration' else 'Highly rated by similar travellers')
+        reasons.append('Highly rated in sample community data' if item.get('recommendationEvidenceMode') in {'demonstration', 'fyp_evaluation'} else 'Highly rated by similar travellers')
     for key, label in (
         ('travelPurpose', 'travel purpose'),
         ('travelPersonality', 'traveller personality'),
@@ -520,7 +522,7 @@ def _recommendation_reasons(item, popularity):
         if signal.get('applied') and _score_number(signal.get('score')) >= 80.0:
             reasons.append(f'Fits your {label}')
     if popularity >= 85.0:
-        reasons.append('Popular in demonstration reviews' if item.get('recommendationEvidenceMode') == 'demonstration' else 'Popular and well reviewed')
+        reasons.append('Popular in sample community data' if item.get('popularitySource') == 'demonstration_approved_reviews' else 'Popular and well reviewed')
     return reasons[:5]
 
 

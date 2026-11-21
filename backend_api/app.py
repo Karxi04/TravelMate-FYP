@@ -46,6 +46,12 @@ def create_app():
     lan_sign = load_lan_signer(os.getenv("LOCAL_LAN_IDENTITY_KEY", "")) if lan_origins else None
     app.config["LOCAL_LAN_ORIGINS"] = lan_origins
     app.config["LOCAL_FYP_SAMPLE_REVIEWS"] = bool(networks)
+    evidence_mode = os.getenv('RECOMMENDATION_EVIDENCE_MODE', 'genuine').strip()
+    if evidence_mode not in {'genuine', 'fyp_evaluation'}:
+        raise RuntimeError('RECOMMENDATION_EVIDENCE_MODE must be genuine or fyp_evaluation')
+    if evidence_mode == 'fyp_evaluation' and not networks:
+        raise RuntimeError('FYP evaluation recommendations require the restricted local LAN configuration')
+    app.config['RECOMMENDATION_EVIDENCE_MODE'] = evidence_mode
     if networks:
         @app.before_request
         def allow_only_trusted_lan():

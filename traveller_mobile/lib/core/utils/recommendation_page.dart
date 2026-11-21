@@ -3,6 +3,8 @@ import 'recommendation_taxonomy.dart';
 const recommendationEvidenceUpdateMessage =
     'These saved recommendations use an older evidence format. Their scores have not been '
     're-evaluated against current reviews. Regenerate recommendations to see the latest evidence.';
+const recommendationPreferenceUpdateMessage =
+    'Your saved preferences have changed. Regenerate recommendations to calculate new scores for your updated profile.';
 
 bool recommendationHasCurrentEvidence(Map item) {
   final popularity = item['popularityEvidence'];
@@ -122,10 +124,16 @@ Map<String,dynamic> discoveryAnnotations(Map item, Map preference) {
 }
 
 void validateDiscoveryResponse(Map data) {
-  if (data['recommendationEvidenceMode'] == 'demonstration' ||
-      (data['recommendations'] as List? ?? []).whereType<Map>().any((r) =>
-        r['synthetic'] == true || r['recommendationEvidenceMode'] == 'demonstration')) {
-    throw StateError('Demonstration results belong in the separate review-data simulation.');
+  final evaluation = data['recommendationEvidenceMode'] == 'fyp_evaluation';
+  final provenance = data['evidenceProvenance'];
+  if (![null,'genuine','fyp_evaluation'].contains(data['recommendationEvidenceMode']) ||
+      (evaluation && (data['synthetic'] != true || provenance is! Map ||
+          provenance['source'] != 'sample_community_evaluation' || provenance['synthetic'] != true)) ||
+      data['recommendationEvidenceMode'] == 'demonstration' ||
+      (data['recommendations'] as List? ?? []).whereType<Map>().any((r) => evaluation
+        ? r['synthetic'] != true || r['recommendationEvidenceMode'] != 'fyp_evaluation'
+        : r['synthetic'] == true || ![null,'genuine'].contains(r['recommendationEvidenceMode']))) {
+    throw StateError('Recommendation evidence does not match the authorized data configuration.');
   }
   if (data['stale'] == true) return;
   if (data['ok'] == false || data['pagination'] is! Map ||
