@@ -783,7 +783,9 @@ def select_flight():
     patch.update(flight_selection_change_patch(current, trusted))
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
     updated = updateRecord('itineraries', itinerary_id, patch)
-    return jsonify({'ok': True, 'itinerary': updated, 'selectedFlight': _public_option(trusted), 'budget': patch['budgetEstimate']})
+    from services.flexible_planning import confirmation_fingerprint
+    return jsonify({'ok': True, 'itinerary': updated, 'selectedFlight': _public_option(trusted), 'budget': patch['budgetEstimate'],
+        'planningReviewRequired':(updated.get('travelDayPreferences') or {}).get('confirmedFor')!=confirmation_fingerprint(updated)})
 
 
 @bp.post('/itineraries/<iid>/flight-selection/remove')

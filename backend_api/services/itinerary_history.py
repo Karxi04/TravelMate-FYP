@@ -12,12 +12,15 @@ RETENTION = 5
 MAX_SNAPSHOT_BYTES = 48 * 1024
 FIELDS = EDITABLE_FIELDS | {'destinationState', 'numberOfTravellers', 'interests', 'excludedInterests',
     'excludedActivityTypes', 'preferIndoor', 'daySpecificPreferences', 'activities', 'foodCost', 'transportCost',
-    'confirmedIntercityTransfer'}
+    'confirmedIntercityTransfer', 'recommendationGenerationId'}
 ACTIVITY_FIELDS = ACTIVITY_TEXT | ACTIVITY_NUMBERS | {'activityId', 'dayNo', 'sequenceNo', 'indoor',
     'gps_coordinates', 'gpsCoordinates', 'pricingEvidence', 'overlapsAllowance', 'currency',
     'imageUrl', 'thumbnail', 'openingHoursSourceUrl', 'openingHoursVerifiedAt',
     'intentionalRepeat', 'canonicalAttractionId', 'identityConsolidation', 'supportingAccess',
     'independentSubAttraction', 'ticketProductId', 'place_id', 'data_id', 'data_cid'}
+ACTIVITY_FIELDS |= {'fixed', 'userFixed', 'manualTime', 'userEdited', 'editProvenance',
+                    'notes', 'scheduledStartTime', 'scheduledEndTime', 'recommendedDurationMinutes',
+                    'planningOrigin', 'recommendationGenerationId'}
 
 
 class HistoryConflict(ReviewConflict):
@@ -118,7 +121,7 @@ def restore_patch(trip, version, *, scope='trip', day=None):
         raise HistoryConflict('Those supported fields already match this version. Nothing needs restoring.')
     merged = {**trip, **patch}
     if {'activities', 'startDate', 'endDate', 'destinationArea', 'travelPace',
-        'transportMode', 'confirmedIntercityTransfer'} & patch.keys():
+        'transportMode', 'confirmedIntercityTransfer', 'travelDayPreferences', 'planningBlocks'} & patch.keys():
         ids = [a.get('activityId') for a in merged['activities']]
         if any(not key for key in ids) or len(ids) != len(set(ids)):
             raise HistoryConflict('Historical activity identifiers are incomplete or duplicated; safe restoration is unavailable.')

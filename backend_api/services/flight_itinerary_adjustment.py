@@ -72,6 +72,7 @@ def _finite_env(name, default, minimum=0, maximum=720):
 def planning_assumptions():
     return {
         'arrivalClearanceMinutes': _finite_env('FLIGHT_ARRIVAL_CLEARANCE_MINUTES', 90),
+        'arrivalTransferMinutes': _finite_env('FLIGHT_ARRIVAL_TRANSFER_MINUTES', 90),
         'departureTransferMinutes': _finite_env('FLIGHT_DEPARTURE_TRANSFER_MINUTES', 90),
         'departureCheckinMinutes': _finite_env('FLIGHT_DEPARTURE_CHECKIN_MINUTES', 120),
         'timezone': 'Asia/Kuala_Lumpur',
@@ -189,9 +190,13 @@ def _availability(trip, boundaries, assumptions):
         return {'status': 'incompatible', 'reason': 'Flight arrives after the trip ends.', 'days': {}}
     if departure and (departure.date() < start_date or departure.date() > end_date):
         return {'status': 'incompatible', 'reason': 'Flight departs outside the trip dates.', 'days': {}}
-    pace = str(trip.get('travelPace') or trip.get('pace') or 'moderate').lower()
-    pace = 'relaxed' if 'relax' in pace else ('active' if 'active' in pace else 'moderate')
+    from sequence_contract.domain_functions import _pace_key
+    pace = _pace_key(trip)
     base_start, base_end = PACE_WINDOWS[pace]
+    rhythm=str(trip.get('sleepingType') or '').lower()
+    if rhythm=='early riser':base_start,base_end=max(450,base_start-60),base_end-60
+    elif rhythm=='night owl':base_start=max(base_start,660)
+    elif rhythm=='comfort-focused':base_start=max(base_start,600)
     days = {}
     for index in range((end_date - start_date).days + 1):
         current = start_date + timedelta(days=index)
@@ -219,7 +224,8 @@ def _availability(trip, boundaries, assumptions):
             value['source'] = 'outside_flight_stay'
         value['availableMinutes'] = max(0, value['endMinutes'] - value['startMinutes'])
         value['availabilityStatus'] = 'available' if value['endMinutes'] > value['startMinutes'] else 'unavailable'
-    return {'status': 'available', 'reason': '', 'days': days}
+    from services.flexible_planning import apply_preferences
+    return apply_preferences(trip, {'status': 'available', 'reason': '', 'days': days}, boundaries, assumptions)
 
 
 def _schedule_day(trip, activities, day_info):
@@ -235,6 +241,9 @@ def _schedule_day(trip, activities, day_info):
             if start is None or end is None or start < max(current, day_info['startMinutes']) or end > day_info['endMinutes']:
                 protected_conflicts.append({'activityId': activity.get('activityId'), 'message': 'Protected activity conflicts with flight availability; manual review required.', 'type': 'protected_activity'})
             opening = _activity_opening(activity, date.fromisoformat(day_info['date']))
+            from services.flexible_planning import reservations, skip_reservations
+            if start is not None and end is not None and skip_reservations(start,end-start,reservations(trip,day_info['dayNo'],activity.get('activityId')))!=start:
+                protected_conflicts.append({'activityId':activity.get('activityId'),'message':'Your fixed visit overlaps personal reserved time.','type':'protected_activity'})
             if opening['status'] == 'closed' or (opening.get('periods') and start is not None and end is not None
                     and not any(left <= start and end <= right for left, right in opening['periods'])):
                 protected_conflicts.append({'activityId': activity.get('activityId'), 'message': 'Protected visit conflicts with venue hours; manual review required.', 'type': 'protected_activity'})
@@ -244,6 +253,8 @@ def _schedule_day(trip, activities, day_info):
                 previous = activity
             continue
         bounded = dict(day_info)
+        from services.flexible_planning import reservations
+        bounded['reservedIntervals']=reservations(trip,day_info['dayNo'],activity.get('activityId'))
         following_fixed = next((row for row in activities[index + 1:] if _protected(row)), None)
         if following_fixed:
             fixed_start = _clock(following_fixed.get('scheduledStartTime') or following_fixed.get('timeSlot'))
@@ -282,6 +293,9 @@ def _schedule_candidate(activity, previous, current, day_info):
     if start < 13 * 60 + 30 and start + duration > 12 * 60 + 30:
         start = 13 * 60 + 30
     end = start + duration
+    from services.flexible_planning import skip_reservations
+    start = skip_reservations(start,duration,day_info.get('reservedIntervals',()))
+    end = start+duration
     if periods and not any(left <= start and end <= right for left, right in periods):
         return None, 'Could not fit within attraction opening hours after flight availability.'
     if end > day_info['endMinutes']:
@@ -302,12 +316,13 @@ def _schedule_candidate(activity, previous, current, day_info):
 def build_preview(trip, flight, owner, preview_id):
     assumptions = planning_assumptions()
     boundaries = flight_boundaries(trip, flight, assumptions)
+    boundaries['source']='selected_flight'
     availability = _availability(trip, boundaries, assumptions)
     current = deepcopy(trip)
     proposed = deepcopy(trip)
     changes = []
     newly_unscheduled = []
-    remaining_conflicts = []
+    remaining_conflicts = list(availability.get('preferenceConflicts') or [])
     outbound_segments, return_segments = _segments(flight)
     missing_boundary = (bool(return_segments) and (not boundaries.get('arrival') or not boundaries.get('departure'))) or (not return_segments and not boundaries.get('arrival') and not boundaries.get('departure'))
     if missing_boundary:
@@ -367,24 +382,36 @@ def build_preview(trip, flight, owner, preview_id):
         for day in current['dailySchedule']:
             day_rows = [row for row in proposed_activities if row.get('dayNo') == day.get('dayNo')]
             prices = [activity_pricing(row, current.get('travellerCount')) for row in day_rows]
+            blocks = [row for row in current.get('planningBlocks') or [] if row.get('dayNo') == day.get('dayNo')]
+            known = round(sum(price['effectiveCost'] for price in prices)
+                          + sum(float(row.get('estimatedCost') or 0) for row in blocks), 2)
+            unpriced = sum(bool(price['pricingIssues']) for price in prices)
+            unpriced_blocks = sum(row.get('estimatedCost') is None for row in blocks)
             days.append({**day, 'activities': deepcopy(day_rows),
-                         'estimatedCost': None if any(price['pricingIssues'] for price in prices) else
-                             round(sum(price['effectiveCost'] for price in prices), 2),
+                         'knownEstimatedCost': known,
+                         'unpricedActivityCount': unpriced, 'unpricedPersonalBlockCount': unpriced_blocks,
+                         'estimatedCost': None if unpriced or unpriced_blocks else known,
                          'estimatedMinutes': sum(_activity_duration(row)[0] + int(row.get('travelDurationMinutes') or 0)
                                                  for row in day_rows)})
         proposed['dailySchedule'] = days
     proposed['scheduledActivityCount'] = len(proposed.get('activities', []))
     proposed['unscheduledActivityCount'] = len(proposed.get('unscheduledSuggestions', []) or [])
     proposed['budgetEstimate'] = calculateBudget(proposed)
+    from services.flexible_planning import active, confirmation_fingerprint
+    if active(proposed) and not remaining_conflicts:
+        proposed['travelDayPreferences']={**(proposed.get('travelDayPreferences') or {}),'confirmedFor':confirmation_fingerprint(proposed)}
     current_fingerprint = fingerprint(current)
     flight_fingerprint = fingerprint(flight)
     no_window = not any(day['availableMinutes'] > 0 for day in availability['days'].values())
+    blocked_window = no_window and (bool(activities) or not active(proposed))
     reason = ('No sightseeing window remains between these flights after the configured airport buffers. Change the flight times or trip dates.'
-              if no_window else 'Protected activities conflict with the flight. Review the arrangement before adjusting.'
+              if blocked_window else 'Protected activities conflict with the flight. Review the arrangement before adjusting.'
               if remaining_conflicts else '')
+    if remaining_conflicts and availability.get('preferenceConflicts'):
+        reason=availability['preferenceConflicts'][0]['message']
     return {
         'previewId': preview_id, 'tripId': trip.get('id'), 'status': 'ready',
-        'canApply': not no_window and not remaining_conflicts,
+        'canApply': not blocked_window and not remaining_conflicts,
         'scheduleFeasibility': 'no_sightseeing_window' if no_window else 'protected_conflict' if remaining_conflicts else 'fits_flight_window',
         'reason': reason, 'assumptions': assumptions,
         'boundaries': {k: v for k, v in boundaries.items() if k not in {'arrival', 'departure'}},
@@ -396,10 +423,14 @@ def build_preview(trip, flight, owner, preview_id):
     }
 
 
-def create_preview(trip, flight, owner):
-    preview_key = f"{owner}:{trip.get('id')}:{fingerprint(flight)}:{fingerprint(trip)}"
+def create_preview(trip, flight, owner, planning=None, candidates=None):
+    preview_key = f"{owner}:{trip.get('id')}:{fingerprint(flight)}:{fingerprint(trip)}:{fingerprint(planning)}"
     preview_id = f"flight_adjustment_{hashlib.sha256(preview_key.encode()).hexdigest()[:24]}"
-    preview = build_preview(trip, flight, owner, preview_id)
+    if planning is not None:
+        from services.flexible_planning import build_planning_preview
+        preview = build_planning_preview(trip, flight, owner, preview_id, planning, candidates)
+    else:
+        preview = build_preview(trip, flight, owner, preview_id)
     with _LOCK:
         _PREVIEWS[preview_id] = deepcopy(preview)
     return preview
@@ -431,7 +462,13 @@ def apply_preview(preview_id, trip, flight, owner, update):
         proposed['flightAdjustmentReviewReason'] = None
         proposed['revision'] = int(trip.get('revision') or 0) + 1
         patch = {key: proposed[key] for key in ('activities', 'dailySchedule', 'unscheduledSuggestions', 'scheduledActivityCount', 'unscheduledActivityCount', 'budgetEstimate') if key in proposed}
+        if 'travelDayPreferences' in proposed:patch['travelDayPreferences']=proposed['travelDayPreferences']
         patch.update({key: proposed[key] for key in ('flightAdjustmentPreviewId', 'flightAdjustmentAppliedAt', 'flightAdjustmentAssumptions', 'flightAdjustmentStatus', 'flightAdjustmentFlightFingerprint', 'flightAdjustmentReviewReason', 'revision')})
+        if preview.get('kind')=='planning':
+            patch = {key:proposed[key] for key in ('planningMode','travelMode','travelDayPreferences','planningBlocks','activities',
+                'dailySchedule','unscheduledSuggestions','scheduledActivityCount','unscheduledActivityCount','budgetEstimate',
+                'nextActivitySeq','recommendationGenerationId') if key in proposed}
+            patch.update(planningAdjustmentPreviewId=preview_id,planningAdjustmentStatus='applied',revision=proposed['revision'])
         updated = update(trip.get('id'), patch)
         if updated is None:
             return None, 'The itinerary could not be saved.'

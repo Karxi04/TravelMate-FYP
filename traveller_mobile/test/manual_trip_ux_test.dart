@@ -402,6 +402,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Penang 3-Day Explorer'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('Fort Cornwallis'), 200,
+          scrollable: find.descendant(of: find.byKey(const ValueKey('trip-details-scroll')),
+              matching: find.byType(Scrollable)).first);
       expect(find.text('Fort Cornwallis'), findsOneWidget);
     });
 

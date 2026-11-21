@@ -911,6 +911,7 @@ void main() {
       await _pumpTrip(tester, historicTrip);
 
       expect(find.text('Minimal Historical Trip'), findsOneWidget);
+      await _scrollTarget(tester, find.text('Armenian Street Murals'));
       expect(find.text('Armenian Street Murals'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });

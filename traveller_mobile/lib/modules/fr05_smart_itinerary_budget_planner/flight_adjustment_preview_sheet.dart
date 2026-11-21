@@ -9,6 +9,8 @@ class FlightAdjustmentPreviewSheet extends StatefulWidget {
   final String tripId;
   final Map<String, dynamic>? initialPreview;
   final Map<String, dynamic> trip;
+  final Map<String,dynamic>? previewRequest;
+  final String? title;
 
   const FlightAdjustmentPreviewSheet({
     super.key,
@@ -16,6 +18,8 @@ class FlightAdjustmentPreviewSheet extends StatefulWidget {
     required this.tripId,
     this.initialPreview,
     required this.trip,
+    this.previewRequest,
+    this.title,
   });
 
   static Future<Map<String, dynamic>?> show({
@@ -24,6 +28,8 @@ class FlightAdjustmentPreviewSheet extends StatefulWidget {
     required String tripId,
     Map<String, dynamic>? initialPreview,
     required Map<String, dynamic> trip,
+    Map<String,dynamic>? previewRequest,
+    String? title,
   }) {
     return showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -34,6 +40,8 @@ class FlightAdjustmentPreviewSheet extends StatefulWidget {
         tripId: tripId,
         initialPreview: initialPreview,
         trip: trip,
+        previewRequest:previewRequest,
+        title:title,
       ),
     );
   }
@@ -71,6 +79,7 @@ class _FlightAdjustmentPreviewSheetState
     try {
       final data = await widget.api.post(
         '/api/fr5/itineraries/${widget.tripId}/flight-adjustment/preview',
+        widget.previewRequest,
       );
       if (!mounted) return;
       final rawPreview = data['preview'] is Map
@@ -115,6 +124,7 @@ class _FlightAdjustmentPreviewSheetState
     try {
       final data = await widget.api.post(
         '/api/fr5/itineraries/${widget.tripId}/flight-adjustment/preview',
+        widget.previewRequest,
       );
       if (!mounted) return;
       final rawPreview = data['preview'] is Map
@@ -466,8 +476,8 @@ class _FlightAdjustmentPreviewSheetState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Review flight-aware adjustment',
+                        Text(
+                          widget.title ?? 'Review flight-aware adjustment',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w900,
@@ -584,7 +594,9 @@ class _FlightAdjustmentPreviewSheetState
                             children: [
                               Text(
                                 canApply
-                                    ? 'TravelMate proposes changes only on the flight-affected dates. Your current trip stays saved until you apply this preview.'
+                                    ? (p['kind']=='planning'
+                                      ? 'Review the selected days, personal preferences and budget impact. Your current trip stays saved until you apply this preview.'
+                                      : 'TravelMate proposes changes only on the flight-affected dates. Your current trip stays saved until you apply this preview.')
                                     : (p?['reason'] ??
                                             'The flight data is incomplete for a safe adjustment.')
                                         .toString(),
@@ -596,7 +608,7 @@ class _FlightAdjustmentPreviewSheetState
                               ),
                               const SizedBox(height: 6),
                               const Text(
-                                'Availability uses Penang local time and standard planning assumptions.',
+                                'Availability uses Malaysia local time and planning assumptions. These are not official airline requirements.',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: InkWashColors.mutedInk,

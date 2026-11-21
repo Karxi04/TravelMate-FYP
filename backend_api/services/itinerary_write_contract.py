@@ -10,13 +10,14 @@ EDITABLE_FIELDS = {
     'title', 'destinationArea', 'destinationName', 'destinationCountry',
     'startDate', 'endDate', 'travellerCount', 'budgetLimit', 'originLocation',
     'travelMode', 'transportMode', 'accommodationChoice', 'carRentalChoice', 'travelPace',
+    'planningMode', 'travelDayPreferences', 'planningBlocks',
 }
 GENERATION_FIELDS = {'generationRequestId', 'recommendationGenerationId'}
 ERROR = 'Invalid or non-editable trip fields. Use the supported trip editing or selection actions.'
 ACTIVITY_TEXT = {
     'activityName', 'title', 'destinationId', 'address', 'state', 'city',
     'timeSlot', 'type', 'category', 'description', 'openingHours', 'durationSource',
-    'pricingUnit', 'costCategory', 'costProvenance', 'priceSourceUrl', 'priceVerifiedAt',
+    'pricingUnit', 'costCategory', 'costProvenance', 'priceSourceUrl', 'priceVerifiedAt', 'notes',
 }
 ACTIVITY_NUMBERS = {'estimatedCost', 'unitPrice', 'recommendedDurationMinutes', 'providerDurationMinutes'}
 IMAGE_FIELDS = {'thumbnail', 'image', 'imageUrl', 'mainPhoto', 'main_photo', 'photo',
@@ -58,7 +59,7 @@ def _image(value):
 
 def _activity(value):
     allowed = ACTIVITY_TEXT | ACTIVITY_NUMBERS | IMAGE_FIELDS | {
-        'dayNo', 'indoor', 'overlapsAllowance', 'gps_coordinates', 'gpsCoordinates', 'pricingEvidence',
+        'dayNo', 'indoor', 'overlapsAllowance', 'gps_coordinates', 'gpsCoordinates', 'pricingEvidence', 'fixed',
     }
     if not isinstance(value, dict) or not set(value) <= allowed:
         return False
@@ -69,7 +70,7 @@ def _activity(value):
             return False
         if key == 'dayNo' and not _number(item, positive=True, integer=True):
             return False
-        if key in {'indoor', 'overlapsAllowance'} and not isinstance(item, bool):
+        if key in {'indoor', 'overlapsAllowance', 'fixed'} and not isinstance(item, bool):
             return False
         if key in IMAGE_FIELDS and not _image(item):
             return False
@@ -93,12 +94,17 @@ def validate_trip_write(payload, *, update=False, generation=False):
     supplies its snapshot and amount. Other selections use their dedicated routes.
     """
     allowed = EDITABLE_FIELDS | ({'hotelBookingId', 'expectedItineraryRevision'} if update else {'activities'})
+    if not update and isinstance(payload,dict) and payload.get('planningMode') in ('smart','manual','assisted'):
+        allowed |= {'generationRequestId'}
     if generation:
         allowed |= GENERATION_FIELDS
     if not isinstance(payload, dict) or not payload or not set(payload) <= allowed:
         raise ValueError(ERROR)
     for key, value in payload.items():
-        if key == 'activities':
+        if key in {'planningMode', 'travelDayPreferences', 'planningBlocks'}:
+            if update:
+                raise ValueError('Preview and confirm changes in Planning settings.')
+        elif key == 'activities':
             if not isinstance(value, list) or not all(_activity(item) for item in value):
                 raise ValueError(ERROR)
         elif key == 'expectedItineraryRevision':
@@ -119,4 +125,6 @@ def validate_trip_write(payload, *, update=False, generation=False):
                'carRentalChoice': CAR_RENTAL_CHOICES}
     if any(key in payload and payload[key] not in options for key, options in choices.items()):
         raise ValueError(ERROR)
-    return dict(payload)
+    from services.flexible_planning import settings_patch
+    settings = {k:v for k,v in payload.items() if k in {'planningMode', 'travelDayPreferences', 'planningBlocks'}}
+    return {**payload, **settings_patch(settings, payload)} if settings else dict(payload)

@@ -6,6 +6,7 @@ import '../../widgets/travel_widgets.dart';
 import 'flight_details_screen.dart';
 import 'flight_airport_catalog.dart';
 import 'flight_replacement_sheet.dart';
+import '../fr05_smart_itinerary_budget_planner/planning_settings_sheet.dart';
 
 class FlightScreen extends StatefulWidget {
   final String? initialOutboundDate;
@@ -737,6 +738,28 @@ class _FlightScreenState extends State<FlightScreen> {
     );
   }
 
+  Future<Map<String,dynamic>?> _reviewTravelDays(Map<String,dynamic> result) async {
+    if(result['planningReviewRequired']!=true || !mounted)return null;
+    final accepted=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(title:const Text('Plan your travel days'),
+      content:const Text('Your flight is selected as a planning quote. Choose when to start and finish sightseeing, including rest or luggage time. Until reviewed, timing remains provisional.'),
+      actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Not now')),
+        FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Choose travel-day preferences'))]));
+    if(accepted!=true || !mounted)return null;
+    final original=result['itinerary'] is Map ? Map<String,dynamic>.from(result['itinerary']):<String,dynamic>{};
+    if(original['id']==null)return null;
+    dynamic data;
+    try {
+      data=await api.get('/api/fr5/itineraries/${original['id']}');
+    } catch (_) {
+      if(mounted)showError(context,'Your flight selection is saved. Planning settings could not be loaded; reopen them from Trip Details.');
+      return null;
+    }
+    final trip=data is Map && data['itinerary'] is Map ? Map<String,dynamic>.from(data['itinerary']):original;
+    if(data is Map && data['planning'] is Map){trip['planningAssumptions']=data['planning']['assumptions'];trip['planningAvailability']=data['planning']['availability'];trip['planningPersonalBlocks']=data['planning']['personalBlocks'];}
+    if(!mounted)return null;
+    return PlanningSettingsSheet.show(context,api,trip);
+  }
+
   Future<void> selectFlight(Map<String, dynamic> flight,
       {Map<String, dynamic>? returnOption}) async {
     if (selecting) return;
@@ -794,13 +817,14 @@ class _FlightScreenState extends State<FlightScreen> {
             : <String, dynamic>{};
         if ((created['id'] ?? '').toString().isNotEmpty) {
           try {
-            await api.post('/api/fr7/flights/select', {
+            final attached=await api.post('/api/fr7/flights/select', {
               'itineraryId': created['id'],
               'searchId': searchId,
               'optionId': idOf(flight),
               if (returnOption != null) 'returnOptionId': idOf(returnOption),
               'flight': flight,
             });
+            await _reviewTravelDays(Map<String,dynamic>.from(attached));
           } on ApiException catch (error) {
             if (error.code == 'flight_quote_expired') {
               if (mounted) {
@@ -979,6 +1003,8 @@ class _FlightScreenState extends State<FlightScreen> {
             'acknowledgeConflicts': true,
           });
         }
+        final updatedPlanning=await _reviewTravelDays(result);
+        if(updatedPlanning!=null)result={...result,'itinerary':updatedPlanning};
         if (mounted) {
           final budget = result['budget'] is Map
               ? Map<String, dynamic>.from(result['budget'] as Map)
