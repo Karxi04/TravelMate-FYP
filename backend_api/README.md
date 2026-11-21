@@ -200,6 +200,30 @@ pending row is forced approved. Existing local staging overlays and Administrato
 moderation apply, and the authorized Local Reviews list/summary includes both
 sources. No Firebase import or genuine projection is created by this supplement.
 
+The nationwide refinement adds 688 contributions in six regional JSON files under
+`services/data/evaluation_reviews`, with eight explicitly simulated profile groups.
+The curated combined set covers 100 attractions across all 16 states/territories;
+it does not bulk-promote the 400 identity records. New candidate records must have
+an existing canonical name, coordinates and pass the existing geographic/tourism
+checks. Unknown hours/admission remain unknown. The offline source still has five
+original Penang and two older regional identities without exact coordinates;
+these remain unchanged and are not newly promoted to pinned Trip stops.
+The new rows initially screen as 661 approved and 27 pending (seven or eight
+approved per newly covered attraction). Pending/hidden/removed rows do not score.
+Existing 104 Penang, 72 Penang supplement and 45 regional definitions are unchanged.
+The combined initial source totals are 909 contributions, 874 approved, before
+any effective Administrator overlay. These are evaluation fixtures, not customers.
+
+Normal evaluation generation now loads the resolved requested state/city/country
+scope instead of always loading Penang. It filters candidate identities and review
+contributions to the same scope, deduplicates review IDs, and only accesses the
+original private Penang dataset for Penang or Malaysia-wide requests. No live
+provider search, genuine snapshot write or profile mutation is introduced.
+Valid localities without curated evidence can use the normal verified cache
+fallback or return no results; they do not borrow another state's reviews.
+The bounded moderation-source cache covers the curated set and excludes empty
+lookups, preserving existing review revisions while browsing the larger dataset.
+
 Evaluation generations and More like this / Not for me learning are owner-scoped
 in process memory: up to 64 generations and 64 learning profiles, each expiring
 after one hour or process restart. They never write genuine feedback, preferences,

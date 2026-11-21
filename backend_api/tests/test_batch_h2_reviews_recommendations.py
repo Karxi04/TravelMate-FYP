@@ -6,6 +6,7 @@ import pytest
 
 from test_local_reviews import memory, headers
 from services.fyp_reviews import regional_demo_reviews, regional_demo_destinations
+from services import national_evaluation_reviews
 from services.review_service import approved_reviews, genuine_review
 from services.recommendation_discovery import is_planning_candidate
 from services.recommendation_taxonomy import experience_types
@@ -60,18 +61,21 @@ def test_regional_fixtures_are_screened_canonical_private_and_not_seeded(client,
     from modules.fr03_destination_search_information import routes
     rows = regional_demo_reviews(identity)
     before = deepcopy(rows)
-    assert len(rows) == 3 and all(row['synthetic'] and not genuine_review(row) for row in rows)
+    original = [row for row in rows if row['dataset'] == 'fyp-regional-v1']
+    assert len(original) == 3 and len(rows)==3+len(national_evaluation_reviews.sources(identity))
+    assert all(row['synthetic'] and not genuine_review(row) for row in rows)
     assert all(row['destinationId'] == identity for row in rows)
-    assert len(approved_reviews(rows)) == 3
+    visible = approved_reviews(rows)
+    assert len(visible)==3+len(approved_reviews(national_evaluation_reviews.sources(identity)))
     client.application.config['LOCAL_FYP_SAMPLE_REVIEWS'] = True
     with patch.object(routes, '_private_review_dataset') as firestore:
         body = client.get(f'/api/fr3/destinations/{identity}/ratings-reviews?view=unified',
                           headers={**headers(), 'X-TravelMate-Review-Context': 'fyp-v1'}).json
     firestore.assert_not_called()
-    assert body['result']['reviews'] == 3
-    assert body['result']['rating'] == round(sum(row['rating'] for row in rows) / 3, 1)
+    assert body['result']['reviews'] == len(visible)
+    assert body['result']['rating'] == round(sum(row['rating'] for row in visible) / len(visible), 1)
     assert body['result']['genuineSummary'] == {'rating': None, 'reviews': 0}
-    assert len(body['result']['user_reviews']) == 3
+    assert len(body['result']['user_reviews']) == len(visible)
     assert rows == before and not memory
 
 

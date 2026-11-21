@@ -5,7 +5,7 @@ from functools import lru_cache
 
 from firebase_service import get_db
 from services.review_service import ReviewConflict, review_id, review_revision, screen_submission, stage_review_decision
-from services import penang_evaluation_coverage
+from services import penang_evaluation_coverage, national_evaluation_reviews
 
 
 PROJECT = 'travelmate2-30a8a'
@@ -176,7 +176,7 @@ def regional_demo_destinations():
     return places
 
 
-@lru_cache(maxsize=64)
+@lru_cache(maxsize=128)
 def _regional_sources(identity):
     if identity in penang_evaluation_coverage.ATTRACTIONS:
         return penang_evaluation_coverage.sources(identity)
@@ -200,16 +200,21 @@ def _regional_sources(identity):
             'dataset': 'fyp-regional-v1', 'submittedAt': f'2026-11-{10 + index}T10:00:00+08:00',
             **screen_submission(comment, rating),
         })
-    return rows
+    return rows + national_evaluation_reviews.sources(identity)
 
 
 def regional_demo_reviews(identity):
     from services.review_staging import overlay_rows
+    # Empty lookups must not evict the bounded immutable moderation sources.
+    if (identity not in PENANG_DESTINATION_IDS and identity not in regional_demo_destinations()
+            and identity not in national_evaluation_reviews.destinations()):
+        return []
     return overlay_rows(_regional_sources(identity))
 
 
 def all_regional_reviews():
-    identities = dict.fromkeys([*regional_demo_destinations(), *penang_evaluation_coverage.ATTRACTIONS])
+    identities = dict.fromkeys([*regional_demo_destinations(), *penang_evaluation_coverage.ATTRACTIONS,
+                               *national_evaluation_reviews.destinations()])
     return [row for identity in identities for row in regional_demo_reviews(identity)]
 
 

@@ -47,10 +47,10 @@ def test_all12_have_profile_coverage_without_changing_formula_or_source_data(pen
     _, original=penang
     before=deepcopy(original)
     places,rows=demo.load_sources('Penang')
-    assert len(rows)==176 and sum(map(len,approved_contributions(rows,demonstration=True).values()))==168
+    assert len(rows)==224 and sum(map(len,approved_contributions(rows,demonstration=True).values()))==215
     for profile in demo.SIMULATED_PROFILES.values():
         result=demo.evaluate(profile,places,rows,evidence_mode='fyp_evaluation')
-        assert len(result)==12
+        assert len(result)==18 and coverage.ATTRACTIONS.keys() <= {r['destinationId'] for r in result}
         for item in result:
             assert item['collaborativeRatingCount']>0 and item['collaborativeConfidence']>0
             assert item['popularitySource']=='demonstration_approved_reviews'

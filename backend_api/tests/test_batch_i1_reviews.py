@@ -21,8 +21,8 @@ def test_private_combined_summary_matches_list_cards_and_moderation(client, memo
     path = '/api/fr3/destinations/local_batu_caves/ratings-reviews'
     for account in ['owner', 'second', 'new-account']:
         result = client.get(path, headers={**headers(account), **context}).json['result']
-        assert result['reviews'] == len(result['user_reviews']) == 4
-        assert result['rating'] == round(sum(row['rating'] for row in result['user_reviews']) / 4, 1)
+        assert result['reviews'] == len(result['user_reviews']) == 12
+        assert result['rating'] == round(sum(row['rating'] for row in result['user_reviews']) / 12, 1)
         assert result['genuineSummary'] == {'rating': 5, 'reviews': 1}
         summary = client.get('/api/fr3/local-ratings', headers={**headers(account), **context}).json['items']['local_batu_caves']
         assert (summary['rating'], summary['reviews']) == (result['rating'], result['reviews'])
@@ -38,7 +38,7 @@ def test_private_combined_summary_matches_list_cards_and_moderation(client, memo
     stale = client.post(admin + '/' + target['id'] + '/review?source=fyp_regional', headers=headers('admin'), json=payload)
     assert stale.status_code == 409
     fresh = client.get(path, headers={**headers(), **context}).json['result']
-    assert fresh['reviews'] == 3 and all(row['id'] != target['id'] for row in fresh['user_reviews'])
+    assert fresh['reviews'] == 11 and all(row['id'] != target['id'] for row in fresh['user_reviews'])
     card = client.get('/api/fr3/local-ratings', headers={**headers(), **context}).json['items']['local_batu_caves']
     assert (card['rating'], card['reviews']) == (fresh['rating'], fresh['reviews'])
     history = client.get(admin + '/' + target['id'] + '/history?source=fyp_regional', headers=headers('admin')).json['items']
@@ -53,13 +53,14 @@ def test_regional_coverage_is_canonical_and_overlay_read_only_by_default(client,
     places = regional_demo_destinations()
     assert len({row['state'] for row in places.values()} | {'Penang'}) == 16
     rows = [row for identity in places for row in regional_demo_reviews(identity)]
-    assert len(rows) == 45 and len({row['id'] for row in rows}) == 45
+    assert len(rows) == len({row['id'] for row in rows}) == 149
+    assert len([row for row in rows if row['dataset']=='fyp-regional-v1'])==45
     assert all(row['synthetic'] and row['destinationId'] in places for row in rows)
     url = '/api/fr13/feedback'
     listed = client.get(url + '?source=all', headers=headers('admin')).json['items']
     # private Penang reads are mocked away so this proves local-only regional behaviour.
     regional = [row for row in listed if row['reviewSource'] == 'fyp_regional']
-    assert len(regional) == 117 and all(row['moderationWritable'] is False for row in regional)
+    assert len(regional) == 805 and all(row['moderationWritable'] is False for row in regional)
     assert len([row for row in regional if row['dataset']=='fyp-regional-v1'])==45
     assert {row['id'] for row in rows} <= {row['id'] for row in regional}
     row = regional[0]

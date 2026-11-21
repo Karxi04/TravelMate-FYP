@@ -4,6 +4,7 @@ import 'package:travelmate_traveller/core/utils/recommendation_page.dart';
 import 'package:travelmate_traveller/modules/fr04_hybrid_recommendation/recommendation_screen.dart';
 import 'package:travelmate_traveller/theme/app_theme.dart';
 import 'package:travelmate_traveller/widgets/recommendation_card.dart';
+import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/activity_payload_helper.dart';
 import 'core_personalization_notifications_test.dart' show RecsApi;
 
 // Widget fixtures only; these values are never submitted as customer evidence.
@@ -47,6 +48,43 @@ class EvaluationRecsApi extends RecsApi {
 }
 
 void main() {
+  for(final place in [
+    ('local_my_perak_zoo_taiping','Zoo Taiping','Taiping, Perak, Malaysia'),
+    ('local_my_kuala_lumpur_aquaria_klcc','Aquaria KLCC','Kuala Lumpur, Malaysia'),
+    ('local_melaka_cruise','Melaka River Cruise','Melaka City, Melaka, Malaysia'),
+  ]) {
+    test('nationwide Trip payload preserves identity and excludes evaluation evidence: ${place.$2}',() {
+      final payload=buildActivityPayload({...evaluationRecommendation(),
+        'destinationId':place.$1,'title':place.$2,'address':place.$3,
+        'evidenceProvenance':{'synthetic':true,'source':'sample_community_evaluation'},
+        'demonstrationReviewSummary':{'rating':3.5,'reviews':8}});
+      expect(payload['destinationId'],place.$1);expect(payload['activityName'],place.$2);
+      for(final key in ['synthetic','recommendationEvidenceMode','evidenceProvenance','collaborativeScore',
+        'collaborativeRatingCount','demonstrationReviewSummary','popularityEvidence','scoreBreakdown']) {
+        expect(payload.containsKey(key),isFalse);
+      }
+    });
+    testWidgets('nationwide local evaluation card preserves badge, source and actions: ${place.$2}',(tester) async {
+      var views=0,adds=0;
+      await tester.pumpWidget(MaterialApp(theme:buildInkWashTheme(),home:Scaffold(body:SingleChildScrollView(
+        child:RecommendationCard(discovery:true,recommendation:{...evaluationRecommendation(),
+          'destinationId':place.$1,'title':place.$2,'address':place.$3,
+          'popularityEvidence':{'source':'demonstration_approved_reviews','rating':3.5,'reviewCount':8},
+          'demonstrationReviewSummary':{'source':'demonstration_approved_reviews','synthetic':true,'rating':3.5,'reviews':8}},
+          onView:()=>views++,onAddToTrip:()=>adds++)))));
+      await tester.pumpAndSettle();
+      expect(find.text(place.$2),findsOneWidget);expect(find.text('3.5 · 8 sample reviews'),findsOneWidget);
+      expect(find.textContaining('provider reviews'),findsNothing);
+      await tester.ensureVisible(find.text('View'));await tester.tap(find.text('View'));
+      await tester.ensureVisible(find.text('Add to trip'));await tester.tap(find.text('Add to trip'));
+      expect(views,1);expect(adds,1);
+      await tester.ensureVisible(find.text('Why this suggestion'));await tester.tap(find.text('Why this suggestion'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Qualifying evaluation contributors: 3'),findsOneWidget);
+      expect(find.textContaining('unweighted destination aggregate'),findsOneWidget);
+      expect(tester.takeException(),isNull);
+    });
+  }
   testWidgets('first evaluation visit does not generate before an explicit tap',(tester) async {
     final api=EvaluationRecsApi()..initialEmpty=true;
     await tester.pumpWidget(MaterialApp(theme:buildInkWashTheme(),home:RecommendationScreen(api:api,initialDestination:'Penang')));

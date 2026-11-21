@@ -103,7 +103,7 @@ def _evaluation_recommendations(options, *, generate=False):
     record = previous or session.snapshot(g.uid, scope_key=scope['scopeKey'])
     if generate:
         try:
-            places, rows = demonstration_recommendations.load_sources('Penang')
+            places, rows = demonstration_recommendations.load_sources(scope)
             candidates = merge_candidates(normalise([*DESTINATIONS, *places], scope, source='local_catalog'),
                                           cached_candidates(retrieveRecord, scope))[:150]
             candidates = [row for row in candidates if row.get('synthetic') is not True
@@ -112,6 +112,7 @@ def _evaluation_recommendations(options, *, generate=False):
         except (ValueError, GoogleAPICallError, TimeoutError):
             return jsonify(ok=False, error='Approved sample community evidence is unavailable. No genuine recommendations were changed.'), 503
         ranked = [{**_snapshot_item(row, 'fyp_evaluation'), **discovery_annotations(row, profile)} for row in ranked]
+        datasets = sorted({str(row.get('dataset') or 'penang_private') for row in rows})
         record = {'recommendationGenerationId': 'fyp-evaluation-' + uuid4().hex,
             'travellerId': g.uid, 'recommendationEvidenceMode': 'fyp_evaluation', 'synthetic': True,
             'generatedAt': utc_now_iso(), 'requestedDestination': area, 'canonicalDestinationScope': scope,
@@ -120,7 +121,8 @@ def _evaluation_recommendations(options, *, generate=False):
             'planningPreferences': planning_preferences(profile),
             'recommendationResults': ranked, 'source': 'fyp_evaluation', 'providerHasMore': False,
             'requestedInterestConcepts': sorted(preference_concepts(profile.get('interests') or [])),
-            'evidenceProvenance': {'source': 'sample_community_evaluation', 'dataset': 'penang_v1_v2+fyp-penang-coverage-v1',
+            'evidenceProvenance': {'source': 'sample_community_evaluation',
+                'dataset': '+'.join(datasets), 'datasets': datasets,
                 'localReviewPolicy': 'approved_local_first',
                 'synthetic': True, 'persistence': 'owner_scoped_process_memory',
                 'approvedContributions': sum(map(len, approved_contributions(rows, demonstration=True).values()))},
