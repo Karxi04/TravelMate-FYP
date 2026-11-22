@@ -23,6 +23,7 @@ from services.trip_budget_replan import budget_replan_options, preview_budget_re
 from services.itinerary_history import history_patch, history_metadata, HistoryConflict
 from sequence_contract.validators import validateItineraryInput, validateItineraryForSaving, validateSelectedDestination
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord, deleteRecord, claimRecord
+from services.recommendation_snapshot_resolver import SnapshotUnavailable
 from sequence_contract.domain_functions import (
     createItinerary, addActivity, removeActivity, rearrangeActivity, updateActivity,
     checkDestinationLimit, calculateBudget, compareBudget,
@@ -38,6 +39,12 @@ from services.flight_itinerary_adjustment import (
 )
 
 bp = Blueprint('fr05_itineraries', __name__, url_prefix='/api/fr5')
+
+
+@bp.errorhandler(SnapshotUnavailable)
+def snapshot_temporarily_unavailable(error):
+    return jsonify(ok=False,error=str(error),code='recommendation_evidence_unavailable',
+                   stage='snapshot_validation',retryable=True,requiresExplicitRegeneration=False),503
 
 
 @bp.errorhandler(HistoryConflict)
@@ -275,9 +282,12 @@ def _recommendation_snapshot(current, payload):
     if not generation_id:
         return None, None
 
-    snapshot = retrieveRecord('recommendation_snapshots', generation_id)
-    if not snapshot or snapshot.get('travellerId') != g.uid:
-        return None, 'Recommendation snapshot not found for this traveller'
+    from services.recommendation_snapshot_resolver import resolve_snapshot
+    snapshot, error = resolve_snapshot(generation_id, current.get('destinationArea'), retrieveRecord)
+    if error:
+        return None, error
+    if snapshot.get('recommendationEvidenceMode') == 'fyp_evaluation':
+        return snapshot, None  # The shared resolver already checked canonical scope.
 
     trip_area = _requested_area(current.get('destinationArea'))
     snapshot_area = _requested_area(
@@ -1180,7 +1190,6 @@ def budget_comparison(iid):
     ):
         budget = qualify_selection_budget(budget, selection)
     budget['comparison'] = compareBudget(budget)
-    updateRecord('itineraries', iid, {'budgetEstimate': budget})
     return jsonify({'ok': True, 'budget': budget})
 
 

@@ -65,18 +65,22 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   Map<String, dynamic>? expenseSnapshot;
   int _expenseLoad = 0;
   bool _expenseFailed = false;
+  bool _expenseSummaryLoading = false;
+  bool _budgetOpen = false;
 
   void _showExpenseSnapshot(Map<String, dynamic> snapshot) {
     if (!mounted || snapshot['overview'] is! Map) return;
     ++_expenseLoad;
     setState(() {
       expenseSnapshot = snapshot;
+      if(trip!=null && snapshot['budgetLimit'] is num)trip={...trip!,'budgetLimit':snapshot['budgetLimit']};
       _expenseFailed = false;
     });
   }
 
   Future<void> _loadExpenseSummary() async {
-    if (api.isStandalone) return;
+    if (api.isStandalone || _expenseSummaryLoading) return;
+    _expenseSummaryLoading=true;
     final version = ++_expenseLoad;
     try {
       final response = await api.get('/api/fr5/itineraries/${widget.tripId}/expenses');
@@ -89,6 +93,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
       if (mounted && version == _expenseLoad) {
         setState(() => _expenseFailed = true);
       }
+    } finally {
+      _expenseSummaryLoading=false;
     }
   }
 
@@ -1622,46 +1628,21 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   }
 
   Future<void> showBudget() async {
+    if(_budgetOpen || trip==null)return;
+    setState(()=>_budgetOpen=true);
+    var changed=false;
+    final cached=trip!['budgetEstimate'];
+    final model=BudgetModel.fromJson(cached is Map ? Map<String,dynamic>.from(cached):{},
+      fallbackLimit:double.tryParse('${trip!['budgetLimit']}') ?? 0);
     try {
-      final data =
-          await api.get('/api/fr5/itineraries/${widget.tripId}/budget');
-
-      if (data is! Map || data['ok'] == false || data['budget'] is! Map) {
-        throw StateError('Budget details are unavailable. Please try again.');
-      }
-      final budgetModel = BudgetModel.fromJson(
-        Map<String, dynamic>.from(data['budget'] as Map),
-        fallbackLimit: double.tryParse('${trip?['budgetLimit']}') ?? 0,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        if (trip != null) {
-          trip = {
-            ...trip!,
-            'budgetEstimate': Map<String, dynamic>.from(data['budget'] as Map),
-          };
-        }
-      });
-
-      await Navigator.push<void>(
-          context,
-          MaterialPageRoute(
-              builder: (context) => BudgetComparisonScreen(
-                    budget: budgetModel,
-                    userBudget: budgetModel.budgetLimit,
-                    tripId: widget.tripId,
-                    api: api,
-                    onApplied: (updated) {
-                      if (!mounted) return;
-                      setState(() => trip = updated);
-                    },
-                  )));
-      if (mounted) await load();
-    } catch (e) {
-      if (mounted) {
-        showError(context, e);
-      }
+      await Navigator.push<void>(context,MaterialPageRoute(builder:(_)=>BudgetComparisonScreen(
+        budget:model,userBudget:model.budgetLimit,tripId:widget.tripId,api:api,refreshOnOpen:true,
+        onBudgetLoaded:(budget){if(mounted && trip!=null)setState(()=>trip={...trip!,'budgetEstimate':budget});},
+        onApplied:(updated){changed=true;if(mounted)setState(()=>trip=updated);},
+      )));
+      if(mounted && changed)await load();
+    } finally {
+      if(mounted)setState(()=>_budgetOpen=false);
     }
   }
 
@@ -2465,7 +2446,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             onPressed: () => Navigator.push<void>(
               context,
               MaterialPageRoute(builder: (_) => TripExpensesScreen(
-                tripId: widget.tripId, api: api, onChanged: _showExpenseSnapshot,
+                tripId: widget.tripId, api: api, onChanged: _showExpenseSnapshot, initialData: expenseSnapshot,
               )),
             ),
           ),

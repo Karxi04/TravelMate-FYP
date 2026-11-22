@@ -1,6 +1,15 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
+Map<String,String> localReviewContextHeaders(String method,String path) {
+  final reviewRead=method=='GET' && (path=='/api/fr3/local-ratings' || path.startsWith('/api/fr3/destinations/'));
+  final recommendation={'/api/fr4/recommendations','/api/fr4/recommendations/generate',
+    '/api/fr4/preference-feedback','/api/fr4/recommendations/demonstration'}.contains(path);
+  final planning=method=='POST' && (path=='/api/fr5/personalised-trips/generate' ||
+    RegExp(r'^/api/fr5/itineraries/[^/]+/(generate|flight-adjustment/preview|lower-cost-alternatives(?:/(preview|apply))?)$').hasMatch(path));
+  return reviewRead || recommendation || planning ? {'X-TravelMate-Review-Context':'fyp-v1'}:{};
+}
+
 class ReviewContract {
   static int editsRemaining(Map review) {
     final used = review['editCount'] ?? 0;

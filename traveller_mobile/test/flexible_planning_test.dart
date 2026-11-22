@@ -4,6 +4,7 @@ import 'package:travelmate_traveller/services/api_service.dart';
 import 'package:travelmate_traveller/theme/app_theme.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/personalized_planning_screen.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/planning_settings_sheet.dart';
+import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/personal_block_editor.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/trip_details_screen.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/models/budget_model.dart';
 import 'package:travelmate_traveller/modules/fr05_smart_itinerary_budget_planner/budget_breakdown.dart';
@@ -125,7 +126,9 @@ Widget app(Widget child, {double scale = 1}) => MaterialApp(
     home: Scaffold(body: child));
 
 Future<void> reveal(WidgetTester tester, String text, {double delta = 180}) async {
-  final list = find.byType(PlanningSettingsSheet).evaluate().isNotEmpty
+  final list = find.byType(PersonalBlockEditor).evaluate().isNotEmpty
+      ? find.descendant(of:find.byType(PersonalBlockEditor),matching:find.byType(ListView)).first
+      : find.byType(PlanningSettingsSheet).evaluate().isNotEmpty
       ? find
           .descendant(
               of: find.byType(PlanningSettingsSheet),
@@ -235,15 +238,19 @@ void main() {
   testWidgets('personal block stays local until preview then explicit apply',
       (tester) async {
     final api = PlanningApi();
-    await tester.pumpWidget(app(PlanningSettingsSheet(
-        trip: api.trip, api: api, initialBlockType: 'rest', initialDay: 3)));
+    await tester.pumpWidget(app(Builder(builder:(c)=>TextButton(onPressed:()=>PlanningSettingsSheet.show(c,api,api.trip,initialBlockType:'rest',initialDay:3),child:const Text('Open personal planning')))));
+    await tester.tap(find.text('Open personal planning'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Title'),
+    await tester.enterText(find.widgetWithText(TextFormField, 'Title'),
         'Personal rest before the evening walk');
+    await tester.testTextInput.receiveAction(TextInputAction.done);await tester.pumpAndSettle();
+    await reveal(tester,'Optional details');await tester.tap(find.text('Optional details'));await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.widgetWithText(TextFormField, 'Estimated cost (RM) — Optional'),180,
+      scrollable:find.descendant(of:find.byType(PersonalBlockEditor),matching:find.byType(Scrollable)).first);
     await tester.enterText(
-        find.widgetWithText(TextField, 'Additional personal estimate (MYR)'),
+        find.widgetWithText(TextFormField, 'Estimated cost (RM) — Optional'),
         '10');
-    await tester.tap(find.text('Keep in preview'));
+    await tester.tap(find.text('Add to preview'));
     await tester.pumpAndSettle();
     expect(api.posts, isEmpty);
     await reveal(tester, 'Preview planning changes');
@@ -275,7 +282,7 @@ void main() {
       await reveal(tester, 'Daily sightseeing windows');
       await tester.tap(find.text('Daily sightseeing windows'));
       await tester.pumpAndSettle();
-      await reveal(tester, 'Day 5 · Travel-pace defaults');
+      await tester.scrollUntilVisible(find.textContaining('Day 5 ·'),180,scrollable:find.descendant(of:find.byType(PlanningSettingsSheet),matching:find.byType(Scrollable)).first);
       expect(tester.takeException(), isNull);
       await reveal(tester, 'Preview planning changes');
       expect(find.text('Preview planning changes'), findsOneWidget);
@@ -338,7 +345,7 @@ void main() {
       await reveal(tester, 'Daily sightseeing windows');
       await tester.tap(find.text('Daily sightseeing windows'));
       await tester.pumpAndSettle();
-      await reveal(tester, 'Day 10 · Travel-pace defaults');
+      await tester.scrollUntilVisible(find.textContaining('Day 10 ·'),180,scrollable:find.descendant(of:find.byType(PlanningSettingsSheet),matching:find.byType(Scrollable)).first);
       expect(tester.takeException(), isNull);
       expect(api.posts, isEmpty);
     });

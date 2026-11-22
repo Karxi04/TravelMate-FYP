@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
-import '../../services/transaction_request.dart';
+import 'personal_block_editor.dart';
 import '../../theme/app_theme.dart';
 import 'flight_adjustment_preview_sheet.dart';
 
@@ -143,192 +143,15 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
       };
 
   Future<void> editBlock([int? index]) async {
-    final old = index == null ? <String, dynamic>{} : blocks[index];
-    final title = TextEditingController(text: old['label']?.toString() ?? '');
-    final notes = TextEditingController(text: old['notes']?.toString() ?? '');
-    final location =
-        TextEditingController(text: old['location']?.toString() ?? '');
-    final cost =
-        TextEditingController(text: old['estimatedCost']?.toString() ?? '');
-    final duration =
-        TextEditingController(text: '${old['durationMinutes'] ?? 60}');
-    var day = old['dayNo'] as int? ?? widget.initialDay;
-    var kind = old['type']?.toString() ?? widget.initialBlockType ?? 'rest';
-    var boundary = old['boundary']?.toString() ??
-        ({'custom', 'hotel_luggage'}.contains(kind)
-            ? 'destination'
-            : 'personal');
-    String? start = old['startTime'], end = old['endTime'];
-    var locked = old['locked'] != false;
-    String? failure;
-    final result = await showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (dialogContext) => StatefulBuilder(
-            builder: (context, update) => AlertDialog(
-                    title: Text(index == null
-                        ? 'Add personal block'
-                        : 'Edit personal block'),
-                    scrollable: true,
-                    content: SizedBox(
-                        width: 420,
-                        child:
-                            Column(mainAxisSize: MainAxisSize.min, children: [
-                          TextField(
-                              controller: title,
-                              decoration:
-                                  const InputDecoration(labelText: 'Title'),
-                              maxLength: 160),
-                          DropdownButtonFormField<String>(
-                              initialValue: kind,
-                              isExpanded: true,
-                              itemHeight: null,
-                              decoration:
-                                  const InputDecoration(labelText: 'Type'),
-                              items: const {
-                                'rest': 'Rest',
-                                'meal': 'Meal break',
-                                'hotel_luggage': 'Hotel / luggage time',
-                                'free_time': 'Free time',
-                                'transfer': 'Personal transfer',
-                                'custom': 'Custom activity'
-                              }
-                                  .entries
-                                  .map((e) => DropdownMenuItem(
-                                      value: e.key, child: Text(e.value)))
-                                  .toList(),
-                              onChanged: (v) => update(() {
-                                    kind = v!;
-                                    boundary = {'custom', 'hotel_luggage'}
-                                            .contains(kind)
-                                        ? 'destination'
-                                        : 'personal';
-                                  })),
-                          DropdownButtonFormField<int>(
-                              initialValue: day,
-                              isExpanded: true,
-                              itemHeight: null,
-                              decoration:
-                                  const InputDecoration(labelText: 'Trip day'),
-                              items: [
-                                for (var n = 1; n <= count; n++)
-                                  DropdownMenuItem(
-                                      value: n, child: Text('Day $n'))
-                              ],
-                              onChanged: (v) => update(() => day = v!)),
-                          DropdownButtonFormField<String>(
-                              initialValue: boundary,
-                              isExpanded: true,
-                              itemHeight: null,
-                              decoration: const InputDecoration(
-                                  labelText: 'Time context'),
-                              items: const [
-                                DropdownMenuItem(
-                                    value: 'destination',
-                                    child: Text(
-                                        'At destination: apply travel bounds')),
-                                DropdownMenuItem(
-                                    value: 'personal',
-                                    child: Text(
-                                        'Personal / travel plan: unverified timing'))
-                              ],
-                              onChanged: (v) => update(() => boundary = v!)),
-                          Wrap(spacing: 8, runSpacing: 8, children: [
-                            OutlinedButton(
-                                onPressed: () async {
-                                  final v = await pick(start);
-                                  if (v != null) update(() => start = v);
-                                },
-                                child: Text('Start: ${start ?? 'Optional'}')),
-                            OutlinedButton(
-                                onPressed: () async {
-                                  final v = await pick(end);
-                                  if (v != null) update(() => end = v);
-                                },
-                                child: Text('End: ${end ?? 'Optional'}')),
-                            TextButton(
-                                onPressed: () => update(() {
-                                      start = null;
-                                      end = null;
-                                    }),
-                                child: const Text('Leave unscheduled')),
-                          ]),
-                          if (start == null && end == null)
-                            TextField(
-                                controller: duration,
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
-                                    labelText: 'Duration estimate (minutes)')),
-                          TextField(
-                              controller: location,
-                              decoration: const InputDecoration(
-                                  labelText: 'Location (optional)'),
-                              maxLength: 300),
-                          TextField(
-                              controller: notes,
-                              decoration: const InputDecoration(
-                                  labelText: 'Notes (optional)'),
-                              maxLines: 3,
-                              maxLength: 1000),
-                          TextField(
-                              controller: cost,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                      decimal: true),
-                              decoration: const InputDecoration(
-                                  labelText:
-                                      'Additional personal estimate (MYR)',
-                                  helperText:
-                                      'Optional. Blank means cost unknown.')),
-                          const Text(
-                              'This does not book a hotel or transfer. Do not repeat a hotel or flight amount already in your Budget. Untimed blocks do not reserve a time slot.'),
-                          SwitchListTile(
-                              contentPadding: EdgeInsets.zero,
-                              value: locked,
-                              onChanged: (v) => update(() => locked = v),
-                              title: const Text('Keep this block fixed')),
-                          if (failure != null)
-                            Text(failure!,
-                                style: const TextStyle(color: AppColors.error)),
-                        ])),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(dialogContext),
-                          child: const Text('Cancel')),
-                      FilledButton(
-                          onPressed: () {
-                            final amount = double.tryParse(cost.text),
-                                minutes = int.tryParse(duration.text);
-                            if (title.text.trim().isEmpty ||
-                                cost.text.trim().isNotEmpty &&
-                                    (amount == null ||
-                                        !amount.isFinite ||
-                                        amount < 0) ||
-                                (start == null) != (end == null) ||
-                                start != null && start!.compareTo(end!) >= 0 ||
-                                start == null &&
-                                    (minutes == null || minutes < 1)) {
-                              update(() => failure =
-                                  'Enter a title, valid time range or duration, and non-negative cost.');
-                              return;
-                            }
-                            Navigator.pop(dialogContext, {
-                              'blockId': old['blockId'] ??
-                                  newTransactionAttemptId('personal_block'),
-                              'type': kind,
-                              'label': title.text.trim(),
-                              'dayNo': day,
-                              if (start != null) 'startTime': start,
-                              if (end != null) 'endTime': end,
-                              if (start == null) 'durationMinutes': minutes,
-                              'location': location.text.trim(),
-                              'notes': notes.text.trim(),
-                              'locked': locked,
-                              if (amount != null) 'estimatedCost': amount,
-                              'boundary': boundary
-                            });
-                          },
-                          child: const Text('Keep in preview'))
-                    ])));
+    final result = await Navigator.push<Map<String, dynamic>>(
+        context,
+        MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => PersonalBlockEditor(
+                initial: index == null ? null : blocks[index],
+                dayCount: count,
+                initialDay: widget.initialDay,
+                initialType: widget.initialBlockType ?? 'rest')));
     if (result != null && mounted)
       setState(() {
         blocksTouched = true;
@@ -338,10 +161,129 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
           blocks[index] = result;
         }
       });
-    // Dialog route removal may animate while its text fields are still mounted.
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    for (final controller in [title, notes, location, cost, duration])
-      controller.dispose();
+  }
+
+  String dayLabel(int day) {
+    final date =
+        DateTime.parse(widget.trip['startDate'].toString().substring(0, 10))
+            .add(Duration(days: day - 1));
+    final flight = map(widget.trip['selectedFlight']);
+    final outbound = rows(flight['outboundSegments']),
+        returns = rows(flight['returnSegments']);
+    String datePart(dynamic value) =>
+        value.toString().split('T').first.split(' ').first;
+    final arrivalDate = datePart(
+        (outbound.isEmpty ? null : outbound.last['arrivalDate']) ??
+            transport['arrivalDate'] ??
+            widget.trip['startDate']);
+    final departureDate = datePart(
+        (returns.isEmpty ? null : returns.first['departureDate']) ??
+            transport['departureDate'] ??
+            widget.trip['endDate']);
+    final dayDate = date.toIso8601String().substring(0, 10);
+    final role = dayDate == arrivalDate && dayDate == departureDate
+        ? 'Arrival / departure day'
+        : dayDate == arrivalDate
+            ? 'Arrival day'
+            : dayDate == departureDate
+                ? 'Departure day'
+                : dayDate.compareTo(arrivalDate) < 0 ||
+                        dayDate.compareTo(departureDate) > 0
+                    ? 'Travel day'
+                    : 'Full day';
+    return 'Day $day · ${MaterialLocalizations.of(context).formatMediumDate(date)} ${date.year} · $role';
+  }
+
+  Future<void> bulkHours() async {
+    final selected = <int>{for (var n = 2; n < count; n++) n};
+    var start = '09:00', end = '18:00';
+    String? failure;
+    final result = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (c) => StatefulBuilder(
+            builder: (c, update) => AlertDialog(
+                  title: const Text('Set hours for multiple days'),
+                  scrollable: true,
+                  content: SizedBox(
+                      width: 420,
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Wrap(spacing: 8, runSpacing: 8, children: [
+                          TextButton(
+                              onPressed: () => update(() {
+                                    selected.clear();
+                                    selected.addAll(
+                                        [for (var n = 2; n < count; n++) n]);
+                                  }),
+                              child: const Text('Select all middle days')),
+                          TextButton(
+                              onPressed: () => update(selected.clear),
+                              child: const Text('Clear selection'))
+                        ]),
+                        for (var n = 1; n <= count; n++)
+                          CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(dayLabel(n)),
+                              value: selected.contains(n),
+                              onChanged: (v) => update(() {
+                                    if (v == true) {
+                                      selected.add(n);
+                                    } else {
+                                      selected.remove(n);
+                                    }
+                                  })),
+                        Wrap(spacing: 8, runSpacing: 8, children: [
+                          OutlinedButton(
+                              onPressed: () async {
+                                final v = await pick(start);
+                                if (v != null) update(() => start = v);
+                              },
+                              child: Text('Start: $start')),
+                          OutlinedButton(
+                              onPressed: () async {
+                                final v = await pick(end);
+                                if (v != null) update(() => end = v);
+                              },
+                              child: Text('End: $end'))
+                        ]),
+                        Text(
+                            'Days ${selected.toList()..sort()} will use $start–$end for sightseeing. Unselected days stay unchanged. Travel bounds still apply.'),
+                        if (failure != null)
+                          Text(failure!,
+                              style: const TextStyle(color: AppColors.error)),
+                      ])),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(c),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        onPressed: () {
+                          if (selected.isEmpty || start.compareTo(end) >= 0) {
+                            update(() => failure =
+                                'Choose days and a valid time range.');
+                            return;
+                          }
+                          Navigator.pop(c, {
+                            'days': selected.toList(),
+                            'startTime': start,
+                            'endTime': end
+                          });
+                        },
+                        child: const Text('Apply to draft'))
+                  ],
+                )));
+    if (result != null && mounted)
+      setState(() {
+        preferencesTouched = true;
+        for (final day in result['days'] as List) {
+          days.removeWhere((row) => row['dayNo'] == day);
+          days.add({
+            'dayNo': day,
+            'startTime': result['startTime'],
+            'endTime': result['endTime'],
+            'restDay': false
+          });
+        }
+      });
   }
 
   Future<void> preview() async {
@@ -570,6 +512,9 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                 ExpansionTile(
                     title: const Text('Daily sightseeing windows'),
                     children: [
+                      TextButton(
+                          onPressed: busy ? null : bulkHours,
+                          child: const Text('Set hours for multiple days')),
                       for (var day = 1; day <= count; day++)
                         Builder(builder: (context) {
                           final override = days
@@ -588,14 +533,16 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                           }
 
                           return Padding(
+                              key: ValueKey('planning-day-$day'),
                               padding: const EdgeInsets.only(bottom: 12),
                               child: Column(
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
                                   children: [
                                     Text(
-                                        'Day $day · ${override == null ? 'Travel-pace defaults' : 'Custom window'}'),
+                                        '${dayLabel(day)} · ${override == null ? 'Travel-pace defaults' : 'Custom window'}'),
                                     SwitchListTile(
+                                        key: ValueKey('rest-day-$day'),
                                         contentPadding: EdgeInsets.zero,
                                         title: const Text('Rest day'),
                                         value: override?['restDay'] == true,
@@ -626,23 +573,6 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                                                     row['dayNo'] == day);
                                               }),
                                           child: const Text('Use default')),
-                                      if (count > 2 && override != null)
-                                        TextButton(
-                                            onPressed: () => setState(() {
-                                                  preferencesTouched = true;
-                                                  for (var n = 2;
-                                                      n < count;
-                                                      n++) {
-                                                    days.removeWhere((row) =>
-                                                        row['dayNo'] == n);
-                                                    days.add({
-                                                      ...override,
-                                                      'dayNo': n
-                                                    });
-                                                  }
-                                                }),
-                                            child: const Text(
-                                                'Apply to middle days')),
                                     ]),
                                   ]));
                         }),

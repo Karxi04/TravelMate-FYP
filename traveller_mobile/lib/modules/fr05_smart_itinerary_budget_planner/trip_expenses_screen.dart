@@ -6,7 +6,12 @@ import '../../widgets/ink_card.dart';
 import '../../widgets/travel_widgets.dart';
 
 const _categories = [
-  'Food', 'Transportation', 'Accommodation', 'Activities', 'Shopping', 'Other',
+  'Food',
+  'Transportation',
+  'Accommodation',
+  'Activities',
+  'Shopping',
+  'Other',
 ];
 
 String _money(num minor) => (minor / 100).toStringAsFixed(2);
@@ -15,8 +20,14 @@ class TripExpensesScreen extends StatefulWidget {
   final String tripId;
   final ApiService api;
   final ValueChanged<Map<String, dynamic>>? onChanged;
+  final Map<String, dynamic>? initialData;
 
-  const TripExpensesScreen({super.key, required this.tripId, required this.api, this.onChanged});
+  const TripExpensesScreen(
+      {super.key,
+      required this.tripId,
+      required this.api,
+      this.onChanged,
+      this.initialData});
 
   @override
   State<TripExpensesScreen> createState() => _TripExpensesScreenState();
@@ -25,55 +36,95 @@ class TripExpensesScreen extends StatefulWidget {
 class _TripExpensesScreenState extends State<TripExpensesScreen> {
   Map<String, dynamic>? data;
   String? error;
-  bool busy = false;
+  bool reading = false, saving = false, unknownOutcome = false;
+  int requestVersion = 0;
+  bool get busy => reading || saving;
 
   String get path => '/api/fr5/itineraries/${widget.tripId}/expenses';
 
   @override
   void initState() {
     super.initState();
+    data = widget.initialData;
     load();
   }
 
+  @override
+  void didUpdateWidget(covariant TripExpensesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tripId != widget.tripId || oldWidget.api != widget.api) {
+      requestVersion++;
+      data = widget.initialData;
+      reading = false;
+      saving = false;
+      error = null;
+      unknownOutcome = false;
+      load();
+    }
+  }
+
   Future<void> load() async {
+    if (reading || saving) return;
+    final version = ++requestVersion;
     setState(() {
-      busy = true;
+      reading = true;
       error = null;
     });
     try {
       final response = await widget.api.get(path);
-      if (mounted) {
-        final updated = Map<String, dynamic>.from(response as Map);
-        setState(() => data = updated);
-        widget.onChanged?.call(updated);
-      }
+      if (!mounted || version != requestVersion) return;
+      if (response is! Map || response['overview'] is! Map)
+        throw StateError('Invalid expense response');
+      final updated = Map<String, dynamic>.from(response);
+      setState(() {
+        data = updated;
+        unknownOutcome = false;
+      });
+      widget.onChanged?.call(updated);
     } catch (e) {
-      if (mounted) setState(() => error = userFacingApiError(e));
+      if (mounted && version == requestVersion)
+        setState(() => error = userFacingApiError(e));
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted && version == requestVersion) setState(() => reading = false);
     }
   }
 
   Future<void> change(Map<String, dynamic> action) async {
-    if (busy || data == null) return;
+    if (busy || unknownOutcome || data == null) return;
+    final version = ++requestVersion;
     final revision = data!['revision'];
-    setState(() => busy = true);
+    final target = path;
+    var reload = false;
+    setState(() {
+      saving = true;
+      error = null;
+    });
     try {
-      final response = await widget.api.patch(path, {
-        ...action,
-        'expectedRevision': revision,
-      });
-      if (mounted) {
-        final updated = Map<String, dynamic>.from(response as Map);
-        setState(() => data = updated);
-        widget.onChanged?.call(updated);
-      }
+      final response = await widget.api
+          .patch(target, {...action, 'expectedRevision': revision});
+      if (!mounted || version != requestVersion) return;
+      final updated = Map<String, dynamic>.from(response as Map);
+      setState(() => data = updated);
+      widget.onChanged?.call(updated);
     } catch (e) {
-      if (!mounted) return;
-      if (e is ApiException && e.statusCode == 409) await load();
-      if (mounted) showError(context, e);
+      if (!mounted || version != requestVersion) return;
+      reload = e is ApiException && e.statusCode == 409;
+      final uncertain = isBackendConnectionFailure(e) ||
+          e is ApiException && e.statusCode >= 500;
+      setState(() {
+        unknownOutcome = uncertain;
+        error = uncertain
+            ? 'The save result is unconfirmed. Refresh before editing again; the request will not be sent again automatically.'
+            : userFacingApiError(e);
+      });
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted && version == requestVersion) setState(() => saving = false);
+    }
+    if (reload && mounted) {
+      await load();
+      if (mounted && error == null)
+        setState(() => error =
+            'These expenses changed. Review the latest records before saving again.');
     }
   }
 
@@ -82,8 +133,10 @@ class _TripExpensesScreenState extends State<TripExpensesScreen> {
       context: context,
       builder: (_) => _ExpenseDialog(
         row: row,
-        startDate: DateTime.tryParse('${data?['startDate'] ?? ''}'.split('T').first),
-        endDate: DateTime.tryParse('${data?['endDate'] ?? ''}'.split('T').first),
+        startDate:
+            DateTime.tryParse('${data?['startDate'] ?? ''}'.split('T').first),
+        endDate:
+            DateTime.tryParse('${data?['endDate'] ?? ''}'.split('T').first),
       ),
     );
     if (!mounted || expense == null) return;
@@ -101,8 +154,12 @@ class _TripExpensesScreenState extends State<TripExpensesScreen> {
         title: const Text('Delete expense?'),
         content: Text('${row['name']} will be removed from this trip.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete')),
         ],
       ),
     );
@@ -130,38 +187,64 @@ class _TripExpensesScreenState extends State<TripExpensesScreen> {
     final snapshot = data;
     final overview = snapshot?['overview'] as Map?;
     final entries = (snapshot?['expenses'] as List? ?? []).whereType<Map>();
-    final unknown = (overview?['unknownCategories'] as List? ?? const []).join(', ');
+    final unknown =
+        (overview?['unknownCategories'] as List? ?? const []).join(', ');
     final balance = overview?['balanceAfterRecordedActualMinor'] as num?;
     return Scaffold(
-      appBar: AppBar(title: const Text('Trip expenses')),
+      appBar: AppBar(title: const Text('Trip expenses'), actions: [
+        IconButton(
+            tooltip: 'Refresh expenses',
+            onPressed: busy ? null : load,
+            icon: const Icon(Icons.refresh))
+      ]),
       body: overview == null
           ? error != null
-              ? AppErrorState(title: 'Budget unavailable', message: error!, onRetry: load)
+              ? AppErrorState(
+                  title: 'Budget unavailable', message: error!, onRetry: load)
               : const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: load,
               child: ListView(
                 padding: const EdgeInsets.all(AppSpacing.lg),
+                physics: const AlwaysScrollableScrollPhysics(),
                 children: [
                   if (busy) const LinearProgressIndicator(),
-                  if (error != null) Text(error!),
+                  if (error != null || unknownOutcome) ...[
+                    Text(error ??
+                        'Refresh to confirm the previous save result.'),
+                    TextButton(
+                        onPressed: busy ? null : load,
+                        child: const Text('Retry refresh'))
+                  ],
                   InkCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Budget limit · MYR ${_money(overview['budgetLimitMinor'] as num)}'),
-                        Text('System estimate · MYR ${_money(overview['systemEstimateMinor'] as num)}'),
-                        Text('Verified payments · MYR ${_money(overview['verifiedMinor'] as num)}'),
+                        Text(
+                            'Budget limit · MYR ${_money(overview['budgetLimitMinor'] as num)}'),
+                        Text(
+                            'System estimate · MYR ${_money(overview['systemEstimateMinor'] as num)}'),
+                        Text(
+                            'Verified payments · MYR ${_money(overview['verifiedMinor'] as num)}'),
                         if ((overview['committedHotelMinor'] as num? ?? 0) > 0)
-                          Text('Confirmed hotel cost · MYR ${_money(overview['committedHotelMinor'] as num)}'),
-                        Text('Planned expenses · MYR ${_money(overview['plannedMinor'] as num)}'),
-                        Text('Recorded actual expenses · MYR ${_money(overview['actualMinor'] as num)}'),
+                          Text(
+                              'Confirmed hotel cost · MYR ${_money(overview['committedHotelMinor'] as num)}'),
+                        Text(
+                            'Planned expenses · MYR ${_money(overview['plannedMinor'] as num)}'),
+                        Text(
+                            'Recorded actual expenses · MYR ${_money(overview['actualMinor'] as num)}'),
                         if (balance != null)
-                          Text('Balance after recorded actuals only · MYR ${_money(balance)}'),
-                        if (unknown.isNotEmpty) Text('Unpriced or outside the estimate · $unknown'),
+                          Text(
+                              'Balance after recorded actuals only · MYR ${_money(balance)}'),
+                        if (unknown.isNotEmpty)
+                          Text('Unpriced or outside the estimate · $unknown'),
                         const SizedBox(height: AppSpacing.xs),
-                        const Text('Your entries are self-reported. Estimates, payments and entries can overlap, so their totals are shown separately.'),
-                        TextButton(onPressed: busy ? null : editLimit, child: const Text('Edit budget limit')),
+                        const Text(
+                            'Your entries are self-reported. Estimates, payments and entries can overlap, so their totals are shown separately.'),
+                        TextButton(
+                            onPressed:
+                                busy || unknownOutcome ? null : editLimit,
+                            child: const Text('Edit budget limit')),
                       ],
                     ),
                   ),
@@ -169,22 +252,25 @@ class _TripExpensesScreenState extends State<TripExpensesScreen> {
                   SecondaryButton(
                     label: 'Add expense',
                     icon: Icons.add,
-                    onPressed: busy ? null : () => edit(null),
+                    onPressed: busy || unknownOutcome ? null : () => edit(null),
                   ),
                   if (entries.isEmpty) const Text('No expenses recorded.'),
                   for (final row in entries)
                     ListTile(
-                      title: Text('${row['name']} · MYR ${_money(row['amountMinor'] as num)}'),
+                      title: Text(
+                          '${row['name']} · MYR ${_money(row['amountMinor'] as num)}'),
                       subtitle: Text([
                         '${row['category']} · ${row['type'] == 'actual' ? 'Actual' : 'Planned'}',
                         if (row['date'] != null) '${row['date']}',
-                        if ((row['description'] as String? ?? '').isNotEmpty) '${row['description']}',
+                        if ((row['description'] as String? ?? '').isNotEmpty)
+                          '${row['description']}',
                       ].join('\n')),
-                      onTap: busy ? null : () => edit(row),
+                      onTap: busy || unknownOutcome ? null : () => edit(row),
                       trailing: IconButton(
                         tooltip: 'Delete ${row['name']}',
                         icon: const Icon(Icons.delete_outline),
-                        onPressed: busy ? null : () => delete(row),
+                        onPressed:
+                            busy || unknownOutcome ? null : () => delete(row),
                       ),
                     ),
                 ],

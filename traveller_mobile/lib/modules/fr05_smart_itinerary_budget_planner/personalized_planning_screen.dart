@@ -252,11 +252,13 @@ class _PersonalizedPlanningScreenState
     });
   }
 
+  int _suggestionRequest=0;
   Future<void> _loadSuggestions({required bool regenerate}) async {
     if (suggestionsLoading && regenerate) return;
+    final request=++_suggestionRequest;
     final requestedDestination = destination.text.trim();
     if (requestedDestination.isEmpty) {
-      if (mounted) {
+      if (mounted && request==_suggestionRequest) {
         setState(() {
           touchedFields.add('destination');
           suggestionsLoading = false;
@@ -282,7 +284,7 @@ class _PersonalizedPlanningScreenState
               'destinationArea': requestedDestination,
               'purpose': 'trip_planning',
             });
-      if (!mounted || data is! Map) return;
+      if (!mounted || request!=_suggestionRequest || _normaliseDestination(requestedDestination)!=_normaliseDestination(destination.text) || data is! Map) return;
 
       final items = (data['recommendations'] as List? ?? const [])
           .whereType<Map>()
@@ -309,27 +311,29 @@ class _PersonalizedPlanningScreenState
             (data['source'] ?? snapshot['source'] ?? '').toString().trim();
         snapshotConflict = false;
         suggestionsError = data['stale'] == true
-            ? 'Your preferences changed. Refresh recommendations to use them for this trip.'
+            ? data['staleReason']=='review_evidence_changed'
+                ? 'Local review evidence changed. Refresh suggestions for this trip.'
+                : 'Your preferences changed. Refresh recommendations to use them for this trip.'
             : items.isEmpty
                 ? 'No saved suggestions are available for this destination yet.'
                 : null;
       });
     } on ApiException catch (error) {
-      if (!mounted) return;
+      if (!mounted || request!=_suggestionRequest) return;
       setState(() {
         suggestionsError = error.statusCode == 404
             ? 'No saved suggestions are available for this destination yet.'
             : 'We could not load suggestions for this destination.';
       });
     } catch (_) {
-      if (mounted) {
+      if (mounted && request==_suggestionRequest) {
         setState(() {
           suggestionsError =
               'We could not load suggestions for this destination.';
         });
       }
     } finally {
-      if (mounted) setState(() => suggestionsLoading = false);
+      if (mounted && request==_suggestionRequest) setState(() => suggestionsLoading = false);
     }
   }
 
