@@ -220,7 +220,7 @@ def test_readiness_components_and_completion_are_derived_from_purchased_snapshot
     assert result['requiredCount'] == required
     assert result['canMarkReady'] is (required == 0)
     for service in record['services'].values():
-        service.update(status='confirmed',reference='genuine-fixture-ref',providerName='Synthetic Fleet',provenance='operator_attested',confirmedBy='op1',confirmedAt='2026-11-08T10:00:00Z')
+        service.update(status='confirmed',reference='genuine-fixture-ref',supplierName='Actual test hotel',providerName='Synthetic Fleet',provenance='operator_attested',confirmedBy='op1',confirmedAt='2026-11-08T10:00:00Z')
     assert fulfillment_readiness(order,requirements,record,True)['canMarkReady']
     assert not fulfillment_readiness(order,requirements,record,False)['canMarkReady']
 

@@ -1,22 +1,27 @@
 # Operator arrangement attestations
 
-Transportation and Guide / Activities no longer require an external booking,
-licence or voucher reference. The normal Operator forms require the actual
-provider/fleet or guide/attraction authority and an unchecked confirmation that
-the arrangement is in place. Optional notes and existing Save actions remain.
-Accommodation still requires its existing reference; its validation is unchanged.
+All three services accept reference-free operator attestations. The normal forms
+require the actual Accommodation provider/hotel, Transport provider/fleet or
+Guide/attraction authority and an unchecked confirmation that the arrangement is
+in place. Optional notes and existing Save actions remain. Purchased brochure
+specifications and Administrator-reviewed entitlements remain read-only and
+separate from the actual Accommodation provider field. A brochure placeholder
+such as "To Be Confirmed – Teluk Bahang / Batu Ferringhi Area" is never prefilled
+as the actual hotel and cannot satisfy Backend readiness. Obvious placeholders,
+empty/generic names and non-meaningful names are rejected; this does not verify
+that a property or supplier reservation exists.
 
-The same existing FR12 POST accepts `attestation: "confirmed"` for Transport and
-Guide / Activities. The Backend requires it even if an external reference is
+The same existing FR12 POST accepts `attestation: "confirmed"` for all three
+services. The Backend requires it even if an external reference is
 supplied, validates actual arrangement details, and sets `confirmedBy`,
 `confirmedAt` and `provenance: "operator_attested"` itself. Client overrides of
 audit/financial fields remain rejected. Historical references are retained when
-omitted or blank; edits keep the prior attestation in `attestationHistory`.
+omitted or blank for all services; edits keep the prior attestation in `attestationHistory`.
 Identical confirmed requests remain idempotent. No historical records are
 migrated and no booking/reference/reservation is invented.
 
-Readiness uses the same evaluated service components as the action gate. Only
-Accommodation requires a reference. Transport requires its actual fleet/provider;
+Readiness uses the same evaluated service components as the action gate.
+Accommodation requires a meaningful actual provider/hotel; Transport its actual fleet/provider;
 Guide / Activities requires its actual authority. Required arrangements also
 need confirmed status, operator provenance, actor and confirmation time.
 Uncertain purchased requirements or integrity errors require review. Payment,
@@ -31,6 +36,23 @@ components rather than a raw `confirmed` flag. Saved Arrangements includes
 reference-free attestations, actual provider/authority, status, confirmation time,
 provenance, optional notes and any historical reference. Operator attestation
 never claims independent supplier verification.
+
+## Persistent confirmation display
+
+Each complete service card shows a green **✓ Arrangement Confirmed** indicator
+from its authoritative readiness component, together with the saved provider,
+confirmation time, notes and operator-attested disclosure. The editable required
+checkbox remains separate and unchecked after reopening. Changing provider, notes
+or other form details clears a checked editable confirmation, so the updated
+arrangement requires an explicit fresh attestation. The input handler never
+submits or performs requests, and refreshing the page is a GET only.
+
+Accommodation notes can retain room allocation such as two rooms for three
+travellers; no room or supplier reservation is invented or automatically assigned.
+Historical Accommodation references remain visible when present; there is no
+reference input and no artificial reference is generated. Final Ready still
+requires the original explicit action and all payment/ownership/entitlement,
+protected-order and linked-Trip safeguards.
 
 ## Isolated demonstration data
 
@@ -49,10 +71,12 @@ authorization. No production records need changing to demonstrate the fixture.
 
 ## Acceptance after an authorized rollout
 
-On a disposable authorized booking, verify both removed inputs are absent and
-Accommodation still has its reference. Try missing provider and unchecked
+On a disposable authorized booking, verify all reference inputs are absent.
+Try missing/placeholder Accommodation provider and unchecked
 confirmation; save valid reference-free attestations, reopen and inspect history.
 Confirm unpaid/foreign/uncertain/incomplete orders stay blocked. Mark a complete
 paid booking ready and compare list/detail badges, filters and counts. Verify a
-historical reference remains visible after editing its provider or notes.
+historical reference remains visible after editing its provider or notes. Confirm
+one saved green indicator per service, while every editable confirmation remains
+unchecked and is cleared again after changing details.
 Do not use existing customer records solely to obtain the demonstration ratio.

@@ -33,7 +33,7 @@ from firebase_service import get_db
 
 from flask import send_file
 from .analytics_service import generate_business_analytics, _safe_analytics_booking, unique_package_orders, RECORD_LIMIT, is_paid_order
-from services.package_checkout_contract import build_initial_fulfillment_record, fulfillment_readiness
+from services.package_checkout_contract import build_initial_fulfillment_record, fulfillment_readiness, valid_accommodation_provider
 from services.booking_requirements import COLLECTION as CLARIFICATION_COLLECTION, load_context
 from services.public_content_projection import eligible_package
 from services.campaign_schedule import campaign_package_ids
@@ -195,13 +195,15 @@ def update_booking_fulfillment(order_reference):
         return jsonify({'ok': False, 'error': 'Invalid serviceType'}), 400
     reference = payload.get('reference', '')
     name = payload.get('supplierName') or payload.get('providerName') or payload.get('guideOrActivity') or ''
+    if service_type == 'accommodation' and not valid_accommodation_provider(name):
+        return jsonify(ok=False,error='Enter a meaningful actual accommodation provider / hotel, not a To Be Confirmed placeholder.'),400
     if service_type in {'transport', 'guideActivities'} and not name:
         return jsonify(ok=False,error=('Enter the actual transport provider or internal fleet.' if service_type == 'transport' else 'Enter the actual guide / attraction authority.')),400
-    if service_type in {'transport', 'guideActivities'} and payload.get('attestation') != 'confirmed':
+    if payload.get('attestation') != 'confirmed':
         return jsonify(ok=False,error='Confirm that the actual arrangement is in place.'),400
     notes = payload.get('notes', '')
-    if (service_type == 'accommodation' and not reference) or len(reference) > 200 or len(name) > 200 or len(notes) > 2000 or any(ord(c) < 32 for c in reference):
-        return jsonify({'ok': False, 'error': 'A valid reservation reference is required (maximum 200 characters).'}), 400
+    if len(reference) > 200 or len(name) > 200 or len(notes) > 2000 or any(ord(c) < 32 for c in reference):
+        return jsonify({'ok': False, 'error': 'Enter valid arrangement details (provider and optional reference: maximum 200 characters; notes: maximum 2000).'}), 400
     context, trip = load_context(order,retrieveRecord)
     g.fulfillment_context=context
     if context['integrityError']:
@@ -215,7 +217,7 @@ def update_booking_fulfillment(order_reference):
     services = record.setdefault('services', {})
     name_field = {'accommodation': 'supplierName', 'transport': 'providerName', 'guideActivities': 'guideOrActivity'}[service_type]
     previous = services.get(service_type) or {}
-    if service_type != 'accommodation' and not reference:
+    if not reference:
         reference = previous.get('reference') or ''
     if (previous.get('status') == 'confirmed' and previous.get('provenance') == 'operator_attested'
             and previous.get('confirmedBy') and previous.get('confirmedAt') and previous.get('reference') == reference and

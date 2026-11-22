@@ -68,7 +68,7 @@ def test_historical_reference_and_prior_attestation_retained(client, booking):
 def test_all_attestations_enable_ready_but_payment_alone_does_not(client, booking):
     store, identity = booking
     assert client.post(f'/api/fr12/bookings/{identity}/confirm-fulfillment', headers=AUTH_HEADER).status_code == 400
-    for body in [{'serviceType':'accommodation','reference':'DEMO-HOTEL','supplierName':'Fictional hotel'},
+    for body in [{'serviceType':'accommodation','supplierName':'Fictional hotel','attestation':'confirmed'},
                  {'serviceType':'transport','providerName':'Fictional fleet','attestation':'confirmed'},
                  {'serviceType':'guideActivities','guideOrActivity':'Fictional guide','attestation':'confirmed'}]:
         result = client.post(f'/api/fr12/bookings/{identity}/fulfillment', headers=AUTH_HEADER, json=body)

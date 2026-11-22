@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timezone, timedelta
 from math import isfinite
 from uuid import uuid4
@@ -501,16 +502,20 @@ def update_booking_fulfillment(order_reference):
     notes = request.form.get("notes", "").strip()
 
     attestation = request.form.get('attestation', '')
+    invalid_hotel = service_type == 'accommodation' and (
+        not 3 <= len(supplier_name) <= 200 or sum(char.isalpha() for char in supplier_name) < 3
+        or re.search(r'\b(?:to[\s_-]+be[\s_-]+confirmed|tbc|tbd|not[\s_-]+confirmed|not[\s_-]+specified|unknown|pending)\b', supplier_name, re.I)
+        or any(ord(char) < 32 for char in supplier_name)
+        or supplier_name.casefold() in {'n/a', 'na', 'none', '-', 'hotel', 'accommodation', 'provider', 'supplier'})
     if service_type not in {'accommodation', 'transport', 'guideActivities'} or (
-            service_type == 'accommodation' and not reference) or (
-            service_type != 'accommodation' and (not supplier_name or attestation != 'confirmed')):
+            not supplier_name or attestation != 'confirmed' or invalid_hotel):
         flash("Enter the required arrangement details and confirm that the arrangement is in place.", "error")
         return redirect(url_for("operator_fr12.booking_detail", order_reference=order_reference))
 
     payload = {
         "serviceType": service_type,
-        **({"reference": reference} if service_type == "accommodation" or reference else {}),
-        **({"attestation": attestation} if service_type != "accommodation" else {}),
+        **({"reference": reference} if reference else {}),
+        "attestation": attestation,
         name_field: supplier_name,
         "notes": notes,
     }

@@ -52,8 +52,8 @@ def test_fields_removed_accommodation_retained_and_reference_free_records_visibl
     assert result.status_code == 200
     html = result.get_data(as_text=True)
     assert 'Transit / Booking Reference' not in html and 'License / Voucher' not in html
-    assert html.count('name="reference"') == 1
-    assert html.count('name="attestation"') == 2
+    assert html.count('name="reference"') == 0
+    assert html.count('name="attestation"') == 3
     saved = html.split('Saved Arrangements', 1)[1]
     assert 'Fictional fleet' in saved and 'Fictional guide' in saved
     assert 'OLD-ACCOM' in saved and '2026-11-22T01:00:00Z' in saved

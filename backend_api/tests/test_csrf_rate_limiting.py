@@ -172,7 +172,7 @@ def test_all_portal_mutations_accept_valid_csrf(portal):
             "reason": "Valid suspension reason for testing purposes.",
         }
         if path.endswith("/fulfillment"):
-            post_data.update(serviceType="accommodation", reference="synthetic-reference")
+            post_data.update(serviceType="accommodation", supplierName="Synthetic actual hotel", attestation="confirmed")
         if "upload-image" in path:
             post_data["file"] = (io.BytesIO(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"), "test.png", "image/png")
             response = client.post(path, data=post_data, content_type="multipart/form-data")

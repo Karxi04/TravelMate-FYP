@@ -287,7 +287,7 @@ def test_no_required_suppliers_path_and_manual_internal_reference(client,databas
     value=order();value['packageSnapshot'].update(accommodationIncluded=True,transportIncluded=False,guideActivitiesIncluded=False,inclusions=[])
     database.rows[('checkout_orders',value['id'])]=value
     with patch.object(persistence,'_notify_committed'):
-        result=client.post(URL+'/fulfillment',headers=headers(),json={'serviceType':'accommodation','reference':'internal-contract-101','supplierName':'Manual Homestay'})
+        result=client.post(URL+'/fulfillment',headers=headers(),json={'serviceType':'accommodation','reference':'internal-contract-101','supplierName':'Manual Homestay','attestation':'confirmed'})
     assert result.status_code==200,result.json
     assert result.json['booking']['statusOverview']['supplierArrangements']['state']=='arrangements_recorded'
 
