@@ -187,7 +187,7 @@ def update_booking_fulfillment(order_reference):
     order, error = _fulfillment_order(order_reference)
     if error:
         return error
-    payload = _fulfillment_payload({'serviceType', 'reference', 'supplierName', 'providerName', 'guideOrActivity', 'notes'})
+    payload = _fulfillment_payload({'serviceType', 'reference', 'supplierName', 'providerName', 'guideOrActivity', 'notes', 'attestation'})
     if payload is None:
         return jsonify({'ok': False, 'error': 'Invalid attestation fields or value types'}), 400
     service_type = payload.get('serviceType')
@@ -195,10 +195,12 @@ def update_booking_fulfillment(order_reference):
         return jsonify({'ok': False, 'error': 'Invalid serviceType'}), 400
     reference = payload.get('reference', '')
     name = payload.get('supplierName') or payload.get('providerName') or payload.get('guideOrActivity') or ''
-    if service_type == 'transport' and not name:
-        return jsonify(ok=False,error='Enter the actual transport provider or internal fleet.'),400
+    if service_type in {'transport', 'guideActivities'} and not name:
+        return jsonify(ok=False,error=('Enter the actual transport provider or internal fleet.' if service_type == 'transport' else 'Enter the actual guide / attraction authority.')),400
+    if service_type in {'transport', 'guideActivities'} and payload.get('attestation') != 'confirmed':
+        return jsonify(ok=False,error='Confirm that the actual arrangement is in place.'),400
     notes = payload.get('notes', '')
-    if not reference or len(reference) > 200 or len(name) > 200 or len(notes) > 2000 or any(ord(c) < 32 for c in reference):
+    if (service_type == 'accommodation' and not reference) or len(reference) > 200 or len(name) > 200 or len(notes) > 2000 or any(ord(c) < 32 for c in reference):
         return jsonify({'ok': False, 'error': 'A valid reservation reference is required (maximum 200 characters).'}), 400
     context, trip = load_context(order,retrieveRecord)
     g.fulfillment_context=context
@@ -213,11 +215,17 @@ def update_booking_fulfillment(order_reference):
     services = record.setdefault('services', {})
     name_field = {'accommodation': 'supplierName', 'transport': 'providerName', 'guideActivities': 'guideOrActivity'}[service_type]
     previous = services.get(service_type) or {}
-    if (previous.get('status') == 'confirmed' and previous.get('reference') == reference and
+    if service_type != 'accommodation' and not reference:
+        reference = previous.get('reference') or ''
+    if (previous.get('status') == 'confirmed' and previous.get('provenance') == 'operator_attested'
+            and previous.get('confirmedBy') and previous.get('confirmedAt') and previous.get('reference') == reference and
             previous.get('notes', '') == notes and previous.get(name_field, '') == (name or previous.get(name_field, ''))):
         return _save_fulfillment(order_reference, order, {})
     now = utc_now_iso()
-    services[service_type] = {**previous, 'required': True, 'status': 'confirmed',
+    history = deepcopy(previous.get('attestationHistory') or [])
+    if previous.get('confirmedAt'):
+        history.append({key: deepcopy(value) for key, value in previous.items() if key != 'attestationHistory'})
+    services[service_type] = {**previous, 'attestationHistory': history, 'required': True, 'status': 'confirmed',
         'reference': reference, name_field: name or previous.get(name_field, ''), 'notes': notes,
         'confirmedAt': now, 'confirmedBy': g.uid, 'provenance': 'operator_attested'}
     record.update({'status': 'partially_fulfilled', 'updatedAt': now, 'requiredServices': requirements})

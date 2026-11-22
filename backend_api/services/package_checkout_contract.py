@@ -500,10 +500,12 @@ def fulfillment_readiness(order, requirements, record, paid, legacy_reviewed=Fal
         if meta.get('uncertain'):
             missing.append(f"{label}: {meta.get('reviewReason') or 'Purchased brochure requires review.'}")
         if meta.get('required'):
-            if not str(service.get('reference') or '').strip():
+            if key == 'accommodation' and not str(service.get('reference') or '').strip():
                 missing.append(f'{label} booking reference is missing.')
             if key == 'transport' and not str(service.get('providerName') or '').strip():
                 missing.append('Actual transport provider / fleet is missing.')
+            if key == 'guideActivities' and not str(service.get('guideOrActivity') or '').strip():
+                missing.append('Actual guide / attraction authority is missing.')
             if (service.get('status') != 'confirmed' or service.get('provenance') != 'operator_attested'
                     or not service.get('confirmedBy') or not service.get('confirmedAt')):
                 missing.append(f'{label} arrangements have not been attested by the operator.')

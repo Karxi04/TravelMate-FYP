@@ -1,0 +1,1580 @@
+{
+  "synthetic": true,
+  "deployment": "isolated-fixture-only",
+  "liveImportAuthorized": false,
+  "description": "Ten fictional test bookings. No route, analytics, notification or production collection loads this file.",
+  "orders": [
+    {
+      "id": "demo-fulfilment-01",
+      "orderReference": "demo-fulfilment-01",
+      "quoteType": "package",
+      "packageId": "pkg-penang-heritage",
+      "packageTitle": "Fictional Penang demonstration excursion",
+      "operatorId": "demo-operator",
+      "travellerId": "demo-traveller-01",
+      "fulfilledTripId": "demo-trip-01",
+      "departureDate": "2027-04-15",
+      "amount": 1300.0,
+      "currency": "MYR",
+      "status": "paid",
+      "paymentStatus": "paid",
+      "fulfillmentStatus": "trip_ready",
+      "supplierReservationStatus": "operator_attested",
+      "packageSnapshot": {
+        "packageId": "pkg-penang-heritage",
+        "title": "Fictional Penang demonstration excursion",
+        "destination": "Penang",
+        "durationDays": 3,
+        "durationNights": 2,
+        "selectedDepartureDate": "2027-04-15",
+        "accommodation": {
+          "accommodationName": "Eastern & Oriental Hotel",
+          "roomType": "Heritage Suite",
+          "accommodationCategory": "Hotel",
+          "accommodationNotes": "Includes daily breakfast for 2"
+        },
+        "transport": {
+          "transportTypes": [
+            "Airport Van Transfer",
+            "Heritage Ferry"
+          ],
+          "transportNotes": "Private air-conditioned minivan"
+        },
+        "inclusions": [
+          "2 nights 5-star heritage hotel accommodation",
+          "Licensed MOTAC English-speaking tour docent",
+          "Pinang Peranakan Mansion entrance tickets"
+        ],
+        "itineraryDays": [
+          {
+            "dayNumber": 1,
+            "activities": [
+              "Arrival and check-in",
+              "Evening street food walk"
+            ]
+          },
+          {
+            "dayNumber": 2,
+            "activities": [
+              "Guided colonial quarter tour",
+              "Mansion visit"
+            ]
+          },
+          {
+            "dayNumber": 3,
+            "activities": [
+              "Morning beach walk",
+              "Airport transfer"
+            ]
+          }
+        ],
+        "priceBasis": "per_person",
+        "adultUnitPrice": 650.0,
+        "participants": {
+          "adults": 2,
+          "children": 0,
+          "total": 2
+        },
+        "groupSize": 2,
+        "price": 1300.0,
+        "amountMinor": 130000,
+        "currency": "MYR"
+      },
+      "fulfillmentRecord": {
+        "status": "awaiting_operator_fulfillment",
+        "requiredServices": {
+          "accommodation": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureName": "Eastern & Oriental Hotel",
+            "brochureRoomType": "Heritage Suite",
+            "brochureCategory": "Hotel",
+            "brochureNotes": "Includes daily breakfast for 2"
+          },
+          "transport": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureTypes": [
+              "Airport Van Transfer",
+              "Heritage Ferry"
+            ],
+            "brochureNotes": "Private air-conditioned minivan"
+          },
+          "guideActivities": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "inclusions": [
+              "2 nights 5-star heritage hotel accommodation",
+              "Licensed MOTAC English-speaking tour docent",
+              "Pinang Peranakan Mansion entrance tickets"
+            ],
+            "itineraryDaysCount": 3
+          }
+        },
+        "services": {
+          "accommodation": {
+            "required": true,
+            "status": "confirmed",
+            "supplierName": "Fictional demonstration hotel",
+            "reference": "DEMO-ACCOM-01",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "providerName": "Fictional demonstration fleet",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "transport": {
+            "required": true,
+            "status": "confirmed",
+            "providerName": "Fictional demonstration fleet",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "guideActivities": {
+            "required": true,
+            "status": "confirmed",
+            "guideOrActivity": "Fictional demonstration guide",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "providerName": "Fictional demonstration fleet"
+          }
+        },
+        "declineReason": null,
+        "declinedAt": null,
+        "declinedBy": null,
+        "confirmedAt": null,
+        "confirmedBy": null,
+        "updatedAt": "2026-11-22T05:50:21.848518+00:00"
+      },
+      "testMode": true,
+      "createdAt": "2026-11-01T10:00:00Z",
+      "updatedAt": "2026-11-01T10:00:00Z",
+      "synthetic": true,
+      "provenance": "isolated_operator_fulfillment_fixture"
+    },
+    {
+      "id": "demo-fulfilment-02",
+      "orderReference": "demo-fulfilment-02",
+      "quoteType": "package",
+      "packageId": "pkg-penang-heritage",
+      "packageTitle": "Fictional Penang demonstration excursion",
+      "operatorId": "demo-operator",
+      "travellerId": "demo-traveller-02",
+      "fulfilledTripId": "demo-trip-02",
+      "departureDate": "2027-04-15",
+      "amount": 1300.0,
+      "currency": "MYR",
+      "status": "paid",
+      "paymentStatus": "paid",
+      "fulfillmentStatus": "trip_ready",
+      "supplierReservationStatus": "operator_attested",
+      "packageSnapshot": {
+        "packageId": "pkg-penang-heritage",
+        "title": "Fictional Penang demonstration excursion",
+        "destination": "Penang",
+        "durationDays": 3,
+        "durationNights": 2,
+        "selectedDepartureDate": "2027-04-15",
+        "accommodation": {
+          "accommodationName": "Eastern & Oriental Hotel",
+          "roomType": "Heritage Suite",
+          "accommodationCategory": "Hotel",
+          "accommodationNotes": "Includes daily breakfast for 2"
+        },
+        "transport": {
+          "transportTypes": [
+            "Airport Van Transfer",
+            "Heritage Ferry"
+          ],
+          "transportNotes": "Private air-conditioned minivan"
+        },
+        "inclusions": [
+          "2 nights 5-star heritage hotel accommodation",
+          "Licensed MOTAC English-speaking tour docent",
+          "Pinang Peranakan Mansion entrance tickets"
+        ],
+        "itineraryDays": [
+          {
+            "dayNumber": 1,
+            "activities": [
+              "Arrival and check-in",
+              "Evening street food walk"
+            ]
+          },
+          {
+            "dayNumber": 2,
+            "activities": [
+              "Guided colonial quarter tour",
+              "Mansion visit"
+            ]
+          },
+          {
+            "dayNumber": 3,
+            "activities": [
+              "Morning beach walk",
+              "Airport transfer"
+            ]
+          }
+        ],
+        "priceBasis": "per_person",
+        "adultUnitPrice": 650.0,
+        "participants": {
+          "adults": 2,
+          "children": 0,
+          "total": 2
+        },
+        "groupSize": 2,
+        "price": 1300.0,
+        "amountMinor": 130000,
+        "currency": "MYR"
+      },
+      "fulfillmentRecord": {
+        "status": "awaiting_operator_fulfillment",
+        "requiredServices": {
+          "accommodation": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureName": "Eastern & Oriental Hotel",
+            "brochureRoomType": "Heritage Suite",
+            "brochureCategory": "Hotel",
+            "brochureNotes": "Includes daily breakfast for 2"
+          },
+          "transport": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureTypes": [
+              "Airport Van Transfer",
+              "Heritage Ferry"
+            ],
+            "brochureNotes": "Private air-conditioned minivan"
+          },
+          "guideActivities": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "inclusions": [
+              "2 nights 5-star heritage hotel accommodation",
+              "Licensed MOTAC English-speaking tour docent",
+              "Pinang Peranakan Mansion entrance tickets"
+            ],
+            "itineraryDaysCount": 3
+          }
+        },
+        "services": {
+          "accommodation": {
+            "required": true,
+            "status": "confirmed",
+            "supplierName": "Fictional demonstration hotel",
+            "reference": "DEMO-ACCOM-02",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "providerName": "Fictional demonstration fleet",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "transport": {
+            "required": true,
+            "status": "confirmed",
+            "providerName": "Fictional demonstration fleet",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "guideActivities": {
+            "required": true,
+            "status": "confirmed",
+            "guideOrActivity": "Fictional demonstration guide",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "providerName": "Fictional demonstration fleet"
+          }
+        },
+        "declineReason": null,
+        "declinedAt": null,
+        "declinedBy": null,
+        "confirmedAt": null,
+        "confirmedBy": null,
+        "updatedAt": "2026-11-22T05:50:21.848518+00:00"
+      },
+      "testMode": true,
+      "createdAt": "2026-11-01T10:00:00Z",
+      "updatedAt": "2026-11-01T10:00:00Z",
+      "synthetic": true,
+      "provenance": "isolated_operator_fulfillment_fixture"
+    },
+    {
+      "id": "demo-fulfilment-03",
+      "orderReference": "demo-fulfilment-03",
+      "quoteType": "package",
+      "packageId": "pkg-penang-heritage",
+      "packageTitle": "Fictional Penang demonstration excursion",
+      "operatorId": "demo-operator",
+      "travellerId": "demo-traveller-03",
+      "fulfilledTripId": "demo-trip-03",
+      "departureDate": "2027-04-15",
+      "amount": 1300.0,
+      "currency": "MYR",
+      "status": "paid",
+      "paymentStatus": "paid",
+      "fulfillmentStatus": "trip_ready",
+      "supplierReservationStatus": "operator_attested",
+      "packageSnapshot": {
+        "packageId": "pkg-penang-heritage",
+        "title": "Fictional Penang demonstration excursion",
+        "destination": "Penang",
+        "durationDays": 3,
+        "durationNights": 2,
+        "selectedDepartureDate": "2027-04-15",
+        "accommodation": {
+          "accommodationName": "Eastern & Oriental Hotel",
+          "roomType": "Heritage Suite",
+          "accommodationCategory": "Hotel",
+          "accommodationNotes": "Includes daily breakfast for 2"
+        },
+        "transport": {
+          "transportTypes": [
+            "Airport Van Transfer",
+            "Heritage Ferry"
+          ],
+          "transportNotes": "Private air-conditioned minivan"
+        },
+        "inclusions": [
+          "2 nights 5-star heritage hotel accommodation",
+          "Licensed MOTAC English-speaking tour docent",
+          "Pinang Peranakan Mansion entrance tickets"
+        ],
+        "itineraryDays": [
+          {
+            "dayNumber": 1,
+            "activities": [
+              "Arrival and check-in",
+              "Evening street food walk"
+            ]
+          },
+          {
+            "dayNumber": 2,
+            "activities": [
+              "Guided colonial quarter tour",
+              "Mansion visit"
+            ]
+          },
+          {
+            "dayNumber": 3,
+            "activities": [
+              "Morning beach walk",
+              "Airport transfer"
+            ]
+          }
+        ],
+        "priceBasis": "per_person",
+        "adultUnitPrice": 650.0,
+        "participants": {
+          "adults": 2,
+          "children": 0,
+          "total": 2
+        },
+        "groupSize": 2,
+        "price": 1300.0,
+        "amountMinor": 130000,
+        "currency": "MYR"
+      },
+      "fulfillmentRecord": {
+        "status": "awaiting_operator_fulfillment",
+        "requiredServices": {
+          "accommodation": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureName": "Eastern & Oriental Hotel",
+            "brochureRoomType": "Heritage Suite",
+            "brochureCategory": "Hotel",
+            "brochureNotes": "Includes daily breakfast for 2"
+          },
+          "transport": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureTypes": [
+              "Airport Van Transfer",
+              "Heritage Ferry"
+            ],
+            "brochureNotes": "Private air-conditioned minivan"
+          },
+          "guideActivities": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "inclusions": [
+              "2 nights 5-star heritage hotel accommodation",
+              "Licensed MOTAC English-speaking tour docent",
+              "Pinang Peranakan Mansion entrance tickets"
+            ],
+            "itineraryDaysCount": 3
+          }
+        },
+        "services": {
+          "accommodation": {
+            "required": true,
+            "status": "confirmed",
+            "supplierName": "Fictional demonstration hotel",
+            "reference": "DEMO-ACCOM-03",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "providerName": "Fictional demonstration fleet",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "transport": {
+            "required": true,
+            "status": "confirmed",
+            "providerName": "Fictional demonstration fleet",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "guideActivities": {
+            "required": true,
+            "status": "confirmed",
+            "guideOrActivity": "Fictional demonstration guide",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "providerName": "Fictional demonstration fleet"
+          }
+        },
+        "declineReason": null,
+        "declinedAt": null,
+        "declinedBy": null,
+        "confirmedAt": null,
+        "confirmedBy": null,
+        "updatedAt": "2026-11-22T05:50:21.848518+00:00"
+      },
+      "testMode": true,
+      "createdAt": "2026-11-01T10:00:00Z",
+      "updatedAt": "2026-11-01T10:00:00Z",
+      "synthetic": true,
+      "provenance": "isolated_operator_fulfillment_fixture"
+    },
+    {
+      "id": "demo-fulfilment-04",
+      "orderReference": "demo-fulfilment-04",
+      "quoteType": "package",
+      "packageId": "pkg-penang-heritage",
+      "packageTitle": "Fictional Penang demonstration excursion",
+      "operatorId": "demo-operator",
+      "travellerId": "demo-traveller-04",
+      "fulfilledTripId": "demo-trip-04",
+      "departureDate": "2027-04-15",
+      "amount": 1300.0,
+      "currency": "MYR",
+      "status": "paid",
+      "paymentStatus": "paid",
+      "fulfillmentStatus": "trip_ready",
+      "supplierReservationStatus": "operator_attested",
+      "packageSnapshot": {
+        "packageId": "pkg-penang-heritage",
+        "title": "Fictional Penang demonstration excursion",
+        "destination": "Penang",
+        "durationDays": 3,
+        "durationNights": 2,
+        "selectedDepartureDate": "2027-04-15",
+        "accommodation": {
+          "accommodationName": "Eastern & Oriental Hotel",
+          "roomType": "Heritage Suite",
+          "accommodationCategory": "Hotel",
+          "accommodationNotes": "Includes daily breakfast for 2"
+        },
+        "transport": {
+          "transportTypes": [
+            "Airport Van Transfer",
+            "Heritage Ferry"
+          ],
+          "transportNotes": "Private air-conditioned minivan"
+        },
+        "inclusions": [
+          "2 nights 5-star heritage hotel accommodation",
+          "Licensed MOTAC English-speaking tour docent",
+          "Pinang Peranakan Mansion entrance tickets"
+        ],
+        "itineraryDays": [
+          {
+            "dayNumber": 1,
+            "activities": [
+              "Arrival and check-in",
+              "Evening street food walk"
+            ]
+          },
+          {
+            "dayNumber": 2,
+            "activities": [
+              "Guided colonial quarter tour",
+              "Mansion visit"
+            ]
+          },
+          {
+            "dayNumber": 3,
+            "activities": [
+              "Morning beach walk",
+              "Airport transfer"
+            ]
+          }
+        ],
+        "priceBasis": "per_person",
+        "adultUnitPrice": 650.0,
+        "participants": {
+          "adults": 2,
+          "children": 0,
+          "total": 2
+        },
+        "groupSize": 2,
+        "price": 1300.0,
+        "amountMinor": 130000,
+        "currency": "MYR"
+      },
+      "fulfillmentRecord": {
+        "status": "awaiting_operator_fulfillment",
+        "requiredServices": {
+          "accommodation": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureName": "Eastern & Oriental Hotel",
+            "brochureRoomType": "Heritage Suite",
+            "brochureCategory": "Hotel",
+            "brochureNotes": "Includes daily breakfast for 2"
+          },
+          "transport": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureTypes": [
+              "Airport Van Transfer",
+              "Heritage Ferry"
+            ],
+            "brochureNotes": "Private air-conditioned minivan"
+          },
+          "guideActivities": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "inclusions": [
+              "2 nights 5-star heritage hotel accommodation",
+              "Licensed MOTAC English-speaking tour docent",
+              "Pinang Peranakan Mansion entrance tickets"
+            ],
+            "itineraryDaysCount": 3
+          }
+        },
+        "services": {
+          "accommodation": {
+            "required": true,
+            "status": "confirmed",
+            "supplierName": "Fictional demonstration hotel",
+            "reference": "DEMO-ACCOM-04",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "providerName": "Fictional demonstration fleet",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "transport": {
+            "required": true,
+            "status": "confirmed",
+            "providerName": "Fictional demonstration fleet",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "guideActivities": {
+            "required": true,
+            "status": "confirmed",
+            "guideOrActivity": "Fictional demonstration guide",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "providerName": "Fictional demonstration fleet"
+          }
+        },
+        "declineReason": null,
+        "declinedAt": null,
+        "declinedBy": null,
+        "confirmedAt": null,
+        "confirmedBy": null,
+        "updatedAt": "2026-11-22T05:50:21.848518+00:00"
+      },
+      "testMode": true,
+      "createdAt": "2026-11-01T10:00:00Z",
+      "updatedAt": "2026-11-01T10:00:00Z",
+      "synthetic": true,
+      "provenance": "isolated_operator_fulfillment_fixture"
+    },
+    {
+      "id": "demo-fulfilment-05",
+      "orderReference": "demo-fulfilment-05",
+      "quoteType": "package",
+      "packageId": "pkg-penang-heritage",
+      "packageTitle": "Fictional Penang demonstration excursion",
+      "operatorId": "demo-operator",
+      "travellerId": "demo-traveller-05",
+      "fulfilledTripId": "demo-trip-05",
+      "departureDate": "2027-04-15",
+      "amount": 1300.0,
+      "currency": "MYR",
+      "status": "paid",
+      "paymentStatus": "paid",
+      "fulfillmentStatus": "trip_ready",
+      "supplierReservationStatus": "operator_attested",
+      "packageSnapshot": {
+        "packageId": "pkg-penang-heritage",
+        "title": "Fictional Penang demonstration excursion",
+        "destination": "Penang",
+        "durationDays": 3,
+        "durationNights": 2,
+        "selectedDepartureDate": "2027-04-15",
+        "accommodation": {
+          "accommodationName": "Eastern & Oriental Hotel",
+          "roomType": "Heritage Suite",
+          "accommodationCategory": "Hotel",
+          "accommodationNotes": "Includes daily breakfast for 2"
+        },
+        "transport": {
+          "transportTypes": [
+            "Airport Van Transfer",
+            "Heritage Ferry"
+          ],
+          "transportNotes": "Private air-conditioned minivan"
+        },
+        "inclusions": [
+          "2 nights 5-star heritage hotel accommodation",
+          "Licensed MOTAC English-speaking tour docent",
+          "Pinang Peranakan Mansion entrance tickets"
+        ],
+        "itineraryDays": [
+          {
+            "dayNumber": 1,
+            "activities": [
+              "Arrival and check-in",
+              "Evening street food walk"
+            ]
+          },
+          {
+            "dayNumber": 2,
+            "activities": [
+              "Guided colonial quarter tour",
+              "Mansion visit"
+            ]
+          },
+          {
+            "dayNumber": 3,
+            "activities": [
+              "Morning beach walk",
+              "Airport transfer"
+            ]
+          }
+        ],
+        "priceBasis": "per_person",
+        "adultUnitPrice": 650.0,
+        "participants": {
+          "adults": 2,
+          "children": 0,
+          "total": 2
+        },
+        "groupSize": 2,
+        "price": 1300.0,
+        "amountMinor": 130000,
+        "currency": "MYR"
+      },
+      "fulfillmentRecord": {
+        "status": "awaiting_operator_fulfillment",
+        "requiredServices": {
+          "accommodation": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureName": "Eastern & Oriental Hotel",
+            "brochureRoomType": "Heritage Suite",
+            "brochureCategory": "Hotel",
+            "brochureNotes": "Includes daily breakfast for 2"
+          },
+          "transport": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureTypes": [
+              "Airport Van Transfer",
+              "Heritage Ferry"
+            ],
+            "brochureNotes": "Private air-conditioned minivan"
+          },
+          "guideActivities": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "inclusions": [
+              "2 nights 5-star heritage hotel accommodation",
+              "Licensed MOTAC English-speaking tour docent",
+              "Pinang Peranakan Mansion entrance tickets"
+            ],
+            "itineraryDaysCount": 3
+          }
+        },
+        "services": {
+          "accommodation": {
+            "required": true,
+            "status": "confirmed",
+            "supplierName": "Fictional demonstration hotel",
+            "reference": "DEMO-ACCOM-05",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "providerName": "Fictional demonstration fleet",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "transport": {
+            "required": true,
+            "status": "confirmed",
+            "providerName": "Fictional demonstration fleet",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "guideActivities": {
+            "required": true,
+            "status": "confirmed",
+            "guideOrActivity": "Fictional demonstration guide",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "providerName": "Fictional demonstration fleet"
+          }
+        },
+        "declineReason": null,
+        "declinedAt": null,
+        "declinedBy": null,
+        "confirmedAt": null,
+        "confirmedBy": null,
+        "updatedAt": "2026-11-22T05:50:21.848518+00:00"
+      },
+      "testMode": true,
+      "createdAt": "2026-11-01T10:00:00Z",
+      "updatedAt": "2026-11-01T10:00:00Z",
+      "synthetic": true,
+      "provenance": "isolated_operator_fulfillment_fixture"
+    },
+    {
+      "id": "demo-fulfilment-06",
+      "orderReference": "demo-fulfilment-06",
+      "quoteType": "package",
+      "packageId": "pkg-penang-heritage",
+      "packageTitle": "Fictional Penang demonstration excursion",
+      "operatorId": "demo-operator",
+      "travellerId": "demo-traveller-06",
+      "fulfilledTripId": "demo-trip-06",
+      "departureDate": "2027-04-15",
+      "amount": 1300.0,
+      "currency": "MYR",
+      "status": "paid",
+      "paymentStatus": "paid",
+      "fulfillmentStatus": "trip_ready",
+      "supplierReservationStatus": "operator_attested",
+      "packageSnapshot": {
+        "packageId": "pkg-penang-heritage",
+        "title": "Fictional Penang demonstration excursion",
+        "destination": "Penang",
+        "durationDays": 3,
+        "durationNights": 2,
+        "selectedDepartureDate": "2027-04-15",
+        "accommodation": {
+          "accommodationName": "Eastern & Oriental Hotel",
+          "roomType": "Heritage Suite",
+          "accommodationCategory": "Hotel",
+          "accommodationNotes": "Includes daily breakfast for 2"
+        },
+        "transport": {
+          "transportTypes": [
+            "Airport Van Transfer",
+            "Heritage Ferry"
+          ],
+          "transportNotes": "Private air-conditioned minivan"
+        },
+        "inclusions": [
+          "2 nights 5-star heritage hotel accommodation",
+          "Licensed MOTAC English-speaking tour docent",
+          "Pinang Peranakan Mansion entrance tickets"
+        ],
+        "itineraryDays": [
+          {
+            "dayNumber": 1,
+            "activities": [
+              "Arrival and check-in",
+              "Evening street food walk"
+            ]
+          },
+          {
+            "dayNumber": 2,
+            "activities": [
+              "Guided colonial quarter tour",
+              "Mansion visit"
+            ]
+          },
+          {
+            "dayNumber": 3,
+            "activities": [
+              "Morning beach walk",
+              "Airport transfer"
+            ]
+          }
+        ],
+        "priceBasis": "per_person",
+        "adultUnitPrice": 650.0,
+        "participants": {
+          "adults": 2,
+          "children": 0,
+          "total": 2
+        },
+        "groupSize": 2,
+        "price": 1300.0,
+        "amountMinor": 130000,
+        "currency": "MYR"
+      },
+      "fulfillmentRecord": {
+        "status": "awaiting_operator_fulfillment",
+        "requiredServices": {
+          "accommodation": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureName": "Eastern & Oriental Hotel",
+            "brochureRoomType": "Heritage Suite",
+            "brochureCategory": "Hotel",
+            "brochureNotes": "Includes daily breakfast for 2"
+          },
+          "transport": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureTypes": [
+              "Airport Van Transfer",
+              "Heritage Ferry"
+            ],
+            "brochureNotes": "Private air-conditioned minivan"
+          },
+          "guideActivities": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "inclusions": [
+              "2 nights 5-star heritage hotel accommodation",
+              "Licensed MOTAC English-speaking tour docent",
+              "Pinang Peranakan Mansion entrance tickets"
+            ],
+            "itineraryDaysCount": 3
+          }
+        },
+        "services": {
+          "accommodation": {
+            "required": true,
+            "status": "confirmed",
+            "supplierName": "Fictional demonstration hotel",
+            "reference": "DEMO-ACCOM-06",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "providerName": "Fictional demonstration fleet",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "transport": {
+            "required": true,
+            "status": "confirmed",
+            "providerName": "Fictional demonstration fleet",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "guideActivities": {
+            "required": true,
+            "status": "confirmed",
+            "guideOrActivity": "Fictional demonstration guide",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "providerName": "Fictional demonstration fleet"
+          }
+        },
+        "declineReason": null,
+        "declinedAt": null,
+        "declinedBy": null,
+        "confirmedAt": null,
+        "confirmedBy": null,
+        "updatedAt": "2026-11-22T05:50:21.848518+00:00"
+      },
+      "testMode": true,
+      "createdAt": "2026-11-01T10:00:00Z",
+      "updatedAt": "2026-11-01T10:00:00Z",
+      "synthetic": true,
+      "provenance": "isolated_operator_fulfillment_fixture"
+    },
+    {
+      "id": "demo-fulfilment-07",
+      "orderReference": "demo-fulfilment-07",
+      "quoteType": "package",
+      "packageId": "pkg-penang-heritage",
+      "packageTitle": "Fictional Penang demonstration excursion",
+      "operatorId": "demo-operator",
+      "travellerId": "demo-traveller-07",
+      "fulfilledTripId": "demo-trip-07",
+      "departureDate": "2027-04-15",
+      "amount": 1300.0,
+      "currency": "MYR",
+      "status": "paid",
+      "paymentStatus": "paid",
+      "fulfillmentStatus": "trip_ready",
+      "supplierReservationStatus": "operator_attested",
+      "packageSnapshot": {
+        "packageId": "pkg-penang-heritage",
+        "title": "Fictional Penang demonstration excursion",
+        "destination": "Penang",
+        "durationDays": 3,
+        "durationNights": 2,
+        "selectedDepartureDate": "2027-04-15",
+        "accommodation": {
+          "accommodationName": "Eastern & Oriental Hotel",
+          "roomType": "Heritage Suite",
+          "accommodationCategory": "Hotel",
+          "accommodationNotes": "Includes daily breakfast for 2"
+        },
+        "transport": {
+          "transportTypes": [
+            "Airport Van Transfer",
+            "Heritage Ferry"
+          ],
+          "transportNotes": "Private air-conditioned minivan"
+        },
+        "inclusions": [
+          "2 nights 5-star heritage hotel accommodation",
+          "Licensed MOTAC English-speaking tour docent",
+          "Pinang Peranakan Mansion entrance tickets"
+        ],
+        "itineraryDays": [
+          {
+            "dayNumber": 1,
+            "activities": [
+              "Arrival and check-in",
+              "Evening street food walk"
+            ]
+          },
+          {
+            "dayNumber": 2,
+            "activities": [
+              "Guided colonial quarter tour",
+              "Mansion visit"
+            ]
+          },
+          {
+            "dayNumber": 3,
+            "activities": [
+              "Morning beach walk",
+              "Airport transfer"
+            ]
+          }
+        ],
+        "priceBasis": "per_person",
+        "adultUnitPrice": 650.0,
+        "participants": {
+          "adults": 2,
+          "children": 0,
+          "total": 2
+        },
+        "groupSize": 2,
+        "price": 1300.0,
+        "amountMinor": 130000,
+        "currency": "MYR"
+      },
+      "fulfillmentRecord": {
+        "status": "awaiting_operator_fulfillment",
+        "requiredServices": {
+          "accommodation": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureName": "Eastern & Oriental Hotel",
+            "brochureRoomType": "Heritage Suite",
+            "brochureCategory": "Hotel",
+            "brochureNotes": "Includes daily breakfast for 2"
+          },
+          "transport": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureTypes": [
+              "Airport Van Transfer",
+              "Heritage Ferry"
+            ],
+            "brochureNotes": "Private air-conditioned minivan"
+          },
+          "guideActivities": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "inclusions": [
+              "2 nights 5-star heritage hotel accommodation",
+              "Licensed MOTAC English-speaking tour docent",
+              "Pinang Peranakan Mansion entrance tickets"
+            ],
+            "itineraryDaysCount": 3
+          }
+        },
+        "services": {
+          "accommodation": {
+            "required": true,
+            "status": "confirmed",
+            "supplierName": "Fictional demonstration hotel",
+            "reference": "DEMO-ACCOM-07",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "providerName": "Fictional demonstration fleet",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "transport": {
+            "required": true,
+            "status": "confirmed",
+            "providerName": "Fictional demonstration fleet",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "guideActivities": {
+            "required": true,
+            "status": "confirmed",
+            "guideOrActivity": "Fictional demonstration guide",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "providerName": "Fictional demonstration fleet"
+          }
+        },
+        "declineReason": null,
+        "declinedAt": null,
+        "declinedBy": null,
+        "confirmedAt": null,
+        "confirmedBy": null,
+        "updatedAt": "2026-11-22T05:50:21.848518+00:00"
+      },
+      "testMode": true,
+      "createdAt": "2026-11-01T10:00:00Z",
+      "updatedAt": "2026-11-01T10:00:00Z",
+      "synthetic": true,
+      "provenance": "isolated_operator_fulfillment_fixture"
+    },
+    {
+      "id": "demo-fulfilment-08",
+      "orderReference": "demo-fulfilment-08",
+      "quoteType": "package",
+      "packageId": "pkg-penang-heritage",
+      "packageTitle": "Fictional Penang demonstration excursion",
+      "operatorId": "demo-operator",
+      "travellerId": "demo-traveller-08",
+      "fulfilledTripId": "demo-trip-08",
+      "departureDate": "2027-04-15",
+      "amount": 1300.0,
+      "currency": "MYR",
+      "status": "paid",
+      "paymentStatus": "paid",
+      "fulfillmentStatus": "trip_ready",
+      "supplierReservationStatus": "operator_attested",
+      "packageSnapshot": {
+        "packageId": "pkg-penang-heritage",
+        "title": "Fictional Penang demonstration excursion",
+        "destination": "Penang",
+        "durationDays": 3,
+        "durationNights": 2,
+        "selectedDepartureDate": "2027-04-15",
+        "accommodation": {
+          "accommodationName": "Eastern & Oriental Hotel",
+          "roomType": "Heritage Suite",
+          "accommodationCategory": "Hotel",
+          "accommodationNotes": "Includes daily breakfast for 2"
+        },
+        "transport": {
+          "transportTypes": [
+            "Airport Van Transfer",
+            "Heritage Ferry"
+          ],
+          "transportNotes": "Private air-conditioned minivan"
+        },
+        "inclusions": [
+          "2 nights 5-star heritage hotel accommodation",
+          "Licensed MOTAC English-speaking tour docent",
+          "Pinang Peranakan Mansion entrance tickets"
+        ],
+        "itineraryDays": [
+          {
+            "dayNumber": 1,
+            "activities": [
+              "Arrival and check-in",
+              "Evening street food walk"
+            ]
+          },
+          {
+            "dayNumber": 2,
+            "activities": [
+              "Guided colonial quarter tour",
+              "Mansion visit"
+            ]
+          },
+          {
+            "dayNumber": 3,
+            "activities": [
+              "Morning beach walk",
+              "Airport transfer"
+            ]
+          }
+        ],
+        "priceBasis": "per_person",
+        "adultUnitPrice": 650.0,
+        "participants": {
+          "adults": 2,
+          "children": 0,
+          "total": 2
+        },
+        "groupSize": 2,
+        "price": 1300.0,
+        "amountMinor": 130000,
+        "currency": "MYR"
+      },
+      "fulfillmentRecord": {
+        "status": "awaiting_operator_fulfillment",
+        "requiredServices": {
+          "accommodation": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureName": "Eastern & Oriental Hotel",
+            "brochureRoomType": "Heritage Suite",
+            "brochureCategory": "Hotel",
+            "brochureNotes": "Includes daily breakfast for 2"
+          },
+          "transport": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureTypes": [
+              "Airport Van Transfer",
+              "Heritage Ferry"
+            ],
+            "brochureNotes": "Private air-conditioned minivan"
+          },
+          "guideActivities": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "inclusions": [
+              "2 nights 5-star heritage hotel accommodation",
+              "Licensed MOTAC English-speaking tour docent",
+              "Pinang Peranakan Mansion entrance tickets"
+            ],
+            "itineraryDaysCount": 3
+          }
+        },
+        "services": {
+          "accommodation": {
+            "required": true,
+            "status": "confirmed",
+            "supplierName": "Fictional demonstration hotel",
+            "reference": "DEMO-ACCOM-08",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "providerName": "Fictional demonstration fleet",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "transport": {
+            "required": true,
+            "status": "confirmed",
+            "providerName": "Fictional demonstration fleet",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "guideOrActivity": "Fictional demonstration guide"
+          },
+          "guideActivities": {
+            "required": true,
+            "status": "confirmed",
+            "guideOrActivity": "Fictional demonstration guide",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": "2026-11-22T01:00:00Z",
+            "confirmedBy": "demo-operator",
+            "provenance": "operator_attested",
+            "supplierName": "Fictional demonstration hotel",
+            "providerName": "Fictional demonstration fleet"
+          }
+        },
+        "declineReason": null,
+        "declinedAt": null,
+        "declinedBy": null,
+        "confirmedAt": null,
+        "confirmedBy": null,
+        "updatedAt": "2026-11-22T05:50:21.848518+00:00"
+      },
+      "testMode": true,
+      "createdAt": "2026-11-01T10:00:00Z",
+      "updatedAt": "2026-11-01T10:00:00Z",
+      "synthetic": true,
+      "provenance": "isolated_operator_fulfillment_fixture"
+    },
+    {
+      "id": "demo-fulfilment-09",
+      "orderReference": "demo-fulfilment-09",
+      "quoteType": "package",
+      "packageId": "pkg-penang-heritage",
+      "packageTitle": "Fictional Penang demonstration excursion",
+      "operatorId": "demo-operator",
+      "travellerId": "demo-traveller-09",
+      "fulfilledTripId": "demo-trip-09",
+      "departureDate": "2027-04-15",
+      "amount": 1300.0,
+      "currency": "MYR",
+      "status": "paid",
+      "paymentStatus": "paid",
+      "fulfillmentStatus": "awaiting_operator_fulfillment",
+      "supplierReservationStatus": "not_created",
+      "packageSnapshot": {
+        "packageId": "pkg-penang-heritage",
+        "title": "Fictional Penang demonstration excursion",
+        "destination": "Penang",
+        "durationDays": 3,
+        "durationNights": 2,
+        "selectedDepartureDate": "2027-04-15",
+        "accommodation": {
+          "accommodationName": "Eastern & Oriental Hotel",
+          "roomType": "Heritage Suite",
+          "accommodationCategory": "Hotel",
+          "accommodationNotes": "Includes daily breakfast for 2"
+        },
+        "transport": {
+          "transportTypes": [
+            "Airport Van Transfer",
+            "Heritage Ferry"
+          ],
+          "transportNotes": "Private air-conditioned minivan"
+        },
+        "inclusions": [
+          "2 nights 5-star heritage hotel accommodation",
+          "Licensed MOTAC English-speaking tour docent",
+          "Pinang Peranakan Mansion entrance tickets"
+        ],
+        "itineraryDays": [
+          {
+            "dayNumber": 1,
+            "activities": [
+              "Arrival and check-in",
+              "Evening street food walk"
+            ]
+          },
+          {
+            "dayNumber": 2,
+            "activities": [
+              "Guided colonial quarter tour",
+              "Mansion visit"
+            ]
+          },
+          {
+            "dayNumber": 3,
+            "activities": [
+              "Morning beach walk",
+              "Airport transfer"
+            ]
+          }
+        ],
+        "priceBasis": "per_person",
+        "adultUnitPrice": 650.0,
+        "participants": {
+          "adults": 2,
+          "children": 0,
+          "total": 2
+        },
+        "groupSize": 2,
+        "price": 1300.0,
+        "amountMinor": 130000,
+        "currency": "MYR"
+      },
+      "fulfillmentRecord": {
+        "status": "awaiting_operator_fulfillment",
+        "requiredServices": {
+          "accommodation": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureName": "Eastern & Oriental Hotel",
+            "brochureRoomType": "Heritage Suite",
+            "brochureCategory": "Hotel",
+            "brochureNotes": "Includes daily breakfast for 2"
+          },
+          "transport": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureTypes": [
+              "Airport Van Transfer",
+              "Heritage Ferry"
+            ],
+            "brochureNotes": "Private air-conditioned minivan"
+          },
+          "guideActivities": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "inclusions": [
+              "2 nights 5-star heritage hotel accommodation",
+              "Licensed MOTAC English-speaking tour docent",
+              "Pinang Peranakan Mansion entrance tickets"
+            ],
+            "itineraryDaysCount": 3
+          }
+        },
+        "services": {
+          "accommodation": {
+            "required": true,
+            "status": "unconfirmed",
+            "supplierName": "Eastern & Oriental Hotel",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": null,
+            "confirmedBy": null,
+            "provenance": "unconfirmed_manual"
+          },
+          "transport": {
+            "required": true,
+            "status": "unconfirmed",
+            "providerName": "",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": null,
+            "confirmedBy": null,
+            "provenance": "unconfirmed_manual"
+          },
+          "guideActivities": {
+            "required": true,
+            "status": "unconfirmed",
+            "guideOrActivity": "2 nights 5-star heritage hotel accommodation, Licensed MOTAC English-speaking tour docent, Pinang Peranakan Mansion entrance tickets",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": null,
+            "confirmedBy": null,
+            "provenance": "unconfirmed_manual"
+          }
+        },
+        "declineReason": null,
+        "declinedAt": null,
+        "declinedBy": null,
+        "confirmedAt": null,
+        "confirmedBy": null,
+        "updatedAt": "2026-11-22T05:50:21.848518+00:00"
+      },
+      "testMode": true,
+      "createdAt": "2026-11-01T10:00:00Z",
+      "updatedAt": "2026-11-01T10:00:00Z",
+      "synthetic": true,
+      "provenance": "isolated_operator_fulfillment_fixture"
+    },
+    {
+      "id": "demo-fulfilment-10",
+      "orderReference": "demo-fulfilment-10",
+      "quoteType": "package",
+      "packageId": "pkg-penang-heritage",
+      "packageTitle": "Fictional Penang demonstration excursion",
+      "operatorId": "demo-operator",
+      "travellerId": "demo-traveller-10",
+      "fulfilledTripId": "demo-trip-10",
+      "departureDate": "2027-04-15",
+      "amount": 1300.0,
+      "currency": "MYR",
+      "status": "paid",
+      "paymentStatus": "paid",
+      "fulfillmentStatus": "awaiting_operator_fulfillment",
+      "supplierReservationStatus": "not_created",
+      "packageSnapshot": {
+        "title": "Fictional Penang demonstration excursion",
+        "durationDays": 1
+      },
+      "fulfillmentRecord": {
+        "status": "awaiting_operator_fulfillment",
+        "requiredServices": {
+          "accommodation": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureName": "Eastern & Oriental Hotel",
+            "brochureRoomType": "Heritage Suite",
+            "brochureCategory": "Hotel",
+            "brochureNotes": "Includes daily breakfast for 2"
+          },
+          "transport": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "brochureTypes": [
+              "Airport Van Transfer",
+              "Heritage Ferry"
+            ],
+            "brochureNotes": "Private air-conditioned minivan"
+          },
+          "guideActivities": {
+            "required": true,
+            "uncertain": false,
+            "conflictingClauses": [],
+            "reviewReason": "",
+            "inclusions": [
+              "2 nights 5-star heritage hotel accommodation",
+              "Licensed MOTAC English-speaking tour docent",
+              "Pinang Peranakan Mansion entrance tickets"
+            ],
+            "itineraryDaysCount": 3
+          }
+        },
+        "services": {
+          "accommodation": {
+            "required": true,
+            "status": "unconfirmed",
+            "supplierName": "Eastern & Oriental Hotel",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": null,
+            "confirmedBy": null,
+            "provenance": "unconfirmed_manual"
+          },
+          "transport": {
+            "required": true,
+            "status": "unconfirmed",
+            "providerName": "",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": null,
+            "confirmedBy": null,
+            "provenance": "unconfirmed_manual"
+          },
+          "guideActivities": {
+            "required": true,
+            "status": "unconfirmed",
+            "guideOrActivity": "2 nights 5-star heritage hotel accommodation, Licensed MOTAC English-speaking tour docent, Pinang Peranakan Mansion entrance tickets",
+            "reference": "",
+            "notes": "",
+            "confirmedAt": null,
+            "confirmedBy": null,
+            "provenance": "unconfirmed_manual"
+          }
+        },
+        "declineReason": null,
+        "declinedAt": null,
+        "declinedBy": null,
+        "confirmedAt": null,
+        "confirmedBy": null,
+        "updatedAt": "2026-11-22T05:50:21.848518+00:00"
+      },
+      "testMode": true,
+      "createdAt": "2026-11-01T10:00:00Z",
+      "updatedAt": "2026-11-01T10:00:00Z",
+      "synthetic": true,
+      "provenance": "isolated_operator_fulfillment_fixture"
+    }
+  ]
+}

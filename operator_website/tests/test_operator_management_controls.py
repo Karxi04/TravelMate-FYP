@@ -203,14 +203,14 @@ def test_transport_form_separates_brochure_from_actual_saved_provider(auth_clien
     brochure = 'Long brochure paragraph promising a private airport transfer and island transport'
     portal_data['detail'] = booking('transport',requiredServices={'transport':{'required':True,'brochureTypes':[brochure]}},
         fulfillmentRecord={'services':{'transport':{'status':'unconfirmed','providerName':brochure}}},packageBrochure={},
-        readiness={'canMarkReady':False,'blockers':['Transportation booking reference is missing.','Actual transport provider / fleet is missing.'],
+        readiness={'canMarkReady':False,'blockers':['Transportation arrangements have not been attested by the operator.','Actual transport provider / fleet is missing.'],
                    'components':[],'requiredCount':1,'completedCount':0,'requirementsReliable':True})
     page = auth_client.get('/bookings/transport')
     html = page.get_data(as_text=True)
     assert page.status_code == 200 and brochure in html
     assert 'Read-only Brochure Specification' in html and 'name="providerName" value=""' in html
     assert f'value="{brochure}"' not in html
-    assert 'Transportation booking reference is missing.' in html
+    assert 'Transportation arrangements have not been attested by the operator.' in html
     assert 'Actual transport provider / fleet is missing.' in html
     assert 'FYP demonstration environment' not in html
     assert '<a href="/bookings" class="active">' in html
@@ -220,10 +220,11 @@ def test_transport_form_separates_brochure_from_actual_saved_provider(auth_clien
         status='confirmed',provenance='operator_attested',providerName='Saved actual fleet',reference='SAVED-42',notes='Saved pickup notes')
     saved_html = auth_client.get('/bookings/transport').get_data(as_text=True)
     assert 'name="providerName" value="Saved actual fleet"' in saved_html
-    assert 'value="SAVED-42"' in saved_html and 'value="Saved pickup notes"' in saved_html
-    result = auth_client.post('/bookings/transport/fulfillment',data={'serviceType':'transport','providerName':'Actual fleet','reference':'DISPATCH-42','notes':'Gate A'})
+    assert 'Historical reference: SAVED-42' in saved_html and 'value="Saved pickup notes"' in saved_html
+    assert 'name="reference"' not in saved_html
+    result = auth_client.post('/bookings/transport/fulfillment',data={'serviceType':'transport','providerName':'Actual fleet','attestation':'confirmed','notes':'Gate A'})
     assert result.status_code == 302
-    assert portal_data['calls'][-1] == ('POST','/api/fr12/bookings/transport/fulfillment',{'json':{'serviceType':'transport','reference':'DISPATCH-42','providerName':'Actual fleet','notes':'Gate A'}})
+    assert portal_data['calls'][-1] == ('POST','/api/fr12/bookings/transport/fulfillment',{'json':{'serviceType':'transport','attestation':'confirmed','providerName':'Actual fleet','notes':'Gate A'}})
 
 
 def test_payment_disclosure_footer_remains_on_payment_page(auth_client,portal_data):

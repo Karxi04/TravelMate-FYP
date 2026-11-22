@@ -500,13 +500,17 @@ def update_booking_fulfillment(order_reference):
     supplier_name = request.form.get(name_field, request.form.get('supplierName', '')).strip()
     notes = request.form.get("notes", "").strip()
 
-    if not service_type or not reference:
-        flash("Service type and booking reference are required.", "error")
+    attestation = request.form.get('attestation', '')
+    if service_type not in {'accommodation', 'transport', 'guideActivities'} or (
+            service_type == 'accommodation' and not reference) or (
+            service_type != 'accommodation' and (not supplier_name or attestation != 'confirmed')):
+        flash("Enter the required arrangement details and confirm that the arrangement is in place.", "error")
         return redirect(url_for("operator_fr12.booking_detail", order_reference=order_reference))
 
     payload = {
         "serviceType": service_type,
-        "reference": reference,
+        **({"reference": reference} if service_type == "accommodation" or reference else {}),
+        **({"attestation": attestation} if service_type != "accommodation" else {}),
         name_field: supplier_name,
         "notes": notes,
     }

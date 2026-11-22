@@ -102,12 +102,15 @@ def test_ambiguous_or_conflicting_snapshot_never_ready(data):
 
 def test_complete_attested_services_allow_readiness_but_payment_and_provider_still_gate():
     req = derive_required_services(snapshot(accommodationIncluded=True,transportIncluded=True,guideActivitiesIncluded=True))
-    record = {'services': {key: {'reference':'ACTUAL-REF','providerName':'Actual fleet', 'status':'confirmed',
+    record = {'services': {key: {'reference':'ACTUAL-REF','providerName':'Actual fleet', 'guideOrActivity':'Actual attraction authority', 'status':'confirmed',
                                'provenance':'operator_attested','confirmedBy':'op','confirmedAt':'2026-11-08'} for key in req}}
     ready = fulfillment_readiness({}, req, record, True)
     assert ready['canMarkReady'] and ready['completedCount'] == ready['requiredCount'] == 3
     assert not fulfillment_readiness({},req,record,False)['canMarkReady']
     record['services']['transport']['providerName'] = ''
+    assert not fulfillment_readiness({},req,record,True)['canMarkReady']
+    record['services']['transport']['providerName'] = 'Actual fleet'
+    record['services']['guideActivities']['guideOrActivity'] = ''
     assert not fulfillment_readiness({},req,record,True)['canMarkReady']
 
 
