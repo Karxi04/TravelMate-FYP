@@ -80,6 +80,8 @@ void main() {
       expect(views,1);expect(adds,1);
       await tester.ensureVisible(find.text('Why this suggestion'));await tester.pump();await tester.tap(find.text('Why this suggestion'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('How recommendations work')); await tester.pump();
+      await tester.tap(find.text('How recommendations work')); await tester.pumpAndSettle();
       expect(find.textContaining('Qualifying evaluation contributors: 3'),findsOneWidget);
       expect(find.textContaining('unweighted destination aggregate'),findsOneWidget);
       expect(tester.takeException(),isNull);
@@ -145,6 +147,8 @@ void main() {
         await tester.ensureVisible(find.text('Why this suggestion'));await tester.pump();await tester.tap(find.text('Why this suggestion'));
         await tester.pumpAndSettle();
         expect(find.textContaining('not genuine customer peer evidence'),findsOneWidget);
+        await tester.ensureVisible(find.text('How recommendations work')); await tester.pump();
+        await tester.tap(find.text('How recommendations work')); await tester.pumpAndSettle();
         expect(find.textContaining('Qualifying evaluation contributors: 3'),findsOneWidget);
         expect(tester.takeException(),isNull);
       });
@@ -192,6 +196,8 @@ void main() {
     expect(tester.takeException(),isNull);
     await tester.ensureVisible(find.text('Recommendation score: 62/100'));await tester.pump();
     await tester.tap(find.text('Recommendation score: 62/100'));await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('How recommendations work')); await tester.pump();
+    await tester.tap(find.text('How recommendations work')); await tester.pumpAndSettle();
     expect(find.textContaining('This saved evaluation predates the local-only policy'),findsOneWidget);
     expect(tester.takeException(),isNull);
   });

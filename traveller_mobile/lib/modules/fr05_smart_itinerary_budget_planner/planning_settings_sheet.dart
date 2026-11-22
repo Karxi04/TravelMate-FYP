@@ -124,6 +124,69 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
       });
   }
 
+  Widget transportEstimate(String kind, String title) {
+    final date = transport['${kind}Date'];
+    final time = transport['${kind}Time'];
+    Widget control(String field, Object? value, VoidCallback onPressed) =>
+        OutlinedButton(
+            key: ValueKey('transport-$kind-$field'),
+            onPressed: busy ? null : onPressed,
+            child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(children: [
+                  Text('$title $field'),
+                  Text(value?.toString() ?? 'Choose $field'),
+                ])));
+    final controls = [
+      control('date', date, () => transportDate('${kind}Date')),
+      control('time', time, () async {
+        final value = await pick(time?.toString());
+        if (value != null && mounted) {
+          setState(() {
+            preferencesTouched = true;
+            transport['${kind}Time'] = value;
+          });
+        }
+      }),
+    ];
+    return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(title, style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          LayoutBuilder(builder: (context, constraints) {
+            if (constraints.maxWidth < 340 ||
+                MediaQuery.textScalerOf(context).scale(14) > 18) {
+              return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    controls[0],
+                    const SizedBox(height: 8),
+                    controls[1],
+                  ]);
+            }
+            return Row(children: [
+              Expanded(child: controls[0]),
+              const SizedBox(width: 12),
+              Expanded(child: controls[1])
+            ]);
+          }),
+          Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                  key: ValueKey('clear-$kind-estimate'),
+                  onPressed: busy || date == null && time == null
+                      ? null
+                      : () => setState(() {
+                            preferencesTouched = true;
+                            transport.remove('${kind}Date');
+                            transport.remove('${kind}Time');
+                          }),
+                  child: Text('Clear ${kind.toLowerCase()} estimate'))),
+        ]));
+  }
+
   Map<String, dynamic> blockPayload(Map<String, dynamic> block) => {
         for (final key in [
           'blockId',
@@ -289,7 +352,7 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
   Future<void> preview() async {
     final minutes = int.tryParse(buffer.text);
     if (minutes == null || minutes < 0 || minutes > 720) {
-      setState(() => error = 'Choose a buffer of 0–720 minutes.');
+      setState(() => error = 'Enter extra travel time from 0 to 720 minutes.');
       return;
     }
     setState(() {
@@ -349,266 +412,293 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
         : transport['departureDate']]);
     String minutes(int value) =>
         '${(value ~/ 60).toString().padLeft(2, '0')}:${(value % 60).toString().padLeft(2, '0')}';
-    return SizedBox(
-        height: MediaQuery.sizeOf(context).height * .92,
-        child: Column(children: [
-          Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(children: [
-                const Expanded(
-                    child: Text('Planning settings',
-                        style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.w700))),
-                TextButton(
-                    onPressed: busy ? null : () => Navigator.pop(context),
-                    child: const Text('Not now'))
-              ])),
-          Expanded(
-              child: ListView(
-                  padding: EdgeInsets.fromLTRB(
-                      16, 0, 16, MediaQuery.viewInsetsOf(context).bottom + 24),
-                  children: [
-                DropdownButtonFormField<String>(
-                    initialValue: mode,
-                    isExpanded: true,
-                    itemHeight: null,
-                    decoration:
-                        const InputDecoration(labelText: 'Planning style'),
-                    items: const {
-                      'smart': 'Smart Planning',
-                      'manual': 'Manual Planning',
-                      'assisted': 'Assisted Planning'
-                    }
-                        .entries
-                        .map((e) => DropdownMenuItem(
-                            value: e.key, child: Text(e.value)))
-                        .toList(),
-                    onChanged: busy ? null : (v) => setState(() => mode = v!)),
-                if (widget.trip['planningMode'] == null)
-                  const Text(
-                      'This older trip has no saved planning style. It changes only when you apply a preview.'),
-                if (flight.isEmpty)
-                  DropdownButtonFormField<String>(
-                      initialValue: travelMode,
-                      isExpanded: true,
-                      itemHeight: null,
-                      decoration: const InputDecoration(
-                          labelText: 'Travel arrangements'),
-                      items: const {
-                        'undecided': 'Undecided',
-                        'flight': 'Flight (optional selection)',
-                        'own_vehicle': 'Self-drive',
-                        'public_transport': 'Bus / train (self-arranged)',
-                        'other': 'Other arrangements'
-                      }
-                          .entries
-                          .map((e) => DropdownMenuItem(
-                              value: e.key, child: Text(e.value)))
-                          .toList(),
-                      onChanged: busy
-                          ? null
-                          : (v) => setState(() {
-                                travelMode = v!;
-                                travelTouched = true;
-                              })),
-                const SizedBox(height: 16),
-                if (outbound.isNotEmpty)
-                  Text(
-                      'Arrival: ${outbound.last['arrivalAirportCode'] ?? 'Airport'} · ${outbound.last['arrivalDate'] ?? 'Date unavailable'} ${outbound.last['arrivalTime'] ?? 'Time unavailable'}'),
-                if (returns.isNotEmpty)
-                  Text(
-                      'Departure: ${returns.first['departureAirportCode'] ?? 'Airport'} · ${returns.first['departureDate'] ?? 'Date unavailable'} ${returns.first['departureTime'] ?? 'Time unavailable'}'),
-                if (flight.isNotEmpty)
-                  Text(assumptions.isNotEmpty
-                      ? 'Planning buffers: clearance ${assumptions['arrivalClearanceMinutes']} min + arrival transfer ${assumptions['arrivalTransferMinutes']} min; departure transfer ${assumptions['departureTransferMinutes']} min + check-in ${assumptions['departureCheckinMinutes']} min. Estimates, not airline requirements.'
-                      : 'Review the configured airport buffers in the preview. They are planning estimates, not airline requirements.'),
-                if (arrivalDay['earliestStartMinutes'] is int)
-                  Text((arrivalDay['earliestStartMinutes'] as int) >= 1440
-                      ? 'Arrival and travel buffers leave no sightseeing time that day.'
-                      : 'Saved arrival travel bound: sightseeing from ${minutes(arrivalDay['earliestStartMinutes'])} at the earliest.'),
-                if (departureDay['latestEndMinutes'] is int)
-                  Text((departureDay['latestEndMinutes'] as int) <= 0
-                      ? 'No sightseeing fits on the departure day.'
-                      : 'Saved departure travel bound: finish by ${minutes(departureDay['latestEndMinutes'])}.'),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                    initialValue: arrival,
-                    isExpanded: true,
-                    itemHeight: null,
-                    decoration: const InputDecoration(labelText: 'Arrival day'),
-                    items: const {
-                      'practical': 'Start when practical',
-                      'rest': 'Rest / hotel / luggage first',
-                      'custom': 'Choose my start time',
-                      'none': 'No sightseeing'
-                    }
-                        .entries
-                        .map((e) => DropdownMenuItem(
-                            value: e.key, child: Text(e.value)))
-                        .toList(),
-                    onChanged: busy
-                        ? null
-                        : (v) => setState(() {
-                              preferencesTouched = true;
-                              arrival = v!;
-                            })),
-                if ({'rest', 'custom'}.contains(arrival))
-                  timeButton('Sightseeing starts', arrivalStart,
-                      (v) => arrivalStart = v),
-                DropdownButtonFormField<String>(
-                    initialValue: departure,
-                    isExpanded: true,
-                    itemHeight: null,
-                    decoration:
-                        const InputDecoration(labelText: 'Departure day'),
-                    items: const {
-                      'keep': 'Keep activities if they fit',
-                      'light': 'Light sightseeing',
-                      'custom': 'Choose my finish time',
-                      'none': 'No sightseeing'
-                    }
-                        .entries
-                        .map((e) => DropdownMenuItem(
-                            value: e.key, child: Text(e.value)))
-                        .toList(),
-                    onChanged: busy
-                        ? null
-                        : (v) => setState(() {
-                              preferencesTouched = true;
-                              departure = v!;
-                            })),
-                if (departure == 'custom')
-                  timeButton('Sightseeing ends', departureEnd,
-                      (v) => departureEnd = v),
-                if (flight.isEmpty)
-                  ExpansionTile(
-                      title: const Text('Estimated transport times (optional)'),
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+        padding: EdgeInsets.only(bottom: keyboard),
+        child: SizedBox(
+            height: (MediaQuery.sizeOf(context).height - keyboard) * .92,
+            child: Column(children: [
+              Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(children: [
+                    const Expanded(
+                        child: Text('Planning settings',
+                            style: TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.w700))),
+                    TextButton(
+                        onPressed: busy ? null : () => Navigator.pop(context),
+                        child: const Text('Not now'))
+                  ])),
+              Expanded(
+                  child: ListView(
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                       children: [
-                        const Text(
-                            'Your estimates are distinct from verified flight data. Leave unset if undecided.'),
-                        for (final kind in ['arrival', 'departure'])
-                          Wrap(spacing: 8, runSpacing: 8, children: [
-                            OutlinedButton(
-                                onPressed: () => transportDate('${kind}Date'),
-                                child: Text(
-                                    '$kind date: ${transport['${kind}Date'] ?? 'Optional'}')),
-                            timeButton('$kind time', transport['${kind}Time'],
-                                (v) => transport['${kind}Time'] = v),
-                            TextButton(
-                                onPressed: () => setState(() {
-                                      preferencesTouched = true;
-                                      transport.remove('${kind}Date');
-                                      transport.remove('${kind}Time');
-                                    }),
-                                child: const Text('Clear')),
-                          ]),
-                        TextField(
-                            controller: buffer,
-                            onChanged: (_) => preferencesTouched = true,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                                labelText: 'Travel buffer (minutes)')),
-                      ]),
-                ExpansionTile(
-                    title: const Text('Daily sightseeing windows'),
-                    children: [
-                      TextButton(
-                          onPressed: busy ? null : bulkHours,
-                          child: const Text('Set hours for multiple days')),
-                      for (var day = 1; day <= count; day++)
-                        Builder(builder: (context) {
-                          final override = days
-                              .where((row) => row['dayNo'] == day)
-                              .firstOrNull;
-                          void change(Map<String, dynamic> update) {
-                            preferencesTouched = true;
-                            days.removeWhere((row) => row['dayNo'] == day);
-                            days.add({
-                              'dayNo': day,
-                              'startTime': '09:00',
-                              'endTime': '18:00',
-                              ...?override,
-                              ...update
-                            });
+                    DropdownButtonFormField<String>(
+                        initialValue: mode,
+                        isExpanded: true,
+                        itemHeight: null,
+                        decoration:
+                            const InputDecoration(labelText: 'Planning style'),
+                        items: const {
+                          'smart': 'Smart Planning',
+                          'manual': 'Manual Planning',
+                          'assisted': 'Assisted Planning'
+                        }
+                            .entries
+                            .map((e) => DropdownMenuItem(
+                                value: e.key, child: Text(e.value)))
+                            .toList(),
+                        onChanged:
+                            busy ? null : (v) => setState(() => mode = v!)),
+                    if (widget.trip['planningMode'] == null)
+                      const Text(
+                          'This older trip has no saved planning style. It changes only when you apply a preview.'),
+                    if (flight.isEmpty)
+                      DropdownButtonFormField<String>(
+                          initialValue: travelMode,
+                          isExpanded: true,
+                          itemHeight: null,
+                          decoration: const InputDecoration(
+                              labelText: 'Travel arrangements'),
+                          items: const {
+                            'undecided': 'Undecided',
+                            'flight': 'Flight (optional selection)',
+                            'own_vehicle': 'Self-drive',
+                            'public_transport': 'Bus / train (self-arranged)',
+                            'other': 'Other arrangements'
                           }
+                              .entries
+                              .map((e) => DropdownMenuItem(
+                                  value: e.key, child: Text(e.value)))
+                              .toList(),
+                          onChanged: busy
+                              ? null
+                              : (v) => setState(() {
+                                    travelMode = v!;
+                                    travelTouched = true;
+                                  })),
+                    const SizedBox(height: 16),
+                    Text('Arrival and departure preferences',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                        initialValue: arrival,
+                        isExpanded: true,
+                        itemHeight: null,
+                        decoration:
+                            const InputDecoration(labelText: 'Arrival day'),
+                        items: const {
+                          'practical': 'Start when practical',
+                          'rest': 'Rest / hotel / luggage first',
+                          'custom': 'Choose my start time',
+                          'none': 'No sightseeing'
+                        }
+                            .entries
+                            .map((e) => DropdownMenuItem(
+                                value: e.key, child: Text(e.value)))
+                            .toList(),
+                        onChanged: busy
+                            ? null
+                            : (v) => setState(() {
+                                  preferencesTouched = true;
+                                  arrival = v!;
+                                })),
+                    if ({'rest', 'custom'}.contains(arrival))
+                      timeButton('Sightseeing starts', arrivalStart,
+                          (v) => arrivalStart = v),
+                    DropdownButtonFormField<String>(
+                        initialValue: departure,
+                        isExpanded: true,
+                        itemHeight: null,
+                        decoration:
+                            const InputDecoration(labelText: 'Departure day'),
+                        items: const {
+                          'keep': 'Keep activities if they fit',
+                          'light': 'Light sightseeing',
+                          'custom': 'Choose my finish time',
+                          'none': 'No sightseeing'
+                        }
+                            .entries
+                            .map((e) => DropdownMenuItem(
+                                value: e.key, child: Text(e.value)))
+                            .toList(),
+                        onChanged: busy
+                            ? null
+                            : (v) => setState(() {
+                                  preferencesTouched = true;
+                                  departure = v!;
+                                })),
+                    if (departure == 'custom')
+                      timeButton('Sightseeing ends', departureEnd,
+                          (v) => departureEnd = v),
+                    const SizedBox(height: 16),
+                    ExpansionTile(
+                        key: const ValueKey('planning-travel-schedule'),
+                        title: const Text('Travel schedule'),
+                        subtitle: Text(flight.isEmpty
+                            ? 'Optional transport estimates'
+                            : 'Selected flight times'),
+                        initiallyExpanded: flight.isNotEmpty,
+                        childrenPadding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+                        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (flight.isNotEmpty) ...[
+                            if (outbound.isNotEmpty)
+                              Text(
+                                  'Arrival: ${outbound.last['arrivalAirportCode'] ?? 'Airport'} · ${outbound.last['arrivalDate'] ?? 'Date unavailable'} ${outbound.last['arrivalTime'] ?? 'Time unavailable'}'),
+                            if (returns.isNotEmpty)
+                              Text(
+                                  'Departure: ${returns.first['departureAirportCode'] ?? 'Airport'} · ${returns.first['departureDate'] ?? 'Date unavailable'} ${returns.first['departureTime'] ?? 'Time unavailable'}'),
+                            ExpansionTile(
+                              title: const Text('Airport time allowances'),
+                              children: [
+                                Text(assumptions.isNotEmpty
+                                    ? 'Clearance: ${assumptions['arrivalClearanceMinutes']} min. Arrival transfer: ${assumptions['arrivalTransferMinutes']} min. Departure transfer: ${assumptions['departureTransferMinutes']} min. Check-in: ${assumptions['departureCheckinMinutes']} min. Planning estimates, not airline requirements.'
+                                    : 'Review the airport allowances in the preview. These are planning estimates, not airline requirements.')
+                              ],
+                            ),
+                            if (arrivalDay['earliestStartMinutes'] is int)
+                              Text((arrivalDay['earliestStartMinutes']
+                                          as int) >=
+                                      1440
+                                  ? 'Arrival and travel buffers leave no sightseeing time that day.'
+                                  : 'Saved arrival travel bound: sightseeing from ${minutes(arrivalDay['earliestStartMinutes'])} at the earliest.'),
+                            if (departureDay['latestEndMinutes'] is int)
+                              Text((departureDay['latestEndMinutes'] as int) <=
+                                      0
+                                  ? 'No sightseeing fits on the departure day.'
+                                  : 'Saved departure travel bound: finish by ${minutes(departureDay['latestEndMinutes'])}.'),
+                          ] else ...[
+                            const Text(
+                                'Optional estimates, not confirmed transport. Leave unset if undecided.'),
+                            const SizedBox(height: 16),
+                            transportEstimate('arrival', 'Arrival'),
+                            transportEstimate('departure', 'Departure'),
+                            const SizedBox(height: 8),
+                            TextField(
+                                key: const ValueKey('extra-travel-time'),
+                                controller: buffer,
+                                onChanged: (_) => preferencesTouched = true,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                    labelText: 'Extra travel time (minutes)',
+                                    helperText:
+                                        'Optional time for stops or transfers. This is an estimate.',
+                                    helperMaxLines: 3)),
+                          ],
+                        ]),
+                    ExpansionTile(
+                        title: const Text('Daily sightseeing windows'),
+                        children: [
+                          TextButton(
+                              onPressed: busy ? null : bulkHours,
+                              child: const Text('Set hours for multiple days')),
+                          for (var day = 1; day <= count; day++)
+                            Builder(builder: (context) {
+                              final override = days
+                                  .where((row) => row['dayNo'] == day)
+                                  .firstOrNull;
+                              void change(Map<String, dynamic> update) {
+                                preferencesTouched = true;
+                                days.removeWhere((row) => row['dayNo'] == day);
+                                days.add({
+                                  'dayNo': day,
+                                  'startTime': '09:00',
+                                  'endTime': '18:00',
+                                  ...?override,
+                                  ...update
+                                });
+                              }
 
-                          return Padding(
-                              key: ValueKey('planning-day-$day'),
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    Text(
-                                        '${dayLabel(day)} · ${override == null ? 'Travel-pace defaults' : 'Custom window'}'),
-                                    SwitchListTile(
-                                        key: ValueKey('rest-day-$day'),
-                                        contentPadding: EdgeInsets.zero,
-                                        title: const Text('Rest day'),
-                                        value: override?['restDay'] == true,
-                                        onChanged: busy
-                                            ? null
-                                            : (v) => setState(
-                                                () => change({'restDay': v}))),
-                                    if (override?['restDay'] != true)
-                                      Wrap(
-                                          spacing: 8,
-                                          runSpacing: 8,
-                                          children: [
-                                            timeButton(
-                                                'Start',
-                                                override?['startTime'],
-                                                (v) =>
-                                                    change({'startTime': v})),
-                                            timeButton(
-                                                'End',
-                                                override?['endTime'],
-                                                (v) => change({'endTime': v})),
-                                          ]),
-                                    Wrap(spacing: 8, runSpacing: 8, children: [
-                                      TextButton(
-                                          onPressed: () => setState(() {
-                                                preferencesTouched = true;
-                                                days.removeWhere((row) =>
-                                                    row['dayNo'] == day);
-                                              }),
-                                          child: const Text('Use default')),
-                                    ]),
-                                  ]));
-                        }),
-                    ]),
-                ExpansionTile(
-                    title: Text('Personal planning blocks (${blocks.length})'),
-                    initiallyExpanded: blocks.isNotEmpty,
-                    children: [
-                      for (var index = 0; index < blocks.length; index++)
-                        ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text('${blocks[index]['label']}'),
-                            subtitle: Text(
-                                'Day ${blocks[index]['dayNo']} · ${blocks[index]['startTime'] ?? 'Unscheduled'} ${blocks[index]['endTime'] ?? ''}'),
-                            onTap: () => editBlock(index),
-                            trailing: IconButton(
-                                tooltip: 'Remove personal block',
-                                icon: const Icon(Icons.delete_outline),
-                                onPressed: () => setState(() {
-                                      blocksTouched = true;
-                                      blocks.removeAt(index);
-                                    }))),
-                      OutlinedButton.icon(
-                          onPressed: busy ? null : () => editBlock(),
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add personal block')),
-                    ]),
-                const Text(
-                    'No saved activities or arrangements change until you review and apply. Fixed visits and paid arrangements stay protected.'),
-                if (error != null)
-                  Text(error!, style: const TextStyle(color: AppColors.error)),
-                const SizedBox(height: 12),
-                FilledButton(
-                    onPressed: busy ? null : preview,
-                    child: const Text('Preview planning changes')),
-              ])),
-        ]));
+                              return Padding(
+                                  key: ValueKey('planning-day-$day'),
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Text(
+                                            '${dayLabel(day)} · ${override == null ? 'Travel-pace defaults' : 'Custom window'}'),
+                                        SwitchListTile(
+                                            key: ValueKey('rest-day-$day'),
+                                            contentPadding: EdgeInsets.zero,
+                                            title: const Text('Rest day'),
+                                            value: override?['restDay'] == true,
+                                            onChanged: busy
+                                                ? null
+                                                : (v) => setState(() =>
+                                                    change({'restDay': v}))),
+                                        if (override?['restDay'] != true)
+                                          Wrap(
+                                              spacing: 8,
+                                              runSpacing: 8,
+                                              children: [
+                                                timeButton(
+                                                    'Start',
+                                                    override?['startTime'],
+                                                    (v) => change(
+                                                        {'startTime': v})),
+                                                timeButton(
+                                                    'End',
+                                                    override?['endTime'],
+                                                    (v) =>
+                                                        change({'endTime': v})),
+                                              ]),
+                                        Wrap(
+                                            spacing: 8,
+                                            runSpacing: 8,
+                                            children: [
+                                              TextButton(
+                                                  onPressed: () => setState(() {
+                                                        preferencesTouched =
+                                                            true;
+                                                        days.removeWhere(
+                                                            (row) =>
+                                                                row['dayNo'] ==
+                                                                day);
+                                                      }),
+                                                  child: const Text(
+                                                      'Use default')),
+                                            ]),
+                                      ]));
+                            }),
+                        ]),
+                    ExpansionTile(
+                        title:
+                            Text('Personal planning blocks (${blocks.length})'),
+                        initiallyExpanded: blocks.isNotEmpty,
+                        children: [
+                          for (var index = 0; index < blocks.length; index++)
+                            ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text('${blocks[index]['label']}'),
+                                subtitle: Text(
+                                    'Day ${blocks[index]['dayNo']} · ${blocks[index]['startTime'] ?? 'Unscheduled'} ${blocks[index]['endTime'] ?? ''}'),
+                                onTap: () => editBlock(index),
+                                trailing: IconButton(
+                                    tooltip: 'Remove personal block',
+                                    icon: const Icon(Icons.delete_outline),
+                                    onPressed: () => setState(() {
+                                          blocksTouched = true;
+                                          blocks.removeAt(index);
+                                        }))),
+                          OutlinedButton.icon(
+                              onPressed: busy ? null : () => editBlock(),
+                              icon: const Icon(Icons.add),
+                              label: const Text('Add personal block')),
+                        ]),
+                    const Text(
+                        'No saved activities or arrangements change until you review and apply. Fixed visits and paid arrangements stay protected.'),
+                    if (error != null)
+                      Text(error!,
+                          style: const TextStyle(color: AppColors.error)),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                        onPressed: busy ? null : preview,
+                        child: const Text('Preview planning changes')),
+                  ])),
+            ])));
   }
 }

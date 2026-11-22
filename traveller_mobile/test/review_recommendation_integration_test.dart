@@ -189,6 +189,8 @@ void main() {
       }
       await tester.ensureVisible(find.text('Recommendation score: 62/100'));
       await tester.tap(find.text('Recommendation score: 62/100')); await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('How recommendations work')); await tester.pump();
+      await tester.tap(find.text('How recommendations work')); await tester.pumpAndSettle();
       expect(find.textContaining(entry.$2),findsOneWidget);
       expect(find.textContaining(simulation ? 'Qualifying evaluation contributors: 3' : 'Eligible reviewers: 3'),findsOneWidget);
       expect(actions,0); expect(tester.takeException(),isNull);

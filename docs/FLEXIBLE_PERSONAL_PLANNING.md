@@ -5,6 +5,64 @@ Based on `travelmate-full-repair` at `51919834f0c2f97461b50aabed1c16b9e62df5d8`
 provider, checkout flow, or database collection. Source verification is separate
 from rollout and physical Vivo acceptance.
 
+## Mobile and supplier comparison follow-up — 22 November 2026
+
+- Travel schedule now groups optional arrival/departure date and time controls,
+  with associated Clear actions and responsive stacking. Extra travel time has
+  a short explanation. Attached flight times remain read-only and authoritative;
+  airport planning allowances are available in collapsed details. Keyboard space
+  is reserved so the preview action remains reachable.
+- Why this suggestion shows the actual overall hybrid score and three independent
+  60/30/10 components first. Detailed peer count/confidence, local/provider rating
+  provenance, illustrative-data limitations and attribution remain accessible
+  under How recommendations work. No scoring or review data changed.
+- A reproduced cross-module defect tied supplier search receipts to the entire
+  Trip fingerprint. Saving daily hours, personal blocks or derived budget metadata
+  made exact saved searches unavailable, even when supplier criteria were intact.
+  Flutter also discarded the references before the Backend could recheck them.
+- Newly submitted searches carry `searchContextVersion` in the existing search
+  receipt, covering owner/Trip, dates, destination, passengers, selected supplier
+  evidence and protected arrangement fields. Saved references can be re-read
+  after unrelated planning changes; every quote, price, expiry, cabin, occupancy
+  and timing constraint is revalidated against the current Trip. A new offer uses
+  the current **full** state version; old previews still cannot apply. No old
+  receipt or Trip is migrated. Legacy receipts retain strict full-version checks.
+- Same-cabin and explicitly chosen lower-cabin searches keep their original
+  two-request cap; hotel searches keep the one-request cap. Read-only rechecking
+  never calls providers. Expired, unrelated and paid/pending arrangements remain
+  blocked. A mismatched old receipt now explains the need to refresh rather than
+  claiming that no cheaper inventory exists.
+
+The regression baseline reproduced 12 failures with isolated saved supplier
+receipts; these are source-level findings, not proof of the owner's precise live
+supplier failure. Runtime health reports no source SHA, and installed version
+metadata does not establish an APK commit. Real supplier availability and matching
+Backend/APK Vivo replacement acceptance remain pending separate authorization.
+
+After an approved matching rollout, use an authorized disposable Trip: check
+arrival/departure controls and keyboard, expand recommendation provenance, search
+Same Cabin/explicit Lower Cabin, review valid hotel revalidation, then inspect
+supplier counts/expiry and Preview → Cancel or Confirm → Reopen. Confirm no
+duplicate budget amount and retention of fixed visits, personal breaks and paid
+records. Live supplier searches and mutations require their separate approvals.
+
+### Follow-up verification
+
+| Suite | Final follow-up result |
+|---|---|
+| Complete default Backend | 4,035 passed; 2 existing emulator-only skips; 30 integration tests deselected; 6 warnings |
+| Complete Flutter | 1,333 passed |
+| Dart analysis | No issues |
+| Administrator | 112 passed; 1 integration deselected |
+| Operator | 213 Python and 5 JavaScript passed |
+| New targeted supplier integration | 23 passed; included in the complete Backend count |
+
+The initial complete Flutter run had five assertions expecting provenance text
+before expanding details. Tests now open the requested detail control and retain
+the original source/count/confidence and no-side-effect assertions. The final
+complete run passed. Mobile layout evidence is automated; it does not establish
+physical Vivo success or current real supplier availability.
+
 ## PR #93 continuation — 22 November 2026
 
 The follow-up addresses the owner's Smart Planning, Budget/Expenses and form

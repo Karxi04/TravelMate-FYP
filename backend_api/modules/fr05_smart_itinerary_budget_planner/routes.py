@@ -1205,6 +1205,18 @@ def _alternative_state(current):
     return hashlib.sha256(json.dumps(current, sort_keys=True, default=str).encode()).hexdigest()
 
 
+def _supplier_search_context(current, kind):
+    # Supplier evidence can be rechecked after a plan edit; applying still uses the full Trip fingerprint.
+    common = ('id', 'travellerId', 'destinationArea', 'startDate', 'endDate', 'travellerCount',
+              'status', 'paymentId', 'paymentRecordId', 'paidTotal', 'checkoutOrderId', 'purchasedPackages')
+    fields = (('selectedFlight', 'flightCost', 'flightCurrency', 'flightPriceBasis', 'travelMode',
+               'flightSearchId', 'flightOptionId', 'flightBookingId', 'flightPaymentId', 'flightOrderId')
+              if kind == 'flight' else
+              ('selectedHotel', 'hotelCost', 'hotelCurrency', 'hotelStayCriteria', 'accommodationChoice',
+               'hotelBookingId', 'hotelOfferQuoteId', 'hotelPaymentId', 'hotelOrderId'))
+    return _alternative_state({key: current.get(key) for key in common + fields})
+
+
 def _commit_cost_alternative(iid, expected, patch):
     from google.api_core.exceptions import FailedPrecondition, NotFound
     from sequence_contract.firebase_firestore import get_db
@@ -1644,7 +1656,8 @@ def discover_cost_alternatives(iid):
                 raise _AlternativeConflict('The selected flight cannot safely be compared.')
             comparison=flight_comparison(current,payload.get('cabinComparison','same_cabin'),payload.get('comparisonCabin'))
             search = lambda invoke: flight_search(current, invoke, comparison)
-        result = run_search(g.uid, current, kind, state, search, request_id=search_request_id,comparison=comparison)
+        result = run_search(g.uid, current, kind, state, search, request_id=search_request_id,
+                            comparison=comparison, search_context=_supplier_search_context(current, kind))
     except (DiscoveryError, _AlternativeConflict) as error:
         logging.getLogger(__name__).info('budget_discovery_blocked category=%s reason=%s', kind, str(error))
         diagnostic={'status':'needs_review','reasonCode':getattr(error,'code','invalid_cabin_comparison'),
@@ -1865,14 +1878,18 @@ def _comparison_searches(current, search_ids, cabin_settings):
             record = (retrieveRecord('budget_alternative_searches', identity)
                       if isinstance(identity, str) and len(identity) <= 200 and '/' not in identity else None)
             result = (record or {}).get('result') or {}
+            state = _alternative_state(current)
+            same_context = bool(record and record.get('searchContextVersion') == _supplier_search_context(current, kind)
+                                and re.fullmatch(r'[0-9a-f]{64}', str(record.get('stateVersion') or '')))
             if (record and record.get('travellerId') == g.uid and record.get('tripId') == current['id']
-                    and record.get('stateVersion') == _alternative_state(current) and record.get('category') == kind
+                    and (record.get('stateVersion') == state or same_context) and record.get('category') == kind
                     and (kind != 'flight' or result.get('comparison', record.get('comparison')) == cabin_settings)):
                 summary = {key: result[key] for key in ('providerReached', 'requestsAttempted', 'candidateCount',
                     'validQuoteCount', 'rejectedCount', 'rejectionCounts', 'failureCode', 'retryAt', 'expiresAt',
                     'outboundCandidateCount', 'returnCandidateCount') if key in result}
                 summary.update(searchStatus=record['status'], searchId=identity,
-                               reasonCode=result.get('failureCode'), cheaperCandidateCount=0, timingConflictCount=0)
+                               reasonCode=result.get('failureCode'), cheaperCandidateCount=0, timingConflictCount=0,
+                               recheckedForCurrentTrip=record.get('stateVersion') != state)
                 if record['status'] == 'completed':
                     references[kind] = [row for row in result.get('references', []) if isinstance(row, dict)]
             else:

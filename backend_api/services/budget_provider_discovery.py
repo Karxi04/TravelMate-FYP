@@ -22,7 +22,7 @@ def searches_per_hour():
         return 6
 
 
-def run_search(owner, trip, kind, state, search, request_id=None, comparison=None):
+def run_search(owner, trip, kind, state, search, request_id=None, comparison=None, search_context=None):
     """Durable deduplication; count submitted provider searches, not page visits or validation failures."""
     now = datetime.now(timezone.utc)
     bucket = int(now.timestamp()) // 600
@@ -47,6 +47,7 @@ def run_search(owner, trip, kind, state, search, request_id=None, comparison=Non
         identity = intent['cacheId']
     record, created = claimRecord('budget_alternative_searches', identity, {
         'travellerId': owner, 'tripId': trip['id'], 'stateVersion': state, 'category': kind,
+        'searchContextVersion': search_context,
         'comparison':comparison, 'status': 'pending', 'createdAt': now.isoformat(),
     })
     if not created:
