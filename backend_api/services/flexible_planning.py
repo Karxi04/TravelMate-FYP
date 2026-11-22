@@ -326,6 +326,136 @@ def preservation_error(before, after, exclude=None):
     return None
 
 
+def fill_available_time(trip, candidates, targets):
+    """Propose bounded additions in real gaps; existing visit times stay untouched."""
+    from sequence_contract.domain_functions import (
+        _schedule_candidate, _local_leg, _LOCAL_TRAVEL, _sightseeing_mode,
+        _pace_key, _format_time, _local_coords, calculateBudget)
+    from services.itinerary_identity import same_attraction
+    from services.activity_pricing import activity_pricing
+    from sequence_contract.domain_functions import addActivity
+    available = availability_for(trip)
+    if available['status'] != 'available':
+        return trip, {'addedCount': 0, 'message': 'Travel timing must be reviewed before adding attractions.'}
+    result = deepcopy(trip)
+    pace, mode = _pace_key(trip), _sightseeing_mode(trip)
+    cap = {'relaxed': 2, 'moderate': 3, 'active': 5}[pace]
+    max_km, max_leg, daily_limit, _ = _LOCAL_TRAVEL[mode]
+    daily_limit = int(daily_limit * (.75 if pace == 'relaxed' else 1))
+    rhythm = str(trip.get('sleepingType') or '').lower()
+    rest = (840, 900) if rhythm == 'night owl' else (750, 840 if rhythm == 'comfort-focused' else 810)
+    added, rejected = [], {}
+    coordinate_cache, leg_cache = {}, {}
+    def coords(row):
+        if row is None:
+            return None
+        key = str(row.get('destinationId') or row.get('activityId') or id(row))
+        if key not in coordinate_cache:
+            coordinate_cache[key] = _local_coords(row)
+        return coordinate_cache[key]
+    def journey(origin, destination):
+        if destination is None:
+            return (0, 0, 'not_applicable')
+        key = (str((origin or {}).get('destinationId') or (origin or {}).get('activityId')),
+               str(destination.get('destinationId') or destination.get('activityId')))
+        if key not in leg_cache:
+            if not coords(destination) or origin is not None and not coords(origin):
+                leg_cache[key] = None
+            else:
+                leg_cache[key] = _local_leg(origin, destination, mode,
+                    coordinates=(coords(origin), coords(destination)))
+        return leg_cache[key]
+    pool = [deepcopy(row) for row in candidates or []][:70]
+    for candidate in pool:
+        if any(same_attraction(candidate, row) for row in result.get('activities') or []):
+            rejected['duplicate'] = rejected.get('duplicate', 0) + 1
+            continue
+        price = activity_pricing(candidate, trip.get('travellerCount', 1))
+        if price['pricingIssues']:
+            rejected['unknown_price'] = rejected.get('unknown_price', 0) + 1
+            continue
+        limit = float(trip.get('budgetLimit') or 0)
+        if limit and calculateBudget({**result, 'activities': result.get('activities', []) + [candidate]})['totalEstimatedCost'] > limit:
+            rejected['budget'] = rejected.get('budget', 0) + 1
+            continue
+        options = []
+        for key, window in available['days'].items():
+            number = window['dayNo']
+            if number not in targets or window['endMinutes'] <= window['startMinutes']:
+                continue
+            rows = sorted([row for row in result.get('activities') or [] if row.get('dayNo', 1) == number],
+                          key=lambda row: row.get('scheduledStartTime') or row.get('timeSlot') or '')
+            if len(rows) >= cap:
+                continue
+            # Missing saved times cannot safely define an insertion gap.
+            if any(not row.get('scheduledEndTime') or not (row.get('scheduledStartTime') or row.get('timeSlot')) for row in rows):
+                continue
+            day_rest = (0, 0) if any(row.get('dayNo') == number and row.get('type') == 'meal'
+                                      for row in result.get('planningBlocks') or []) else rest
+            for index in range(len(rows) + 1):
+                prior = rows[index - 1] if index else result.get('accommodationBase') or result.get('selectedHotel')
+                following = rows[index] if index < len(rows) else None
+                cursor = clock(prior['scheduledEndTime']) if index else window['startMinutes']
+                end = clock(following.get('scheduledStartTime') or following.get('timeSlot')) if following else window['endMinutes']
+                leg = journey(prior, candidate)
+                onward = journey(candidate, following)
+                anchor = rows[0] if rows else prior
+                anchor_leg = journey(anchor, candidate)
+                if any(value is None or value[0] > max_leg or value[1] > max_km for value in (leg, onward, anchor_leg)):
+                    rejected['travel'] = rejected.get('travel', 0) + 1
+                    continue
+                if sum(int(row.get('travelDurationMinutes') or 0) for row in rows) + leg[0] + onward[0] > daily_limit:
+                    continue
+                planned, reason = _schedule_candidate(candidate, prior, cursor, date.fromisoformat(key),
+                    end - onward[0], day_rest, leg, reservations(result, number))
+                if not planned:
+                    rejected['hours_or_time'] = rejected.get('hours_or_time', 0) + 1
+                    continue
+                options.append((len(rows) / max(1, window['availableMinutes']), number, index, planned))
+                break
+        if not options:
+            continue
+        _, number, _, planned = min(options, key=lambda value: (value[0], value[1]))
+        start, end = planned.pop('_startMinutes'), planned.pop('_endMinutes')
+        planned.pop('_openingPeriodEnd', None)
+        planned.update(dayNo=number, dayDate=next(key for key, value in available['days'].items() if value['dayNo'] == number), timeSlot=_format_time(start), scheduledStartTime=_format_time(start),
+                       scheduledEndTime=_format_time(end), planningOrigin='generated')
+        # Reuse existing ID allocation; never reuse snapshot A1 over an owned visit.
+        planned.pop('activityId', None)
+        result = addActivity(result, planned)
+        row = result['activities'][-1]
+        added.append(row['activityId'])
+        result['unscheduledSuggestions'] = [item for item in result.get('unscheduledSuggestions') or []
+                                            if not same_attraction(item, row)]
+    for day in result.get('dailySchedule') or []:
+        if day['dayNo'] not in targets:
+            continue
+        rows = sorted([row for row in result['activities'] if row.get('dayNo', 1) == day['dayNo']],
+                      key=lambda row: row.get('scheduledStartTime') or row.get('timeSlot') or '')
+        day['activities'] = rows
+        prices = [activity_pricing(row, trip.get('travellerCount')) for row in rows]
+        blocks = [row for row in result.get('planningBlocks') or [] if row.get('dayNo') == day['dayNo']]
+        known = round(sum(row['effectiveCost'] for row in prices) + sum(float(row.get('estimatedCost') or 0) for row in blocks), 2)
+        day.update(knownEstimatedCost=known, estimatedCost=None if any(row['pricingIssues'] for row in prices)
+                   or any(row.get('estimatedCost') is None for row in blocks) else known,
+                   estimatedMinutes=sum(int(row.get('recommendedDurationMinutes') or 0) + int(row.get('travelDurationMinutes') or 0) for row in rows))
+    summaries = []
+    for key, window in available['days'].items():
+        number = window['dayNo']
+        if number not in targets:
+            continue
+        rows = [row for row in result.get('activities') or [] if row.get('dayNo', 1) == number]
+        summaries.append({'dayNo': number, 'startTime': _format_time(window['startMinutes']),
+            'endTime': _format_time(window['endMinutes']), 'existingCount': sum(row.get('activityId') not in added for row in rows),
+            'addedCount': sum(row.get('activityId') in added for row in rows),
+            'scheduledEnd': max((row.get('scheduledEndTime') or '' for row in rows), default=None),
+            'availableMinutes': window['availableMinutes'],
+            'note': 'Unoccupied time may still require travel, meals, rest or unavailable venue hours.'})
+    return result, {'days': summaries, 'addedCount': len(added), 'rejectedCounts': rejected,
+                    'message': f'{len(added)} additional attractions fit the available time.' if added else
+                    'No suitable additional attractions were found for your available time. Existing visits remain subject to the preview.'}
+
+
 def build_planning_preview(trip, flight, owner, preview_id, command, candidates=None):
     """Use the authoritative constraint planner, then merge only the selected days."""
     from sequence_contract.domain_functions import recalculateItinerary, calculateBudget, addActivity
@@ -406,6 +536,9 @@ def build_planning_preview(trip, flight, owner, preview_id, command, candidates=
             proposed['dailySchedule'].append(row)
     elif not proposed.get('dailySchedule'):
         proposed.update({k:v for k,v in recalculateItinerary(proposed).items() if k in {'dailySchedule','tripDays'}})
+    filling = None
+    if action == 'improve':
+        proposed, filling = fill_available_time(proposed, [*(trip.get('unscheduledSuggestions') or []), *(candidates or [])], targets)
     conflicts = [row for row in available.get('preferenceConflicts') or [] if row.get('dayNo') in targets or row.get('dayNo') is None]
     if available['status']!='available':conflicts.append({'message':available.get('reason') or 'Travel timing is unavailable.'})
     after_by_id = {row.get('activityId'):row for row in proposed.get('activities',[])}
@@ -437,7 +570,7 @@ def build_planning_preview(trip, flight, owner, preview_id, command, candidates=
     code = ('PROTECTED_ACTIVITY_CONFLICT' if any(row.get('activityId') for row in conflicts) else
             'FLIGHT_TIMING_INCOMPLETE' if any('incomplete' in row.get('message','').lower() for row in conflicts) else
             'PLANNING_TIME_CONFLICT') if conflicts else None
-    return {'kind':'planning','previewId':preview_id,'tripId':trip['id'],'owner':owner,'status':'ready',
+    return {'gapFilling': filling, 'kind':'planning','previewId':preview_id,'tripId':trip['id'],'owner':owner,'status':'ready',
         'code':code,'nextAction': 'review_fixed_activity' if code=='PROTECTED_ACTIVITY_CONFLICT' else 'review_flight' if code=='FLIGHT_TIMING_INCOMPLETE' else 'edit_preferences' if conflicts else None,
         'canApply':not conflicts,'reason':' '.join(row['message'] for row in conflicts),
         'tripFingerprint':fingerprint(trip),'flightFingerprint':fingerprint(flight or {}),'before':deepcopy(trip),'after':proposed,

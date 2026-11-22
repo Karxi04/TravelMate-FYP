@@ -501,9 +501,9 @@ def _generate_itinerary_data(current, payload, snapshot=None):
             if snapshot:
                 raise RuntimeError('Linked recommendation snapshot has no destination-relevant results')
             raise RuntimeError('No destination candidates are available for this trip')
-        # Let the constraint-aware planner decide actual capacity. The existing
-        # safety limit remains 20, with overflow retained as suggestions.
-        max_items = min(len(candidates), 20)
+        # Expand only the owned pool: five visits/day plus rejection headroom, bounded to 70.
+        days = (date.fromisoformat(working['endDate']) - date.fromisoformat(working['startDate'])).days + 1
+        max_items = min(len(candidates), min(70, max(20, days * 5 + 10)))
         working['activities'] = [
             _activity_from_destination(item, index)
             for index, item in enumerate(candidates[:max_items])
@@ -819,6 +819,19 @@ def flight_adjustment_preview(iid):
             candidates = [{**_activity_from_destination(row,index), 'recommendationGenerationId':
                 snapshot.get('recommendationGenerationId') or generation} for index,row in enumerate(rows)
                 if str(row.get('title') or row.get('name') or '').strip()]
+    evidence_status = None
+    if planning and planning.get('action') == 'improve':
+        # Additional evidence is optional; expired suggestions never block existing-plan improvement.
+        try:
+            snapshot, error = _regeneration_snapshot(current, planning)
+        except Exception:
+            snapshot, error = None, 'Saved suggestions are temporarily unavailable.'
+        if snapshot and not error:
+            rows = _filter_destination_candidates(snapshot.get('recommendationResults') or snapshot.get('items') or [], current.get('destinationArea'))
+            candidates = [_activity_from_destination(row, index) for index, row in enumerate(rows[:70])]
+            evidence_status = 'available'
+        else:
+            evidence_status = 'unavailable'
     try:
         preview = (create_flight_adjustment_preview(current, flight or {}, g.uid, planning=planning, candidates=candidates)
                    if planning is not None else create_flight_adjustment_preview(current, flight, g.uid))
@@ -827,6 +840,8 @@ def flight_adjustment_preview(iid):
         if isinstance(error, PlanningConflict):
             return _planning_error(str(error), error.code, 'schedule_validation', error.action)
         return _planning_error(str(error), 'PLANNING_TIME_CONFLICT', 'schedule_validation', 'edit_preferences', 400)
+    if evidence_status:
+        preview['additionalEvidenceStatus'] = evidence_status
     if preview.get('canApply') is False and not preview.get('code'):
         incomplete = 'incomplete' in str(preview.get('reason', '')).lower()
         preview.update(code='FLIGHT_TIMING_INCOMPLETE' if incomplete else 'PLANNING_TIME_CONFLICT',

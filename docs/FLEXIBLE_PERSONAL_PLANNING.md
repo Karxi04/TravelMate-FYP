@@ -5,6 +5,52 @@ Based on `travelmate-full-repair` at `51919834f0c2f97461b50aabed1c16b9e62df5d8`
 provider, checkout flow, or database collection. Source verification is separate
 from rollout and physical Vivo acceptance.
 
+## Free-time additions and Packed balancing — 22 November 2026
+
+Initial Smart creation now takes a bounded pool from its already-owned generation:
+five candidates per Trip day plus ten rejection alternatives, minimum 20, maximum
+70 (supported Trips remain 1–14 days). This is a candidate allowance, not a promise
+of five visits or a provider fetch. The existing automatic visit caps remain
+2/3/5 for relaxed/moderate/active profiled planning. Day distribution uses the
+effective remaining sightseeing minutes, including overrides and travel boundaries,
+rather than reserving the same capacity for full days, short days and rest days.
+Rank/context priority is considered for the final available slots, so an
+early-closing sort alone does not consume every opportunity for a late venue.
+The previous relaxed pair-selection policy remains restricted to relaxed pace;
+directional provider journey evidence is preserved.
+
+Both Improve scopes optionally resolve additional candidates through the existing
+owned, mode-aware snapshot resolver. They do not call a destination provider.
+Expired/missing/unavailable evidence leaves existing-visit improvement usable;
+Flutter offers an explicit, confirmed Refresh suggestions action using its existing
+recovery flow. It does not regenerate automatically or restore either removed menu.
+
+After normal improvement, bounded additions are considered in actual gaps before,
+between and after saved visits. Existing visit times are not changed by insertion.
+The same scheduling helper checks weekday/split/overnight hours, duration, rest and
+personal reservations. Local journey checks include the next visit, anchor distance
+and daily travel limits. Known MYR pricing must fit the existing total budget;
+missing/ambiguous prices are rejected rather than assumed free. Unknown opening
+hours may remain provisional under the existing contract. Candidate/day counts are
+bounded, and geographic validations/journeys are cached only within that preview.
+
+The preview identifies `added`, `retained`, `moved` and unscheduled visits through
+the existing change cards, shows budget before/after, and includes `gapFilling`
+counts, daily windows and rejection categories. A no-addition message explicitly
+states that no suitable additional attraction was found; it does not claim success.
+Keep current plan does not persist. Apply uses the existing owner/fingerprint/CAS,
+history and idempotent reopening contract. Earlier days remain unchanged for
+Improve remaining days, and only the selected day changes for Improve this day.
+Recalculate in normal Backend Trip Details uses Improve this day; standalone
+recalculate only has its locally available activities and suggestions, with no
+new remote candidate source.
+
+Controlled five-day evidence with the same 35 available fixture attractions:
+the previous 20-input creation limit scheduled 4/4/4/4/4; the expanded owned pool
+scheduled 5/5/5/5/5. A rest-day case schedules 5/5/0/5/5. These are synthetic
+demonstrations of opportunity, not live venue availability or a target count.
+Physical Vivo rollout and persistence acceptance still require separate approval.
+
 ## Current Schedule Assistance and relaxed scheduling — 22 November 2026
 
 The normal Traveller menu now contains only **Improve this day** and **Improve

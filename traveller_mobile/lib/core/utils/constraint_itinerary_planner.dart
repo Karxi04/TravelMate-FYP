@@ -530,9 +530,14 @@ Map<String, dynamic> planConstraintAwareItinerary(
     final flexible = localDays && !respectDayAssignments && !preserveOrder;
     final transferDay = transfer?['dayNo'];
     final lastLocalDay = transferDay is int && transferDay > dayNo && transferDay <= days ? transferDay - 1 : days;
-    final futureLocalDays = lastLocalDay - dayNo;
+    final remainingMinutes = [
+      for (var number = dayNo; number <= lastLocalDay; number++)
+        _dayWindow(trip, startDate.add(Duration(days: number - 1)), number, baseWindow)
+    ].fold<int>(0, (total, value) => total + max(0, value[1] - value[0]));
+    final dayShare = max(0, window[1] - window[0]) /
+        max(1, remainingMinutes);
     if (flexible) {
-      visitLimit = min(maxVisits ?? 5, max(1, remaining.length - futureLocalDays));
+      visitLimit = min(maxVisits ?? 5, max(1, (remaining.length * dayShare).ceil()));
     }
     while (transferBlock == null && remaining.isNotEmpty && (visitLimit == null || dayItems.length < visitLimit)) {
       final eligible = remaining
@@ -593,7 +598,7 @@ Map<String, dynamic> planConstraintAwareItinerary(
               if (proximity != 0) return proximity;
             }
           }
-          if (pace == 'relaxed' && visitLimit == 2 && !respectDayAssignments)
+          if (visitLimit != null && visitLimit - dayItems.length <= 2 && !respectDayAssignments)
             return rank[a['activityId']]!.compareTo(rank[b['activityId']]!);
           final closeA = _opening(a, dayDate).end ?? 1440;
           final closeB = _opening(b, dayDate).end ?? 1440;
@@ -814,7 +819,7 @@ Map<String, dynamic> planConstraintAwareItinerary(
                 .where((item) => (_localDistance(focus!, item) ?? double.infinity) <= limits.km && canStartDay(item))
                 .length;
         visitLimit =
-            min(visitLimit!, max(dayItems.length, ((dayItems.length + compatible) / (futureLocalDays + 1)).ceil()));
+            min(visitLimit!, max(dayItems.length, ((dayItems.length + compatible) * dayShare).ceil()));
       }
     }
     if (localDays && dayItems.isNotEmpty && focus != null && !sightseeingAnchors.contains(focus)) {

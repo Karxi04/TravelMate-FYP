@@ -1568,12 +1568,12 @@ def _local_coords(activity):
     return coord
 
 
-def _local_leg(previous, activity, mode):
+def _local_leg(previous, activity, mode, coordinates=None):
     if previous is None:
         if _conflicting_location(activity):
             return None
         return 0, 0.0, 'not_applicable'
-    if not _local_coords(previous) or not _local_coords(activity):
+    if not all(coordinates if coordinates is not None else (_local_coords(previous), _local_coords(activity))):
         return None
     distance = _distance_km(previous, activity)
     if distance is None:
@@ -1872,8 +1872,13 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         transfer_day = transfer.get('dayNo')
         last_local_day = transfer_day - 1 if type(transfer_day) is int and day_no < transfer_day <= days else days
         future_local_days = last_local_day - day_no
+        available_days = (availability or {}).get('days') or {}
+        usable_minutes = [max(0, row.get('endMinutes', window_end) - row.get('startMinutes', window_start))
+                          for row in available_days.values() if day_no <= row['dayNo'] <= last_local_day]
+        remaining_minutes = sum(usable_minutes) or max(1, (future_local_days + 1) * (window_end - window_start))
+        day_share = max(0, day_end - day_start) / remaining_minutes
         if flexible:
-            visit_limit = min(max_visits or 5, max(1, len(remaining) - future_local_days))
+            visit_limit = min(max_visits or 5, max(1, ceil(len(remaining) * day_share)))
         while not transfer_block and remaining and (visit_limit is None or len(day_items) < visit_limit):
             eligible = [x for x in remaining
                         if (not respect_day_assignments and x.get('activityId') not in pinned)
@@ -1939,7 +1944,7 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
                     deferred_reasons.setdefault(str(candidate.get('activityId')), reason)
                 return planned
 
-            if pace == 'relaxed' and visit_limit == 2 and not preserve_order and not respect_day_assignments:
+            if visit_limit is not None and visit_limit - len(day_items) <= 2 and not preserve_order and not respect_day_assignments:
                 # Keep the existing comfort cap. Compare bounded feasible pairs rather
                 # than spending both slots on early-closing, lower-ranked candidates.
                 priority = {id(item): index for index, item in enumerate(all_candidates)}
@@ -1947,7 +1952,7 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
                     (local_priority(item) if local_days else
                      (0 if not weather.get('heavyRainLikely') or _indoor(item) else 1,)),
                     priority[id(item)]))
-                if not day_items:
+                if not day_items and pace == 'relaxed':
                     shortlist = ranked[:20]
                     pairs = sorted(((i, j) for i in range(len(shortlist))
                                     for j in range(i + 1, len(shortlist))),
@@ -2032,7 +2037,7 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
                          and (not balance_budget or calculateBudget({**itinerary, 'activities': scheduled + [item]})['totalEstimatedCost'] <= _float(itinerary['budgetLimit'])))
                     for item in remaining
                 ) if focus else len(remaining)
-                visit_limit = min(visit_limit, max(len(day_items), ceil((len(day_items) + compatible) / (future_local_days + 1))))
+                visit_limit = min(visit_limit, max(len(day_items), ceil((len(day_items) + compatible) * day_share)))
 
         meal_blocks = [transfer_block] if transfer_block else []
         if day_items:

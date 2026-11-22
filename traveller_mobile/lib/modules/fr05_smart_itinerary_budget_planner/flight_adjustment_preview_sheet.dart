@@ -701,6 +701,15 @@ class _FlightAdjustmentPreviewSheetState
                           ),
                         ),
                         const SizedBox(height: 8),
+                        if (p?['gapFilling'] is Map) Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(p!['gapFilling']['message']?.toString() ?? ''),
+                        ),
+                        if (p?['additionalEvidenceStatus'] == 'unavailable')
+                          TextButton(onPressed: loading || applying || refreshing || recovering ? null : () {
+                            setState(() => recovery = 'refresh_suggestions');
+                            _recover();
+                          }, child: const Text('Refresh suggestions for additional places')),
                         if (changes.isEmpty && canApply) ...[
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 8),
