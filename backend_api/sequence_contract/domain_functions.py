@@ -1707,13 +1707,16 @@ def _schedule_candidate(activity, previous, current_minutes, day_date, window_en
     selected_period = None
     for period_start, period_end in periods:
         start = fixed_start if fixed else max(arrival, period_start)
-        # Lunch/rest shifting must still fit wholly inside one open period.
-        if not fixed and start < rest[1] and start + duration > rest[0]:
-            start = rest[1]
-        shifted = skip_reservations(start, duration, reserved)
-        if fixed and shifted!=start:
-            return None, 'Your fixed activity overlaps reserved personal time.'
-        start = shifted
+        # A personal block can shift a visit into lunch, and vice versa.
+        for _ in range(len(reserved) + 2):
+            before = start
+            if not fixed and start < rest[1] and start + duration > rest[0]:
+                start = rest[1]
+            start = skip_reservations(start, duration, reserved)
+            if fixed and start != before:
+                return None, 'Your fixed activity overlaps reserved personal time.'
+            if start == before:
+                break
         end = start + duration
         if period_start <= start and end <= min(period_end, window_end):
             selected_period = (period_start, period_end)
@@ -1811,8 +1814,12 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         for item in activities:
             first_visit_by_day[id(item)] = [
                 day for day in range(days)
-                if _schedule_candidate(item, None, window_start,
-                    start_date.fromordinal(start_date.toordinal() + day), window_end, rest)[0]
+                if _schedule_candidate(item, None,
+                    (((availability or {}).get('days') or {}).get(
+                        (start_date.fromordinal(start_date.toordinal() + day)).isoformat()) or {}).get('startMinutes', window_start),
+                    start_date.fromordinal(start_date.toordinal() + day),
+                    (((availability or {}).get('days') or {}).get(
+                        (start_date.fromordinal(start_date.toordinal() + day)).isoformat()) or {}).get('endMinutes', window_end), rest)[0]
             ]
     max_visits = ({'relaxed': 2, 'moderate': 3, 'active': 5}[pace]
                   if (profiled or local_days and pace == 'relaxed') and not respect_day_assignments else None)
@@ -1895,48 +1902,88 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
                             trip_experiences.get(experience, 0),
                             int(distance // 4) if distance is not None else 0)
                 order.sort(key=local_priority)
-            for candidate in order:
-                # Retain a same-day pair only if the existing saved schedule already contains it.
+            def try_visit(candidate, trial=()):
+                visits = day_items + list(trial)
+                prior = trial[-1] if trial else previous
+                cursor = trial[-1]['_endMinutes'] if trial else current
                 if any(same_attraction(candidate, visit) and
                        (saved_days.get(candidate.get('activityId')) != day_no or
-                        saved_days.get(visit.get('activityId')) != day_no) for visit in day_items):
-                    continue
+                        saved_days.get(visit.get('activityId')) != day_no) for visit in visits):
+                    return None
                 leg = None
                 if local_days:
                     key = str(candidate.get('activityId'))
-                    # A bounded cluster prevents chaining short legs into a distant area.
-                    anchor = focus or (day_items[0] if day_items else None)
+                    anchor = focus or (visits[0] if visits else None)
                     anchor_distance = (_distance_km(anchor, candidate)
                                        if anchor and _coord(anchor) and coordinates[id(candidate)] else None)
-                    leg = _local_leg(previous, candidate, mode)
+                    leg = _local_leg(prior, candidate, mode)
                     if leg is None or (anchor and anchor_distance is None):
                         deferred_reasons[key] = _UNKNOWN_JOURNEY
-                        continue
+                        return None
+                    trial_travel = sum(row['travelDurationMinutes'] for row in trial)
                     if (leg[0] > max_leg or leg[1] > max_km or (anchor_distance is not None and anchor_distance > max_km)
-                            or travel_minutes + leg[0] > daily_limit):
+                            or travel_minutes + trial_travel + leg[0] > daily_limit):
                         deferred_reasons[key] = _DISTANT_STOP
-                        continue
-                    if balance_budget and calculateBudget({**itinerary, 'activities': scheduled + [candidate]})['totalEstimatedCost'] > _float(itinerary['budgetLimit']):
+                        return None
+                    if balance_budget and calculateBudget({**itinerary, 'activities': scheduled + list(trial) + [candidate]})['totalEstimatedCost'] > _float(itinerary['budgetLimit']):
                         deferred_reasons[key] = 'This activity would exceed the total trip budget using the current estimates.'
-                        continue
+                        return None
                     experience = experiences[id(candidate)]
-                    if experience in {'hike', 'meal'} and experience_counts.get(experience, 0) >= (2 if hike_focused or experience == 'meal' else 1):
+                    count = experience_counts.get(experience, 0) + sum(_visit_experience(row) == experience for row in trial)
+                    if experience in {'hike', 'meal'} and count >= (2 if hike_focused or experience == 'meal' else 1):
                         deferred_reasons[key] = 'This day already includes similar activities. Try another day to allow time for rest and variety.'
-                        continue
-                planned, reason = _schedule_candidate(candidate, previous, current, day_date, day_end, day_rest, leg,
+                        return None
+                planned, reason = _schedule_candidate(candidate, prior, cursor, day_date, day_end, day_rest, leg,
                     reservations(itinerary, day_no, candidate.get('activityId')))
-                if planned and local_days:
+                if not planned:
+                    deferred_reasons.setdefault(str(candidate.get('activityId')), reason)
+                return planned
+
+            if pace == 'relaxed' and visit_limit == 2 and not preserve_order and not respect_day_assignments:
+                # Keep the existing comfort cap. Compare bounded feasible pairs rather
+                # than spending both slots on early-closing, lower-ranked candidates.
+                priority = {id(item): index for index, item in enumerate(all_candidates)}
+                ranked = sorted(order, key=lambda item: (
+                    (local_priority(item) if local_days else
+                     (0 if not weather.get('heavyRainLikely') or _indoor(item) else 1,)),
+                    priority[id(item)]))
+                if not day_items:
+                    shortlist = ranked[:20]
+                    pairs = sorted(((i, j) for i in range(len(shortlist))
+                                    for j in range(i + 1, len(shortlist))),
+                                   key=lambda pair: (sum(pair), pair))
+                    first_visits = {}
+                    for i, j in pairs:
+                        feasible = []
+                        for left, right in ((i, j), (j, i)):
+                            if left not in first_visits:
+                                first_visits[left] = try_visit(shortlist[left])
+                            first_visit = first_visits[left]
+                            second_visit = try_visit(shortlist[right], [first_visit]) if first_visit else None
+                            if second_visit:
+                                feasible.append((second_visit['_endMinutes'],
+                                    first_visit['travelDurationMinutes'] + second_visit['travelDurationMinutes'], left))
+                        if feasible:
+                            first = shortlist[min(feasible)[2]]
+                            ranked.remove(first)
+                            ranked.insert(0, first)
+                            break
+                order = ranked
+            for candidate in order:
+                planned = try_visit(candidate)
+                if not planned:
+                    continue
+                chosen = planned
+                if local_days:
+                    experience = experiences[id(candidate)]
                     if experience:
                         experience_counts[experience] = experience_counts.get(experience, 0) + 1
                         trip_experiences[experience] = trip_experiences.get(experience, 0) + 1
                     used_concepts.update(concepts.get(id(candidate), ()))
-                    travel_minutes += leg[0]
+                    travel_minutes += planned['travelDurationMinutes']
                     if focus is None and coordinates[id(candidate)]:
                         focus = candidate
-                if planned:
-                    chosen = planned
-                    break
-                deferred_reasons.setdefault(str(candidate.get('activityId')), reason)
+                break
             if chosen is None:
                 break
             remaining.remove(next(x for x in remaining if str(x.get('activityId')) == str(chosen.get('activityId'))))

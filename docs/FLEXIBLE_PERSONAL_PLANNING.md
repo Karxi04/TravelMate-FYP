@@ -5,6 +5,37 @@ Based on `travelmate-full-repair` at `51919834f0c2f97461b50aabed1c16b9e62df5d8`
 provider, checkout flow, or database collection. Source verification is separate
 from rollout and physical Vivo acceptance.
 
+## Current Schedule Assistance and relaxed scheduling — 22 November 2026
+
+The normal Traveller menu now contains only **Improve this day** and **Improve
+remaining days** in Smart, Assisted and Manual trips. Both use the existing
+preview, Keep current plan (cancel), explicit Apply and revision checks. The
+regeneration API and its recovery contract below remain for compatibility; the
+two regeneration menu commands and their scope dialog are removed. Initial
+Smart trip generation, recommendation refresh, recalculate and editing remain.
+
+Relaxed pace still defaults to 10:00–20:00 and two automatically selected visits
+for profiled/local-day generation. It does not imply a 17:00 cutoff. Previously,
+early-closing-first ordering could use both slots before a higher-ranked evening
+venue was considered. The planner now compares feasible two-visit sequences in
+the existing 20-candidate Smart pool, retaining recommendation/context priority,
+travel limits, budget checks, visit duration, lunch and personal reservations.
+It stops at the first best-ranked feasible pair and compares both visit orders;
+it neither creates a night-attraction category nor forces an evening visit.
+Explicit Improve operations retain their existing capacity/scope behavior.
+
+Saved Travel Preferences supply `travelDayPreferences.days`; daily overrides
+replace pace defaults and remain bounded by arrival/departure buffers. The
+standalone constraint planner uses these windows, existing travel-boundary and
+opening-hours utilities, personal blocks and fixed visit times too. Shared
+Backend/Dart fixtures cover the same controlled schedules. Reported weekly,
+split and overnight periods are timetable evidence, not live opening or holiday
+verification. Unknown/stale hours remain provisional; closing time does not
+establish last admission. No genuine attraction timetable is added by this change.
+
+Automated fixtures and in-memory route lifecycle tests are separate from the
+remaining approved-rollout Vivo checks. No owner Trip is used for these tests.
+
 ## Regeneration recovery and Travel Preferences — 22 November 2026
 
 ### Reproduced causes
@@ -299,7 +330,7 @@ layouts at 320/360/390dp. No financial or ownership assertion was weakened.
 | Timing | Planner windows and flight adjustment | Saved arrival/departure choices, daily overrides and rest days |
 | Personal plans | Generated breaks in daily schedules | Editable rest, meal, luggage, free-time, transfer and custom blocks |
 | Visits | Add, move and remove | Also edit time, duration, notes, user estimate and fixed/flexible status |
-| Assistance | Flight-affected preview | Improve a day/remaining days; regenerate flexible day/full trip |
+| Assistance | Flight-affected preview | Improve a day/remaining days; regeneration API retained for compatibility only |
 | Saving | Existing owner/CAS safeguards | Same safeguards; previews require an explicit Apply |
 
 ## Data contract
@@ -460,8 +491,8 @@ rollout, use one authorized disposable trip and no real provider purchase:
 5. Add rest/meal/custom plans, edit notes/cost/time, move a visit and fix one time.
 6. Improve one day/remaining days. Cancel once and verify no change; then apply
    another proposal, retaining the fixed visit, other days and personal blocks.
-7. Regenerate flexible Day 2/full trip from owned saved recommendations; inspect
-   removals, additions and unscheduled suggestions before applying.
+7. Confirm both Regenerate commands are absent from Schedule Assistance; initial
+   Smart generation and normal recommendation refresh remain available.
 8. Replace with a later authorized flight reference; review changed bounds and
    preserved choices. Do not change a paid/protected arrangement.
 9. Force-close/reopen; verify styles, preferences, blocks, locks, budget and history.

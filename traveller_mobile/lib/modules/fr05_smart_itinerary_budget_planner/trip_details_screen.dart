@@ -1232,21 +1232,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   }
 
   bool _scheduleHelpActive = false;
-  Future<void> _scheduleHelp({String action='improve',String scope='day'}) async {
+  Future<void> _scheduleHelp({String scope='day'}) async {
     if(trip==null || busy || _scheduleHelpActive)return;
     _scheduleHelpActive = true;
     try {
-    if(action=='regenerate'){
-      final accepted=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(title:const Text('Review regeneration scope'),
-        content:Text(scope=='full' ? 'Flexible generated places throughout this trip may be replaced. Fixed visits, personal blocks, notes and arrangements remain protected. You will review a preview before saving.'
-          :'Only flexible generated places on Day $selectedDay may be replaced. Other days, fixed visits and personal blocks stay unchanged.'),
-        actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),
-          FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Review proposal'))]));
-      if(accepted!=true || !mounted)return;
-    }
     final result=await FlightAdjustmentPreviewSheet.show(context:context,api:api,tripId:widget.tripId,trip:trip!,
-      title:action=='regenerate' ? 'Review regenerated schedule':'Review schedule assistance',
-      previewRequest:{'planningChanges':<String,dynamic>{},'action':action,'scope':scope,'dayNo':selectedDay,
+      title:'Review schedule assistance',
+      previewRequest:{'planningChanges':<String,dynamic>{},'action':'improve','scope':scope,'dayNo':selectedDay,
         if(trip!['itineraryRevision'] is int)'expectedItineraryRevision':trip!['itineraryRevision']});
     if(result?['itinerary'] is Map && mounted){setState(()=>trip=Map<String,dynamic>.from(result!['itinerary']));await load();}
     if (mounted && {'edit_preferences','review_fixed_activity'}.contains(result?['nextAction'])) await _planningSettings();
@@ -2780,12 +2772,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                 OutlinedButton.icon(onPressed:busy ? null:()=>_planningSettings(),icon:const Icon(Icons.tune),label:const Text('Travel Preferences')),
                 OutlinedButton.icon(onPressed:busy ? null:()=>_planningSettings(blockType:'custom'),icon:const Icon(Icons.edit_calendar_outlined),label:const Text('Add custom activity')),
                 OutlinedButton.icon(onPressed:busy ? null:()=>_planningSettings(blockType:'rest'),icon:const Icon(Icons.free_breakfast_outlined),label:const Text('Add rest / free time')),
-                PopupMenuButton<String>(tooltip:'Schedule assistance',onSelected:(value)=>_scheduleHelp(action:value.startsWith('regenerate') ? 'regenerate':'improve',
-                  scope:value.endsWith('full') ? 'full':value.endsWith('remaining') ? 'remaining':'day'),itemBuilder:(_)=>[
+                PopupMenuButton<String>(tooltip:'Schedule assistance',onSelected:(value)=>_scheduleHelp(scope:value.endsWith('remaining') ? 'remaining':'day'),itemBuilder:(_)=>[
                     const PopupMenuItem(value:'improve-day',child:Text('Improve this day')),
                     const PopupMenuItem(value:'improve-remaining',child:Text('Improve remaining days')),
-                    if(t['planningMode']!='manual') const PopupMenuItem(value:'regenerate-day',child:Text('Regenerate flexible places this day')),
-                    if(t['planningMode']!='manual') const PopupMenuItem(value:'regenerate-full',child:Text('Regenerate full editable itinerary')),
                   ],child:const Padding(padding:EdgeInsets.all(12),child:Text('Schedule assistance'))),
               ]),
               if (t['interestCoverage']?['limitation'] != null)
