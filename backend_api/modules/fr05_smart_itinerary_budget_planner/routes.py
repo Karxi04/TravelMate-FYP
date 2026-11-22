@@ -49,7 +49,7 @@ def snapshot_temporarily_unavailable(error):
 
 @bp.errorhandler(HistoryConflict)
 def history_conflict(error):
-    return jsonify(ok=False, error=str(error)), 409
+    return jsonify(ok=False, error=str(error), code='STALE_ITINERARY', stage='trip_validation', nextAction='reload_trip'), 409
 
 
 @bp.get('/itineraries/<iid>/history')
@@ -296,6 +296,59 @@ def _recommendation_snapshot(current, payload):
     if not trip_area or trip_area != snapshot_area:
         return None, 'Recommendation snapshot destination does not match this trip'
     return snapshot, None
+
+
+def _regeneration_snapshot(current, payload):
+    """Only an explicit preview may propose replacing an obsolete linked generation."""
+    linked = str(current.get('recommendationGenerationId') or '')
+    requested = payload.get('recommendationGenerationId') or linked
+    if requested != linked and linked:
+        if (payload.get('refreshSuggestions') is not True or payload.get('expectedLinkedGenerationId') != linked
+                or type(payload.get('expectedItineraryRevision')) is not int
+                or payload['expectedItineraryRevision'] != int(current.get('itineraryRevision') or 1)):
+            return None, 'Confirm refreshed suggestions for the current trip before regenerating.'
+        if requested.startswith('fyp-evaluation-') != linked.startswith('fyp-evaluation-'):
+            return None, 'Recommendation evidence does not belong to the current mode.'
+    if not requested:
+        return None, 'No saved suggestions are available. Generate suggestions first.'
+    snapshot, error = _recommendation_snapshot({**current, 'recommendationGenerationId': requested},
+                                              {'recommendationGenerationId': requested})
+    if error or not snapshot:
+        return snapshot, error
+    # Genuine legacy snapshots remain readable; enforce any recorded expiry and profile evidence.
+    if snapshot.get('recommendationEvidenceMode') != 'fyp_evaluation':
+        expiry = snapshot.get('expiresAt')
+        if expiry:
+            try:
+                if datetime.fromisoformat(str(expiry).replace('Z', '+00:00')) <= datetime.now(timezone.utc):
+                    return None, 'Saved suggestions expired. Refresh suggestions.'
+            except (ValueError, TypeError):
+                return None, 'Saved suggestion expiry cannot be verified. Refresh suggestions.'
+        if snapshot.get('preferenceFingerprint') or snapshot.get('preferenceProfileVersion'):
+            from services.recommendation_snapshot_resolver import profile_fingerprint, preference_version
+            preference = retrieveRecord('travel_preferences', g.uid)
+            learned = retrieveRecord('learned_preference_profiles', g.uid)
+            if (not isinstance(preference, dict)
+                    or snapshot.get('preferenceFingerprint') and snapshot['preferenceFingerprint'] != profile_fingerprint(preference)
+                    or snapshot.get('preferenceProfileVersion') and snapshot['preferenceProfileVersion'] != preference_version(preference, learned)):
+                return None, 'Travel preferences changed. Refresh suggestions before regenerating.'
+        rows = snapshot.get('recommendationResults') or snapshot.get('items') or []
+        if not isinstance(rows, list) or any(not isinstance(row, dict) or row.get('recommendationGenerationId', requested) != requested for row in rows):
+            return None, 'Candidate evidence does not match this recommendation generation. Refresh suggestions.'
+    return snapshot, None
+
+
+def _planning_error(message, code, stage, action, status=409):
+    return jsonify(ok=False, error=message, code=code, stage=stage, nextAction=action), status
+
+
+def _recommendation_planning_error(message):
+    text = message.lower()
+    code = ('RECOMMENDATION_EXPIRED' if 'expired' in text or 'expiry' in text else
+            'RECOMMENDATION_NOT_FOUND' if 'not found' in text or 'no saved' in text else
+            'RECOMMENDATION_CONTEXT_MISMATCH' if any(word in text for word in ('context', 'destination', 'mode', 'current trip')) else
+            'RECOMMENDATION_REFRESH_REQUIRED')
+    return _planning_error(message, code, 'recommendation_validation', 'refresh_suggestions')
 
 
 def _personalised_trip_id(user_id, generation_request_id):
@@ -748,25 +801,36 @@ def flight_adjustment_preview(iid):
     if not isinstance(payload,dict):
         return jsonify(ok=False,error='Choose valid planning settings.'),400
     planning = payload if 'planningChanges' in payload or 'action' in payload else None
+    if planning and payload.get('expectedItineraryRevision') is not None:
+        expected = payload['expectedItineraryRevision']
+        if type(expected) is not int or expected != int(current.get('itineraryRevision') or 1):
+            return _planning_error('This trip has changed. Reload the latest itinerary.', 'STALE_ITINERARY', 'trip_validation', 'reload_trip')
     if not flight and planning is None:
-        return jsonify({'ok': False, 'error': 'Select a flight before requesting an itinerary adjustment preview.'}), 409
+        return _planning_error('Some flight times are missing. Review your selected flight.', 'FLIGHT_TIMING_INCOMPLETE', 'flight_validation', 'review_flight')
     candidates = None
     if planning and planning.get('action')=='regenerate':
         generation=planning.get('recommendationGenerationId')
         if generation is not None and (not isinstance(generation,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}',generation)):
-            return jsonify(ok=False,error='Choose a valid saved recommendation generation.'),400
-        snapshot, error = _recommendation_snapshot(current,planning)
-        if error:return jsonify(ok=False,error=error),409
+            return _planning_error('Choose a valid saved recommendation generation.', 'RECOMMENDATION_CONTEXT_MISMATCH', 'recommendation_validation', 'refresh_suggestions', 400)
+        snapshot, error = _regeneration_snapshot(current,planning)
+        if error:return _recommendation_planning_error(error)
         if snapshot:
             rows = _filter_destination_candidates(snapshot.get('recommendationResults') or snapshot.get('items') or [],current.get('destinationArea'))
             candidates = [{**_activity_from_destination(row,index), 'recommendationGenerationId':
-                current.get('recommendationGenerationId') or generation} for index,row in enumerate(rows)
+                snapshot.get('recommendationGenerationId') or generation} for index,row in enumerate(rows)
                 if str(row.get('title') or row.get('name') or '').strip()]
     try:
         preview = (create_flight_adjustment_preview(current, flight or {}, g.uid, planning=planning, candidates=candidates)
                    if planning is not None else create_flight_adjustment_preview(current, flight, g.uid))
     except ValueError as error:
-        return jsonify(ok=False,error=str(error)),400
+        from services.flexible_planning import PlanningConflict
+        if isinstance(error, PlanningConflict):
+            return _planning_error(str(error), error.code, 'schedule_validation', error.action)
+        return _planning_error(str(error), 'PLANNING_TIME_CONFLICT', 'schedule_validation', 'edit_preferences', 400)
+    if preview.get('canApply') is False and not preview.get('code'):
+        incomplete = 'incomplete' in str(preview.get('reason', '')).lower()
+        preview.update(code='FLIGHT_TIMING_INCOMPLETE' if incomplete else 'PLANNING_TIME_CONFLICT',
+                       nextAction='review_flight' if incomplete else 'edit_preferences')
     return jsonify({'ok': True, 'preview': _public_flight_preview(preview)})
 
 
@@ -788,7 +852,9 @@ def flight_adjustment_apply(iid):
         lambda _iid, patch: updateRecord('itineraries', _iid, patch, expected=current),
     )
     if error:
-        return jsonify({'ok': False, 'error': error}), 404 if error == 'Preview not found' else 409
+        code = 'STALE_PREVIEW' if error == 'Preview not found' or 'stale' in error.lower() else 'PLANNING_TIME_CONFLICT'
+        return _planning_error(error, code, 'apply_validation', 'reload_trip' if code=='STALE_PREVIEW' else 'edit_preferences',
+                               404 if error == 'Preview not found' else 409)
     return jsonify(result)
 
 

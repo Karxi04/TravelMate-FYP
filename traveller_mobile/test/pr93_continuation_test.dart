@@ -150,7 +150,7 @@ void main() {
     expect(find.text('Start: 10:00'), findsOneWidget);
     await tester.tap(find.text('Save changes'));
     await tester.pumpAndSettle();
-    expect(find.text('Choose both times, with the end after the start.'),
+    expect(find.text('Choose both times, with the end after the start on the same day.'),
         findsOneWidget);
     expect(result, isNull);
     await tester.tap(find.text('Leave unscheduled'));

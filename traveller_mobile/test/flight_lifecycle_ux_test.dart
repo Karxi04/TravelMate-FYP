@@ -686,14 +686,14 @@ void main() {
   // FL-UX-11: Expired/stale preview recovery
   // -------------------------------------------------------------
   testWidgets(
-      'FL-UX-11: Expired/stale preview (409) recovers via Refresh Preview',
+      'FL-UX-11: Stale preview (409) reloads the Trip before a new preview',
       (tester) async {
     final trip = _buildSampleTrip(withFlight: true);
     final api = _MockLifecycleApi(trip: trip);
     api.applyException = const ApiException(
       'This preview is stale because the trip or selected flight changed. Create a new preview.',
       409,
-      {'code': 'stale_preview'},
+      {'code': 'STALE_PREVIEW', 'nextAction': 'reload_trip'},
     );
 
     await _pumpTripDetails(tester, api);
@@ -707,7 +707,7 @@ void main() {
     // Banner appears
     expect(
         find.text(
-            'Your itinerary has changed. Refresh the preview to review the latest schedule.'),
+            'This preview expired or the trip changed. Reload the latest itinerary.'),
         findsOneWidget);
     expect(find.text('Stale Preview'), findsOneWidget);
 
@@ -730,7 +730,7 @@ void main() {
     api.applyException = const ApiException(
       'Preview not found',
       404,
-      {'code': 'not_found'},
+      {'code': 'STALE_PREVIEW', 'nextAction': 'reload_trip'},
     );
 
     await _pumpTripDetails(tester, api);
@@ -742,7 +742,7 @@ void main() {
 
     expect(
         find.text(
-            'Preview expired or server restarted. Please refresh the preview.'),
+            'This preview expired or the trip changed. Reload the latest itinerary.'),
         findsOneWidget);
 
     api.applyException = null;
@@ -926,7 +926,7 @@ void main() {
         tester, find.byKey(const ValueKey('adjust-flight-itinerary-btn')));
 
     expect(
-        find.textContaining('Unable to connect to server'), findsOneWidget);
+        find.text('Unable to load a preview. Try again.'), findsOneWidget);
     expect(find.byKey(const ValueKey('refresh-preview-btn')), findsOneWidget);
   });
 

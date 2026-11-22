@@ -5,6 +5,105 @@ Based on `travelmate-full-repair` at `51919834f0c2f97461b50aabed1c16b9e62df5d8`
 provider, checkout flow, or database collection. Source verification is separate
 from rollout and physical Vivo acceptance.
 
+## Regeneration recovery and Travel Preferences — 22 November 2026
+
+### Reproduced causes
+
+Regeneration re-used a Trip's linked evaluation generation after its session had
+expired/restarted or its profile/review revision changed. FR5 correctly rejected
+unusable evidence, but it also rejected a newly owned generation because its ID
+was different from the Trip association. Flutter interpreted most 409s as stale
+itineraries and offered to repeat the same deterministic request. A missing preview
+also showed an unrelated incomplete-flight fallback. These are controlled source
+reproductions; the exact owner's HTTP body and persisted block context were not
+captured and no production records were inspected.
+
+### Recovery contract
+
+The existing preview route now returns `code`, `stage`, and `nextAction` for evidence,
+Trip revision, time and protected-activity failures. No new API is introduced.
+Regeneration first validates the existing linked generation. After an explicit
+Refresh suggestions confirmation, Flutter generates through the existing FR4 route,
+reloads the current Trip and submits `refreshSuggestions: true`, the previous
+`expectedLinkedGenerationId`, new `recommendationGenerationId`, and current
+`expectedItineraryRevision`. A different association is allowed only inside this
+explicit regeneration preview, with owner/source/canonical-destination and current
+snapshot checks. Existing genuine snapshots retain compatibility; any supplied
+expiry, profile fingerprint/version and candidate-generation metadata are verified.
+Evaluation TTL, local review revision and learned-profile checks stay unchanged.
+
+The original Trip stays unchanged until Apply. The preview carries the new
+association, and the existing full fingerprint/atomic history update controls the
+save. Cancel does not replace the Trip ID or generation; stale/duplicate Apply
+protection remains. Generation recovery does not copy evaluation reviews or
+snapshots into genuine Firestore. An explicit FR4 refresh may create its normal
+owned recommendation evidence; it never saves a Trip automatically.
+
+| Code | User action |
+|---|---|
+| `RECOMMENDATION_EXPIRED` / `RECOMMENDATION_REFRESH_REQUIRED` | Refresh suggestions, with confirmation |
+| `RECOMMENDATION_NOT_FOUND` | Generate suggestions through the same explicit recovery |
+| `RECOMMENDATION_CONTEXT_MISMATCH` | Refresh for the matching destination/mode; authorization still required |
+| `STALE_ITINERARY` / `STALE_PREVIEW` | Reload Trip before making a new preview |
+| `FLIGHT_TIMING_INCOMPLETE` | Review selected flight |
+| `PLANNING_TIME_CONFLICT` | Edit travel preferences |
+| `PROTECTED_ACTIVITY_CONFLICT` | Review the fixed activity |
+| `NO_REGENERATION_CANDIDATES` | Keep current itinerary |
+| Temporary connection / service failure | Explicit Retry connection, never automatic Apply replay |
+
+Day regeneration remains scoped; full regeneration replaces only eligible generated
+flexible visits. Fixed/manual-time/paid rows, personal blocks, notes and expenses
+remain protected. Empty/rest-day/no-fit replacement proposals return no-change
+feedback instead of deleting visits. Improve day/remaining behavior is preserved.
+Manual/Assisted trips do not need a flight when date-aware planning is sufficient;
+Manual user-added visits remain preserved and no mode change is implied.
+
+### Travel Preferences and time feedback
+
+Planning Settings is now Travel Preferences. The creation-only style selector is
+removed, its unchanged `planningMode` is not sent, and legacy records gain no
+implicit planning mode. Travel schedule, individual/bulk hours and personal-block
+editing remain. Spacing separates independent fields, important travel bounds are
+emphasized, and optional assumptions remain in details.
+
+A shared client draft validator checks same-day ranges, paired times, daily hours,
+arrival/departure buffers, block overlaps and fixed-visit intersections before
+Preview/Save. Changing times immediately rechecks the interval; invalid controls
+are disabled without discarding values. The Backend remains authoritative. Timed
+personal/travel notes may be outside destination sightseeing hours, while blocks
+marked at destination must respect travel bounds. Unscheduled blocks reserve no
+slot; unknown cost remains unknown. End before start is never an implicit overnight
+interval. Existing airport buffers and selected flight references are unchanged.
+
+Controlled 25–27 November 2026 tests use arrival 14:50 and departure 10:55, producing
+17:50 earliest destination sightseeing and 07:25 latest departure-day finish with
+the existing configured assumptions. A Day 1 noon lunch explicitly marked
+personal/travel is preserved through both Improve actions and both Regenerate
+actions. Day-only operations intentionally leave other days unchanged; they do not
+certify or repair pre-existing conflicts outside their scope.
+
+Physical Vivo acceptance remains pending a separately approved matching Backend/APK
+rollout and disposable-trip procedure. No service restart, APK operation, provider
+call, production Firebase access, payment or owner Trip edit is part of this task.
+
+### Regeneration follow-up verification
+
+| Suite | Final result |
+|---|---|
+| Complete default Backend | 4,071 passed; 2 existing emulator-only skipped; 30 live integration deselected; 10 warnings |
+| Complete Flutter | 1,357 passed |
+| Dart analysis | No issues |
+| Administrator | 112 passed; 1 integration deselected |
+| Operator | 213 Python and 5 JavaScript passed |
+
+Focused planning Backend (76), lifecycle/recovery Flutter (44) and final time
+widget/unit cases (24) overlap the complete totals. No live Firebase emulator or
+supplier test is inferred. The original missing-generation test now asserts its
+explicit409/code/action contract; the removed style-switch widget test asserts
+absence of incidental mode writes. Lifecycle tests retain stale/restart recovery
+and no-write checks using the current structured response. Initial failed logs
+are retained; no test was skipped or removed to hide a defect.
+
 ## Mobile and supplier comparison follow-up — 22 November 2026
 
 - Travel schedule now groups optional arrival/departure date and time controls,

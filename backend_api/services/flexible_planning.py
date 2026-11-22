@@ -8,6 +8,12 @@ MODES = {'smart', 'manual', 'assisted'}
 USER_LOCKS = ('fixed', 'locked', 'isLocked', 'userFixed', 'manualTime', 'manualOrder', 'userEdited')
 
 
+class PlanningConflict(ValueError):
+    def __init__(self, message, code='PLANNING_TIME_CONFLICT', action='edit_preferences'):
+        super().__init__(message)
+        self.code, self.action = code, action
+
+
 def trip_days(trip):
     try:
         start, end = (date.fromisoformat(str(trip[k])[:10]) for k in ('startDate', 'endDate'))
@@ -127,7 +133,7 @@ def validate_blocks(value, trip):
         for right in result[index+1:]:
             if (left['dayNo']==right['dayNo'] and 'startTime' in left and 'startTime' in right
                     and clock(left['startTime'])<clock(right['endTime']) and clock(right['startTime'])<clock(left['endTime'])):
-                raise ValueError('Personal planning blocks cannot overlap.')
+                raise ValueError(f"Your {right.get('label', 'personal activity')} overlaps another personal activity on Day {right['dayNo']}.")
     return result
 
 
@@ -242,6 +248,8 @@ def apply_preferences(trip, availability, boundaries, assumptions):
         rest = (override.get('restDay') is True or arrival_day and (prefs.get('arrival') or {}).get('choice')=='none'
                 or departure_day and (prefs.get('departure') or {}).get('choice')=='none')
         if not rest:
+            if start >= end and (requested_start is not None or requested_end is not None):
+                conflicts.append({'dayNo':day, 'message':f'Day {day}: sightseeing must end after it starts on the same day.'})
             if (requested_start is not None and clock(requested_start)<hard_start) or (override and start<hard_start):
                 earliest=arrival_ready.strftime('%d %b %H:%M') if arrival_ready and key!=arrival_ready.date().isoformat() else time_text(min(1439,hard_start))
                 conflicts.append({'dayNo':day, 'message':f'Day {day}: sightseeing can start no earlier than {earliest} after travel buffers.'})
@@ -324,7 +332,7 @@ def build_planning_preview(trip, flight, owner, preview_id, command, candidates=
     from services.flight_itinerary_adjustment import fingerprint, planning_assumptions
     from services.trip_budget_replan import protected_activity
     from services.itinerary_identity import same_attraction
-    if not isinstance(command, dict) or set(command)-{'planningChanges','action','scope','dayNo','expectedItineraryRevision','recommendationGenerationId'}:
+    if not isinstance(command, dict) or set(command)-{'planningChanges','action','scope','dayNo','expectedItineraryRevision','recommendationGenerationId','refreshSuggestions','expectedLinkedGenerationId'}:
         raise ValueError('Choose supported planning options.')
     action, scope = command.get('action','settings'), command.get('scope','full')
     if not isinstance(action,str) or not isinstance(scope,str) or action not in {'settings','improve','regenerate'} or scope not in {'day','remaining','full'}:
@@ -345,17 +353,15 @@ def build_planning_preview(trip, flight, owner, preview_id, command, candidates=
         legacy = personal_blocks(trip)
         if legacy:
             proposed['planningBlocks'] = validate_blocks(legacy,trip)
-    proposed.setdefault('planningMode','assisted')
     proposed.setdefault('travelDayPreferences',{})
     available = availability_for(proposed)
     targets = {day} if scope=='day' else set(range(day if scope=='remaining' else 1,count+1))
     before_rows = [*trip.get('activities',[]), *(trip.get('unscheduledSuggestions') or [])]
     target_rows = [deepcopy(row) for row in before_rows if row.get('dayNo',1) in targets]
+    regenerated_ids = set()
     if action=='regenerate':
-        if proposed['planningMode']=='manual':
-            raise ValueError('Manual Planning keeps your places. Choose Assisted or Smart before regeneration.')
         if not candidates:
-            raise ValueError('No owned saved recommendation candidates are available. Review For You first; no provider search was started.')
+            raise PlanningConflict('No suitable replacement activities were found.', 'NO_REGENERATION_CANDIDATES', 'keep_current')
         generation = next((row.get('recommendationGenerationId') for row in candidates if row.get('recommendationGenerationId')),None)
         if generation:proposed['recommendationGenerationId']=generation
         target_rows = [row for row in target_rows if protected_activity(row)
@@ -370,10 +376,11 @@ def build_planning_preview(trip, flight, owner, preview_id, command, candidates=
             else:
                 working = addActivity(working,{**deepcopy(candidate),'dayNo':min(targets),'planningOrigin':'generated'})
                 target_rows.append(working['activities'][-1])
+            regenerated_ids.add(target_rows[-1]['activityId'])
             if len(target_rows)>=30:break
         proposed['nextActivitySeq'] = working.get('nextActivitySeq',trip.get('nextActivitySeq',1))
     mode_only = action=='settings' and not (set(patch)-{'planningMode'}) and (
-        proposed['planningMode']=='manual' or proposed['planningMode']==trip.get('planningMode'))
+        proposed.get('planningMode')=='manual' or proposed.get('planningMode')==trip.get('planningMode'))
     if not mode_only:
         prefs = public_preferences(proposed.get('travelDayPreferences'))
         overrides = {row['dayNo']:row for row in prefs.get('days',[])}
@@ -424,7 +431,14 @@ def build_planning_preview(trip, flight, owner, preview_id, command, candidates=
     proposed['scheduledActivityCount']=len(proposed.get('activities',[]))
     proposed['unscheduledActivityCount']=len(proposed.get('unscheduledSuggestions') or [])
     proposed['budgetEstimate']=calculateBudget(proposed)
+    if action=='regenerate' and (not regenerated_ids.intersection(after_by_id) or
+            not any(row['kind'] in {'added','moved','removed'} for row in changes)):
+        raise PlanningConflict('No suitable replacement activities were found.', 'NO_REGENERATION_CANDIDATES', 'keep_current')
+    code = ('PROTECTED_ACTIVITY_CONFLICT' if any(row.get('activityId') for row in conflicts) else
+            'FLIGHT_TIMING_INCOMPLETE' if any('incomplete' in row.get('message','').lower() for row in conflicts) else
+            'PLANNING_TIME_CONFLICT') if conflicts else None
     return {'kind':'planning','previewId':preview_id,'tripId':trip['id'],'owner':owner,'status':'ready',
+        'code':code,'nextAction': 'review_fixed_activity' if code=='PROTECTED_ACTIVITY_CONFLICT' else 'review_flight' if code=='FLIGHT_TIMING_INCOMPLETE' else 'edit_preferences' if conflicts else None,
         'canApply':not conflicts,'reason':' '.join(row['message'] for row in conflicts),
         'tripFingerprint':fingerprint(trip),'flightFingerprint':fingerprint(flight or {}),'before':deepcopy(trip),'after':proposed,
         'changes':changes,'newlyUnscheduled':proposed.get('unscheduledSuggestions',[]),'remainingConflicts':conflicts,

@@ -187,27 +187,23 @@ void main() {
   });
 
   testWidgets(
-      'style-only switch previews without rescheduling or saving automatically',
+      'Travel Preferences preview never switches planning mode or saves automatically',
       (tester) async {
     final api = PlanningApi();
     await tester
         .pumpWidget(app(PlanningSettingsSheet(trip: api.trip, api: api)));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Manual Planning').last);
-    await tester.pumpAndSettle();
+    expect(find.text('Planning style'), findsNothing);
     await reveal(tester, 'Preview planning changes');
     await tester.tap(find.text('Preview planning changes'));
     await tester.pumpAndSettle();
-    expect(api.changes, {'planningMode': 'manual'});
+    expect(api.changes.containsKey('planningMode'), isFalse);
     expect(api.applies, 0);
     expect(find.text('Review planning changes'), findsOneWidget);
     await tester.tap(find.widgetWithIcon(IconButton, Icons.close_rounded));
     await tester.pumpAndSettle();
     expect(api.applies, 0);
-    await reveal(tester, 'Manual Planning', delta: -180);
-    expect(find.text('Manual Planning'), findsOneWidget);
+    expect(api.trip['planningMode'], 'assisted');
   });
 
   testWidgets(
@@ -339,8 +335,8 @@ void main() {
           TripDetailsScreen(tripId: 'personal-plan', api: api),
           scale: 1.6));
       await tester.pumpAndSettle();
-      await reveal(tester, 'Planning settings');
-      await tester.tap(find.text('Planning settings'));
+      await reveal(tester, 'Travel Preferences');
+      await tester.tap(find.text('Travel Preferences'));
       await tester.pumpAndSettle();
       await reveal(tester, 'Daily sightseeing windows');
       await tester.tap(find.text('Daily sightseeing windows'));

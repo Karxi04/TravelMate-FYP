@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import '../../services/transaction_request.dart';
+import 'planning_time_validation.dart';
 
 /// A local draft editor. Only the parent's existing preview/apply can save a Trip.
 class PersonalBlockEditor extends StatefulWidget {
   final Map<String, dynamic>? initial;
   final int dayCount, initialDay;
   final String initialType;
+  final Map<String, dynamic>? trip;
+  final List<Map<String, dynamic>> otherBlocks;
   const PersonalBlockEditor(
       {super.key,
       this.initial,
+      this.trip,
+      this.otherBlocks = const [],
       required this.dayCount,
       this.initialDay = 1,
       this.initialType = 'rest'});
@@ -70,6 +75,7 @@ class _PersonalBlockEditorState extends State<PersonalBlockEditor> {
   }
 
   void save() {
+    if (draftTimeError != null) return;
     final valid = form.currentState!.validate();
     if ((start == null) != (end == null) ||
         start != null && start!.compareTo(end!) >= 0) {
@@ -94,6 +100,30 @@ class _PersonalBlockEditorState extends State<PersonalBlockEditor> {
       'location': location.text.trim(),
       'notes': notes.text.trim()
     });
+  }
+
+  String? get draftTimeError {
+    if ((start == null) != (end == null) ||
+        start != null && start!.compareTo(end!) >= 0) {
+      return 'Choose both times, with the end after the start on the same day.';
+    }
+    if (widget.trip == null) return null;
+    return planningTimeError(
+        widget.trip!,
+        widget.trip!['travelDayPreferences'] is Map
+            ? Map<String, dynamic>.from(widget.trip!['travelDayPreferences'])
+            : const {},
+        [
+          ...widget.otherBlocks,
+          {
+            'label': title.text.trim(),
+            'dayNo': day,
+            'type': type,
+            'boundary': boundary,
+            if (start != null) 'startTime': start,
+            if (end != null) 'endTime': end
+          }
+        ]);
   }
 
   @override
@@ -170,8 +200,8 @@ class _PersonalBlockEditorState extends State<PersonalBlockEditor> {
                                 }),
                             child: const Text('Leave unscheduled'))
                       ]),
-                      if (timeError != null)
-                        Text(timeError!,
+                      if (draftTimeError != null || timeError != null)
+                        Text(draftTimeError ?? timeError!,
                             style: TextStyle(
                                 color: Theme.of(context).colorScheme.error)),
                       if (start == null && end == null) ...[
@@ -266,7 +296,7 @@ class _PersonalBlockEditorState extends State<PersonalBlockEditor> {
                           onPressed: () => Navigator.pop(context),
                           child: const Text('Cancel')),
                       FilledButton(
-                          onPressed: save,
+                          onPressed: draftTimeError == null ? save : null,
                           child: Text(widget.initial == null
                               ? 'Add to preview'
                               : 'Save changes')),

@@ -5,6 +5,7 @@ import 'alternative_screen.dart';
 import 'budget_comparison_screen.dart';
 import 'trip_expenses_screen.dart';
 import 'flight_adjustment_preview_sheet.dart';
+import 'planning_time_validation.dart';
 import 'planning_settings_sheet.dart';
 import 'activity_payload_helper.dart';
 import 'models/budget_model.dart';
@@ -1230,8 +1231,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     finally{if(mounted)setState(()=>busy=false);}
   }
 
+  bool _scheduleHelpActive = false;
   Future<void> _scheduleHelp({String action='improve',String scope='day'}) async {
-    if(trip==null || busy)return;
+    if(trip==null || busy || _scheduleHelpActive)return;
+    _scheduleHelpActive = true;
+    try {
     if(action=='regenerate'){
       final accepted=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(title:const Text('Review regeneration scope'),
         content:Text(scope=='full' ? 'Flexible generated places throughout this trip may be replaced. Fixed visits, personal blocks, notes and arrangements remain protected. You will review a preview before saving.'
@@ -1240,20 +1244,14 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Review proposal'))]));
       if(accepted!=true || !mounted)return;
     }
-    String? generation;
-    if(action=='regenerate' && trip!['recommendationGenerationId']==null){
-      try{
-        final saved=await api.get('/api/fr4/recommendations',{'destination':'${trip!['destinationArea']}','purpose':'trip_planning'});
-        generation=saved is Map ? saved['recommendationGenerationId']?.toString():null;
-      }catch(error){if(mounted)showError(context,error);return;}
-      if(!mounted)return;
-    }
     final result=await FlightAdjustmentPreviewSheet.show(context:context,api:api,tripId:widget.tripId,trip:trip!,
       title:action=='regenerate' ? 'Review regenerated schedule':'Review schedule assistance',
       previewRequest:{'planningChanges':<String,dynamic>{},'action':action,'scope':scope,'dayNo':selectedDay,
-        if(generation!=null)'recommendationGenerationId':generation,
         if(trip!['itineraryRevision'] is int)'expectedItineraryRevision':trip!['itineraryRevision']});
     if(result?['itinerary'] is Map && mounted){setState(()=>trip=Map<String,dynamic>.from(result!['itinerary']));await load();}
+    if (mounted && {'edit_preferences','review_fixed_activity'}.contains(result?['nextAction'])) await _planningSettings();
+    if (mounted && result?['nextAction']=='review_flight') await _replaceFlight(trip!);
+    } finally { _scheduleHelpActive = false; }
   }
 
   Future<void> _editActivityTime(Map<String,dynamic> activity) async {
@@ -1264,6 +1262,16 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     var time='${activity['scheduledStartTime'] ?? activity['timeSlot'] ?? '09:00'}';
     var fixed=activity['fixed']!=false,saving=false;
     String? error;
+    String? activityTimeError() {
+      final start = planningMinutes(time), minutes = int.tryParse(duration.text);
+      if (start == null || minutes == null || minutes <= 0 || start + minutes >= 1440) return 'Choose a valid same-day start time and duration.';
+      final end = start + minutes;
+      return planningTimeError({...trip!, 'activities': [for (final row in trip!['activities'] as List? ?? []) if (row['activityId'] != activity['activityId']) row]},
+        trip!['travelDayPreferences'] is Map ? Map<String,dynamic>.from(trip!['travelDayPreferences']) : {}, [
+          ...((trip!['planningBlocks'] as List?) ?? []).whereType<Map>().map((row) => Map<String,dynamic>.from(row)),
+          {'label': activity['activityName'], 'type':'custom','boundary':'destination','dayNo': day,
+            'startTime':time,'endTime':'${(end ~/ 60).toString().padLeft(2,'0')}:${(end % 60).toString().padLeft(2,'0')}'}]);
+    }
     await showDialog<void>(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,update)=>AlertDialog(
       title:Text('Edit ${activity['activityName'] ?? 'activity'}'),scrollable:true,
       content:SizedBox(width:420,child:Column(mainAxisSize:MainAxisSize.min,children:[
@@ -1273,16 +1281,16 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           final parts=time.split(':');final chosen=await showTimePicker(context:context,initialTime:TimeOfDay(hour:int.tryParse(parts.first) ?? 9,minute:int.tryParse(parts.last) ?? 0));
           if(chosen!=null)update(()=>time='${chosen.hour.toString().padLeft(2,'0')}:${chosen.minute.toString().padLeft(2,'0')}');
         },child:Text('Start time: $time')),
-        TextField(controller:duration,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'Duration estimate (minutes)')),
+        TextField(controller:duration,onChanged:(_)=>update((){}),keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'Duration estimate (minutes)')),
         TextField(controller:notes,maxLines:3,maxLength:1000,decoration:const InputDecoration(labelText:'Personal notes')),
         TextField(controller:cost,keyboardType:const TextInputType.numberWithOptions(decimal:true),
           decoration:const InputDecoration(labelText:'New group cost estimate (MYR, optional)')),
         const Text('Leave cost blank to keep existing pricing evidence.'),
         SwitchListTile(contentPadding:EdgeInsets.zero,value:fixed,onChanged:saving ? null:(v)=>update(()=>fixed=v),title:const Text('Fix this activity time'),
           subtitle:const Text('Fixed times cannot be moved by smart scheduling.')),
-        if(error!=null)Text(error!,style:const TextStyle(color:AppColors.error)),
+        if(activityTimeError()!=null || error!=null)Text(activityTimeError() ?? error!,style:const TextStyle(color:AppColors.error)),
       ])),actions:[TextButton(onPressed:saving ? null:()=>Navigator.pop(dialogContext),child:const Text('Cancel')),
-        FilledButton(onPressed:saving ? null:() async {
+        FilledButton(onPressed:saving || activityTimeError()!=null ? null:() async {
           final minutes=int.tryParse(duration.text),amount=cost.text.trim().isEmpty ? null:double.tryParse(cost.text);
           if(minutes==null || minutes<1 || cost.text.isNotEmpty && (amount==null || !amount.isFinite || amount<0)){
             update(()=>error='Enter a valid duration and non-negative optional estimate.');return;
@@ -2102,9 +2110,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text((block['label'] ?? 'Lunch / Rest').toString(),
                   style: Theme.of(context).textTheme.titleMedium),
-              if(block['personal']==true) Text('${block['locked']==false ? 'Flexible personal plan':'Fixed personal plan'} · No supplier reservation'),
+              if(block['personal']==true) Text(block['boundary']=='destination' ? 'Added by you · At destination' : 'Added by you · Personal / travel'),
               if((block['notes'] ?? '').toString().isNotEmpty)Text('${block['notes']}'),
-              if(block['personal']==true && block['estimatedCost']==null)const Text('Cost unknown · outside the known subtotal'),
+              if(block['personal']==true && block['estimatedCost']==null)const Text('Estimated cost not entered'),
               if((block['estimatedCost'] as num? ?? 0)>0)Text('MYR ${block['estimatedCost']} · additional user estimate'),
               if (duration > 0)
                 Text(
@@ -2766,10 +2774,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               _daySummary(t, day),
               if(t['travelDayStatus'] is String) Padding(padding:const EdgeInsets.only(top:8),child:Text(
                 t['travelDayStatus']=='confirmed' ? 'Travel-day preferences confirmed. Venue hours and local travel estimates may still need checking.':
-                  'Travel-day timing is provisional. Review Planning settings when your arrangements are ready.')),
+                  'Travel-day timing is provisional. Review Travel Preferences when your arrangements are ready.')),
               const SizedBox(height:AppSpacing.sm),
               if(!api.isStandalone) Wrap(spacing:8,runSpacing:8,children:[
-                OutlinedButton.icon(onPressed:busy ? null:()=>_planningSettings(),icon:const Icon(Icons.tune),label:const Text('Planning settings')),
+                OutlinedButton.icon(onPressed:busy ? null:()=>_planningSettings(),icon:const Icon(Icons.tune),label:const Text('Travel Preferences')),
                 OutlinedButton.icon(onPressed:busy ? null:()=>_planningSettings(blockType:'custom'),icon:const Icon(Icons.edit_calendar_outlined),label:const Text('Add custom activity')),
                 OutlinedButton.icon(onPressed:busy ? null:()=>_planningSettings(blockType:'rest'),icon:const Icon(Icons.free_breakfast_outlined),label:const Text('Add rest / free time')),
                 PopupMenuButton<String>(tooltip:'Schedule assistance',onSelected:(value)=>_scheduleHelp(action:value.startsWith('regenerate') ? 'regenerate':'improve',

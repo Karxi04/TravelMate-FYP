@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
 import 'personal_block_editor.dart';
+import 'planning_time_validation.dart';
 import '../../theme/app_theme.dart';
 import 'flight_adjustment_preview_sheet.dart';
 
@@ -34,7 +35,7 @@ class PlanningSettingsSheet extends StatefulWidget {
 }
 
 class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
-  late String mode, arrival, departure;
+  late String arrival, departure;
   late String travelMode;
   String? arrivalStart, departureEnd;
   late Map<String, dynamic> transport;
@@ -58,7 +59,6 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
   void initState() {
     super.initState();
     final prefs = map(widget.trip['travelDayPreferences']);
-    mode = widget.trip['planningMode']?.toString() ?? 'smart';
     travelMode = widget.trip['travelMode']?.toString() ?? 'undecided';
     arrival = map(prefs['arrival'])['choice']?.toString() ?? 'practical';
     departure = map(prefs['departure'])['choice']?.toString() ?? 'keep';
@@ -214,6 +214,11 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                 initial: index == null ? null : blocks[index],
                 dayCount: count,
                 initialDay: widget.initialDay,
+                trip: widget.trip,
+                otherBlocks: [
+                  for (var n = 0; n < blocks.length; n++)
+                    if (n != index) blocks[n]
+                ],
                 initialType: widget.initialBlockType ?? 'rest')));
     if (result != null && mounted)
       setState(() {
@@ -310,8 +315,11 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                         ]),
                         Text(
                             'Days ${selected.toList()..sort()} will use $start–$end for sightseeing. Unselected days stay unchanged. Travel bounds still apply.'),
-                        if (failure != null)
-                          Text(failure!,
+                        if (start.compareTo(end) >= 0 || failure != null)
+                          Text(
+                              start.compareTo(end) >= 0
+                                  ? 'End time must be later than start time on the same day.'
+                                  : failure!,
                               style: const TextStyle(color: AppColors.error)),
                       ])),
                   actions: [
@@ -319,18 +327,21 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                         onPressed: () => Navigator.pop(c),
                         child: const Text('Cancel')),
                     FilledButton(
-                        onPressed: () {
-                          if (selected.isEmpty || start.compareTo(end) >= 0) {
-                            update(() => failure =
-                                'Choose days and a valid time range.');
-                            return;
-                          }
-                          Navigator.pop(c, {
-                            'days': selected.toList(),
-                            'startTime': start,
-                            'endTime': end
-                          });
-                        },
+                        onPressed: selected.isEmpty || start.compareTo(end) >= 0
+                            ? null
+                            : () {
+                                if (selected.isEmpty ||
+                                    start.compareTo(end) >= 0) {
+                                  update(() => failure =
+                                      'Choose days and a valid time range.');
+                                  return;
+                                }
+                                Navigator.pop(c, {
+                                  'days': selected.toList(),
+                                  'startTime': start,
+                                  'endTime': end
+                                });
+                              },
                         child: const Text('Apply to draft'))
                   ],
                 )));
@@ -349,7 +360,33 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
       });
   }
 
+  Map<String, dynamic> get preferences => <String, dynamic>{
+        'arrival': {
+          'choice': arrival,
+          if (arrivalStart != null && {'rest', 'custom'}.contains(arrival))
+            'startTime': arrivalStart
+        },
+        'departure': {
+          'choice': departure,
+          if (departureEnd != null && departure == 'custom')
+            'endTime': departureEnd
+        },
+        'days': days,
+        'transport': {
+          ...transport,
+          'bufferMinutes': int.tryParse(buffer.text) ?? 0
+        },
+      };
+
+  String? get validationError {
+    final minutes = int.tryParse(buffer.text);
+    if (minutes == null || minutes < 0 || minutes > 720)
+      return 'Enter extra travel time from 0 to 720 minutes.';
+    return planningTimeError(widget.trip, preferences, blocks);
+  }
+
   Future<void> preview() async {
+    if (validationError != null) return;
     final minutes = int.tryParse(buffer.text);
     if (minutes == null || minutes < 0 || minutes > 720) {
       setState(() => error = 'Enter extra travel time from 0 to 720 minutes.');
@@ -359,20 +396,6 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
       busy = true;
       error = null;
     });
-    final preferences = <String, dynamic>{
-      'arrival': {
-        'choice': arrival,
-        if (arrivalStart != null && {'rest', 'custom'}.contains(arrival))
-          'startTime': arrivalStart
-      },
-      'departure': {
-        'choice': departure,
-        if (departureEnd != null && departure == 'custom')
-          'endTime': departureEnd
-      },
-      'days': days,
-      'transport': {...transport, 'bufferMinutes': minutes},
-    };
     final result = await FlightAdjustmentPreviewSheet.show(
         context: context,
         api: widget.api,
@@ -381,7 +404,6 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
         title: 'Review planning changes',
         previewRequest: {
           'planningChanges': {
-            'planningMode': mode,
             if (travelTouched) 'travelMode': travelMode,
             if (preferencesTouched) 'travelDayPreferences': preferences,
             if (blocksTouched)
@@ -410,8 +432,8 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
     final departureDay = map(available[returns.isNotEmpty
         ? returns.first['departureDate']
         : transport['departureDate']]);
-    String minutes(int value) =>
-        '${(value ~/ 60).toString().padLeft(2, '0')}:${(value % 60).toString().padLeft(2, '0')}';
+    String minutes(int value) => MaterialLocalizations.of(context)
+        .formatTimeOfDay(TimeOfDay(hour: value ~/ 60, minute: value % 60));
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     return Padding(
         padding: EdgeInsets.only(bottom: keyboard),
@@ -422,7 +444,7 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                   padding: const EdgeInsets.all(12),
                   child: Row(children: [
                     const Expanded(
-                        child: Text('Planning settings',
+                        child: Text('Travel Preferences',
                             style: TextStyle(
                                 fontSize: 20, fontWeight: FontWeight.w700))),
                     TextButton(
@@ -435,26 +457,6 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                           ScrollViewKeyboardDismissBehavior.onDrag,
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                       children: [
-                    DropdownButtonFormField<String>(
-                        initialValue: mode,
-                        isExpanded: true,
-                        itemHeight: null,
-                        decoration:
-                            const InputDecoration(labelText: 'Planning style'),
-                        items: const {
-                          'smart': 'Smart Planning',
-                          'manual': 'Manual Planning',
-                          'assisted': 'Assisted Planning'
-                        }
-                            .entries
-                            .map((e) => DropdownMenuItem(
-                                value: e.key, child: Text(e.value)))
-                            .toList(),
-                        onChanged:
-                            busy ? null : (v) => setState(() => mode = v!)),
-                    if (widget.trip['planningMode'] == null)
-                      const Text(
-                          'This older trip has no saved planning style. It changes only when you apply a preview.'),
                     if (flight.isEmpty)
                       DropdownButtonFormField<String>(
                           initialValue: travelMode,
@@ -508,6 +510,7 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                     if ({'rest', 'custom'}.contains(arrival))
                       timeButton('Sightseeing starts', arrivalStart,
                           (v) => arrivalStart = v),
+                    const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                         initialValue: departure,
                         isExpanded: true,
@@ -530,6 +533,7 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                                   preferencesTouched = true;
                                   departure = v!;
                                 })),
+                    const SizedBox(height: 12),
                     if (departure == 'custom')
                       timeButton('Sightseeing ends', departureEnd,
                           (v) => departureEnd = v),
@@ -560,16 +564,20 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                               ],
                             ),
                             if (arrivalDay['earliestStartMinutes'] is int)
-                              Text((arrivalDay['earliestStartMinutes']
-                                          as int) >=
-                                      1440
-                                  ? 'Arrival and travel buffers leave no sightseeing time that day.'
-                                  : 'Saved arrival travel bound: sightseeing from ${minutes(arrivalDay['earliestStartMinutes'])} at the earliest.'),
+                              Text(
+                                  (arrivalDay['earliestStartMinutes'] as int) >=
+                                          1440
+                                      ? 'Arrival and travel buffers leave no sightseeing time that day.'
+                                      : 'Earliest sightseeing: ${minutes(arrivalDay['earliestStartMinutes'])}',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700)),
                             if (departureDay['latestEndMinutes'] is int)
-                              Text((departureDay['latestEndMinutes'] as int) <=
-                                      0
-                                  ? 'No sightseeing fits on the departure day.'
-                                  : 'Saved departure travel bound: finish by ${minutes(departureDay['latestEndMinutes'])}.'),
+                              Text(
+                                  (departureDay['latestEndMinutes'] as int) <= 0
+                                      ? 'No sightseeing fits on the departure day.'
+                                      : 'Finish sightseeing by: ${minutes(departureDay['latestEndMinutes'])}',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700)),
                           ] else ...[
                             const Text(
                                 'Optional estimates, not confirmed transport. Leave unset if undecided.'),
@@ -580,7 +588,8 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                             TextField(
                                 key: const ValueKey('extra-travel-time'),
                                 controller: buffer,
-                                onChanged: (_) => preferencesTouched = true,
+                                onChanged: (_) =>
+                                    setState(() => preferencesTouched = true),
                                 keyboardType: TextInputType.number,
                                 decoration: const InputDecoration(
                                     labelText: 'Extra travel time (minutes)',
@@ -691,12 +700,13 @@ class _PlanningSettingsSheetState extends State<PlanningSettingsSheet> {
                         ]),
                     const Text(
                         'No saved activities or arrangements change until you review and apply. Fixed visits and paid arrangements stay protected.'),
-                    if (error != null)
-                      Text(error!,
+                    if (validationError != null || error != null)
+                      Text(validationError ?? error!,
                           style: const TextStyle(color: AppColors.error)),
                     const SizedBox(height: 12),
                     FilledButton(
-                        onPressed: busy ? null : preview,
+                        onPressed:
+                            busy || validationError != null ? null : preview,
                         child: const Text('Preview planning changes')),
                   ])),
             ])));

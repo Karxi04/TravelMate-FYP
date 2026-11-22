@@ -236,7 +236,10 @@ def test_paid_visit_cannot_be_removed_or_reordered_around_to_hide_conflicts(clie
 
 def test_regeneration_needs_owned_matching_saved_recommendation_evidence(client,planning):
     memory,writes=planning;saved(memory,flight=False)
-    assert preview(client,{},action='regenerate',scope='day',dayNo=2).status_code==400
+    missing = preview(client,{},action='regenerate',scope='day',dayNo=2)
+    assert missing.status_code == 409
+    assert missing.json['code'] == 'RECOMMENDATION_NOT_FOUND'
+    assert missing.json['nextAction'] == 'refresh_suggestions'
     memory.seed('recommendation_snapshots','saved-generation',{'travellerId':'another-owner','requestedDestination':'Penang','items':[]})
     assert preview(client,{},action='regenerate',recommendationGenerationId='saved-generation').status_code==409
     assert not writes
