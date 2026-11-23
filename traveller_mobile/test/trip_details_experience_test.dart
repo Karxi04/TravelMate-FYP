@@ -449,6 +449,7 @@ void main() {
       ..remove('imageUrl');
 
     await _pumpTrip(tester, api);
+    await _show(tester,find.byType(TravelPlaceImage));
 
     final image = tester
         .widgetList<TravelPlaceImage>(find.byType(TravelPlaceImage))
@@ -585,14 +586,21 @@ void main() {
     expect(budget['total'], 770);
   });
 
-  testWidgets('budget response error stays on the trip with retryable message', (tester) async {
+  testWidgets('budget response error retains the cached view and offers retry before returning to the trip', (tester) async {
     final api = _TripApi()..budgetUnavailable = true;
     await _pumpTrip(tester, api);
     await _show(tester, find.text('Budget details'));
     await tester.tap(find.text('Budget details'));
     await tester.pumpAndSettle();
-    expect(find.byType(BudgetComparisonScreen), findsNothing);
+    expect(find.byType(BudgetComparisonScreen), findsOneWidget);
     expect(find.textContaining('Budget details are unavailable'), findsOneWidget);
+    expect(find.text('Retry budget'),findsOneWidget);
+    api.budgetUnavailable=false;
+    await tester.tap(find.text('Retry budget'));await tester.pumpAndSettle();
+    expect(find.textContaining('Budget details are unavailable'),findsNothing);
+    expect(tester.widget<BudgetComparisonScreen>(find.byType(BudgetComparisonScreen)).tripId,'trip_target');
+    await tester.pageBack();await tester.pumpAndSettle();
+    expect(find.byType(TripDetailsScreen),findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

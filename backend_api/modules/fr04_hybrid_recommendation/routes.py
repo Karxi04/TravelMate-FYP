@@ -1,3 +1,5 @@
+from services.recommendation_snapshot_resolver import (evaluation_allowed, evaluation_mode, evaluation_session,
+    evaluation_evidence_revision, preference_version, profile_fingerprint)
 import hashlib
 import json
 import logging
@@ -60,21 +62,19 @@ logger = logging.getLogger(__name__)
 
 
 def _demonstration_allowed():
-    return request.headers.get('X-TravelMate-Review-Context') == 'fyp-v1' and (
-        bool(current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS')) or
-        bool(os.getenv('FYP_REVIEW_VIEWER_UID', '').strip() == g.uid))
+    return evaluation_allowed()
 
 
 def _evaluation_mode():
-    return current_app.config.get('RECOMMENDATION_EVIDENCE_MODE', 'genuine') == 'fyp_evaluation'
+    return evaluation_mode()
 
 
 def _evaluation_session():
-    return current_app.extensions.setdefault('recommendation_evaluation', demonstration_recommendations.EvaluationSession())
+    return evaluation_session()
 
 
 def _evaluation_evidence_revision(session):
-    return f'local-only-v1:{session.evidence_revision()}:{review_staging.evidence_revision()}'
+    return evaluation_evidence_revision(session)
 
 
 def _evaluation_recommendations(options, *, generate=False):
@@ -221,22 +221,11 @@ def _filter_for_destination(items, destination_area):
 
 
 def _preference_version(preference, learned_profile=None):
-    explicit = (
-        preference.get('preferenceProfileVersion')
-        or preference.get('profileVersion')
-        or preference.get('version')
-        or preference.get('updatedAt')
-    )
-    if explicit:
-        base_version = str(explicit)
-    else:
-        encoded = json.dumps(preference or {}, sort_keys=True, separators=(',', ':'), default=str).encode('utf-8')
-        base_version = f"profile_{hashlib.sha256(encoded).hexdigest()[:16]}"
-    return effective_profile_version(base_version, learned_profile)
+    return preference_version(preference, learned_profile)
 
 
 def _profile_fingerprint(preference):
-    return hashlib.sha256(json.dumps(preference,sort_keys=True,separators=(',', ':'),default=str).encode()).hexdigest()
+    return profile_fingerprint(preference)
 
 
 def _destination_id(item):

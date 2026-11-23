@@ -132,6 +132,8 @@ void main() {
     expect(find.text('No relevant suggestions available yet'),findsNothing);
     await tester.scrollUntilVisible(find.text('Why this suggestion').first,300,scrollable:find.byType(Scrollable).first);
     await tester.ensureVisible(find.text('Why this suggestion').first);await tester.tap(find.text('Why this suggestion').first);await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('How recommendations work')); await tester.pump();
+    await tester.tap(find.text('How recommendations work')); await tester.pumpAndSettle();
     expect(find.textContaining('not an enjoyment probability'),findsOneWidget);
   });
 

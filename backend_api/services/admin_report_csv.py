@@ -32,9 +32,11 @@ COLUMNS = {
                   ('discountValue', 'Discount Value'), ('startDate', 'Start Date'), ('endDate', 'End Date'),
                   ('reviewStatus', 'Review Status'), ('campaignStatus', 'Campaign Status'),
                   ('createdAt', 'Created Date'), ('updatedAt', 'Updated Date')],
-    'feedback': [('id', 'Feedback ID'), ('destinationId', 'Destination ID'), ('travellerId', 'Traveller ID'),
+    'feedback': [('id', 'Feedback ID'), ('destinationName', 'Destination'), ('destinationId', 'Destination ID'),
+                 ('feedbackSource', 'Feedback Source'), ('reviewProvenance', 'Review Provenance'),
                  ('rating', 'Rating'), ('comment', 'Review Comment'), ('feedbackStatus', 'Feedback Status'),
-                 ('moderationStatus', 'Moderation Status'), ('submittedAt', 'Submitted Date'),
+                 ('moderationStatus', 'Moderation Status'), ('moderationCategory', 'Moderation Category'),
+                 ('submittedAt', 'Submitted Date'), ('reviewedAt', 'Reviewed Date'),
                  ('createdAt', 'Created Date'), ('updatedAt', 'Updated Date')],
     'bookings': [('id', 'Record ID'), ('bookingReference', 'Booking Reference'), ('bookingType', 'Booking Type'),
                  ('productType', 'Product Type'), ('productTitle', 'Product Name'), ('packageTitle', 'Package Name'),
@@ -91,6 +93,20 @@ def _cell(value):
     return value
 
 
+def feedback_scope_text(report):
+    scope = report.get('feedbackSources')
+    if not scope:
+        return ''
+    sources = '; '.join(f"{name}: {status['status']}, {status.get('loaded', 0)} loaded, "
+                        f"{status.get('matching', status.get('loaded', 0))} matching"
+                        for name, status in scope['sources'].items())
+    total = 'lower bound; total/omitted unavailable' if scope['partial'] else 'exact within authorized sources'
+    return (f"Feedback: {sources}. {scope.get('exported', 0)} exported; "
+            f"{scope.get('omittedLoaded', 0)} loaded matching omitted. Matching count is {total}. "
+            f"Bound: {scope['recordLimitPerSource']} per feedback source, ordered by review identity. "
+            'Synthetic evaluation feedback is not genuine customer feedback. SQLite supplies state only, not extra reviews.')
+
+
 def readable_csv(report):
     """Return an Excel-friendly UTF-8 CSV; callers retain auth and sanitization."""
     criteria = report.get('criteria') or {}
@@ -118,10 +134,13 @@ def readable_csv(report):
         ('Reporting Period', 'Dates as specified above; blank bounds mean no date restriction.'),
         ('Source Scope', 'Partial source data loaded; this is not the complete system dataset.'
          if report.get('dataLimited') else 'Loaded source scope; a source loading cap applies.'),
-        ('Source Record Limit (Per Category)', report.get('recordLimit')),
+        ('Source Record Limit (Other Categories)' if report.get('feedbackSources') and report_type in {'feedback', 'system_summary'}
+         else 'Source Record Limit (Per Category)', report.get('recordLimit')),
         ('Detailed Export Limited', report.get('recordsLimited', False)),
-        ('Detailed Record Limit', report.get('recordDisplayLimit')),
+        ('Non-Feedback Detail Limit' if report.get('feedbackSources') and report_type == 'system_summary'
+         else 'Detailed Record Limit', report.get('recordDisplayLimit')),
         ('Records Exported', len(records)),
+        ('Feedback Source Scope', feedback_scope_text(report)),
         ('Summary Scope', 'Summary counts cover the filtered loaded sources; detailed rows may be capped.'),
         ('Financial Disclosure', 'Recorded paid totals include test-mode records. Test totals are included, not additional income. No real settlement or supplier reservation is implied.'),
         ('Category Disclosure', 'Active campaigns are a subset of approved campaigns; feedback moderation categories may overlap.'),

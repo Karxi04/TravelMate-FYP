@@ -186,6 +186,7 @@ def test_operator_attests_accommodation_component(client, mock_operator_auth):
         payload = {
             'serviceType': 'accommodation',
             'supplierName': 'Eastern & Oriental Hotel',
+            'attestation': 'confirmed',
             'reference': 'EO-PEN-88992',
             'notes': 'Late check-in requested for 22:00',
         }
@@ -220,7 +221,7 @@ def test_attestation_validation_rejects_missing_reference_or_bad_type(client, mo
             json={'serviceType': 'accommodation', 'reference': ''},
         )
         assert res1.status_code == 400
-        assert 'reference is required' in res1.get_json()['error']
+        assert 'actual accommodation provider / hotel' in res1.get_json()['error']
 
         # Invalid service type
         res2 = client.post(
@@ -307,7 +308,7 @@ def test_unowned_booking_fulfillment_rejected(client, mock_operator_auth):
         res = client.post(
             f"/api/fr12/bookings/{order['id']}/fulfillment",
             headers=AUTH_HEADER,
-            json={'serviceType': 'accommodation', 'reference': 'REF-123'},
+            json={'serviceType': 'accommodation', 'reference': 'REF-123', 'supplierName':'Fictional test hotel', 'attestation':'confirmed'},
         )
         assert res.status_code == 403
 
@@ -318,7 +319,7 @@ def test_unpaid_booking_fulfillment_rejected(client, mock_operator_auth):
         res = client.post(
             f"/api/fr12/bookings/{order['id']}/fulfillment",
             headers=AUTH_HEADER,
-            json={'serviceType': 'accommodation', 'reference': 'REF-123'},
+            json={'serviceType': 'accommodation', 'reference': 'REF-123', 'supplierName':'Fictional test hotel', 'attestation':'confirmed'},
         )
         assert res.status_code == 400
         assert 'unpaid' in res.get_json()['error']

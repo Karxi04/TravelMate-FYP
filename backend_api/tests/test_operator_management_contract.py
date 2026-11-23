@@ -220,19 +220,20 @@ def test_readiness_components_and_completion_are_derived_from_purchased_snapshot
     assert result['requiredCount'] == required
     assert result['canMarkReady'] is (required == 0)
     for service in record['services'].values():
-        service.update(status='confirmed',reference='genuine-fixture-ref',providerName='Synthetic Fleet',provenance='operator_attested',confirmedBy='op1',confirmedAt='2026-11-08T10:00:00Z')
+        service.update(status='confirmed',reference='genuine-fixture-ref',supplierName='Actual test hotel',providerName='Synthetic Fleet',provenance='operator_attested',confirmedBy='op1',confirmedAt='2026-11-08T10:00:00Z')
     assert fulfillment_readiness(order,requirements,record,True)['canMarkReady']
     assert not fulfillment_readiness(order,requirements,record,False)['canMarkReady']
 
 
-def test_readiness_explains_missing_transport_provider_reference_and_attestation():
+def test_readiness_explains_missing_transport_provider_and_attestation():
     snapshot = {'inclusions':['Airport transfer'],'accommodation':{},'transport':{'transportTypes':['Very long purchased brochure description']}}
     requirements = derive_required_services(snapshot)
     record = build_initial_fulfillment_record(snapshot)
     assert record['services']['transport']['providerName'] == ''
     result = fulfillment_readiness({},requirements,record,True)
     assert 'Actual transport provider / fleet is missing.' in result['blockers']
-    assert 'Transportation booking reference is missing.' in result['blockers']
+    assert 'Transportation booking reference is missing.' not in result['blockers']
+    assert 'Transportation arrangements have not been attested by the operator.' in result['blockers']
     assert result['completedCount'] == 0
 
 
@@ -253,7 +254,7 @@ def test_transport_attestation_requires_actual_provider_and_preserves_financial_
     monkeypatch.setattr(routes,'retrieveRecord',lambda c,i: None if c == 'package_requirement_clarifications' else deepcopy(store.get(i)))
     monkeypatch.setattr(routes,'commitPackageFulfillment',_memory_commit(store))
     response = client.post('/api/fr12/bookings/'+order['id']+'/fulfillment',headers=AUTH_HEADER,
-        json={'serviceType':'transport','reference':'DISPATCH-42','providerName':provider})
+        json={'serviceType':'transport','reference':'DISPATCH-42','attestation':'confirmed','providerName':provider})
     assert response.status_code == expected
     assert store[order['id']]['packageSnapshot'] == before and store[order['id']]['amount'] == order['amount']
     if provider:

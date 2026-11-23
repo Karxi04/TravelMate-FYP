@@ -5,74 +5,10 @@ import math
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
-from services.admin_report_csv import REPORT_TITLES, COUNT_LABELS, SECTION_LABELS, METRIC_LABELS, _cell, _label
+from services.admin_report_csv import REPORT_TITLES, COUNT_LABELS, SECTION_LABELS, METRIC_LABELS, _cell, _label, feedback_scope_text
 
 
-# Logical display fields, label, character width, cell type. No arbitrary source keys are appended.
-SCHEMAS = {
-    'users': [('reference', 'User ID', 34, 'text'), ('name', 'Full Name', 28, 'text'),
-              ('email', 'Email', 32, 'text'), ('role', 'Role', 18, 'text'),
-              ('status', 'Account Status', 18, 'text'), ('verificationStatus', 'Verification Status', 20, 'text'),
-              ('createdAt', 'Created Date', 24, 'date')],
-    'packages': [('reference', 'Package ID', 34, 'text'), ('name', 'Package Name', 42, 'text'),
-                 ('destination', 'Destination', 28, 'text'), ('operator', 'Operator', 28, 'text'),
-                 ('price', 'Adult / Base Price', 18, 'money'), ('currency', 'Currency', 12, 'text'),
-                 ('approvalStatus', 'Approval Status', 18, 'text'), ('createdAt', 'Created Date', 24, 'date')],
-    'campaigns': [('reference', 'Campaign ID', 34, 'text'), ('name', 'Campaign Name', 38, 'text'),
-                  ('promoCode', 'Promo Code', 20, 'text'), ('discountType', 'Discount Type', 18, 'text'),
-                  ('discountValue', 'Discount Value', 18, 'number'), ('startDate', 'Start Date', 22, 'date'),
-                  ('endDate', 'End Date', 22, 'date'), ('reviewStatus', 'Review Status', 18, 'text')],
-    'feedback': [('reference', 'Feedback ID', 34, 'text'), ('destination', 'Destination', 28, 'text'),
-                 ('rating', 'Rating', 10, 'number'), ('comment', 'Review Comment', 60, 'text'),
-                 ('feedbackStatus', 'Feedback Status', 18, 'text'), ('moderationStatus', 'Moderation Status', 20, 'text'),
-                 ('submitted', 'Submitted Date', 24, 'date')],
-    'bookings': [('reference', 'Booking Reference', 42, 'text'), ('type', 'Booking Type', 16, 'text'),
-                 ('name', 'Product Name', 42, 'text'), ('departureDate', 'Departure Date', 22, 'date'),
-                 ('travellers', 'Traveller Count', 16, 'number'), ('amount', 'Amount', 18, 'money'),
-                 ('currency', 'Currency', 12, 'text'), ('payment', 'Payment Status', 18, 'text'),
-                 ('booking_state', 'Booking / Record Status', 22, 'text'),
-                 ('createdAt', 'Created Date', 24, 'date')],
-    'payments': [('reference', 'Order Reference', 42, 'text'), ('type', 'Product Type', 16, 'text'),
-                 ('name', 'Product Name', 42, 'text'), ('amount', 'Amount', 18, 'money'),
-                 ('currency', 'Currency', 12, 'text'), ('payment', 'Payment Status', 18, 'text'),
-                 ('testMode', 'Test Mode', 12, 'text'), ('createdAt', 'Created Date', 24, 'date')],
-    'other': [('reference', 'Record ID', 38, 'text'), ('name', 'Name', 45, 'text'),
-              ('status', 'Record Status', 22, 'text'), ('createdAt', 'Created Date', 24, 'date')],
-}
-
-
-def _first(record, *paths):
-    for path in paths:
-        value = record
-        for key in path.split('.'):
-            value = value.get(key) if isinstance(value, dict) else None
-        if value is not None and value != '' and value != '-':
-            return value
-    return None
-
-
-def _value(record, field, kind):
-    paths = {
-        'reference': ('bookingReference', 'id', 'uid') if kind == 'bookings' else ('id', 'uid'),
-        'name': {'users': ('name', 'fullName'), 'packages': ('title', 'packageTitle'),
-                 'campaigns': ('campaignTitle',)}.get(kind, (
-                     'productTitle', 'packageTitle', 'packageSnapshot.title', 'packageSnapshot.packageTitle',
-                     'hotelName', 'quoteSnapshot.name', 'quoteSnapshot.hotel.name', 'selectedHotel.name',
-                     'acceptedPrebookSnapshot.name', 'orderTitle', 'name', 'title')),
-        'type': ('productType', 'bookingType', 'quoteType'),
-        'payment': ('paymentStatus', 'status'), 'price': ('adultPrice', 'price'),
-        'operator': ('operatorName', 'operatorId'),
-        'destination': ('destination', 'destinationName', 'destinationId'),
-        'travellers': ('travellerCount', 'groupSize', 'participants.totalTravellers'),
-        'submitted': ('submittedAt', 'createdAt'),
-        'booking_state': ('bookingStatus', 'status'),
-    }
-    if kind == 'bookings':
-        paths.update(amount=('amount', 'hotelCost'), currency=('currency', 'hotelCurrency'))
-    value = _first(record, *paths.get(field, (field,)))
-    if field == 'testMode' and isinstance(value, bool):
-        return 'Yes' if value else 'No'
-    return value
+from admin_report_records import SCHEMAS, _first, _value, record_table
 
 
 def summary_table(report):
@@ -85,25 +21,16 @@ def summary_table(report):
     return columns, rows
 
 
-def record_table(kind, records):
-    columns = list(SCHEMAS[kind])
-    # Only a known homogeneous MYR scope permits the compact currency-specific heading.
-    if kind == 'payments' and records and all(item.get('currency') == 'MYR' for item in records):
-        columns = [(key, 'Amount (MYR)' if key == 'amount' else label, width, cell_type)
-                   for key, label, width, cell_type in columns if key != 'currency']
-    # Optional booking details are absent from some supported legacy records.
-    optional = {'departureDate', 'travellers', 'type', 'payment', 'booking_state'} if kind == 'bookings' else set()
-    columns = [col for col in columns if col[0] not in optional
-               or any(_value(record, col[0], kind) is not None for record in records)]
-    return columns, [tuple(_value(record, key, kind) for key, *_ in columns) for record in records]
-
-
 def metadata(report):
     criteria = report.get('criteria') or {}
     scope = ('Partial source dataset. ' if report.get('dataLimited') else 'Loaded source scope. ')
-    scope += f"Up to {report.get('recordLimit', 500)} records per source; {report.get('recordDisplayLimit', 200)} detailed rows per export."
+    scope += (f"Other categories: up to {report.get('recordLimit', 500)} records per source; 200 non-feedback detail rows."
+              if report.get('feedbackSources') else
+              f"Up to {report.get('recordLimit', 500)} records per source; {report.get('recordDisplayLimit', 200)} detailed rows per export.")
     if report.get('recordsLimited'):
         scope += ' Detailed export is incomplete.'
+    if report.get('feedbackSources'):
+        scope += ' ' + feedback_scope_text(report)
     return [
         ('Generated At', _date_text(report.get('generatedAt'))),
         ('Report Type', (criteria.get('reportType') or 'system_summary').replace('_', ' ').title()),
@@ -135,6 +62,8 @@ def compact_csv(report):
 
 
 def _record_category(record):
+    if record.get('reportCategory') == 'feedback':
+        return 'feedback'
     # Presentation grouping only. Ambiguous rows stay in Other Records, never guessed or dropped.
     matches = []
     if record.get('role'):

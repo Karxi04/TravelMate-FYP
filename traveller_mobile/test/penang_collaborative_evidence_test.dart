@@ -67,13 +67,15 @@ void main() {
     await tester.ensureVisible(find.text('Recommendation score: 62/100'));
     await tester.tap(find.text('Recommendation score: 62/100'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('How recommendations work')); await tester.pump();
+    await tester.tap(find.text('How recommendations work')); await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   }
 
   testWidgets('cold start explains missing reviewer profiles without claiming a real average', (tester) async {
     await explain(tester, {'collaborativeConfidence': 0, 'collaborativeRatingCount': 0,
       'collaborativeFallbackReason': 'missing_peer_preferences'});
-    expect(find.text('50/100 (Neutral baseline)'), findsOneWidget);
+    expect(find.text('Not enough similar reviewer ratings yet.'), findsOneWidget);
     expect(find.textContaining('not an average review rating'), findsOneWidget);
     expect(find.textContaining('Reviewers had no matching saved preference profiles'), findsOneWidget);
   });
@@ -81,15 +83,15 @@ void main() {
   testWidgets('an evidence-backed fifty is not labelled cold start', (tester) async {
     await explain(tester, {'collaborativeConfidence': .667, 'collaborativeRatingCount': 2,
       'rawCollaborativeScore': 50, 'collaborativeSource': 'neutral (legacy wording)'});
-    expect(find.text('50/100 (Peer evidence)'), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const ValueKey('recommendation-score-Similar profiles (30%)')), matching: find.text('50/100')), findsOneWidget);
     expect(find.textContaining('Eligible reviewers: 2'), findsOneWidget);
     expect(find.textContaining('Raw peer score: 50.0/100'), findsOneWidget);
-    expect(find.text('50/100 (Neutral baseline)'), findsNothing);
+    expect(find.text('Not enough similar reviewer ratings yet.'), findsNothing);
   });
 
   testWidgets('legacy saved scores with absent metadata disclose unavailable evidence', (tester) async {
     await explain(tester, {});
-    expect(find.text('50/100 (Evidence unavailable)'), findsOneWidget);
+    expect(find.text('Peer-rating details are unavailable for this saved result.'), findsOneWidget);
     expect(find.textContaining('saved score has not been recalculated'), findsOneWidget);
     expect(find.textContaining('No peer ratings from similar travellers qualified'), findsNothing);
   });
@@ -98,7 +100,7 @@ void main() {
     await explain(tester, {'collaborativeConfidence': .333, 'collaborativeRatingCount': 1,
       'rawCollaborativeScore': 100, 'scoreBreakdown': {'content': 70,
       'collaborative': 66.67, 'popularity': 50}});
-    expect(find.text('67/100 (Peer evidence)'), findsOneWidget);
+    expect(find.text('66.7/100'), findsOneWidget);
     expect(find.textContaining('Evidence confidence: 33%'), findsOneWidget);
     expect(find.textContaining('confidence is not prediction accuracy'), findsOneWidget);
   });
@@ -111,6 +113,8 @@ void main() {
     await explain(tester, {}, textScale: 1.8);
     await tester.ensureVisible(find.textContaining('saved score has not been recalculated'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('How recommendations work')); await tester.pump();
+    await tester.tap(find.text('How recommendations work')); await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 }

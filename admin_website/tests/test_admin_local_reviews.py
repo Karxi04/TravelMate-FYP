@@ -78,7 +78,8 @@ def test_private_source_is_carried_to_filters_history_and_actions(auth_client):
             'source': 'fyp_penang', 'decision': 'keep', 'expectedRevision': 'expected',
         })
     html = page.get_data(as_text=True)
-    assert 'Review source' in html and 'FYP evaluation contribution' in html
+    assert 'Review source' in html and 'fictional evaluation reviews' in html
+    assert 'FYP evaluation contribution' not in html
     assert 'Penang Hill' in html and 'Genuine place' in html
     assert 'name="source" value="fyp_penang"' in html and 'name="source" value="traveller"' in html
     assert html.count('<details open>') == 1
@@ -102,7 +103,7 @@ def test_regional_overlay_form_is_read_only_until_explicitly_configured(auth_cli
         return response
     with _patch_admin_api(api):
         read_only = auth_client.get('/admin/feedback?status=all').get_data(as_text=True)
-        assert 'Read-only fixture' in read_only and 'name="source" value="fyp_regional"' not in read_only
+        assert 'Read-only · local moderation storage is unavailable.' in read_only and 'name="source" value="fyp_regional"' not in read_only
         row['moderationWritable'] = True
         writable = auth_client.get('/admin/feedback?status=all').get_data(as_text=True)
         assert 'name="source" value="fyp_regional"' in writable

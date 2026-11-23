@@ -330,7 +330,7 @@ class RecommendationCard extends StatelessWidget {
     final popularityDescription = popularityEvidence == null
         ? 'This saved recommendation uses an older evidence format. Detailed popularity provenance is unavailable in this format. Regenerate recommendations to evaluate current evidence.'
         : popularitySource == 'provider_rating_review_count'
-            ? '${_evaluation ? 'This saved evaluation predates the local-only policy. Regenerate to use current local evidence; provider popularity is no longer used in FYP evaluation. ' : ''}Verified provider rating: ${popularityRating?.toStringAsFixed(1)}/5. ${popularityCount == null ? 'Provider review count unavailable.' : '$popularityCount provider reviews.'}'
+            ? '${_evaluation ? 'This saved evaluation predates the local-only policy. Regenerate to use current local evidence; provider popularity is no longer used in this evaluation. ' : ''}Verified provider rating: ${popularityRating?.toStringAsFixed(1)}/5. ${popularityCount == null ? 'Provider review count unavailable.' : '$popularityCount provider reviews.'}'
         : popularitySource == 'genuine_approved_local_reviews'
             ? 'Approved genuine TravelMate reviews: ${popularityRating?.toStringAsFixed(1)}/5 from $popularityCount reviews loaded for this generation. Demonstration reviews are excluded.'
         : popularitySource == 'demonstration_approved_reviews'
@@ -354,124 +354,106 @@ class RecommendationCard extends StatelessWidget {
               'Sparse evidence is blended toward 50; confidence is not prediction accuracy. '
               'A result of 50 can be evidence-backed and is not automatically a cold start.';
 
+    String valueText(Object? value) {
+      final number = num.tryParse('$value');
+      if (number == null || !number.isFinite || number < 0 || number > 100) return 'Unavailable';
+      return '${number.toStringAsFixed(number == number.roundToDouble() ? 0 : 1)}/100';
+    }
+    final overall = recommendation['hybridRankingScore'] ?? recommendation['finalScore'] ?? recommendation['score'];
+    final peerSummary = !hasEvidenceDetails
+        ? 'Peer-rating details are unavailable for this saved result.'
+        : isColdStart
+            ? 'Not enough similar reviewer ratings yet.'
+            : _sampleEvidence
+                ? 'Based on illustrative reviewer profiles with similar interests.'
+                : 'Based on ratings from reviewer profiles with similar interests.';
+    final ratingSummary = switch (popularitySource) {
+      'demonstration_approved_reviews' => 'Based on approved illustrative community review ratings.',
+      'genuine_approved_local_reviews' => 'Based on approved TravelMate review ratings.',
+      'provider_rating_review_count' => 'Based on provider review ratings.',
+      _ => popularityEvidence == null
+          ? 'Rating-source details are unavailable for this saved result.'
+          : 'Not enough qualifying review information yet.',
+    };
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
-            0,
-            AppSpacing.md,
-            AppSpacing.lg,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.auto_awesome_rounded,
-                    color: AppColors.primary,
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(
-                    child: Text(
-                      discovery
-                          ? 'Why this suggestion'
-                          : '${_hasPersonalScore ? 'Personal match' : 'Recommendation Score'} (${score.round()}/100)',
-                      style: Theme.of(sheetContext).textTheme.titleLarge,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                'A 0–100 hybrid ranking score used to order recommendations for your profile. This is not an enjoyment probability or percentage guarantee.',
-                style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              if (_sampleEvidence) ...[
-                const Text('Data sources: your saved preferences are compared with approved sample community reviews and associated simulated reviewer profiles. This is an FYP evaluation, not genuine customer peer evidence. Genuine recommendation history is unchanged.'),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(sheetContext).height * .88),
+          child: SingleChildScrollView(
+            key: const ValueKey('recommendation-explanation-scroll'),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Why this suggestion?', style: Theme.of(sheetContext).textTheme.titleLarge),
+                const SizedBox(height: AppSpacing.xs),
+                Text(_matchedInterests.isNotEmpty
+                    ? 'Matches your interests in ${_matchedInterests.join(', ')}.'
+                    : 'Selected using available preference and destination information.'),
                 const SizedBox(height: AppSpacing.sm),
-              ],
-              if (_hasPersonalScore) ...[
-                Text(
-                    'Personal match averages only supported profile signals. Evidence coverage describes available metadata, not prediction accuracy. Hybrid ranking retains 60% content, 30% similar travellers and 10% popularity.'),
+                Text('Overall match: ${valueText(overall)}',
+                    key: const ValueKey('overall-recommendation-score'),
+                    style: Theme.of(sheetContext).textTheme.titleMedium),
                 const SizedBox(height: AppSpacing.sm),
-                Text(
-                    'Hybrid ranking: ${recommendation['hybridRankingScore']} /100'),
-              ],
-              if (breakdown != null) ...[
-                _breakdownCard(
-                  sheetContext,
-                  title: 'Travel style & interests (60% weight)',
-                  scoreText:
-                      '${(breakdown['content'] as num?)?.round() ?? '-'}/100',
-                  description:
-                      'Evaluates compatibility with your saved travel interests, budget preference, and travel pace.',
-                ),
-                if (!_sampleEvidence && !recommendationHasCurrentEvidence(recommendation)) ...[
+                if (breakdown != null) ...[
+                  _breakdownCard(sheetContext,
+                      title: 'Your interests (60%)',
+                      scoreText: valueText(breakdown['content']),
+                      description: 'Matches your travel style, interests and pace.'),
+                  const SizedBox(height: AppSpacing.xs),
+                  _breakdownCard(sheetContext,
+                      title: 'Similar profiles (30%)',
+                      scoreText: valueText(breakdown['collaborative']),
+                      description: peerSummary),
+                  const SizedBox(height: AppSpacing.xs),
+                  _breakdownCard(sheetContext,
+                      title: 'Popularity (10%)',
+                      scoreText: valueText(breakdown['popularity']),
+                      description: ratingSummary),
+                ] else
+                  const Text('Detailed score breakdown is not available for this saved recommendation.'),
+                if (!recommendationHasCurrentEvidence(recommendation)) ...[
+                  const SizedBox(height: AppSpacing.sm),
                   const Text(recommendationEvidenceUpdateMessage),
                   if (onRefreshEvidence != null) TextButton.icon(
-                    key: const ValueKey('regenerate-recommendation-evidence'),
-                    onPressed: () { Navigator.pop(sheetContext); onRefreshEvidence!(); },
-                    icon: const Icon(Icons.refresh_rounded), label: const Text('Regenerate recommendations')),
+                      key: const ValueKey('regenerate-recommendation-evidence'),
+                      onPressed: () { Navigator.pop(sheetContext); onRefreshEvidence!(); },
+                      icon: const Icon(Icons.refresh_rounded), label: const Text('Regenerate recommendations')),
                 ],
-                const SizedBox(height: AppSpacing.sm),
-                _breakdownCard(
-                  sheetContext,
-                  title: 'Similar traveller evidence (30% weight)',
-                  scoreText: isColdStart
-                      ? '50/100 (Neutral baseline)'
-                      : '${(breakdown['collaborative'] as num?)?.round() ?? '-'}/100 (${hasPeerEvidence ? 'Peer evidence' : 'Evidence unavailable'})',
-                  description: collaborativeDescription,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                _breakdownCard(
-                  sheetContext,
-                  title: 'Destination popularity (10% weight)',
-                  scoreText:
-                      '${(breakdown['popularity'] as num?)?.round() ?? '-'}/100',
-                  description: popularityDescription,
-                ),
-              ] else ...[
-                Container(
-                  padding: AppSpacing.card,
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceElevated,
-                    borderRadius: AppRadii.control,
-                    border: Border.all(color: AppColors.divider),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.info_outline_rounded,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          'Detailed score breakdown is not available for this recommendation.',
-                          style: Theme.of(sheetContext).textTheme.bodySmall,
-                        ),
-                      ),
+                if (_sampleEvidence) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  const Text('Review information includes illustrative community evaluation data, not genuine customer peer evidence.'),
+                ],
+                ExpansionTile(
+                  key: const PageStorageKey('recommendation-source-details'),
+                  title: const Text('How recommendations work'),
+                  childrenPadding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('The overall score uses 60% interests, 30% similar profiles and 10% popularity. It is a ranking score, not an enjoyment probability.'),
+                    if (_hasPersonalScore) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      const Text('Personal match averages only supported profile signals. Evidence coverage describes available metadata, not prediction accuracy.'),
                     ],
-                  ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(collaborativeDescription),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(popularityDescription),
+                    if (_sampleEvidence) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      const Text('Illustrative review contributions and simulated preference profiles are not verified genuine Traveller submissions. They remain separate from genuine recommendations.'),
+                    ],
+                    RecommendationDataSources(evaluation: _sampleEvidence, label: 'Review sources and attribution'),
+                  ],
                 ),
+                const SizedBox(height: AppSpacing.sm),
+                SecondaryButton(label: 'Close', onPressed: () => Navigator.pop(sheetContext)),
               ],
-              const SizedBox(height: AppSpacing.md),
-              SizedBox(
-                width: double.infinity,
-                child: SecondaryButton(
-                  label: 'Close',
-                  onPressed: () => Navigator.pop(sheetContext),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -485,6 +467,7 @@ class RecommendationCard extends StatelessWidget {
     required String description,
   }) {
     return Container(
+      key: ValueKey('recommendation-score-$title'),
       padding: AppSpacing.card,
       decoration: BoxDecoration(
         color: AppColors.surfaceElevated,
@@ -548,11 +531,11 @@ class RecommendationDataSources extends StatelessWidget {
         context: context, showDragHandle: true, builder: (context) => SafeArea(child: SingleChildScrollView(
           padding: AppSpacing.page, child: Column(mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(evaluation ? 'FYP evaluation configuration' : 'Genuine community configuration',
+              Text(evaluation ? 'Illustrative community information' : 'Genuine community configuration',
                 style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: AppSpacing.sm),
               Text(evaluation
-                ? 'Your saved preferences drive the same 60% content, 30% similar-traveller and 10% popularity calculation. FYP evaluation uses approved TravelMate sample community reviews only. Similarity-weighted peer ratings and the unweighted popularity aggregate remain separate. Missing local evidence uses a neutral ranking prior and Not rated yet. Provider ratings are excluded. Sample contributors are not verified real tourists. Evaluation results remain in owner-scoped server memory for one hour or restart. Your questionnaire and genuine history are unchanged. Trip actions use normal confirmations.'
+                ? 'Your saved preferences drive the same 60% content, 30% similar-traveller and 10% popularity calculation. Evaluation mode uses approved TravelMate sample community reviews only. Similarity-weighted peer ratings and the unweighted popularity aggregate remain separate. Missing local evidence uses a neutral ranking prior and Not rated yet. Provider ratings are excluded. Sample contributors are not verified real tourists. Evaluation results remain in owner-scoped server memory for one hour or restart. Your questionnaire and genuine history are unchanged. Trip actions use normal confirmations.'
                 : 'Recommendations use your saved preferences, qualifying independent genuine reviews and verified provider ratings or approved genuine local ratings. Sample community reviews do not contribute. Missing peer evidence uses a confidence-aware neutral score.'),
               const SizedBox(height:AppSpacing.md),
               const Text('Data attribution'),

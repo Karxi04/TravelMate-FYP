@@ -29,7 +29,7 @@ def operator_data():
 def admin_data():
     return {
         'generatedAt':'2026-11-18T03:04:05+00:00','dataLimited':True,'recordsLimited':True,
-        'criteria':{'reportType':'payments','startDate':'2026-11-01','endDate':'2026-11-18','filter':'paid'},
+        'criteria':{'reportType':'system_summary','startDate':'2026-11-01','endDate':'2026-11-18','filter':'paid'},
         'counts':{'users':10,'tourism_packages':5,'promotional_campaigns':3,'feedback':8,
                   'payment_records':4,'hotel_bookings':2},
         'summary':{

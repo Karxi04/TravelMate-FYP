@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timezone, timedelta
 from math import isfinite
 from uuid import uuid4
@@ -276,13 +277,15 @@ def _safe_float(val, default=0.0):
 
 
 def _is_paid_booking(booking):
+    pay = str(booking.get('paymentStatus') or '').strip().lower()
+    status = str(booking.get('orderStatus') or '').strip().lower()
+    terminal = {'expired', 'checkout_expired', 'failed', 'checkout_failed', 'payment_failed',
+                'cancelled', 'checkout_cancelled', 'payment_cancelled', 'refunded', 'partially_refunded', 'rejected'}
+    if status in terminal or pay in terminal:
+        return False
     if isinstance(booking.get('isPaid'), bool):
         return booking['isPaid']
-    pay = str(booking.get('paymentStatus') or '').lower()
-    status = str(booking.get('orderStatus') or '').lower()
-    terminal = {'expired', 'checkout_expired', 'failed', 'checkout_failed', 'payment_failed',
-                'cancelled', 'checkout_cancelled', 'refunded', 'partially_refunded', 'rejected'}
-    return status not in terminal and (pay in {'paid', 'succeeded'} or (not pay and status in {'paid', 'succeeded'}))
+    return pay in {'paid', 'succeeded'} or (not pay and status in {'paid', 'succeeded'})
 
 
 def _is_pending_booking(b):
@@ -294,14 +297,14 @@ def _is_pending_booking(b):
         "expired", "checkout_expired",
         "failed", "checkout_failed",
         "cancelled", "checkout_cancelled",
-        "rejected",
+        "rejected", "refunded", "partially_refunded", "payment_cancelled",
     }
     terminal_pays = {
         "paid", "succeeded",
         "failed", "payment_failed",
         "expired",
         "cancelled",
-        "refunded",
+        "refunded", "partially_refunded", "payment_cancelled",
     }
     if order in terminal_orders or pay in terminal_pays:
         return False
@@ -500,13 +503,21 @@ def update_booking_fulfillment(order_reference):
     supplier_name = request.form.get(name_field, request.form.get('supplierName', '')).strip()
     notes = request.form.get("notes", "").strip()
 
-    if not service_type or not reference:
-        flash("Service type and booking reference are required.", "error")
+    attestation = request.form.get('attestation', '')
+    invalid_hotel = service_type == 'accommodation' and (
+        not 3 <= len(supplier_name) <= 200 or sum(char.isalpha() for char in supplier_name) < 3
+        or re.search(r'\b(?:to[\s_-]+be[\s_-]+confirmed|tbc|tbd|not[\s_-]+confirmed|not[\s_-]+specified|unknown|pending)\b', supplier_name, re.I)
+        or any(ord(char) < 32 for char in supplier_name)
+        or supplier_name.casefold() in {'n/a', 'na', 'none', '-', 'hotel', 'accommodation', 'provider', 'supplier'})
+    if service_type not in {'accommodation', 'transport', 'guideActivities'} or (
+            not supplier_name or attestation != 'confirmed' or invalid_hotel):
+        flash("Enter the required arrangement details and confirm that the arrangement is in place.", "error")
         return redirect(url_for("operator_fr12.booking_detail", order_reference=order_reference))
 
     payload = {
         "serviceType": service_type,
-        "reference": reference,
+        **({"reference": reference} if reference else {}),
+        "attestation": attestation,
         name_field: supplier_name,
         "notes": notes,
     }
@@ -564,7 +575,7 @@ def payments():
         data_limited = bool(payload.get("dataLimited", False))
 
     query = request.args.get("q", "").strip().lower()
-    status = request.args.get("status", "all").strip().lower()
+    status = request.args.get("status", "all").strip().lower() or "all"
 
     items = list(all_items)
     if status != "all":
@@ -580,11 +591,11 @@ def payments():
                 if str(b.get("paymentStatus") or "").lower() in {"failed", "payment_failed"}
                 or str(b.get("orderStatus") or "").lower() in {"failed", "checkout_failed"}
             ]
-        elif status in {"cancelled", "refunded"}:
+        elif status in {"cancelled", "refunded", "partially_refunded"}:
             items = [
                 b for b in items
-                if str(b.get("paymentStatus") or "").lower() in {"cancelled", "payment_cancelled", "refunded"}
-                or str(b.get("orderStatus") or "").lower() in {"cancelled", "checkout_cancelled", "refunded"}
+                if str(b.get("paymentStatus") or "").strip().lower() in {"cancelled", "payment_cancelled", "refunded", "partially_refunded"}
+                or str(b.get("orderStatus") or "").strip().lower() in {"cancelled", "checkout_cancelled", "refunded", "partially_refunded"}
             ]
         elif status == "test":
             items = [b for b in items if b.get("testMode")]

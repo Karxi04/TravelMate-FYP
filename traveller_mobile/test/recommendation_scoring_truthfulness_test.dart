@@ -149,8 +149,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verifies breakdown explains cold-start neutral baseline
-      expect(find.text('Recommendation Score (58/100)'), findsOneWidget);
-      expect(find.text('50/100 (Neutral baseline)'), findsOneWidget);
+      expect(find.text('Why this suggestion?'), findsOneWidget);
+      expect(find.text('Not enough similar reviewer ratings yet.'), findsOneWidget);
+      await tester.ensureVisible(find.text('How recommendations work')); await tester.pump();
+      await tester.tap(find.text('How recommendations work')); await tester.pumpAndSettle();
       expect(find.textContaining('No peer ratings from similar travellers qualified in this generation'), findsOneWidget);
       expect(find.textContaining('not an enjoyment probability'), findsOneWidget);
 
@@ -181,7 +183,7 @@ void main() {
       await tester.tap(find.text('Recommendation score: 61/100'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Detailed score breakdown is not available for this recommendation.'), findsOneWidget);
+      expect(find.text('Detailed score breakdown is not available for this saved recommendation.'), findsOneWidget);
     });
 
     testWidgets('5. Scenario D: historical recommendation with % match in recommendationReason strips stale wording',

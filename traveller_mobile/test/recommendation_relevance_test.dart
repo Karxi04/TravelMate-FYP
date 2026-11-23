@@ -117,6 +117,8 @@ void main() {
     await tester.pumpAndSettle();
     final match=find.text('Personal match: 90/100');
     await tester.ensureVisible(match);await tester.tap(match);await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('How recommendations work')); await tester.pump();
+    await tester.tap(find.text('How recommendations work')); await tester.pumpAndSettle();
     expect(find.textContaining('Evidence coverage describes available metadata'),findsOneWidget);
     expect(find.textContaining('No peer ratings from similar travellers'),findsOneWidget);
     expect(tester.takeException(),isNull);

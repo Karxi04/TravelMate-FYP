@@ -23,6 +23,7 @@ from services.trip_budget_replan import budget_replan_options, preview_budget_re
 from services.itinerary_history import history_patch, history_metadata, HistoryConflict
 from sequence_contract.validators import validateItineraryInput, validateItineraryForSaving, validateSelectedDestination
 from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord, deleteRecord, claimRecord
+from services.recommendation_snapshot_resolver import SnapshotUnavailable
 from sequence_contract.domain_functions import (
     createItinerary, addActivity, removeActivity, rearrangeActivity, updateActivity,
     checkDestinationLimit, calculateBudget, compareBudget,
@@ -40,9 +41,15 @@ from services.flight_itinerary_adjustment import (
 bp = Blueprint('fr05_itineraries', __name__, url_prefix='/api/fr5')
 
 
+@bp.errorhandler(SnapshotUnavailable)
+def snapshot_temporarily_unavailable(error):
+    return jsonify(ok=False,error=str(error),code='recommendation_evidence_unavailable',
+                   stage='snapshot_validation',retryable=True,requiresExplicitRegeneration=False),503
+
+
 @bp.errorhandler(HistoryConflict)
 def history_conflict(error):
-    return jsonify(ok=False, error=str(error)), 409
+    return jsonify(ok=False, error=str(error), code='STALE_ITINERARY', stage='trip_validation', nextAction='reload_trip'), 409
 
 
 @bp.get('/itineraries/<iid>/history')
@@ -275,9 +282,12 @@ def _recommendation_snapshot(current, payload):
     if not generation_id:
         return None, None
 
-    snapshot = retrieveRecord('recommendation_snapshots', generation_id)
-    if not snapshot or snapshot.get('travellerId') != g.uid:
-        return None, 'Recommendation snapshot not found for this traveller'
+    from services.recommendation_snapshot_resolver import resolve_snapshot
+    snapshot, error = resolve_snapshot(generation_id, current.get('destinationArea'), retrieveRecord)
+    if error:
+        return None, error
+    if snapshot.get('recommendationEvidenceMode') == 'fyp_evaluation':
+        return snapshot, None  # The shared resolver already checked canonical scope.
 
     trip_area = _requested_area(current.get('destinationArea'))
     snapshot_area = _requested_area(
@@ -286,6 +296,59 @@ def _recommendation_snapshot(current, payload):
     if not trip_area or trip_area != snapshot_area:
         return None, 'Recommendation snapshot destination does not match this trip'
     return snapshot, None
+
+
+def _regeneration_snapshot(current, payload):
+    """Only an explicit preview may propose replacing an obsolete linked generation."""
+    linked = str(current.get('recommendationGenerationId') or '')
+    requested = payload.get('recommendationGenerationId') or linked
+    if requested != linked and linked:
+        if (payload.get('refreshSuggestions') is not True or payload.get('expectedLinkedGenerationId') != linked
+                or type(payload.get('expectedItineraryRevision')) is not int
+                or payload['expectedItineraryRevision'] != int(current.get('itineraryRevision') or 1)):
+            return None, 'Confirm refreshed suggestions for the current trip before regenerating.'
+        if requested.startswith('fyp-evaluation-') != linked.startswith('fyp-evaluation-'):
+            return None, 'Recommendation evidence does not belong to the current mode.'
+    if not requested:
+        return None, 'No saved suggestions are available. Generate suggestions first.'
+    snapshot, error = _recommendation_snapshot({**current, 'recommendationGenerationId': requested},
+                                              {'recommendationGenerationId': requested})
+    if error or not snapshot:
+        return snapshot, error
+    # Genuine legacy snapshots remain readable; enforce any recorded expiry and profile evidence.
+    if snapshot.get('recommendationEvidenceMode') != 'fyp_evaluation':
+        expiry = snapshot.get('expiresAt')
+        if expiry:
+            try:
+                if datetime.fromisoformat(str(expiry).replace('Z', '+00:00')) <= datetime.now(timezone.utc):
+                    return None, 'Saved suggestions expired. Refresh suggestions.'
+            except (ValueError, TypeError):
+                return None, 'Saved suggestion expiry cannot be verified. Refresh suggestions.'
+        if snapshot.get('preferenceFingerprint') or snapshot.get('preferenceProfileVersion'):
+            from services.recommendation_snapshot_resolver import profile_fingerprint, preference_version
+            preference = retrieveRecord('travel_preferences', g.uid)
+            learned = retrieveRecord('learned_preference_profiles', g.uid)
+            if (not isinstance(preference, dict)
+                    or snapshot.get('preferenceFingerprint') and snapshot['preferenceFingerprint'] != profile_fingerprint(preference)
+                    or snapshot.get('preferenceProfileVersion') and snapshot['preferenceProfileVersion'] != preference_version(preference, learned)):
+                return None, 'Travel preferences changed. Refresh suggestions before regenerating.'
+        rows = snapshot.get('recommendationResults') or snapshot.get('items') or []
+        if not isinstance(rows, list) or any(not isinstance(row, dict) or row.get('recommendationGenerationId', requested) != requested for row in rows):
+            return None, 'Candidate evidence does not match this recommendation generation. Refresh suggestions.'
+    return snapshot, None
+
+
+def _planning_error(message, code, stage, action, status=409):
+    return jsonify(ok=False, error=message, code=code, stage=stage, nextAction=action), status
+
+
+def _recommendation_planning_error(message):
+    text = message.lower()
+    code = ('RECOMMENDATION_EXPIRED' if 'expired' in text or 'expiry' in text else
+            'RECOMMENDATION_NOT_FOUND' if 'not found' in text or 'no saved' in text else
+            'RECOMMENDATION_CONTEXT_MISMATCH' if any(word in text for word in ('context', 'destination', 'mode', 'current trip')) else
+            'RECOMMENDATION_REFRESH_REQUIRED')
+    return _planning_error(message, code, 'recommendation_validation', 'refresh_suggestions')
 
 
 def _personalised_trip_id(user_id, generation_request_id):
@@ -347,6 +410,7 @@ def _activity_from_destination(item, index):
     return {
         **{key: item[key] for key in (*IDENTITY_FIELDS, *LOCAL_ACTIVITY_FIELDS) if key in item},
         'activityId': f'A{index + 1}',
+        'planningOrigin': 'generated',
         'activityName': item.get('title') or item.get('name') or f'Activity {index + 1}',
         'destinationId': item.get('destinationId') or item.get('place_id') or item.get('data_id') or item.get('id') or f'destination_{index + 1}',
         'address': item.get('address') or '',
@@ -437,9 +501,9 @@ def _generate_itinerary_data(current, payload, snapshot=None):
             if snapshot:
                 raise RuntimeError('Linked recommendation snapshot has no destination-relevant results')
             raise RuntimeError('No destination candidates are available for this trip')
-        # Let the constraint-aware planner decide actual capacity. The existing
-        # safety limit remains 20, with overflow retained as suggestions.
-        max_items = min(len(candidates), 20)
+        # Expand only the owned pool: five visits/day plus rejection headroom, bounded to 70.
+        days = (date.fromisoformat(working['endDate']) - date.fromisoformat(working['startDate'])).days + 1
+        max_items = min(len(candidates), min(70, max(20, days * 5 + 10)))
         working['activities'] = [
             _activity_from_destination(item, index)
             for index, item in enumerate(candidates[:max_items])
@@ -591,7 +655,10 @@ def _forecast_for(current, payload):
 @bp.get('/itineraries')
 @auth_required(['traveller'])
 def list_itineraries():
-    return jsonify({'ok': True, 'items': retrieveRecord('itineraries', filters=[('travellerId', '==', g.uid)])})
+    from services.flexible_planning import confirmation_status,active
+    rows=retrieveRecord('itineraries', filters=[('travellerId', '==', g.uid)]) or []
+    return jsonify({'ok': True, 'items': [{**row,'travelDayStatus':confirmation_status(row)}
+        if not _is_package_trip(row) and (active(row) or row.get('selectedFlight')) else row for row in rows]})
 
 
 @bp.get('/itineraries/<iid>')
@@ -609,7 +676,13 @@ def get_itinerary_route(iid):
         if order and order.get('travellerId')==g.uid and order.get('fulfilledTripId')==iid:
             summary=read_public_clarification(order,retrieveRecord)
             if summary:current={**current,'approvedRequirementClarification':summary}
-    return jsonify({'ok': True, 'itinerary': current})
+    from services.flexible_planning import availability_for, personal_blocks
+    planning = None
+    if not _is_package_trip(current) and current.get('startDate') and current.get('endDate'):
+        from services.flight_itinerary_adjustment import planning_assumptions
+        planning={'availability':availability_for({**current,'planningMode':current.get('planningMode') or 'smart'}),
+                  'assumptions':planning_assumptions(), 'personalBlocks':personal_blocks(current)}
+    return jsonify({'ok': True, 'itinerary': current, **({'planning':planning} if planning else {})})
 
 
 @bp.post('/itineraries')
@@ -626,10 +699,34 @@ def create_itinerary_route():
            for earlier in activities[:index]):
         return jsonify(ok=False, error='Add repeat visits to the saved trip and confirm each revisit.'), 409
     itinerary = createItinerary(payload, g.uid)
+    from services.flexible_planning import active, trip_days
+    if active(itinerary):
+        try:
+            itinerary['tripDays'] = trip_days(itinerary)
+        except ValueError as error:
+            return jsonify(ok=False,error=str(error)),400
+        initial = itinerary.get('activities') or []
+        itinerary['activities'] = []
+        for row in initial:
+            itinerary = addActivity(itinerary, row)
+        itinerary = recalculateItinerary(itinerary, preserveOrder=True, respectDayAssignments=True)
+        itinerary['status'] = 'planned'
     budget = calculateBudget(itinerary)
     itinerary['budgetEstimate'] = budget
-    result = storeRecord('itineraries', itinerary)
-    return jsonify({'ok': True, 'id': result['id'], 'itinerary': result, 'budget': budget}), 201
+    if payload.get('generationRequestId'):
+        from services.transaction_reliability import normalize_attempt_id
+        try:
+            identity = normalize_attempt_id(payload['generationRequestId'], 'generationRequestId')
+        except ValueError as error:
+            return jsonify(ok=False,error=str(error)),400
+        key = _personalised_trip_id(g.uid, identity)
+        itinerary.update(id=key, creationFingerprint=_alternative_state(payload))
+        result, created = claimRecord('itineraries', key, itinerary)
+        if result.get('travellerId')!=g.uid or result.get('creationFingerprint')!=itinerary['creationFingerprint']:
+            return jsonify(ok=False,error='This creation request was used for another trip. Review the existing result.'),409
+    else:
+        result, created = storeRecord('itineraries', itinerary), True
+    return jsonify({'ok': True, 'id': result['id'], 'itinerary': result, 'budget': result.get('budgetEstimate',budget)}), 201 if created else 200
 
 
 @bp.put('/itineraries/<iid>')
@@ -657,6 +754,14 @@ def update_itinerary_route(iid):
     if not validateItineraryInput({**current, **payload}):
         return jsonify({'ok': False, 'error': 'Use a title, valid date range, positive traveller count and non-negative budget'}), 400
     if 'startDate' in payload or 'endDate' in payload:
+        from services.flexible_planning import active, validate_preferences, public_preferences, validate_blocks
+        if active(current):
+            try:
+                validate_preferences(public_preferences(current.get('travelDayPreferences')), {**current,**payload})
+                block_fields={'blockId','type','label','dayNo','startTime','endTime','durationMinutes','location','notes','locked','estimatedCost','boundary'}
+                validate_blocks([{k:v for k,v in row.items() if k in block_fields} for row in current.get('planningBlocks') or []],{**current,**payload})
+            except ValueError as error:
+                return jsonify(ok=False,error=f'Update planning settings before changing these dates. {error}'),409
         conflicts = _trip_date_conflicts(current, {**current, **payload})
         daily_schedule, schedule_conflicts = _synchronise_daily_schedule(
             current, {**current, **payload}
@@ -692,9 +797,55 @@ def flight_adjustment_preview(iid):
     if _is_package_trip(current):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
     flight = current.get('selectedFlight') if isinstance(current.get('selectedFlight'), dict) else None
-    if not flight:
-        return jsonify({'ok': False, 'error': 'Select a flight before requesting an itinerary adjustment preview.'}), 409
-    preview = create_flight_adjustment_preview(current, flight, g.uid)
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload,dict):
+        return jsonify(ok=False,error='Choose valid planning settings.'),400
+    planning = payload if 'planningChanges' in payload or 'action' in payload else None
+    if planning and payload.get('expectedItineraryRevision') is not None:
+        expected = payload['expectedItineraryRevision']
+        if type(expected) is not int or expected != int(current.get('itineraryRevision') or 1):
+            return _planning_error('This trip has changed. Reload the latest itinerary.', 'STALE_ITINERARY', 'trip_validation', 'reload_trip')
+    if not flight and planning is None:
+        return _planning_error('Some flight times are missing. Review your selected flight.', 'FLIGHT_TIMING_INCOMPLETE', 'flight_validation', 'review_flight')
+    candidates = None
+    if planning and planning.get('action')=='regenerate':
+        generation=planning.get('recommendationGenerationId')
+        if generation is not None and (not isinstance(generation,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}',generation)):
+            return _planning_error('Choose a valid saved recommendation generation.', 'RECOMMENDATION_CONTEXT_MISMATCH', 'recommendation_validation', 'refresh_suggestions', 400)
+        snapshot, error = _regeneration_snapshot(current,planning)
+        if error:return _recommendation_planning_error(error)
+        if snapshot:
+            rows = _filter_destination_candidates(snapshot.get('recommendationResults') or snapshot.get('items') or [],current.get('destinationArea'))
+            candidates = [{**_activity_from_destination(row,index), 'recommendationGenerationId':
+                snapshot.get('recommendationGenerationId') or generation} for index,row in enumerate(rows)
+                if str(row.get('title') or row.get('name') or '').strip()]
+    evidence_status = None
+    if planning and planning.get('action') == 'improve':
+        # Additional evidence is optional; expired suggestions never block existing-plan improvement.
+        try:
+            snapshot, error = _regeneration_snapshot(current, planning)
+        except Exception:
+            snapshot, error = None, 'Saved suggestions are temporarily unavailable.'
+        if snapshot and not error:
+            rows = _filter_destination_candidates(snapshot.get('recommendationResults') or snapshot.get('items') or [], current.get('destinationArea'))
+            candidates = [_activity_from_destination(row, index) for index, row in enumerate(rows[:70])]
+            evidence_status = 'available'
+        else:
+            evidence_status = 'unavailable'
+    try:
+        preview = (create_flight_adjustment_preview(current, flight or {}, g.uid, planning=planning, candidates=candidates)
+                   if planning is not None else create_flight_adjustment_preview(current, flight, g.uid))
+    except ValueError as error:
+        from services.flexible_planning import PlanningConflict
+        if isinstance(error, PlanningConflict):
+            return _planning_error(str(error), error.code, 'schedule_validation', error.action)
+        return _planning_error(str(error), 'PLANNING_TIME_CONFLICT', 'schedule_validation', 'edit_preferences', 400)
+    if evidence_status:
+        preview['additionalEvidenceStatus'] = evidence_status
+    if preview.get('canApply') is False and not preview.get('code'):
+        incomplete = 'incomplete' in str(preview.get('reason', '')).lower()
+        preview.update(code='FLIGHT_TIMING_INCOMPLETE' if incomplete else 'PLANNING_TIME_CONFLICT',
+                       nextAction='review_flight' if incomplete else 'edit_preferences')
     return jsonify({'ok': True, 'preview': _public_flight_preview(preview)})
 
 
@@ -716,7 +867,9 @@ def flight_adjustment_apply(iid):
         lambda _iid, patch: updateRecord('itineraries', _iid, patch, expected=current),
     )
     if error:
-        return jsonify({'ok': False, 'error': error}), 404 if error == 'Preview not found' else 409
+        code = 'STALE_PREVIEW' if error == 'Preview not found' or 'stale' in error.lower() else 'PLANNING_TIME_CONFLICT'
+        return _planning_error(error, code, 'apply_validation', 'reload_trip' if code=='STALE_PREVIEW' else 'edit_preferences',
+                               404 if error == 'Preview not found' else 409)
     return jsonify(result)
 
 
@@ -837,6 +990,17 @@ def add_activity_route(iid):
         'durationSource': payload.get('durationSource') or '',
         **_place_image_snapshot(payload),
     }
+    activity['planningOrigin'] = 'user_selected'
+    try:
+        from services.flexible_planning import clock, time_text
+        if 'fixed' in payload and type(payload['fixed']) is not bool:raise ValueError('Choose Fixed or Flexible.')
+        if payload.get('timeSlot'):
+            start=clock(payload['timeSlot']);length=duration or 90
+            if start+length>=1440:raise ValueError('This activity must finish on its selected day.')
+            activity.update(scheduledStartTime=time_text(start),scheduledEndTime=time_text(start+length))
+            if payload.get('fixed',True):activity.update(fixed=True,manualTime=True)
+    except ValueError as error:
+        return jsonify(ok=False,error=str(error)),400
     payload_hash = _alternative_state(activity)
     receipts = current.get('activityAddReceipts') or {}
     if request_id and request_id in receipts:
@@ -894,6 +1058,8 @@ def add_activity_route(iid):
                                 for key in ('dayNo', 'scheduledStartTime', 'scheduledEndTime')):
                 return jsonify(ok=False, error='Adding this visit would change a protected stop.'), 409
     new_id = updated['activities'][-1]['activityId']
+    if any(row.get('activityId') not in scheduled for row in current.get('activities') or []):
+        return jsonify(ok=False,error='Adding this place would displace another visit. Review the schedule first.'),409
     conflict = _travel_edit_conflict(current, recalculated, new_id)
     if conflict:
         return conflict
@@ -920,19 +1086,26 @@ def remove_activity_route(iid, activity_id):
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     if _is_package_trip(current):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
+    from services.flexible_planning import commercial_activity
+    original = next((row for row in current.get('activities',[])+list(current.get('unscheduledSuggestions') or []) if str(row.get('activityId'))==activity_id),None)
+    if not original:return jsonify(ok=False,error='Activity not found.'),404
+    if commercial_activity(original):return jsonify(ok=False,error='This protected arrangement cannot be removed here.'),409
     updated = removeActivity(current, activity_id)
     recalculated = recalculateItinerary(
         {**current, **updated},
         preserveOrder=True,
         respectDayAssignments=True,
     )
+    from services.flexible_planning import preservation_error
+    error=preservation_error(current,recalculated,activity_id)
+    if error:return jsonify(ok=False,error=error),409
     patch = {key: recalculated[key] for key in (
         'activities', 'unscheduledSuggestions', 'scheduledActivityCount',
         'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
         'paceApplied', 'dailyPlanningWindow', 'tripDays',
         'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq', 'intercityTransferStatus') if key in recalculated}
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
-    updateRecord('itineraries', iid, patch)
+    updateRecord('itineraries', iid, patch, expected=current)
     return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
 
 
@@ -958,13 +1131,41 @@ def update_activity_route(iid, activity_id):
     original = next((row for row in rows if str(row.get('activityId')) == activity_id), None)
     if not isinstance(changes, dict):
         return jsonify(ok=False, error='Invalid activity changes.'), 400
-    if original and (protected_activity(original) or any(
+    from services.flexible_planning import commercial_activity, clock, time_text, USER_LOCKS
+    expected=changes.pop('expectedItineraryRevision',None)
+    if expected is not None and (type(expected) is not int or expected!=int(current.get('itineraryRevision') or 1)):
+        return jsonify(ok=False,error='This trip changed. Reopen it before editing.',code='STALE_ITINERARY'),409
+    if not original:return jsonify(ok=False,error='Activity not found.'),404
+    if original and (commercial_activity(original) or any(
             key in changes and changes[key] != original.get(key)
             for key in (*IDENTITY_FIELDS, 'activityId', 'destinationId'))):
         return jsonify(ok=False, error='Use Add Places to change the attraction or confirm a repeat visit.'), 409
     if original and any(same_attraction({**original, **changes}, row) and not same_attraction(original, row)
                         for row in rows if row is not original):
         return jsonify(ok=False, error='Use Add Places to confirm a repeat visit.'), 409
+    if set(changes)-{'dayNo','timeSlot','recommendedDurationMinutes','notes','estimatedCost','fixed'}:
+        return jsonify(ok=False,error='Choose supported activity edits.'),409
+    try:
+        if 'notes' in changes and (not isinstance(changes['notes'],str) or len(changes['notes'])>1000):raise ValueError('Keep notes within 1000 characters.')
+        if 'fixed' in changes and type(changes['fixed']) is not bool:raise ValueError('Choose Fixed or Flexible.')
+        if 'recommendedDurationMinutes' in changes and (type(changes['recommendedDurationMinutes']) is not int or not 1<=changes['recommendedDurationMinutes']<=1440):raise ValueError('Choose a valid activity duration.')
+        if 'estimatedCost' in changes:
+            cost = changes['estimatedCost']
+            if type(cost) not in (int,float) or not 0<=cost<1000000:raise ValueError('Choose a non-negative cost estimate.')
+            changes.update(unitPrice=round(cost,2),pricingUnit='per_group',currency='MYR',costProvenance='user_entered',
+                           pricingEvidence=None,priceSourceUrl=None,priceVerifiedAt=None)
+        if 'timeSlot' in changes or changes.get('fixed') is True:
+            start = clock(changes.get('timeSlot') or original.get('scheduledStartTime') or original.get('timeSlot'))
+            duration = changes.get('recommendedDurationMinutes') or original.get('recommendedDurationMinutes') or 90
+            if start+duration>=1440:raise ValueError('This activity must finish on the selected day.')
+            changes.update(scheduledStartTime=time_text(start),scheduledEndTime=time_text(start+duration))
+        if changes.get('fixed') is False:
+            changes.update({key:False for key in USER_LOCKS})
+            changes['editProvenance']='flexible'
+        elif {'timeSlot','recommendedDurationMinutes','notes'} & changes.keys() or changes.get('fixed') is True or 'dayNo' in changes and original.get('scheduledStartTime'):
+            changes.update(fixed=True,userEdited=True,editProvenance='user')
+    except (ValueError,TypeError,OverflowError) as error:
+        return jsonify(ok=False,error=str(error)),400
     if original and 'dayNo' in changes:
         try:
             day = int(str(changes['dayNo']))
@@ -980,9 +1181,13 @@ def update_activity_route(iid, activity_id):
             if duplicate:
                 return _same_day_visit(duplicate, day)
     updated = updateActivity(current, activity_id, changes)
+    working=updated
+    if changes.get('fixed') is False and 'timeSlot' in changes:
+        working={**updated,'activities':[{**row,'manualTime':True} if str(row.get('activityId'))==activity_id else row for row in updated.get('activities',[])],
+                 'unscheduledSuggestions':[{**row,'manualTime':True} if str(row.get('activityId'))==activity_id else row for row in updated.get('unscheduledSuggestions') or []]}
     policy = _edit_planning_policy(current, updated['activities'])
     recalculated = recalculateItinerary(
-        {**current, **updated, 'geographyPlanningPolicy': policy},
+        {**current, **working, 'geographyPlanningPolicy': policy},
         preserveOrder=True,
         respectDayAssignments=True,
     )
@@ -991,11 +1196,21 @@ def update_activity_route(iid, activity_id):
         'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
         'paceApplied', 'dailyPlanningWindow', 'tripDays',
         'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq', 'intercityTransferStatus') if key in recalculated}
+    if changes.get('fixed') is False:
+        for row in patch['activities']:
+            if str(row.get('activityId'))==activity_id:row.update({**{key:False for key in USER_LOCKS},'editProvenance':'flexible'})
     conflict = _travel_edit_conflict(current, recalculated, activity_id)
     if conflict:
         return conflict
     if policy:
         patch['geographyPlanningPolicy'] = policy
+    scheduled = {row.get('activityId'):row for row in patch['activities']}
+    if activity_id not in scheduled:
+        return jsonify(ok=False,error='This activity cannot fit on the selected day. Review a different day or time.'),409
+    for row in updated.get('activities') or []:
+        after = scheduled.get(row.get('activityId'))
+        if not after or protected_activity(row) and any(after.get(key)!=row.get(key) for key in ('dayNo','scheduledStartTime','scheduledEndTime')):
+            return jsonify(ok=False,error='This edit cannot fit while preserving your other visits and fixed times.'),409
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
     saved = updateRecord('itineraries', iid, patch, expected=current)
     return jsonify({'ok': True, 'itinerary': saved, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
@@ -1009,19 +1224,29 @@ def rearrange_activity_route(iid):
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     if _is_package_trip(current):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
-    updated = rearrangeActivity(current, (request.get_json(silent=True) or {}).get('orderedActivityIds', []))
+    command=request.get_json(silent=True) or {}
+    ids=command.get('orderedActivityIds') if isinstance(command,dict) else None
+    if not isinstance(ids,list) or not all(isinstance(value,str) for value in ids) or len(ids)!=len(set(ids)):
+        return jsonify(ok=False,error='Choose a valid activity order.'),400
+    expected=command.get('expectedItineraryRevision')
+    if expected is not None and (type(expected) is not int or expected!=int(current.get('itineraryRevision') or 1)):
+        return jsonify(ok=False,error='This trip changed. Reopen it before rearranging.',code='STALE_ITINERARY'),409
+    updated = rearrangeActivity(current, ids)
     recalculated = recalculateItinerary(
         {**current, **updated},
         preserveOrder=True,
         respectDayAssignments=True,
     )
+    from services.flexible_planning import preservation_error
+    error=preservation_error(current,recalculated)
+    if error:return jsonify(ok=False,error=error),409
     patch = {key: recalculated[key] for key in (
         'activities', 'unscheduledSuggestions', 'scheduledActivityCount',
         'unscheduledActivityCount', 'dailySchedule', 'totalScheduledMinutes',
         'paceApplied', 'dailyPlanningWindow', 'tripDays',
         'tripDateRangeLabel', 'updatedAt', 'nextActivitySeq', 'intercityTransferStatus') if key in recalculated}
     patch['budgetEstimate'] = calculateBudget({**current, **patch})
-    updateRecord('itineraries', iid, patch)
+    updateRecord('itineraries', iid, patch, expected=current)
     return jsonify({'ok': True, 'itinerary': {**current, **patch}, 'activities': patch['activities'], 'budget': patch['budgetEstimate']})
 
 
@@ -1046,7 +1271,6 @@ def budget_comparison(iid):
     ):
         budget = qualify_selection_budget(budget, selection)
     budget['comparison'] = compareBudget(budget)
-    updateRecord('itineraries', iid, {'budgetEstimate': budget})
     return jsonify({'ok': True, 'budget': budget})
 
 
@@ -1060,6 +1284,18 @@ class _AlternativeConflict(ValueError):
 
 def _alternative_state(current):
     return hashlib.sha256(json.dumps(current, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _supplier_search_context(current, kind):
+    # Supplier evidence can be rechecked after a plan edit; applying still uses the full Trip fingerprint.
+    common = ('id', 'travellerId', 'destinationArea', 'startDate', 'endDate', 'travellerCount',
+              'status', 'paymentId', 'paymentRecordId', 'paidTotal', 'checkoutOrderId', 'purchasedPackages')
+    fields = (('selectedFlight', 'flightCost', 'flightCurrency', 'flightPriceBasis', 'travelMode',
+               'flightSearchId', 'flightOptionId', 'flightBookingId', 'flightPaymentId', 'flightOrderId')
+              if kind == 'flight' else
+              ('selectedHotel', 'hotelCost', 'hotelCurrency', 'hotelStayCriteria', 'accommodationChoice',
+               'hotelBookingId', 'hotelOfferQuoteId', 'hotelPaymentId', 'hotelOrderId'))
+    return _alternative_state({key: current.get(key) for key in common + fields})
 
 
 def _commit_cost_alternative(iid, expected, patch):
@@ -1501,7 +1737,8 @@ def discover_cost_alternatives(iid):
                 raise _AlternativeConflict('The selected flight cannot safely be compared.')
             comparison=flight_comparison(current,payload.get('cabinComparison','same_cabin'),payload.get('comparisonCabin'))
             search = lambda invoke: flight_search(current, invoke, comparison)
-        result = run_search(g.uid, current, kind, state, search, request_id=search_request_id,comparison=comparison)
+        result = run_search(g.uid, current, kind, state, search, request_id=search_request_id,
+                            comparison=comparison, search_context=_supplier_search_context(current, kind))
     except (DiscoveryError, _AlternativeConflict) as error:
         logging.getLogger(__name__).info('budget_discovery_blocked category=%s reason=%s', kind, str(error))
         diagnostic={'status':'needs_review','reasonCode':getattr(error,'code','invalid_cabin_comparison'),
@@ -1584,11 +1821,11 @@ def _resolve_cost_alternative(kind, data, current):
         }
         from services.flight_itinerary_adjustment import flight_selection_change_patch
         patch.update(flight_selection_change_patch(current, patch['selectedFlight']))
-        if current.get('activities'):
+        if current.get('activities') or current.get('planningBlocks'):
             from services.flight_itinerary_adjustment import build_preview, fingerprint
             schedule = build_preview({**current, **patch}, patch['selectedFlight'], g.uid, 'budget-preview')
             reason = (schedule.get('reason') or 'No feasible sightseeing plan fits this flight.'
-                      if not schedule['canApply'] or not schedule['after'].get('activities')
+                      if not schedule['canApply'] or current.get('activities') and not schedule['after'].get('activities')
                       else 'This flight cannot retain all planned visits safely. Review the flight or trip dates first.'
                       if schedule['newlyUnscheduled'] else None)
             if reason:
@@ -1604,7 +1841,7 @@ def _resolve_cost_alternative(kind, data, current):
                     'currency': 'MYR', 'canApply': False, 'itineraryChanges': schedule.get('changes') or [],
                 } if _alternative_savings('flight', trusted, current) is not None else None, code='schedule_conflict')
             patch.update({key: schedule['after'][key] for key in (
-                'activities', 'dailySchedule', 'unscheduledSuggestions', 'scheduledActivityCount', 'unscheduledActivityCount'
+                'activities', 'dailySchedule', 'unscheduledSuggestions', 'scheduledActivityCount', 'unscheduledActivityCount', 'travelDayPreferences'
             ) if key in schedule['after']})
             patch.update(flightAdjustmentStatus='applied', flightAdjustmentFlightFingerprint=fingerprint(patch['selectedFlight']),
                          flightAdjustmentAssumptions=schedule['assumptions'], flightAdjustmentReviewReason=None)
@@ -1722,14 +1959,18 @@ def _comparison_searches(current, search_ids, cabin_settings):
             record = (retrieveRecord('budget_alternative_searches', identity)
                       if isinstance(identity, str) and len(identity) <= 200 and '/' not in identity else None)
             result = (record or {}).get('result') or {}
+            state = _alternative_state(current)
+            same_context = bool(record and record.get('searchContextVersion') == _supplier_search_context(current, kind)
+                                and re.fullmatch(r'[0-9a-f]{64}', str(record.get('stateVersion') or '')))
             if (record and record.get('travellerId') == g.uid and record.get('tripId') == current['id']
-                    and record.get('stateVersion') == _alternative_state(current) and record.get('category') == kind
+                    and (record.get('stateVersion') == state or same_context) and record.get('category') == kind
                     and (kind != 'flight' or result.get('comparison', record.get('comparison')) == cabin_settings)):
                 summary = {key: result[key] for key in ('providerReached', 'requestsAttempted', 'candidateCount',
                     'validQuoteCount', 'rejectedCount', 'rejectionCounts', 'failureCode', 'retryAt', 'expiresAt',
                     'outboundCandidateCount', 'returnCandidateCount') if key in result}
                 summary.update(searchStatus=record['status'], searchId=identity,
-                               reasonCode=result.get('failureCode'), cheaperCandidateCount=0, timingConflictCount=0)
+                               reasonCode=result.get('failureCode'), cheaperCandidateCount=0, timingConflictCount=0,
+                               recheckedForCurrentTrip=record.get('stateVersion') != state)
                 if record['status'] == 'completed':
                     references[kind] = [row for row in result.get('references', []) if isinstance(row, dict)]
             else:
@@ -2295,6 +2536,8 @@ def generate_itinerary_route(iid):
         return jsonify({'ok': False, 'error': 'Itinerary not found'}), 404
     if _is_package_trip(current):
         return jsonify({'ok': False, 'error': 'Purchased package trips cannot be modified or recalculated.'}), 409
+    if current.get('planningMode') or any(protected_activity(row) or row.get('planningOrigin')=='user_selected' for row in current.get('activities') or []):
+        return jsonify(ok=False,error='Use Improve schedule to preview changes without overwriting your saved plan.',code='PLANNING_PREVIEW_REQUIRED'),409
     payload = request.get_json(silent=True) or {}
     snapshot, snapshot_error = _recommendation_snapshot(current, payload)
     if snapshot_error:

@@ -478,6 +478,15 @@ def build_initial_fulfillment_record(snapshot, now=None):
     }
 
 
+def valid_accommodation_provider(value):
+    """Reject brochure placeholders; an attestation names an actual provider."""
+    text = str(value or '').strip()
+    return (3 <= len(text) <= 200 and sum(char.isalpha() for char in text) >= 3
+            and not re.search(r'\b(?:to[\s_-]+be[\s_-]+confirmed|tbc|tbd|not[\s_-]+confirmed|not[\s_-]+specified|unknown|pending)\b', text, re.I)
+            and not any(ord(char) < 32 for char in text)
+            and text.casefold() not in {'n/a', 'na', 'none', '-', 'hotel', 'accommodation', 'provider', 'supplier'})
+
+
 def fulfillment_readiness(order, requirements, record, paid, legacy_reviewed=False, trip_state=None):
     """Explain the same attestation conditions enforced by the readiness action."""
     labels = {'accommodation': 'Accommodation', 'transport': 'Transportation', 'guideActivities': 'Guide / Activities'}
@@ -500,10 +509,12 @@ def fulfillment_readiness(order, requirements, record, paid, legacy_reviewed=Fal
         if meta.get('uncertain'):
             missing.append(f"{label}: {meta.get('reviewReason') or 'Purchased brochure requires review.'}")
         if meta.get('required'):
-            if not str(service.get('reference') or '').strip():
-                missing.append(f'{label} booking reference is missing.')
+            if key == 'accommodation' and not valid_accommodation_provider(service.get('supplierName')):
+                missing.append('Actual accommodation provider / hotel is missing or still to be confirmed.')
             if key == 'transport' and not str(service.get('providerName') or '').strip():
                 missing.append('Actual transport provider / fleet is missing.')
+            if key == 'guideActivities' and not str(service.get('guideOrActivity') or '').strip():
+                missing.append('Actual guide / attraction authority is missing.')
             if (service.get('status') != 'confirmed' or service.get('provenance') != 'operator_attested'
                     or not service.get('confirmedBy') or not service.get('confirmedAt')):
                 missing.append(f'{label} arrangements have not been attested by the operator.')

@@ -5,6 +5,8 @@ import 'alternative_screen.dart';
 import 'budget_comparison_screen.dart';
 import 'trip_expenses_screen.dart';
 import 'flight_adjustment_preview_sheet.dart';
+import 'planning_time_validation.dart';
+import 'planning_settings_sheet.dart';
 import 'activity_payload_helper.dart';
 import 'models/budget_model.dart';
 import 'package_trip_details_screen.dart';
@@ -64,18 +66,22 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   Map<String, dynamic>? expenseSnapshot;
   int _expenseLoad = 0;
   bool _expenseFailed = false;
+  bool _expenseSummaryLoading = false;
+  bool _budgetOpen = false;
 
   void _showExpenseSnapshot(Map<String, dynamic> snapshot) {
     if (!mounted || snapshot['overview'] is! Map) return;
     ++_expenseLoad;
     setState(() {
       expenseSnapshot = snapshot;
+      if(trip!=null && snapshot['budgetLimit'] is num)trip={...trip!,'budgetLimit':snapshot['budgetLimit']};
       _expenseFailed = false;
     });
   }
 
   Future<void> _loadExpenseSummary() async {
-    if (api.isStandalone) return;
+    if (api.isStandalone || _expenseSummaryLoading) return;
+    _expenseSummaryLoading=true;
     final version = ++_expenseLoad;
     try {
       final response = await api.get('/api/fr5/itineraries/${widget.tripId}/expenses');
@@ -88,6 +94,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
       if (mounted && version == _expenseLoad) {
         setState(() => _expenseFailed = true);
       }
+    } finally {
+      _expenseSummaryLoading=false;
     }
   }
 
@@ -1203,6 +1211,95 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
     }
   }
 
+  Future<void> _planningSettings({String? blockType}) async {
+    if(trip==null || busy)return;
+    setState(()=>busy=true);
+    try{
+      final data=await api.get('/api/fr5/itineraries/${widget.tripId}');
+      final current=data is Map && data['itinerary'] is Map ? Map<String,dynamic>.from(data['itinerary']):Map<String,dynamic>.from(trip!);
+      if(data is Map && data['planning'] is Map){
+        current['planningAvailability']=data['planning']['availability'];current['planningAssumptions']=data['planning']['assumptions'];
+        current['planningPersonalBlocks']=data['planning']['personalBlocks'];
+      }
+      if(!mounted)return;
+      if(DateTime.tryParse('${current['startDate']}')==null || DateTime.tryParse('${current['endDate']}')==null){
+        showError(context,'Set valid trip dates before choosing planning windows.');return;
+      }
+      final updated=await PlanningSettingsSheet.show(context,api,current,initialBlockType:blockType,initialDay:selectedDay);
+      if(updated!=null && mounted){setState(()=>trip=updated);await load();}
+    }catch(error){if(mounted)showError(context,error);}
+    finally{if(mounted)setState(()=>busy=false);}
+  }
+
+  bool _scheduleHelpActive = false;
+  Future<void> _scheduleHelp({String scope='day'}) async {
+    if(trip==null || busy || _scheduleHelpActive)return;
+    _scheduleHelpActive = true;
+    try {
+    final result=await FlightAdjustmentPreviewSheet.show(context:context,api:api,tripId:widget.tripId,trip:trip!,
+      title:'Review schedule assistance',
+      previewRequest:{'planningChanges':<String,dynamic>{},'action':'improve','scope':scope,'dayNo':selectedDay,
+        if(trip!['itineraryRevision'] is int)'expectedItineraryRevision':trip!['itineraryRevision']});
+    if(result?['itinerary'] is Map && mounted){setState(()=>trip=Map<String,dynamic>.from(result!['itinerary']));await load();}
+    if (mounted && {'edit_preferences','review_fixed_activity'}.contains(result?['nextAction'])) await _planningSettings();
+    if (mounted && result?['nextAction']=='review_flight') await _replaceFlight(trip!);
+    } finally { _scheduleHelpActive = false; }
+  }
+
+  Future<void> _editActivityTime(Map<String,dynamic> activity) async {
+    final notes=TextEditingController(text:'${activity['notes'] ?? ''}');
+    final duration=TextEditingController(text:'${activity['recommendedDurationMinutes'] ?? 90}');
+    final cost=TextEditingController();
+    var day=int.tryParse('${activity['dayNo']}') ?? selectedDay;
+    var time='${activity['scheduledStartTime'] ?? activity['timeSlot'] ?? '09:00'}';
+    var fixed=activity['fixed']!=false,saving=false;
+    String? error;
+    String? activityTimeError() {
+      final start = planningMinutes(time), minutes = int.tryParse(duration.text);
+      if (start == null || minutes == null || minutes <= 0 || start + minutes >= 1440) return 'Choose a valid same-day start time and duration.';
+      final end = start + minutes;
+      return planningTimeError({...trip!, 'activities': [for (final row in trip!['activities'] as List? ?? []) if (row['activityId'] != activity['activityId']) row]},
+        trip!['travelDayPreferences'] is Map ? Map<String,dynamic>.from(trip!['travelDayPreferences']) : {}, [
+          ...((trip!['planningBlocks'] as List?) ?? []).whereType<Map>().map((row) => Map<String,dynamic>.from(row)),
+          {'label': activity['activityName'], 'type':'custom','boundary':'destination','dayNo': day,
+            'startTime':time,'endTime':'${(end ~/ 60).toString().padLeft(2,'0')}:${(end % 60).toString().padLeft(2,'0')}'}]);
+    }
+    await showDialog<void>(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,update)=>AlertDialog(
+      title:Text('Edit ${activity['activityName'] ?? 'activity'}'),scrollable:true,
+      content:SizedBox(width:420,child:Column(mainAxisSize:MainAxisSize.min,children:[
+        DropdownButtonFormField<int>(initialValue:day,isExpanded:true,decoration:const InputDecoration(labelText:'Trip day'),
+          items:[for(var n=1;n<=_tripDays(trip!);n++)DropdownMenuItem(value:n,child:Text('Day $n'))],onChanged:saving ? null:(v)=>update(()=>day=v!)),
+        OutlinedButton(onPressed:saving ? null:() async {
+          final parts=time.split(':');final chosen=await showTimePicker(context:context,initialTime:TimeOfDay(hour:int.tryParse(parts.first) ?? 9,minute:int.tryParse(parts.last) ?? 0));
+          if(chosen!=null)update(()=>time='${chosen.hour.toString().padLeft(2,'0')}:${chosen.minute.toString().padLeft(2,'0')}');
+        },child:Text('Start time: $time')),
+        TextField(controller:duration,onChanged:(_)=>update((){}),keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'Duration estimate (minutes)')),
+        TextField(controller:notes,maxLines:3,maxLength:1000,decoration:const InputDecoration(labelText:'Personal notes')),
+        TextField(controller:cost,keyboardType:const TextInputType.numberWithOptions(decimal:true),
+          decoration:const InputDecoration(labelText:'New group cost estimate (MYR, optional)')),
+        const Text('Leave cost blank to keep existing pricing evidence.'),
+        SwitchListTile(contentPadding:EdgeInsets.zero,value:fixed,onChanged:saving ? null:(v)=>update(()=>fixed=v),title:const Text('Fix this activity time'),
+          subtitle:const Text('Fixed times cannot be moved by smart scheduling.')),
+        if(activityTimeError()!=null || error!=null)Text(activityTimeError() ?? error!,style:const TextStyle(color:AppColors.error)),
+      ])),actions:[TextButton(onPressed:saving ? null:()=>Navigator.pop(dialogContext),child:const Text('Cancel')),
+        FilledButton(onPressed:saving || activityTimeError()!=null ? null:() async {
+          final minutes=int.tryParse(duration.text),amount=cost.text.trim().isEmpty ? null:double.tryParse(cost.text);
+          if(minutes==null || minutes<1 || cost.text.isNotEmpty && (amount==null || !amount.isFinite || amount<0)){
+            update(()=>error='Enter a valid duration and non-negative optional estimate.');return;
+          }
+          update((){saving=true;error=null;});
+          try{
+            await api.put('/api/fr5/itineraries/${widget.tripId}/activities/${activity['activityId']}',{
+              'dayNo':day,'timeSlot':time,'recommendedDurationMinutes':minutes,'notes':notes.text,'fixed':fixed,
+              if(amount!=null)'estimatedCost':amount,
+              if(trip!['itineraryRevision'] is int)'expectedItineraryRevision':trip!['itineraryRevision']});
+            if(dialogContext.mounted)Navigator.pop(dialogContext);if(mounted){selectedDay=day;await load();}
+          }catch(failure){if(dialogContext.mounted)update((){saving=false;error=userFacingApiError(failure);});}
+        },child:Text(saving ? 'Saving…':'Save activity edit'))])));
+    await Future<void>.delayed(const Duration(milliseconds:300));
+    notes.dispose();duration.dispose();cost.dispose();
+  }
+
   Future<void> _replaceFlight(Map<String, dynamic> t) async {
     final flight = t['selectedFlight'] is Map
         ? Map<String, dynamic>.from(t['selectedFlight'] as Map)
@@ -1531,46 +1628,21 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   }
 
   Future<void> showBudget() async {
+    if(_budgetOpen || trip==null)return;
+    setState(()=>_budgetOpen=true);
+    var changed=false;
+    final cached=trip!['budgetEstimate'];
+    final model=BudgetModel.fromJson(cached is Map ? Map<String,dynamic>.from(cached):{},
+      fallbackLimit:double.tryParse('${trip!['budgetLimit']}') ?? 0);
     try {
-      final data =
-          await api.get('/api/fr5/itineraries/${widget.tripId}/budget');
-
-      if (data is! Map || data['ok'] == false || data['budget'] is! Map) {
-        throw StateError('Budget details are unavailable. Please try again.');
-      }
-      final budgetModel = BudgetModel.fromJson(
-        Map<String, dynamic>.from(data['budget'] as Map),
-        fallbackLimit: double.tryParse('${trip?['budgetLimit']}') ?? 0,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        if (trip != null) {
-          trip = {
-            ...trip!,
-            'budgetEstimate': Map<String, dynamic>.from(data['budget'] as Map),
-          };
-        }
-      });
-
-      await Navigator.push<void>(
-          context,
-          MaterialPageRoute(
-              builder: (context) => BudgetComparisonScreen(
-                    budget: budgetModel,
-                    userBudget: budgetModel.budgetLimit,
-                    tripId: widget.tripId,
-                    api: api,
-                    onApplied: (updated) {
-                      if (!mounted) return;
-                      setState(() => trip = updated);
-                    },
-                  )));
-      if (mounted) await load();
-    } catch (e) {
-      if (mounted) {
-        showError(context, e);
-      }
+      await Navigator.push<void>(context,MaterialPageRoute(builder:(_)=>BudgetComparisonScreen(
+        budget:model,userBudget:model.budgetLimit,tripId:widget.tripId,api:api,refreshOnOpen:true,
+        onBudgetLoaded:(budget){if(mounted && trip!=null)setState(()=>trip={...trip!,'budgetEstimate':budget});},
+        onApplied:(updated){changed=true;if(mounted)setState(()=>trip=updated);},
+      )));
+      if(mounted && changed)await load();
+    } finally {
+      if(mounted)setState(()=>_budgetOpen=false);
     }
   }
 
@@ -1795,7 +1867,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         ? Map<String, dynamic>.from(day['weather'] as Map)
         : <String, dynamic>{'source': 'unavailable'};
     final storedCost = double.tryParse('${day['estimatedCost'] ?? ''}');
-    final cost = storedCost ??
+    final cost = double.tryParse('${day['knownEstimatedCost'] ?? ''}') ?? storedCost ??
         dayItems.fold<double>(
           0,
           (sum, item) =>
@@ -1808,6 +1880,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           'Day $selectedDay · ${t['destinationArea'] ?? 'Your destination'}',
           style: Theme.of(context).textTheme.titleLarge,
         ),
+        if(day['planningWindow'] is Map) Text(day['planningWindow']['status']=='unavailable'
+          ? 'No sightseeing window / rest day'
+          :'Sightseeing window: ${day['planningWindow']['startTime']}–${day['planningWindow']['endTime']}'),
+        if((day['unpricedActivityCount'] as num? ?? 0)>0) const Text('Some activities are unpriced. The known subtotal is not the full day cost.'),
+        if((day['unpricedPersonalBlockCount'] as num? ?? 0)>0) const Text('Some personal plans have no cost estimate. The known subtotal is not the full day cost.'),
         if ((day['dayDate'] ?? '').toString().isNotEmpty) ...[
           const SizedBox(height: AppSpacing.xxs),
           Text(
@@ -2025,6 +2102,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text((block['label'] ?? 'Lunch / Rest').toString(),
                   style: Theme.of(context).textTheme.titleMedium),
+              if(block['personal']==true) Text(block['boundary']=='destination' ? 'Added by you · At destination' : 'Added by you · Personal / travel'),
+              if((block['notes'] ?? '').toString().isNotEmpty)Text('${block['notes']}'),
+              if(block['personal']==true && block['estimatedCost']==null)const Text('Estimated cost not entered'),
+              if((block['estimatedCost'] as num? ?? 0)>0)Text('MYR ${block['estimatedCost']} · additional user estimate'),
               if (duration > 0)
                 Text(
                   _durationText({'recommendedDurationMinutes': duration}),
@@ -2071,6 +2152,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   Future<void> _activityMenuAction(
       String value, Map<String, dynamic> activity) async {
     if (value == 'view') return viewPlace(activity);
+    if (value == 'time') return _editActivityTime(activity);
     if (value == 'remove') return confirmRemoveActivity(activity);
     if (value.startsWith('day:')) {
       final day = int.tryParse(value.substring(4));
@@ -2135,6 +2217,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                   itemBuilder: (_) => [
                     const PopupMenuItem(
                         value: 'view', child: Text('View place')),
+                    const PopupMenuItem(value:'time',child:Text('Edit time, notes and flexibility')),
                     for (var dayNo = 1; dayNo <= _tripDays(t); dayNo++)
                       if (dayNo != selectedDay)
                         PopupMenuItem(
@@ -2363,7 +2446,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
             onPressed: () => Navigator.push<void>(
               context,
               MaterialPageRoute(builder: (_) => TripExpensesScreen(
-                tripId: widget.tripId, api: api, onChanged: _showExpenseSnapshot,
+                tripId: widget.tripId, api: api, onChanged: _showExpenseSnapshot, initialData: expenseSnapshot,
               )),
             ),
           ),
@@ -2681,6 +2764,19 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
               _dayNavigation(t),
               const SizedBox(height: AppSpacing.sm),
               _daySummary(t, day),
+              if(t['travelDayStatus'] is String) Padding(padding:const EdgeInsets.only(top:8),child:Text(
+                t['travelDayStatus']=='confirmed' ? 'Travel-day preferences confirmed. Venue hours and local travel estimates may still need checking.':
+                  'Travel-day timing is provisional. Review Travel Preferences when your arrangements are ready.')),
+              const SizedBox(height:AppSpacing.sm),
+              if(!api.isStandalone) Wrap(spacing:8,runSpacing:8,children:[
+                OutlinedButton.icon(onPressed:busy ? null:()=>_planningSettings(),icon:const Icon(Icons.tune),label:const Text('Travel Preferences')),
+                OutlinedButton.icon(onPressed:busy ? null:()=>_planningSettings(blockType:'custom'),icon:const Icon(Icons.edit_calendar_outlined),label:const Text('Add custom activity')),
+                OutlinedButton.icon(onPressed:busy ? null:()=>_planningSettings(blockType:'rest'),icon:const Icon(Icons.free_breakfast_outlined),label:const Text('Add rest / free time')),
+                PopupMenuButton<String>(tooltip:'Schedule assistance',onSelected:(value)=>_scheduleHelp(scope:value.endsWith('remaining') ? 'remaining':'day'),itemBuilder:(_)=>[
+                    const PopupMenuItem(value:'improve-day',child:Text('Improve this day')),
+                    const PopupMenuItem(value:'improve-remaining',child:Text('Improve remaining days')),
+                  ],child:const Padding(padding:EdgeInsets.all(12),child:Text('Schedule assistance'))),
+              ]),
               if (t['interestCoverage']?['limitation'] != null)
                 Padding(
                   padding: const EdgeInsets.only(top: AppSpacing.sm),
@@ -2728,7 +2824,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                   child: TertiaryButton(
                     label: 'Recalculate itinerary',
                     icon: Icons.auto_fix_high_rounded,
-                    onPressed: busy ? null : generate,
+                    onPressed: busy ? null : api.isStandalone ? generate:()=>_scheduleHelp(),
                   ),
                 ),
               ],

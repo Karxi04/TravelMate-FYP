@@ -9,6 +9,8 @@ class FlightAdjustmentPreviewSheet extends StatefulWidget {
   final String tripId;
   final Map<String, dynamic>? initialPreview;
   final Map<String, dynamic> trip;
+  final Map<String, dynamic>? previewRequest;
+  final String? title;
 
   const FlightAdjustmentPreviewSheet({
     super.key,
@@ -16,6 +18,8 @@ class FlightAdjustmentPreviewSheet extends StatefulWidget {
     required this.tripId,
     this.initialPreview,
     required this.trip,
+    this.previewRequest,
+    this.title,
   });
 
   static Future<Map<String, dynamic>?> show({
@@ -24,6 +28,8 @@ class FlightAdjustmentPreviewSheet extends StatefulWidget {
     required String tripId,
     Map<String, dynamic>? initialPreview,
     required Map<String, dynamic> trip,
+    Map<String, dynamic>? previewRequest,
+    String? title,
   }) {
     return showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -34,6 +40,8 @@ class FlightAdjustmentPreviewSheet extends StatefulWidget {
         tripId: tripId,
         initialPreview: initialPreview,
         trip: trip,
+        previewRequest: previewRequest,
+        title: title,
       ),
     );
   }
@@ -50,107 +58,199 @@ class _FlightAdjustmentPreviewSheetState
   bool applying = false;
   bool refreshing = false;
   bool isStale = false;
+  bool recovering = false;
   String? errorMessage;
+  String? recovery;
+  late Map<String, dynamic> currentTrip;
+  Map<String, dynamic>? currentRequest;
 
   @override
   void initState() {
     super.initState();
+    currentTrip = Map<String, dynamic>.from(widget.trip);
+    currentRequest = widget.previewRequest == null
+        ? null
+        : Map<String, dynamic>.from(widget.previewRequest!);
     if (widget.initialPreview != null) {
       preview = Map<String, dynamic>.from(widget.initialPreview!);
+      if (preview!['canApply'] != true)
+        recovery = preview!['nextAction']?.toString() ?? 'keep_current';
     } else {
       _loadPreview();
     }
   }
 
-  Future<void> _loadPreview() async {
+  String get recoveryLabel => switch (recovery) {
+        'refresh_suggestions' => 'Refresh suggestions',
+        'reload_trip' => 'Reload Trip',
+        'edit_preferences' => 'Edit travel preferences',
+        'review_flight' => 'Review selected flight',
+        'review_fixed_activity' => 'Review fixed activity',
+        'keep_current' => 'Keep current itinerary',
+        _ => 'Retry connection',
+      };
+
+  void failure(Object error) {
+    preview = null;
+    if (error is! ApiException) {
+      recovery = 'retry';
+      errorMessage = travellerErrorMessage(error);
+      return;
+    }
+    final code = error.code;
+    isStale =
+        {'STALE_ITINERARY', 'STALE_PREVIEW', 'stale_preview'}.contains(code) ||
+            code == null && error.message.toLowerCase().contains('stale');
+    recovery = error.data['nextAction']?.toString() ??
+        (isStale
+            ? 'reload_trip'
+            : error.statusCode >= 500
+                ? 'retry'
+                : 'keep_current');
+    if (code?.startsWith('RECOMMENDATION_') == true)
+      recovery = 'refresh_suggestions';
+    errorMessage = switch (code) {
+      'STALE_ITINERARY' =>
+        'This trip has changed. Reload the latest itinerary.',
+      'STALE_PREVIEW' ||
+      'stale_preview' =>
+        'This preview expired or the trip changed. Reload the latest itinerary.',
+      'RECOMMENDATION_EXPIRED' ||
+      'RECOMMENDATION_REFRESH_REQUIRED' =>
+        'Your saved suggestions need to be refreshed before regenerating this itinerary.',
+      'RECOMMENDATION_NOT_FOUND' =>
+        'No saved suggestions are available. Generate suggestions first.',
+      'RECOMMENDATION_CONTEXT_MISMATCH' =>
+        'These suggestions do not match this trip or recommendation mode. Refresh suggestions for this destination.',
+      'FLIGHT_TIMING_INCOMPLETE' =>
+        'Some flight times are missing. Review your selected flight.',
+      'PROTECTED_ACTIVITY_CONFLICT' =>
+        'A fixed activity prevents this schedule change.',
+      'NO_REGENERATION_CANDIDATES' =>
+        'No suitable replacement activities were found.',
+      _ => error.statusCode >= 500
+          ? 'Unable to load a preview. Try again.'
+          : error.message,
+    };
+  }
+
+  Future<bool> reloadTrip() async {
+    final response =
+        await widget.api.get('/api/fr5/itineraries/${widget.tripId}');
+    if (!mounted) return false;
+    if (response is! Map || response['itinerary'] is! Map)
+      throw StateError('The latest trip could not be loaded.');
+    currentTrip = Map<String, dynamic>.from(response['itinerary']);
+    if (currentTrip['id'] != widget.tripId)
+      throw StateError('The latest trip could not be verified.');
+    if (currentRequest != null) {
+      currentRequest!['expectedItineraryRevision'] =
+          currentTrip['itineraryRevision'] ?? 1;
+    }
+    return true;
+  }
+
+  Future<void> _recover() async {
+    if (loading || applying || refreshing || recovering) return;
+    recovering = true;
+    try {
+      if (recovery == 'refresh_suggestions') {
+        final accepted = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+                    title: const Text('Refresh suggestions?'),
+                    content: const Text(
+                        'Generate current suggestions for this destination using your saved preferences. This may use provider quota. Your trip changes only after you review and apply a new preview.'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel')),
+                      FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Refresh suggestions now'))
+                    ]));
+        if (accepted != true || !mounted) return;
+        setState(() => refreshing = true);
+        try {
+          if (!await reloadTrip()) return;
+          final linked = currentTrip['recommendationGenerationId'];
+          final response = await widget.api.post(
+              '/api/fr4/recommendations/generate', {
+            'destinationArea': currentTrip['destinationArea'],
+            'purpose': 'trip_planning'
+          });
+          if (!mounted) return;
+          final id =
+              response is Map ? response['recommendationGenerationId'] : null;
+          if (id is! String || id.isEmpty)
+            throw StateError('New suggestions could not be verified.');
+          if (!await reloadTrip()) return;
+          if (currentTrip['recommendationGenerationId'] != linked) {
+            throw const ApiException(
+                'This trip has changed. Reload the latest itinerary.',
+                409,
+                {'code': 'STALE_ITINERARY', 'nextAction': 'reload_trip'});
+          }
+          currentRequest = {
+            ...?currentRequest,
+            'recommendationGenerationId': id,
+            'refreshSuggestions': true,
+            'expectedLinkedGenerationId': linked ?? '',
+            'expectedItineraryRevision': currentTrip['itineraryRevision'] ?? 1
+          };
+          await _loadPreview(recoveryLoad: true);
+        } catch (error) {
+          if (mounted) setState(() => failure(error));
+        } finally {
+          if (mounted) setState(() => refreshing = false);
+        }
+      } else if (recovery == 'reload_trip') {
+        setState(() => refreshing = true);
+        try {
+          if (await reloadTrip()) await _loadPreview(recoveryLoad: true);
+        } catch (error) {
+          if (mounted) setState(() => failure(error));
+        } finally {
+          if (mounted) setState(() => refreshing = false);
+        }
+      } else if (recovery == 'retry' || recovery == null) {
+        await _loadPreview();
+      } else {
+        Navigator.pop(context, {'nextAction': recovery});
+      }
+    } finally {
+      recovering = false;
+    }
+  }
+
+  Future<void> _loadPreview({bool recoveryLoad = false}) async {
+    if (loading || applying || refreshing && !recoveryLoad) return;
     setState(() {
       loading = true;
       errorMessage = null;
+      recovery = null;
       isStale = false;
     });
     try {
       final data = await widget.api.post(
-        '/api/fr5/itineraries/${widget.tripId}/flight-adjustment/preview',
-      );
+          '/api/fr5/itineraries/${widget.tripId}/flight-adjustment/preview',
+          currentRequest);
       if (!mounted) return;
-      final rawPreview = data['preview'] is Map
-          ? Map<String, dynamic>.from(data['preview'] as Map)
-          : <String, dynamic>{};
+      final raw = data['preview'];
+      if (raw is! Map) throw StateError('The preview could not be verified.');
       setState(() {
-        preview = rawPreview;
-        loading = false;
+        preview = Map<String, dynamic>.from(raw);
+        if (preview!['canApply'] != true)
+          recovery = preview!['nextAction']?.toString() ?? 'keep_current';
       });
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        loading = false;
-        if (e.statusCode == 404 ||
-            '${e.message}'.toLowerCase().contains('not found')) {
-          isStale = true;
-          errorMessage =
-              'Preview expired or server restarted. Please refresh the preview.';
-        } else if (e.statusCode == 409 ||
-            '${e.message}'.toLowerCase().contains('stale')) {
-          isStale = true;
-          errorMessage =
-              'Your itinerary has changed. Refresh the preview to review the latest schedule.';
-        } else {
-          errorMessage = e.message.isNotEmpty ? e.message : e.toString();
-        }
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        loading = false;
-        errorMessage = travellerErrorMessage(e);
-      });
+    } catch (error) {
+      if (mounted) setState(() => failure(error));
+    } finally {
+      if (mounted) setState(() => loading = false);
     }
   }
 
-  Future<void> _refreshPreview() async {
-    setState(() {
-      refreshing = true;
-      errorMessage = null;
-    });
-    try {
-      final data = await widget.api.post(
-        '/api/fr5/itineraries/${widget.tripId}/flight-adjustment/preview',
-      );
-      if (!mounted) return;
-      final rawPreview = data['preview'] is Map
-          ? Map<String, dynamic>.from(data['preview'] as Map)
-          : <String, dynamic>{};
-      setState(() {
-        preview = rawPreview;
-        isStale = false;
-        refreshing = false;
-      });
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        refreshing = false;
-        if (e.statusCode == 404 ||
-            '${e.message}'.toLowerCase().contains('not found')) {
-          isStale = true;
-          errorMessage =
-              'Preview expired or server restarted. Please refresh the preview.';
-        } else if (e.statusCode == 409 ||
-            '${e.message}'.toLowerCase().contains('stale')) {
-          isStale = true;
-          errorMessage =
-              'Your itinerary has changed. Refresh the preview to review the latest schedule.';
-        } else {
-          errorMessage = e.message.isNotEmpty ? e.message : e.toString();
-        }
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        refreshing = false;
-        errorMessage = travellerErrorMessage(e);
-      });
-    }
-  }
+  Future<void> _refreshPreview() => _recover();
 
   Future<void> _applyChanges() async {
     if (applying || isStale || preview == null) return;
@@ -180,31 +280,12 @@ class _FlightAdjustmentPreviewSheetState
         'applied': true,
         'itinerary': updatedItinerary,
       });
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        applying = false;
-        if (e.statusCode == 409 ||
-            e.code == 'stale_preview' ||
-            '${e.message}'.toLowerCase().contains('stale')) {
-          isStale = true;
-          errorMessage =
-              'Your itinerary has changed. Refresh the preview to review the latest schedule.';
-        } else if (e.statusCode == 404 ||
-            '${e.message}'.toLowerCase().contains('not found')) {
-          isStale = true;
-          errorMessage =
-              'Preview expired or server restarted. Please refresh the preview.';
-        } else {
-          errorMessage = e.message.isNotEmpty ? e.message : e.toString();
-        }
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        applying = false;
-        errorMessage = travellerErrorMessage(e);
-      });
+    } catch (error) {
+      if (mounted)
+        setState(() {
+          applying = false;
+          failure(error);
+        });
     }
   }
 
@@ -466,8 +547,8 @@ class _FlightAdjustmentPreviewSheetState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Review flight-aware adjustment',
+                        Text(
+                          widget.title ?? 'Review flight-aware adjustment',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w900,
@@ -485,7 +566,7 @@ class _FlightAdjustmentPreviewSheetState
                       ],
                     ),
                   ),
-                  if (p != null) _buildStatusChip(canApply),
+                  if (p != null || isStale) _buildStatusChip(canApply),
                   IconButton(
                     icon: const Icon(Icons.close_rounded),
                     onPressed: () => Navigator.pop(context),
@@ -504,7 +585,8 @@ class _FlightAdjustmentPreviewSheetState
                         children: [
                           CircularProgressIndicator(),
                           SizedBox(height: 16),
-                          Text('Calculating flight-aware adjustment preview...'),
+                          Text(
+                              'Calculating flight-aware adjustment preview...'),
                         ],
                       ),
                     )
@@ -521,8 +603,7 @@ class _FlightAdjustmentPreviewSheetState
                               color: AppColors.warningSoft,
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color:
-                                    AppColors.warning.withValues(alpha: 0.4),
+                                color: AppColors.warning.withValues(alpha: 0.4),
                               ),
                             ),
                             child: Column(
@@ -536,7 +617,7 @@ class _FlightAdjustmentPreviewSheetState
                                     Expanded(
                                       child: Text(
                                         errorMessage ??
-                                            'Your itinerary has changed. Refresh the preview to review the latest schedule.',
+                                            'This preview needs review before changes can be applied.',
                                         style: const TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w700,
@@ -551,8 +632,9 @@ class _FlightAdjustmentPreviewSheetState
                                   alignment: Alignment.centerRight,
                                   child: FilledButton.tonalIcon(
                                     key: const ValueKey('refresh-preview-btn'),
-                                    onPressed:
-                                        refreshing ? null : _refreshPreview,
+                                    onPressed: refreshing || loading || applying
+                                        ? null
+                                        : _recover,
                                     icon: refreshing
                                         ? const SizedBox(
                                             width: 14,
@@ -562,7 +644,7 @@ class _FlightAdjustmentPreviewSheetState
                                           )
                                         : const Icon(Icons.refresh_rounded,
                                             size: 16),
-                                    label: const Text('Refresh preview'),
+                                    label: Text(recoveryLabel),
                                   ),
                                 ),
                               ],
@@ -571,40 +653,44 @@ class _FlightAdjustmentPreviewSheetState
                         ],
 
                         // Planning Notice & Local Time
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: InkWashColors.cream,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                canApply
-                                    ? 'TravelMate proposes changes only on the flight-affected dates. Your current trip stays saved until you apply this preview.'
-                                    : (p?['reason'] ??
-                                            'The flight data is incomplete for a safe adjustment.')
-                                        .toString(),
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  height: 1.4,
-                                  fontWeight: FontWeight.w600,
+                        if (p != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: InkWashColors.cream,
+                              borderRadius: BorderRadius.circular(10),
+                              border:
+                                  Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  canApply
+                                      ? (p['kind'] == 'planning'
+                                          ? 'Review the selected days, personal preferences and budget impact. Your current trip stays saved until you apply this preview.'
+                                          : 'TravelMate proposes changes only on the flight-affected dates. Your current trip stays saved until you apply this preview.')
+                                      : (p['reason'] ??
+                                              'Review the planning constraints before continuing.')
+                                          .toString(),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    height: 1.4,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              const Text(
-                                'Availability uses Penang local time and standard planning assumptions.',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: InkWashColors.mutedInk,
+                                const SizedBox(height: 6),
+                                const Text(
+                                  'Availability uses Malaysia local time and planning assumptions. These are not official airline requirements.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: InkWashColors.mutedInk,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
 
                         // Proposed Changes Section
                         const Text(
@@ -615,6 +701,15 @@ class _FlightAdjustmentPreviewSheetState
                           ),
                         ),
                         const SizedBox(height: 8),
+                        if (p?['gapFilling'] is Map) Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(p!['gapFilling']['message']?.toString() ?? ''),
+                        ),
+                        if (p?['additionalEvidenceStatus'] == 'unavailable')
+                          TextButton(onPressed: loading || applying || refreshing || recovering ? null : () {
+                            setState(() => recovery = 'refresh_suggestions');
+                            _recover();
+                          }, child: const Text('Refresh suggestions for additional places')),
                         if (changes.isEmpty && canApply) ...[
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 8),
@@ -753,38 +848,37 @@ class _FlightAdjustmentPreviewSheetState
                 color: Colors.white,
                 border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
+                  SizedBox(
                     child: OutlinedButton(
                       onPressed: applying ? null : () => Navigator.pop(context),
                       child: const Text('Keep current plan'),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  if (isStale || !canApply) ...[
+                  const SizedBox(height: 8),
+                  if (recovery != null && errorMessage == null) ...[
                     OutlinedButton(
                       key: const ValueKey('refresh-preview-btn-bottom'),
-                      onPressed: (refreshing || applying)
-                          ? null
-                          : _refreshPreview,
+                      onPressed:
+                          (refreshing || applying) ? null : _refreshPreview,
                       child: refreshing
                           ? const SizedBox(
                               width: 14,
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Refresh preview'),
+                          : Text(recoveryLabel),
                     ),
                     const SizedBox(width: 8),
                   ],
-                  Expanded(
+                  SizedBox(
                     child: FilledButton(
                       key: const ValueKey('apply-flight-adjustment-btn'),
-                      onPressed:
-                          (canApply && !applying && !isStale && !loading)
-                              ? _applyChanges
-                              : null,
+                      onPressed: (canApply && !applying && !isStale && !loading)
+                          ? _applyChanges
+                          : null,
                       child: applying
                           ? const SizedBox(
                               width: 18,

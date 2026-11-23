@@ -107,10 +107,13 @@ def status_overview(order, context, record, trip):
         readiness.update(canMarkReady=False,requirementsReliable=False)
         readiness['blockers'].append('Saved clarification does not match this purchase. Administrator review is required.')
     state = order.get('fulfillmentStatus')
-    review = (not readiness['requirementsReliable'] or (state=='fulfilled' and not context['legacyReviewed']))
+    review = (not readiness['requirementsReliable'] or (state=='fulfilled' and not context['legacyReviewed'])
+              or paid and trip['state'] != 'created')
+    complete_records = (readiness['requirementsReliable'] and
+                        readiness['completedCount'] == readiness['requiredCount'])
     operator = ('not_applicable','Not Applicable') if not paid else (
         ('unable_to_fulfil','Unable to Fulfil') if state=='fulfillment_declined' else
-        ('ready','Ready') if state=='trip_ready' else ('needs_review','Needs Review') if review else
+        ('needs_review','Needs Review') if review else ('ready','Ready') if state=='trip_ready' and complete_records else
         ('awaiting_arrangements','Awaiting Arrangements'))
     required, complete = readiness['requiredCount'],readiness['completedCount']
     supplier = ('needs_review','Needs Review') if review else (

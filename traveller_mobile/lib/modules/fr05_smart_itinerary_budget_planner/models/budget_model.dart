@@ -13,6 +13,7 @@ class BudgetModel {
   final double activities;
   final double flight;
   final double carRental;
+  final double personalPlans;
   final double budgetLimit;
   final double? authoritativeTotal;
   final double? knownSubtotal;
@@ -32,6 +33,7 @@ class BudgetModel {
     required this.activities,
     this.flight = 0,
     this.carRental = 0,
+    this.personalPlans = 0,
     this.budgetLimit = 0,
     this.authoritativeTotal,
     this.knownSubtotal,
@@ -85,6 +87,7 @@ class BudgetModel {
       activities: activities,
       flight: flight,
       carRental: rental,
+      personalPlans:category('personalPlans'),
       budgetLimit: limit,
       authoritativeTotal: total ?? known,
       knownSubtotal: known,
@@ -119,6 +122,7 @@ class BudgetModel {
         'hotel': accommodation,
         'flight': flight,
         'carRental': carRental,
+        if(personalPlans>0 || expenseBreakdown.containsKey('personalPlans')) 'personalPlans':personalPlans,
       };
   // Only legacy payloads without a backend total need the six-category fallback.
   double get totalCost =>

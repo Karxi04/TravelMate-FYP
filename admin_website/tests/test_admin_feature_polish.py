@@ -391,7 +391,7 @@ def test_destinations_and_activities_presentation(admin_client):
 # =========================================================================
 
 def test_reports_page_criteria_form_and_export_links(admin_client):
-    """Reports page renders CSV/PDF export buttons, criteria form, and category breakdown cards."""
+    """Reports retain the criteria/cards with only Excel and PDF export actions."""
     report_data = {
         "report": {
             "generatedAt": "2026-11-01T10:30:00Z",
@@ -411,11 +411,12 @@ def test_reports_page_criteria_form_and_export_links(admin_client):
         assert resp.status_code == 200
         html = resp.data.decode("utf-8")
         assert "System Activity Report" in html
-        assert "Export CSV" in html
-        assert "layout=readable" in html
-        assert "layout=compact" in html
+        assert "Export CSV" not in html
+        assert "layout=readable" not in html
+        assert "layout=compact" not in html
         assert "Export Excel (.xlsx)" in html
-        assert "Advanced CSV (all fields)" in html
+        assert "Advanced CSV (all fields)" not in html
+        assert "Print Report" not in html
         assert "Export PDF" in html
         assert "Configure Report Parameters" in html
         assert "User Accounts Breakdown" in html

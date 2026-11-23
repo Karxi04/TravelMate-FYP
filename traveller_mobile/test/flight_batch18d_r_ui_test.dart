@@ -26,6 +26,7 @@ class _Mock18DRApi extends ApiService {
 
   ApiException? selectException;
   bool acknowledgeRequired = false;
+  bool planningReadFails = false;
   int selectCallCount = 0;
 
   final List<String> getPaths = [];
@@ -97,6 +98,7 @@ class _Mock18DRApi extends ApiService {
     }
 
     if (path.startsWith('/api/fr5/itineraries/')) {
+      if(planningReadFails)throw const ApiException('Synthetic settings read timeout',503,{});
       final id = path.split('/').last;
       final rows = tripsResponse?['items'] as List? ?? [];
       return {'ok': true, 'itinerary': rows.whereType<Map>().firstWhere((row) => row['id'] == id, orElse: () => {'id': id})};
@@ -250,6 +252,27 @@ Future<void> _pumpTripDetails(WidgetTester tester, Map<String, dynamic> trip, _M
 }
 
 void main() {
+  for(final review in [false,true]){
+    testWidgets('saved flight remains attached when timing review is ${review ? 'temporarily unavailable':'deferred'}',(tester) async {
+      _setViewport(tester);
+      final api=_Mock18DRApi();
+      api.selectResponse={'ok':true,'planningReviewRequired':true,'itinerary':{'id':'trip_penang_nov'},'budget':{'total':256,'flight':256}};
+      await tester.pumpWidget(_wrap(FlightScreen(api:api,targetTripId:'trip_penang_nov')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton,'Search flights'));await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton,'Select'));await tester.pumpAndSettle();
+      expect(find.text('Plan your travel days'),findsOneWidget);
+      expect(api.selectCallCount,1);
+      api.planningReadFails=review;
+      await tester.tap(find.text(review ? 'Choose travel-day preferences':'Not now'));await tester.pumpAndSettle();
+      expect(api.selectCallCount,1);
+      expect(api.postBodies.single?['itineraryId'],'trip_penang_nov');
+      expect(api.postPaths.any((p)=>p.contains('flight-adjustment')),isFalse);
+      expect(find.text('Plan your travel days'),findsNothing);
+      expect(tester.takeException(),isNull);
+    });
+  }
+
   testWidgets('normal higher fare replacement confirms once and shows authoritative budget warning', (tester) async {
     _setViewport(tester);
     final api = _Mock18DRApi();

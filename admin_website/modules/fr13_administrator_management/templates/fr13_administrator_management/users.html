@@ -7,7 +7,7 @@
   <div>
     <span class="eyebrow">PEOPLE &amp; ACCESS</span>
     <h1>People and verification</h1>
-    <p>Supervise user accounts, manage permission roles, and review Tourism Operator accreditations.</p>
+    <p>Manage account status and review Tourism Operator verification. Registered account roles cannot be changed.</p>
   </div>
 </div>
 
@@ -15,20 +15,22 @@
   <div class="actions">
     <input class="input search-input" name="q" value="{{ query }}" placeholder="Search name, email or company" aria-label="Search users">
     <select class="input filter-input" name="role" aria-label="Filter by role">
-      <option value="all">All roles</option>
+      <option value="all" {% if role == 'all' %}selected{% endif %}>All roles</option>
       <option value="traveller" {% if role == 'traveller' %}selected{% endif %}>Travellers</option>
       <option value="operator" {% if role == 'operator' %}selected{% endif %}>Operators</option>
       <option value="admin" {% if role == 'admin' %}selected{% endif %}>Administrators</option>
     </select>
     <select class="input filter-input" name="status" aria-label="Filter by status">
-      <option value="all">All statuses</option>
+      <option value="all" {% if status == 'all' %}selected{% endif %}>All statuses</option>
       <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
       <option value="deactivated" {% if status == 'deactivated' %}selected{% endif %}>Deactivated</option>
     </select>
     <button class="btn primary" type="submit">Filter</button>
+    <a class="btn outline" href="{{ url_for('admin_fr13.users') }}">Reset Filters</a>
   </div>
 </form>
 
+{% if not backend_error %}
 <div class="table-wrap">
   <table>
     <thead>
@@ -90,11 +92,9 @@
             <form class="actions compact-form" method="post" action="{{ url_for('admin_fr13.update_user', uid=x.id) }}" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               
-              <select class="input" name="role" aria-label="Role for {{ x.get('email', 'user') }}" style="min-width: 105px; padding: 5px 8px; font-size: 12.5px;">
-                <option value="traveller" {% if user_role == 'traveller' %}selected{% endif %}>Traveller</option>
-                <option value="operator" {% if is_op %}selected{% endif %}>Operator</option>
-                <option value="admin" {% if is_adm %}selected{% endif %}>Admin</option>
-              </select>
+              <span class="status draft" aria-label="Registered role">
+                {% if is_adm %}Administrator{% elif is_op %}Tourism Operator{% else %}Traveller{% endif %}
+              </span>
 
               <select class="input" name="status" aria-label="Status for {{ x.get('email', 'user') }}" style="min-width: 95px; padding: 5px 8px; font-size: 12.5px;">
                 <option value="active" {% if x.get('status', 'active') == 'active' %}selected{% endif %}>Active</option>
@@ -129,4 +129,5 @@
     </tbody>
   </table>
 </div>
+{% endif %}
 {% endblock %}

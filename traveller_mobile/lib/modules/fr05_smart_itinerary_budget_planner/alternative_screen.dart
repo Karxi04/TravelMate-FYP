@@ -100,7 +100,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
     if (stateVersion != null &&
         data['stateVersion'] is String &&
         data['stateVersion'] != stateVersion) {
-      searchIds.clear();
+      // Retain exact receipts so the server can recheck quotes against the new plan.
       searches.clear();
       reusedSearches.clear();
       searchMessages.clear();
@@ -381,7 +381,12 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
           category, DateTime.tryParse(search['retryAt']?.toString() ?? ''));
     if (status == 'retry_available')
       return 'Search limit has reset. You can start a new search.';
-    if (status == 'needs_review') return searchBlocked(category);
+    if (status == 'needs_review') {
+      if (search['reasonCode'] == 'search_mismatch') {
+        return 'This saved search no longer matches the selected arrangement. Refresh the comparison, then confirm a new search if needed.';
+      }
+      return searchBlocked(category);
+    }
     return switch (search['failureCode']) {
       'provider_timeout' =>
         'The provider search timed out. No result was confirmed; refresh saved results before trying again.',
@@ -443,7 +448,7 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
       setState(() {
         searchMessages.remove(category);
         searchRetryAt.remove(category);
-        searches[category] = {'searchStatus':'pending'};
+        searches[category] = {'searchStatus': 'pending'};
       });
       final result = await api.post(
           '/api/fr5/itineraries/$tripId/lower-cost-alternatives/discover', {
@@ -642,6 +647,9 @@ class _AlternativeScreenState extends State<AlternativeScreen> {
           if (reusedSearches[category] == true)
             const Text(
                 'Reused saved search evidence; no new provider request.'),
+          if (searches[category]?['recheckedForCurrentTrip'] == true)
+            const Text(
+                'Saved offers were checked against your updated trip. No new provider search was made.'),
           if (searches[category]?['providerReached'] == true)
             Text(
                 'Provider requests in this search: ${searches[category]?['requestsAttempted'] ?? 'Unknown'}'),

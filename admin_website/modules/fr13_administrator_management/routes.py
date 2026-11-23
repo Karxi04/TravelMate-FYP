@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response, g, abort
 from api_client import call_api
 from uuid import uuid4
+from admin_report_records import display_table, SCHEMAS
 
 bp = Blueprint("admin_fr13", __name__, template_folder="templates", url_prefix="/admin")
 
@@ -46,17 +47,25 @@ def users():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
     params = {key: request.args.get(key, "").strip() for key in ("q", "role", "status") if request.args.get(key, "").strip()}
+    for key in ('role', 'status'):
+        value = params.get(key, '').lower()
+        if value in {'', 'all'}:
+            params.pop(key, None)
+        else:
+            params[key] = value
+    if 'role' in params:
+        params['role'] = {'tourism_operator':'operator', 'administrator':'admin',
+                          'traveler':'traveller', 'user':'traveller'}.get(params['role'], params['role'])
     response = call_api("GET", "/api/fr13/users", params=params)
-    return render_template("fr13_administrator_management/users.html", items=response.json().get("items", []) if response.ok else [], query=params.get("q", ""), role=params.get("role", "all"), status=params.get("status", "all"))
+    return render_template("fr13_administrator_management/users.html", items=response.json().get("items", []) if response.ok else [], query=params.get("q", ""), role=params.get("role", "all"), status=params.get("status", "all"), backend_error=not response.ok), (200 if response.ok else response.status_code)
 
 @bp.post("/users/<uid>/update")
 def update_user(uid):
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    payload = {"role": request.form.get("role"), "status": request.form.get("status")}
-    if request.form.get("verificationStatus"):
-        if payload['role'] in {'operator','tourism_operator'}:
-            payload["verificationStatus"] = request.form.get("verificationStatus")
+    if 'role' in request.form:
+        return Response('Registered user roles cannot be changed. Refresh User Accounts before saving.', status=409)
+    payload = {key: request.form[key] for key in ('status', 'verificationStatus') if key in request.form}
     response = call_api("PUT", f"/api/fr13/users/{uid}", json=payload)
     flash("User account updated." if response.ok else _error(response), "success" if response.ok else "error")
     return redirect(url_for("admin_fr13.users"))
@@ -160,12 +169,14 @@ def feedback():
     if review_source not in source_labels:
         review_source='all'
     counts = dict.fromkeys(categories, 0)
+    groups = {'queue': {'flagged', 'needs_review'}, 'normal': {'automatic', 'manual'},
+              'hidden_rejected': {'hidden', 'rejected'}}
     status = request.args.get("status", "queue")
-    if status not in {*categories, "queue", "normal", "all"}:
+    if status not in {*categories, *groups, "all"}:
         status = "queue"
     query = request.args.get("q", "").strip()
     search = query.casefold()
-    group = {"flagged", "needs_review"} if status == "queue" else {"automatic", "manual"} if status == "normal" else {status}
+    group = groups.get(status, {status})
     items = []
     for item in data.get("items", []):
         origin=item.get('reviewSource','traveller')
@@ -368,10 +379,30 @@ def reports():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
     params = _report_params()
+    kind = params['reportType']
+    if kind != 'system_summary' and (kind not in SCHEMAS or kind == 'other'):
+        return Response('Unsupported report type', status=400)
     response = call_api("GET", "/api/fr13/reports/summary", params=params)
     if not response.ok:
         flash(_error(response), "error")
-    return render_template("fr13_administrator_management/reports.html", report=response.json().get("report", {}) if response.ok else {}, criteria=params)
+        g.admin_backend_error = True
+        status = response.status_code if isinstance(response.status_code, int) and 400 <= response.status_code < 500 else 503
+        return render_template("fr13_administrator_management/reports.html", report={}, criteria=params), status
+    try:
+        body = response.json()
+    except ValueError:
+        return Response('Report data is unavailable.', status=502)
+    report = body.get('report') if isinstance(body, dict) else None
+    if not isinstance(report, dict):
+        return Response('Report data is unavailable.', status=502)
+    records = report.get('records')
+    records = [] if records is None else records
+    if not isinstance(records, list) or any(not isinstance(record, dict) for record in records):
+        return Response('Report records are unavailable.', status=502)
+    report = {**report, 'records': records}
+    columns, rows = display_table(kind, records) if kind != 'system_summary' else ([], [])
+    return render_template("fr13_administrator_management/reports.html", report=report, criteria=params,
+                           report_columns=columns, report_rows=rows)
 
 @bp.route("/reports/export")
 def export_report():
@@ -379,6 +410,8 @@ def export_report():
         return redirect(url_for("admin_fr01.login"))
     params = _report_params()
     export_format = request.args.get("format", "pdf")
+    if export_format not in {'csv', 'xlsx', 'pdf'}:
+        return Response('Unsupported report format', status=400)
     if export_format == "csv":
         layout = request.args.get("layout", "compact")
         if layout not in {"readable", "legacy", "compact"}:

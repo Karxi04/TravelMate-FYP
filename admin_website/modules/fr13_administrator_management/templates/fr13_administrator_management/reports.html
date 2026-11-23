@@ -6,8 +6,20 @@
 {% if not backend_error %}
   {% if report.get('recordsLimited') %}
     <p class="notice-banner-limited" role="status">
-      Exports contain the first {{ report.get('recordDisplayLimit', 200) }} matching records. Summary counts cover the loaded source records.
+      Non-feedback details contain at most 200 matching records. Feedback uses its separately disclosed source scope. Summary counts cover the loaded sources.
     </p>
+  {% endif %}
+
+  {% if report.get('feedbackSources') %}
+    <div class="notice-banner-limited" role="status">
+      <strong>Feedback source scope{% if report.feedbackSources.get('partial') %} — Partial{% endif %}</strong>
+      {% for source, scope in report.feedbackSources.get('sources', {}).items() %}
+        <span>{{ source }}: {{ scope.get('status') }} · {{ scope.get('matching', scope.get('loaded', 0)) }} loaded matching records.</span>
+      {% endfor %}
+      Feedback source bound: {{ report.feedbackSources.get('recordLimitPerSource') }}.
+      {% if report.feedbackSources.get('partial') %}Unavailable or bounded sources make counts incomplete.{% endif %}
+      Synthetic evaluation feedback is separate from genuine customer feedback.
+    </div>
   {% endif %}
 
   <style>
@@ -491,19 +503,9 @@
       <p style="margin: 0; color: var(--ink-secondary); font-size: 13.5px;">Review comprehensive TravelMate system metrics, audit operational counts, and export administrative activity reports.</p>
     </div>
     <div class="report-actions">
-      <button type="button" class="btn outline" onclick="window.print()" aria-label="Print Report">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-        <span>Print Report</span>
-      </button>
-      <a class="btn outline" href="{{ url_for('admin_fr13.export_report', reportType=criteria.get('reportType', 'system_summary'), startDate=criteria.get('startDate', ''), endDate=criteria.get('endDate', ''), filter=criteria.get('filter', ''), format='csv', layout='compact') }}">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        <span>Export CSV (.csv)</span>
-      </a>
       <a class="btn primary" href="{{ url_for('admin_fr13.export_report', reportType=criteria.get('reportType', 'system_summary'), startDate=criteria.get('startDate', ''), endDate=criteria.get('endDate', ''), filter=criteria.get('filter', ''), format='xlsx') }}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="m8 13 4 4m0-4-4 4"/></svg>
         <span>Export Excel (.xlsx)</span>
-      </a>
-      <a class="btn outline" href="{{ url_for('admin_fr13.export_report', reportType=criteria.get('reportType', 'system_summary'), startDate=criteria.get('startDate', ''), endDate=criteria.get('endDate', ''), filter=criteria.get('filter', ''), format='csv', layout='readable') }}" title="All sanitized fields, including advanced technical columns">
-        <span>Advanced CSV (all fields)</span>
       </a>
       <a class="btn primary" href="{{ url_for('admin_fr13.export_report', reportType=criteria.get('reportType', 'system_summary'), startDate=criteria.get('startDate', ''), endDate=criteria.get('endDate', ''), filter=criteria.get('filter', ''), format='pdf') }}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -520,7 +522,7 @@
       <div class="field">
         <label for="reportTypeSelect">Report type</label>
         <select id="reportTypeSelect" class="input" name="reportType">
-          {% for value, label in [('system_summary','System summary'), ('users','Users'), ('packages','Packages'), ('campaigns','Campaigns'), ('feedback','Feedback'), ('bookings','Bookings'), ('payments','Payments')] %}
+          {% for value, label in [('system_summary','System Summary'), ('users','Users'), ('packages','Packages'), ('campaigns','Campaigns'), ('feedback','Feedback')] %}
             <option value="{{ value }}" {% if criteria.get('reportType', 'system_summary') == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
@@ -1056,7 +1058,7 @@
         <h3 style="margin: 2px 0 0;">Filtered Records: {{ criteria.get('reportType')|replace('_', ' ')|title }}</h3>
       </div>
       <span class="muted" style="font-size: 12px; font-weight: 600;">
-        Showing {{ records|length }} record{% if records|length != 1 %}s{% endif %}{% if report.get('recordsLimited') %} (capped at 200){% endif %}
+        Showing {{ records|length }} record{% if records|length != 1 %}s{% endif %}{% if report.get('recordsLimited') %} (detail limit reached; see source scope){% endif %}
       </span>
     </div>
 
@@ -1064,51 +1066,11 @@
     <div class="records-table-wrap">
       <table class="records-table">
         <thead>
-          <tr>
-            <th>Identifier / Ref</th>
-            <th>Primary Name / Title</th>
-            <th>Status / State</th>
-            <th>Date / Timestamp</th>
-            <th>Additional Details</th>
-          </tr>
+          <tr>{% for column in report_columns %}<th>{{ column }}</th>{% endfor %}</tr>
         </thead>
         <tbody>
-          {% for rec in records %}
-          <tr>
-            <td class="code-cell">
-              {{ rec.id or rec.uid or rec.orderReference or rec.transactionReference or '—' }}
-            </td>
-            <td>
-              <strong style="color: var(--ink);">
-                {{ rec.name or rec.fullName or rec.title or rec.packageTitle or rec.campaignTitle or rec.destinationName or rec.hotelName or rec.productTitle or '—' }}
-              </strong>
-              {% if rec.email %}
-                <small class="muted" style="display: block;">{{ rec.email }}</small>
-              {% endif %}
-            </td>
-            <td>
-              {% set s_val = rec.status or rec.approvalStatus or rec.reviewStatus or rec.paymentStatus or rec.verificationStatus or 'recorded' %}
-              <span class="status {{ 'approved' if s_val in ['approved', 'active', 'paid', 'visible', 'verified'] else 'pending' if s_val in ['pending', 'submitted', 'under_review'] else 'rejected' if s_val in ['rejected', 'deactivated', 'failed', 'removed'] else 'draft' }}">
-                {{ s_val|replace('_', ' ')|title }}
-              </span>
-            </td>
-            <td style="font-size: 12px; color: var(--ink-muted);">
-              {{ (rec.createdAt or rec.updatedAt or rec.startDate or rec.departureDate or '—')[:19]|replace('T', ' ') }}
-            </td>
-            <td style="font-size: 12px;">
-              {% if rec.amount is not none or rec.groupTotal is not none %}
-                <strong>{{ rec.currency or 'MYR' }} {{ '%.2f'|format((rec.amount if rec.amount is not none else rec.groupTotal)|float) }}</strong>
-              {% elif rec.role %}
-                <span>Role: <strong>{{ rec.role|title }}</strong></span>
-              {% elif rec.discountValue %}
-                <span>Discount: <strong>{{ rec.discountValue }}{% if rec.discountType == 'percentage' %}%{% else %} MYR{% endif %}</strong></span>
-              {% elif rec.rating %}
-                <span>Rating: <strong>{{ rec.rating }}/5</strong></span>
-              {% else %}
-                <span class="muted">—</span>
-              {% endif %}
-            </td>
-          </tr>
+          {% for row in report_rows %}
+          <tr>{% for value in row %}<td{% if loop.first %} class="code-cell"{% endif %}>{{ value }}</td>{% endfor %}</tr>
           {% endfor %}
         </tbody>
       </table>

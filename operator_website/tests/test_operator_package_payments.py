@@ -1,4 +1,6 @@
 import sys
+import re
+from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
@@ -350,3 +352,107 @@ def test_terminal_order_is_not_presented_as_paid(auth_client, order_status, labe
     html = page.get_data(as_text=True)
     assert page.status_code == 200 and f'>{label}</span>' in html
     assert 'class="status approved">Paid</span>' not in html
+
+
+@pytest.fixture
+def filter_payments():
+    states = [
+        ('paid-test','paid','paid',True,125,True),
+        ('paid-live','paid','paid',True,275,False),
+        ('pending','pending','checkout_open',False,80,True),
+        ('failed','failed','checkout_failed',False,90,True),
+        ('cancelled','cancelled','checkout_cancelled',False,100,True),
+        ('refunded','refunded','refunded',False,110,True),
+        ('partial-pay','partially_refunded','paid',True,120,True),
+        ('partial-order','paid','partially_refunded',True,130,True),
+        ('stale-failed','paid','checkout_failed',True,140,True),
+        ('pending-refunded','pending','refunded',False,150,True),
+    ]
+    rows = [{'id':key,'orderReference':key,'paymentStatus':pay,'orderStatus':order,
+             'isPaid':paid,'groupTotal':amount,'currency':'MYR','testMode':test,
+             'packageTitle':('Coastal' if key != 'paid-live' else 'Mountain')+' Package',
+             'paidAt':None,'createdAt':'2026-11-01T10:00:00Z'}
+            for key,pay,order,paid,amount,test in states]
+    before = deepcopy(rows)
+    yield rows
+    assert rows == before
+
+
+def payment_references(page):
+    return set(re.findall(r'href="/bookings/([^"/?]+)"',page.text))
+
+
+@pytest.mark.parametrize('suffix',['','?status=all','?status='])
+def test_payment_dropdown_exactly_four_options_and_all_default(auth_client, filter_payments, suffix):
+    api = MagicMock(return_value=_mock_response({'items':filter_payments}))
+    with _patch_view_api('operator_fr12.payments',api):
+        page = auth_client.get('/payments'+suffix)
+    options = re.search(r'<select[^>]*aria-label="Filter payments by status"[^>]*>(.*?)</select>',page.text,re.S).group(1)
+    assert re.findall(r'<option value="([^"]+)"[^>]*>([^<]+)</option>',options) == [
+        ('all','All Payments'),('paid','Paid'),('pending','Pending'),('cancelled','Cancelled / Refunded')]
+    assert '<option value="all" selected' in options
+    assert payment_references(page) == {row['id'] for row in filter_payments}
+    assert 'Stripe Test Mode' in page.text
+    api.assert_called_once_with('GET','/api/fr12/bookings')
+
+
+@pytest.mark.parametrize('status,expected', [
+    ('all',{'paid-test','paid-live','pending','failed','cancelled','refunded','partial-pay','partial-order','stale-failed','pending-refunded'}),
+    ('paid',{'paid-test','paid-live'}),('pending',{'pending'}),
+    ('cancelled',{'cancelled','refunded','partial-pay','partial-order','pending-refunded'})])
+@pytest.mark.parametrize('query',['','Coastal'])
+def test_payment_filters_search_and_unfiltered_totals(auth_client, filter_payments, status, expected, query):
+    from flask import template_rendered
+    contexts = []
+    def capture(sender, template, context, **kwargs):
+        contexts.append(context)
+    api = MagicMock(return_value=_mock_response({'items':filter_payments}))
+    with template_rendered.connected_to(capture,app), _patch_view_api('operator_fr12.payments',api):
+        page = auth_client.get('/payments',query_string={'status':status,'q':query})
+    assert page.status_code == 200
+    assert payment_references(page) == (expected-{'paid-live'} if query else expected)
+    summary = contexts[-1]['summary']
+    assert summary['total'] == 10 and summary['paid'] == 2 and summary['pending'] == 1
+    assert summary['currency_revenues'] == {'MYR':400.0}
+    assert summary['test_orders'] == 9
+    assert 'Stripe Test Mode' in page.text
+    if status == 'cancelled':
+        assert 'Partially Refunded' in page.text
+    api.assert_called_once_with('GET','/api/fr12/bookings')
+
+
+def test_payment_clear_restores_all_filters(auth_client, filter_payments):
+    api = MagicMock(return_value=_mock_response({'items':filter_payments}))
+    with _patch_view_api('operator_fr12.payments',api):
+        filtered = auth_client.get('/payments?status=paid&q=Coastal')
+        href = re.search(r'href="([^"]+)"[^>]*>Clear</a>',filtered.text).group(1)
+        assert href in {'/payments','/package-payments'}
+        reset = auth_client.get(href)
+    assert payment_references(filtered) == {'paid-test'}
+    assert payment_references(reset) == {row['id'] for row in filter_payments}
+    assert '<option value="all" selected' in reset.text and 'name="q" value=""' in reset.text
+    assert all(call.args == ('GET','/api/fr12/bookings') for call in api.call_args_list)
+
+
+@pytest.mark.parametrize('status,expected', [
+    ('test_paid',{'paid-test'}),('failed',{'failed','stale-failed'}),
+    ('refunded',{'cancelled','refunded','partial-pay','partial-order','pending-refunded'}),
+    ('test',{'paid-test','pending','failed','cancelled','refunded','partial-pay','partial-order','stale-failed','pending-refunded'})])
+def test_legacy_payment_filter_urls_remain_compatible(auth_client, filter_payments, status, expected):
+    api = MagicMock(return_value=_mock_response({'items':filter_payments}))
+    with _patch_view_api('operator_fr12.payments',api):
+        page = auth_client.get('/payments',query_string={'status':status})
+    assert page.status_code == 200 and payment_references(page) == expected
+    if status in {'test_paid','failed','test'}:
+        assert 'A saved payment filter is active.' in page.text
+    assert 'Stripe Test Mode' in page.text
+
+
+@pytest.mark.parametrize('field',['paymentStatus','orderStatus'])
+@pytest.mark.parametrize('terminal',['failed','checkout_failed','cancelled','checkout_cancelled','refunded','partially_refunded','payment_cancelled'])
+def test_terminal_status_overrides_stale_paid_and_pending_flags(field, terminal):
+    view = app.view_functions['operator_fr12.payments'].__globals__
+    paid = {'paymentStatus':'paid','orderStatus':'paid','isPaid':True,field:terminal}
+    pending = {'paymentStatus':'pending','orderStatus':'checkout_open',field:terminal}
+    assert not view['_is_paid_booking'](paid)
+    assert not view['_is_pending_booking'](pending)

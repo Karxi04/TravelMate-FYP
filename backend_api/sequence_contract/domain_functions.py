@@ -956,7 +956,13 @@ def calculateBudget(itineraryOrSelections):
         limitations.append(
             'Costs for the selected other travel mode are outside the current planner scope.')
 
-    total = flight + hotel + car_rental + transport + food + activities
+    personal_blocks = data.get('planningBlocks') or []
+    personal = round(sum(_budget_amount(row.get('estimatedCost')) for row in personal_blocks), 2)
+    unpriced_personal = sum(row.get('estimatedCost') is None for row in personal_blocks)
+    if unpriced_personal:
+        pending.append('personalPlans')
+        limitations.append(f'{unpriced_personal} personal planning block(s) have no cost estimate; these costs are outside the known subtotal.')
+    total = flight + hotel + car_rental + transport + food + activities + personal
     difference = limit - total if has_budget_limit else 0.0
     incomplete = bool(pending or excluded)
     status = 'over_budget' if has_budget_limit and total > limit else (
@@ -994,6 +1000,11 @@ def calculateBudget(itineraryOrSelections):
             activities, activity_state, 'mixed_estimates',
             pricingIssues=pricing_issues, overlapsAllowance=activity_overlap),
     }
+    if data.get('planningBlocks'):
+        category_totals['personalPlans'] = personal
+        expense_breakdown['personalPlans'] = _expense(personal, 'pending_unpriced' if unpriced_personal else 'unverified_estimate', 'user_estimate')
+        if personal:
+            limitations.append('Personal planning-block costs are additional user estimates, not supplier prices or payments.')
     if travel_mode == 'own_vehicle':
         expense_breakdown['ownVehicleFuelAndTolls'] = _expense(
             0, 'excluded_outside_scope', 'not_modelled')
@@ -1013,6 +1024,7 @@ def calculateBudget(itineraryOrSelections):
         'transport': category_totals['transport'],
         'food': category_totals['food'],
         'activities': category_totals['activities'],
+        **({'personalPlans':personal} if data.get('planningBlocks') else {}),
         'total': round(total, 2),
         'totalEstimatedCost': round(total, 2),
         'knownEstimatedSubtotal': round(total, 2),
@@ -1556,12 +1568,12 @@ def _local_coords(activity):
     return coord
 
 
-def _local_leg(previous, activity, mode):
+def _local_leg(previous, activity, mode, coordinates=None):
     if previous is None:
         if _conflicting_location(activity):
             return None
         return 0, 0.0, 'not_applicable'
-    if not _local_coords(previous) or not _local_coords(activity):
+    if not all(coordinates if coordinates is not None else (_local_coords(previous), _local_coords(activity))):
         return None
     distance = _distance_km(previous, activity)
     if distance is None:
@@ -1670,7 +1682,7 @@ def _candidate_order(remaining, previous, weather, preserve_order, day_date=None
     return sorted(remaining, key=key)
 
 
-def _schedule_candidate(activity, previous, current_minutes, day_date, window_end, rest=(750, 810), leg=None):
+def _schedule_candidate(activity, previous, current_minutes, day_date, window_end, rest=(750, 810), leg=None, reserved=()):
     duration, duration_source = _activity_duration(activity)
     travel_minutes, distance, travel_source = leg if leg is not None else _travel_leg(previous, activity)
     opening = _activity_opening(activity, day_date)
@@ -1680,14 +1692,33 @@ def _schedule_candidate(activity, previous, current_minutes, day_date, window_en
     if leg and current_minutes < rest[1] and arrival > rest[0]:
         arrival = rest[1] + travel_minutes
     periods = opening.get('periods') or [(0, 1440)]
+    from services.flexible_planning import clock, skip_reservations, time_fixed
+    fixed = time_fixed(activity)
+    fixed_start = fixed_end = None
+    if fixed:
+        try:
+            fixed_start = clock(activity.get('scheduledStartTime') or activity.get('timeSlot'))
+            fixed_end = clock(activity['scheduledEndTime']) if activity.get('scheduledEndTime') else fixed_start+duration
+            if fixed_end<=fixed_start or fixed_start<arrival:
+                raise ValueError()
+            duration = fixed_end-fixed_start
+        except (ValueError, TypeError):
+            return None, 'Your fixed activity cannot move automatically; review its time or travel buffer.'
     selected_period = None
     for period_start, period_end in periods:
-        start = max(arrival, period_start)
-        # Lunch/rest shifting must still fit wholly inside one open period.
-        if start < rest[1] and start + duration > rest[0]:
-            start = rest[1]
+        start = fixed_start if fixed else max(arrival, period_start)
+        # A personal block can shift a visit into lunch, and vice versa.
+        for _ in range(len(reserved) + 2):
+            before = start
+            if not fixed and start < rest[1] and start + duration > rest[0]:
+                start = rest[1]
+            start = skip_reservations(start, duration, reserved)
+            if fixed and start != before:
+                return None, 'Your fixed activity overlaps reserved personal time.'
+            if start == before:
+                break
         end = start + duration
-        if end <= min(period_end, window_end):
+        if period_start <= start and end <= min(period_end, window_end):
             selected_period = (period_start, period_end)
             break
     if selected_period is None:
@@ -1714,6 +1745,10 @@ def _schedule_candidate(activity, previous, current_minutes, day_date, window_en
 def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respect_day_assignments=False):
     itinerary = dict(itinerary or {})
     activities = [dict(x) for x in itinerary.get('activities', [])]
+    from services.flexible_planning import active, availability_for, reservations
+    from services.trip_budget_replan import protected_activity
+    flexible_planning = active(itinerary)
+    availability = availability_for(itinerary) if flexible_planning else None
     for item in itinerary.get('unscheduledSuggestions', []) or []:
         candidate = dict(item)
         candidate.pop('unscheduledReason', None)
@@ -1729,6 +1764,7 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
     repeats = [row for row in activities if row.get('intentionalRepeat') is True]
     pinned = {row.get('activityId') for row in activities if row.get('dayNo') and
               any(same_attraction(row, repeat) for repeat in repeats)}
+    pinned.update(row.get('activityId') for row in activities if protected_activity(row))
     for activity in activities:
         if activity.get('pricingUnit'):
             activity['effectiveCost'] = activity_pricing(
@@ -1778,8 +1814,12 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         for item in activities:
             first_visit_by_day[id(item)] = [
                 day for day in range(days)
-                if _schedule_candidate(item, None, window_start,
-                    start_date.fromordinal(start_date.toordinal() + day), window_end, rest)[0]
+                if _schedule_candidate(item, None,
+                    (((availability or {}).get('days') or {}).get(
+                        (start_date.fromordinal(start_date.toordinal() + day)).isoformat()) or {}).get('startMinutes', window_start),
+                    start_date.fromordinal(start_date.toordinal() + day),
+                    (((availability or {}).get('days') or {}).get(
+                        (start_date.fromordinal(start_date.toordinal() + day)).isoformat()) or {}).get('endMinutes', window_end), rest)[0]
             ]
     max_visits = ({'relaxed': 2, 'moderate': 3, 'active': 5}[pace]
                   if (profiled or local_days and pace == 'relaxed') and not respect_day_assignments else None)
@@ -1792,13 +1832,19 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         day_no = day_index + 1
         day_date = start_date.fromordinal(start_date.toordinal() + day_index)
         date_key = _format_date(day_date)
+        personal_window = ((availability or {}).get('days') or {}).get(date_key, {})
+        day_start = personal_window.get('startMinutes', window_start)
+        day_end = personal_window.get('endMinutes', window_end)
+        if availability and availability['status']!='available':day_end=day_start
+        personal_blocks = [dict(row) for row in itinerary.get('planningBlocks') or [] if row.get('dayNo')==day_no]
+        day_rest = (0, 0) if any(row.get('type')=='meal' for row in personal_blocks) else rest
         weather = weather_by_date.get(date_key, {
             'date': date_key,
             'source': 'unavailable',
             'message': 'Weather forecast unavailable for this date.',
             'heavyRainLikely': False,
         })
-        current = window_start
+        current = day_start
         previous = base if local_days else None
         day_items = []
         travel_minutes = 0
@@ -1826,8 +1872,13 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
         transfer_day = transfer.get('dayNo')
         last_local_day = transfer_day - 1 if type(transfer_day) is int and day_no < transfer_day <= days else days
         future_local_days = last_local_day - day_no
+        available_days = (availability or {}).get('days') or {}
+        usable_minutes = [max(0, row.get('endMinutes', window_end) - row.get('startMinutes', window_start))
+                          for row in available_days.values() if day_no <= row['dayNo'] <= last_local_day]
+        remaining_minutes = sum(usable_minutes) or max(1, (future_local_days + 1) * (window_end - window_start))
+        day_share = max(0, day_end - day_start) / remaining_minutes
         if flexible:
-            visit_limit = min(max_visits or 5, max(1, len(remaining) - future_local_days))
+            visit_limit = min(max_visits or 5, max(1, ceil(len(remaining) * day_share)))
         while not transfer_block and remaining and (visit_limit is None or len(day_items) < visit_limit):
             eligible = [x for x in remaining
                         if (not respect_day_assignments and x.get('activityId') not in pinned)
@@ -1856,47 +1907,88 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
                             trip_experiences.get(experience, 0),
                             int(distance // 4) if distance is not None else 0)
                 order.sort(key=local_priority)
-            for candidate in order:
-                # Retain a same-day pair only if the existing saved schedule already contains it.
+            def try_visit(candidate, trial=()):
+                visits = day_items + list(trial)
+                prior = trial[-1] if trial else previous
+                cursor = trial[-1]['_endMinutes'] if trial else current
                 if any(same_attraction(candidate, visit) and
                        (saved_days.get(candidate.get('activityId')) != day_no or
-                        saved_days.get(visit.get('activityId')) != day_no) for visit in day_items):
-                    continue
+                        saved_days.get(visit.get('activityId')) != day_no) for visit in visits):
+                    return None
                 leg = None
                 if local_days:
                     key = str(candidate.get('activityId'))
-                    # A bounded cluster prevents chaining short legs into a distant area.
-                    anchor = focus or (day_items[0] if day_items else None)
+                    anchor = focus or (visits[0] if visits else None)
                     anchor_distance = (_distance_km(anchor, candidate)
                                        if anchor and _coord(anchor) and coordinates[id(candidate)] else None)
-                    leg = _local_leg(previous, candidate, mode)
+                    leg = _local_leg(prior, candidate, mode)
                     if leg is None or (anchor and anchor_distance is None):
                         deferred_reasons[key] = _UNKNOWN_JOURNEY
-                        continue
+                        return None
+                    trial_travel = sum(row['travelDurationMinutes'] for row in trial)
                     if (leg[0] > max_leg or leg[1] > max_km or (anchor_distance is not None and anchor_distance > max_km)
-                            or travel_minutes + leg[0] > daily_limit):
+                            or travel_minutes + trial_travel + leg[0] > daily_limit):
                         deferred_reasons[key] = _DISTANT_STOP
-                        continue
-                    if balance_budget and calculateBudget({**itinerary, 'activities': scheduled + [candidate]})['totalEstimatedCost'] > _float(itinerary['budgetLimit']):
+                        return None
+                    if balance_budget and calculateBudget({**itinerary, 'activities': scheduled + list(trial) + [candidate]})['totalEstimatedCost'] > _float(itinerary['budgetLimit']):
                         deferred_reasons[key] = 'This activity would exceed the total trip budget using the current estimates.'
-                        continue
+                        return None
                     experience = experiences[id(candidate)]
-                    if experience in {'hike', 'meal'} and experience_counts.get(experience, 0) >= (2 if hike_focused or experience == 'meal' else 1):
+                    count = experience_counts.get(experience, 0) + sum(_visit_experience(row) == experience for row in trial)
+                    if experience in {'hike', 'meal'} and count >= (2 if hike_focused or experience == 'meal' else 1):
                         deferred_reasons[key] = 'This day already includes similar activities. Try another day to allow time for rest and variety.'
-                        continue
-                planned, reason = _schedule_candidate(candidate, previous, current, day_date, window_end, rest, leg)
-                if planned and local_days:
+                        return None
+                planned, reason = _schedule_candidate(candidate, prior, cursor, day_date, day_end, day_rest, leg,
+                    reservations(itinerary, day_no, candidate.get('activityId')))
+                if not planned:
+                    deferred_reasons.setdefault(str(candidate.get('activityId')), reason)
+                return planned
+
+            if visit_limit is not None and visit_limit - len(day_items) <= 2 and not preserve_order and not respect_day_assignments:
+                # Keep the existing comfort cap. Compare bounded feasible pairs rather
+                # than spending both slots on early-closing, lower-ranked candidates.
+                priority = {id(item): index for index, item in enumerate(all_candidates)}
+                ranked = sorted(order, key=lambda item: (
+                    (local_priority(item) if local_days else
+                     (0 if not weather.get('heavyRainLikely') or _indoor(item) else 1,)),
+                    priority[id(item)]))
+                if not day_items and pace == 'relaxed':
+                    shortlist = ranked[:20]
+                    pairs = sorted(((i, j) for i in range(len(shortlist))
+                                    for j in range(i + 1, len(shortlist))),
+                                   key=lambda pair: (sum(pair), pair))
+                    first_visits = {}
+                    for i, j in pairs:
+                        feasible = []
+                        for left, right in ((i, j), (j, i)):
+                            if left not in first_visits:
+                                first_visits[left] = try_visit(shortlist[left])
+                            first_visit = first_visits[left]
+                            second_visit = try_visit(shortlist[right], [first_visit]) if first_visit else None
+                            if second_visit:
+                                feasible.append((second_visit['_endMinutes'],
+                                    first_visit['travelDurationMinutes'] + second_visit['travelDurationMinutes'], left))
+                        if feasible:
+                            first = shortlist[min(feasible)[2]]
+                            ranked.remove(first)
+                            ranked.insert(0, first)
+                            break
+                order = ranked
+            for candidate in order:
+                planned = try_visit(candidate)
+                if not planned:
+                    continue
+                chosen = planned
+                if local_days:
+                    experience = experiences[id(candidate)]
                     if experience:
                         experience_counts[experience] = experience_counts.get(experience, 0) + 1
                         trip_experiences[experience] = trip_experiences.get(experience, 0) + 1
                     used_concepts.update(concepts.get(id(candidate), ()))
-                    travel_minutes += leg[0]
+                    travel_minutes += planned['travelDurationMinutes']
                     if focus is None and coordinates[id(candidate)]:
                         focus = candidate
-                if planned:
-                    chosen = planned
-                    break
-                deferred_reasons.setdefault(str(candidate.get('activityId')), reason)
+                break
             if chosen is None:
                 break
             remaining.remove(next(x for x in remaining if str(x.get('activityId')) == str(chosen.get('activityId'))))
@@ -1945,30 +2037,38 @@ def _constraint_plan(itinerary, forecast_data=None, preserve_order=False, respec
                          and (not balance_budget or calculateBudget({**itinerary, 'activities': scheduled + [item]})['totalEstimatedCost'] <= _float(itinerary['budgetLimit'])))
                     for item in remaining
                 ) if focus else len(remaining)
-                visit_limit = min(visit_limit, max(len(day_items), ceil((len(day_items) + compatible) / (future_local_days + 1))))
+                visit_limit = min(visit_limit, max(len(day_items), ceil((len(day_items) + compatible) * day_share)))
 
         meal_blocks = [transfer_block] if transfer_block else []
         if day_items:
             if local_days and focus and _coord(focus) and not any(anchor is focus for anchor in sightseeing_anchors):
                 sightseeing_anchors.append(focus)
-            meal_blocks.append({
+            if day_rest[1]>day_rest[0]:meal_blocks.append({
                 'type': 'meal_rest', 'label': 'Lunch and rest',
-                'startTime': _format_time(rest[0]), 'endTime': _format_time(rest[1]),
-                'durationMinutes': rest[1] - rest[0], 'estimated': True,
+                'startTime': _format_time(day_rest[0]), 'endTime': _format_time(day_rest[1]),
+                'durationMinutes': day_rest[1] - day_rest[0], 'estimated': True,
             })
         daily.append({
             'dayNo': day_no,
             'dayDate': date_key,
             'dayLabel': f"Day {day_no} · {date_key}",
-            'planningWindow': {'startTime': _format_time(window_start), 'endTime': _format_time(window_end), 'pace': pace},
+            'planningWindow': {'startTime': _format_time(min(1439,day_start)), 'endTime': _format_time(max(0,min(1439,day_end))), 'pace': pace,
+                               **({'status':personal_window.get('availabilityStatus'),'source':personal_window.get('source')} if personal_window else {})},
             'activities': day_items,
-            'planningBlocks': meal_blocks,
+            'planningBlocks': meal_blocks+personal_blocks,
             'weather': weather,
             'estimatedMinutes': ((transfer_block or {}).get('durationMinutes', 0)
                                  + sum(int(_float(x.get('recommendedDurationMinutes'))) + int(_float(x.get('travelDurationMinutes'))) for x in day_items)),
             'estimatedCost': round(sum(activity_pricing(
                 x, itinerary.get('travellerCount', 1))['effectiveCost'] for x in day_items), 2),
         })
+        if flexible_planning:
+            prices=[activity_pricing(row,itinerary.get('travellerCount')) for row in day_items]
+            known=round(sum(row['effectiveCost'] for row in prices)+sum(_budget_amount(row.get('estimatedCost')) for row in personal_blocks),2)
+            unpriced=sum(bool(row['pricingIssues']) for row in prices)
+            unpriced_blocks=sum(row.get('estimatedCost') is None for row in personal_blocks)
+            daily[-1].update(knownEstimatedCost=known,estimatedCost=None if unpriced or unpriced_blocks else known,
+                             unpricedActivityCount=unpriced,unpricedPersonalBlockCount=unpriced_blocks)
 
     unscheduled = []
     for item in remaining:

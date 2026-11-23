@@ -48,6 +48,8 @@ void main() {
     await tester.ensureVisible(find.text('Why this suggestion'));await tester.tap(find.text('Why this suggestion'));
     await tester.pumpAndSettle();
     expect(find.textContaining('not genuine customer peer evidence'),findsOneWidget);
+    await tester.ensureVisible(find.text('How recommendations work')); await tester.pump();
+    await tester.tap(find.text('How recommendations work')); await tester.pumpAndSettle();
     expect(find.textContaining('unweighted destination aggregate'),findsOneWidget);
   });
   testWidgets('changed moderation asks for regeneration without blaming preferences',(tester) async {

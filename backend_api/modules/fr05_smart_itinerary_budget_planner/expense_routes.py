@@ -2,6 +2,8 @@
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from uuid import uuid4
+import logging
+from time import perf_counter
 
 from flask import g, jsonify, request
 from auth_utils import auth_required
@@ -13,6 +15,7 @@ from utils import utc_now_iso
 from .routes import _is_package_trip, bp
 
 CATEGORIES = ('Food', 'Transportation', 'Accommodation', 'Activities', 'Shopping', 'Other')
+logger = logging.getLogger(__name__)
 
 
 class ExpenseError(ValueError):
@@ -160,7 +163,33 @@ def recorded_costs(trip, iid, uid, read):
     return paid_orders, committed_hotel, hotel_payment
 
 
+def _expense_response(trip, paid_orders, committed_hotel, hotel_payment):
+    overview = expense_overview(trip, paid_orders, committed_hotel)
+    if hotel_payment:
+        overview['hotelPayment'] = hotel_payment
+    return {'ok': True, 'expenses': trip.get('manualExpenses', []),
+            'revision': trip.get('manualExpenseRevision', 0), 'overview': overview,
+            'startDate': trip.get('startDate'), 'endDate': trip.get('endDate'),
+            'budgetLimit': trip.get('budgetLimit', 0)}
+
+
+def _read_expenses(iid, uid):
+    db = firebase_firestore.get_db()
+    snapshot = db.collection('itineraries').document(iid).get()
+    trip = snapshot.to_dict() if snapshot.exists else None
+    if not trip or trip.get('travellerId') != uid:
+        raise ExpenseError('Trip not found.', 404)
+    if _is_package_trip(trip):
+        raise ExpenseError('Manual expenses are available for ordinary saved trips.', 409)
+    # Linked commercial records retain exactly the mutation path's verification.
+    def read(collection, identity):
+        return db.collection(collection).document(identity).get().to_dict() or {}
+    return _expense_response(trip, *recorded_costs(trip, iid, uid, read))
+
+
 def _transact_expenses(iid, uid, payload):
+    if payload is None:
+        return _read_expenses(iid, uid)
     from google.cloud import firestore
 
     db = firebase_firestore.get_db()
@@ -178,15 +207,9 @@ def _transact_expenses(iid, uid, payload):
         patch = update_expenses(trip, payload, new_id) if payload is not None else {}
         updated = {**trip, **patch}
         paid_orders, committed_hotel, hotel_payment = _verified_costs(db, transaction, iid, uid, trip)
-        overview = expense_overview(updated, paid_orders, committed_hotel)
-        if hotel_payment:
-            overview['hotelPayment'] = hotel_payment
         if patch:
             transaction.update(ref, patch)
-        return {'ok': True, 'expenses': updated.get('manualExpenses', []),
-                'revision': updated.get('manualExpenseRevision', 0), 'overview': overview,
-                'startDate': updated.get('startDate'), 'endDate': updated.get('endDate'),
-                'budgetLimit': updated.get('budgetLimit', 0)}
+        return _expense_response(updated, paid_orders, committed_hotel, hotel_payment)
 
     return commit(db.transaction())
 
@@ -194,6 +217,8 @@ def _transact_expenses(iid, uid, payload):
 @bp.route('/itineraries/<iid>/expenses', methods=['GET', 'PATCH'])
 @auth_required(['traveller'])
 def expenses(iid):
+    started, request_id = perf_counter(), uuid4().hex[:16]
+    failure = 'none'
     try:
         if not valid_trip_id(iid):
             raise ExpenseError('Invalid trip ID.')
@@ -202,8 +227,15 @@ def expenses(iid):
             payload = request.get_json(silent=True)
             if not isinstance(payload, dict):
                 raise ExpenseError('Use a JSON object.')
-        return jsonify(_transact_expenses(iid, g.uid, payload))
+        response = jsonify(_transact_expenses(iid, g.uid, payload))
     except ExpenseError as error:
-        return jsonify(ok=False, error=str(error)), error.status
-    except Exception:
-        return jsonify(ok=False, error='Trip budget is temporarily unavailable. Reload before trying again.'), 503
+        failure = type(error).__name__
+        response = jsonify(ok=False, error=str(error)); response.status_code = error.status
+    except Exception as error:
+        failure = type(error).__name__
+        response = jsonify(ok=False, error='Trip budget is temporarily unavailable. Reload before trying again.')
+        response.status_code = 503
+    response.headers['X-Request-ID'] = request_id
+    logger.info('trip_expenses method=%s status=%s elapsed_ms=%d request_id=%s failure=%s',
+                request.method, response.status_code, (perf_counter()-started)*1000, request_id, failure)
+    return response

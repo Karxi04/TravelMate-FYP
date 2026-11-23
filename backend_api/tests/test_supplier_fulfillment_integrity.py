@@ -87,7 +87,7 @@ def test_missing_persistence_never_returns_false_success(client, mock_operator_a
     with patch('modules.fr12_tourism_operator_management.routes.retrieveRecord', side_effect=_read_order(_sample_order())), \
          patch('modules.fr12_tourism_operator_management.routes.commitPackageFulfillment', return_value=None):
         result = client.post('/api/fr12/bookings/ord-sample-1/fulfillment', headers=AUTH_HEADER,
-                             json={'serviceType': 'accommodation', 'reference': 'R1'})
+                             json={'serviceType': 'accommodation', 'reference': 'R1', 'supplierName':'Fictional test hotel', 'attestation':'confirmed'})
     assert result.status_code in {409, 503}
 
 
@@ -104,7 +104,7 @@ def memory_flow(monkeypatch):
 def attest_all(client):
     for key in ('accommodation', 'transport', 'guideActivities'):
         result = client.post('/api/fr12/bookings/ord-sample-1/fulfillment', headers=AUTH_HEADER,
-                             json={'serviceType': key, 'reference': 'R-' + key, 'providerName':'Synthetic Fleet'})
+                             json={'serviceType': key, 'reference': 'R-' + key, 'attestation':'confirmed', 'providerName':'Synthetic Fleet'})
         assert result.status_code == 200
 
 
@@ -120,12 +120,12 @@ def test_repeat_confirmation_is_idempotent_and_immutable(client, mock_operator_a
     for key in ('amount', 'currency', 'travellerId', 'packageSnapshot', 'testMode', 'createdAt'):
         assert saved[key] == original[key]
     assert client.post('/api/fr12/bookings/ord-sample-1/fulfillment', headers=AUTH_HEADER,
-                       json={'serviceType': 'accommodation', 'reference': 'changed'}).status_code == 409
+                       json={'serviceType': 'accommodation', 'reference': 'changed', 'supplierName':'Fictional test hotel', 'attestation':'confirmed'}).status_code == 409
 
 
 def test_repeat_attestation_and_decline_preserve_audit_metadata(client, mock_operator_auth, memory_flow):
     path = '/api/fr12/bookings/ord-sample-1/fulfillment'
-    body = {'serviceType': 'accommodation', 'reference': 'R1'}
+    body = {'serviceType': 'accommodation', 'reference': 'R1', 'supplierName':'Fictional test hotel', 'attestation':'confirmed'}
     assert client.post(path, headers=AUTH_HEADER, json=body).status_code == 200
     saved = deepcopy(memory_flow['ord-sample-1'])
     assert client.post(path, headers=AUTH_HEADER, json=body).status_code == 200
@@ -144,7 +144,7 @@ def test_commit_failure_is_generic_503(client, mock_operator_auth, failure):
          patch('modules.fr12_tourism_operator_management.routes.commitPackageFulfillment',
                return_value=failure, side_effect=failure):
         result = client.post('/api/fr12/bookings/ord-sample-1/fulfillment', headers=AUTH_HEADER,
-                             json={'serviceType': 'accommodation', 'reference': 'R1'})
+                             json={'serviceType': 'accommodation', 'reference': 'R1', 'supplierName':'Fictional test hotel', 'attestation':'confirmed'})
     assert result.status_code == 503
     assert 'sensitive' not in result.get_data(as_text=True)
 
@@ -163,7 +163,7 @@ def test_concurrent_attestations_have_one_cas_winner(app, mock_operator_auth, me
     def request(key):
         with app.test_client() as client:
             return client.post('/api/fr12/bookings/ord-sample-1/fulfillment', headers=AUTH_HEADER,
-                               json={'serviceType': key, 'reference': 'R-' + key, 'providerName':'Synthetic Fleet'}).status_code
+                               json={'serviceType': key, 'reference': 'R-' + key, 'attestation':'confirmed', 'providerName':'Synthetic Fleet'}).status_code
     with ThreadPoolExecutor(2) as pool:
         assert sorted(pool.map(request, ('accommodation', 'transport'))) == [200, 409]
     saved = memory_flow['ord-sample-1']

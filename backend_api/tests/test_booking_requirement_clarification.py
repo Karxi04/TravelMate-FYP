@@ -220,7 +220,7 @@ def test_actual_actions_admin_approval_arrangements_ready_and_no_read_or_replay_
         notify.assert_not_called()
         assert client.post(URL+'/confirm-fulfillment',headers=headers()).status_code==400
         for key in ('transport','guideActivities'):
-            response=client.post(URL+'/fulfillment',headers=headers(),json={'serviceType':key,'reference':'internal-contract-'+key,'providerName':'Actual contracted supplier'})
+            response=client.post(URL+'/fulfillment',headers=headers(),json={'serviceType':key,'reference':'internal-contract-'+key,'attestation':'confirmed','providerName':'Actual contracted supplier'})
             assert response.status_code==200,response.json
         state=response.json['booking']['statusOverview']['supplierArrangements']
         assert state['state']=='arrangements_recorded' and state['completedCount']==state['requiredCount']==2
@@ -287,7 +287,7 @@ def test_no_required_suppliers_path_and_manual_internal_reference(client,databas
     value=order();value['packageSnapshot'].update(accommodationIncluded=True,transportIncluded=False,guideActivitiesIncluded=False,inclusions=[])
     database.rows[('checkout_orders',value['id'])]=value
     with patch.object(persistence,'_notify_committed'):
-        result=client.post(URL+'/fulfillment',headers=headers(),json={'serviceType':'accommodation','reference':'internal-contract-101','supplierName':'Manual Homestay'})
+        result=client.post(URL+'/fulfillment',headers=headers(),json={'serviceType':'accommodation','reference':'internal-contract-101','supplierName':'Manual Homestay','attestation':'confirmed'})
     assert result.status_code==200,result.json
     assert result.json['booking']['statusOverview']['supplierArrangements']['state']=='arrangements_recorded'
 
