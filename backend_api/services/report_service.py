@@ -767,9 +767,12 @@ def export_system_report_pdf(data, target, admin_profile=None):
     scope=f"Scope: {criteria.get('reportType','system_summary')}; {criteria.get('startDate') or 'all dates'} to {criteria.get('endDate') or 'all dates'}; filter: {criteria.get('filter') or 'none'}."
     story.append(Paragraph(escape(scope),styles['SectionDesc']))
     if data.get('dataLimited'):
-        story.append(Paragraph('Partial results: up to 500 records per source category; not the complete system history.',styles['SectionDesc']))
+        story.append(Paragraph('Partial results: a source is unavailable or exceeds its loading bound; not the complete system history.',styles['SectionDesc']))
     if data.get('recordsLimited'):
-        story.append(Paragraph('Detailed exports contain at most 200 matching records; summary counts cover the loaded source scope.',styles['SectionDesc']))
+        story.append(Paragraph('Non-feedback details contain at most 200 matching records; feedback uses its separately disclosed scope.',styles['SectionDesc']))
+    if data.get('feedbackSources'):
+        from services.admin_report_csv import feedback_scope_text
+        story.append(Paragraph(escape(feedback_scope_text(data)), styles['SectionDesc']))
 
     # 3. Executive KPI Metric Cards
     u_total = counts.get("users", summary.get("users", {}).get("total", 0))
@@ -841,7 +844,12 @@ def export_system_report_pdf(data, target, admin_profile=None):
         [Paragraph("Category", styles["TableHeader"]), Paragraph("Count", styles["TableHeader"]), Paragraph("Moderation & Operations Status", styles["TableHeader"])],
         [Paragraph("Approved Campaigns", styles["TableCellBold"]), Paragraph(str(c_data.get("approved", 0)), styles["TableCellBold"]), Paragraph("Activity depends on dates and package eligibility", styles["TableCellMuted"])],
         [Paragraph("Pending Campaigns", styles["TableCellBold"]), Paragraph(str(c_data.get("pending", 0)), styles["TableCellBold"]), Paragraph("Awaiting campaign approval", styles["TableCellMuted"])],
-        [Paragraph("Visible Feedback", styles["TableCellBold"]), Paragraph(str(f_data.get("visible", 0)), styles["TableCellBold"]), Paragraph("Published traveller reviews", styles["TableCellBold"])],
+        [Paragraph("Total Feedback", styles["TableCellBold"]), Paragraph(str(f_data.get("total", 0)), styles["TableCellBold"]), Paragraph("Loaded authorized genuine and evaluation sources", styles["TableCellMuted"])],
+        [Paragraph("Genuine Feedback", styles["TableCellBold"]), Paragraph(str(f_data.get("genuine", 0)), styles["TableCellBold"]), Paragraph("Genuine Traveller feedback", styles["TableCellMuted"])],
+        [Paragraph("Evaluation Feedback", styles["TableCellBold"]), Paragraph(str(f_data.get("evaluation", 0)), styles["TableCellBold"]), Paragraph("Synthetic FYP evaluation; not customer testimonials", styles["TableCellMuted"])],
+        [Paragraph("Reviewed Feedback", styles["TableCellBold"]), Paragraph(str(f_data.get("reviewed", 0)), styles["TableCellBold"]), Paragraph("May overlap visible or hidden categories", styles["TableCellMuted"])],
+        [Paragraph("Hidden or Removed Feedback", styles["TableCellBold"]), Paragraph(str(f_data.get("hiddenOrRemoved", 0)), styles["TableCellBold"]), Paragraph("Effective hidden, removed or rejected state", styles["TableCellMuted"])],
+        [Paragraph("Visible Feedback", styles["TableCellBold"]), Paragraph(str(f_data.get("visible", 0)), styles["TableCellBold"]), Paragraph("Published within each source's visibility scope", styles["TableCellBold"])],
         [Paragraph("Feedback Pending Moderation", styles["TableCellBold"]), Paragraph(str(f_data.get("pending", 0)), styles["TableCellBold"]), Paragraph("Queued for review", styles["TableCellMuted"])],
         [Paragraph("Removed Feedback", styles["TableCellBold"]), Paragraph(str(f_data.get("removed", 0)), styles["TableCellBold"]), Paragraph("Flagged & hidden from travellers", styles["TableCellMuted"])],
         [Paragraph("Hotel Bookings", styles["TableCellBold"]), Paragraph(str(counts.get("hotel_bookings", 0)), styles["TableCellBold"]), Paragraph("Recorded hotel bookings; supplier status is separate", styles["TableCellMuted"])],

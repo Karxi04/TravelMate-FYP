@@ -41,6 +41,7 @@ def _blocked_live_service(*_args, **_kwargs):
 def block_live_firebase(monkeypatch):
     """Fail fast if a regression test misses its Firebase test double."""
     monkeypatch.setattr("firebase_service.get_db", _blocked_live_service)
+    monkeypatch.setattr("services.fyp_reviews.get_db", _blocked_live_service)
     monkeypatch.setattr(
         "sequence_contract.firebase_firestore.get_db",
         _blocked_live_service,

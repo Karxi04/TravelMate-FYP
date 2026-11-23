@@ -20,13 +20,13 @@ from sequence_contract.domain_functions import (
 )
 
 from services.commerce_money import record_money as _record_money, record_amount as _amount
-from services.admin_report_csv import readable_csv
+from services.admin_report_csv import readable_csv, feedback_scope_text
 from services.admin_report_spreadsheet import compact_csv, export_xlsx
 from services.report_service import (
     export_system_report_pdf
 )
 from services.package_service import package_for_read, package_submission_error
-from services.review_service import ReviewConflict, current_screen, review_revision, published_review, review_history, moderation_state, moderation_actions
+from services.review_service import ReviewConflict, current_screen, review_revision, published_review, review_history, moderation_state, moderation_actions, genuine_review
 from services.fyp_reviews import private_dataset, dataset_reviews, moderation_history, moderate_review, all_regional_reviews, _regional_sources
 from services import review_staging
 from services.public_content_projection import active_campaign, eligible_package
@@ -36,6 +36,7 @@ from firebase_service import get_db
 
 bp=Blueprint('fr13_admin',__name__,url_prefix='/api/fr13')
 RECORD_LIMIT = 500
+FEEDBACK_LIMIT = 10000
 
 
 def _fail(message, status):
@@ -86,7 +87,8 @@ def admin_failure(error):
 def list_scope(response):
     body = response.get_json(silent=True) if response.is_json else None
     if isinstance(body, dict) and body.get('ok') and isinstance(body.get('items'), list):
-        body.update(dataLimited=getattr(g, 'admin_data_limited', False), recordLimit=RECORD_LIMIT)
+        body.update(dataLimited=bool(body.get('dataLimited') or getattr(g, 'admin_data_limited', False)),
+                    recordLimit=FEEDBACK_LIMIT if 'feedbackSources' in body else RECORD_LIMIT)
         response.set_data(current_app.json.dumps(body))
     return response
 
@@ -138,11 +140,16 @@ def _filter_records(items, criteria):
     start = criteria.get('startDate') or ''
     end = criteria.get('endDate') or ''
     keyword = str(criteria.get('filter') or '').strip().lower()
-    filtered = [x for x in items if _in_date_range(x, start, end)]
+    filtered = [x for x in items if _in_date_range(x, start, end,
+                ('submittedAt', 'createdAt', 'timestamp', 'date')
+                if x.get('reportCategory') == 'feedback' else
+                ('createdAt', 'updatedAt', 'submittedAt', 'reviewedAt', 'timestamp', 'date'))]
     if keyword:
         filtered = [
             x for x in filtered
-            if keyword in ' '.join(str(v) for v in x.values()).lower()
+            if keyword in ' '.join(str(v) for key, v in x.items()
+                                   if x.get('reportCategory') != 'feedback' or key not in {
+                                       'screening', 'reviewRevision', 'moderationActions', 'moderationWritable'}).lower()
         ]
     return filtered
 
@@ -439,40 +446,91 @@ def _private_feedback(source=None, *, optional=False):
 @bp.get('/feedback')
 @auth_required(['admin'])
 def all_feedback():
-    unified = request.args.get('source') == 'all'
-    ref, private_rows = _private_feedback('fyp_penang' if unified else None, optional=unified)
-    sources = [('fyp_penang', item) for item in private_rows]
-    regional_unavailable=False
-    if unified and current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS'):
-        try:
-            sources.extend(('fyp_regional', item) for item in all_regional_reviews())
-        except review_staging.ReviewStagingUnavailable:
-            regional_unavailable=True
-    if unified or ref is None:
-        sources.extend(('traveller', item) for item in _load('feedback'))
-    items = []
-    regional_writable=review_staging.ready() if any(source=='fyp_regional' for source,_ in sources) else False
-    for source, item in sources:
-        screening = item['screening'] if source in {'fyp_penang', 'fyp_regional'} else current_screen(item)
-        decision = item.get('moderationDecision') or {}
-        state=moderation_state(item)
-        if state in {'hidden','rejected'}:
-            category = state
-        elif published_review(item):
-            category = 'automatic' if decision.get('actor') == 'system' else 'manual'
-        else:
-            category = 'flagged' if screening['risk'] == 'flagged' else 'needs_review'
-        items.append({**item, 'screening': screening, 'moderationCategory': category, 'reviewSource': source,
-                      'moderationState':state,'moderationActions':moderation_actions(item),
-                      'reviewRevision': review_revision(item),
-                      'moderationWritable': source != 'fyp_regional' or regional_writable})
-    items.sort(key=lambda item: str(item.get('submittedAt') or ''), reverse=True)
-    response = jsonify({'ok': True, 'items': items, 'regionalUnavailable':regional_unavailable,
-                        **({'privateUnavailable': ref is None,
-                            'dataLimited': getattr(g, 'admin_data_limited', False)} if unified else {})})
-    if ref is not None or unified:
-        response.headers['Cache-Control'] = 'private, no-store'
+    source = request.args.get('source', 'traveller')
+    if source not in {'all', 'traveller', 'fyp_penang', 'fyp_regional'}:
+        _fail('Unknown review source.', 400)
+    if source == 'fyp_regional' and not current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS'):
+        _fail('Regional review staging is unavailable.', 403)
+    items, scope = _feedback_scope(source)
+    if source != 'all' and scope['sources'][source]['status'] == 'unavailable':
+        _fail('The selected review source is unavailable.', 503)
+    items = _filter_records(items, _criteria())
+    response = jsonify({'ok': True, 'items': items, 'feedbackSources': scope,
+                        'regionalUnavailable': scope['sources'].get('fyp_regional', {}).get('status') == 'unavailable',
+                        'privateUnavailable': scope['sources'].get('fyp_penang', {}).get('status') == 'unavailable',
+                        'dataLimited': scope['partial']})
+    response.headers['Cache-Control'] = 'private, no-store'
     return response
+
+
+def _feedback_scope(selection='all', *, for_report=False):
+    """Shared admin-only read scope. An overlay updates a source row, never adds one.
+
+    Firestore's default ordering is ascending document identity. A bounded lookahead
+    detects overflow; no unrelated report collection has its retrieval cap changed.
+    The regional loader uses SQLite mode=ro and fails closed if its overlay is missing.
+    """
+    sources, items = {}, []
+    loaders = {
+        'traveller': lambda: retrieveRecord('feedback', limit=FEEDBACK_LIMIT + 1) or [],
+        'fyp_penang': lambda: dataset_reviews(*dataset) if (dataset := private_dataset()) else None,
+        'fyp_regional': all_regional_reviews,
+    }
+    labels = {'traveller': 'Genuine Traveller', 'fyp_penang': 'FYP Evaluation — Penang',
+              'fyp_regional': 'FYP Evaluation — Regional'}
+    for source, loader in loaders.items():
+        if selection not in {'all', source}:
+            continue
+        if source == 'fyp_regional' and not current_app.config.get('LOCAL_FYP_SAMPLE_REVIEWS'):
+            sources[source] = {'status': 'disabled', 'loaded': 0}
+            continue
+        try:
+            rows = loader()
+            if rows is None or not isinstance(rows, list) or any(not row.get('id') for row in rows):
+                raise ValueError('Review source unavailable')
+            # Only duplicate identities within the same source are collapsed.
+            unique = {str(row['id']): row for row in rows}
+            rows = [unique[key] for key in sorted(unique)[:FEEDBACK_LIMIT]]
+            sources[source] = {'status': 'limited' if len(unique) > FEEDBACK_LIMIT else 'available',
+                               'loaded': len(rows), 'limit': FEEDBACK_LIMIT}
+        except Exception as error:
+            current_app.logger.warning('Administrator feedback source unavailable (%s, %s)', source, type(error).__name__)
+            sources[source] = {'status': 'unavailable', 'loaded': 0}
+            continue
+        regional_writable = review_staging.ready() if source == 'fyp_regional' and rows else False
+        for item in rows:
+            record = _feedback_item(item, source, labels[source], regional_writable)
+            # Reports retain stored screening evidence, not a newly generated screening timestamp.
+            if for_report:
+                if 'screening' in item:
+                    record['screening'] = item['screening']
+                else:
+                    record.pop('screening', None)
+            items.append(record)
+    items.sort(key=lambda item: (str(item.get('submittedAt') or item.get('createdAt') or ''),
+                                item['reviewSource'], str(item['id'])), reverse=True)
+    partial = any(value['status'] in {'limited', 'unavailable'} for value in sources.values())
+    return items, {'sources': sources, 'partial': partial, 'recordLimitPerSource': FEEDBACK_LIMIT}
+
+
+def _feedback_item(item, source, label, regional_writable):
+    screening = current_screen(item) if source == 'traveller' else item.get('screening') or current_screen(item)
+    decision = item.get('moderationDecision') or {}
+    state=moderation_state(item)
+    if state in {'hidden','rejected'}:
+        category = state
+    elif published_review(item):
+        category = 'automatic' if decision.get('actor') == 'system' else 'manual'
+    else:
+        category = 'flagged' if screening['risk'] == 'flagged' else 'needs_review'
+    genuine = source == 'traveller' and genuine_review(item)
+    return {**item, 'screening': screening, 'moderationCategory': category, 'reviewSource': source,
+            'reportCategory': 'feedback',
+            'feedbackSource': label if source != 'traveller' or genuine else 'Firestore feedback (synthetic)',
+            'reviewProvenance': 'Genuine Traveller feedback' if genuine else 'Synthetic FYP evaluation feedback',
+            'moderationState': state, 'moderationActions': moderation_actions(item),
+            'reviewRevision': review_revision(item),
+            'moderationWritable': source != 'fyp_regional' or regional_writable}
 
 
 @bp.get('/feedback/<fid>/history')
@@ -901,7 +959,10 @@ def _summary(criteria=None):
     loaded_packages = _load('tourism_packages')
     packages = _filter_records(loaded_packages,criteria)
     campaigns = _filter_records(_load('promotional_campaigns'),criteria)
-    feedback = _filter_records(_load('feedback'),criteria)
+    feedback_rows, feedback_scope = _feedback_scope(for_report=True)
+    feedback = _filter_records(feedback_rows, criteria)
+    for source, status in feedback_scope['sources'].items():
+        status['matching'] = sum(row['reviewSource'] == source for row in feedback)
     hotel_bookings = _filter_records(_load('hotel_bookings'),criteria)
     checkout_orders = _load('checkout_orders')
     legacy_payments = _load('payment_records')
@@ -922,6 +983,15 @@ def _summary(criteria=None):
     }
     report_type = str(criteria.get('reportType') or 'system_summary')
     scoped_records = _filter_records(_records_for_type(report_type, collections), criteria)
+    # Feedback is complete within its disclosed source bound, including in a system
+    # workbook. Retain the established 200-row detail limit for all other categories.
+    other_records = [row for row in scoped_records if row.get('reportCategory') != 'feedback']
+    export_records = (feedback if report_type == 'feedback' else
+                      other_records[:200] + feedback if report_type == 'system_summary' else scoped_records[:200])
+    feedback_scope.update(matching=len(feedback), totalMatching=None if feedback_scope['partial'] else len(feedback),
+                          exported=sum(row.get('reportCategory') == 'feedback' for row in export_records),
+                          totalMatchingExact=not feedback_scope['partial'])
+    feedback_scope['omittedLoaded'] = len(feedback) - feedback_scope['exported']
 
     travellers = sum(1 for u in users if str(u.get('role', '')).lower() == 'traveller')
     operators = sum(1 for u in users if str(u.get('role', '')).lower() in {'operator', 'tourism_operator'})
@@ -941,7 +1011,7 @@ def _summary(criteria=None):
     active_camps = sum(1 for c in campaigns if active_campaign(c) and bool(set(campaign_package_ids(c)) & eligible_ids))
 
     visible_fb = sum(1 for f in feedback if published_review(f))
-    pending_fb = sum(1 for f in feedback if str(f.get('moderationStatus', '')).lower() in {'pending', 'pending_review'})
+    pending_fb = sum(1 for f in feedback if moderation_state(f) == 'pending')
     removed_fb = sum(1 for f in feedback if str(f.get('feedbackStatus', '')).lower() == 'removed' or str(f.get('moderationStatus', '')).lower() == 'removed')
 
     # Payment metrics across unified payments
@@ -972,10 +1042,13 @@ def _summary(criteria=None):
     generated_at = utc_now_iso()
 
     return {
-        'dataLimited':getattr(g,'admin_data_limited',False),
+        'dataLimited':getattr(g,'admin_data_limited',False) or feedback_scope['partial'],
         'recordLimit':RECORD_LIMIT,
-        'recordsLimited':len(scoped_records)>200,
-        'recordDisplayLimit':200,
+        'recordsLimited':len(export_records) < len(scoped_records),
+        'recordDisplayLimit':FEEDBACK_LIMIT * 3 if report_type == 'feedback' else 200,
+        'feedbackSources': feedback_scope,
+        'recordsExported': len(export_records),
+        'recordsOmitted': len(scoped_records) - len(export_records),
         'generatedAt': generated_at,
         'criteria': criteria,
         'counts': {
@@ -1016,9 +1089,14 @@ def _summary(criteria=None):
             },
             'feedback': {
                 'total': len(feedback),
+                'genuine': sum(row['reviewProvenance'] == 'Genuine Traveller feedback' for row in feedback),
+                'evaluation': sum(row['reviewProvenance'] != 'Genuine Traveller feedback' for row in feedback),
                 'visible': visible_fb,
                 'pending': pending_fb,
                 'removed': removed_fb,
+                'hiddenOrRemoved': sum(moderation_state(row) in {'hidden', 'rejected'} for row in feedback),
+                'reviewed': sum(bool(row.get('reviewedAt')) or str(row.get('moderationStatus') or '').lower()
+                                in {'reviewed', 'approved', 'rejected', 'removed'} for row in feedback),
             },
             'payments': {
                 'total': len(unified_payments),
@@ -1033,7 +1111,7 @@ def _summary(criteria=None):
                 'excludedCurrencyPaidOrders':sum(1 for p in unified_payments if is_paid_order(p) and p.get('currency') != 'MYR'),
             },
         },
-        'records': _sanitize_commerce_record(scoped_records[:200]),
+        'records': _sanitize_commerce_record(export_records),
     }
 
 @bp.get("/reports/summary")
@@ -1123,6 +1201,8 @@ def export_report_csv():
     row(['Filter', criteria.get('filter', '')])
     row(['Source records limited',report.get('dataLimited',False)])
     row(['Export rows limited',report.get('recordsLimited',False)])
+    if report.get('feedbackSources'):
+        row(['Feedback source scope', feedback_scope_text(report)])
     row([])
     row(['Metric', 'Value'])
     for key, value in report.get('counts', {}).items():

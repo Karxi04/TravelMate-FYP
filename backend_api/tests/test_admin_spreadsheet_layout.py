@@ -68,7 +68,12 @@ def test_compact_report_types_never_expand_with_raw_fields(kind):
     before = deepcopy(report)
     rows, headings, records = parse_compact(compact_csv(report))
     assert rows[0][0] == REPORT_TITLES[kind]
-    assert len(headings) <= 10 and len({len(row) for row in rows}) == 1
+    # Feedback deliberately exposes identity, provenance and effective moderation in 13 columns.
+    assert len(headings) <= (13 if kind == 'feedback' else 10) and len({len(row) for row in rows}) == 1
+    if kind == 'feedback':
+        assert headings == ['No.', 'Feedback ID', 'Destination', 'Destination ID', 'Rating', 'Review Comment',
+                            'Feedback Source', 'Review Provenance', 'Feedback Status', 'Moderation Status',
+                            'Moderation Category', 'Submitted Date', 'Reviewed Date']
     assert 'technical data' not in compact_csv(report)
     if kind == 'system_summary':
         assert headings == ['No.', 'Category', 'Metric', 'Value']
