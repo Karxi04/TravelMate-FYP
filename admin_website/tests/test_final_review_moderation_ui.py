@@ -55,7 +55,8 @@ def test_source_filters_and_all_pages_keep_large_dataset_records(auth_client):
             html=auth_client.get(f'/admin/feedback?status=all&review_source=evaluation&page={page}').get_data(as_text=True)
             found=re.findall(r'data-review-id="(r\d+)"',html)
             assert len(found)==50
-            assert 'FYP evaluation contribution' in html and 'Review source' in html
+            assert 'FYP evaluation contribution' not in html and 'Review source' in html
+            assert 'fictional evaluation reviews' in html
             seen.extend(found)
         assert len(seen)==len(set(seen))==600
         genuine=auth_client.get('/admin/feedback?status=all&review_source=traveller').get_data(as_text=True)
@@ -146,7 +147,8 @@ def test_isolated_browser_moderates_actual_routes_and_reopens_sqlite_history(tmp
             worker.close();worker.start()  # New Python process, same disposable database.
             go(page,'rejected')
             article=page.locator('article[data-review-id="'+pending['id']+'"]')
-            assert 'FYP evaluation contribution' in article.inner_text()
+            assert 'FYP evaluation contribution' not in article.inner_text()
+            assert 'fictional evaluation reviews' in page.locator('.page-title').inner_text()
             article.get_by_role('link',name='Decision history').click()
             page.wait_for_load_state('networkidle')
             assert page.locator('details[open]').count()==1

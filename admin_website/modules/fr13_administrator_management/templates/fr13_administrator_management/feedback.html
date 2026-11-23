@@ -7,7 +7,7 @@
 <div class="page-title">
   <div>
     <h1>Review Moderation</h1>
-    <p>Manage Traveller feedback and the private fictional review examples available to this Administrator account.</p>
+    <p>Moderate Traveller feedback and fictional evaluation reviews. Source filters and exports retain their provenance.</p>
   </div>
 </div>
 
@@ -43,8 +43,9 @@
   <div class="field">
     <label for="review-status">Moderation status</label>
     <select class="input" id="review-status" name="status">
-      {% for value, label in [('queue', 'Moderation queue'), ('all', 'All reviews'), ('normal', 'Normal reviews')] + (categories.items()|list) %}
-        <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+      {% set selected_status = 'queue' if status in ['queue','flagged','needs_review'] else 'normal' if status in ['normal','automatic','manual'] else 'hidden_rejected' if status in ['hidden_rejected','hidden','rejected'] else 'all' %}
+      {% for value, label in [('all', 'All Reviews'), ('queue', 'Needs Attention'), ('normal', 'Approved'), ('hidden_rejected', 'Hidden / Rejected')] %}
+        <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
   </div>
@@ -56,6 +57,7 @@
   </div>{% endif %}
   <button class="btn primary" type="submit">Apply filters</button>
 </form>
+{% if status in categories %}<p class="muted">Showing {{ categories[status]|lower }} reviews. Select a group above to view all its statuses.</p>{% endif %}
 
 <div class="grid g2">
   {% for x in items %}
@@ -75,9 +77,7 @@
         </span>
         <strong aria-label="{{ x.get('rating', '-') }} out of 5 stars">★ {{ x.get('rating', '-') }} / 5</strong>
       </div>
-      <p class="muted"><strong>{{ 'FYP evaluation contribution · fictional' if review_source!='traveller' or x.get('synthetic') else 'Genuine Traveller feedback' }}</strong>
-        {% if x.get('dataset') %} · {{ x.dataset }}{% endif %}</p>
-      <h3>{{ x.get('destinationName') or x.get('destinationId', 'Destination') }}</h3>
+      <h3 style="margin: 12px 0 6px;">{{ x.get('destinationName') or x.get('destinationId', 'Destination') }}</h3>
       {% if x.get('destinationAddress') %}<p class="muted">{{ x.destinationAddress }}</p>{% endif %}
       <p class="muted">{{ x.get('travellerName') or 'Traveller' }} · {{ (x.get('submittedAt') or '')[:10] or 'Date unavailable' }}</p>
       <blockquote style="margin: 12px 0; padding: 10px 14px; background: var(--canvas); border-left: 3px solid var(--bluegrey);">
@@ -131,7 +131,7 @@
       {% elif decision or x.get('reviewedBy') or x.get('removedBy') %}
         <p><a href="{{ url_for('admin_fr13.feedback', history_source=review_source, q=query, status=status, history=x.id,review_source=selected_source,page=page|default(1)) }}">Decision history</a></p>
       {% endif %}
-      {% if x.get('moderationWritable') == false %}<p class="muted">Read-only fixture · local moderation storage is not configured or writable.</p>{% endif %}
+      {% if x.get('moderationWritable') == false %}<p class="muted">Read-only · local moderation storage is unavailable.</p>{% endif %}
       {% if x.get('moderationWritable', true) %}
         <form method="post" action="{{ url_for('admin_fr13.review_feedback', feedback_id=x.id) }}" style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

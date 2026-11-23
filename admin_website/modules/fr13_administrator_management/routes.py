@@ -169,12 +169,14 @@ def feedback():
     if review_source not in source_labels:
         review_source='all'
     counts = dict.fromkeys(categories, 0)
+    groups = {'queue': {'flagged', 'needs_review'}, 'normal': {'automatic', 'manual'},
+              'hidden_rejected': {'hidden', 'rejected'}}
     status = request.args.get("status", "queue")
-    if status not in {*categories, "queue", "normal", "all"}:
+    if status not in {*categories, *groups, "all"}:
         status = "queue"
     query = request.args.get("q", "").strip()
     search = query.casefold()
-    group = {"flagged", "needs_review"} if status == "queue" else {"automatic", "manual"} if status == "normal" else {status}
+    group = groups.get(status, {status})
     items = []
     for item in data.get("items", []):
         origin=item.get('reviewSource','traveller')
