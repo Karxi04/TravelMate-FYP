@@ -238,14 +238,23 @@ def _records_for_type(report_type, collections):
 @bp.get('/users')
 @auth_required(['admin'])
 def users():
-    items = [_sanitize_commerce_record(item) for item in _load('users')]
     role = str(request.args.get('role') or '').strip().lower()
     status = str(request.args.get('status') or '').strip().lower()
     query = str(request.args.get('q') or '').strip().lower()
+    role_aliases = {'traveller':'traveller', 'traveler':'traveller', 'user':'traveller',
+                    'operator':'operator', 'tourism_operator':'operator',
+                    'admin':'admin', 'administrator':'admin'}
+    if role not in {'', 'all'} and role not in role_aliases:
+        _fail('Invalid role filter. Choose all, traveller, operator or admin.',400)
+    if status not in {'', 'all', 'active', 'deactivated'}:
+        _fail('Invalid status filter. Choose all, active or deactivated.',400)
+    role = role_aliases.get(role)
+    status = '' if status == 'all' else status
+    items = [_sanitize_commerce_record(item) for item in _load('users')]
     if role:
-        items = [item for item in items if str(item.get('role') or '').lower() == role]
+        items = [item for item in items if role_aliases.get(str(item.get('role') or '').strip().lower()) == role]
     if status:
-        items = [item for item in items if str(item.get('status') or 'active').lower() == status]
+        items = [item for item in items if str(item.get('status') or 'active').strip().lower() == status]
     if query:
         items = [item for item in items if query in ' '.join(str(item.get(k) or '') for k in ('name', 'email', 'companyName', 'role')).lower()]
     return jsonify({'ok':True,'items':items})

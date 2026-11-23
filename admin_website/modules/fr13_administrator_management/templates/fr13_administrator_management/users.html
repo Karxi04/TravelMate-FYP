@@ -15,20 +15,22 @@
   <div class="actions">
     <input class="input search-input" name="q" value="{{ query }}" placeholder="Search name, email or company" aria-label="Search users">
     <select class="input filter-input" name="role" aria-label="Filter by role">
-      <option value="all">All roles</option>
+      <option value="all" {% if role == 'all' %}selected{% endif %}>All roles</option>
       <option value="traveller" {% if role == 'traveller' %}selected{% endif %}>Travellers</option>
       <option value="operator" {% if role == 'operator' %}selected{% endif %}>Operators</option>
       <option value="admin" {% if role == 'admin' %}selected{% endif %}>Administrators</option>
     </select>
     <select class="input filter-input" name="status" aria-label="Filter by status">
-      <option value="all">All statuses</option>
+      <option value="all" {% if status == 'all' %}selected{% endif %}>All statuses</option>
       <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
       <option value="deactivated" {% if status == 'deactivated' %}selected{% endif %}>Deactivated</option>
     </select>
     <button class="btn primary" type="submit">Filter</button>
+    <a class="btn outline" href="{{ url_for('admin_fr13.users') }}">Reset Filters</a>
   </div>
 </form>
 
+{% if not backend_error %}
 <div class="table-wrap">
   <table>
     <thead>
@@ -127,4 +129,5 @@
     </tbody>
   </table>
 </div>
+{% endif %}
 {% endblock %}

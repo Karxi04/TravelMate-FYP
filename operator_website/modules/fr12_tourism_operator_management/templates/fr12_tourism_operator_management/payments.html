@@ -82,12 +82,9 @@
     <input class="input search-input" name="q" value="{{ query }}" placeholder="Search by payment reference, package, currency..." aria-label="Search package payments">
     <select class="input filter-input" name="status" aria-label="Filter payments by status">
       <option value="all" {% if status == 'all' %}selected{% endif %}>All Payments</option>
-      <option value="test_paid" {% if status == 'test_paid' %}selected{% endif %}>Paid Orders (test environment)</option>
-      <option value="paid" {% if status == 'paid' %}selected{% endif %}>All Paid Orders</option>
+      <option value="paid" {% if status == 'paid' %}selected{% endif %}>Paid</option>
       <option value="pending" {% if status == 'pending' %}selected{% endif %}>Pending</option>
-      <option value="failed" {% if status == 'failed' %}selected{% endif %}>Payment Failed</option>
-      <option value="cancelled" {% if status in ['cancelled', 'refunded'] %}selected{% endif %}>Cancelled / Refunded</option>
-      <option value="test" {% if status == 'test' %}selected{% endif %}>Stripe Test Mode Only</option>
+      <option value="cancelled" {% if status in ['cancelled', 'refunded', 'partially_refunded'] %}selected{% endif %}>Cancelled / Refunded</option>
     </select>
     <button class="btn outline" type="submit">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
@@ -102,6 +99,10 @@
     {{ items|length }} payment record{% if items|length != 1 %}s{% endif %} found
   </span>
 </div>
+
+{% if status in ['test_paid', 'failed', 'test'] %}
+<p class="muted">A saved payment filter is active. Clear filters to show all payments.</p>
+{% endif %}
 
 {% if backend_error %}
 <div class="card" style="text-align: center; padding: 36px 20px; border-color: var(--danger-border); background: #FFF5F5;">
@@ -186,7 +187,7 @@
         <td>
           {% set pay_status = (item.paymentStatus or 'unknown')|lower %}
           {% set ord_status = (item.orderStatus or '')|lower %}
-          {% set label = pay_status|payment_label(ord_status) %}
+          {% set label = 'Partially Refunded' if 'partially_refunded' in [pay_status, ord_status] else pay_status|payment_label(ord_status) %}
           <span class="status {{ 'approved' if label == 'Paid' else 'pending' if label == 'Pending' else 'expired' if label == 'Expired' else 'rejected' }}">{{ label }}</span>
         </td>
 

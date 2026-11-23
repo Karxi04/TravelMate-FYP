@@ -47,8 +47,17 @@ def users():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
     params = {key: request.args.get(key, "").strip() for key in ("q", "role", "status") if request.args.get(key, "").strip()}
+    for key in ('role', 'status'):
+        value = params.get(key, '').lower()
+        if value in {'', 'all'}:
+            params.pop(key, None)
+        else:
+            params[key] = value
+    if 'role' in params:
+        params['role'] = {'tourism_operator':'operator', 'administrator':'admin',
+                          'traveler':'traveller', 'user':'traveller'}.get(params['role'], params['role'])
     response = call_api("GET", "/api/fr13/users", params=params)
-    return render_template("fr13_administrator_management/users.html", items=response.json().get("items", []) if response.ok else [], query=params.get("q", ""), role=params.get("role", "all"), status=params.get("status", "all"))
+    return render_template("fr13_administrator_management/users.html", items=response.json().get("items", []) if response.ok else [], query=params.get("q", ""), role=params.get("role", "all"), status=params.get("status", "all"), backend_error=not response.ok), (200 if response.ok else response.status_code)
 
 @bp.post("/users/<uid>/update")
 def update_user(uid):
