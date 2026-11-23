@@ -522,7 +522,7 @@
       <div class="field">
         <label for="reportTypeSelect">Report type</label>
         <select id="reportTypeSelect" class="input" name="reportType">
-          {% for value, label in [('system_summary','System summary'), ('users','Users'), ('packages','Packages'), ('campaigns','Campaigns'), ('feedback','Feedback'), ('bookings','Bookings'), ('payments','Payments')] %}
+          {% for value, label in [('system_summary','System Summary'), ('users','Users'), ('packages','Packages'), ('campaigns','Campaigns'), ('feedback','Feedback')] %}
             <option value="{{ value }}" {% if criteria.get('reportType', 'system_summary') == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>

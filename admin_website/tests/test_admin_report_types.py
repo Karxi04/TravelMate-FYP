@@ -157,7 +157,8 @@ def test_download_proxies_preserve_type_dates_keyword_and_bytes(auth_client, kin
     api.assert_called_once_with('GET', '/api/fr13/reports/export' + ('.xlsx' if format == 'xlsx' else ''), params=params)
 
 
-@pytest.mark.parametrize('path', ['/admin/reports', '/admin/reports/export?format=xlsx', '/admin/reports/export?format=pdf'])
+@pytest.mark.parametrize('path', ['/admin/reports', '/admin/reports/export?format=xlsx', '/admin/reports/export?format=pdf',
+                                  '/admin/bookings', '/admin/payments'])
 def test_reports_require_an_admin_session(auth_client, path):
     with auth_client.session_transaction() as session:
         session['portal_role'] = 'operator'
@@ -165,3 +166,32 @@ def test_reports_require_an_admin_session(auth_client, path):
     with _patch_view_api('admin_fr13.reports', api), _patch_view_api('admin_fr13.export_report', api):
         assert auth_client.get(path).status_code == 302
     api.assert_not_called()
+
+
+@pytest.mark.parametrize('kind', RECORDS)
+def test_navigation_and_five_report_choices_are_visibility_only(auth_client, kind):
+    with _patch_view_api('admin_fr13.reports', MagicMock(return_value=api_response({'records': []}))):
+        response = auth_client.get('/admin/reports', query_string={'reportType': kind})
+    assert response.status_code == 200  # Includes both hidden types via authorized direct requests.
+    nav = re.search(r'<nav\b[^>]*>(.*?)</nav>', response.text, re.S).group(1)
+    assert 'href="/admin/bookings"' not in nav and '<span>Bookings</span>' not in nav
+    assert 'href="/admin/payments"' not in nav and '<span>Payments</span>' not in nav
+    assert 'href="/admin/users"' in nav and '<span>User Accounts</span>' in nav
+    assert 'href="/admin/reports"' in nav and '<span>System Reports</span>' in nav
+    select = re.search(r'<select\b[^>]*id="reportTypeSelect"[^>]*>(.*?)</select>', response.text, re.S).group(1)
+    assert re.findall(r'<option value="([^"]+)"[^>]*>(.*?)</option>', select) == [
+        ('system_summary', 'System Summary'), ('users', 'Users'), ('packages', 'Packages'),
+        ('campaigns', 'Campaigns'), ('feedback', 'Feedback')]
+    assert 'Export Excel (.xlsx)' in response.text and 'Export PDF' in response.text
+
+
+def test_system_summary_keeps_booking_and_payment_statistics(auth_client):
+    data = {'counts': {'package_bookings': 9, 'hotel_bookings': 7},
+            'summary': {'payments': {'paid': 11, 'totalPaidRevenue': 210, 'testMode': 11, 'testPaidTotal': 210}}}
+    with _patch_view_api('admin_fr13.reports', MagicMock(return_value=api_response(data))):
+        response = auth_client.get('/admin/reports?reportType=system_summary')
+    section = response.text.split('Platform Bookings &amp; Payment Transactions')[1]
+    assert response.status_code == 200
+    for label, count in [('Package Bookings', 9), ('Hotel Bookings', 7), ('Paid Orders', 11), ('Stripe Test Orders', 11)]:
+        assert re.search(re.escape(label) + r'</small>\s*<div[^>]*>' + str(count) + r'</div>', section)
+    assert '210.00' in section

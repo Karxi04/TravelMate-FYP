@@ -29,7 +29,8 @@ def test_review_get_and_decision_form_maps_exact_callback(auth_client,decision,m
         page=auth_client.get('/admin/bookings/paid-reference/clarification');html=page.get_data(as_text=True)
         assert page.status_code==200 and 'Private transfer' in html and 'entitlementVerified' in html
         assert 'Purchased inclusion and exclusion information conflicts.' in html
-        assert re.search(r'href="/admin/bookings" class="active"',html)
+        nav=re.search(r'<nav\b[^>]*>(.*?)</nav>',html,re.S).group(1)
+        assert 'href="/admin/bookings"' not in nav and 'href="/admin/payments"' not in nav
         nonce=re.search(r'name="requestId" value="([a-f0-9]{32})"',html).group(1)
         csrf=re.search(r'name="csrf_token" value="([^"]+)"',html).group(1)
         posted=auth_client.post('/admin/bookings/paid-reference/clarification',data={'csrf_token':csrf,'requestId':nonce,'expectedRevision':'1','decision':decision,
