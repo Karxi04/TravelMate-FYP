@@ -678,6 +678,54 @@ def export_operator_report(data, target, operator_profile=None):
 # ADMIN SYSTEM ACTIVITY REPORT
 # ======================================================
 
+def _selected_admin_report(data, styles):
+    """Category details reuse the same read-only cells as Excel and the portal."""
+    from admin_report_records import display_table, display_value
+    from services.admin_report_csv import METRIC_LABELS, _label
+    kind = data['criteria']['reportType']
+    metrics = (data.get('summary') or {}).get(kind) or {}
+    records = data.get('records') or []
+    matching = (data.get('counts') or {}).get('filtered_records', len(records))
+    values = [('Matching records in loaded scope', matching), ('Detailed records available', len(records))]
+    feedback_labels = {'genuine': 'Genuine Feedback', 'evaluation': 'Evaluation Feedback'} if kind == 'feedback' else {}
+    values.extend((feedback_labels.get(key, METRIC_LABELS.get(key, _label(key))), value) for key, value in metrics.items())
+    story = [Paragraph(f'{escape(kind.title())} report summary', styles['SectionTitle']),
+             _style_table([[Paragraph('Metric', styles['TableHeader']), Paragraph('Value', styles['TableHeader'])]] +
+                          [[Paragraph(escape(label), styles['TableCellBold']),
+                            Paragraph(escape(display_value(value, 'number')), styles['TableCell'])]
+                           for label, value in values], colWidths=[370, 153])]
+    if kind in {'payments', 'bookings'}:
+        story.append(Paragraph('Recorded Stripe test-mode payments are not live income. '
+                               'Payment or a selected quote does not independently confirm a supplier reservation.',
+                               styles['SectionDesc']))
+    # Preserve the existing chart calculations, selecting only the corresponding category.
+    chart_titles = {'users': 'User role distribution', 'packages': 'Package moderation',
+                    'campaigns': 'Campaign status', 'feedback': 'Feedback moderation'}
+    for title, rows, chart_kind, description in _report_charts(data, False):
+        if title == chart_titles.get(kind):
+            story.extend([Spacer(1, 18), Paragraph(title, styles['SectionTitle']),
+                          Paragraph(description, styles['SectionDesc']), _chart_content(rows, chart_kind, styles)])
+    story.extend([PageBreak(), Paragraph(f'{escape(kind.title())} records', styles['SectionTitle'])])
+    # PDF is a bounded readable companion; Excel retains all available feedback detail.
+    visible = records[:200]
+    story.append(Paragraph(f'Showing {len(visible)} of {len(records)} available detail records '
+                           f'({matching} matching in loaded scope). PDF detail limit: 200. '
+                           'Use Excel for the complete available detail scope. Missing values are not zero.',
+                           styles['SectionDesc']))
+    if not visible:
+        story.append(Paragraph('No matching records found for the selected criteria.', styles['SectionDesc']))
+    headings, rows = display_table(kind, visible)
+    for index, row in enumerate(rows, 1):
+        story.extend([Spacer(1, 12), Paragraph(f'Record {index}', styles['TableCellBold'])])
+        table = _style_table([[Paragraph('Field', styles['TableHeader']), Paragraph('Value', styles['TableHeader'])]] +
+                             [[Paragraph(escape(label), styles['TableCellBold']),
+                               Paragraph(escape(value), styles['TableCell'])] for label, value in zip(headings, row)],
+                             colWidths=[150, 373])
+        table.splitInRow = 1
+        story.append(table)
+    return story
+
+
 def export_system_report_pdf(data, target, admin_profile=None):
     """
     Generates an executive PDF report for TravelMate Central Administration.
@@ -703,7 +751,11 @@ def export_system_report_pdf(data, target, admin_profile=None):
     admin_name = escape(str(admin_profile.get("name") or "TravelMate Administrator"))
     admin_email = escape(str(admin_profile.get("email") or "-"))
     gen_date = _generated_at(data)
-    story.extend(_cover("Administrator System Activity Report", "TravelMate Central Administration",
+    from services.admin_report_csv import REPORT_TITLES
+    report_kind = (data.get('criteria') or {}).get('reportType', 'system_summary')
+    report_title = ('Administrator System Activity Report' if report_kind == 'system_summary'
+                    else REPORT_TITLES[report_kind].replace('TravelMate ', ''))
+    story.extend(_cover(report_title, "TravelMate Central Administration",
                         data, gen_date, styles, "Confidential - Internal system activity"))
 
     # 1. Header Banner & Branding
@@ -713,7 +765,7 @@ def export_system_report_pdf(data, target, admin_profile=None):
             Paragraph(f"AUDIT REF: SYS-REPORT-{datetime.now().strftime('%Y%m%d')}", styles["TableCellMuted"])
         ],
         [
-            Paragraph("Administrator System Activity Report", styles["BrandHeader"]),
+            Paragraph(escape(report_title), styles["BrandHeader"]),
             Paragraph("<b>Classification:</b> Confidential", styles["TableCellBold"])
         ],
         [
@@ -773,6 +825,11 @@ def export_system_report_pdf(data, target, admin_profile=None):
     if data.get('feedbackSources'):
         from services.admin_report_csv import feedback_scope_text
         story.append(Paragraph(escape(feedback_scope_text(data)), styles['SectionDesc']))
+
+    if report_kind != 'system_summary':
+        story.extend(_selected_admin_report(data, styles))
+        doc.build(story, canvasmaker=NumberedCanvas)
+        return
 
     # 3. Executive KPI Metric Cards
     u_total = counts.get("users", summary.get("users", {}).get("total", 0))

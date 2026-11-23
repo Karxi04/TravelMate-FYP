@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, Response, g, abort
 from api_client import call_api
 from uuid import uuid4
+from admin_report_records import display_table, SCHEMAS
 
 bp = Blueprint("admin_fr13", __name__, template_folder="templates", url_prefix="/admin")
 
@@ -368,10 +369,30 @@ def reports():
     if not guard():
         return redirect(url_for("admin_fr01.login"))
     params = _report_params()
+    kind = params['reportType']
+    if kind != 'system_summary' and (kind not in SCHEMAS or kind == 'other'):
+        return Response('Unsupported report type', status=400)
     response = call_api("GET", "/api/fr13/reports/summary", params=params)
     if not response.ok:
         flash(_error(response), "error")
-    return render_template("fr13_administrator_management/reports.html", report=response.json().get("report", {}) if response.ok else {}, criteria=params)
+        g.admin_backend_error = True
+        status = response.status_code if isinstance(response.status_code, int) and 400 <= response.status_code < 500 else 503
+        return render_template("fr13_administrator_management/reports.html", report={}, criteria=params), status
+    try:
+        body = response.json()
+    except ValueError:
+        return Response('Report data is unavailable.', status=502)
+    report = body.get('report') if isinstance(body, dict) else None
+    if not isinstance(report, dict):
+        return Response('Report data is unavailable.', status=502)
+    records = report.get('records')
+    records = [] if records is None else records
+    if not isinstance(records, list) or any(not isinstance(record, dict) for record in records):
+        return Response('Report records are unavailable.', status=502)
+    report = {**report, 'records': records}
+    columns, rows = display_table(kind, records) if kind != 'system_summary' else ([], [])
+    return render_template("fr13_administrator_management/reports.html", report=report, criteria=params,
+                           report_columns=columns, report_rows=rows)
 
 @bp.route("/reports/export")
 def export_report():
@@ -379,6 +400,8 @@ def export_report():
         return redirect(url_for("admin_fr01.login"))
     params = _report_params()
     export_format = request.args.get("format", "pdf")
+    if export_format not in {'csv', 'xlsx', 'pdf'}:
+        return Response('Unsupported report format', status=400)
     if export_format == "csv":
         layout = request.args.get("layout", "compact")
         if layout not in {"readable", "legacy", "compact"}:

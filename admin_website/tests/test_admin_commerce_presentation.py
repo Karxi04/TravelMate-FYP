@@ -57,7 +57,7 @@ def test_f4b_outage_is_visible_without_private_exception(auth_client,page):
     import requests
     with patch('api_client.requests.request',side_effect=requests.Timeout('private-sentinel')):
         response=auth_client.get('/admin/'+page)
-    assert response.status_code == 200
+    assert response.status_code == (503 if page == 'reports' else 200)
     html=response.get_data(as_text=True)
     assert 'temporarily unavailable' in html and 'private-sentinel' not in html
     if page == 'dashboard':assert 'Queue Clear' not in html
