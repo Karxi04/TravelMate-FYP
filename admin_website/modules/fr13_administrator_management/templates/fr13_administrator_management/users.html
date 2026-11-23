@@ -7,7 +7,7 @@
   <div>
     <span class="eyebrow">PEOPLE &amp; ACCESS</span>
     <h1>People and verification</h1>
-    <p>Supervise user accounts, manage permission roles, and review Tourism Operator accreditations.</p>
+    <p>Manage account status and review Tourism Operator verification. Registered account roles cannot be changed.</p>
   </div>
 </div>
 
@@ -90,11 +90,9 @@
             <form class="actions compact-form" method="post" action="{{ url_for('admin_fr13.update_user', uid=x.id) }}" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               
-              <select class="input" name="role" aria-label="Role for {{ x.get('email', 'user') }}" style="min-width: 105px; padding: 5px 8px; font-size: 12.5px;">
-                <option value="traveller" {% if user_role == 'traveller' %}selected{% endif %}>Traveller</option>
-                <option value="operator" {% if is_op %}selected{% endif %}>Operator</option>
-                <option value="admin" {% if is_adm %}selected{% endif %}>Admin</option>
-              </select>
+              <span class="status draft" aria-label="Registered role">
+                {% if is_adm %}Administrator{% elif is_op %}Tourism Operator{% else %}Traveller{% endif %}
+              </span>
 
               <select class="input" name="status" aria-label="Status for {{ x.get('email', 'user') }}" style="min-width: 95px; padding: 5px 8px; font-size: 12.5px;">
                 <option value="active" {% if x.get('status', 'active') == 'active' %}selected{% endif %}>Active</option>

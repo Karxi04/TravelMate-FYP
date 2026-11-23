@@ -59,7 +59,7 @@ def test_generic_edit_cannot_overwrite_derived_budget_during_concurrent_change(c
 def test_profile_registration_uses_same_validation_as_profile_edits(client,mock_traveller_auth,monkeypatch,payload):
     writes=[]
     monkeypatch.setattr(profiles,'retrieveRecord',lambda *a,**k:{})
-    monkeypatch.setattr(profiles,'storeRecord',lambda c,data,*a,**k:writes.append(data) or {'id':'synthetic',**data})
+    monkeypatch.setattr(profiles,'claimRecord',lambda c,uid,data:writes.append(data) or ({'id':uid,**data},True))
     reply=client.post('/api/fr1/profile',headers=AUTH,json=payload)
     assert reply.status_code==400 and not writes
 

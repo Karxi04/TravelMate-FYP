@@ -215,6 +215,11 @@ def operation_boundaries():
             return {"interests": ["Culture"], "travelType": "Solo", "budgetLevel": "Moderate"}
         return []
 
+    def update(collection, document_id, data, **kwargs):
+        if 'expected' in kwargs:
+            assert memory.retrieve(collection, document_id) == kwargs['expected']
+        return memory.update(collection, document_id, data)
+
     with ExitStack() as stack:
         for module in ("fr01_user_management", "fr04_hybrid_recommendation",
                        "fr08_hotel_booking", "fr09_payment", "fr11_chatbot_travel_assistant"):
@@ -222,12 +227,12 @@ def operation_boundaries():
             stack.enter_context(patch(f"{target}.retrieveRecord", side_effect=(
                 recommendation_read if module == "fr04_hybrid_recommendation" else memory.retrieve
             )))
-            if module in {"fr08_hotel_booking", "fr09_payment"}:
+            if module in {"fr01_user_management", "fr08_hotel_booking", "fr09_payment"}:
                 stack.enter_context(patch(f"{target}.claimRecord", side_effect=memory.claim))
             else:
                 stack.enter_context(patch(f"{target}.storeRecord", side_effect=store))
             if module != "fr04_hybrid_recommendation":
-                stack.enter_context(patch(f"{target}.updateRecord", side_effect=memory.update))
+                stack.enter_context(patch(f"{target}.updateRecord", side_effect=update))
         payment = stack.enter_context(patch(
             "modules.fr09_payment.routes.processPaymentAttempt",
             return_value=SimulatedPaymentIntent("pi_test", 1000),

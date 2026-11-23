@@ -54,10 +54,9 @@ def users():
 def update_user(uid):
     if not guard():
         return redirect(url_for("admin_fr01.login"))
-    payload = {"role": request.form.get("role"), "status": request.form.get("status")}
-    if request.form.get("verificationStatus"):
-        if payload['role'] in {'operator','tourism_operator'}:
-            payload["verificationStatus"] = request.form.get("verificationStatus")
+    if 'role' in request.form:
+        return Response('Registered user roles cannot be changed. Refresh User Accounts before saving.', status=409)
+    payload = {key: request.form[key] for key in ('status', 'verificationStatus') if key in request.form}
     response = call_api("PUT", f"/api/fr13/users/{uid}", json=payload)
     flash("User account updated." if response.ok else _error(response), "success" if response.ok else "error")
     return redirect(url_for("admin_fr13.users"))

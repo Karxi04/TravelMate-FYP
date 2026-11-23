@@ -5,7 +5,8 @@ from sequence_contract.validators import (
     validateRequiredInformation, validateEmailFormat,
     validateUpdatedProfile, getUpdatedProfileValidationError
 )
-from sequence_contract.firebase_firestore import retrieveRecord, storeRecord, updateRecord
+from sequence_contract.firebase_firestore import retrieveRecord, claimRecord, updateRecord
+from services.review_service import ReviewConflict
 
 bp=Blueprint('fr01_users',__name__,url_prefix='/api/fr1')
 
@@ -16,12 +17,15 @@ def create_or_update_profile():
     validation_error = getUpdatedProfileValidationError(payload)
     if validation_error:
         return jsonify(ok=False, error=validation_error), 400
+    existing=retrieveRecord('users',g.uid) or {}
+    if existing and 'role' in payload and payload['role'] != existing.get('role'):
+        return jsonify(ok=False, error='Registered user roles cannot be changed.'), 409
     requested_role=payload.get('role','traveller')
-    if requested_role not in {'traveller','operator'}: return jsonify({'ok':False,'error':'Only traveller or operator self-registration is allowed'}),400
+    if not isinstance(requested_role, str) or requested_role not in {'traveller','operator'}: return jsonify({'ok':False,'error':'Only traveller or operator self-registration is allowed'}),400
     email=g.firebase_user.get('email','')
     required=['name'] + (['companyName','registrationNo'] if requested_role=='operator' else [])
     if not validateRequiredInformation(payload,required) or not validateEmailFormat(email): return jsonify({'ok':False,'error':'Invalid required profile information'}),400
-    existing=retrieveRecord('users',g.uid) or {}; role=existing.get('role',requested_role)
+    role=existing.get('role',requested_role)
     data={'uid':g.uid,'email':email,'name':payload.get('name',existing.get('name','')),'phoneNo':payload.get('phoneNo',existing.get('phoneNo','')),'role':role,'status':existing.get('status','active'),'updatedAt':utc_now_iso(),'createdAt':existing.get('createdAt',utc_now_iso())}
     for extra_field in ['dateOfBirth', 'nationality', 'currentCity', 'gender',
                         'emergencyContactName', 'emergencyContact', 'emergencyRelationship',
@@ -31,7 +35,16 @@ def create_or_update_profile():
         elif extra_field in existing:
             data[extra_field] = existing[extra_field]
     if role=='operator': data.update({'companyName':payload.get('companyName',existing.get('companyName','')),'businessContact':payload.get('businessContact',existing.get('businessContact','')),'registrationNo':payload.get('registrationNo',existing.get('registrationNo','')),'verificationStatus':existing.get('verificationStatus','pending')})
-    result=storeRecord('users',data,g.uid,merge=True)
+    if not existing:
+        result, created = claimRecord('users', g.uid, data)
+        if not created:
+            return jsonify(ok=False, error='This account was already provisioned. Refresh your profile.'), 409
+    else:
+        data.pop('role')
+        try:
+            result = updateRecord('users', g.uid, data, expected=existing)
+        except ReviewConflict:
+            return jsonify(ok=False, error='Your account changed. Refresh your profile before saving.'), 409
     return jsonify({'ok':True,'profile':result})
 
 @bp.get('/me')
@@ -47,6 +60,9 @@ def update_me():
     validation_error = getUpdatedProfileValidationError(payload)
     if validation_error:
         return jsonify({'ok': False, 'error': validation_error}), 400
+
+    if 'role' in payload and payload['role'] != g.profile.get('role'):
+        return jsonify(ok=False, error='Registered user roles cannot be changed.'), 409
 
     allowed_keys = [
         'name', 'phoneNo', 'preferredLanguage', 'companyName', 'businessContact',

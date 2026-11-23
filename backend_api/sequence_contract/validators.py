@@ -149,12 +149,16 @@ def validateUpdatedProfile(data):
     return getUpdatedProfileValidationError(data) is None
 
 
-def validateAccountAction(data):
-    role_ok = 'role' not in data or data.get('role') in {'traveller','operator','admin'}
-    status_ok = 'status' not in data or data.get('status') in {'active','deactivated'}
+def validateAccountAction(data, current=None):
+    if not isinstance(data, dict) or set(data) - {'role','status','verificationStatus'}:
+        return False
+    # A role echo is compatible only with the stored value; it is never an update.
+    role_ok = ('role' not in data or
+               (isinstance(current, dict) and isinstance(data['role'], str) and data['role'] == current.get('role')))
+    status_ok = 'status' not in data or (isinstance(data['status'], str) and data['status'] in {'active','deactivated'})
     verification_ok = (
         'verificationStatus' not in data
-        or data.get('verificationStatus') in {'pending','approved','verified','rejected'}
+        or (isinstance(data['verificationStatus'], str) and data['verificationStatus'] in {'pending','approved','verified','rejected'})
     )
     return (
         role_ok

@@ -159,10 +159,12 @@ def test_user_verification_and_privilege_transitions(client,mock_admin_auth,reco
     records['users'][0]['role']='traveller'
     denied=client.put('/api/fr13/users/u',headers=AUTH,json={'verificationStatus':'approved'})
     assert denied.status_code == 400
-    with patch.object(routes,'updateRecord',side_effect=lambda c,i,v,**kw:{**records['users'][0],**v}):
-        # Existing authorized Administrator provisioning remains available.
+    with patch.object(routes,'updateRecord') as update:
+        # Initial provisioning is separate; an existing account cannot be promoted.
         promoted=client.put('/api/fr13/users/u',headers=AUTH,json={'role':'admin'})
-    assert promoted.status_code == 200 and promoted.get_json()['user']['role']=='admin'
+    assert promoted.status_code == 409
+    update.assert_not_called()
+    assert records['users'][0]['role']=='traveller'
 
 
 def test_conditional_persistence_rejects_real_concurrent_stale_writes():

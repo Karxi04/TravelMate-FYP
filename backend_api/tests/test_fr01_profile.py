@@ -16,15 +16,15 @@ def test_create_profile_unauthorized(client):
 
 def test_create_traveller_profile(client, mock_traveller_auth):
     with patch('modules.fr01_user_management.routes.retrieveRecord') as mock_retrieve, \
-         patch('modules.fr01_user_management.routes.storeRecord') as mock_store:
+         patch('modules.fr01_user_management.routes.claimRecord') as mock_claim:
         mock_retrieve.return_value = None
-        mock_store.return_value = {
+        mock_claim.return_value = ({
             'uid': 'test_traveller_uid',
             'email': 'traveller@test.com',
             'name': 'Test Traveller',
             'role': 'traveller',
             'status': 'active'
-        }
+        }, True)
         res = client.post(
             '/api/fr1/profile',
             headers={'Authorization': 'Bearer valid_test_token'},
@@ -34,6 +34,8 @@ def test_create_traveller_profile(client, mock_traveller_auth):
         data = res.get_json()
         assert data['ok'] is True
         assert data['profile']['role'] == 'traveller'
+        mock_claim.assert_called_once()
+        assert mock_claim.call_args.args[:2] == ('users', 'test_traveller_uid')
 
 
 def test_get_me_profile_reuses_authenticated_firestore_snapshot(client, mock_traveller_auth):
@@ -243,6 +245,11 @@ def test_update_profile_disallows_role_and_uid_tampering(client, mock_traveller_
                 'uid': 'target_victim_uid'
             }
         )
+        assert res.status_code == 409
+        mock_update.assert_not_called()
+        # Without a role-conversion attempt, safe personal edits still ignore forged uid/status.
+        res = client.put('/api/fr1/me', headers={'Authorization': 'Bearer valid_test_token'},
+                         json={'name': 'Safe Name', 'status': 'deactivated', 'uid': 'target_victim_uid'})
         assert res.status_code == 200
         args, _ = mock_update.call_args
         # Document updated MUST be authenticated user g.uid, not victim

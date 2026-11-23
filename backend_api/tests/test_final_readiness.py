@@ -297,7 +297,7 @@ def test_portal_admin_verification_package_campaign_and_traveller_publication(cl
     assert login.status_code == 302
     pending_browser, _token, pending = portal_bridge(load_portal("operator", monkeypatch), client, OPERATOR)
     assert pending.status_code == 302
-    account_update = {"role": "operator", "status": "active", "verificationStatus": "approved"}
+    account_update = {"status": "active", "verificationStatus": "approved"}
     assert admin.post(f"/admin/users/{OPERATOR}/update", data=account_update).status_code == 400
     assert journey.retrieve("users", OPERATOR)["verificationStatus"] == "pending"
     assert admin.post(f"/admin/users/{OPERATOR}/update", data={**account_update, "csrf_token": admin_token}).status_code == 302

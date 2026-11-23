@@ -255,14 +255,19 @@ def update_user(uid):
     payload=_payload()
     if any(k in payload and not isinstance(payload[k],str) for k in ('role','status','verificationStatus')):
         _fail('Invalid account action',400)
-    if not validateAccountAction(payload):return jsonify({'ok':False,'error':'No valid account update supplied'}),400
-    updates={k:v for k,v in payload.items() if k in {'role','status','verificationStatus'}}
-    if uid == g.uid and (updates.get('role') not in (None, 'admin') or updates.get('status') == 'deactivated'):
-        return jsonify({'ok':False,'error':'Administrators cannot disable or demote their own account'}), 409
+    if uid == g.uid and (payload.get('status') == 'deactivated' or
+                        ('role' in payload and payload['role'] != g.profile.get('role'))):
+        return jsonify({'ok':False,'error':'Administrators cannot change their registered role or deactivate their own account'}), 409
     current=retrieveRecord('users',uid)
     if not current:return jsonify({'ok':False,'error':'User not found'}),404
-    if updates.get('verificationStatus') in {'approved','verified','rejected'} and updates.get('role',current.get('role')) not in {'operator','tourism_operator'}:
+    if 'role' in payload and payload['role'] != current.get('role'):
+        _fail('Registered user roles cannot be changed.',409)
+    if not validateAccountAction(payload, current):return jsonify({'ok':False,'error':'No valid account update supplied'}),400
+    updates={k:v for k,v in payload.items() if k in {'status','verificationStatus'}}
+    if 'verificationStatus' in updates and str(current.get('role') or '').strip().lower() not in {'operator','tourism_operator'}:
         _fail('Business verification is only applicable to Operator accounts.',400)
+    if not updates:
+        return jsonify({'ok':True,'user':_sanitize_commerce_record(current)})
     updates['updatedAt']=utc_now_iso()
     if 'status' in updates: auth.update_user(uid,disabled=updates['status']=='deactivated')
     return jsonify({'ok':True,'user':_sanitize_commerce_record(_save('users',uid,updates,current))})

@@ -446,6 +446,12 @@ def test_f4a_profile_cannot_forge_privileges(client, mock_operator_auth):
         response = client.put('/api/fr1/me', headers={'Authorization': 'Bearer test'}, json={
             'name': 'Synthetic Owner', 'companyName': 'Synthetic Business', 'role': 'admin',
             'operatorId': 'other', 'verificationStatus': 'rejected'})
+        assert response.status_code == 409
+        assert 'roles cannot be changed' in response.get_json()['error']
+        update.assert_not_called()
+        response = client.put('/api/fr1/me', headers={'Authorization': 'Bearer test'}, json={
+            'name': 'Synthetic Owner', 'companyName': 'Synthetic Business',
+            'operatorId': 'other', 'verificationStatus': 'rejected'})
     assert response.status_code == 200
     assert response.get_json()['profile']['role'] == 'operator'
     assert response.get_json()['profile']['verificationStatus'] == 'approved'
